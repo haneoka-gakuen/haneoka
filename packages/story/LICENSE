@@ -1,0 +1,25 @@
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+License scope
+-------------
+
+Haneoka-authored source code and documentation in this package are
+Covered Software under MPL-2.0 unless a file or directory says otherwise.
+The complete license text is available at ../../LICENSE.
+
+This notice does not grant rights to:
+
+- the vendored Live2D Cubism Framework in src/vendor/cubism, governed by
+  the Live2D Open Software License described in CUBISM-LICENSE.md;
+- Live2D Cubism Core or MotionSync Core components loaded from public/Core,
+  governed by their respective proprietary licenses;
+- game-derived textures, media, metadata, or generated resources,
+  including content under src/assets;
+- separately identified third-party shader programs or source ported from
+  Unity Graphics, as identified in ../../THIRD_PARTY_NOTICES.md; or
+- any other separately licensed dependency or material identified there.
+
+Preserve this file, CUBISM-LICENSE.md, and all applicable third-party
+notices with source or executable distributions.

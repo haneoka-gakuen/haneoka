@@ -1,0 +1,108 @@
+name: Bug report
+description: Report a reproducible problem in Haneoka.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Haneoka. Use this form for a concrete, reproducible defect.
+
+        For setup and usage questions, use [Q&A](https://github.com/haneoka-gakuen/haneoka/discussions/categories/q-a). Report security vulnerabilities through [GitHub Private Vulnerability Reporting](https://github.com/haneoka-gakuen/haneoka/security/advisories/new), not here.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Select the closest match. You can clarify the boundary below.
+      options:
+        - Website shell or responsive layout
+        - Catalog page or search
+        - Story player, Live2D, video, or audio
+        - Story editor
+        - Chart player or WebGL rendering
+        - Chart editor
+        - Account, community, moderation, or administration
+        - Worker API, D1, authentication, or deployment
+        - Resource pipeline, release, or R2 storage
+        - Sonolus
+        - Localization or accessibility
+        - Documentation website behavior
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Affected page, package, or command
+      description: Give a route, URL, workspace package, script, or command when one is known.
+      placeholder: /tools/story-editor, @haneoka/story, pnpm preview, or a public URL
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe what happened and its practical impact. Include the complete error message when useful.
+      placeholder: What did you observe?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Start from a clean page load or checkout and provide the smallest reliable sequence. A public reproduction is welcome but not required.
+      placeholder: |
+        1. Open or run ...
+        2. Select or enter ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the result you expected after following the same steps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Tested version
+      description: Give a commit SHA, branch, release/build identifier, or the date and time when you tested the deployed site.
+      placeholder: main at 0123abc, build r-..., or haneoka.org on 2026-07-19
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the relevant OS, browser/runtime, device, viewport/orientation, selected resource server, and physical/emulated status. Enter N/A for details that cannot affect this report.
+      placeholder: macOS 15; Chrome 138; 1440 × 900; jp-cbt; physical device
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or recording
+      description: Drag in visual evidence when it helps. Remove private information and use the smallest material needed to show the problem.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste a short, sanitized console, terminal, or network excerpt. Link a larger log instead of pasting thousands of lines.
+      render: shell
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Note regressions, the last known working version, workarounds, frequency, or other details that change how the issue should be investigated.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for the same problem.
+          required: true
+        - label: I tested the current deployed site or current `main`, or explained above why that was not possible.
+          required: true
+        - label: I removed credentials, authorization values, private packages, restricted payloads, and personal data.
+          required: true

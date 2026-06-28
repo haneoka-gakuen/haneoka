@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.nuxt/
+.output/
+data/
+tmp/
+docs/
+public/
+.wrangler/
+worker/worker-configuration.d.ts
+packages/story/src/vendor/
+pnpm-lock.yaml
+*.apks
+*.apk
+*.xapk
+*.ipa

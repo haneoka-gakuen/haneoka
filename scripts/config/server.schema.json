@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://haneoka.org/schemas/pipeline-server.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "packageName",
+    "platform",
+    "unityVersion",
+    "extractionShards",
+    "r2Bucket",
+    "releaseRetention",
+    "authorizationRequired",
+    "remoteRoot",
+    "criHcaKey",
+    "masterCrypto"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "packageName": { "type": "string", "minLength": 1 },
+    "platform": { "enum": ["Android"] },
+    "unityVersion": { "type": "string", "minLength": 1 },
+    "extractionShards": { "type": "integer", "minimum": 1, "maximum": 128 },
+    "r2Bucket": { "type": "string", "minLength": 1 },
+    "releaseRetention": { "type": "integer", "minimum": 2, "maximum": 10 },
+    "authorizationRequired": { "type": "boolean" },
+    "remoteRoot": { "type": "string", "format": "uri" },
+    "criHcaKey": { "type": "string", "pattern": "^[0-9]+$" },
+    "masterCrypto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["salt", "key", "iv"],
+      "properties": {
+        "salt": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "iv": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

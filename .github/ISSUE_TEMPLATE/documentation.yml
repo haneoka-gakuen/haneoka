@@ -1,0 +1,60 @@
+name: Documentation correction
+description: Report documentation that is missing, inaccurate, outdated, or difficult to follow.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation fixes are welcome. For help using Haneoka, use [Q&A](https://github.com/haneoka-gakuen/haneoka/discussions/categories/q-a) instead.
+  - type: input
+    id: location
+    attributes:
+      label: Affected document
+      description: Link the page or give the repository path and heading.
+      placeholder: README.md#local-preview or https://github.com/.../blob/main/...
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Problem type
+      options:
+        - Incorrect information
+        - Outdated information
+        - Missing explanation or example
+        - Unclear or ambiguous wording
+        - Broken link or command
+        - Translation or locale problem
+        - Accessibility problem
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or difficult to understand?
+      description: Quote only the shortest relevant excerpt and explain how it could mislead a new contributor or user.
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Suggested correction
+      description: Propose replacement wording, an example, or a better structure if you have one.
+  - type: input
+    id: locale
+    attributes:
+      label: Affected language
+      description: Complete this only when the problem is locale-specific.
+      placeholder: English, 日本語, 한국어, 简体中文, or 繁體中文
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I checked the current `main` version of the document and searched for an existing report.
+          required: true
+        - label: I removed private information and did not attach restricted files.
+          required: true

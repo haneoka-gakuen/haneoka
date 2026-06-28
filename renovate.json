@@ -1,0 +1,45 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "labels": ["dependencies"],
+  "schedule": ["* 16 8 * *"],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "constraints": {
+    "python": "3.13"
+  },
+  "pip-compile": {
+    "managerFilePatterns": ["/^scripts/requirements\\.txt$/"]
+  },
+  "pip_requirements": {
+    "enabled": false
+  },
+  "packageRules": [
+    {
+      "description": "Update the pnpm release selected by Corepack",
+      "matchPackageNames": ["pnpm"],
+      "groupName": "pnpm toolchain"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Keep Sonolus packages together",
+      "matchPackageNames": ["@sonolus/**"],
+      "groupName": "sonolus packages"
+    },
+    {
+      "description": "Keep Vue packages together",
+      "matchPackageNames": ["vue", "vue-router", "vue-tsc", "@vue/**"],
+      "groupName": "vue packages"
+    }
+  ]
+}

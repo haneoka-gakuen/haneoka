@@ -1,0 +1,58 @@
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+
+# Framework and build outputs
+dist
+.nuxt/
+.output/
+public/sitemap.xml
+public/robots.txt
+packages/sonolus/worker-assets/
+.wrangler/
+
+# Local databases
+worker/database/plans/
+worker/database/local/
+worker/database/exports/
+worker/database/*.sqlite
+worker/database/*.sqlite3
+
+# Environment and secrets
+.dev.vars*
+.env*
+!.dev.vars.example
+!.env.example
+
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+
+# Generated game data and source packages
+/data/
+/tmp/
+/app/data/garupa/
+game-resource-downloads/
+*.apk
+*.apks
+*.xapk
+*.ipa
+*.imazingapp
+usmlogs/
+
+# Logs and operating-system metadata
+.DS_Store
+*.log
+
+# Published documentation allowlist
+/docs/*
+!/docs/assets/
+!/docs/assets/haneoka-header.png
+!/docs/assets/haneoka-header.svg
+!/docs/assets/haneoka-social-card.png
+!/docs/assets/haneoka-social-card.svg
+!/docs/architecture/
+/docs/architecture/*
+!/docs/architecture/garupa-master-playlists.md

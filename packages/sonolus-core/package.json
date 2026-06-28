@@ -1,0 +1,49 @@
+{
+  "name": "@haneoka/sonolus-core",
+  "version": "0.1.0",
+  "description": "Runtime-neutral chart repositories and Sonolus level document projection",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haneoka-gakuen/haneoka.git",
+    "directory": "packages/sonolus-core"
+  },
+  "bugs": {
+    "url": "https://github.com/haneoka-gakuen/haneoka/issues"
+  },
+  "homepage": "https://github.com/haneoka-gakuen/haneoka/tree/main/packages/sonolus-core#readme",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "pnpm run typecheck && pnpm run build",
+    "prepare": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "sideEffects": false
+}

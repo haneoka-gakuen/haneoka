@@ -1,0 +1,7 @@
+{
+  "extends": "../../worker/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../../worker/env.d.ts", "../../worker/worker-configuration.d.ts"]
+}

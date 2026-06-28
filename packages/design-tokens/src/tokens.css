@@ -1,0 +1,287 @@
+:root {
+  color-scheme: light;
+
+  /* Generated with Material Color Utilities from the favicon's #31356e,
+   * #79bbc8, and #c370b7 source colors. */
+  --md-sys-color-primary: #31356e;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e5e6f3;
+  --md-sys-color-on-primary-container: #242750;
+  --md-sys-color-secondary: #2e6974;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #d9eff2;
+  --md-sys-color-on-secondary-container: #173f46;
+  --md-sys-color-tertiary: #875080;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #f5e4f1;
+  --md-sys-color-on-tertiary-container: #52234d;
+  --md-sys-color-error: #b6485c;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-surface: #f6f8f9;
+  --md-sys-color-on-surface: #202428;
+  --md-sys-color-on-surface-variant: #555d63;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f1f4f5;
+  --md-sys-color-surface-container: #eceff1;
+  --md-sys-color-surface-container-high: #e6eaec;
+  --md-sys-color-surface-container-highest: #dce2e5;
+  --md-sys-color-surface-dim: #d7dde0;
+  --md-sys-color-surface-bright: #ffffff;
+  --md-sys-color-outline: #687177;
+  --md-sys-color-outline-variant: #c7ced2;
+  --md-sys-color-inverse-surface: #272a58;
+  --md-sys-color-inverse-on-surface: #f5f3ef;
+  --md-sys-color-inverse-primary: #a5d7dc;
+  --md-sys-color-surface-tint: #31356e;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+
+  --md-extended-color-attribute-blue: #3f8efc;
+  --md-extended-color-attribute-green: #55c77c;
+  --md-extended-color-attribute-yellow: #d49216;
+  --md-extended-color-attribute-red: #eb5b59;
+  --md-extended-color-attribute-purple: #aa62e7;
+  --md-extended-color-difficulty-easy: #48cadc;
+  --md-extended-color-difficulty-normal: #56ce79;
+  --md-extended-color-difficulty-hard: #f4bb3c;
+  --md-extended-color-difficulty-expert: #e84e43;
+  --md-extended-color-difficulty-master: #c950d7;
+
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans Variable", sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans Variable", sans-serif;
+  --md-ref-typeface-code: ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", monospace;
+  --md-ref-typeface-weight-regular: 400;
+  --md-ref-typeface-weight-medium: 500;
+  --md-ref-typeface-weight-bold: 700;
+
+  --md-sys-typescale-display-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-large-size: 3.5625rem;
+  --md-sys-typescale-display-large-line-height: 4rem;
+  --md-sys-typescale-display-large-weight: 400;
+  --md-sys-typescale-display-large-tracking: 0;
+  --md-sys-typescale-display-medium-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-medium-size: 2.8125rem;
+  --md-sys-typescale-display-medium-line-height: 3.25rem;
+  --md-sys-typescale-display-medium-weight: 400;
+  --md-sys-typescale-display-medium-tracking: 0;
+  --md-sys-typescale-display-small-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-display-small-size: 2.25rem;
+  --md-sys-typescale-display-small-line-height: 2.75rem;
+  --md-sys-typescale-display-small-weight: 400;
+  --md-sys-typescale-display-small-tracking: 0;
+  --md-sys-typescale-headline-large-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-large-size: 2rem;
+  --md-sys-typescale-headline-large-line-height: 2.5rem;
+  --md-sys-typescale-headline-large-weight: 400;
+  --md-sys-typescale-headline-large-tracking: 0;
+  --md-sys-typescale-headline-medium-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-medium-size: 1.75rem;
+  --md-sys-typescale-headline-medium-line-height: 2.25rem;
+  --md-sys-typescale-headline-medium-weight: 400;
+  --md-sys-typescale-headline-medium-tracking: 0;
+  --md-sys-typescale-headline-small-font: var(--md-ref-typeface-brand);
+  --md-sys-typescale-headline-small-size: 1.5rem;
+  --md-sys-typescale-headline-small-line-height: 2rem;
+  --md-sys-typescale-headline-small-weight: 400;
+  --md-sys-typescale-headline-small-tracking: 0;
+  --md-sys-typescale-title-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-title-large-size: 1.375rem;
+  --md-sys-typescale-title-large-line-height: 1.75rem;
+  --md-sys-typescale-title-large-weight: 400;
+  --md-sys-typescale-title-large-tracking: 0;
+  --md-sys-typescale-title-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-title-medium-size: 1rem;
+  --md-sys-typescale-title-medium-line-height: 1.5rem;
+  --md-sys-typescale-title-medium-weight: 500;
+  --md-sys-typescale-title-medium-tracking: 0;
+  --md-sys-typescale-title-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-title-small-size: 0.875rem;
+  --md-sys-typescale-title-small-line-height: 1.25rem;
+  --md-sys-typescale-title-small-weight: 500;
+  --md-sys-typescale-title-small-tracking: 0;
+  --md-sys-typescale-body-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-large-size: 1rem;
+  --md-sys-typescale-body-large-line-height: 1.5rem;
+  --md-sys-typescale-body-large-weight: 400;
+  --md-sys-typescale-body-large-tracking: 0;
+  --md-sys-typescale-body-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-medium-size: 0.875rem;
+  --md-sys-typescale-body-medium-line-height: 1.25rem;
+  --md-sys-typescale-body-medium-weight: 400;
+  --md-sys-typescale-body-medium-tracking: 0;
+  --md-sys-typescale-body-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-body-small-size: 0.75rem;
+  --md-sys-typescale-body-small-line-height: 1rem;
+  --md-sys-typescale-body-small-weight: 400;
+  --md-sys-typescale-body-small-tracking: 0;
+  --md-sys-typescale-label-large-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-large-size: 0.875rem;
+  --md-sys-typescale-label-large-line-height: 1.25rem;
+  --md-sys-typescale-label-large-weight: 500;
+  --md-sys-typescale-label-large-tracking: 0;
+  --md-sys-typescale-label-medium-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-medium-size: 0.75rem;
+  --md-sys-typescale-label-medium-line-height: 1rem;
+  --md-sys-typescale-label-medium-weight: 500;
+  --md-sys-typescale-label-medium-tracking: 0;
+  --md-sys-typescale-label-small-font: var(--md-ref-typeface-plain);
+  --md-sys-typescale-label-small-size: 0.6875rem;
+  --md-sys-typescale-label-small-line-height: 1rem;
+  --md-sys-typescale-label-small-weight: 500;
+  --md-sys-typescale-label-small-tracking: 0;
+
+  /* Material 3's canonical shape scale.  Components deliberately choose a
+   * role from this scale instead of carrying their own near-identical radii. */
+  --md-sys-shape-corner-none: 0;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-extra-large-increased: 32px;
+  --md-sys-shape-corner-extra-extra-large: 48px;
+  --md-sys-shape-corner-full: 9999px;
+
+  --md-sys-spacing-0: 0;
+  --md-sys-spacing-1: 4px;
+  --md-sys-spacing-2: 8px;
+  --md-sys-spacing-3: 12px;
+  --md-sys-spacing-4: 16px;
+  --md-sys-spacing-5: 24px;
+  --md-sys-spacing-6: 32px;
+  --md-sys-spacing-7: 40px;
+  --md-sys-spacing-8: 48px;
+
+  --md-sys-motion-duration-short1: 50ms;
+  --md-sys-motion-duration-short2: 100ms;
+  --md-sys-motion-duration-short3: 150ms;
+  --md-sys-motion-duration-short4: 200ms;
+  --md-sys-motion-duration-medium1: 250ms;
+  --md-sys-motion-duration-medium2: 300ms;
+  --md-sys-motion-duration-medium3: 350ms;
+  --md-sys-motion-duration-medium4: 400ms;
+  --md-sys-motion-duration-long1: 450ms;
+  --md-sys-motion-duration-long2: 500ms;
+  --md-sys-motion-duration-long3: 550ms;
+  --md-sys-motion-duration-long4: 600ms;
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --md-sys-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md-sys-motion-distance-short: 12px;
+  --md-sys-motion-distance-medium: 32px;
+
+  --md-sys-safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --md-sys-safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --md-sys-safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --md-sys-safe-area-inset-left: env(safe-area-inset-left, 0px);
+
+  /* Material state-layer opacities are shared by native controls and Material
+   * Web hosts. Focus rings are intentionally disabled at the product level. */
+  --md-sys-state-hover-state-layer-opacity: 0.08;
+  --md-sys-state-focus-state-layer-opacity: 0.12;
+  --md-sys-state-pressed-state-layer-opacity: 0.12;
+  --md-sys-state-dragged-state-layer-opacity: 0.16;
+  --md-focus-ring-color: var(--md-sys-color-secondary);
+  --md-focus-ring-width: 0px;
+  --md-focus-ring-active-width: 0px;
+  --md-focus-ring-outward-offset: 0px;
+
+  --md-sys-elevation-level0: none;
+  --md-sys-elevation-level1: 0 1px 2px rgb(22 38 43 / 0.08);
+  --md-sys-elevation-level2: 0 2px 6px rgb(22 38 43 / 0.12);
+  --md-sys-elevation-level3: 0 4px 12px rgb(22 38 43 / 0.14);
+  --md-sys-elevation-inset: inset 0 1px 2px rgb(22 38 43 / 0.1);
+  --md-sys-state-focus-ring: none;
+
+  --md-comp-control-height-compact: 32px;
+  --md-comp-control-height: 40px;
+  --md-comp-control-height-touch: 48px;
+  --md-comp-navigation-drawer-width: 280px;
+  --md-comp-navigation-rail-width: 80px;
+  --md-comp-catalog-selector-rail-width: 72px;
+  --md-comp-bottom-navigation-height: 64px;
+  --md-comp-top-app-bar-height: 64px;
+  --md-comp-top-app-bar-safe-height: calc(var(--md-comp-top-app-bar-height) + var(--md-sys-safe-area-inset-top));
+  --md-comp-page-inline-space: clamp(16px, 2.4vw, 38px);
+  --md-comp-page-block-space: 12px;
+  --md-comp-collection-content-space: 8px;
+  --md-comp-search-field-max-width: 320px;
+  --md-comp-search-field-shape: 28px;
+  --md-comp-search-form-max-width: 464px;
+  --md-comp-filter-panel-width: 400px;
+  --md-comp-collection-table-column-gap: 12px;
+  --md-comp-detail-accent: var(--md-sys-color-primary);
+  --md-comp-story-media-aspect-ratio: 4 / 3;
+  --md-comp-audio-dock-height: 64px;
+  --md-comp-audio-dock-collapsed-height: 56px;
+  --md-comp-game-scene-background: none;
+  --md-comp-runtime-surface: var(--md-sys-color-surface-container-high);
+  --md-comp-runtime-surface-high: var(--md-sys-color-surface-container-highest);
+  --md-comp-runtime-outline: var(--md-sys-color-outline-variant);
+  --md-comp-runtime-primary: var(--md-sys-color-primary);
+  --md-comp-runtime-primary-strong: var(--md-sys-color-primary);
+  --md-comp-runtime-primary-container: var(--md-sys-color-primary-container);
+  --md-comp-runtime-on-surface: var(--md-sys-color-on-surface);
+  --md-comp-runtime-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --md-comp-runtime-toolbar-height: 48px;
+  --md-comp-runtime-toolbar-height-touch: 56px;
+  --md-comp-runtime-control-size: 40px;
+  --md-comp-runtime-control-size-compact: 32px;
+  --md-comp-runtime-control-size-touch: 40px;
+  --md-comp-runtime-toolbar-gap: 2px;
+  --md-comp-runtime-toolbar-padding: 4px;
+  --md-comp-runtime-elevation: var(--md-sys-elevation-level2);
+  --md-comp-runtime-slider-track: var(--md-sys-color-surface-container-highest);
+  --md-comp-runtime-slider-fill: var(--md-sys-color-primary);
+  --md-comp-runtime-slider-thumb: var(--md-sys-color-primary);
+  --md-comp-runtime-scene-surface: #05070f;
+  --md-comp-runtime-scene-surface-deep: #03030a;
+  --md-comp-runtime-scene-scrim: rgb(3 4 12 / 0.75);
+  --md-comp-runtime-scene-on-error: #ffb3bd;
+  --md-icon-font: "Material Symbols Rounded";
+
+  --md-sys-z-index-local-content: 0;
+  --md-sys-z-index-local-raised: 1;
+  --md-sys-z-index-local-sticky: 10;
+  --md-sys-z-index-local-backdrop: 20;
+  --md-sys-z-index-local-popover: 30;
+  --md-sys-z-index-shell-navigation: 110;
+  --md-sys-z-index-shell-player: 120;
+  --md-sys-z-index-overlay-backdrop: 200;
+  --md-sys-z-index-overlay-sheet: 210;
+  --md-sys-z-index-overlay-raised-backdrop: 215;
+  --md-sys-z-index-overlay-drawer: 220;
+  --md-sys-z-index-overlay-dialog: 300;
+  --md-sys-z-index-overlay-popover: 310;
+  --md-sys-z-index-overlay-toast: 400;
+  --md-sys-z-index-a11y: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --md-sys-motion-duration-short1: 1ms;
+    --md-sys-motion-duration-short2: 1ms;
+    --md-sys-motion-duration-short3: 1ms;
+    --md-sys-motion-duration-short4: 1ms;
+    --md-sys-motion-duration-medium1: 1ms;
+    --md-sys-motion-duration-medium2: 1ms;
+    --md-sys-motion-duration-medium3: 1ms;
+    --md-sys-motion-duration-medium4: 1ms;
+    --md-sys-motion-duration-long1: 1ms;
+    --md-sys-motion-duration-long2: 1ms;
+    --md-sys-motion-duration-long3: 1ms;
+    --md-sys-motion-duration-long4: 1ms;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --md-comp-page-inline-space: 14px;
+  }
+}

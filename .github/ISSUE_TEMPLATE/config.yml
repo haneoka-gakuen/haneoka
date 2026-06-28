@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and setup help
+    url: https://github.com/haneoka-gakuen/haneoka/discussions/categories/q-a
+    about: Ask how to use, configure, or contribute to Haneoka.
+  - name: Early-stage ideas
+    url: https://github.com/haneoka-gakuen/haneoka/discussions/categories/ideas
+    about: Discuss an idea before turning it into a focused feature proposal.
+  - name: Security vulnerability
+    url: https://github.com/haneoka-gakuen/haneoka/security/advisories/new
+    about: Report a vulnerability privately. Do not open a public issue.
+  - name: Support policy
+    url: https://github.com/haneoka-gakuen/haneoka/blob/main/SUPPORT.md
+    about: Check supported requests, required details, and reporting boundaries.

@@ -1,0 +1,7 @@
+Corresponding Haneoka Source Code Form:
+https://github.com/haneoka-gakuen/haneoka
+
+The source revision used for a deployment should be identified by that
+deployment's release or commit metadata. Haneoka-authored covered files and
+covered modifications are licensed under MPL-2.0 unless a file or notice
+states otherwise.

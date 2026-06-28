@@ -1,0 +1,54 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "haneoka-local-worker",
+  "main": "../../worker/index.ts",
+  "compatibility_date": "2026-02-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+
+  "vars": {
+    "ADMIN_PACKAGE_MAX_BYTES": "2147483648",
+    "AUTH_EMAIL_FROM": "noreply@haneoka.local",
+    "BETTER_AUTH_URL": "http://127.0.0.1:3000",
+    "LOCAL_MODERATION_MODE": "deterministic",
+    "TURNSTILE_ALLOWED_HOSTNAMES": "localhost,127.0.0.1",
+    "TURNSTILE_ENABLED": "false",
+    "TURNSTILE_SITE_KEY": "",
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "haneoka-community-local",
+      "database_id": "00000000-0000-4000-8000-000000000001",
+      "migrations_dir": "../../worker/database/migrations",
+    },
+  ],
+
+  "r2_buckets": [
+    { "binding": "ASSET_BUCKET", "bucket_name": "haneoka-assets-local" },
+    { "binding": "COMMUNITY_UPLOADS", "bucket_name": "haneoka-community-uploads-local" },
+    { "binding": "RESOURCE_PACKAGE_INGRESS", "bucket_name": "haneoka-resource-ingress-local" },
+  ],
+
+  "queues": {
+    "producers": [{ "binding": "MODERATION_QUEUE", "queue": "haneoka-community-moderation-local" }],
+    "consumers": [
+      {
+        "queue": "haneoka-community-moderation-local",
+        "max_batch_size": 5,
+        "max_batch_timeout": 1,
+        "max_retries": 2,
+        "retry_delay": 1,
+      },
+    ],
+  },
+
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["noreply@haneoka.local"],
+    },
+  ],
+}

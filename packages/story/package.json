@@ -1,0 +1,109 @@
+{
+  "name": "@haneoka/story",
+  "version": "0.1.0",
+  "description": "Host-neutral ADV and visual-novel runtime with text, audio, Three.js, Live2D, and Vue adapters",
+  "keywords": [
+    "visual-novel",
+    "adv",
+    "live2d",
+    "three.js",
+    "vue"
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haneoka-gakuen/haneoka.git",
+    "directory": "packages/story"
+  },
+  "bugs": {
+    "url": "https://github.com/haneoka-gakuen/haneoka/issues"
+  },
+  "homepage": "https://github.com/haneoka-gakuen/haneoka/tree/main/packages/story#readme",
+  "type": "module",
+  "sideEffects": [
+    "./dist/styles.css"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "ADV_OPCODE_AUDIT.md",
+    "CUBISM2_RUNTIME_EVIDENCE.md",
+    "CUBISM-LICENSE.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime-entry.d.ts",
+      "import": "./dist/runtime.js",
+      "default": "./dist/runtime.js"
+    },
+    "./viewer": {
+      "types": "./dist/viewer-entry.d.ts",
+      "import": "./dist/viewer.js",
+      "default": "./dist/viewer.js"
+    },
+    "./vue": {
+      "types": "./dist/vue-entry.d.ts",
+      "import": "./dist/vue.js",
+      "default": "./dist/vue.js"
+    },
+    "./vue/controls": {
+      "types": "./dist/vue-controls-entry.d.ts",
+      "import": "./dist/vue-controls.js",
+      "default": "./dist/vue-controls.js"
+    },
+    "./vue/player": {
+      "types": "./dist/vue-player-entry.d.ts",
+      "import": "./dist/vue-player.js",
+      "default": "./dist/vue-player.js"
+    },
+    "./vue/text": {
+      "types": "./dist/vue-text-entry.d.ts",
+      "import": "./dist/vue-text.js",
+      "default": "./dist/vue-text.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "vite build && vue-tsc -p tsconfig.build.json",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit",
+    "prepack": "pnpm run typecheck && pnpm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@material/web": "^2.5.0"
+  },
+  "peerDependencies": {
+    "howler": ">=2.2.0 <3",
+    "three": ">=0.184.0 <0.185.0",
+    "vue": ">=3.5.0 <4"
+  },
+  "devDependencies": {
+    "@types/howler": "^2.2.13",
+    "@types/node": "^26.1.0",
+    "@types/three": "^0.184.1",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/compiler-sfc": "^3.5.39",
+    "howler": "2.2.4",
+    "three": "0.184.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.6",
+    "vue": "3.5.39",
+    "vue-tsc": "^3.3.6"
+  }
+}

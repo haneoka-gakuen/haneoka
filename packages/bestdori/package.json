@@ -1,0 +1,88 @@
+{
+  "name": "@haneoka/bestdori",
+  "version": "0.1.0",
+  "description": "Browser-neutral Bestdori contracts, scenario conversion, and Live2D resource adapters",
+  "keywords": [
+    "bestdori",
+    "bang-dream",
+    "scenario",
+    "live2d"
+  ],
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haneoka-gakuen/haneoka.git",
+    "directory": "packages/bestdori"
+  },
+  "bugs": {
+    "url": "https://github.com/haneoka-gakuen/haneoka/issues"
+  },
+  "homepage": "https://github.com/haneoka-gakuen/haneoka/tree/main/packages/bestdori#readme",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CHART_VIEWER_EVIDENCE.md",
+    "LICENSE",
+    "README.md",
+    "STORY_VIEWER_EVIDENCE.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./scenario": {
+      "types": "./dist/scenario.d.ts",
+      "import": "./dist/scenario.js"
+    },
+    "./chart": {
+      "types": "./dist/chart.d.ts",
+      "import": "./dist/chart.js"
+    },
+    "./cache-policy": {
+      "types": "./dist/cache-policy.d.ts",
+      "import": "./dist/cache-policy.js"
+    },
+    "./live2d": {
+      "types": "./dist/live2d.d.ts",
+      "import": "./dist/live2d.js"
+    },
+    "./resources": {
+      "types": "./dist/resources.d.ts",
+      "import": "./dist/resources.js"
+    },
+    "./transport": {
+      "types": "./dist/transport.d.ts",
+      "import": "./dist/transport.js"
+    },
+    "./story-editor": {
+      "types": "./dist/story-editor.d.ts",
+      "import": "./dist/story-editor.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "pnpm run typecheck && pnpm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@haneoka/story-editor": "^0.1.0"
+  },
+  "devDependencies": {
+    "@haneoka/story-editor": "^0.1.0",
+    "typescript": "^6.0.3"
+  }
+}

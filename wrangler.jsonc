@@ -1,0 +1,141 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "haneoka",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-02-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+
+  "routes": [
+    { "pattern": "haneoka.org/*", "zone_name": "haneoka.org" },
+  ],
+
+  "build": {
+    "command": "pnpm run build",
+    "watch_dir": ["app", "worker", "public", "nuxt.config.ts"],
+  },
+
+  // Resource dispatch currently reads a fine-grained Actions:write token from
+  // `wrangler secret put GITHUB_ACTIONS_TOKEN`; migrate this to a GitHub App
+  // installation token when automated credential rotation is introduced.
+  "vars": {
+    "ADMIN_PACKAGE_MAX_BYTES": "2147483648",
+    "BETTER_AUTH_URL": "https://haneoka.org",
+    "AUTH_EMAIL_FROM": "noreply@haneoka.org",
+    "TURNSTILE_ENABLED": "false",
+  },
+
+  "assets": {
+    "directory": "./.output/public",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/",
+      "/api/*",
+      "/artifacts/*",
+      "/assets/*",
+      "/backgrounds/*",
+      "/effects/*",
+      "/engines/*",
+      "/game-client/*",
+      "/info",
+      "/levels/*",
+      "/objects/*",
+      "/particles/*",
+      "/playlists/*",
+      "/repository/*",
+      "/rooms/*",
+      "/runtime/*",
+      "/skins/*",
+      "/sonolus/*",
+      "/asset/*",
+      "/Android/*",
+      "/master/*",
+      "/MasterDataSystemVersion.txt",
+      "/*.bin",
+    ],
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "ASSET_BUCKET",
+      "bucket_name": "hotdori-assets",
+    },
+    {
+      "binding": "COMMUNITY_UPLOADS",
+      "bucket_name": "haneoka-community-uploads",
+    },
+    {
+      "binding": "RESOURCE_PACKAGE_INGRESS",
+      "bucket_name": "haneoka-resource-package-ingress",
+    },
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "haneoka-community",
+      "database_id": "d73093dd-69cf-4c44-849e-f113e9889b84",
+      "migrations_dir": "worker/database/migrations",
+    },
+  ],
+
+  "ai": {
+    "binding": "AI",
+  },
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "MODERATION_QUEUE",
+        "queue": "haneoka-community-moderation",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "haneoka-community-moderation",
+        "max_batch_size": 5,
+        "max_batch_timeout": 2,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "dead_letter_queue": "haneoka-community-moderation-dlq",
+        "max_concurrency": 3,
+      },
+    ],
+  },
+
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["noreply@haneoka.org"],
+    },
+  ],
+
+  "ratelimits": [
+    {
+      "name": "COMMUNITY_RATE_LIMITER",
+      "namespace_id": "412673",
+      "simple": {
+        "limit": 20,
+        "period": 60,
+      },
+    },
+  ],
+
+  "triggers": {
+    "crons": ["17 * * * *", "37 */6 * * *", "23 3 * * *"],
+  },
+
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05,
+    },
+  },
+}

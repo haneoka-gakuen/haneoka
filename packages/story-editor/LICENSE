@@ -1,0 +1,20 @@
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+License scope
+-------------
+
+Haneoka-authored source code and documentation in this package are
+Covered Software under MPL-2.0 unless a file says otherwise. The complete
+license text is available at ../../LICENSE.
+
+Some story-editor files contain work adapted from OpenWebGAL/WebGAL and
+OpenWebGAL/WebGAL_Terre, which are also licensed under MPL-2.0. Preserve
+LICENSE.webgal.txt, LICENSE.webgal-terre.txt, and NOTICE.webgal.md with
+source distributions, and preserve the corresponding notices when
+distributing Executable Form.
+
+Third-party dependencies, game resources, and generated media are not
+relicensed by this notice. Review ../../THIRD_PARTY_NOTICES.md before
+redistribution.

@@ -1,0 +1,43 @@
+name: Resource pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: Server configuration id
+        required: true
+        default: jp-cbt
+        type: string
+      package_r2_key:
+        description: Private R2 CAS key of one APK, APKS, or XAPK file
+        required: false
+        type: string
+      source_id:
+        description: Existing immutable R2 source id to resume without ingestion
+        required: false
+        type: string
+      ktx2:
+        description: Build optional KTX2 derivatives
+        required: false
+        default: false
+        type: boolean
+concurrency:
+  group: resource-pipeline-${{ inputs.server }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    name: Build and publish resources
+    permissions:
+      contents: read
+    uses: ./.github/workflows/resource-pipeline-run.yml
+    with:
+      github_environment: resource-${{ inputs.server }}
+      server: ${{ inputs.server }}
+      package_r2_key: ${{ inputs.package_r2_key }}
+      source_id: ${{ inputs.source_id }}
+      ktx2: ${{ inputs.ktx2 }}
+    secrets:
+      cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+      r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}

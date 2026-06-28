@@ -1,0 +1,18 @@
+{
+  "$schema": "../server.schema.json",
+  "id": "jp-cbt",
+  "packageName": "com.bushiroad.siriusstaging",
+  "platform": "Android",
+  "unityVersion": "6000.3.12f1",
+  "extractionShards": 32,
+  "r2Bucket": "hotdori-assets",
+  "releaseRetention": 3,
+  "authorizationRequired": true,
+  "remoteRoot": "https://static-cbt.bang-dream-on.jp/asset/Android",
+  "criHcaKey": "8594927479",
+  "masterCrypto": {
+    "salt": "b50b23a5fd628c3dc386f7488f81d6b0450b8c89671574f55a3ad815f10b8e30",
+    "key": "0532791c510a08eb7ede6b46c6ba71ea9aa2a3cfb678a595f89d67c8a5e493b6",
+    "iv": "9b94c91e242a562e97fcd505b75a5129b2b80632a269034cf942ec7293d489a1"
+  }
+}

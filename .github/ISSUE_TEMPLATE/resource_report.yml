@@ -1,0 +1,91 @@
+name: Catalog or resource report
+description: Report incorrect catalog data, a missing resource, or a reproducible resource-build problem.
+title: "[Resource]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for catalog records, resource resolution, release verification, or resource-pipeline behavior. Use the general bug form for player or editor behavior.
+
+        Do not upload game packages, authorization values, private CDN URLs, restricted media, credentials, or personal data. Describe the smallest public or sanitized verification method instead.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Report type
+      options:
+        - Incorrect catalog metadata
+        - Missing catalog entry
+        - Missing or unavailable resource
+        - Incorrect resource mapping or localization
+        - Local resource-build failure
+        - Release, verification, or publication failure
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Resource server
+      description: Give the selected server identifier, or N/A if the report is server-independent.
+      placeholder: jp-cbt
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Affected entity or stage
+      description: Give a public URL, catalog entity ID, logical resource path, pipeline command, or failing stage.
+      placeholder: Story ID ..., /catalog/..., build-api, or verify-release
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed data or behavior
+      description: State the incorrect value, missing item, failed lookup, or error and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Reproduction or verification method
+      description: Provide reproducible, sanitized steps or a public reference that allows the report to be checked without restricted files.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected data or behavior
+      description: State the corrected value or successful outcome you expect.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Tested release or commit
+      description: Give the catalog release/build ID, commit SHA, or deployed test date.
+      placeholder: r-..., 0123abc, or haneoka.org on 2026-07-19
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Public evidence or screenshots
+      description: Add a public source, a small sanitized manifest excerpt, or visual evidence when available.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste only the shortest sanitized excerpt needed to identify the failing stage.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for the same resource or record.
+          required: true
+        - label: I removed credentials, authorization values, private URLs, private packages, restricted payloads, and personal data.
+          required: true

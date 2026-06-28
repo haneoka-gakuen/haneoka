@@ -1,0 +1,17 @@
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+License scope
+-------------
+
+Haneoka-authored modifications and new source code in this package are
+Covered Software under MPL-2.0 unless a file says otherwise. The complete
+license text is available at ../../../LICENSE.
+
+The implementation began from NonSpicyBurrito's MIT-licensed
+sonolus-pjsekai-engine. Its copyright and permission notice is retained
+verbatim in LICENSE.pjsekai.txt. Distributions containing corresponding
+upstream code must preserve that notice in addition to satisfying MPL-2.0
+for Haneoka-covered modifications. Game-derived assets assembled by the
+parent package are outside both grants; see ../../../THIRD_PARTY_NOTICES.md.

@@ -1,0 +1,9 @@
+UnityPy==1.25.0
+numpy==2.5.1
+Pillow==12.2.0
+WannaCRI==0.3.1
+boto3==1.43.47
+apkutils2==1.0.0
+py3rijndael==0.3.3
+
+# Runtime tools kept outside pip: vgmstream-cli r2117 and ffmpeg.

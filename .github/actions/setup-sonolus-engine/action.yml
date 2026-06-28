@@ -1,0 +1,46 @@
+name: Set up Sonolus engine
+description: Restore the compiled engine or build it in the current job.
+
+inputs:
+  dependencies-installed:
+    description: Use Node.js and workspace dependencies already installed by the caller.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore compiled engine
+      id: engine-cache
+      uses: actions/cache@v6
+      with:
+        path: packages/sonolus/engine/dist
+        key: sonolus-engine-v1-${{ runner.os }}-node24-${{ hashFiles('packages/sonolus/engine/**', 'LICENSE') }}
+
+    - name: Set up Node.js
+      if: steps.engine-cache.outputs.cache-hit != 'true' && inputs.dependencies-installed != 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: Install engine dependencies
+      if: steps.engine-cache.outputs.cache-hit != 'true' && inputs.dependencies-installed != 'true'
+      shell: bash
+      run: |
+        corepack enable
+        pnpm install --frozen-lockfile
+
+    - name: Build Sonolus engine
+      if: steps.engine-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        for target in play watch preview tutorial; do
+          pnpm --dir packages/sonolus/engine exec sonolus-cli \
+            --build "./$target/sonolus-cli.config.ts"
+        done
+        output="packages/sonolus/engine/dist"
+        cp LICENSE "$output/LICENSE"
+        cp packages/sonolus/engine/NOTICE.txt "$output/NOTICE.txt"
+        cp packages/sonolus/engine/LICENSE.pjsekai.txt "$output/LICENSE.pjsekai.txt"
+        printf 'Corresponding Haneoka Source Code Form:\nhttps://github.com/haneoka-gakuen/haneoka/tree/%s\n' \
+          "$GITHUB_SHA" > "$output/SOURCE.txt"

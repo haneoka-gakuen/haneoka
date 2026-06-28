@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "customConditions": ["node"],
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true,
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "./esbuild.config.ts",
+    "./play/sonolus-cli.config.ts",
+    "./preview/sonolus-cli.config.ts",
+    "./scripts/**/*.ts",
+    "./tutorial/sonolus-cli.config.ts",
+    "./watch/sonolus-cli.config.ts"
+  ]
+}

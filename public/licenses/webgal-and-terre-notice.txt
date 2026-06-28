@@ -1,0 +1,25 @@
+WebGAL and WebGAL Terre source notice
+
+This Haneoka executable contains MPL-2.0-covered story-editor code adapted
+from:
+
+- OpenWebGAL/WebGAL, audited at
+  e7f0abeb855b5b442460743bdaa9778ca751b43f
+  https://github.com/OpenWebGAL/WebGAL
+- OpenWebGAL/WebGAL_Terre, audited at
+  7b7a2159a5ccead80327437b7305b8fdb47a4e5f
+  https://github.com/OpenWebGAL/WebGAL_Terre
+
+WebGAL command and script-parser semantics are adapted in
+packages/story-editor/src/formats/webgal.ts. Terre's Assets/FileElement,
+Topbar/AddSentence, TagsManager, GraphicalEditor/SentenceEditor, Editor,
+EditorSidebar, and MainArea components are adapted in the Haneoka story
+editor resource library, Ribbon, scene tabs, sentence list/cards, command
+picker, and main editor page.
+
+The complete local-to-upstream file mapping is retained at:
+https://github.com/haneoka-gakuen/haneoka/blob/main/packages/story-editor/NOTICE.webgal.md
+
+The two upstream MPL-2.0 license copies accompany this notice as
+webgal-mpl-2.0.txt and webgal-terre-mpl-2.0.txt. Haneoka's corresponding
+covered source is available from https://github.com/haneoka-gakuen/haneoka.

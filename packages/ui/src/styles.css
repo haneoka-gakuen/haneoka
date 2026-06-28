@@ -1,0 +1,805 @@
+.md3-slot-icon {
+  display: inline-grid;
+  min-width: 0;
+  flex: 0 0 auto;
+  place-items: center;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.md3-material-icon {
+  display: inline-grid;
+  width: var(--md-comp-icon-size);
+  height: var(--md-comp-icon-size);
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  font-family: var(--md-icon-font);
+  font-size: var(--md-comp-icon-size);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  pointer-events: none;
+  font-feature-settings: "liga";
+  font-variation-settings:
+    "FILL" var(--md-comp-icon-fill),
+    "wght" var(--md-comp-icon-weight),
+    "GRAD" var(--md-comp-icon-grade),
+    "opsz" var(--md-comp-icon-optical-size);
+}
+
+.md3-button {
+  min-height: var(--md-comp-control-height);
+  vertical-align: middle;
+  letter-spacing: 0;
+  --md-filled-button-container-height: var(--md-comp-control-height);
+  --md-filled-button-container-shape: var(--md-sys-shape-corner-full);
+  --md-filled-button-label-text-font: var(--md-sys-typescale-label-large-font);
+  --md-filled-button-label-text-size: var(--md-sys-typescale-label-large-size);
+  --md-filled-button-label-text-weight: var(--md-sys-typescale-label-large-weight);
+  --md-filled-tonal-button-container-height: var(--md-comp-control-height);
+  --md-filled-tonal-button-container-shape: var(--md-sys-shape-corner-full);
+  --md-filled-tonal-button-label-text-font: var(--md-sys-typescale-label-large-font);
+  --md-filled-tonal-button-label-text-size: var(--md-sys-typescale-label-large-size);
+  --md-filled-tonal-button-label-text-weight: var(--md-sys-typescale-label-large-weight);
+  --md-outlined-button-container-height: var(--md-comp-control-height);
+  --md-outlined-button-container-shape: var(--md-sys-shape-corner-full);
+  --md-outlined-button-label-text-font: var(--md-sys-typescale-label-large-font);
+  --md-outlined-button-label-text-size: var(--md-sys-typescale-label-large-size);
+  --md-outlined-button-label-text-weight: var(--md-sys-typescale-label-large-weight);
+  --md-text-button-container-height: var(--md-comp-control-height);
+  --md-text-button-container-shape: var(--md-sys-shape-corner-full);
+  --md-text-button-label-text-font: var(--md-sys-typescale-label-large-font);
+  --md-text-button-label-text-size: var(--md-sys-typescale-label-large-size);
+  --md-text-button-label-text-weight: var(--md-sys-typescale-label-large-weight);
+}
+
+.md3-text-field,
+.md3-select {
+  width: 100%;
+  min-width: 0;
+  letter-spacing: 0;
+  --md-outlined-field-container-shape: var(--md-sys-shape-corner-extra-small);
+  --md-outlined-field-label-text-font: var(--md-sys-typescale-body-medium-font);
+  --md-outlined-field-label-text-size: var(--md-sys-typescale-body-medium-size);
+  --md-outlined-text-field-input-text-font: var(--md-sys-typescale-body-medium-font);
+  --md-outlined-text-field-input-text-size: var(--md-sys-typescale-body-medium-size);
+  --md-outlined-select-text-field-input-text-font: var(--md-sys-typescale-body-medium-font);
+  --md-outlined-select-text-field-input-text-size: var(--md-sys-typescale-body-medium-size);
+}
+
+.md3-form-layout {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  gap: var(--md-sys-spacing-4);
+  padding: var(--md-sys-spacing-5);
+}
+
+.md3-form-layout > * {
+  min-width: 0;
+}
+
+.md3-form-layout > .md3-button,
+.md3-form-layout > .md3-checkbox-field,
+.md3-form-layout > .md3-segments,
+.md3-form-layout > .md3-text-field {
+  width: 100%;
+}
+
+.md3-checkbox-field,
+.md3-switch-field {
+  display: flex;
+  min-width: 0;
+  min-height: var(--md-comp-control-height-touch);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-sys-typescale-body-medium-font);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  cursor: pointer;
+}
+
+.md3-checkbox-field {
+  align-items: flex-start;
+  gap: 0;
+}
+
+.md3-switch-field {
+  align-items: center;
+  gap: var(--md-sys-spacing-2);
+}
+
+.md3-checkbox-field__control {
+  display: grid;
+  width: var(--md-comp-control-height-touch);
+  height: var(--md-comp-control-height-touch);
+  flex: 0 0 var(--md-comp-control-height-touch);
+  place-items: center;
+}
+
+.md3-checkbox-field__control > md-checkbox,
+.md3-switch-field > md-switch {
+  flex: 0 0 auto;
+}
+
+.md3-checkbox-field__label,
+.md3-switch-field__label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.md3-checkbox-field__label {
+  min-height: var(--md-comp-control-height-touch);
+  box-sizing: border-box;
+  padding-block: calc((var(--md-comp-control-height-touch) - var(--md-sys-typescale-body-medium-line-height)) / 2);
+}
+
+.md3-checkbox-field__label a {
+  color: var(--md-sys-color-primary);
+  font-weight: var(--md-sys-typescale-label-medium-weight);
+}
+
+.md3-switch-field {
+  justify-content: space-between;
+}
+
+.md3-checkbox-field--runtime,
+.md3-switch-field--runtime {
+  color: var(--md-comp-runtime-on-surface-variant);
+}
+
+.md3-switch-field--runtime md-switch {
+  --md-switch-handle-color: var(--md-comp-runtime-on-surface-variant);
+  --md-switch-track-color: var(--md-comp-runtime-surface);
+  --md-switch-track-outline-color: var(--md-comp-runtime-outline);
+  --md-switch-selected-handle-color: var(--md-comp-runtime-surface-high);
+  --md-switch-selected-track-color: var(--md-comp-runtime-primary);
+  --md-switch-selected-hover-track-color: var(--md-comp-runtime-primary);
+  --md-switch-selected-focus-track-color: var(--md-comp-runtime-primary);
+  --md-switch-selected-pressed-track-color: var(--md-comp-runtime-primary);
+}
+
+.md3-list {
+  min-width: 0;
+  padding-block: var(--md-sys-spacing-1);
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
+}
+
+.md3-list-item {
+  min-width: 0;
+  border-radius: var(--md-sys-shape-corner-small);
+  --md-list-item-container-color: transparent;
+  --md-list-item-label-text-color: var(--md-sys-color-on-surface);
+  --md-list-item-supporting-text-color: var(--md-sys-color-on-surface-variant);
+}
+
+.md3-list-item.is-selected {
+  --md-list-item-container-color: var(--md-sys-color-secondary-container);
+  --md-list-item-label-text-color: var(--md-sys-color-on-secondary-container);
+  --md-list-item-supporting-text-color: var(--md-sys-color-on-secondary-container);
+}
+
+.md3-dialog {
+  --md3-dialog-max-height: 720px;
+  --md3-dialog-max-width: 560px;
+  --md3-dialog-viewport-inset: var(--md-sys-spacing-6, 24px);
+  height: var(--md3-dialog-height, fit-content);
+  width: var(--md3-dialog-width, fit-content);
+  max-width: min(var(--md3-dialog-max-width), calc(100vw - (var(--md3-dialog-viewport-inset) * 2)));
+  max-height: min(var(--md3-dialog-max-height), calc(100dvh - (var(--md3-dialog-viewport-inset) * 2)));
+  min-width: min(280px, calc(100vw - (var(--md3-dialog-viewport-inset) * 2)));
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  --md-dialog-container-color: var(--md-sys-color-surface-container-high);
+  --md-dialog-container-shape: var(--md-sys-shape-corner-extra-large);
+  --md-dialog-headline-color: var(--md-sys-color-on-surface);
+  --md-dialog-supporting-text-color: var(--md-sys-color-on-surface-variant);
+}
+
+.md3-dialog > .md3-dialog__headline,
+.md3-dialog > .md3-dialog__content,
+.md3-dialog > .md3-dialog__actions {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.md3-dialog > .md3-dialog__headline,
+.md3-dialog > .md3-dialog__content {
+  overflow-wrap: anywhere;
+}
+
+.md3-dialog > .md3-dialog__content {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+}
+
+.md3-dialog > .md3-dialog__actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 599px) {
+  .md3-dialog {
+    --md3-dialog-viewport-inset: var(--md-sys-spacing-2, 8px);
+    min-width: 0;
+  }
+}
+
+.md3-filter-chip {
+  max-width: 100%;
+  min-width: 0;
+  --md-filter-chip-container-height: var(--md-comp-control-height-compact);
+  --md-filter-chip-container-shape: var(--md-sys-shape-corner-small);
+  --md-filter-chip-label-text-color: var(--md-sys-color-on-surface-variant);
+  --md-filter-chip-label-text-font: var(--md-sys-typescale-label-medium-font);
+  --md-filter-chip-label-text-size: var(--md-sys-typescale-label-medium-size);
+  --md-filter-chip-label-text-weight: var(--md-sys-typescale-label-medium-weight);
+  --md-filter-chip-outline-color: var(--md-sys-color-outline-variant);
+  --md-filter-chip-selected-container-color: var(--md-sys-color-secondary-container);
+  --md-filter-chip-selected-label-text-color: var(--md-sys-color-on-secondary-container);
+  --md-filter-chip-selected-leading-icon-color: var(--md-sys-color-on-secondary-container);
+}
+
+.md3-filter-chip__icon {
+  width: var(--md-filter-chip-icon-size, 18px);
+  height: var(--md-filter-chip-icon-size, 18px);
+}
+
+.md3-button--primary {
+  --md-filled-button-container-color: var(--md-sys-color-primary);
+  --md-filled-button-label-text-color: var(--md-sys-color-on-primary);
+}
+
+.md3-button--accent {
+  --md-filled-tonal-button-container-color: var(--md-sys-color-tertiary-container);
+  --md-filled-tonal-button-label-text-color: var(--md-sys-color-on-tertiary-container);
+}
+
+.md3-button--danger {
+  --md-filled-button-container-color: var(--md-sys-color-error);
+  --md-filled-button-label-text-color: var(--md-sys-color-on-error);
+}
+
+.md3-button--neutral {
+  --md-outlined-button-label-text-color: var(--md-sys-color-primary);
+  --md-outlined-button-outline-color: var(--md-sys-color-outline);
+}
+
+.md3-button--runtime {
+  --md-outlined-button-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-button-hover-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-button-focus-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-button-pressed-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-button-outline-color: var(--md-comp-runtime-outline);
+  --md-outlined-button-hover-state-layer-color: var(--md-comp-runtime-primary);
+  --md-outlined-button-focus-state-layer-color: var(--md-comp-runtime-primary);
+  --md-outlined-button-pressed-state-layer-color: var(--md-comp-runtime-primary);
+}
+
+.md3-button--text {
+  --md-text-button-label-text-color: var(--md-sys-color-primary);
+}
+
+.md3-button__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.md3-file-picker {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.md3-file-picker__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.md3-icon-button {
+  --md-comp-icon-button-hit-size: var(--md-comp-control-height);
+  --md-comp-icon-button-visual-size: var(--md-comp-control-height);
+  --md-icon-button-icon-color: var(--md-sys-color-on-surface-variant);
+  --md-icon-button-icon-size: 24px;
+  --md-icon-button-selected-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-icon-button-selected-hover-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-icon-button-selected-pressed-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-icon-button-selected-hover-state-layer-color: var(--md-sys-color-on-secondary-container);
+  --md-icon-button-selected-pressed-state-layer-color: var(--md-sys-color-on-secondary-container);
+  --md-icon-button-state-layer-height: var(--md-comp-icon-button-visual-size);
+  --md-icon-button-state-layer-width: var(--md-comp-icon-button-visual-size);
+  --md-filled-tonal-icon-button-container-height: var(--md-comp-icon-button-visual-size);
+  --md-filled-tonal-icon-button-container-width: var(--md-comp-icon-button-visual-size);
+  --md-filled-tonal-icon-button-icon-size: 24px;
+
+  width: var(--md-comp-icon-button-hit-size);
+  height: var(--md-comp-icon-button-hit-size);
+  min-height: var(--md-comp-icon-button-hit-size);
+  flex: 0 0 auto;
+  padding: 0;
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.md3-icon-button__icon {
+  display: grid;
+  width: var(--md-icon-button-icon-size, var(--md-filled-tonal-icon-button-icon-size, 24px));
+  height: var(--md-icon-button-icon-size, var(--md-filled-tonal-icon-button-icon-size, 24px));
+  align-self: center;
+  justify-self: center;
+  margin: 0;
+  place-items: center;
+  line-height: 0;
+}
+
+.md3-icon-button__icon > .md3-material-icon {
+  margin: 0;
+}
+
+.md3-icon-button--compact {
+  --md-comp-icon-button-hit-size: var(--md-comp-control-height-compact);
+  --md-comp-icon-button-visual-size: var(--md-comp-control-height-compact);
+  --md-icon-button-icon-size: 20px;
+  --md-filled-tonal-icon-button-icon-size: 20px;
+}
+
+.md3-icon-button--touch {
+  --md-comp-icon-button-hit-size: var(--md-comp-control-height-touch);
+  --md-comp-icon-button-visual-size: var(--md-comp-control-height-touch);
+}
+
+.md3-icon-button.is-touch-target {
+  --md-comp-icon-button-hit-size: var(--md-comp-control-height-touch);
+}
+
+.md3-icon-button:disabled {
+  cursor: not-allowed;
+}
+
+/* Icon-only toggles cannot rely on a focus outline to communicate state.
+ * Keep their idle tonal host transparent, then give the selected state the
+ * same filled secondary container used by other M3 selected controls. */
+.md3-icon-button.is-toggle {
+  --md-filled-tonal-icon-button-container-color: transparent;
+  --md-filled-tonal-icon-button-focus-container-color: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    transparent
+  );
+  --md-filled-tonal-icon-button-hover-container-color: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 8%,
+    transparent
+  );
+  --md-filled-tonal-icon-button-pressed-container-color: color-mix(
+    in srgb,
+    var(--md-sys-color-on-surface) 12%,
+    transparent
+  );
+  --md-filled-tonal-icon-button-icon-color: var(--md-sys-color-on-surface-variant);
+  --md-filled-tonal-icon-button-hover-icon-color: var(--md-sys-color-on-surface);
+  --md-filled-tonal-icon-button-focus-icon-color: var(--md-sys-color-on-surface);
+  --md-filled-tonal-icon-button-pressed-icon-color: var(--md-sys-color-on-surface);
+}
+
+.md3-icon-button.is-toggle.is-active {
+  --md-filled-tonal-icon-button-container-color: var(--md-sys-color-secondary-container);
+  --md-filled-tonal-icon-button-focus-container-color: var(--md-sys-color-secondary-container);
+  --md-filled-tonal-icon-button-hover-container-color: var(--md-sys-color-secondary-container);
+  --md-filled-tonal-icon-button-pressed-container-color: var(--md-sys-color-secondary-container);
+  --md-filled-tonal-icon-button-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-filled-tonal-icon-button-hover-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-filled-tonal-icon-button-focus-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-filled-tonal-icon-button-pressed-icon-color: var(--md-sys-color-on-secondary-container);
+}
+
+.md3-segments {
+  display: inline-flex;
+  max-width: 100%;
+  --md-outlined-segmented-button-container-height: var(--md-comp-control-height);
+}
+
+.md3-segments__option {
+  --md-outlined-segmented-button-label-text-font: var(--md-sys-typescale-label-large-font);
+  --md-outlined-segmented-button-label-text-line-height: var(--md-sys-typescale-label-large-line-height);
+  --md-outlined-segmented-button-label-text-size: var(--md-sys-typescale-label-large-size);
+  --md-outlined-segmented-button-label-text-weight: var(--md-sys-typescale-label-large-weight);
+  --md-outlined-segmented-button-selected-container-color: var(--md-sys-color-secondary-container);
+  --md-outlined-segmented-button-selected-icon-color: var(--md-sys-color-on-secondary-container);
+  --md-outlined-segmented-button-selected-label-text-color: var(--md-sys-color-on-secondary-container);
+}
+
+.md3-segments.is-touch-target {
+  --md-outlined-segmented-button-container-height: var(--md-comp-control-height-touch);
+}
+
+.md3-segments.is-compact {
+  --md-outlined-segmented-button-container-height: var(--md-comp-control-height-compact);
+}
+
+.md3-segments.is-icon-only .md3-segments__option {
+  --md-outlined-segmented-button-icon-size: 24px;
+}
+
+.md3-segments:not(.is-icon-only) .md3-segments__option {
+  --md-outlined-segmented-button-icon-size: auto;
+}
+
+.md3-segments__content {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md-sys-spacing-2);
+  font-family: var(--md-sys-typescale-label-large-font);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-label-large-weight);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  vertical-align: middle;
+}
+
+.md3-segments__content .md3-segments__icon,
+.md3-segments__content .md3-segments__image {
+  width: 18px;
+  height: 18px;
+}
+
+.md3-segments__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Material's segmented-button icon slot participates in an inline line box.
+ * Make icon-only segments a real grid so the glyph sits at the exact visual
+ * center of the native control instead of inheriting the baseline offset. */
+.md3-segments.is-icon-only .md3-segments__icon {
+  display: grid;
+  align-self: center;
+  place-items: center;
+  vertical-align: initial;
+}
+
+.md3-segments__image {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  object-fit: contain;
+}
+
+.md3-segments__icon {
+  width: 24px;
+  height: 24px;
+}
+
+.md3-text-field__icon {
+  width: 24px;
+  height: 24px;
+}
+
+.md3-text-field__icon--trailing:has(.md3-icon-button) {
+  width: var(--md-comp-control-height-compact);
+  height: var(--md-comp-control-height-compact);
+}
+
+.md3-text-field__icon--trailing:has(.md3-icon-button.is-touch-target) {
+  width: var(--md-comp-control-height-touch);
+  height: var(--md-comp-control-height-touch);
+}
+
+.md3-list-item__slot {
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.md3-segments__image.is-cover {
+  object-fit: cover;
+}
+
+.md3-skeleton {
+  display: block;
+  min-height: 1em;
+  overflow: hidden;
+  color: transparent;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+.md3-skeleton::after {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  content: "";
+  animation: md3-skeleton 1.2s var(--md-sys-motion-easing-standard) infinite alternate;
+}
+
+.md3-circular-progress {
+  width: var(--md-comp-progress-size, 40px);
+  height: var(--md-comp-progress-size, 40px);
+  --md-circular-progress-active-indicator-color: var(--md-sys-color-primary);
+  --md-circular-progress-size: var(--md-comp-progress-size, 40px);
+}
+
+.md3-linear-progress {
+  width: 100%;
+  min-width: 0;
+  --md-linear-progress-active-indicator-color: var(--md-sys-color-primary);
+  --md-linear-progress-track-color: var(--md-sys-color-surface-container-highest);
+}
+
+.md3-runtime-surface {
+  color: var(--md-comp-runtime-on-surface-variant);
+  border: 1px solid var(--md-comp-runtime-outline);
+  background: var(--md-comp-runtime-surface);
+}
+
+.md3-runtime-surface--toolbar {
+  display: flex;
+  height: var(--md-comp-runtime-toolbar-height);
+  align-items: center;
+  gap: var(--md-comp-runtime-toolbar-gap);
+  padding: var(--md-comp-runtime-toolbar-padding);
+  border-radius: var(--md-sys-shape-corner-full);
+  box-shadow: var(--md-comp-runtime-elevation);
+}
+
+.md3-runtime-surface--dock {
+  border-width: 1px 0 0;
+  background: var(--md-comp-runtime-surface-high);
+}
+
+.md3-runtime-surface--panel {
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-comp-runtime-surface-high);
+  box-shadow: var(--md-comp-runtime-elevation);
+}
+
+.md3-runtime-control-group {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  padding-right: var(--md-sys-spacing-1);
+  border-right: 1px solid var(--md-comp-runtime-outline);
+}
+
+.md3-icon-button--runtime {
+  --md-comp-icon-button-hit-size: var(--md-comp-runtime-control-size);
+  --md-comp-icon-button-visual-size: var(--md-comp-runtime-control-size);
+  --md-icon-button-icon-color: var(--md-comp-runtime-on-surface-variant);
+  --md-icon-button-hover-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-focus-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-pressed-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-hover-state-layer-color: var(--md-comp-runtime-primary);
+  --md-icon-button-pressed-state-layer-color: var(--md-comp-runtime-primary);
+  --md-icon-button-selected-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-selected-hover-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-selected-focus-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-selected-pressed-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-selected-hover-state-layer-color: var(--md-comp-runtime-primary);
+  --md-icon-button-selected-pressed-state-layer-color: var(--md-comp-runtime-primary);
+  --md-filled-tonal-icon-button-container-color: var(--md-comp-runtime-primary-container);
+  --md-filled-tonal-icon-button-icon-color: var(--md-comp-runtime-on-surface);
+  --md-filled-tonal-icon-button-hover-icon-color: var(--md-comp-runtime-on-surface);
+  --md-filled-tonal-icon-button-pressed-icon-color: var(--md-comp-runtime-on-surface);
+}
+
+.md3-icon-button--runtime.md3-icon-button--compact,
+.md3-runtime-surface.is-compact .md3-icon-button--runtime {
+  --md-comp-icon-button-hit-size: var(--md-comp-runtime-control-size-compact);
+  --md-comp-icon-button-visual-size: var(--md-comp-runtime-control-size-compact);
+  --md-icon-button-icon-size: 20px;
+  --md-filled-tonal-icon-button-icon-size: 20px;
+}
+
+.md3-icon-button--runtime.md3-icon-button--touch {
+  --md-comp-icon-button-hit-size: var(--md-comp-control-height-touch);
+  --md-comp-icon-button-visual-size: var(--md-comp-runtime-control-size-touch);
+}
+
+.md3-icon-button--runtime.is-active,
+.md3-icon-button--runtime[aria-expanded="true"] {
+  --md-icon-button-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-hover-icon-color: var(--md-comp-runtime-on-surface);
+  --md-icon-button-pressed-icon-color: var(--md-comp-runtime-on-surface);
+}
+
+.md3-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.md3-range {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(48px, 1fr);
+  align-items: center;
+  gap: var(--md-sys-spacing-2);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.md3-range.has-icon {
+  grid-template-columns: 20px minmax(48px, 1fr);
+}
+
+.md3-range.has-output {
+  grid-template-columns: minmax(48px, 1fr) minmax(30px, auto);
+}
+
+.md3-range.has-icon.has-output {
+  grid-template-columns: 20px minmax(48px, 1fr) minmax(30px, auto);
+}
+
+.md3-range__icon {
+  display: grid;
+  width: 20px;
+  place-items: center;
+}
+
+.md3-range__input,
+.md3-timeline__input {
+  --md-slider-active-track-color: var(--md-sys-color-primary);
+  --md-slider-inactive-track-color: var(--md-sys-color-surface-container-highest);
+  --md-slider-handle-color: var(--md-sys-color-primary);
+  --md-slider-focus-handle-color: var(--md-sys-color-primary);
+  --md-slider-hover-handle-color: var(--md-sys-color-primary);
+  --md-slider-pressed-handle-color: var(--md-sys-color-primary);
+  --md-slider-hover-state-layer-color: var(--md-sys-color-primary);
+  --md-slider-pressed-state-layer-color: var(--md-sys-color-primary);
+  --md-slider-handle-height: 20px;
+  --md-slider-handle-width: 4px;
+  --md-slider-state-layer-size: 32px;
+
+  width: 100%;
+  min-width: 48px;
+  min-inline-size: 48px;
+  height: 32px;
+  flex: 1 1 auto;
+  cursor: pointer;
+}
+
+.md3-timeline__input {
+  --md-slider-active-track-height: 6px;
+  --md-slider-active-track-shape: var(--md-sys-shape-corner-none);
+  --md-slider-inactive-track-height: 6px;
+  --md-slider-inactive-track-shape: var(--md-sys-shape-corner-none);
+  --md-slider-handle-shape: var(--md-sys-shape-corner-extra-small);
+}
+
+.md3-range__output {
+  min-width: 30px;
+  color: currentColor;
+  font: var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height)
+    var(--md-sys-typescale-label-small-font);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.md3-range--runtime {
+  color: var(--md-comp-runtime-on-surface-variant);
+}
+
+.md3-range--runtime .md3-range__input,
+.md3-timeline--runtime .md3-timeline__input {
+  --md-slider-active-track-color: var(--md-comp-runtime-primary);
+  --md-slider-inactive-track-color: var(--md-comp-runtime-outline);
+  --md-slider-handle-color: var(--md-comp-runtime-primary);
+  --md-slider-focus-handle-color: var(--md-comp-runtime-primary);
+  --md-slider-hover-handle-color: var(--md-comp-runtime-primary);
+  --md-slider-pressed-handle-color: var(--md-comp-runtime-primary);
+  --md-slider-hover-state-layer-color: var(--md-comp-runtime-primary);
+  --md-slider-pressed-state-layer-color: var(--md-comp-runtime-primary);
+}
+
+.md3-range.is-disabled,
+.md3-timeline.is-disabled {
+  opacity: 0.38;
+}
+
+.md3-timeline {
+  display: flex;
+  min-width: 0;
+  height: 40px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--md-sys-spacing-2);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.md3-timeline__label {
+  min-width: 42px;
+  flex: 0 0 auto;
+  font: var(--md-sys-typescale-label-small-size) / 1 var(--md-sys-typescale-label-small-font);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.md3-timeline__label--value {
+  min-width: 66px;
+}
+
+.md3-timeline--runtime {
+  color: var(--md-comp-runtime-on-surface-variant);
+}
+
+.md3-timeline.is-busy {
+  opacity: 0.72;
+}
+
+@keyframes md3-skeleton {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (max-width: 760px) {
+  .md3-button {
+    min-height: var(--md-comp-control-height-touch);
+    --md-filled-button-container-height: var(--md-comp-control-height-touch);
+    --md-filled-tonal-button-container-height: var(--md-comp-control-height-touch);
+    --md-outlined-button-container-height: var(--md-comp-control-height-touch);
+    --md-text-button-container-height: var(--md-comp-control-height-touch);
+  }
+
+  .md3-icon-button--surface:not(.md3-icon-button--compact) {
+    --md-comp-icon-button-hit-size: var(--md-comp-control-height-touch);
+    --md-comp-icon-button-visual-size: var(--md-comp-control-height);
+  }
+
+  .md3-segments.is-icon-only:not(.is-compact) {
+    --md-outlined-segmented-button-container-height: var(--md-comp-control-height-touch);
+  }
+
+  .md3-runtime-surface--toolbar:not(.is-compact) {
+    height: var(--md-comp-runtime-toolbar-height-touch);
+  }
+
+  .md3-runtime-surface--toolbar:not(.is-compact) .md3-icon-button--runtime {
+    --md-comp-icon-button-hit-size: var(--md-comp-control-height-touch);
+    --md-comp-icon-button-visual-size: var(--md-comp-runtime-control-size-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md3-skeleton::after {
+    animation: none;
+  }
+}

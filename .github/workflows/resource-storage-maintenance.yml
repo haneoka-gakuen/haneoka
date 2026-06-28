@@ -1,0 +1,57 @@
+name: Resource storage maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: Server configuration id
+        required: true
+        default: jp-cbt
+        type: string
+      apply:
+        description: Delete unreferenced metadata and CAS objects
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "16 8 * * 0"
+
+concurrency:
+  group: resource-pipeline-${{ inputs.server || 'jp-cbt' }}
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    name: Collect unreferenced objects
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment:
+      name: resource-${{ inputs.server || 'jp-cbt' }}
+    permissions:
+      contents: read
+    env:
+      RESOURCE_SERVER: ${{ inputs.server || 'jp-cbt' }}
+      APPLY_CHANGES: ${{ github.event_name == 'schedule' || inputs.apply == true }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-resource-pipeline
+      - name: Prune unreferenced manifests
+        if: env.APPLY_CHANGES == 'true'
+        run: |
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" prune-releases --concurrency 64
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" prune-sources --concurrency 64
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" prune-uploads --concurrency 64
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" prune-garupa-master \
+            --garupa-server jp --retain 3 --concurrency 64
+      - name: Collect unreferenced CAS objects
+        run: |
+          arguments=(gc-r2 --concurrency 64)
+          if [[ "$APPLY_CHANGES" != "true" ]]; then
+            arguments+=(--dry-run)
+          fi
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" "${arguments[@]}"

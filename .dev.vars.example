@@ -1,0 +1,19 @@
+# Copy this file to .dev.vars for local Wrangler development. Never commit real values.
+BETTER_AUTH_SECRET=
+
+# Optional OAuth providers.
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+TWITTER_CLIENT_ID=
+TWITTER_CLIENT_SECRET=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+
+# Optional Cloudflare Turnstile integration. The account-page widget is not
+# currently mounted, so keep this false unless the client challenge is restored.
+TURNSTILE_ENABLED=false
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+TURNSTILE_ALLOWED_HOSTNAMES=localhost,127.0.0.1

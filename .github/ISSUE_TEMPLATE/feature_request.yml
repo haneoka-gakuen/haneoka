@@ -1,0 +1,79 @@
+name: Feature proposal
+description: Propose a focused improvement with a clear user need.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a proposal that is ready for maintainer evaluation. If the idea is still exploratory, start in [Ideas](https://github.com/haneoka-gakuen/haneoka/discussions/categories/ideas) so alternatives can be discussed without prematurely fixing the scope.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Website shell or responsive layout
+        - Catalog, search, or resource presentation
+        - Story player
+        - Story editor
+        - Chart player
+        - Chart editor
+        - Account, community, or moderation
+        - Worker API, database, or deployment
+        - Resource pipeline or release tooling
+        - Sonolus
+        - Localization, accessibility, or documentation
+        - Developer experience or repository tooling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Explain who is affected, what they are trying to accomplish, and why the current behavior or workaround is insufficient.
+      placeholder: When ..., a user cannot ... because ...
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable behavior and the conditions that would make the proposal successful. You do not need to design the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples or references
+      description: Add a sketch, screenshot, workflow example, or link that makes the desired experience easier to evaluate.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Share current workarounds or other approaches you considered, if any.
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints or compatibility considerations
+      description: Add known mobile, format, API, migration, deployment, or interoperability constraints. Leave this empty if you do not know.
+  - type: checkboxes
+    id: participation
+    attributes:
+      label: Participation
+      description: These choices are optional and do not affect whether the proposal is considered.
+      options:
+        - label: I would be willing to implement this after the scope is agreed.
+        - label: I would be willing to test or review an implementation.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for the same proposal.
+          required: true
+        - label: I described a user problem and outcome rather than only naming a technology or implementation.
+          required: true
+        - label: I have not attached credentials, private packages, restricted payloads, or personal data.
+          required: true

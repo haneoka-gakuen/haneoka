@@ -1,0 +1,24 @@
+{
+  "name": "@haneoka/sonolus-engine",
+  "private": true,
+  "description": "Sonolus play, watch, preview, and tutorial engine for Our Notes charts",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haneoka-gakuen/haneoka.git",
+    "directory": "packages/sonolus/engine"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "pnpm run typecheck:tools && sonolus-cli --build ./play/sonolus-cli.config.ts && sonolus-cli --build ./watch/sonolus-cli.config.ts && sonolus-cli --build ./preview/sonolus-cli.config.ts && sonolus-cli --build ./tutorial/sonolus-cli.config.ts && node ./scripts/copy-upstream-license.ts",
+    "typecheck:tools": "tsc --project ./tsconfig.tools.json"
+  },
+  "dependencies": {
+    "@sonolus/core": "catalog:sonolus-engine"
+  },
+  "devDependencies": {
+    "@sonolus/sonolus.js": "catalog:sonolus-engine",
+    "@types/node": "catalog:sonolus-engine",
+    "typescript": "catalog:sonolus-engine"
+  }
+}

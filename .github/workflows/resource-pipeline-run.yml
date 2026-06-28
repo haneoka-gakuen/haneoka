@@ -1,0 +1,280 @@
+name: Resource pipeline implementation
+
+on:
+  workflow_call:
+    inputs:
+      github_environment:
+        required: true
+        type: string
+      server:
+        required: true
+        type: string
+      package_r2_key:
+        required: false
+        type: string
+      source_id:
+        required: false
+        type: string
+      ktx2:
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      cloudflare_account_id:
+        required: true
+      r2_access_key_id:
+        required: true
+      r2_secret_access_key:
+        required: true
+
+env:
+  RESOURCE_SERVER: ${{ inputs.server }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.cloudflare_account_id }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
+  AWS_EC2_METADATA_DISABLED: "true"
+  PYTHONPATH: scripts
+
+jobs:
+  prepare:
+    name: Normalize and publish source
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment:
+      name: ${{ inputs.github_environment }}
+    permissions:
+      contents: read
+    outputs:
+      source_id: ${{ steps.identity.outputs.source_id }}
+      build_id: ${{ steps.identity.outputs.build_id }}
+      shard_count: ${{ steps.identity.outputs.shard_count }}
+      shard_matrix: ${{ steps.identity.outputs.shard_matrix }}
+    env:
+      PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
+      SOURCE_ID_INPUT: ${{ inputs.source_id }}
+      RESOURCE_CDN_AUTHORIZATION: ${{ vars.RESOURCE_CDN_AUTHORIZATION }}
+    steps:
+      - name: Mask server authorization variable
+        if: env.RESOURCE_CDN_AUTHORIZATION != ''
+        run: echo "::add-mask::$RESOURCE_CDN_AUTHORIZATION"
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-resource-pipeline
+      - name: Materialize source input
+        run: |
+          if [[ -n "$SOURCE_ID_INPUT" ]]; then
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source \
+              --source "$SOURCE_ID_INPUT" --role package > "$RUNNER_TEMP/source.json"
+          else
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-package \
+              --key "$PACKAGE_R2_KEY" --output "$RUNNER_TEMP/package-input"
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
+              --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
+          fi
+      - name: Export build identity
+        id: identity
+        run: |
+          SOURCE_ID="$(jq -r .sourceId "$RUNNER_TEMP/source.json")"
+          BUILD_ID="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" build-id --source "$SOURCE_ID" | jq -r .buildId)"
+          SHARD_COUNT="$(jq -r .extractionShards "scripts/config/servers/$RESOURCE_SERVER.json")"
+          echo "source_id=$SOURCE_ID" >> "$GITHUB_OUTPUT"
+          echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "shard_count=$SHARD_COUNT" >> "$GITHUB_OUTPUT"
+          echo "shard_matrix=$(python -c 'import json,sys; print(json.dumps(list(range(int(sys.argv[1])))))' "$SHARD_COUNT")" >> "$GITHUB_OUTPUT"
+      - name: Publish source CAS
+        run: |
+          if [[ -z "$SOURCE_ID_INPUT" ]]; then
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" publish-source \
+              --source "${{ steps.identity.outputs.source_id }}"
+          fi
+      - name: Extract Master
+        run: >-
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-master
+          --source "${{ steps.identity.outputs.source_id }}"
+          --build "${{ steps.identity.outputs.build_id }}"
+      - name: Preserve Master build stage
+        uses: actions/upload-artifact@v7
+        with:
+          name: resource-master
+          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ steps.identity.outputs.build_id }}/master
+          if-no-files-found: error
+          retention-days: 1
+
+  unity:
+    name: Unity shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        shard: ${{ fromJSON(needs.prepare.outputs.shard_matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-resource-pipeline
+      - name: Fetch this shard's original bundles
+        run: >-
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source
+          --source "${{ needs.prepare.outputs.source_id }}"
+          --role unity-bundle
+          --shard-index "${{ matrix.shard }}"
+          --shard-count "${{ needs.prepare.outputs.shard_count }}"
+      - name: Extract Unity shard
+        run: >-
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-unity
+          --source "${{ needs.prepare.outputs.source_id }}"
+          --build "${{ needs.prepare.outputs.build_id }}"
+          --shard-index "${{ matrix.shard }}"
+          --shard-count "${{ needs.prepare.outputs.shard_count }}"
+      - name: Upload deterministic shard
+        uses: actions/upload-artifact@v7
+        with:
+          name: unity-shard-${{ matrix.shard }}
+          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/shards
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Assemble and publish release
+    needs: [prepare, unity]
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-resource-pipeline
+      - uses: ./.github/actions/setup-sonolus-engine
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+      - name: Restore pinned vgmstream
+        id: vgmstream-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/haneoka-tools/vgmstream/r2117/vgmstream-cli
+          key: vgmstream-r2117-${{ runner.os }}-${{ runner.arch }}
+      - name: Download pinned vgmstream
+        if: steps.vgmstream-cache.outputs.cache-hit != 'true'
+        run: |
+          curl --fail --location --retry 5 --output "$RUNNER_TEMP/vgmstream.zip" \
+            https://github.com/vgmstream/vgmstream/releases/download/r2117/vgmstream-linux.zip
+          mkdir -p "${{ runner.temp }}/haneoka-tools/vgmstream/r2117"
+          unzip -p "$RUNNER_TEMP/vgmstream.zip" vgmstream-cli \
+            > "${{ runner.temp }}/haneoka-tools/vgmstream/r2117/vgmstream-cli"
+          chmod 755 "${{ runner.temp }}/haneoka-tools/vgmstream/r2117/vgmstream-cli"
+      - name: Save pinned vgmstream
+        if: steps.vgmstream-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/haneoka-tools/vgmstream/r2117/vgmstream-cli
+          key: vgmstream-r2117-${{ runner.os }}-${{ runner.arch }}
+      - name: Install pinned vgmstream
+        run: >-
+          sudo install "${{ runner.temp }}/haneoka-tools/vgmstream/r2117/vgmstream-cli"
+          /usr/local/bin/vgmstream-cli
+      - name: Restore pinned Basis Universal encoder
+        if: ${{ inputs.ktx2 }}
+        id: basisu-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9/basisu
+          key: basisu-1aab02ba2df16ad873229030ea191ea8c10e3fc9-${{ runner.os }}-${{ runner.arch }}
+      - name: Build pinned Basis Universal encoder
+        if: inputs.ktx2 && steps.basisu-cache.outputs.cache-hit != 'true'
+        run: |
+          git init "$RUNNER_TEMP/basis-universal"
+          git -C "$RUNNER_TEMP/basis-universal" remote add origin https://github.com/BinomialLLC/basis_universal.git
+          git -C "$RUNNER_TEMP/basis-universal" fetch --depth=1 origin 1aab02ba2df16ad873229030ea191ea8c10e3fc9
+          git -C "$RUNNER_TEMP/basis-universal" checkout --detach FETCH_HEAD
+          cmake -S "$RUNNER_TEMP/basis-universal" -B "$RUNNER_TEMP/basis-universal/build" -DCMAKE_BUILD_TYPE=Release -DBASISU_SSE=TRUE
+          cmake --build "$RUNNER_TEMP/basis-universal/build" --config Release --parallel 2
+          mkdir -p "${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9"
+          install "$RUNNER_TEMP/basis-universal/bin/basisu" \
+            "${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9/basisu"
+      - name: Save pinned Basis Universal encoder
+        if: inputs.ktx2 && steps.basisu-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9/basisu
+          key: basisu-1aab02ba2df16ad873229030ea191ea8c10e3fc9-${{ runner.os }}-${{ runner.arch }}
+      - name: Install pinned Basis Universal encoder
+        if: ${{ inputs.ktx2 }}
+        run: >-
+          sudo install
+          "${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9/basisu"
+          /usr/local/bin/basisu
+      - name: Restore Master stage
+        uses: actions/download-artifact@v8
+        with:
+          name: resource-master
+          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/master
+      - name: Restore all Unity shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: unity-shard-*
+          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/shards
+          merge-multiple: true
+      - name: Fetch original CRI payloads
+        run: >-
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source
+          --source "${{ needs.prepare.outputs.source_id }}"
+          --role cri-payload
+      - name: Merge Unity shards
+        run: |
+          SOURCE_ID="${{ needs.prepare.outputs.source_id }}"
+          BUILD_ID="${{ needs.prepare.outputs.build_id }}"
+          SHARDS="${{ needs.prepare.outputs.shard_count }}"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" merge-unity --source "$SOURCE_ID" --build "$BUILD_ID" --shard-count "$SHARDS"
+      - name: Fetch original Home Spot bundles
+        run: >-
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-home-spots
+          --source "${{ needs.prepare.outputs.source_id }}"
+          --build "${{ needs.prepare.outputs.build_id }}"
+          --concurrency 32
+      - name: Build independent runtime stages
+        run: |
+          SOURCE_ID="${{ needs.prepare.outputs.source_id }}"
+          BUILD_ID="${{ needs.prepare.outputs.build_id }}"
+          names=()
+          pids=()
+          run_stage() {
+            local name="$1"
+            shift
+            "$@" > "$RUNNER_TEMP/$name.log" 2>&1
+          }
+          run_stage cri python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-cri --source "$SOURCE_ID" --build "$BUILD_ID" --concurrency 2 --reuse-current --reuse-concurrency 64 &
+          names+=(cri)
+          pids+=("$!")
+          run_stage live2d python scripts/pipeline.py --server "$RESOURCE_SERVER" build-live2d --source "$SOURCE_ID" --build "$BUILD_ID" &
+          names+=(live2d)
+          pids+=("$!")
+          run_stage home-spots python scripts/pipeline.py --server "$RESOURCE_SERVER" build-home-spots --source "$SOURCE_ID" --build "$BUILD_ID" &
+          names+=(home-spots)
+          pids+=("$!")
+          if [[ "${{ inputs.ktx2 }}" == "true" ]]; then
+            run_stage ktx2 python scripts/pipeline.py --server "$RESOURCE_SERVER" build-ktx2 --source "$SOURCE_ID" --build "$BUILD_ID" &
+            names+=(ktx2)
+            pids+=("$!")
+          fi
+          failed=0
+          for index in "${!pids[@]}"; do
+            if ! wait "${pids[$index]}"; then
+              failed=1
+            fi
+            cat "$RUNNER_TEMP/${names[$index]}.log"
+          done
+          exit "$failed"
+      - name: Assemble release
+        run: |
+          SOURCE_ID="${{ needs.prepare.outputs.source_id }}"
+          BUILD_ID="${{ needs.prepare.outputs.build_id }}"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" build-api --source "$SOURCE_ID" --build "$BUILD_ID"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" build-sonolus --source "$SOURCE_ID" --build "$BUILD_ID"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" build-release --source "$SOURCE_ID" --build "$BUILD_ID" > "$RUNNER_TEMP/release.json"
+      - name: Publish CAS delta and switch current release
+        run: |
+          RELEASE_ID="$(jq -r .releaseId "$RUNNER_TEMP/release.json")"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" publish-release \
+            --release "$RELEASE_ID" --fast --concurrency 64

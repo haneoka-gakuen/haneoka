@@ -1,0 +1,4 @@
+# This pipeline intentionally uses only the Python 3.13 standard library and
+# the OpenSSL executable provided by the GitHub-hosted runner. Keep this file
+# so Actions can enforce the same --require-hashes installation contract as
+# the repository's larger resource pipeline without adding an AES dependency.

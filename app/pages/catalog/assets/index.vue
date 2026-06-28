@@ -1,0 +1,3 @@
+<template>
+  <AssetExplorerWorkspace />
+</template>
