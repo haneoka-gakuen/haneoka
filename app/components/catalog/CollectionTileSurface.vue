@@ -85,6 +85,8 @@ const rootAttributes = computed(() =>
   background: transparent;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .collection-tile-surface__media {
@@ -187,6 +189,18 @@ const rootAttributes = computed(() =>
   border-radius: inherit;
   --md-ripple-hover-color: var(--md-sys-color-on-surface);
   --md-ripple-pressed-color: var(--md-sys-color-primary);
+}
+
+/*
+ * Touch devices do not have a persistent hover state. Some mobile browsers
+ * nevertheless keep the last tapped element hovered, which would leave the
+ * ripple state layer painted after the finger is released. Keep the pressed
+ * feedback, but suppress that synthetic hover layer for coarse pointers.
+ */
+@media (hover: none) and (pointer: coarse) {
+  .collection-tile-surface md-ripple {
+    --md-ripple-hover-opacity: 0;
+  }
 }
 
 @media (max-width: 760px) {
