@@ -186,7 +186,18 @@ const activateNavigationDestination = (event: MouseEvent, to: string) => {
   const replace = navigationHistoryEntryActive.value;
   navigationHistoryEntryActive.value = false;
   navigationOpen.value = false;
-  void navigateTo(to, { replace });
+  void navigateTo(
+    replace
+      ? {
+          path: to,
+          // Vue Router preserves the current entry's user state on replace.
+          // Explicitly clear the transient drawer marker so returning to this
+          // destination cannot reopen the drawer and trigger another back().
+          state: { [NAVIGATION_HISTORY_STATE_KEY]: false },
+        }
+      : to,
+    { replace },
+  );
 };
 
 const activateBrandNavigation = (event: MouseEvent) => activateNavigationDestination(event, "/");
