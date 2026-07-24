@@ -74,23 +74,38 @@ body {
 }
 
 :where([lang|="en"]) {
-  font-family: "Roboto Variable", "Noto Sans Variable", "Helvetica Neue", Arial, sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans Variable", "Helvetica Neue", Arial, sans-serif;
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans Variable", "Helvetica Neue", Arial, sans-serif;
+
+  font-family: var(--md-ref-typeface-plain);
 }
 
 :where([lang|="ja"]) {
-  font-family: "Roboto Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN", sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN", sans-serif;
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN", sans-serif;
+
+  font-family: var(--md-ref-typeface-plain);
 }
 
 :where([lang="zh-TW"], [lang="zh-HK"]) {
-  font-family: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;
+
+  font-family: var(--md-ref-typeface-plain);
 }
 
 :where([lang="zh-CN"], [lang="zh-SG"]) {
-  font-family: "Roboto Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  font-family: var(--md-ref-typeface-plain);
 }
 
 :where([lang|="ko"]) {
-  font-family: "Roboto Variable", "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+  --md-ref-typeface-plain: "Roboto Variable", "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+  --md-ref-typeface-brand: "Roboto Variable", "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+
+  font-family: var(--md-ref-typeface-plain);
 }
 
 button,

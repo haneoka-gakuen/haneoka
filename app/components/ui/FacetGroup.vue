@@ -60,7 +60,7 @@ const clearSelection = () => emit("update:modelValue", []);
       <span>{{ title }}</span>
       <span v-if="modelValue.length" class="facet__legend-actions">
         <span class="facet__selected-count display-number">{{ modelValue.length }}</span>
-        <UiIconButton :label="`${t('clear')} ${title}`" size="compact" touch-target @click="clearSelection">
+        <UiIconButton :label="`${t('clear')} ${title}`" size="compact" @click="clearSelection">
           <MaterialIcon name="filter_alt_off" :size="18" />
         </UiIconButton>
       </span>
@@ -135,6 +135,7 @@ const clearSelection = () => emit("update:modelValue", []);
 legend {
   display: flex;
   width: 100%;
+  height: var(--md-comp-control-height-compact);
   align-items: center;
   justify-content: space-between;
   gap: var(--md-sys-spacing-2);

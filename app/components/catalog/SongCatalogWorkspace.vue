@@ -8,6 +8,7 @@ import { songTypeDefinition } from "~/config/songTypes";
 import { resolveSongCatalogSource, songReleaseTimestamp, type SongCatalogSort } from "~/features/catalog/songSources";
 import type { SongCreditVisualVariant } from "~/features/catalog/songCreditVisuals";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
+import { textOf, type DisplayText } from "~/types/displayText";
 
 type ChartRuntimeMode = "chart" | "watch" | "play";
 
@@ -146,10 +147,20 @@ const displayTitleOf = (song: Song) =>
     fallback: String(song.musicId),
   }) || titleOf(song);
 const displayBandOf = (song: Song) => {
-  const authored = resolveLocalized(song.artistName, { sourceHint: "ja", fallback: creditLabelOf(song) });
+  const authored = resolveLocalized(song.artistName, {
+    sourceHint: "ja",
+    fallback: creditLabelOf(song),
+    fallbackSourceHint: "ja",
+  });
   if (authored) return authored;
   const band = bandMap.value.get(song.bandId || 0);
-  return resolveLocalized(band?.bandName, { sourceHint: "ja", fallback: bandOf(song) }) || bandOf(song);
+  return (
+    resolveLocalized(band?.bandName, {
+      sourceHint: "ja",
+      fallback: bandOf(song),
+      fallbackSourceHint: "ja",
+    }) || bandOf(song)
+  );
 };
 const bandIconOf = (song: Song) => creditVisualsOf(song, "icon")[0]?.image;
 const categorySortKey = (song: Song) =>
@@ -511,7 +522,7 @@ const bandOptions = computed(() => {
   });
   const sourceOptionMap = new Map<
     string,
-    { value: string; label: string; color?: string; visuals: CompositeEntityVisual[]; count: number }
+    { value: string; label: DisplayText; color?: string; visuals: CompositeEntityVisual[]; count: number }
   >();
   for (const band of sourceCredits) {
     const key = creditResolver.value.bandCreditKey(band, creditSource.value);
@@ -524,7 +535,11 @@ const bandOptions = computed(() => {
     }
     sourceOptionMap.set(value, {
       value,
-      label: localize(band.bandName) || String(band.bandId),
+      label:
+        resolveLocalized(band.bandName, {
+          sourceHint: "ja",
+          fallback: String(band.bandId),
+        }) || String(band.bandId),
       color: band.color,
       visuals: creditResolver.value.bandCredit(band, creditSource.value, "icon"),
       count,
@@ -533,7 +548,7 @@ const bandOptions = computed(() => {
 
   const derivedCredits = new Map<
     string,
-    { value: string; label: string; visuals: CompositeEntityVisual[]; count: number; firstMusicId: number }
+    { value: string; label: DisplayText; visuals: CompositeEntityVisual[]; count: number; firstMusicId: number }
   >();
   for (const song of songs.value) {
     const sourceBand = bandMap.value.get(song.bandId || 0);
@@ -547,7 +562,7 @@ const bandOptions = computed(() => {
     }
     derivedCredits.set(value, {
       value,
-      label: creditLabelOf(song) || String(song.musicId),
+      label: displayBandOf(song),
       visuals: creditVisualsOf(song, "icon"),
       count: 1,
       firstMusicId: song.musicId,
@@ -557,7 +572,9 @@ const bandOptions = computed(() => {
     ...formalOptions,
     ...sourceOptionMap.values(),
     ...[...derivedCredits.values()]
-      .sort((left, right) => left.firstMusicId - right.firstMusicId || compareText(left.label, right.label))
+      .sort(
+        (left, right) => left.firstMusicId - right.firstMusicId || compareText(textOf(left.label), textOf(right.label)),
+      )
       .map(({ firstMusicId: _firstMusicId, ...option }) => option),
   ];
 });

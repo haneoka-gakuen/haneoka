@@ -1,8 +1,8 @@
 import type { Band, Character, Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
-import { localizeArchiveValue } from "~/i18n/locales";
+import { resolveArchiveValue } from "~/i18n/locales";
 import { contributingSongBandIds, uniqueSongCreditIds } from "~/features/catalog/songCredits";
-import { langOf } from "~/types/displayText";
+import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 
 export type SongCreditVisualVariant = "logo" | "icon";
@@ -37,7 +37,13 @@ const identityKey = (value: unknown): string =>
     .toLocaleLowerCase("ja")
     .replace(/[\p{P}\p{S}\s]+/gu, "");
 
-const japaneseText = (value: Parameters<typeof localizeArchiveValue>[0]): string => localizeArchiveValue(value, "ja");
+const japaneseDisplayText = (value: Parameters<typeof resolveArchiveValue>[0], fallback = ""): DisplayText =>
+  resolveArchiveValue(value, "ja", {
+    sourceHint: "ja",
+    fallback,
+    fallbackSourceHint: "ja",
+  }) || fallback;
+const japaneseText = (value: Parameters<typeof resolveArchiveValue>[0]): string => textOf(japaneseDisplayText(value));
 const localizedAliases = (value: unknown): string[] => {
   const values =
     typeof value === "string"
@@ -63,12 +69,15 @@ const uniqueImages = (...values: Array<string | null | undefined>): string[] => 
   ...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
 ];
 const fallbackText = (value: string) => entityAvatarText(value, { cjkLength: 4 });
-const memberVisual = (name: string): CompositeEntityVisual => ({
-  text: fallbackText(name),
-  lang: langOf(name),
-  icon: "person",
-  fit: "cover",
-});
+const memberVisual = (name: string): CompositeEntityVisual => {
+  const label = japaneseDisplayText(name);
+  return {
+    text: fallbackText(textOf(label)),
+    lang: langOf(label),
+    icon: "person",
+    fit: "cover",
+  };
+};
 
 export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): SongCreditVisualResolver => {
   const catalogBandMap = new Map(catalogs.catalogBands.map((band) => [band.bandId, band]));
@@ -155,11 +164,11 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
             source.logo,
             source.icon,
           );
-    const label = japaneseText(source.bandName || catalog?.bandName || bestdori?.bandName);
+    const label = japaneseDisplayText(source.bandName || catalog?.bandName || bestdori?.bandName);
     return {
       image: imageCandidates[0],
       imageCandidates,
-      text: variant === "icon" ? fallbackText(label) : undefined,
+      text: variant === "icon" ? fallbackText(textOf(label)) : undefined,
       lang: variant === "icon" ? langOf(label) : undefined,
       icon: variant === "icon" && !imageCandidates.length ? "music_note" : undefined,
       fit: "contain",
@@ -184,11 +193,11 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
       source.thumbnailImage,
       source.profileImage,
     );
-    const label = japaneseText(source.characterName || catalog?.characterName || bestdori?.characterName);
+    const label = japaneseDisplayText(source.characterName || catalog?.characterName || bestdori?.characterName);
     return {
       image: imageCandidates[0],
       imageCandidates,
-      text: variant === "icon" ? fallbackText(label) : undefined,
+      text: variant === "icon" ? fallbackText(textOf(label)) : undefined,
       lang: variant === "icon" ? langOf(label) : undefined,
       icon: variant === "icon" && !imageCandidates.length ? "person" : undefined,
       fit: "cover",
@@ -211,10 +220,10 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
         ? uniqueSongCreditIds(sourceBand.memberCharacterIds || [])
         : authoredAsSourceBand
           ? []
-        : uniqueSongCreditIds(song.vocalCharacterIds || []).filter((characterId) => {
-            const characterBandId = characters.get(characterId)?.bandId;
-            return !characterBandId || !bandIdSet.has(characterBandId);
-          });
+          : uniqueSongCreditIds(song.vocalCharacterIds || []).filter((characterId) => {
+              const characterBandId = characters.get(characterId)?.bandId;
+              return !characterBandId || !bandIdSet.has(characterBandId);
+            });
     return {
       bandIds,
       characterIds,
