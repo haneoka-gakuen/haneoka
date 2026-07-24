@@ -567,6 +567,64 @@ const nativeEffectAnimationRoot = resolve(
   "unity-json/Assets/AddressableResources/Live/NoteEffect/common/anim",
 );
 
+// LiveAllNoteEffectView uses 24 chart half-lanes across the 19.12000084-unit
+// physical lane, so a normal (size=2) note effect is 19.12000084 / 12 units
+// wide.  Keep all effect001 billboards in that native one-lane reference
+// space before projecting them into Sonolus' [-1, 1] particle coordinates.
+// LiveGameNoteEffectBase.SetWidth adds .4 to the sliced frame width.
+const nativeEffectPhysicalLaneWidth = 19.12000084;
+const nativeEffectReferenceWidth = nativeEffectPhysicalLaneWidth / 12;
+const nativeEffectFrameWidthPadding = 0.4;
+const nativeEffectFrameScaleX = 1.02;
+const nativeEffectPillarPivotY = 0.04267627373337746;
+
+const nativeEffectCoordinateScale = {
+  // A full source lane occupies two local X units (-1 to 1).
+  x: 2 / nativeEffectReferenceWidth,
+} as const;
+
+function nativeEffectWidthRangeScale(range: readonly [number, number]): number {
+  const [min, max] = range;
+  return min + (max - min) * (nativeEffectReferenceWidth / nativeEffectPhysicalLaneWidth);
+}
+
+// LiveGameCamera.asset: position=(0,10,0), X rotation=29.60445665468814°,
+// FOV=54°.  SpriteRenderers and ParticleSystems are authored in that world
+// space, so project their vertical bounds instead of treating world Y as a
+// flat lane-depth coordinate.
+const nativeEffectCameraHeight = 10;
+const nativeEffectJudgementZ = 9.62;
+const nativeEffectCameraSin = Math.sin((29.60445665468814 * Math.PI) / 180);
+const nativeEffectCameraCos = Math.cos((29.60445665468814 * Math.PI) / 180);
+const nativeEffectCameraTanHalfFov = Math.tan((54 * Math.PI) / 360);
+
+function nativeEffectNdcY(y: number, z: number): number {
+  return (
+    (nativeEffectCameraCos * (y - nativeEffectCameraHeight) + nativeEffectCameraSin * (nativeEffectJudgementZ + z)) /
+    ((nativeEffectCameraHeight - y) * nativeEffectCameraSin + (nativeEffectJudgementZ + z) * nativeEffectCameraCos) /
+    nativeEffectCameraTanHalfFov
+  );
+}
+
+const nativeEffectOriginNdcY = nativeEffectNdcY(0, 0);
+const nativeEffectOneLaneNdcY = nativeEffectNdcY(0, nativeEffectReferenceWidth) - nativeEffectOriginNdcY;
+
+function nativeEffectLocalY(y: number, z: number): number {
+  return -1 + (nativeEffectNdcY(y, z) - nativeEffectOriginNdcY) / nativeEffectOneLaneNdcY;
+}
+
+function nativeEffectGroundRect(z: number, height: number): { y: number; h: number } {
+  const b = nativeEffectLocalY(0, z - height / 2);
+  const t = nativeEffectLocalY(0, z + height / 2);
+  return { y: (b + t) / 2, h: t - b };
+}
+
+function nativeEffectVerticalRect(y: number, z: number, height: number, pivot: number): { y: number; h: number } {
+  const b = nativeEffectLocalY(y - pivot * height, z);
+  const t = nativeEffectLocalY(y + (1 - pivot) * height, z);
+  return { y: (b + t) / 2, h: t - b };
+}
+
 const nativeParticleSpriteSpecs = [
   { key: "lane", x: 0, y: 0, w: 128, h: 126 },
   { key: "star", x: 132, y: 0, w: 47, h: 125, source: "ef_tap_particle_star.png" },
@@ -888,13 +946,37 @@ interface NativeSystemProjection {
   /** Source hierarchy scale of motionPath, applied before rate-over-distance integration. */
   motionPathScaleX?: number;
   sprite: "star" | "longStar" | "centerPillar" | "centerPillar02" | "wall";
+  /** Local source Z position, used for the native live-camera projection. */
+  z?: number;
   y: number;
+  /** SetWidth replaces the serialized ShapeModule width with referenceWidth + this offset. */
+  shapeWidthOffset?: number;
+  /**
+   * LiveGameNoteEffectBase.SetWidth writes a width-derived localScale.x to
+   * this system's Transform. The generated effect uses the normal note's
+   * reference width, so this captures the original range at size=2.
+   */
+  widthScaleRange?: readonly [min: number, max: number];
+  /** Hierarchy scales particle position/width; Local replaces the moving emitter path scale. */
+  widthScaleMode?: "hierarchy" | "motionPath";
+  /** Authored local Transform scale.x retained after SetWidth changes an ancestor. */
+  localScaleX?: number;
   /** Serialized ParticleSystemRenderer.m_Pivot.y in particle-diameter units. */
   rendererPivotY?: number;
   /** Explicit opt-in degradation hook; the default native profile never clips source emissions. */
   performanceMaxCount?: number;
   direction?: -1 | 1;
 }
+
+const nativeFlickHierarchyWidthScale = {
+  widthScaleRange: [0.05, 3] as const,
+  widthScaleMode: "hierarchy" as const,
+};
+
+const nativeSideFlickEmitterWidthScale = {
+  widthScaleRange: [0.082, 1.5] as const,
+  widthScaleMode: "motionPath" as const,
+};
 
 type NativeRendererName = "frame" | "pillar01" | "pillar02" | "pillar03" | "pillar04";
 
@@ -926,18 +1008,21 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem_1.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem.json",
         animationPath: "ef_splash/ef_wall_center",
         sprite: "wall",
         y: 0,
+        z: 0.05,
       },
     ],
     renderers: {
@@ -963,18 +1048,21 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem_1.json",
         animationPath: "ef_splash/ef_wall_center",
         sprite: "wall",
         y: 0,
+        z: 0.05,
       },
     ],
     renderers: {
@@ -1000,36 +1088,45 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem_4.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem_8.json",
         animationPath: "ef_splash_move/ef_particle_point01",
         sprite: "star",
         y: 0.71,
+        ...nativeFlickHierarchyWidthScale,
       },
       {
         file: "ParticleSystem_2.json",
         animationPath: "ef_splash_move/ef_particle_point02",
         sprite: "star",
         y: 0.71,
+        ...nativeFlickHierarchyWidthScale,
       },
       {
         file: "ParticleSystem_6.json",
         animationPath: "ef_splash_move/ef_particl_splash",
         sprite: "longStar",
         y: 1.8,
+        z: -0.2,
+        ...nativeFlickHierarchyWidthScale,
+        localScaleX: 1.0199999809265137,
       },
       {
         file: "ParticleSystem_3.json",
         animationPath: "ef_splash_move/ef_particl_splash_line",
         sprite: "centerPillar",
         y: 0.15,
+        z: -0.2,
+        ...nativeFlickHierarchyWidthScale,
         // note_flick.prefab / ef_particl_splash_line: m_Pivot.y = .3.
         rendererPivotY: 0.30000001192092896,
       },
@@ -1038,6 +1135,8 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash_move/ef_particl_splash_line02",
         sprite: "centerPillar02",
         y: -0.5,
+        z: -0.2,
+        ...nativeFlickHierarchyWidthScale,
         // note_flick.prefab / ef_particl_splash_line02: m_Pivot.y = .3.
         rendererPivotY: 0.30000001192092896,
       },
@@ -1046,6 +1145,7 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_wall_center",
         sprite: "wall",
         y: 0,
+        z: 0.05,
       },
     ],
     renderers: {
@@ -1071,12 +1171,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem_6.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem_1.json",
@@ -1086,6 +1188,7 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         sprite: "longStar",
         y: 0,
         direction: -1,
+        ...nativeSideFlickEmitterWidthScale,
       },
       {
         file: "ParticleSystem.json",
@@ -1095,12 +1198,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         sprite: "star",
         y: 0,
         direction: -1,
+        ...nativeSideFlickEmitterWidthScale,
       },
       {
         file: "ParticleSystem_5.json",
         animationPath: "ef_splash/ef_wall_center",
         sprite: "wall",
         y: 0,
+        z: 0.05,
       },
     ],
     renderers: {
@@ -1126,12 +1231,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem_2.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem_6.json",
@@ -1141,6 +1248,7 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         sprite: "longStar",
         y: 0,
         direction: 1,
+        ...nativeSideFlickEmitterWidthScale,
       },
       {
         file: "ParticleSystem_4.json",
@@ -1150,12 +1258,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         sprite: "star",
         y: 0,
         direction: 1,
+        ...nativeSideFlickEmitterWidthScale,
       },
       {
         file: "ParticleSystem_3.json",
         animationPath: "ef_splash/ef_wall_center",
         sprite: "wall",
         y: 0,
+        z: 0.05,
       },
     ],
     renderers: {
@@ -1176,12 +1286,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_slide_loop/ef_particle_point",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem.json",
         animationPath: "ef_slide_loop/ef_particle_point_frame",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: 0.08,
       },
     ],
     renderers: {
@@ -1208,12 +1320,14 @@ const nativeEffectProjections: readonly NativeEffectProjection[] = [
         animationPath: "ef_splash/ef_particle_point",
         sprite: "star",
         y: -0.53,
+        shapeWidthOffset: 0.08,
       },
       {
         file: "ParticleSystem_2.json",
         animationPath: "ef_splash/ef_particle_star",
         sprite: "star",
         y: -0.531,
+        shapeWidthOffset: -0.02,
       },
       {
         file: "ParticleSystem.json",
@@ -1295,25 +1409,38 @@ function readNativeSpriteRenderer(
 }
 
 function animatedRendererLayout(
+  effect: NativeEffectProjection,
   renderer: NativeSpriteRendererProjection,
   sizeX: number,
 ): { x: number; y: number; w: number; h: number } {
   if (renderer.name === "frame") {
-    // ef_tap_line is a true sliced outline in Unity. Sonolus has no sliced
-    // ParticleRenderer, so preserve its authored texture and footprint while
-    // accepting that its 40 px border stretches with note width.
-    return { x: 0, y: -0.89, w: 1.04, h: clamp((renderer.size.y / renderer.size.x) * 0.5, 0.14, 0.2) };
+    // SetWidth replaces m_Size.x with the active physical note width plus
+    // .4; it does not retain the prefab's serialized 5.5-unit width.  The
+    // one-lane reference makes the static particle faithful for ordinary
+    // notes, while the engine still scales it with each chart note's width.
+    const rect = nativeEffectGroundRect(0, renderer.size.y);
+    return {
+      x: 0,
+      y: rect.y,
+      w:
+        (nativeEffectReferenceWidth + nativeEffectFrameWidthPadding) *
+        nativeEffectFrameScaleX *
+        nativeEffectCoordinateScale.x,
+      h: rect.h,
+    };
   }
 
   const left = renderer.name === "pillar01" || renderer.name === "pillar03";
-  const h = clamp((renderer.size.y / 6) * 1.4, 0.85, 1.45);
-  // ef_tap_pillar's normalized pivot is y=.0426762737. Keep its lower edge
-  // pinned to the judgement line instead of centring the authored glow.
+  const front = renderer.name === "pillar01" || renderer.name === "pillar02";
+  const z = front ? 0.64 : effect.prefab === "note_normal.prefab" ? -0.61 : -0.54;
+  const rect = nativeEffectVerticalRect(-0.06, z, renderer.size.y, nativeEffectPillarPivotY);
+  // ef_tap_pillar's normalized pivot is near its lower edge.  Keep that
+  // authored anchor on the judgement line instead of centring the glow.
   return {
-    x: left ? -0.82 : 0.82,
-    y: -1 + h * (0.5 - 0.04267627373337746),
-    w: clamp((sizeX / 5.5) * 0.45, 0.07, 0.38),
-    h,
+    x: left ? -1 : 1,
+    y: rect.y,
+    w: Math.max(0, sizeX) * nativeEffectCoordinateScale.x,
+    h: rect.h,
   };
 }
 
@@ -1414,8 +1541,8 @@ function makeAnimatedRendererGroups(projection: NativeEffectProjection, clip: Na
       const alphaTo = clamp(alphaEnd * (activeEnd > 0.5 ? 1 : 0), 0, 1);
       if (alphaFrom <= 0 && alphaTo <= 0) continue;
 
-      const from = animatedRendererLayout(renderer, sizeStart);
-      const to = animatedRendererLayout(renderer, sizeEnd);
+      const from = animatedRendererLayout(projection, renderer, sizeStart);
+      const to = animatedRendererLayout(projection, renderer, sizeEnd);
       // Sonolus particle RGB is fixed per particle. Each already-discrete
       // AnimationClip segment therefore samples the authored SpriteRenderer
       // RGB at its midpoint; alpha and size retain their endpoint curves.
@@ -1598,9 +1725,13 @@ function nativeDirectionalMotion(
   if (startX === undefined || endX === undefined || Math.abs(endX - startX) <= 1e-5) return undefined;
   // The decoded prefab hierarchy puts ef_splash under ef_splash_move, whose
   // authored local X scale is .6000000238418579 for both side-flick prefabs.
-  // Keep it on the projection so rate-over-distance is evaluated in the same
-  // Unity world distance as the original ParticleSystem.
-  const hierarchyScaleX = projection.motionPathScaleX ?? 1;
+  // Their TransformScaleXSetRangeParam replaces that value at runtime rather
+  // than multiplying it, so use the range result for both the emitter path
+  // and rate-over-distance's world-space distance.
+  const hierarchyScaleX =
+    projection.widthScaleMode === "motionPath" && projection.widthScaleRange
+      ? nativeEffectWidthRangeScale(projection.widthScaleRange)
+      : (projection.motionPathScaleX ?? 1);
 
   const sourceTimes = [...new Set([0, clip.duration, ...clip.frames.map(({ time }) => time)])]
     .filter((time) => Number.isFinite(time) && time >= 0 && time <= clip.duration)
@@ -1941,20 +2072,15 @@ function nativeLifetimeBoundaries(data: JsonObject, path: string): number[] {
 
 interface NativeEffectCoordinateMap {
   xPerUnity: number;
-  yPerUnity: number;
-  originY: number;
 }
 
-function nativeEffectCoordinateMap(effect: NativeEffectProjection): NativeEffectCoordinateMap {
-  const frameFile = effect.renderers.frame;
-  if (!frameFile)
-    throw new Error(`${effect.name} needs its authored frame SpriteRenderer for Sonolus coordinate mapping`);
-  const frame = readNativeSpriteRenderer(effect, "frame", frameFile);
-  const layout = animatedRendererLayout(frame, frame.size.x);
+function nativeEffectCoordinateMap(): NativeEffectCoordinateMap {
+  // Source particle positions are relative to the same effect root as the
+  // SpriteRenderers.  Do not derive this from the serialized frame footprint:
+  // SetWidth overwrites that footprint at runtime, and doing so used to shrink
+  // every system by roughly sevenfold.
   return {
-    xPerUnity: Math.abs(layout.w) / Math.max(Number.EPSILON, Math.abs(frame.size.x)),
-    yPerUnity: Math.abs(layout.h) / Math.max(Number.EPSILON, Math.abs(frame.size.y)),
-    originY: layout.y,
+    xPerUnity: nativeEffectCoordinateScale.x,
   };
 }
 
@@ -1971,7 +2097,7 @@ function makeParticleSystemGroups(
   const windows = nativeSystemActiveWindows(effect, clip, projection, effectDuration);
   if (!windows.length) return [];
 
-  const coordinates = nativeEffectCoordinateMap(effect);
+  const coordinates = nativeEffectCoordinateMap();
   const [sizeMin, sizeMax] = minMaxScalarRange(initial.startSize, `${file}.data.InitialModule.startSize`);
   const baseSize = (sizeMin + sizeMax) / 2;
   const sizeRandom = (sizeMax - sizeMin) / 2;
@@ -1990,10 +2116,21 @@ function makeParticleSystemGroups(
   const lifetimeBoundaries = nativeLifetimeBoundaries(data, file);
   const shape = requireJsonObject(data.ShapeModule, `${file}.data.ShapeModule`);
   const shapeScale = requireJsonObject(shape.m_Scale, `${file}.data.ShapeModule.m_Scale`);
-  const shapeWidth =
+  const rawShapeWidth =
     shape.enabled === true ? Math.abs(requireFiniteNumber(shapeScale.x, `${file}.ShapeModule.m_Scale.x`)) : 0;
-  const spread = shapeWidth * coordinates.xPerUnity;
-  const baseY = coordinates.originY + projection.y * coordinates.yPerUnity;
+  // The point/star systems are included in SetWidth's shape-width list.  At
+  // runtime their serialized 4/5-unit ShapeModule values are overwritten by
+  // the active note width plus their asset-specific offset.
+  const shapeWidth =
+    shape.enabled !== true
+      ? 0
+      : projection.shapeWidthOffset === undefined
+        ? rawShapeWidth
+        : Math.max(0, nativeEffectReferenceWidth + projection.shapeWidthOffset);
+  const widthRangeScale = projection.widthScaleRange ? nativeEffectWidthRangeScale(projection.widthScaleRange) : 1;
+  const hierarchyWidthScale = projection.widthScaleMode === "hierarchy" ? widthRangeScale : 1;
+  const particleXScale = hierarchyWidthScale * (projection.localScaleX ?? 1);
+  const spread = shapeWidth * coordinates.xPerUnity * particleXScale;
   const directionalMotion = nativeDirectionalMotion(effect, clip, projection, effectDuration);
   const groups: JsonValue[] = [];
   for (const window of windows) {
@@ -2071,7 +2208,10 @@ function makeParticleSystemGroups(
       const effectTime = start * effectDuration;
       const startColor = nativeParticleStartColor(effect, clip, projection, effectDuration, effectTime, initial, file);
       const emissionX = directionalMotion
-        ? (directionalMotion.positionAt(effectTime) - motionStart) * directionScale * coordinates.xPerUnity
+        ? (directionalMotion.positionAt(effectTime) - motionStart) *
+          directionScale *
+          coordinates.xPerUnity *
+          particleXScale
         : 0;
       for (let segment = 0; segment < lifetimeBoundaries.length - 1; segment++) {
         const lifeStart = lifetimeBoundaries[segment]!;
@@ -2099,20 +2239,14 @@ function makeParticleSystemGroups(
         );
         const widthFrom = Math.max(
           0.001,
-          baseSize * nativeSizeAxisScale(sizeModule, "x", lifeStart, file) * coordinates.xPerUnity,
+          baseSize * nativeSizeAxisScale(sizeModule, "x", lifeStart, file) * coordinates.xPerUnity * particleXScale,
         );
         const widthTo = Math.max(
           0.001,
-          baseSize * nativeSizeAxisScale(sizeModule, "x", lifeEnd, file) * coordinates.xPerUnity,
+          baseSize * nativeSizeAxisScale(sizeModule, "x", lifeEnd, file) * coordinates.xPerUnity * particleXScale,
         );
-        const heightFrom = Math.max(
-          0.001,
-          baseSize * nativeSizeAxisScale(sizeModule, "y", lifeStart, file) * coordinates.yPerUnity,
-        );
-        const heightTo = Math.max(
-          0.001,
-          baseSize * nativeSizeAxisScale(sizeModule, "y", lifeEnd, file) * coordinates.yPerUnity,
-        );
+        const sourceHeightFrom = Math.max(0.001, baseSize * nativeSizeAxisScale(sizeModule, "y", lifeStart, file));
+        const sourceHeightTo = Math.max(0.001, baseSize * nativeSizeAxisScale(sizeModule, "y", lifeEnd, file));
         // ShapeModule determines a particle's fixed birth offset. Reusing the
         // same random channel at both endpoints keeps that offset fixed; the
         // former `spread * .8` invented a left/right drift even for normal
@@ -2120,30 +2254,36 @@ function makeParticleSystemGroups(
         // rateOverDistance=0 and VelocityModule.x=0. Horizontal motion now
         // comes only from an authored world-space emitter path or Velocity.x.
         const xFrom = randomizedParticleCurve(
-          emissionX + integratedVelocityAxis(data, "x", lifetime * lifeStart, lifetime, file) * coordinates.xPerUnity,
+          emissionX +
+            integratedVelocityAxis(data, "x", lifetime * lifeStart, lifetime, file) *
+              coordinates.xPerUnity *
+              particleXScale,
           1,
           spread,
         );
         const xTo = randomizedParticleCurve(
-          emissionX + integratedVelocityAxis(data, "x", lifetime * lifeEnd, lifetime, file) * coordinates.xPerUnity,
+          emissionX +
+            integratedVelocityAxis(data, "x", lifetime * lifeEnd, lifetime, file) *
+              coordinates.xPerUnity *
+              particleXScale,
           1,
           spread,
         );
         // Unity builds a ParticleSystemRenderer quad around
-        // `(vertex - m_Pivot) * particleSize`. The center-pillar masks use
-        // m_Pivot.y=.3, so treating their serialized center as a geometric
-        // center makes a false symmetric "cross" and incorrectly lengthens
-        // the beam above the judgement line. Apply the same diameter-scaled
-        // anchor after projecting the source height into Sonolus space.
+        // `(vertex - m_Pivot) * particleSize`. Project the resulting native
+        // vertical bounds through LiveGameCamera rather than flattening them
+        // into the lane-depth scale; this retains the tall beam silhouettes.
         const rendererPivotY = projection.rendererPivotY ?? 0;
-        const yFrom =
-          baseY +
-          integratedVerticalVelocity(data, lifetime * lifeStart, lifetime, file) * coordinates.yPerUnity -
-          rendererPivotY * heightFrom;
-        const yTo =
-          baseY +
-          integratedVerticalVelocity(data, lifetime * lifeEnd, lifetime, file) * coordinates.yPerUnity -
-          rendererPivotY * heightTo;
+        const sourceCenterYFrom =
+          projection.y +
+          integratedVerticalVelocity(data, lifetime * lifeStart, lifetime, file) -
+          rendererPivotY * sourceHeightFrom;
+        const sourceCenterYTo =
+          projection.y +
+          integratedVerticalVelocity(data, lifetime * lifeEnd, lifetime, file) -
+          rendererPivotY * sourceHeightTo;
+        const rectFrom = nativeEffectVerticalRect(sourceCenterYFrom, projection.z ?? 0, sourceHeightFrom, 0.5);
+        const rectTo = nativeEffectVerticalRect(sourceCenterYTo, projection.z ?? 0, sourceHeightTo, 0.5);
         groups.push({
           count: stepCount,
           particles: [
@@ -2153,14 +2293,21 @@ function makeParticleSystemGroups(
               start: segmentStart,
               duration: segmentDuration,
               x: particleProperty(xFrom, xTo, "linear"),
-              y: particleProperty(randomizedParticleCurve(yFrom, 2, 0.045), randomizedParticleCurve(yTo, 3, 0.12)),
+              y: particleProperty(
+                randomizedParticleCurve(rectFrom.y, 2, 0.045),
+                randomizedParticleCurve(rectTo.y, 3, 0.12),
+              ),
               w: particleProperty(
-                randomizedParticleCurve(widthFrom, 5, sizeRandom * coordinates.xPerUnity),
+                randomizedParticleCurve(widthFrom, 5, sizeRandom * coordinates.xPerUnity * particleXScale),
                 particleCurve(widthTo),
               ),
               h: particleProperty(
-                randomizedParticleCurve(heightFrom, 5, sizeRandom * coordinates.yPerUnity),
-                particleCurve(heightTo),
+                randomizedParticleCurve(
+                  rectFrom.h,
+                  5,
+                  (Math.abs(rectFrom.h) / Math.max(Number.EPSILON, sourceHeightFrom)) * sizeRandom,
+                ),
+                particleCurve(rectTo.h),
               ),
               r: particleProperty(particleCurve(0), particleCurve(0), "linear"),
               a: particleProperty(particleCurve(alphaFrom), particleCurve(alphaTo), "linear"),

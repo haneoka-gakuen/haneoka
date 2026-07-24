@@ -75,8 +75,6 @@ export abstract class SlideEndFlickNote extends FlickNote {
     }
 
     earlyTouch() {
-        if (this.startSharedMemory.lastActiveTime === time.now) return
-
         const s = ease(
             this.slideImport.ease,
             Math.unlerpClamped(
@@ -99,8 +97,11 @@ export abstract class SlideEndFlickNote extends FlickNote {
         for (const touch of touches) {
             if (touch.vr < minFlickVR) continue
             if (!hitbox.contains(touch.lastPosition)) continue
-            if (!touch.ended && hitbox.contains(touch.position)) continue
 
+            // The native SlideEndFlick updater consumes the current-frame
+            // flick input. It does not require the finger to leave the final
+            // connector or lift first, so a held hidden-long segment may end
+            // in a flick without an artificial release between the two.
             this.complete(touch)
             return
         }
