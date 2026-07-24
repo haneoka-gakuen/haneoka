@@ -181,8 +181,11 @@ const INLINE_MEDIA_TYPES: ReadonlySet<string> = new Set([
 const CANONICAL_HOST = "haneoka.org";
 const POINTER_TTL_MS = 30_000;
 const POINTER_CACHE_LIMIT = 128;
-const API_CACHE_TTL = 600;
-const CATALOG_API_CACHE_CONTROL = "public, max-age=600, stale-while-revalidate=86400";
+// Structured catalogue documents are snapshot-oriented and shared by the
+// Garupa playlist and catalog APIs. One policy keeps their browser and edge
+// behaviour aligned while still allowing a background refresh each day.
+const API_CACHE_TTL = 60 * 60;
+const CATALOG_API_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 const SOURCE_CACHE_TTL = 900;
 const MEDIA_CACHE_TTL = 7 * 86_400;
 const SONOLUS_VERSION = "1.1.2";
@@ -218,7 +221,6 @@ const GARUPA_MASTER_POINTER_SCHEMA = "haneoka-garupa-master-pointer-v1";
 const GARUPA_MASTER_SNAPSHOT_SCHEMA = "haneoka-garupa-master-snapshot-v1";
 const GARUPA_MASTER_SERVER = "jp";
 const GARUPA_MASTER_POINTER_TTL = 30;
-const GARUPA_MASTER_PLAYLIST_TTL = 600;
 const GARUPA_MASTER_SNAPSHOT_CACHE_LIMIT = 8;
 const GARUPA_MASTER_FILE_LIMIT = 20_000;
 const GARUPA_MASTER_SNAPSHOT_ID_PATTERN = /^m-[a-f0-9]{20}$/u;
@@ -1341,18 +1343,17 @@ async function handleGarupaPlaylistApi(
   if (!playlist) throw new Error(`Garupa Master playlist projection is missing: ${pointer.manifestKey}`);
 
   const cacheRequest = garupaSnapshotCacheRequest(request, snapshot.snapshotId);
-  const cacheControl = "public, max-age=60, stale-while-revalidate=600";
   const response = await edgeCached(
     cacheRequest,
     ctx,
-    GARUPA_MASTER_PLAYLIST_TTL,
+    API_CACHE_TTL,
     async () =>
       (await serveR2Object(env, request, casKey(playlist.sha256), playlist.mediaType, {
         attachment: false,
-        cacheControl,
+        cacheControl: CATALOG_API_CACHE_CONTROL,
         expectedBytes: playlist.bytes,
       })) || errorResponse(request, 502, "garupa_playlist_missing", "Garupa playlist projection is missing"),
-    cacheControl,
+    CATALOG_API_CACHE_CONTROL,
   );
   return garupaSnapshotResponseHeaders(response, snapshot.snapshotId);
 }

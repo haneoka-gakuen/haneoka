@@ -9,24 +9,24 @@
  * structured payloads remain bounded while published binary assets receive a
  * long-lived cache policy:
  *
- * - upstream: coalesce edge reads for five minutes;
- * - catalog: refresh lists and transformed story payloads within fifteen minutes;
- * - chart: retain converted score text for a day;
+ * - upstream: coalesce reads from Bestdori for one day;
+ * - catalog: refresh lists and transformed story payloads daily;
+ * - chart: retain converted score text for a week;
  * - media: published asset URLs are treated as immutable for one year.
  */
 export const BESTDORI_CACHE_POLICY = {
   upstream: {
-    edgeTtlSeconds: 5 * 60,
+    edgeTtlSeconds: 24 * 60 * 60,
   },
   catalog: {
-    maxAgeSeconds: 15 * 60,
-    staleWhileRevalidateSeconds: 6 * 60 * 60,
-    clientTtlMs: 10 * 60 * 1_000,
-  },
-  chart: {
     maxAgeSeconds: 24 * 60 * 60,
     staleWhileRevalidateSeconds: 7 * 24 * 60 * 60,
-    clientTtlMs: 60 * 60 * 1_000,
+    clientTtlMs: 24 * 60 * 60 * 1_000,
+  },
+  chart: {
+    maxAgeSeconds: 7 * 24 * 60 * 60,
+    staleWhileRevalidateSeconds: 30 * 24 * 60 * 60,
+    clientTtlMs: 7 * 24 * 60 * 60 * 1_000,
   },
   media: {
     maxAgeSeconds: 365 * 24 * 60 * 60,
