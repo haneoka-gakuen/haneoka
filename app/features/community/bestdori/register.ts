@@ -18,7 +18,7 @@ export const registerBestdoriCommunitySource = (): void => {
     maxDifficulty: 4,
     showMusicTypeFilter: false,
     showCategoryFilter: true,
-    hideSonolus: true,
+    hideSonolus: false,
     bandFallbackIcon: "star",
     defaultSort: "release",
     categorySortKey: (song) => normalizeSongType(song.musicCategories),

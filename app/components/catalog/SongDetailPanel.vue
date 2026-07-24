@@ -196,24 +196,21 @@ async function playVideo() {
 }
 const facts = computed(() => {
   const values = [
-    { key: "source", label: t("source"), value: sourceLabel.value, wrap: true },
+    { key: "source", label: t("source"), value: sourceLabel.value },
     {
       key: "composer",
       label: t("composer"),
       value: resolveLocalized(props.song.composer, { sourceHint: sourceLocale.value }),
-      wrap: true,
     },
     {
       key: "lyrics",
       label: t("lyrics"),
       value: resolveLocalized(props.song.lyricist, { sourceHint: sourceLocale.value }),
-      wrap: true,
     },
     {
       key: "arrangement",
       label: t("arrangement"),
       value: resolveLocalized(props.song.arranger, { sourceHint: sourceLocale.value }),
-      wrap: true,
     },
     { key: "release", label: t("release"), value: publishedAt.value, numeric: true },
   ];
@@ -226,27 +223,48 @@ const rankName = (rank: number) => ({ 2: "D", 3: "C", 4: "B", 5: "A", 6: "S", 7:
 const scoreRanks = computed(() =>
   (props.song.scoreRanks || [])
     .filter((rank) => Number(rank.scoreRank || 0) >= 3)
-    .map((rank) => ({
-      key: `rank-${rank.scoreRank}`,
-      label: rankName(Number(rank.scoreRank || 0)),
-      value: Number(rank.requiredScore || 0).toLocaleString(),
-      numeric: true,
-    })),
+    .map((rank) => {
+      const label = rankName(Number(rank.scoreRank || 0));
+      return {
+        key: `rank-${rank.scoreRank}`,
+        label,
+        labelImage: scoreRankIcon(label),
+        labelImageAlt: label,
+        value: Number(rank.requiredScore || 0).toLocaleString(),
+        numeric: true,
+      };
+    }),
 );
 const cover = computed(() => props.song.jacketUrl || props.song.jacketThumbUrl || "");
 const activeDifficultyKey = computed(() => {
   const source = props.song.difficulty?.[activeDifficulty.value]?.difficulty;
   if (typeof source === "string" && source) return source.toLocaleLowerCase();
-  return ["easy", "normal", "hard", "expert", "master"][activeDifficulty.value] || "";
+  const fallback =
+    props.origin.provider === "bestdori"
+      ? ["easy", "normal", "hard", "expert", "special"]
+      : ["easy", "normal", "hard", "expert", "master"];
+  return fallback[activeDifficulty.value] || "";
 });
 const activeNoteCount = computed(() => {
   const values = [props.song.difficulty?.[activeDifficulty.value]?.noteCount, props.meta?.n].map(Number);
   return Math.trunc(values.find((value) => Number.isFinite(value) && value > 0) || 0);
 });
 const sonolusLevelUrl = computed(() => {
-  const difficulty = ["easy", "normal", "hard", "expert"][activeDifficulty.value];
   const chart = props.song.difficulty?.[activeDifficulty.value];
-  if (!difficulty || !chart?.file || props.origin.provider !== "release") return "";
+  if (!chart) return "";
+  if (props.origin.provider === "bestdori") {
+    const difficulty = activeDifficultyKey.value;
+    if (!["easy", "normal", "hard", "expert", "special"].includes(difficulty)) return "";
+    return `https://open.sonolus.com/haneoka.org/levels/bestdori-level-${props.song.musicId}-${difficulty}`;
+  }
+  const difficulty = activeDifficultyKey.value;
+  if (
+    !["easy", "normal", "hard", "expert", "master"].includes(difficulty) ||
+    !chart.file ||
+    props.origin.provider !== "release"
+  ) {
+    return "";
+  }
   return `https://open.sonolus.com/haneoka.org/levels/${releaseChartLevelName(
     props.origin.releaseId,
     props.song.musicId,
@@ -260,16 +278,20 @@ const scoreRewardItems = computed(() =>
     .sort((left, right) => Number(left.liveScoreRank || 99) - Number(right.liveScoreRank || 99))
     .map((reward, index) => {
       const rank = rankName(Number(reward.liveScoreRank || index + 3));
+      const name =
+        resolveLocalized(reward.resolved?.name, {
+          sourceHint: sourceLocale.value,
+          fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
+        }) || "—";
+      const quantity = Number(reward.resourceCount || 0);
       return {
         key: `score-${rank}-${reward.rewardId || index}`,
-        rank,
-        name:
-          resolveLocalized(reward.resolved?.name, {
-            sourceHint: sourceLocale.value,
-            fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
-          }) || "—",
+        label: rank,
+        labelImage: scoreRankIcon(rank),
+        labelImageAlt: rank,
+        value: `${textOf(name)}${quantity ? ` ×${quantity.toLocaleString()}` : ""}`,
         image: reward.resolved?.image,
-        quantity: Number(reward.resourceCount || 0),
+        imageAlt: name,
       };
     }),
 );
@@ -283,17 +305,23 @@ const comboRewardItems = computed(() =>
       : percentage && activeNoteCount.value > 0
         ? Math.ceil((activeNoteCount.value * percentage) / 100)
         : 0;
+    const name =
+      resolveLocalized(reward.resolved?.name, {
+        sourceHint: sourceLocale.value,
+        fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
+      }) || "—";
+    const quantity = Number(reward.resourceCount || 0);
     return {
       key: `combo-${reward.rewardId || index}`,
-      condition: comboCount ? comboCount.toLocaleString() : "—",
-      percentage: percentage === 100 ? "FULL" : percentage ? `${percentage}%` : "",
-      name:
-        resolveLocalized(reward.resolved?.name, {
-          sourceHint: sourceLocale.value,
-          fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
-        }) || "—",
+      label: [
+        comboCount ? comboCount.toLocaleString() : "—",
+        percentage === 100 ? "FULL" : percentage && `${percentage}%`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      value: `${textOf(name)}${quantity ? ` ×${quantity.toLocaleString()}` : ""}`,
       image: reward.resolved?.image,
-      quantity: Number(reward.resourceCount || 0),
+      imageAlt: name,
     };
   }),
 );
@@ -352,7 +380,7 @@ watch(
         target="_blank"
         rel="noopener noreferrer"
       >
-        <MaterialIcon name="open_in_new" :size="20" />
+        <img class="song-detail-sonolus-icon" src="/images/sonolus-icon.png" alt="" />
       </UiIconButton>
     </template>
 
@@ -394,61 +422,10 @@ watch(
           :title="t('rewards')"
           icon="emoji_events"
         >
-          <div v-if="scoreRanks.length" class="song-detail-score-ranks" role="list" :aria-label="t('scoreRanks')">
-            <div v-for="rank in scoreRanks" :key="rank.key" role="listitem">
-              <img v-if="scoreRankIcon(rank.label)" :src="scoreRankIcon(rank.label)" :alt="rank.label" />
-              <strong v-else>{{ rank.label }}</strong>
-              <span class="display-number">{{ rank.value }}</span>
-            </div>
-          </div>
-
-          <div v-if="scoreRewardItems.length || comboRewardItems.length" class="song-detail-body__achievements">
-            <div
-              v-if="scoreRewardItems.length"
-              class="song-detail-body__achievement-group is-score"
-              role="group"
-              :aria-label="t('scoreRanks')"
-            >
-              <p class="song-detail-body__achievement-heading">{{ t("scoreRanks") }}</p>
-              <ul>
-                <li v-for="reward in scoreRewardItems" :key="reward.key">
-                  <span class="song-detail-body__achievement-condition is-rank">
-                    <img :src="scoreRankIcon(reward.rank)" :alt="reward.rank" />
-                  </span>
-                  <span class="song-detail-body__achievement-reward">
-                    <img v-if="reward.image" :src="reward.image" alt="" />
-                    <span>
-                      <strong><DisplayText :value="reward.name" /></strong>
-                      <small v-if="reward.quantity" class="display-number">×{{ reward.quantity }}</small>
-                    </span>
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <div
-              v-if="comboRewardItems.length"
-              class="song-detail-body__achievement-group is-combo"
-              role="group"
-              :aria-label="t('combo')"
-            >
-              <p class="song-detail-body__achievement-heading">{{ t("combo") }}</p>
-              <ul>
-                <li v-for="reward in comboRewardItems" :key="reward.key">
-                  <span class="song-detail-body__achievement-condition">
-                    <strong class="display-number">{{ reward.condition }}</strong>
-                    <small v-if="reward.percentage" class="display-number">{{ reward.percentage }}</small>
-                  </span>
-                  <span class="song-detail-body__achievement-reward">
-                    <img v-if="reward.image" :src="reward.image" alt="" />
-                    <span>
-                      <strong><DisplayText :value="reward.name" /></strong>
-                      <small v-if="reward.quantity" class="display-number">×{{ reward.quantity }}</small>
-                    </span>
-                  </span>
-                </li>
-              </ul>
-            </div>
+          <div class="song-detail-body__facts">
+            <DetailDataGrid v-if="scoreRanks.length" :items="scoreRanks" :aria-label="t('scoreRanks')" />
+            <DetailDataGrid v-if="scoreRewardItems.length" :items="scoreRewardItems" :aria-label="t('scoreRanks')" />
+            <DetailDataGrid v-if="comboRewardItems.length" :items="comboRewardItems" :aria-label="t('combo')" />
           </div>
         </DetailSection>
 
@@ -546,53 +523,6 @@ watch(
   gap: var(--md-comp-detail-block-gap);
 }
 
-/* One continuous rank table: the rank artwork carries the C/B/A/S/SS
- * semantic rather than repeating the letter in a field-style card. */
-.song-detail-score-ranks {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 96px), 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-outline-variant);
-}
-
-.song-detail-score-ranks > div {
-  display: grid;
-  min-width: 0;
-  min-height: 84px;
-  align-content: center;
-  justify-items: center;
-  gap: var(--md-sys-spacing-1);
-  padding: var(--md-sys-spacing-2);
-  background: var(--md-sys-color-surface-container-lowest);
-  text-align: center;
-}
-
-.song-detail-score-ranks img {
-  width: 52px;
-  height: 36px;
-  object-fit: contain;
-}
-
-.song-detail-score-ranks strong {
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-title-medium-font);
-  font-size: var(--md-sys-typescale-title-medium-size);
-  font-weight: var(--md-sys-typescale-title-medium-weight);
-  line-height: var(--md-sys-typescale-title-medium-line-height);
-}
-
-.song-detail-score-ranks span {
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-body-large-font);
-  font-size: var(--md-sys-typescale-body-large-size);
-  font-weight: var(--md-sys-typescale-body-large-weight);
-  line-height: var(--md-sys-typescale-body-large-line-height);
-}
-
 .song-detail-body__difficulty {
   display: flex;
   min-width: 0;
@@ -608,6 +538,13 @@ watch(
 
 .song-detail-body__difficulty :deep(.md3-segments__option) {
   min-width: 56px;
+}
+
+.song-detail-sonolus-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  object-fit: contain;
 }
 
 .song-detail-mv {
@@ -753,150 +690,12 @@ watch(
   }
 }
 
-.song-detail-body__achievements {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-outline-variant);
-}
-
-/* The reward categories share one continuous table surface. Individual rows
- * use dividers, never a scattering of independent mini-cards. */
-.song-detail-body__achievement-group {
-  min-width: 0;
-  padding: var(--md-sys-spacing-1);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-
-.song-detail-body__achievement-heading {
-  padding: var(--md-sys-spacing-2) var(--md-sys-spacing-2) var(--md-sys-spacing-1);
-  margin: 0;
-  color: var(--md-sys-color-on-surface-variant);
-  font-family: var(--md-sys-typescale-label-large-font);
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: var(--md-sys-typescale-label-large-weight);
-  line-height: var(--md-sys-typescale-label-large-line-height);
-}
-
-.song-detail-body__achievement-group ul {
-  display: grid;
-  min-width: 0;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.song-detail-body__achievement-group li {
-  display: grid;
-  min-width: 0;
-  min-height: 64px;
-  grid-template-columns: 52px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--md-sys-spacing-3);
-  padding: var(--md-sys-spacing-2);
-}
-
-.song-detail-body__achievement-group li + li {
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-}
-
-.song-detail-body__achievement-condition {
-  display: flex;
-  min-width: 0;
-  min-height: 48px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--md-sys-color-on-surface-variant);
-  text-align: center;
-}
-
-.song-detail-body__achievement-condition > strong {
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-title-small-font);
-  font-size: var(--md-sys-typescale-title-small-size);
-  font-weight: var(--md-sys-typescale-title-small-weight);
-  line-height: var(--md-sys-typescale-title-small-line-height);
-}
-
-.song-detail-body__achievement-condition.is-rank img {
-  width: 48px;
-  height: 40px;
-  object-fit: contain;
-}
-
-.song-detail-body__achievement-reward {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--md-sys-spacing-3);
-}
-
-.song-detail-body__achievement-reward > img {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-  border-radius: var(--md-sys-shape-corner-small);
-  object-fit: contain;
-}
-
-.song-detail-body__achievement-reward > span {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.song-detail-body__achievements strong,
-.song-detail-body__achievements small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.song-detail-body__achievements strong {
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-body-large-font);
-  font-size: var(--md-sys-typescale-body-large-size);
-  font-weight: var(--md-sys-typescale-body-large-weight);
-  line-height: var(--md-sys-typescale-body-large-line-height);
-}
-
-.song-detail-body__achievements small {
-  color: var(--md-sys-color-on-surface-variant);
-  font-family: var(--md-sys-typescale-label-medium-font);
-  font-size: var(--md-sys-typescale-label-medium-size);
-  font-weight: var(--md-sys-typescale-label-medium-weight);
-  line-height: var(--md-sys-typescale-label-medium-line-height);
-}
-
 @media (max-width: 760px) {
   .song-detail-body__art {
     width: min(100%, 430px);
     max-height: none;
     justify-self: center;
     overflow: visible;
-  }
-
-  .song-detail-body__achievements {
-    grid-template-columns: 1fr;
-  }
-
-  .song-detail-body__achievement-group li {
-    min-height: 64px;
-  }
-
-  .song-detail-body__achievement-reward strong,
-  .song-detail-body__achievement-reward small {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
 
   .song-detail-mv__viewport {

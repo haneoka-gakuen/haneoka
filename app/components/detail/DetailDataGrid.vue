@@ -4,10 +4,11 @@ import { textOf, type DisplayText } from "~/types/displayText";
 interface DetailDataGridItem {
   key: string;
   label: string;
+  labelImage?: string;
+  labelImageAlt?: DisplayText;
   value: DisplayText | number;
   numeric?: boolean;
   accent?: boolean;
-  wrap?: boolean;
   image?: string;
   imageAlt?: DisplayText;
   imageKind?: "avatar" | "logo" | "attribute";
@@ -31,11 +32,13 @@ const columns = computed(() => Math.max(1, props.items.length));
 <template>
   <dl class="detail-data-grid" :class="{ 'is-compact': compact }" :style="{ '--detail-data-columns': columns }">
     <div v-for="item in items" :key="item.key" class="detail-data-grid__item" :class="{ 'is-accent': item.accent }">
-      <dt>{{ item.label }}</dt>
+      <dt :title="item.label">
+        <img v-if="item.labelImage" :src="item.labelImage" :alt="textOf(item.labelImageAlt || item.label)" />
+        <template v-else>{{ item.label }}</template>
+      </dt>
       <dd
         :class="{
           'display-number': item.numeric,
-          'is-wrap': item.wrap,
           'has-image': item.image,
         }"
         :title="typeof item.value === 'number' ? String(item.value) : textOf(item.value)"
@@ -60,7 +63,7 @@ const columns = computed(() => Math.max(1, props.items.length));
   min-width: 0;
   max-width: 100%;
   flex: 0 0 auto;
-  grid-template-columns: repeat(var(--detail-data-columns), minmax(96px, 1fr));
+  grid-template-columns: repeat(var(--detail-data-columns), minmax(max-content, 1fr));
   box-sizing: border-box;
   padding: 0;
   margin: 0;
@@ -74,7 +77,7 @@ const columns = computed(() => Math.max(1, props.items.length));
 }
 
 .detail-data-grid__item {
-  min-width: 0;
+  min-width: max-content;
   padding: var(--md-sys-spacing-2);
   border-right: 1px solid var(--md-sys-color-outline-variant);
   text-align: center;
@@ -97,22 +100,22 @@ const columns = computed(() => Math.max(1, props.items.length));
   letter-spacing: 0;
 }
 
+.detail-data-grid dt img {
+  width: 48px;
+  height: 30px;
+  object-fit: contain;
+}
+
 .detail-data-grid dd {
   margin: 3px 0 0;
-  overflow: hidden;
+  overflow: visible;
   color: var(--md-sys-color-on-surface);
   font-family: var(--md-sys-typescale-body-small-font);
   font-size: var(--md-sys-typescale-body-small-size);
   font-weight: var(--md-sys-typescale-body-small-weight);
   line-height: var(--md-sys-typescale-body-small-line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-data-grid dd.is-wrap {
-  overflow: visible;
   text-overflow: clip;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .detail-data-grid dd.has-image {
@@ -145,7 +148,6 @@ const columns = computed(() => Math.max(1, props.items.length));
 }
 
 .detail-data-grid.is-compact {
-  grid-template-columns: repeat(var(--detail-data-columns), minmax(78px, 1fr));
   border: 0;
   border-radius: 0;
   background: transparent;

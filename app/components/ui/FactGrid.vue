@@ -20,7 +20,6 @@ const items = computed(() =>
         label: fact.label,
         value: fact.value,
         numeric: typeof fact.value === "number",
-        wrap: true,
         image: fact.image,
         imageAlt: fact.imageAlt,
         imageKind: fact.imageKind,
