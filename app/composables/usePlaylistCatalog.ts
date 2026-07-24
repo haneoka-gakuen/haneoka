@@ -1,9 +1,33 @@
-import type { Band, Character, Song } from "~/types/archive";
-import type { GarupaPlaylist, PlaylistTrackSource, ResolvedPlaylist, ResolvedPlaylistTrack } from "~/types/playlists";
-import { contributingSongBandIds } from "~/features/catalog/songCredits";
-import { createSongCreditVisualResolver } from "~/features/catalog/songCreditVisuals";
+import type { Band, Song } from "~/types/archive";
+import type { CompositeEntityVisual } from "~/types/compositeVisual";
+import type { DisplayText } from "~/types/displayText";
+import type { CatalogContentOrigin, ContentOrigin, OurNotesReleaseId } from "~/features/catalog/contentSource";
+import type { GarupaPlaylist, GarupaPlaylistTrack, ResolvedPlaylist, ResolvedPlaylistTrack } from "~/types/playlists";
+import {
+  bestdoriOrigin,
+  contentOriginKey,
+  isBestdoriOrigin,
+  ourNotesReleaseOrigin,
+  releaseFallbackOrder,
+} from "~/features/catalog/contentSource";
+import { songReleaseTimestamp } from "~/features/catalog/songSources";
 import { resolveArchiveValue } from "~/i18n/locales";
-import { textOf, type DisplayText } from "~/types/displayText";
+import { textOf } from "~/types/displayText";
+
+type ReleaseOrigin = Extract<ContentOrigin, { provider: "release" }>;
+
+interface ReleaseCatalogRequest {
+  origin: MaybeRefOrGetter<ReleaseOrigin>;
+  songs: ReturnType<typeof useCatalogCollection<Song>>;
+  bands: ReturnType<typeof useCatalogCollection<Band>>;
+}
+
+interface ReleaseCatalog {
+  origin: ReleaseOrigin;
+  songByTitle: ReadonlyMap<string, Song>;
+  songsById: ReadonlyMap<number, Song>;
+  bands: ReadonlyMap<number, Band>;
+}
 
 const titleKey = (value: string): string =>
   value
@@ -16,236 +40,239 @@ const stageAssetNumber = (playlist: GarupaPlaylist): string => {
   return match?.[1] || String(playlist.sourceId);
 };
 
+const japaneseText = (value: Parameters<typeof resolveArchiveValue>[0], fallback = ""): DisplayText =>
+  resolveArchiveValue(value, "ja", { sourceHint: "ja", fallback }) || fallback;
+
+const bandVisualsFor = (song: Song, bands: ReadonlyMap<number, Band>): CompositeEntityVisual[] => {
+  const bandIds = [...new Set((song.bandIds?.length ? song.bandIds : [song.bandId]).map(Number).filter(Boolean))];
+  return bandIds.flatMap((bandId) => {
+    const band = bands.get(bandId);
+    if (!band) return [];
+    const images = [band.logo, band.icon].filter((image): image is string => Boolean(image));
+    const label = textOf(japaneseText(band.bandName, String(band.bandId)));
+    return [
+      {
+        ...(images[0] ? { image: images[0] } : {}),
+        ...(images.length > 1 ? { imageCandidates: images } : {}),
+        ...(images.length ? {} : { text: label, icon: "groups" }),
+        ...(band.color ? { color: band.color } : {}),
+        fit: "contain" as const,
+      },
+    ];
+  });
+};
+
+const songByJapaneseTitle = (songs: readonly Song[]): ReadonlyMap<string, Song> => {
+  const byTitle = new Map<string, Song>();
+  for (const song of [...songs].sort((left, right) => left.musicId - right.musicId)) {
+    const key = titleKey(textOf(japaneseText(song.musicTitle, String(song.musicId))));
+    if (key && !byTitle.has(key)) byTitle.set(key, song);
+  }
+  return byTitle;
+};
+
+const releaseCatalog = (request: ReleaseCatalogRequest): ReleaseCatalog => {
+  const songs = recordValues(request.songs.data.value);
+  const bands = recordValues(request.bands.data.value);
+  return {
+    origin: toValue(request.origin),
+    songByTitle: songByJapaneseTitle(songs),
+    songsById: new Map(songs.map((song) => [song.musicId, song])),
+    bands: new Map(bands.map((band) => [band.bandId, band])),
+  };
+};
+
+/**
+ * R2's v1 positions remain immutable Garupa Master definition positions.
+ * Band playlists get their user-visible IDs in release order only after their
+ * concrete source has been resolved: publication time, Bestdori before an
+ * Our Notes release on equal timestamps, then a stable music/definition tie.
+ */
+const chronologicalBandTracks = (tracks: readonly ResolvedPlaylistTrack[]): ResolvedPlaylistTrack[] =>
+  [...tracks]
+    .sort((left, right) => {
+      const leftTimestamp = left.song ? songReleaseTimestamp(left.song) : undefined;
+      const rightTimestamp = right.song ? songReleaseTimestamp(right.song) : undefined;
+      if (leftTimestamp === undefined && rightTimestamp !== undefined) return 1;
+      if (leftTimestamp !== undefined && rightTimestamp === undefined) return -1;
+      if (leftTimestamp !== undefined && rightTimestamp !== undefined && leftTimestamp !== rightTimestamp)
+        return leftTimestamp - rightTimestamp;
+
+      const sourceOrder = (track: ResolvedPlaylistTrack) => (isBestdoriOrigin(track.origin) ? 0 : track.origin ? 1 : 2);
+      const sourceDifference = sourceOrder(left) - sourceOrder(right);
+      if (sourceDifference) return sourceDifference;
+
+      const musicDifference =
+        (left.song?.musicId || left.definition.musicId) - (right.song?.musicId || right.definition.musicId);
+      return musicDifference || left.definition.position - right.definition.position;
+    })
+    .map((track, index) => ({ ...track, position: index + 1 }));
+
+/**
+ * Resolves Garupa definition tracks without treating Bestdori as an Our Notes
+ * resource server. The selected release wins, configured releases form the
+ * ordered fallback chain, and the track's explicit Bestdori region is last.
+ */
 export const usePlaylistCatalog = () => {
   const garupa = useGarupaPlaylists();
-  const catalogSongs = useCatalogCollection<Song>("songs", "jp-cbt");
-  const catalogBands = useCatalogCollection<Band>("bands", "jp-cbt");
-  const catalogCharacters = useCatalogCollection<Character>("characters", "jp-cbt");
-  const bestdoriSongs = useCatalogCollection<Song>("songs", "bestdori");
-  const bestdoriBands = useCatalogCollection<Band>("bands", "bestdori");
-  const bestdoriCharacters = useCatalogCollection<Character>("characters", "bestdori");
+  const { releaseServer, fallbackReleaseServers } = useReleaseServer();
 
-  const japaneseText = (value: Parameters<typeof resolveArchiveValue>[0], fallback = ""): DisplayText =>
-    resolveArchiveValue(value, "ja", { sourceHint: "ja", fallback }) || fallback;
-  const bandName = (band: Band): string => textOf(japaneseText(band.bandName));
+  // Always request the currently selected release reactively: an active
+  // release discovered through the registry may not be part of the configured
+  // fallback policy, but it still gets first chance to resolve a playlist
+  // track. The remaining requests are the deliberate fallback chain.
+  const selectedReleaseOrigin = computed<ReleaseOrigin>(() => ourNotesReleaseOrigin(releaseServer.value));
+  const configuredReleaseIds = [
+    ...new Set(fallbackReleaseServers.value.map((value) => String(value).trim()).filter(Boolean)),
+  ] as OurNotesReleaseId[];
+  const releaseRequests: ReleaseCatalogRequest[] = [
+    {
+      origin: selectedReleaseOrigin,
+      songs: useCatalogCollection<Song>("songs", selectedReleaseOrigin),
+      bands: useCatalogCollection<Band>("bands", selectedReleaseOrigin),
+    },
+    ...configuredReleaseIds.map((releaseId) => {
+      const origin = ourNotesReleaseOrigin(releaseId);
+      return {
+        origin,
+        songs: useCatalogCollection<Song>("songs", origin),
+        bands: useCatalogCollection<Band>("bands", origin),
+      };
+    }),
+  ];
+
+  // Garupa Master definitions are Japanese, so their fallback asset reference
+  // is explicitly Bestdori JP rather than the UI locale's Bestdori region.
+  const bestdoriCatalogOrigin = bestdoriOrigin("jp");
+  const bestdoriSongs = useCatalogCollection<Song>("songs", bestdoriCatalogOrigin);
+  const bestdoriBands = useCatalogCollection<Band>("bands", bestdoriCatalogOrigin);
 
   const data = computed<ResolvedPlaylist[]>(() => {
-    const sourcePlaylists = garupa.data.value?.playlists || [];
-    const localBands = recordValues(catalogBands.data.value);
-    const localSongs = recordValues(catalogSongs.data.value);
-    const localCharacters = recordValues(catalogCharacters.data.value);
-    const remoteBands = recordValues(bestdoriBands.data.value);
-    const remoteSongs = recordValues(bestdoriSongs.data.value);
-    const remoteCharacters = recordValues(bestdoriCharacters.data.value);
-    const visualResolver = createSongCreditVisualResolver({
-      catalogBands: localBands,
-      catalogCharacters: localCharacters,
-      bestdoriBands: remoteBands,
-      bestdoriCharacters: remoteCharacters,
-    });
-    const localBandMap = new Map(localBands.map((band) => [band.bandId, band]));
-    const remoteBandMap = new Map(remoteBands.map((band) => [band.bandId, band]));
-    const remoteBandByName = new Map(
-      remoteBands.filter((band) => band.official !== false).map((band) => [titleKey(bandName(band)), band]),
-    );
-
-    const localBandKey = new Map<number, string>();
-    for (const band of localBands) {
-      const remote = remoteBandByName.get(titleKey(bandName(band)));
-      localBandKey.set(band.bandId, remote ? `bestdori:${remote.bandId}` : `catalog:${band.bandId}`);
+    const releases = releaseRequests.map(releaseCatalog);
+    const releasesById = new Map<OurNotesReleaseId, ReleaseCatalog>();
+    // The reactive selected request appears first, so it wins over a static
+    // request for the same release while that request is changing sources.
+    for (const release of releases) {
+      if (!releasesById.has(release.origin.releaseId)) releasesById.set(release.origin.releaseId, release);
     }
+    const bestdoriSongsById = new Map(recordValues(bestdoriSongs.data.value).map((song) => [song.musicId, song]));
+    const bestdoriBandsById = new Map(recordValues(bestdoriBands.data.value).map((band) => [band.bandId, band]));
+    const fallbackOrigins = releaseFallbackOrder(releaseServer.value, fallbackReleaseServers.value);
 
-    const makeTrack = (
+    const makeResolvedTrack = (
+      definition: GarupaPlaylistTrack,
+      origin: CatalogContentOrigin,
       song: Song,
-      source: PlaylistTrackSource,
-      position: number,
-      bands: Map<number, Band>,
+      bands: ReadonlyMap<number, Band>,
     ): ResolvedPlaylistTrack => {
       const sourceBand = bands.get(song.bandId || 0);
-      const sourceServer = source === "bestdori" ? "bestdori" : "jp-cbt";
       return {
-        position,
-        source,
-        sourceServer: source === "user-upload" ? "user-upload" : sourceServer,
-        sourceId: song.musicId,
+        position: definition.position,
+        definition,
+        origin,
         language: "ja",
         song,
-        title: japaneseText(song.musicTitle, String(song.musicId)),
-        artist: japaneseText(song.artistName || sourceBand?.bandName || "", ""),
-        bandVisuals: visualResolver.song(song, sourceServer),
+        title: japaneseText(song.musicTitle, definition.title || String(song.musicId)),
+        artist: japaneseText(song.artistName || sourceBand?.bandName || definition.bandName || "", ""),
+        bandVisuals: bandVisualsFor(song, bands),
+        available: Boolean(song.musicUrl),
+        ...(song.musicUrl ? {} : { missingReason: "audio-unavailable" }),
       };
     };
 
-    const tracksForBand = (canonicalKey: string): ResolvedPlaylistTrack[] => {
-      const candidates: Array<{
-        song: Song;
-        source: PlaylistTrackSource;
-        bands: Map<number, Band>;
-      }> = [];
-      const remoteId = canonicalKey.startsWith("bestdori:") ? Number(canonicalKey.slice(9)) : 0;
-      if (remoteId) {
-        for (const song of remoteSongs) {
-          const ids = contributingSongBandIds(song, remoteBandMap.get(song.bandId || 0));
-          if (ids.includes(remoteId)) {
-            candidates.push({
-              song,
-              source: "bestdori",
-              bands: remoteBandMap,
-            });
-          }
+    const unavailableTrack = (definition: GarupaPlaylistTrack, missingReason: string): ResolvedPlaylistTrack => ({
+      position: definition.position,
+      definition,
+      origin: null,
+      language: "ja",
+      song: null,
+      title: japaneseText(definition.title, String(definition.musicId)),
+      artist: japaneseText(definition.bandName || "", ""),
+      bandVisuals: [],
+      available: false,
+      missingReason,
+    });
+
+    const resolveTrack = (definition: GarupaPlaylistTrack): ResolvedPlaylistTrack => {
+      if (!definition.available) return unavailableTrack(definition, definition.missingReason || "music-not-in-master");
+
+      const key = titleKey(definition.title);
+      let matchedOurNotesMusicId: number | undefined;
+      if (key) {
+        for (const origin of fallbackOrigins) {
+          const catalog = releasesById.get(origin.releaseId);
+          const titleMatch = catalog?.songByTitle.get(key);
+          // The first cross-game title match identifies an Our Notes music ID.
+          // Release servers share that ID, so later fallbacks prefer it over a
+          // second potentially ambiguous title match.
+          const song =
+            (matchedOurNotesMusicId === undefined ? undefined : catalog?.songsById.get(matchedOurNotesMusicId)) ||
+            titleMatch;
+          if (song && matchedOurNotesMusicId === undefined) matchedOurNotesMusicId = song.musicId;
+          if (song?.musicUrl && catalog) return makeResolvedTrack(definition, origin, song, catalog.bands);
         }
       }
-      for (const song of localSongs) {
-        const ids = song.bandIds?.length ? song.bandIds : [song.bandId];
-        if (ids.some((id) => id && localBandKey.get(id) === canonicalKey)) {
-          candidates.push({ song, source: "catalog", bands: localBandMap });
+
+      const assetRef = definition.assetRef;
+      if (assetRef?.kind === "song" && isBestdoriOrigin(assetRef.origin)) {
+        // The JP Garupa projection currently emits this one exact origin. Do
+        // not silently substitute a locale-selected Bestdori region.
+        if (contentOriginKey(assetRef.origin) === contentOriginKey(bestdoriCatalogOrigin)) {
+          const song = bestdoriSongsById.get(assetRef.musicId);
+          if (song?.musicUrl) return makeResolvedTrack(definition, assetRef.origin, song, bestdoriBandsById);
         }
       }
-      const releaseTimestamp = (song: Song): number => {
-        const canonical = Number(song.releaseAt);
-        if (Number.isFinite(canonical) && canonical > 0) return canonical;
-        if (!Array.isArray(song.publishedAt)) return 0;
-        const japanese = Number(song.publishedAt[0]);
-        return Number.isFinite(japanese) && japanese > 0 ? japanese : 0;
-      };
-      const sourceOrder = (source: PlaylistTrackSource) => (source === "bestdori" ? 0 : source === "catalog" ? 1 : 2);
-      // Band playlists receive stable, compact IDs ordered by their shared
-      // release timeline. Source only breaks ties, with Bestdori first.
-      candidates.sort(
-        (left, right) =>
-          releaseTimestamp(left.song) - releaseTimestamp(right.song) ||
-          sourceOrder(left.source) - sourceOrder(right.source) ||
-          left.song.musicId - right.song.musicId,
-      );
-      const unique = new Map<string, (typeof candidates)[number]>();
-      // A local catalog song carries the preferred playable metadata whenever
-      // the same title is also available from Bestdori. Keep source ordering
-      // for the final playlist IDs separate from this source-selection rule.
-      for (const candidate of [...candidates].sort((left, right) => sourceOrder(right.source) - sourceOrder(left.source))) {
-        const key = titleKey(textOf(japaneseText(candidate.song.musicTitle, String(candidate.song.musicId))));
-        if (!unique.has(key)) unique.set(key, candidate);
-      }
-      return [...unique.values()]
-        .sort(
-          (left, right) =>
-            releaseTimestamp(left.song) - releaseTimestamp(right.song) ||
-            sourceOrder(left.source) - sourceOrder(right.source) ||
-            left.song.musicId - right.song.musicId,
-        )
-        .map((candidate, index) => makeTrack(candidate.song, candidate.source, index + 1, candidate.bands));
+
+      return unavailableTrack(definition, "no-source-match");
     };
 
-    const catalogSongByTitle = new Map(
-      localSongs.map((song) => [titleKey(textOf(japaneseText(song.musicTitle, String(song.musicId)))), song]),
-    );
-    const bestdoriSongById = new Map(remoteSongs.map((song) => [song.musicId, song]));
-
-    const resolved = sourcePlaylists.map<ResolvedPlaylist>((playlist) => {
-      if (playlist.source === "band") {
-        const canonicalKey = `bestdori:${playlist.sourceId}`;
-        const localBand = localBands.find((band) => localBandKey.get(band.bandId) === canonicalKey);
-        const remoteBand = remoteBandMap.get(playlist.sourceId);
-        const visualBand = localBand || remoteBand;
-        const visualSource = localBand ? "jp-cbt" : "bestdori";
-        const logoVisual = visualBand ? visualResolver.band(visualBand, visualSource, "logo") : undefined;
-        return {
-          ...playlist,
-          language: "ja",
-          titleText: japaneseText(remoteBand?.bandName || playlist.title, playlist.title),
-          thumbnail: logoVisual?.image,
-          filterVisual: visualBand ? visualResolver.band(visualBand, visualSource, "icon") : undefined,
-          bandKeys: [canonicalKey],
-          tracks: tracksForBand(canonicalKey),
-        };
-      }
-      const tracks = playlist.tracks.flatMap((track) => {
-        const key = titleKey(track.title);
-        const catalogSong = catalogSongByTitle.get(key);
-        if (catalogSong) {
-          return [makeTrack(catalogSong, "catalog", track.position, localBandMap)];
-        }
-        const bestdoriSong = bestdoriSongById.get(track.musicId);
-        return bestdoriSong ? [makeTrack(bestdoriSong, "bestdori", track.position, remoteBandMap)] : [];
-      });
-      const bandKeys = [
-        ...new Set(
-          tracks.flatMap((track) => {
-            if (track.source === "catalog") {
-              const ids = track.song.bandIds?.length ? track.song.bandIds : [track.song.bandId];
-              return ids.flatMap((id) => (id && localBandKey.get(id) ? [localBandKey.get(id)!] : []));
-            }
-            return contributingSongBandIds(track.song, remoteBandMap.get(track.song.bandId || 0)).map(
-              (id) => `bestdori:${id}`,
-            );
-          }),
-        ),
-      ];
+    return (garupa.data.value?.playlists || []).map((playlist) => {
+      const band = playlist.bandId ? bestdoriBandsById.get(playlist.bandId) : undefined;
+      const bandImages = band ? [band.logo, band.icon].filter((image): image is string => Boolean(image)) : [];
+      const tracks = playlist.tracks.map(resolveTrack);
       return {
         ...playlist,
         language: "ja",
-        titleText: japaneseText(playlist.title, playlist.title),
-        thumbnail: `/api/v1/bestdori/media/stage-challenge/${stageAssetNumber(playlist)}`,
-        bandKeys,
-        tracks,
-      };
+        // A stage challenge may carry a band ID for filtering/visual context,
+        // but its own master-data title remains the playlist title.
+        titleText: japaneseText(
+          playlist.source === "band" ? band?.bandName || playlist.title : playlist.title,
+          playlist.title,
+        ),
+        thumbnail:
+          playlist.source === "band"
+            ? bandImages[0]
+            : `/api/v1/garupa/bestdori/jp/media/stage-challenge/${stageAssetNumber(playlist)}`,
+        filterVisual:
+          playlist.source === "band" && band
+            ? {
+                ...(bandImages[0] ? { image: bandImages[0] } : {}),
+                ...(bandImages.length > 1 ? { imageCandidates: bandImages } : {}),
+                ...(bandImages.length ? {} : { text: textOf(japaneseText(band.bandName, String(band.bandId))) }),
+                ...(band.color ? { color: band.color } : {}),
+                fit: "contain" as const,
+              }
+            : undefined,
+        bandKeys: playlist.bandId ? [`garupa:bestdori:jp:band:${playlist.bandId}`] : [],
+        tracks: playlist.source === "band" ? chronologicalBandTracks(tracks) : tracks,
+      } satisfies ResolvedPlaylist;
     });
-
-    const existingBandKeys = new Set(
-      resolved.filter((item) => item.source === "band").flatMap((item) => item.bandKeys),
-    );
-    for (const band of localBands) {
-      const canonicalKey = localBandKey.get(band.bandId)!;
-      if (existingBandKeys.has(canonicalKey)) continue;
-      const title = bandName(band);
-      const logoVisual = visualResolver.band(band, "jp-cbt", "logo");
-      resolved.push({
-        id: `catalog:jp-cbt:band:${band.bandId}`,
-        kind: "system",
-        source: "band",
-        sourceId: band.bandId,
-        title,
-        language: "ja",
-        titleText: japaneseText(band.bandName, title),
-        bandId: band.bandId,
-        color: band.color || null,
-        thumbnail: logoVisual.image,
-        filterVisual: visualResolver.band(band, "jp-cbt", "icon"),
-        bandKeys: [canonicalKey],
-        tracks: tracksForBand(canonicalKey),
-      });
-    }
-    return resolved;
   });
 
   const pending = computed(
     () =>
       garupa.pending.value ||
-      catalogSongs.pending.value ||
-      catalogBands.pending.value ||
-      catalogCharacters.pending.value ||
+      releaseRequests.some((request) => request.songs.pending.value || request.bands.pending.value) ||
       bestdoriSongs.pending.value ||
-      bestdoriBands.pending.value ||
-      bestdoriCharacters.pending.value,
+      bestdoriBands.pending.value,
   );
-  const error = computed(
-    () =>
-      garupa.error.value ||
-      catalogSongs.error.value ||
-      catalogBands.error.value ||
-      catalogCharacters.error.value ||
-      bestdoriSongs.error.value ||
-      bestdoriBands.error.value ||
-      bestdoriCharacters.error.value,
-  );
+  const error = computed(() => garupa.error.value);
   const refresh = async () => {
     await Promise.all([
       garupa.refresh(),
-      catalogSongs.refresh(),
-      catalogBands.refresh(),
-      catalogCharacters.refresh(),
       bestdoriSongs.refresh(),
       bestdoriBands.refresh(),
-      bestdoriCharacters.refresh(),
+      ...releaseRequests.flatMap((request) => [request.songs.refresh(), request.bands.refresh()]),
     ]);
   };
 

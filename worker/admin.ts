@@ -2652,7 +2652,6 @@ const resourceServerValue = (row: ResourceServerRow): JsonObject => ({
   status: row.status,
   resourcePrefix: row.resourcePrefix,
   version: row.version,
-  builtIn: row.slug === "jp-cbt",
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });

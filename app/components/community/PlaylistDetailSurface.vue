@@ -2,8 +2,16 @@
 import { MaterialIcon, UiButton } from "@haneoka/ui";
 
 import type { AudioTrack } from "~/composables/useAudioPlayer";
-import type { SongDifficulty, SongMetaByDifficulty, SongMetaChart } from "~/types/archive";
+import type { Song, SongDifficulty, SongMetaByDifficulty, SongMetaChart } from "~/types/archive";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { ResolvedPlaylistTrack } from "~/types/playlists";
+import {
+  bestdoriOrigin,
+  contentOriginKey,
+  isBestdoriOrigin,
+  ourNotesReleaseOrigin,
+  runtimeReleaseForCatalogOrigin,
+} from "~/features/catalog/contentSource";
 import { langOf, textOf } from "~/types/displayText";
 import { resolveSongCatalogSource, songReleaseTimestamp, type SongCatalogSort } from "~/features/catalog/songSources";
 
@@ -18,11 +26,20 @@ const emit = defineEmits<{
   afterLeave: [];
 }>();
 const { t, formatDate, localize, compareText } = useLocale();
-const { assetUrl } = useAssetServer();
+const { assetUrl, releaseServer, fallbackReleaseServers } = useReleaseServer();
 const { playQueue } = useAudioPlayer();
 const { data: playlists, pending, error, refresh } = usePlaylistCatalog();
-const { data: catalogMeta } = useCatalogCollection<SongMetaByDifficulty>("song-meta", "jp-cbt");
-const { data: bestdoriMeta } = useCatalogCollection<SongMetaByDifficulty>("song-meta", "bestdori");
+const selectedReleaseMetaOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const selectedReleaseMeta = useCatalogCollection<SongMetaByDifficulty>("song-meta", selectedReleaseMetaOrigin);
+const configuredReleaseIds = [
+  ...new Set(fallbackReleaseServers.value.map((value) => String(value).trim()).filter(Boolean)),
+];
+const releaseMetaRequests = configuredReleaseIds.map((releaseId) => {
+  const origin = ourNotesReleaseOrigin(releaseId);
+  return { origin, request: useCatalogCollection<SongMetaByDifficulty>("song-meta", origin) };
+});
+const bestdoriMetaOrigin = bestdoriOrigin("jp");
+const { data: bestdoriMeta } = useCatalogCollection<SongMetaByDifficulty>("song-meta", bestdoriMetaOrigin);
 const tableColumns = useSongTableColumns({ includeSource: true });
 const difficulty = useRouteQueryInteger("difficulty", 3, { min: 0, max: 4 });
 const selectedSongId = useRouteQueryNumber("song");
@@ -34,12 +51,13 @@ const sort = ref<SongCatalogSort | "source">("id");
 const order = ref<"asc" | "desc">("asc");
 const playlistId = computed(() => props.playlistId);
 const playlist = computed(() => playlists.value.find((candidate) => candidate.id === playlistId.value));
+const originKey = (origin: CatalogContentOrigin | null): string => (origin ? contentOriginKey(origin) : "");
 const selectedTrack = computed(() => {
   if (selectedSongId.value === undefined) return undefined;
   return playlist.value?.tracks.find(
     (item) =>
-      item.song.musicId === selectedSongId.value &&
-      (!selectedSongSource.value || item.sourceServer === selectedSongSource.value),
+      item.song?.musicId === selectedSongId.value &&
+      (!selectedSongSource.value || originKey(item.origin) === selectedSongSource.value),
   );
 });
 const renderedTrack = shallowRef<ResolvedPlaylistTrack>();
@@ -55,6 +73,12 @@ watch(
   { immediate: true },
 );
 const detailTrack = computed(() => selectedTrack.value || renderedTrack.value);
+// Playlist tracks retain their source provenance. Bestdori only provides the
+// chart; native renderer artwork deliberately falls back to the selected
+// Our Notes release instead of treating its `jp` region as a release slug.
+const chartRuntimeRelease = computed(() =>
+  runtimeReleaseForCatalogOrigin(detailTrack.value?.origin, releaseServer.value),
+);
 const pageTitle = computed(() =>
   playlist.value
     ? textOf(playlist.value.titleText)
@@ -63,15 +87,15 @@ const pageTitle = computed(() =>
       : t("communityPage.playlistPage.notFound"),
 );
 const detailPath = computed(() => `/community/playlists/${encodeURIComponent(playlistId.value)}`);
-const playable = (item: ResolvedPlaylistTrack) => Boolean(item.song.musicUrl);
+const playable = (item: ResolvedPlaylistTrack) => Boolean(item.origin && item.song?.musicUrl);
 const queueId = (item: ResolvedPlaylistTrack) =>
-  `${playlistId.value}:${item.position}:${item.sourceServer}:${item.sourceId}`;
+  `${playlistId.value}:${item.position}:${originKey(item.origin)}:${item.song?.musicId || item.definition.musicId}`;
 const audioTrack = (item: ResolvedPlaylistTrack): AudioTrack | null => {
-  if (!item.song.musicUrl) return null;
+  if (!item.origin || !item.song?.musicUrl) return null;
   return {
     kind: "song",
     queueId: queueId(item),
-    catalogSource: item.sourceServer,
+    origin: item.origin,
     detailPath: detailPath.value,
     id: item.song.musicId,
     title: item.title,
@@ -89,15 +113,22 @@ const playableQueue = computed(() =>
     return audio ? [audio] : [];
   }),
 );
-const trackKey = (item: ResolvedPlaylistTrack) => `${item.position}:${item.sourceServer}:${item.sourceId}`;
+const trackKey = (item: ResolvedPlaylistTrack) =>
+  `${item.position}:${originKey(item.origin)}:${item.song?.musicId || item.definition.musicId}`;
 const metaOf = (item: ResolvedPlaylistTrack): SongMetaChart | undefined => {
-  const record = item.sourceServer === "bestdori" ? bestdoriMeta.value : catalogMeta.value;
-  return record[String(item.song.musicId)]?.[String(difficulty.value)]?.chart;
+  const origin = item.origin;
+  if (!origin || !item.song) return undefined;
+  const record = isBestdoriOrigin(origin)
+    ? bestdoriMeta.value
+    : origin.releaseId === selectedReleaseMetaOrigin.value.releaseId
+      ? selectedReleaseMeta.data.value
+      : releaseMetaRequests.find((request) => request.origin.releaseId === origin.releaseId)?.request.data.value;
+  return record?.[String(item.song.musicId)]?.[String(difficulty.value)]?.chart;
 };
 const openSong = async (item: ResolvedPlaylistTrack, chart = false) => {
-  if (item.sourceServer === "user-upload") return;
+  if (!item.origin || !item.song) return;
   const songPatch = {
-    songSource: item.sourceServer,
+    songSource: originKey(item.origin),
     difficulty: difficulty.value === 3 ? undefined : String(difficulty.value),
   };
   await songLayer.open(item.song.musicId, songPatch);
@@ -117,11 +148,11 @@ const playAll = async () => {
   if (playableQueue.value.length) await playQueue(playableQueue.value, 0);
 };
 const sourceLabel = (item: ResolvedPlaylistTrack) =>
-  item.source === "catalog"
-    ? t("communityPage.playlistPage.sourceCatalog")
-    : item.source === "bestdori"
+  !item.origin
+    ? t("communityPage.playlistPage.masterUnavailable")
+    : isBestdoriOrigin(item.origin)
       ? t("communityPage.playlistPage.sourceBestdori")
-      : t("communityPage.playlistPage.sourceUserUpload");
+      : t("communityPage.playlistPage.sourceCatalog");
 const compareNullable = (left: number | null | undefined, right: number | null | undefined, direction: number) => {
   const leftValid = left != null && Number.isFinite(left);
   const rightValid = right != null && Number.isFinite(right);
@@ -131,29 +162,38 @@ const compareNullable = (left: number | null | undefined, right: number | null |
   return direction * (left - right);
 };
 const difficultyLevel = (item: ResolvedPlaylistTrack) => {
-  const entry = item.song.difficulty?.[difficulty.value];
+  const entry = item.song?.difficulty?.[difficulty.value];
   return Number(entry?.sortLevel ?? entry?.displayLevel ?? entry?.playLevel);
 };
 const categorySortKey = (item: ResolvedPlaylistTrack) =>
-  String(Number(item.song.musicCategories?.[0] || 99)).padStart(3, "0");
+  String(Number(item.song?.musicCategories?.[0] || 99)).padStart(3, "0");
+const displaySong = (item: ResolvedPlaylistTrack): Song =>
+  item.song || {
+    musicId: item.definition.musicId,
+    musicTitle: item.definition.title || `Music ${item.definition.musicId}`,
+    musicCategories: [],
+    musicType: 99,
+  };
+const releaseTimestamp = (item: ResolvedPlaylistTrack) => (item.song ? songReleaseTimestamp(item.song) : undefined);
 const sortedTracks = computed(() =>
   [...(playlist.value?.tracks || [])].sort((left, right) => {
     const direction = order.value === "asc" ? 1 : -1;
     const fallback = direction * (left.position - right.position);
     if (sort.value === "id") return fallback;
     if (sort.value === "title") return direction * compareText(textOf(left.title), textOf(right.title)) || fallback;
-    if (sort.value === "musicType") return direction * (left.song.musicType - right.song.musicType) || fallback;
+    if (sort.value === "musicType")
+      return direction * (displaySong(left).musicType - displaySong(right).musicType) || fallback;
     if (sort.value === "band") return direction * compareText(textOf(left.artist), textOf(right.artist)) || fallback;
     if (sort.value === "category")
       return direction * categorySortKey(left).localeCompare(categorySortKey(right)) || fallback;
     if (sort.value === "composer")
-      return direction * compareText(localize(left.song.composer), localize(right.song.composer)) || fallback;
+      return direction * compareText(localize(left.song?.composer), localize(right.song?.composer)) || fallback;
     if (sort.value === "lyrics")
-      return direction * compareText(localize(left.song.lyricist), localize(right.song.lyricist)) || fallback;
+      return direction * compareText(localize(left.song?.lyricist), localize(right.song?.lyricist)) || fallback;
     if (sort.value === "arrangement")
-      return direction * compareText(localize(left.song.arranger), localize(right.song.arranger)) || fallback;
+      return direction * compareText(localize(left.song?.arranger), localize(right.song?.arranger)) || fallback;
     if (sort.value === "release")
-      return compareNullable(songReleaseTimestamp(left.song), songReleaseTimestamp(right.song), direction) || fallback;
+      return compareNullable(releaseTimestamp(left), releaseTimestamp(right), direction) || fallback;
     if (sort.value === "level")
       return compareNullable(difficultyLevel(left), difficultyLevel(right), direction) || fallback;
     if (sort.value === "source") return direction * compareText(sourceLabel(left), sourceLabel(right)) || fallback;
@@ -201,7 +241,7 @@ const difficultySemanticColor = (entry: SongDifficulty, index: number) => {
   return `var(--md-extended-color-difficulty-${key === "special" ? "master" : key})`;
 };
 const chartDifficultyOptions = computed(() =>
-  (detailTrack.value?.song.difficulty || []).map((entry, index) => {
+  (detailTrack.value?.song?.difficulty || []).map((entry, index) => {
     const name = difficultyName(entry, index);
     const level = difficultyLevelLabel(entry);
     return {
@@ -216,9 +256,9 @@ const chartDifficultyOptions = computed(() =>
 const selectedMeta = computed(() => (detailTrack.value ? metaOf(detailTrack.value) : undefined));
 const chartOpen = computed(
   () =>
-    Boolean(detailTrack.value) &&
+    Boolean(detailTrack.value?.song && detailTrack.value.origin) &&
     chartDifficulty.value !== undefined &&
-    Boolean(detailTrack.value?.song.difficulty?.[chartDifficulty.value]),
+    Boolean(detailTrack.value?.song?.difficulty?.[chartDifficulty.value]),
 );
 watch(
   [chartOpen, chartDifficulty],
@@ -232,14 +272,15 @@ watch(
 const chartDifficultyData = computed(() =>
   renderedChartDifficulty.value === undefined
     ? undefined
-    : detailTrack.value?.song.difficulty?.[renderedChartDifficulty.value],
+    : detailTrack.value?.song?.difficulty?.[renderedChartDifficulty.value],
 );
 const chartFile = computed(() => {
-  if (!chartLayerMounted.value || !detailTrack.value) return "";
+  if (!chartLayerMounted.value || !detailTrack.value?.origin || !detailTrack.value.song) return "";
   const file = chartDifficultyData.value?.file;
   if (!file) return "";
-  const profile = resolveSongCatalogSource(detailTrack.value.sourceServer === "bestdori" ? "bestdori" : "catalog");
-  const canonicalize = (value: string) => assetUrl(value, detailTrack.value?.sourceServer || "jp-cbt");
+  const origin = detailTrack.value.origin;
+  const profile = resolveSongCatalogSource(isBestdoriOrigin(origin) ? "bestdori" : "catalog");
+  const canonicalize = (value: string) => (origin.provider === "release" ? assetUrl(value, origin.releaseId) : value);
   return profile.resolveChartUrl?.(file, canonicalize) ?? canonicalize(file);
 });
 const {
@@ -251,7 +292,7 @@ const {
   rotation: chartRotation,
 } = useChartPreview(chartFile);
 const selectedScoreRankThresholds = computed(() =>
-  [...(detailTrack.value?.song.scoreRanks || [])]
+  [...(detailTrack.value?.song?.scoreRanks || [])]
     .filter((rank) => Number(rank.scoreRank || 0) >= 3)
     .sort((left, right) => Number(left.scoreRank || 0) - Number(right.scoreRank || 0))
     .map((rank) => Number(rank.requiredScore || 0)),
@@ -268,10 +309,10 @@ const selectSongDifficulty = (value: number) => {
   difficulty.value = value;
 };
 const openChart = async (item: ResolvedPlaylistTrack, selectedDifficulty = difficulty.value) => {
-  if (selectedSongId.value !== item.song.musicId) return;
+  if (!item.song || !item.origin || selectedSongId.value !== item.song.musicId) return;
   await chartLayer.open(selectedDifficulty, {
     song: String(item.song.musicId),
-    songSource: item.sourceServer,
+    songSource: originKey(item.origin),
     difficulty: selectedDifficulty === 3 ? undefined : String(selectedDifficulty),
   });
   chartRuntimeMode.value = "chart";
@@ -296,15 +337,7 @@ const selectChartDifficultyValue = (value: string | number) => {
 };
 
 watch(
-  [
-    () => props.open,
-    playlist,
-    pending,
-    selectedSongId,
-    selectedSongSource,
-    chartDifficultyQuery,
-    selectedTrack,
-  ],
+  [() => props.open, playlist, pending, selectedSongId, selectedSongSource, chartDifficultyQuery, selectedTrack],
   ([open, currentPlaylist, isPending, songId, songSource, chartQuery, currentTrack]) => {
     if (isPending) return;
 
@@ -341,7 +374,7 @@ watch(
       Number.isInteger(chartIndex) &&
       chartIndex >= 0 &&
       chartIndex <= 4 &&
-      Boolean(currentTrack?.song.difficulty?.[chartIndex]);
+      Boolean(currentTrack?.song?.difficulty?.[chartIndex]);
     if (!validChart) chartDifficultyQuery.value = "";
   },
   { immediate: true },
@@ -419,12 +452,12 @@ useHead(() => ({
           <template #row="{ item, index, style }">
             <SongRow
               :style="style"
-              :song="item.song"
+              :song="displaySong(item)"
               :title="item.title"
               :band="item.artist"
               :display-id="item.position"
               :source-label="sourceLabel(item)"
-              :credit-source="item.sourceServer"
+              :credit-origin="item.origin || undefined"
               :difficulty="difficulty"
               :meta="metaOf(item)"
               :row-index="index"
@@ -443,15 +476,15 @@ useHead(() => ({
   </FullscreenDetailSurface>
 
   <LazySongDetailPanel
-    v-if="songLayerMounted && detailTrack"
+    v-if="songLayerMounted && detailTrack?.song && detailTrack.origin"
     :open="detailOpen"
     :song="detailTrack.song"
     :title="detailTrack.title"
     :band-name="detailTrack.artist"
-    :credit-source="detailTrack.sourceServer"
+    :origin="detailTrack.origin"
     :difficulty="difficulty"
     :meta="selectedMeta"
-    :hide-sonolus="detailTrack.sourceServer === 'bestdori'"
+    :hide-sonolus="isBestdoriOrigin(detailTrack.origin)"
     :covered="chartLayerMounted"
     @close="closeSong"
     @after-leave="afterSongLeave"
@@ -461,7 +494,7 @@ useHead(() => ({
   />
 
   <SongChartWorkbench
-    v-if="chartLayerMounted && detailTrack && renderedChartDifficulty !== undefined"
+    v-if="chartLayerMounted && detailTrack?.song && detailTrack.origin && renderedChartDifficulty !== undefined"
     v-model:mode="chartRuntimeMode"
     :open="chartOpen"
     :title="detailTrack.title"
@@ -477,12 +510,13 @@ useHead(() => ({
       <ClientOnly v-else>
         <RotatableViewport v-model:rotation="chartRotation" :controls="false">
           <LazyChartRuntime
-            :key="`${detailTrack.song.musicId}:${renderedChartDifficulty}`"
+            :key="`${detailTrack.song.musicId}:${renderedChartDifficulty}:${chartRuntimeRelease.releaseId}`"
             v-model:mode="chartRuntimeMode"
             v-model:rotation="chartRotation"
             :chart="chart"
             :audio-url="detailTrack.song.musicUrl"
             :score-ranks="selectedScoreRankThresholds"
+            :runtime-release="chartRuntimeRelease"
           />
         </RotatableViewport>
         <template #fallback><LoadingState /></template>

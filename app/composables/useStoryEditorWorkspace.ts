@@ -258,9 +258,9 @@ const reconcileEpisodeCommands = (
 };
 
 export const useStoryEditorWorkspace = () => {
-  const { assetServer } = useAssetServer();
+  const { releaseServer } = useReleaseServer();
   const copy = useLocale().messages("storyEditorPage");
-  const initial = createEmptyStoryProject({ assetServer: assetServer.value });
+  const initial = createEmptyStoryProject({ releaseServer: releaseServer.value });
   let history = new ProjectHistory<StoryProject>(initial, 200);
   const project = shallowRef<StoryProject>(history.value);
   const currentSceneId = ref(project.value.entrySceneId);
@@ -687,7 +687,7 @@ export const useStoryEditorWorkspace = () => {
     try {
       const importOptions = {
         title: title || String(resource.value.storyKey || resource.key),
-        assetServer: project.value.meta.assetServer || assetServer.value,
+        releaseServer: project.value.meta.releaseServer || releaseServer.value,
         provenance: { resource: "stories", id: resource.key },
       };
       const catalogResult = importAdvStoryJson(resource.value, importOptions);
@@ -738,7 +738,7 @@ export const useStoryEditorWorkspace = () => {
       const result = !isJson
         ? importWebGal(source, {
             title: safeFileStem(file.name),
-            assetServer: project.value.meta.assetServer || assetServer.value,
+            releaseServer: project.value.meta.releaseServer || releaseServer.value,
           })
         : (() => {
             const parsed = JSON.parse(source) as unknown;
@@ -751,12 +751,12 @@ export const useStoryEditorWorkspace = () => {
               fileName: file.name,
               parsed,
               title: safeFileStem(file.name),
-              assetServer: project.value.meta.assetServer || assetServer.value,
+              releaseServer: project.value.meta.releaseServer || releaseServer.value,
             });
             if (sourceResult) return sourceResult;
             return importAdvStoryJson(parsed, {
               title: safeFileStem(file.name),
-              assetServer: project.value.meta.assetServer || assetServer.value,
+              releaseServer: project.value.meta.releaseServer || releaseServer.value,
             });
           })();
       resetProject(result.project);
@@ -860,7 +860,7 @@ export const useStoryEditorWorkspace = () => {
       const result = mergeWebGalScene(project.value, sceneCodeValue.value, {
         sceneId: currentSceneId.value,
         title: currentScene.value?.name || project.value.meta.title || "Scene",
-        assetServer: project.value.meta.assetServer || assetServer.value,
+        releaseServer: project.value.meta.releaseServer || releaseServer.value,
         ...(sceneCodeContexts.value[currentSceneId.value]
           ? { baselineContext: sceneCodeContexts.value[currentSceneId.value] }
           : {}),
@@ -936,7 +936,7 @@ export const useStoryEditorWorkspace = () => {
   };
 
   const newProject = async () => {
-    resetProject(createEmptyStoryProject({ assetServer: assetServer.value }));
+    resetProject(createEmptyStoryProject({ releaseServer: releaseServer.value }));
     status.value = "ready";
     statusDetail.value = "";
     try {

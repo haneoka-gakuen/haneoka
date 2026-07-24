@@ -3,11 +3,18 @@ import { MaterialIcon, UiButton, UiDialog, UiIconButton, UiSegmentedControl } fr
 
 import type { Band, Song, SongDifficulty } from "~/types/archive";
 import { textOf } from "~/types/displayText";
+import {
+  bestdoriOrigin,
+  contentOriginKey,
+  contentOriginLabel,
+  ourNotesReleaseOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 
 export type ChartEditorCatalogSource = "current" | "bestdori";
 
 export interface ChartEditorCatalogSelection {
-  catalogServer: string;
+  origin: CatalogContentOrigin;
   song: Song;
   band?: Band;
   difficulty?: number;
@@ -19,7 +26,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     source: ChartEditorCatalogSource;
-    currentServer: string;
+    currentRelease: string;
     songs: readonly Song[];
     bands?: readonly Band[];
     pending?: boolean;
@@ -47,9 +54,11 @@ const query = ref("");
 const visibleLimit = ref(SONG_BATCH_SIZE);
 const selectedDifficulty = reactive<Record<number, number>>({});
 const bandMap = computed(() => new Map(props.bands.map((band) => [band.bandId, band])));
-const catalogServer = computed(() => (props.source === "bestdori" ? "bestdori" : props.currentServer));
+const catalogOrigin = computed<CatalogContentOrigin>(() =>
+  props.source === "bestdori" ? bestdoriOrigin("jp") : ourNotesReleaseOrigin(props.currentRelease),
+);
 const sourceOptions = computed(() => [
-  { value: "current", label: `${copy.value.currentServer} (${props.currentServer})` },
+  { value: "current", label: `${copy.value.currentServer} (${props.currentRelease})` },
   { value: "bestdori", label: "Bestdori" },
 ]);
 
@@ -118,7 +127,7 @@ const choose = (song: Song, chart: boolean, audio: boolean) => {
   const difficulty = chart ? difficultyFor(song) : undefined;
   if ((chart && difficulty === undefined) || (audio && !song.musicUrl)) return;
   emit("select", {
-    catalogServer: catalogServer.value,
+    origin: catalogOrigin.value,
     song,
     band: bandMap.value.get(song.bandId || 0),
     difficulty,
@@ -155,7 +164,7 @@ watch(query, () => {
         <MaterialIcon name="library_music" :size="22" />
         <div>
           <strong>{{ copy.serverLibrary }}</strong>
-          <span class="display-number">{{ catalogServer }}</span>
+          <span class="display-number">{{ contentOriginLabel(catalogOrigin) }}</span>
         </div>
         <UiIconButton size="compact" :label="t('close')" @click="close">
           <MaterialIcon name="close" :size="20" />
@@ -192,7 +201,7 @@ watch(query, () => {
           <template v-else>
             <article
               v-for="song in visibleSongs"
-              :key="`${catalogServer}:${song.musicId}`"
+              :key="`${contentOriginKey(catalogOrigin)}:${song.musicId}`"
               class="chart-catalog-song"
               role="listitem"
             >

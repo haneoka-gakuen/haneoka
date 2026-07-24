@@ -1,7 +1,7 @@
 interface Env {
   ADMIN_PACKAGE_MAX_BYTES?: string;
   BETTER_AUTH_SECRET?: string;
-  BESTDORI_ORIGIN?: string;
+  BESTDORI_UPSTREAM_BASE?: string;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
   GITHUB_ACTIONS_TOKEN?: string;
@@ -21,7 +21,7 @@ declare namespace Cloudflare {
   interface Env {
     ADMIN_PACKAGE_MAX_BYTES?: string;
     BETTER_AUTH_SECRET?: string;
-    BESTDORI_ORIGIN?: string;
+    BESTDORI_UPSTREAM_BASE?: string;
     DISCORD_CLIENT_ID?: string;
     DISCORD_CLIENT_SECRET?: string;
     GITHUB_ACTIONS_TOKEN?: string;

@@ -2,33 +2,45 @@ import { toValue, type MaybeRefOrGetter } from "vue";
 
 import type { Band, Character, Song } from "~/types/archive";
 import { createSongCreditVisualResolver, type SongCreditVisualVariant } from "~/features/catalog/songCreditVisuals";
+import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 
-export const useSongCreditVisualResolver = () => {
-  const catalogBands = useCatalogCollection<Band>("bands", "jp-cbt");
-  const catalogCharacters = useCatalogCollection<Character>("characters", "jp-cbt");
-  const bestdoriBands = useCatalogCollection<Band>("bands", "bestdori");
-  const bestdoriCharacters = useCatalogCollection<Character>("characters", "bestdori");
+/**
+ * Credit entities are loaded from one exact origin. Passing the origin is
+ * mandatory for cross-game catalog consumers; omitting it means the selected
+ * Our Notes release, never a fictional `bestdori` server.
+ */
+export const useSongCreditVisualResolver = (origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>) => {
+  const { releaseServer } = useReleaseServer();
+  const resolvedOrigin = computed<CatalogContentOrigin>(() => {
+    const requested = origin === undefined ? undefined : toValue(origin);
+    return requested || ourNotesReleaseOrigin(releaseServer.value);
+  });
+  const bands = useCatalogCollection<Band>("bands", resolvedOrigin);
+  const characters = useCatalogCollection<Character>("characters", resolvedOrigin);
 
   return computed(() =>
     createSongCreditVisualResolver({
-      catalogBands: recordValues(catalogBands.data.value),
-      catalogCharacters: recordValues(catalogCharacters.data.value),
-      bestdoriBands: recordValues(bestdoriBands.data.value),
-      bestdoriCharacters: recordValues(bestdoriCharacters.data.value),
+      sources: [
+        {
+          origin: resolvedOrigin.value,
+          bands: recordValues(bands.data.value),
+          characters: recordValues(characters.data.value),
+        },
+      ],
     }),
   );
 };
 
 export const useSongCreditVisuals = (
   song: MaybeRefOrGetter<Song | undefined>,
-  sourceServer: MaybeRefOrGetter<string>,
+  origin: MaybeRefOrGetter<CatalogContentOrigin>,
   variant: MaybeRefOrGetter<SongCreditVisualVariant> = "logo",
 ) => {
-  const resolver = useSongCreditVisualResolver();
+  const resolver = useSongCreditVisualResolver(origin);
 
   return computed(() => {
     const current = toValue(song);
     if (!current) return [];
-    return resolver.value.song(current, toValue(sourceServer), toValue(variant));
+    return resolver.value.song(current, toValue(origin), toValue(variant));
   });
 };

@@ -267,9 +267,12 @@ export const EFFECT001_PREFAB_IDS = {
   Connect: 9,
 } as const;
 
-const DEFAULT_ASSET_SERVER = "jp-cbt";
-const ASSET_ROOT = `/assets/${DEFAULT_ASSET_SERVER}`;
-const RUNTIME_ROOT = `/runtime/${DEFAULT_ASSET_SERVER}`;
+// Static manifest definitions use a non-server template marker. Hosts must
+// replace it with the exact release that owns every runtime asset; never let a
+// missing argument silently point a fallback detail at a particular release.
+const RELEASE_TEMPLATE_ID = "__release_template__";
+const RELEASE_TEMPLATE_ASSET_ROOT = `/assets/${RELEASE_TEMPLATE_ID}`;
+const RELEASE_TEMPLATE_RUNTIME_ROOT = `/runtime/${RELEASE_TEMPLATE_ID}`;
 const NOTE_SOURCE = "Assets/AddressableResources/Live/Note/skin001";
 const LANE_SOURCE = "Assets/AddressableResources/Live/Lane/skin001";
 const EFFECT001_SOURCE = "Assets/AddressableResources/Live/NoteEffect/effect001";
@@ -287,16 +290,16 @@ export const OUR_NOTES_RUNTIME_SOURCES = {
 } as const;
 
 const encodeUnityPath = (value: string): string => value.split("/").map(encodeURIComponent).join("/");
-const sourceAsset = (value: string): string => `${ASSET_ROOT}/${encodeUnityPath(value)}`;
+const sourceAsset = (value: string): string => `${RELEASE_TEMPLATE_ASSET_ROOT}/${encodeUnityPath(value)}`;
 const unityObject = (source: string, type: string, ordinal = 0): string =>
-  `${RUNTIME_ROOT}/unity-json/${encodeUnityPath(source)}/${type}${ordinal ? `_${ordinal}` : ""}.json`;
+  `${RELEASE_TEMPLATE_RUNTIME_ROOT}/unity-json/${encodeUnityPath(source)}/${type}${ordinal ? `_${ordinal}` : ""}.json`;
 const objectOrdinal = (filename: string): { type: string; ordinal: number } => {
   const match = /^([A-Za-z0-9]+)(?:_(\d+))?\.asset$/.exec(filename);
   if (!match) throw new TypeError(`Invalid Unity object projection name: ${filename}`);
   return { type: match[1], ordinal: Number(match[2] || 0) };
 };
 
-const noteSound = (name: string): string => `${RUNTIME_ROOT}/note-se/${name}.mp3`;
+const noteSound = (name: string): string => `${RELEASE_TEMPLATE_RUNTIME_ROOT}/note-se/${name}.mp3`;
 const effect001Root = (prefab: string, objectFile: string): string => {
   const object = objectOrdinal(objectFile);
   return unityObject(`${EFFECT001_SOURCE}/${prefab}`, object.type, object.ordinal);
@@ -1153,14 +1156,18 @@ const buildOurNotesSkin001Manifest = (runtimeMedia: OurNotesRuntimeMediaManifest
   tiltThresholds: [0, 2, 4, 6, 8, 10, 12].map((distance, value) => ({ distance, value })),
 });
 
-export function ourNotesAssetManifestForServer(
-  server: string,
+export function ourNotesAssetManifestForRelease(
+  releaseServer: string,
   runtimeMedia: OurNotesRuntimeMediaManifest,
 ): OurNotesAssetManifest {
-  const normalized = String(server || DEFAULT_ASSET_SERVER);
-  const encodedServer = encodeURIComponent(normalized);
-  const runtimePrefix = `/runtime/${encodedServer}/`;
-  const assetPrefixes = [`/assets/${encodedServer}/Assets/`, `/assets/${encodedServer}/Packages/`] as const;
+  const normalizedReleaseServer = String(releaseServer || "").trim();
+  if (!normalizedReleaseServer) throw new TypeError("A concrete release server is required for chart runtime media");
+  const encodedReleaseServer = encodeURIComponent(normalizedReleaseServer);
+  const runtimePrefix = `/runtime/${encodedReleaseServer}/`;
+  const assetPrefixes = [
+    `/assets/${encodedReleaseServer}/Assets/`,
+    `/assets/${encodedReleaseServer}/Packages/`,
+  ] as const;
   const runtimeUrls = [
     runtimeMedia.noteAtlasTextureUrl,
     ...(runtimeMedia.fontAtlasTextureUrl ? [runtimeMedia.fontAtlasTextureUrl] : []),
@@ -1189,8 +1196,8 @@ export function ourNotesAssetManifestForServer(
     );
   }
   const serialized = JSON.stringify(buildOurNotesSkin001Manifest(runtimeMedia))
-    .replaceAll(`${ASSET_ROOT}/`, `/assets/${encodedServer}/`)
-    .replaceAll(`${RUNTIME_ROOT}/`, runtimePrefix);
+    .replaceAll(`${RELEASE_TEMPLATE_ASSET_ROOT}/`, `/assets/${encodedReleaseServer}/`)
+    .replaceAll(`${RELEASE_TEMPLATE_RUNTIME_ROOT}/`, runtimePrefix);
   const manifest = JSON.parse(serialized) as OurNotesAssetManifest;
   return {
     ...manifest,

@@ -14,8 +14,8 @@ import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.t
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, "../../..");
 const OUT = resolve(here, "../dist/background");
-const server = process.env.ASSET_SERVER || "jp-cbt";
-const workspace = resolveSonolusReleaseWorkspace(server, ROOT);
+const releaseServer = process.env.RELEASE_SERVER || "jp-cbt";
+const workspace = resolveSonolusReleaseWorkspace(releaseServer, ROOT);
 
 const magick = (args: readonly string[]): Buffer => execFileSync("magick", args, { stdio: ["ignore", "pipe", "pipe"] });
 

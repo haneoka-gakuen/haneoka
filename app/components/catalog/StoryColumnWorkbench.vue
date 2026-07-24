@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { WorkspaceTopAppBarSegmentOption } from "~/composables/useWorkspaceTopAppBar";
 import type { DisplayText } from "~/types/displayText";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 type StoryMode = "text" | "play";
 
@@ -9,11 +10,21 @@ const props = withDefaults(
     storyId?: string;
     storyTitle?: DisplayText;
     storyOptions?: readonly WorkspaceTopAppBarSegmentOption[];
-    /** API server that provides catalog-shaped story records. */
-    catalogServer?: string;
-    server?: string;
+    /** Exact origin that provides catalog-shaped story records. */
+    catalogOrigin?: CatalogContentOrigin;
+    /** Optional provider-specific story adapter. */
+    catalogAdapter?: string;
+    /** Fallback renderer release for a non-Our Notes catalog source. */
+    releaseServer?: string;
   }>(),
-  { storyId: "", storyTitle: "", storyOptions: () => [], catalogServer: undefined, server: undefined },
+  {
+    storyId: "",
+    storyTitle: "",
+    storyOptions: () => [],
+    catalogOrigin: undefined,
+    catalogAdapter: undefined,
+    releaseServer: undefined,
+  },
 );
 
 const emit = defineEmits<{ close: []; "update:storyId": [value: string] }>();
@@ -96,8 +107,9 @@ const afterLeave = () => {
         v-model:mode="mode"
         v-model:rotation="rotation"
         :story-id="renderedStoryId"
-        :catalog-server="catalogServer"
-        :server="server"
+        :catalog-origin="catalogOrigin"
+        :catalog-adapter="catalogAdapter"
+        :release-server="releaseServer"
       />
     </FullscreenDetailSurface>
   </div>

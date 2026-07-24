@@ -499,7 +499,7 @@ CREATE INDEX community_comment_reaction_user_idx
 CREATE TABLE user_preference (
   user_id TEXT PRIMARY KEY NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   locale TEXT CHECK (locale IS NULL OR locale IN ('ja', 'en', 'zh-TW', 'zh-CN', 'ko')),
-  asset_server TEXT CHECK (asset_server IS NULL OR length(asset_server) BETWEEN 1 AND 32),
+  release_server TEXT CHECK (release_server IS NULL OR length(release_server) BETWEEN 1 AND 32),
   settings_json TEXT CHECK (settings_json IS NULL OR json_valid(settings_json)),
   version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
   updated_at INTEGER NOT NULL

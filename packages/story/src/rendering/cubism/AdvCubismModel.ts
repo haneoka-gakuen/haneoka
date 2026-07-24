@@ -970,9 +970,7 @@ export class AdvCubismModel extends CubismUserModel implements StoryCharacterMod
     if (!this._eyeBlink) return;
     const phase = this._eyeBlink._blinkingState;
     const blinkInProgress =
-      phase === EyeState.EyeState_Closing ||
-      phase === EyeState.EyeState_Closed ||
-      phase === EyeState.EyeState_Opening;
+      phase === EyeState.EyeState_Closing || phase === EyeState.EyeState_Closed || phase === EyeState.EyeState_Opening;
     // Native IsBlinking is consulted only by UpdateEyeBlinkIdling
     // (0x835c174). PlayMotion clears it, but a blink already in its closing,
     // closed or opening phase continues until the eyes are fully open.

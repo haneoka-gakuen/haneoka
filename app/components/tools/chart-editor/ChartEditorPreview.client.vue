@@ -7,6 +7,8 @@ import ChartPlaybackDock from "~/components/runtime/ChartPlaybackDock.vue";
 import ChartPlaybackSettingsPanel from "~/components/runtime/ChartPlaybackSettingsPanel.vue";
 import RotatableViewport from "~/components/runtime/RotatableViewport.vue";
 import type { ChartStageBackground } from "~/composables/useChartPlayerSettings";
+import { liveStageBackgroundForRelease } from "~/composables/useReleaseServer";
+import type { OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 type PreviewMode = "chart" | "watch" | "play";
 
@@ -18,6 +20,8 @@ const props = withDefaults(
     playing: boolean;
     audioAvailable: boolean;
     durationSeconds: number;
+    /** Native chart assets and stage artwork share this explicit release. */
+    runtimeRelease: OurNotesReleaseOrigin;
     bgmOffsetMs?: number;
     presentation?: ChartCanvasOverviewPresentation;
   }>(),
@@ -30,7 +34,6 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useLocale();
-const { assetServer } = useAssetServer();
 const mode = defineModel<PreviewMode>("mode", { default: "watch" });
 const root = useTemplateRef<HTMLElement>("root");
 const player = ref<ChartPlayerExpose>();
@@ -45,7 +48,7 @@ const { mirror, combo, fever, bpm, noteSize, longAlpha, noteSpeed, effects, qual
 const { active: fullscreen, fallback: fallbackFullscreen, toggle: toggleFullscreen } = useImmersiveFullscreen(root);
 
 const stageBackgroundUrl = (value: ChartStageBackground) =>
-  `/assets/${encodeURIComponent(assetServer.value)}/Assets/AddressableResources/Band/${value === "mygo" ? 1 : 2}/live_stage/lightweight_background.png`;
+  liveStageBackgroundForRelease(props.runtimeRelease.releaseId, value);
 const backgroundUrl = computed(() => stageBackgroundUrl(background.value));
 const externalTimeMs = computed(() => Math.max(0, props.playheadSeconds * 1000));
 const displayedPlayheadSeconds = computed(() => scrubPreviewSeconds.value ?? props.playheadSeconds);
@@ -183,7 +186,12 @@ onBeforeUnmount(() => {
             @toggle-settings="settingsOpen = !settingsOpen"
             @fullscreen="toggleFullscreen"
           />
-          <ChartPlaybackSettingsPanel v-model="settingsOpen" :mode="mode" :audio-controls="false" />
+          <ChartPlaybackSettingsPanel
+            v-model="settingsOpen"
+            :mode="mode"
+            :runtime-release="props.runtimeRelease"
+            :audio-controls="false"
+          />
         </div>
       </RotatableViewport>
     </div>

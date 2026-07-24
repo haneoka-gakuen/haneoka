@@ -1,6 +1,8 @@
 import type { StoryJsonDraftBase, WebGalSceneEditContext } from "@haneoka/story-editor";
 
-const DATABASE_NAME = "haneoka-story-editor";
+// Project schema v2 deliberately has no reader for the legacy `assetServer`
+// metadata field, so keep autosaves in an isolated database as well.
+const DATABASE_NAME = "haneoka-story-editor-v2";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "drafts";
 const ACTIVE_DRAFT = "active";

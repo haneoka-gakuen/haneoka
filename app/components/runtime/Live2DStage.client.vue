@@ -3,6 +3,8 @@ import { MaterialIcon, UiButton, UiIconButton, UiList, UiListItem, UiRange, UiTe
 
 import { CubismModelViewer, type AdvHarmonicMotionData } from "@haneoka/story/viewer";
 import type { Live2DDetail } from "~/types/archive";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { assetRootForRelease, releaseResourceUrl, runtimeRootForRelease } from "~/composables/useReleaseServer";
 
 type InspectorMode = "motion" | "expression" | "transform" | "parameters";
 type BackgroundMode = "common" | "mygo" | "mujica" | "none";
@@ -12,6 +14,8 @@ type CubismParameterValue = ReturnType<CubismModelViewer["parameters"]>[number];
 const props = defineProps<{
   entry: Live2DDetail;
   title: string;
+  /** The exact Our Notes release that supplied this model. */
+  origin?: Extract<CatalogContentOrigin, { provider: "release" }>;
 }>();
 
 const container = ref<HTMLElement>();
@@ -42,8 +46,10 @@ let lastParameterCapture = 0;
 let lastPointerPosition: { x: number; y: number } | null = null;
 
 const { pause: pauseGlobalAudio } = useAudioPlayer();
-const { assetRoot, assetServer } = useAssetServer();
+const { releaseServer } = useReleaseServer();
 const { t } = useLocale();
+const resolvedReleaseServer = computed(() => props.origin?.releaseId || releaseServer.value);
+const assetRoot = computed(() => assetRootForRelease(resolvedReleaseServer.value));
 const motions = computed(() => (props.entry.motions || []).map((motion) => motion.name || "").filter(Boolean));
 const expressions = computed(() =>
   (props.entry.expressions || []).map((expression) => expression.name || "").filter(Boolean),
@@ -57,8 +63,8 @@ const defaultMotionName = computed(() => {
 const headAnchor = computed(() => props.entry.profile?.anchors?.head?.position || null);
 const modelUrl = computed(
   () =>
-    resourceUrl(props.entry.runtime?.model, assetServer.value) ||
-    `${runtimeRootForServer(assetServer.value)}/live2d/${props.entry.live2dKey}/model3.json`,
+    releaseResourceUrl(props.entry.runtime?.model, resolvedReleaseServer.value) ||
+    `${runtimeRootForRelease(resolvedReleaseServer.value)}/live2d/${props.entry.live2dKey}/model3.json`,
 );
 const backgroundAsset = (value: Exclude<BackgroundMode, "none">) => {
   if (value === "mygo") return `${assetRoot.value}/Assets/AddressableResources/Band/1/band_studio_background.png`;
@@ -289,7 +295,7 @@ watch([scale, offsetX, offsetY], () => {
   viewer.value?.setTransform({ scale: scale.value, offsetX: offsetX.value, offsetY: offsetY.value });
   refreshLookPosition();
 });
-watch([() => props.entry.live2dKey, assetServer], load);
+watch([() => props.entry.live2dKey, resolvedReleaseServer], load);
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { liveMusicTypeLabel } from "~/config/liveMusic";
+import { runtimeReleaseForCatalogOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { Song } from "~/types/archive";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 
@@ -13,12 +14,14 @@ const props = defineProps<{
   thumbnailImage?: string;
   musicType?: string | number;
   categories?: unknown;
-  creditSource?: string;
+  creditOrigin?: CatalogContentOrigin;
   selected?: boolean;
 }>();
 
 const emit = defineEmits<{ select: [] }>();
 const { locale } = useLocale();
+const { releaseServer } = useReleaseServer();
+const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.creditOrigin, releaseServer.value));
 
 const imageSource = computed(() => props.thumbnailImage || props.image || "");
 const imageSourceSet = computed(() => {
@@ -71,6 +74,7 @@ const fallbackToThumbnail = (event: Event) => {
           v-if="musicType"
           class="song-catalog-tile__attribute"
           :attribute="musicType"
+          :runtime-release="runtimeRelease"
           variant="live"
           :aria-label="liveMusicTypeLabel(musicType, locale)"
         />
@@ -83,7 +87,7 @@ const fallbackToThumbnail = (event: Event) => {
           <SongCreditVisual
             class="song-catalog-tile__band-visual"
             :song="song"
-            :source-server="creditSource"
+            :origin="creditOrigin"
             :label="textOf(band)"
           />
           <span class="song-catalog-tile__band-label"><DisplayText :value="band" /></span>

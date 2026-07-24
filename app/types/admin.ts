@@ -52,7 +52,6 @@ export interface AdminResourceServer {
   status: AdminResourceServerStatus;
   resourcePrefix: string;
   version: number;
-  builtIn: boolean;
   createdAt: number;
   updatedAt: number;
 }

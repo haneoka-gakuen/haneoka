@@ -18,6 +18,7 @@ import type {
   StoryEpisode,
   SupportCard,
 } from "~/types/archive";
+import { contentOriginLabel, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 
 const props = withDefaults(
@@ -25,6 +26,8 @@ const props = withDefaults(
     open: boolean;
     character?: Character;
     band?: Band;
+    /** Exact Our Notes release that supplied this character detail. */
+    origin: Extract<CatalogContentOrigin, { provider: "release" }>;
     title: DisplayText;
     subtitle?: DisplayText;
     pending?: boolean;
@@ -121,6 +124,7 @@ interface CharacterFriendshipView {
 }
 
 const { resolveLocalized, t } = useLocale();
+const creditOrigin = computed(() => props.origin);
 const layerLink = useRouteQueryLayerLink();
 const characterId = computed(() => props.character?.characterId || 0);
 const headerIcons = computed<DetailHeaderIconItem[]>(() =>
@@ -138,29 +142,44 @@ const headerIcons = computed<DetailHeaderIconItem[]>(() =>
 const relationCharacterId = computed(() => characterId.value || undefined);
 const bandId = computed(() => props.character?.bandId || props.band?.bandId || 0);
 const relationBandId = computed(() => bandId.value || undefined);
-const { data: cardRecord } = useCatalogRelation<MemberCard>("cards", "character", relationCharacterId);
-const { data: supportRecord } = useCatalogRelation<SupportCard>("support-cards", "character", relationCharacterId);
-const { data: stampRecord } = useCatalogRelation<Stamp>("stamps", "character", relationCharacterId);
-const { data: live2dRecord } = useCatalogRelation<Live2DModel>("live2d", "character", relationCharacterId);
-const { data: songRecord } = useCatalogRelation<Song>("songs", "band", relationBandId);
+const { data: cardRecord } = useCatalogRelation<MemberCard>(
+  "cards",
+  "character",
+  relationCharacterId,
+  () => props.origin,
+);
+const { data: supportRecord } = useCatalogRelation<SupportCard>(
+  "support-cards",
+  "character",
+  relationCharacterId,
+  () => props.origin,
+);
+const { data: stampRecord } = useCatalogRelation<Stamp>("stamps", "character", relationCharacterId, () => props.origin);
+const { data: live2dRecord } = useCatalogRelation<Live2DModel>(
+  "live2d",
+  "character",
+  relationCharacterId,
+  () => props.origin,
+);
+const { data: songRecord } = useCatalogRelation<Song>("songs", "band", relationBandId, () => props.origin);
 const {
   data: voiceRecord,
   pending: voicePending,
   error: voiceError,
   refresh: refreshVoices,
-} = useCatalogRelation<VoiceEntry>("voices", "character", relationCharacterId);
+} = useCatalogRelation<VoiceEntry>("voices", "character", relationCharacterId, () => props.origin);
 const {
   data: friendshipRecord,
   pending: friendshipPending,
   error: friendshipError,
   refresh: refreshFriendships,
-} = useCatalogRelation<FriendshipEntry>("friendships", "character", relationCharacterId);
+} = useCatalogRelation<FriendshipEntry>("friendships", "character", relationCharacterId, () => props.origin);
 const {
   data: missionDocument,
   pending: missionPending,
   error: missionError,
   refresh: refreshMissions,
-} = useCatalogDocument<CharacterMissionDocument>("character-missions");
+} = useCatalogDocument<CharacterMissionDocument>("character-missions", () => props.origin);
 const {
   catalog: storyCatalog,
   characterMap,
@@ -170,7 +189,7 @@ const {
   homeSpotOfStory,
   releaseOf,
   storyTo,
-} = useStoryCatalogArchive();
+} = useStoryCatalogArchive(() => props.origin);
 const { playing: musicPlaying, pause: pauseMusic } = useAudioPlayer();
 
 const resolveCharacterName = (character: Character | null | undefined, fallback: string): DisplayText => {
@@ -475,6 +494,7 @@ const description = computed(() => resolveProfileText(props.character?.descripti
 const bandName = computed(() => resolveLocalized(props.band?.bandName, { sourceHint: "ja" }));
 const profileFacts = computed(() =>
   [
+    { label: t("source"), value: contentOriginLabel(props.origin) },
     {
       label: t("band"),
       value: bandName.value,
@@ -892,6 +912,7 @@ onBeforeUnmount(() => stopVoicePreview(true));
               v-else-if="missions.length && character"
               :missions="missions"
               :character="character"
+              :origin="origin"
             />
             <EmptyState v-else />
           </DetailSection>
@@ -962,7 +983,7 @@ onBeforeUnmount(() => stopVoicePreview(true));
                   :image="song.jacketThumbUrl || song.jacketUrl"
                   :music-type="song.musicType"
                   :categories="song.musicCategories"
-                  credit-source="jp-cbt"
+                  :credit-origin="creditOrigin"
                   @select="openItem(`/catalog/songs?song=${song.musicId}`, 'song')"
                 />
               </template>

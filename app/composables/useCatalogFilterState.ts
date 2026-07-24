@@ -30,10 +30,8 @@ export const useCatalogFilterState = (options: CatalogFilterStateOptions) => {
     () =>
       texts().reduce((count, state) => count + (state.value.trim() ? 1 : 0), 0) +
       facets().reduce((count, state) => count + state.value.length, 0) +
-      toggles().reduce(
-        (count, filter) => count + (filter.state.value !== (filter.defaultValue ?? false) ? 1 : 0),
-        0,
-      ) + selections().reduce((count, filter) => count + (Object.is(filter.state.value, filter.defaultValue) ? 0 : 1), 0),
+      toggles().reduce((count, filter) => count + (filter.state.value !== (filter.defaultValue ?? false) ? 1 : 0), 0) +
+      selections().reduce((count, filter) => count + (Object.is(filter.state.value, filter.defaultValue) ? 0 : 1), 0),
   );
 
   const resetFilters = () => {

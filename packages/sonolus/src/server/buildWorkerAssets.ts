@@ -30,9 +30,9 @@ const stagedSonolusRoot = resolve(outRoot, `.sonolus-build-${process.pid}`);
 const repoRoot = resolve(stagedSonolusRoot, "repository");
 const address = process.env.SONOLUS_ADDRESS || "https://haneoka.org/sonolus";
 const haneokaBase = process.env.SONOLUS_HANEOKA_BASE || "https://haneoka.org";
-const server = process.env.ASSET_SERVER || "jp-cbt";
-const workspace = resolveSonolusReleaseWorkspace(server, root);
-const songsUrl = process.env.SONOLUS_SONGS_URL || `${haneokaBase}/api/v1/servers/${server}/songs`;
+const releaseServer = process.env.RELEASE_SERVER || "jp-cbt";
+const workspace = resolveSonolusReleaseWorkspace(releaseServer, root);
+const songsUrl = process.env.SONOLUS_SONGS_URL || `${haneokaBase}/api/v1/servers/${releaseServer}/songs`;
 const localSongsFile = resolve(workspace.apiRoot, "songs.json");
 
 type JsonPrimitive = string | number | boolean | null;
@@ -502,10 +502,12 @@ async function main() {
   const backgroundBlue: BackgroundItem = {
     ...itemBase("ourNotesBgBlue", SONOLUS_ITEM_VERSIONS.background, "Blue Stage", "BanG Dream!", "haneoka"),
     thumbnail: externalSrl(
-      `/assets/${server}/Assets/AddressableResources/Band/1/live_stage/lightweight_background.png`,
+      `/assets/${releaseServer}/Assets/AddressableResources/Band/1/live_stage/lightweight_background.png`,
     ),
     data: addJson({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" }),
-    image: externalSrl(`/assets/${server}/Assets/AddressableResources/Band/1/live_stage/lightweight_background.png`),
+    image: externalSrl(
+      `/assets/${releaseServer}/Assets/AddressableResources/Band/1/live_stage/lightweight_background.png`,
+    ),
     // 0x4d is the closest 8-bit alpha to the native .3 black overlay,
     // preserving MasterOptionDefault BackgroundBrightness=.7.
     configuration: addJson({ blur: 0, mask: "#0000004d" }),
@@ -513,10 +515,12 @@ async function main() {
   const backgroundTheatre: BackgroundItem = {
     ...itemBase("ourNotesBgTheatre", SONOLUS_ITEM_VERSIONS.background, "Theatre Stage", "BanG Dream!", "haneoka"),
     thumbnail: externalSrl(
-      `/assets/${server}/Assets/AddressableResources/Band/2/live_stage/lightweight_background.png`,
+      `/assets/${releaseServer}/Assets/AddressableResources/Band/2/live_stage/lightweight_background.png`,
     ),
     data: addJson({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" }),
-    image: externalSrl(`/assets/${server}/Assets/AddressableResources/Band/2/live_stage/lightweight_background.png`),
+    image: externalSrl(
+      `/assets/${releaseServer}/Assets/AddressableResources/Band/2/live_stage/lightweight_background.png`,
+    ),
     configuration: addJson({ blur: 0, mask: "#0000004d" }),
   };
   const engine: EngineItem = {

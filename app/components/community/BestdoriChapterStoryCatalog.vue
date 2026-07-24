@@ -8,6 +8,7 @@ import {
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import { entityAvatarText } from "~/utils/entityAvatar";
+import { bestdoriOrigin } from "~/features/catalog/contentSource";
 
 /**
  * Bestdori event/band/main story catalog rendered through the shared
@@ -137,7 +138,8 @@ const eventFilterOptions = computed(() => {
   <StoryChapterBrowser
     domain="community"
     :title="pageTitle"
-    catalog-server="bestdori"
+    :catalog-origin="bestdoriOrigin('jp')"
+    catalog-adapter="bestdori"
     :enable-band-filter="section === 'band'"
     :chapter-filter-title="section === 'event' ? t('band') : undefined"
     :chapter-filter-options="section === 'event' ? eventFilterOptions : []"

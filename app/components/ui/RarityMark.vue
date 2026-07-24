@@ -1,7 +1,14 @@
 <script setup lang="ts">
-const props = defineProps<{ rarity?: number | string }>();
-const { assetServer } = useAssetServer();
-const { data: spriteAtlas } = useRuntimeSourceDescriptor(FIX_UI_SPRITE_ATLAS_SOURCE);
+import { ourNotesReleaseOrigin, type OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
+
+const props = defineProps<{
+  rarity?: number | string;
+  /** Release that owns the Fix UI sprite atlas used by this mark. */
+  runtimeRelease?: OurNotesReleaseOrigin;
+}>();
+const { releaseServer } = useReleaseServer();
+const resolvedRuntimeRelease = computed(() => props.runtimeRelease || ourNotesReleaseOrigin(releaseServer.value));
+const { data: spriteAtlas } = useRuntimeSourceDescriptor(FIX_UI_SPRITE_ATLAS_SOURCE, resolvedRuntimeRelease);
 
 type CardRarityName = "R" | "SR" | "SSR" | "EX" | "BD";
 
@@ -25,7 +32,12 @@ const rarityName = computed<CardRarityName | null>(() => {
 
 const icon = computed(() =>
   rarityName.value && spriteAtlas.value
-    ? resolveRuntimeOutputUrl(spriteAtlas.value, assetServer.value, rarityAssetNames[rarityName.value], "Sprite")
+    ? resolveRuntimeOutputUrl(
+        spriteAtlas.value,
+        resolvedRuntimeRelease.value.releaseId,
+        rarityAssetNames[rarityName.value],
+        "Sprite",
+      )
     : "",
 );
 </script>

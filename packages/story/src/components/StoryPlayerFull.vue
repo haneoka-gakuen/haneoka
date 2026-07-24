@@ -46,7 +46,7 @@ const props = defineProps<{
   instantText?: number;
   textSize?: number;
   subtitlesEnabled?: boolean;
-  server?: string;
+  releaseServer?: string;
   showProgress?: boolean;
   showStart?: boolean;
 }>();
@@ -89,9 +89,9 @@ const runtime = computed(() => mergeAdvRuntime(story.value?.runtime));
 const progressRatio = computed(() => (state.preload.total ? state.preload.done / state.preload.total : 0));
 const landscapeAspect = computed(() => Number(runtime.value.layout?.designViewportAspect || 13 / 6));
 const portraitAspect = computed(() => Number(runtime.value.layout?.portraitTargetAspect || 16 / 9));
-const assetServer = computed(() => {
-  const value = props.server || story.value?.assetServer || story.value?.assetServerKey;
-  return typeof value === "string" && value ? value : storyRuntime().defaultAssetServer;
+const resolvedReleaseServer = computed(() => {
+  const value = props.releaseServer;
+  return typeof value === "string" && value ? value : storyRuntime().defaultReleaseServer;
 });
 const lastVisibleChatDataRoot = ref("");
 const lastVisibleChatGroup = ref(false);
@@ -212,7 +212,7 @@ const browserStyle = computed(() => ({
     UNITY_ADV_UI_LAYOUT.psychTalk.edgeBorder / UNITY_ADV_UI_LAYOUT.psychTalk.edgePixelsPerUnitMultiplier,
   ),
   "--adv-sprite-story-bottom-band": cssUrl(
-    sourceAssetUrl("Assets/AddressableResources/UI/Texture/Bg_StoryBottomBand.png", assetServer.value),
+    releaseSourceAssetUrl("Assets/AddressableResources/UI/Texture/Bg_StoryBottomBand.png", resolvedReleaseServer.value),
   ),
   "--adv-sprite-tap-next": uiSpriteCssUrl(props.uiSprites.tapNext, "tapNext"),
   "--adv-sprite-tap-next-glow": uiSpriteCssUrl(props.uiSprites.tapNextGlow, "tapNextGlow"),
@@ -238,19 +238,19 @@ const browserStyle = computed(() => ({
   "--adv-chat-icon-call": cssUrl(advChatIconCall),
   "--adv-chat-icon-battery-frame": cssUrl(advChatIconBatteryFrame),
   "--adv-chat-line-plus": cssUrl(
-    sourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Plus.png`, assetServer.value),
+    releaseSourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Plus.png`, resolvedReleaseServer.value),
   ),
   "--adv-chat-line-photo": cssUrl(
-    sourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Photo.png`, assetServer.value),
+    releaseSourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Photo.png`, resolvedReleaseServer.value),
   ),
   "--adv-chat-line-pic": cssUrl(
-    sourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Pic.png`, assetServer.value),
+    releaseSourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Pic.png`, resolvedReleaseServer.value),
   ),
   "--adv-chat-line-smile": cssUrl(
-    sourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Smile.png`, assetServer.value),
+    releaseSourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Smile.png`, resolvedReleaseServer.value),
   ),
   "--adv-chat-line-mic": cssUrl(
-    sourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Mic.png`, assetServer.value),
+    releaseSourceAssetUrl(`${defaultChatDataRoot.value}/ADVChatIconLine_Mic.png`, resolvedReleaseServer.value),
   ),
 }));
 const talkWindowClass = computed(() => normalizeTalkWindowClass(state.talk.window));
@@ -280,14 +280,14 @@ function cssUrl(value: string) {
 
 function uiSpriteCssUrl(value: string, key: keyof StoryUiSprites) {
   const url = requireCanonicalStoryResourceUrl(value, `uiSprites.${key}`);
-  if (!storyRuntime().resourceBelongsToServer(url, assetServer.value)) {
-    throw new TypeError(`Story uiSprites.${key} URL does not belong to asset server ${assetServer.value}: ${url}`);
+  if (!storyRuntime().resourceBelongsToRelease(url, resolvedReleaseServer.value)) {
+    throw new TypeError(`Story uiSprites.${key} URL does not belong to release ${resolvedReleaseServer.value}: ${url}`);
   }
   return cssUrl(url);
 }
 
-function sourceAssetUrl(path: string, server = storyRuntime().defaultAssetServer): string {
-  return storyRuntime().sourceAssetUrl(canonicalStorySourceAssetPath(path), server);
+function releaseSourceAssetUrl(path: string, releaseServer = storyRuntime().defaultReleaseServer): string {
+  return storyRuntime().releaseSourceAssetUrl(canonicalStorySourceAssetPath(path), releaseServer);
 }
 
 function message(key: "loading" | "play" | "replay" | "skipVideo"): string {
@@ -295,7 +295,9 @@ function message(key: "loading" | "play" | "replay" | "skipVideo"): string {
 }
 
 function chatDataAssetCss(file: string) {
-  return chatDataRoot.value ? cssUrl(sourceAssetUrl(`${chatDataRoot.value}/${file}`, assetServer.value)) : "none";
+  return chatDataRoot.value
+    ? cssUrl(releaseSourceAssetUrl(`${chatDataRoot.value}/${file}`, resolvedReleaseServer.value))
+    : "none";
 }
 
 function clamp01(value: unknown) {
@@ -325,14 +327,18 @@ function chatImageSrc(value: unknown) {
   if (name.startsWith("/")) return requireCanonicalStoryResourceUrl(name, "chat image");
   if (isAdvChatIconAssetName(name)) {
     const path = chatIconImagePath(name, runtime.value);
-    return path ? sourceAssetUrl(path, assetServer.value) : "";
+    return path ? releaseSourceAssetUrl(path, resolvedReleaseServer.value) : "";
   }
   const file = name.endsWith(".png") ? name : `${name}.png`;
-  if (name.includes("/")) return sourceAssetUrl(name.endsWith(".png") ? name : `${name}.png`, assetServer.value);
+  if (name.includes("/"))
+    return releaseSourceAssetUrl(name.endsWith(".png") ? name : `${name}.png`, resolvedReleaseServer.value);
   if (/^(?:ADVChat|Icon|stamp)/i.test(name)) {
-    return sourceAssetUrl(`${defaultChatDataRoot.value}/${file}`, assetServer.value);
+    return releaseSourceAssetUrl(`${defaultChatDataRoot.value}/${file}`, resolvedReleaseServer.value);
   }
-  return sourceAssetUrl(`${chatDataRoot.value || defaultChatDataRoot.value}/${file}`, assetServer.value);
+  return releaseSourceAssetUrl(
+    `${chatDataRoot.value || defaultChatDataRoot.value}/${file}`,
+    resolvedReleaseServer.value,
+  );
 }
 
 function storyCacheKey(value: AdvStory | undefined | null) {
@@ -349,7 +355,7 @@ function storyCacheKey(value: AdvStory | undefined | null) {
 
 function preloadCacheKey(value: AdvStory | undefined | null) {
   const key = storyCacheKey(value);
-  return key ? `${assetServer.value}\u0000${key}` : "";
+  return key ? `${resolvedReleaseServer.value}\u0000${key}` : "";
 }
 
 onMounted(() => void boot());
@@ -358,7 +364,7 @@ onBeforeUnmount(() => {
   destroy({ releaseTextures: true });
 });
 watch(
-  () => [storyCacheKey(story.value), assetServer.value] as const,
+  () => [storyCacheKey(story.value), resolvedReleaseServer.value] as const,
   async () => {
     seekDecisionHistory.clear();
     destroy({ releaseTextures: true });

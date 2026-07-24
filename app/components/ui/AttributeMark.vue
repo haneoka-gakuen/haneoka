@@ -2,6 +2,7 @@
 import { MaterialIcon } from "@haneoka/ui";
 
 import { cardTypeIcon, liveMusicTypeIcon } from "~/config/liveMusic";
+import { ourNotesReleaseOrigin, type OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 const props = withDefaults(
   defineProps<{
@@ -9,19 +10,22 @@ const props = withDefaults(
     label?: string;
     iconOnly?: boolean;
     variant?: "card" | "live";
+    /** Release that owns the Fix UI sprite atlas used by this mark. */
+    runtimeRelease?: OurNotesReleaseOrigin;
   }>(),
   { iconOnly: false, variant: "card" },
 );
 
-const { assetServer } = useAssetServer();
-const { data: spriteAtlas } = useRuntimeSourceDescriptor(FIX_UI_SPRITE_ATLAS_SOURCE);
+const { releaseServer } = useReleaseServer();
+const resolvedRuntimeRelease = computed(() => props.runtimeRelease || ourNotesReleaseOrigin(releaseServer.value));
+const { data: spriteAtlas } = useRuntimeSourceDescriptor(FIX_UI_SPRITE_ATLAS_SOURCE, resolvedRuntimeRelease);
 
 const filename = computed(() => {
   return props.variant === "live" ? liveMusicTypeIcon(props.attribute) : cardTypeIcon(props.attribute);
 });
 const icon = computed(() => {
   if (!filename.value || !spriteAtlas.value) return "";
-  return resolveRuntimeOutputUrl(spriteAtlas.value, assetServer.value, filename.value, "Sprite");
+  return resolveRuntimeOutputUrl(spriteAtlas.value, resolvedRuntimeRelease.value.releaseId, filename.value, "Sprite");
 });
 </script>
 

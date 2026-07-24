@@ -4,7 +4,7 @@ import { handleAvatarRequest } from "./avatar";
 import { handleAppealRequest } from "./appeals";
 import {
   bestdoriSonolusRevision,
-  handleBestdoriProxy,
+  handleGarupaBestdoriApi,
   loadBestdoriSonolusCatalog,
   loadBestdoriSonolusChartText,
 } from "./bestdori";
@@ -16,7 +16,7 @@ import { handlePublicProfileRequest } from "./public-profile";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import { projectCatalogCharts, SonolusLevelService } from "@haneoka/sonolus-core";
 import {
-  releaseAssetPath,
+  parseReleaseChartDataId,
   ReleaseChartCatalogProvider,
   ReleaseLevelTemplateProvider,
   RuntimeChartDataProvider,
@@ -47,6 +47,17 @@ interface ResourceServerRoute {
 interface ResourceServerRouteCacheEntry {
   expiresAt: number;
   value: ResourceServerRoute | null;
+}
+
+interface ResourceServerRouteListCacheEntry {
+  expiresAt: number;
+  value: readonly ResourceServerRoute[];
+}
+
+interface ReleaseRegistryRow {
+  displayName: string;
+  region: string;
+  slug: string;
 }
 
 interface ReleaseEntry {
@@ -184,13 +195,18 @@ const POINTER_CACHE_LIMIT = 128;
 // Structured catalogue documents are snapshot-oriented and shared by the
 // Garupa playlist and catalog APIs. One policy keeps their browser and edge
 // behaviour aligned while still allowing a background refresh each day.
-const API_CACHE_TTL = 60 * 60;
-const CATALOG_API_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
-const SOURCE_CACHE_TTL = 900;
+const API_CACHE_TTL = 86_400;
+const CATALOG_API_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800";
+// The release registry changes only when staff activate, retire, or rename an
+// Our Notes resource server. Treat it like other directory data: fresh daily,
+// while a background refresh absorbs an administrative change without making
+// every page load query D1.
+const RELEASE_REGISTRY_CACHE_TTL = 86_400;
+const RELEASE_REGISTRY_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800";
+const SOURCE_CACHE_TTL = 86_400;
 const MEDIA_CACHE_TTL = 7 * 86_400;
 const SONOLUS_VERSION = "1.1.2";
 const CAS_PREFIX = "cas/v1/sha256";
-const DEFAULT_SONOLUS_SERVER = "jp-cbt";
 const RESOURCE_SERVER_CACHE_TTL_MS = 15_000;
 const RESOURCE_SERVER_CACHE_LIMIT = 128;
 const RELEASE_REPRESENTATION_VERSION = "v3-safe-media";
@@ -206,6 +222,7 @@ const CATALOG_ROUTE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:~-]{0,255}$/u;
 const RESOURCE_SERVER_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u;
 const RESOURCE_PREFIX_PATTERN = /^[a-z0-9](?:[a-z0-9/_-]{0,198}[a-z0-9])?$/u;
 const SOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const RESOURCE_SERVER_REGIONS = new Set(["global", "jp", "kr", "tw", "cn", "en"]);
 
 const GAME_CLIENT_SCHEMA = "haneoka-game-client-v1";
 const GAME_CLIENT_ADDRESSABLES_INDEX_SCHEMA = "haneoka-game-client-addressables-index-v1";
@@ -339,6 +356,7 @@ function jsonResponse(request: Request, value: JsonValue, cacheControl = "public
 
 const pointerCache = new Map<string, ReleaseCacheEntry>();
 const resourceServerRouteCache = new Map<string, ResourceServerRouteCacheEntry>();
+let resourceServerRouteListCache: ResourceServerRouteListCacheEntry | undefined;
 const catalogStorageManifestCache = new Map<string, Promise<CatalogStorageManifest | null>>();
 const sonolusLevelService = new SonolusLevelService(3);
 const gameClientManifestCache = new Map<string, Promise<GameClientManifest>>();
@@ -394,6 +412,82 @@ async function activeResourceServer(env: Env, slug: string): Promise<ResourceSer
   return value;
 }
 
+async function activeResourceServers(env: Env): Promise<readonly ResourceServerRoute[]> {
+  const now = Date.now();
+  if (resourceServerRouteListCache && resourceServerRouteListCache.expiresAt > now) {
+    return resourceServerRouteListCache.value;
+  }
+  const result = await env.DB.prepare(
+    `SELECT slug, resource_prefix AS resourcePrefix
+     FROM resource_server
+     WHERE status = 'active'
+     ORDER BY slug`,
+  ).all<{ resourcePrefix: string; slug: string }>();
+  const routes = result.results.map((row) => {
+    if (
+      typeof row.slug !== "string" ||
+      typeof row.resourcePrefix !== "string" ||
+      !RESOURCE_SERVER_SLUG_PATTERN.test(row.slug) ||
+      !validResourcePrefix(row.resourcePrefix)
+    ) {
+      throw new Error("invalid active resource server route");
+    }
+    return { resourcePrefix: row.resourcePrefix, slug: row.slug };
+  });
+  if (new Set(routes.map((route) => route.slug)).size !== routes.length) {
+    throw new Error("duplicate active resource server route");
+  }
+  const value = Object.freeze(routes);
+  for (const route of value) {
+    cacheResourceServerRoute(route.slug, { expiresAt: now + RESOURCE_SERVER_CACHE_TTL_MS, value: route }, now);
+  }
+  resourceServerRouteListCache = { expiresAt: now + RESOURCE_SERVER_CACHE_TTL_MS, value };
+  return value;
+}
+
+function releaseRegistryCacheRequest(request: Request): Request {
+  const url = new URL(request.url);
+  url.pathname = "/api/v1/releases";
+  url.search = "";
+  return new Request(url, request);
+}
+
+async function handleReleaseRegistryApi(
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+  pathname: string,
+): Promise<Response | null> {
+  if (pathname !== "/api/v1/releases") return null;
+  const response = await edgeCached(
+    releaseRegistryCacheRequest(request),
+    ctx,
+    RELEASE_REGISTRY_CACHE_TTL,
+    async () => {
+      const result = await env.DB.prepare(
+        `SELECT slug, display_name AS displayName, region
+         FROM resource_server
+         WHERE status = 'active'
+         ORDER BY region, display_name COLLATE NOCASE, slug`,
+      ).all<ReleaseRegistryRow>();
+      const releases = result.results.map((row) => {
+        if (
+          !RESOURCE_SERVER_SLUG_PATTERN.test(row.slug) ||
+          !row.displayName.trim() ||
+          row.displayName.length > 80 ||
+          !RESOURCE_SERVER_REGIONS.has(row.region)
+        ) {
+          throw new Error("invalid active resource server registry row");
+        }
+        return { id: row.slug, displayName: row.displayName, region: row.region };
+      });
+      return jsonResponse(request, { releases }, RELEASE_REGISTRY_CACHE_CONTROL);
+    },
+    RELEASE_REGISTRY_CACHE_CONTROL,
+  );
+  return response;
+}
+
 async function currentRelease(env: Env, server: ResourceServerRoute): Promise<Release | null> {
   const key = `${server.resourcePrefix}/current.json`;
   const now = Date.now();
@@ -429,9 +523,9 @@ async function currentRelease(env: Env, server: ResourceServerRoute): Promise<Re
   return release;
 }
 
-function releaseCacheRequest(request: Request, releaseId: string): Request {
+function releaseCacheRequest(request: Request, releaseRevision: string): Request {
   const url = new URL(request.url);
-  url.searchParams.set("__release", releaseId);
+  url.searchParams.set("__release", releaseRevision);
   url.searchParams.set("__representation", RELEASE_REPRESENTATION_VERSION);
   return new Request(url, request);
 }
@@ -469,7 +563,7 @@ function parseRange(value: string | null, size: number): RangeResult {
 
 const cacheControlFor = (contentType: string): string =>
   contentType.includes("json")
-    ? "public, max-age=300, stale-while-revalidate=3600"
+    ? "public, max-age=86400, stale-while-revalidate=604800"
     : "public, max-age=604800, stale-while-revalidate=2592000";
 
 async function serveR2Object(
@@ -1750,6 +1844,73 @@ const BESTDORI_SONOLUS_DATA_ID = /^bestdori:(\d+):(easy|normal|hard|expert|speci
 const BESTDORI_SONOLUS_LEVEL_PREFIX = "/sonolus/levels/bestdori-level-";
 const BESTDORI_SONOLUS_PLAYLIST_PREFIX = "/sonolus/playlists/bestdori-playlist-";
 
+function compareSonolusReleases(left: Release, right: Release): number {
+  const server = left.server.localeCompare(right.server, "en");
+  return server || left.releaseId.localeCompare(right.releaseId, "en");
+}
+
+function sonolusReleaseKey(release: Pick<Release, "releaseId" | "server">): string {
+  return `${release.server}\u0000${release.releaseId}`;
+}
+
+async function activeSonolusReleases(env: Env): Promise<readonly Release[]> {
+  const servers = await activeResourceServers(env);
+  const releases = (await Promise.all(servers.map((server) => currentRelease(env, server)))).filter(
+    (release): release is Release => release !== null,
+  );
+  return Object.freeze(releases.sort(compareSonolusReleases));
+}
+
+function ourNotesSonolusRevision(releases: readonly Release[]): string {
+  if (!releases.length) throw new Error("No active Our Notes releases are available for Sonolus");
+  return `our-notes:${releases.map((release) => `${release.server}@${release.releaseId}`).join(",")}`;
+}
+
+function ourNotesSonolusCatalogProvider(env: Env, releases: readonly Release[], revision: string) {
+  return {
+    async load() {
+      const catalogs = await Promise.all(
+        releases.map(async (release) => {
+          const catalog = await new ReleaseChartCatalogProvider({
+            mediaBaseUrl: "https://haneoka.org",
+            onInvalidCharts: (names) => {
+              console.warn(`Ignoring invalid Sonolus charts from ${release.server}/${release.releaseId}`, names);
+            },
+            readJson: (releasePath) => readReleaseJson(env, release, releasePath),
+            release: { releaseId: release.releaseId, server: release.server },
+            revision: `${release.server}:${release.releaseId}`,
+          }).load();
+          return catalog;
+        }),
+      );
+      const charts = new Map<string, (typeof catalogs)[number]["charts"][number]>();
+      for (const catalog of catalogs) {
+        for (const chart of catalog.charts) {
+          const key = `${chart.songId}\u0000${chart.difficulty.toLocaleLowerCase("en-US")}`;
+          if (!charts.has(key)) charts.set(key, chart);
+        }
+      }
+      return { charts: [...charts.values()], revision: { id: revision } };
+    },
+  };
+}
+
+function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): RuntimeChartDataProvider {
+  const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
+  if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
+  return new RuntimeChartDataProvider({
+    readBytes: async (dataId) => {
+      const reference = parseReleaseChartDataId(dataId);
+      if (!reference) return null;
+      const release = releasesByKey.get(sonolusReleaseKey(reference));
+      return release ? readReleaseBytes(env, release, reference.path) : null;
+    },
+    onInvalidChart: (chart, error) => {
+      console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
+    },
+  });
+}
+
 function isBestdoriSonolusCatalogRequest(url: URL): boolean {
   return (
     url.searchParams.get("type") === "bestdori" ||
@@ -1759,10 +1920,10 @@ function isBestdoriSonolusCatalogRequest(url: URL): boolean {
   );
 }
 
-function bestdoriSonolusCatalogProvider(origin: string | undefined, revision: string) {
+function bestdoriSonolusCatalogProvider(upstreamBase: string | undefined, revision: string) {
   return {
     async load() {
-      const { bands, songs } = await loadBestdoriSonolusCatalog(origin);
+      const { bands, songs } = await loadBestdoriSonolusCatalog(upstreamBase);
       const projection = projectCatalogCharts(songs, bands, {
         chartDataId: (songId, difficulty) => `bestdori:${songId}:${difficulty}`,
         levelName: (songId, difficulty) => `bestdori-level-${songId}-${difficulty}`,
@@ -1776,7 +1937,7 @@ function bestdoriSonolusCatalogProvider(origin: string | undefined, revision: st
   };
 }
 
-function bestdoriSonolusDataProvider(origin: string | undefined): RuntimeChartDataProvider {
+function bestdoriSonolusDataProvider(upstreamBase: string | undefined): RuntimeChartDataProvider {
   return new RuntimeChartDataProvider({
     readBytes: async (dataId) => {
       const match = BESTDORI_SONOLUS_DATA_ID.exec(dataId);
@@ -1784,7 +1945,7 @@ function bestdoriSonolusDataProvider(origin: string | undefined): RuntimeChartDa
       const difficulty = match?.[2];
       if (!Number.isSafeInteger(musicId) || musicId < 1 || !difficulty) return null;
       try {
-        return new TextEncoder().encode(await loadBestdoriSonolusChartText(musicId, difficulty, origin));
+        return new TextEncoder().encode(await loadBestdoriSonolusChartText(musicId, difficulty, upstreamBase));
       } catch (error) {
         console.warn(`Unable to load Bestdori Sonolus chart ${musicId}/${difficulty}`, error);
         return null;
@@ -1825,34 +1986,27 @@ async function handleSonolus(
     assetUrl.pathname === "/sonolus/playlists" ||
     assetUrl.pathname.startsWith("/sonolus/playlists/");
   const isBestdoriCatalog = isBestdoriSonolusCatalogRequest(assetUrl);
-  const server = await activeResourceServer(env, DEFAULT_SONOLUS_SERVER);
-  const release = server ? await currentRelease(env, server) : null;
-  if (!release) {
+  const releases = await activeSonolusReleases(env);
+  const canonicalRelease = releases[0];
+  if (!canonicalRelease) {
     return new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS });
   }
-  const cacheRequest = releaseCacheRequest(request, release.releaseId);
+  const ourNotesRevision = ourNotesSonolusRevision(releases);
+  const revision = isBestdoriCatalog
+    ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
+    : ourNotesRevision;
+  const cacheRequest = releaseCacheRequest(request, revision);
   try {
-    const revision = isBestdoriCatalog
-      ? `${release.server}:${release.releaseId}:${bestdoriSonolusRevision()}`
-      : `${release.server}:${release.releaseId}`;
-    const readJson = (releasePath: string) => readReleaseJson(env, release, releasePath);
+    // Runtime documents (engine/template/banner) are server-wide rather than
+    // chart data. Choose the first active server slug deterministically; chart
+    // data itself remains pinned to the exact release encoded in each data ID.
+    const readJson = (releasePath: string) => readReleaseJson(env, canonicalRelease, releasePath);
     const catalogProvider = isBestdoriCatalog
-      ? bestdoriSonolusCatalogProvider(env.BESTDORI_ORIGIN, revision)
-      : new ReleaseChartCatalogProvider({
-          mediaBaseUrl: "https://haneoka.org",
-          readJson,
-          resolveChartDataId: (_songId, _difficulty, rawDifficulty) =>
-            typeof rawDifficulty.file === "string" ? releaseAssetPath(rawDifficulty.file, release.server) : null,
-          revision,
-        });
+      ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
+      : ourNotesSonolusCatalogProvider(env, releases, revision);
     const dataProvider = isBestdoriCatalog
-      ? bestdoriSonolusDataProvider(env.BESTDORI_ORIGIN)
-      : new RuntimeChartDataProvider({
-          readBytes: (releasePath) => readReleaseBytes(env, release, releasePath),
-          onInvalidChart: (chart, error) => {
-            console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
-          },
-        });
+      ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
+      : ourNotesSonolusDataProvider(env, releases);
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const projected = await sonolusLevelService.handle({
@@ -1901,7 +2055,7 @@ async function handleSonolus(
         : edgeCached(cacheRequest, ctx, API_CACHE_TTL, produce, projected.cacheControl);
     }
   } catch (error) {
-    console.warn("Unable to project the current Sonolus chart catalog", error);
+    console.warn("Unable to project the Sonolus chart catalog", error);
     if (isCatalogRoute) {
       return new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Service unavailable" }), {
         status: 503,
@@ -1932,7 +2086,7 @@ async function handleSonolus(
     ctx,
     MEDIA_CACHE_TTL,
     async () =>
-      (await serveReleaseObject(env, request, release, `runtime/${relative}`, contentType)) ||
+      (await serveReleaseObject(env, request, canonicalRelease, `runtime/${relative}`, contentType)) ||
       new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS }),
   );
   if (response.status === 404) return response;
@@ -2041,10 +2195,12 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   if (gameClient) return gameClient;
   const sonolus = await handleSonolus(env, ctx, request, url.pathname);
   if (sonolus) return sonolus;
-  const bestdori = await handleBestdoriProxy(ctx, request, url, env.BESTDORI_ORIGIN);
+  const bestdori = await handleGarupaBestdoriApi(ctx, request, url, env.BESTDORI_UPSTREAM_BASE);
   if (bestdori) return bestdori;
   const garupaPlaylists = await handleGarupaPlaylistApi(env, ctx, request, url);
   if (garupaPlaylists) return garupaPlaylists;
+  const releaseRegistry = await handleReleaseRegistryApi(env, ctx, request, url.pathname);
+  if (releaseRegistry) return releaseRegistry;
   const api = await handleCatalogApi(env, ctx, request, url.pathname);
   if (api) return api;
   const media = await handleReleaseMedia(env, ctx, request, url.pathname);

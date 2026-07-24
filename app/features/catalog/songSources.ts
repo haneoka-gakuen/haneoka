@@ -1,4 +1,5 @@
 import type { CapabilityDomain } from "~/config/capabilities";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { ArchiveMessageKey } from "~/i18n/messages";
 import type { Song } from "~/types/archive";
 
@@ -23,7 +24,8 @@ export type SongCatalogSort =
 
 export interface SongCatalogSourceProfile {
   readonly id: string;
-  readonly catalogServer?: string;
+  /** Explicit non-release catalog origin. Omit to follow the selected release. */
+  readonly catalogOrigin?: CatalogContentOrigin;
   readonly titleKey: ArchiveMessageKey;
   readonly domain: CapabilityDomain;
   readonly maxDifficulty: number;

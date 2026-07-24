@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { liveMusicTypeLabel } from "~/config/liveMusic";
+import { bestdoriOrigin, runtimeReleaseForCatalogOrigin } from "~/features/catalog/contentSource";
 import { useBestdoriImageSources } from "~/features/community/bestdori/imageSources";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 
@@ -12,6 +13,10 @@ const props = defineProps<{
 }>();
 
 const { locale } = useLocale();
+const { releaseServer } = useReleaseServer();
+// Bestdori card metadata remains Garupa content. Only the shared UI sprite
+// atlas uses this explicit Our Notes renderer fallback release.
+const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(bestdoriOrigin("jp"), releaseServer.value));
 const expandImage = useBestdoriImageSources();
 const normalSources = computed(() => expandImage(props.normalImage));
 const trainedSources = computed(() => expandImage(props.trainedImage));
@@ -56,6 +61,7 @@ const imageAlt = computed(() => textOf(props.title));
       class="bestdori-card-artwork__attribute"
       :attribute="attribute"
       :label="attributeLabel"
+      :runtime-release="runtimeRelease"
       icon-only
     />
     <BestdoriRarityMark class="bestdori-card-artwork__rarity" :rarity="rarity" />

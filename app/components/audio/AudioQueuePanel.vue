@@ -2,6 +2,7 @@
 import { MaterialIcon, UiIconButton, UiList, UiListItem } from "@haneoka/ui";
 
 import type { AudioTrack } from "~/composables/useAudioPlayer";
+import { contentOriginKey } from "~/features/catalog/contentSource";
 import { textOf } from "~/types/displayText";
 
 const props = defineProps<{
@@ -37,7 +38,7 @@ const queueList = ref<{ $el?: HTMLElement }>();
 const currentOccurrence = computed(() => {
   const item = props.queue[props.currentIndex];
   return item
-    ? `${props.currentIndex}:${item.queueId || `${item.catalogSource}:${item.id}:${item.source}`}`
+    ? `${props.currentIndex}:${item.queueId || `${contentOriginKey(item.origin)}:${item.id}:${item.source}`}`
     : `${props.currentIndex}:`;
 });
 let pointerId: number | undefined;
@@ -226,7 +227,7 @@ onBeforeUnmount(() => {
     <UiList ref="queueList" class="audio-queue-panel__list" :aria-label="t('tracks')">
       <UiListItem
         v-for="(item, index) in queue"
-        :key="item.queueId || `${item.catalogSource}:${item.id}:${item.source}`"
+        :key="item.queueId || `${contentOriginKey(item.origin)}:${item.id}:${item.source}`"
         type="button"
         class="audio-queue-panel__track"
         :class="{

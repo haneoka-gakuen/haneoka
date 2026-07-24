@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { assetRootForRelease } from "~/composables/useReleaseServer";
 import { stripUnityMarkup } from "~/composables/useArchiveText";
 import type { ArchiveEntityItem } from "~/components/catalog/ArchiveEntityList.vue";
 import {
@@ -12,6 +13,7 @@ import {
   toolRecordValues,
   type ToolRecord,
 } from "~/components/catalog/ToolCatalogData";
+import { contentOriginLabel, ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character } from "~/types/archive";
 import { langOf, replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
@@ -27,9 +29,11 @@ interface BandItemLevelView {
 
 const bandItemSortKeys = ["id", "order", "title", "levels"] as const;
 type BandItemSort = (typeof bandItemSortKeys)[number];
+type OurNotesCatalogOrigin = Extract<CatalogContentOrigin, { provider: "release" }>;
 
 const { resolveLocalized, compareText, t, messages } = useLocale();
-const { assetRoot, assetUrl } = useAssetServer();
+const { releaseServer, assetUrl } = useReleaseServer();
+const catalogOrigin = computed<OurNotesCatalogOrigin>(() => ourNotesReleaseOrigin(releaseServer.value));
 const selectedId = useRouteQueryText("item");
 const itemLayer = useRouteQueryLayer("item", { clearOnClose: ["level"] });
 const bandQuery = useRouteQueryInteger("band", 0, { min: 0 });
@@ -38,9 +42,8 @@ const { activeFilterCount, resetFilters } = useCatalogFilterState({ texts: [quer
 const view = useRouteQueryEnum("view", ["grid", "list"] as const, "grid");
 const sort = useRouteQueryEnum("sort", bandItemSortKeys, "order");
 const order = useRouteQueryEnum("order", ["asc", "desc"] as const, "asc");
-const { data, pending, error, refresh } = useCatalogDocument<BandItemDocument>("band-items");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
+const { data, pending, error, refresh } = useCatalogDocument<BandItemDocument>("band-items", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
 const copy = messages("bandItemsPage");
 
 const items = computed(() =>
@@ -52,9 +55,7 @@ const items = computed(() =>
   ),
 );
 const bands = computed(() => recordValues(bandRecord.value));
-const characters = computed(() => recordValues(characterRecord.value));
 const bandMap = computed(() => new Map(bands.value.map((band) => [band.bandId, band])));
-const characterMap = computed(() => new Map(characters.value.map((character) => [character.characterId, character])));
 const itemId = (item: ToolRecord) => toolId(item);
 const bandIdOf = (item: ToolRecord) => toolNumber(toolField(item, "bandId", "_bandId"));
 const nameOf = (item: ToolRecord): DisplayText =>
@@ -68,6 +69,36 @@ const levelsOf = (item: ToolRecord) => toolArray(item, "levels").filter(isToolRe
 const effectsOf = (item: ToolRecord) => toolArray(item, "effects").filter(isToolRecord);
 const levelOf = (row: ToolRecord) => toolNumber(toolField(row, "level", "_level"));
 const displayOrderOf = (item: ToolRecord) => toolNumber(toolField(item, "displayOrder", "_displayOrder"));
+
+const selectedSummary = computed(() => items.value.find((item) => itemId(item) === selectedId.value));
+const { data: selectedItem, resolvedOrigin: selectedItemOrigin } = useCatalogSelection<ToolRecord>(
+  "band-items",
+  selectedId,
+  catalogOrigin,
+  { fallbackAcrossReleases: true },
+);
+// The band-item browser itself remains on the selected release. A direct
+// detail URL may resolve in another release, so every detail lookup and every
+// generated asset URL below is anchored to the release that resolved the item.
+const detailOrigin = computed<OurNotesCatalogOrigin>(() =>
+  selectedItemOrigin.value?.provider === "release" ? selectedItemOrigin.value : catalogOrigin.value,
+);
+const { data: detailBandRecord } = useLazyCatalogCollection<Band>(
+  "bands",
+  () => Boolean(selectedId.value),
+  detailOrigin,
+);
+const { data: detailCharacterRecord } = useLazyCatalogCollection<Character>(
+  "characters",
+  () => Boolean(selectedId.value),
+  detailOrigin,
+);
+const detailBandMap = computed(() => new Map(recordValues(detailBandRecord.value).map((band) => [band.bandId, band])));
+const detailCharacterMap = computed(
+  () => new Map(recordValues(detailCharacterRecord.value).map((character) => [character.characterId, character])),
+);
+const selected = computed(() => selectedItem.value || selectedSummary.value);
+const selectedBand = computed(() => detailBandMap.value.get(bandIdOf(selected.value || {})));
 
 const availableBandIds = computed(() => [...new Set(items.value.map(bandIdOf).filter(Boolean))]);
 const availableBands = computed(() =>
@@ -101,11 +132,16 @@ const visibleItems = computed(() => {
       return direction * (difference || itemId(left).localeCompare(itemId(right), "en", { numeric: true }));
     });
 });
-const selected = computed(() => items.value.find((item) => itemId(item) === selectedId.value));
-const selectedBand = computed(() => bandMap.value.get(bandIdOf(selected.value || {})));
+const backgroundBandId = computed(() => (selected.value ? bandIdOf(selected.value) : activeBandId.value));
+const backgroundOrigin = computed(() => (selected.value ? detailOrigin.value : catalogOrigin.value));
+const releaseAssetUrl = (path: string, origin: OurNotesCatalogOrigin) =>
+  assetUrl(`${assetRootForRelease(origin.releaseId)}/${path}`, origin.releaseId);
 const bandBackground = computed(() =>
-  activeBandId.value
-    ? assetUrl(`${assetRoot.value}/Assets/AddressableResources/Band/${activeBandId.value}/band_room_background.png`)
+  backgroundBandId.value
+    ? releaseAssetUrl(
+        `Assets/AddressableResources/Band/${backgroundBandId.value}/band_room_background.png`,
+        backgroundOrigin.value,
+      )
     : "",
 );
 const browserStyle = computed(() => ({
@@ -114,10 +150,9 @@ const browserStyle = computed(() => ({
   "--band-item-count": String(Math.max(visibleItems.value.length, 1)),
 }));
 
-const itemImage = (item: ToolRecord) =>
-  assetUrl(
-    `${assetRoot.value}/Assets/AddressableResources/Band/${bandIdOf(item)}/BandItem/${itemId(item)}/band_item.png`,
-  );
+const itemImageForOrigin = (item: ToolRecord, origin: OurNotesCatalogOrigin) =>
+  releaseAssetUrl(`Assets/AddressableResources/Band/${bandIdOf(item)}/BandItem/${itemId(item)}/band_item.png`, origin);
+const itemImage = (item: ToolRecord) => itemImageForOrigin(item, catalogOrigin.value);
 
 const effectValueAt = (item: ToolRecord, level: number) =>
   toolNumber(
@@ -161,7 +196,7 @@ const selectedLevel = useRouteQueryInteger("level", 0, { min: 0 });
 const selectedLevelRow = computed(() => selectedLevels.value.find((row) => row.level === selectedLevel.value));
 
 const characterName = (id: number): DisplayText => {
-  const character = characterMap.value.get(id);
+  const character = detailCharacterMap.value.get(id);
   return character
     ? resolveLocalized(character.characterName, {
         candidates: [character.englishName],
@@ -176,15 +211,17 @@ const effectTargets = (effect: ToolRecord) => toolArray(effect, "targets").filte
 const targetLabel = (target: ToolRecord) => {
   const bandId = targetBandId(target);
   if (bandId)
-    return resolveLocalized(bandMap.value.get(bandId)?.bandName, { sourceHint: "ja" }) || copy.value.unknownTarget;
+    return (
+      resolveLocalized(detailBandMap.value.get(bandId)?.bandName, { sourceHint: "ja" }) || copy.value.unknownTarget
+    );
   const characterId = targetCharacterId(target);
   if (characterId) return characterName(characterId);
   return copy.value.unknownTarget;
 };
 const targetImage = (target: ToolRecord) => {
   const bandId = targetBandId(target);
-  if (bandId) return bandMap.value.get(bandId)?.icon;
-  const character = characterMap.value.get(targetCharacterId(target));
+  if (bandId) return detailBandMap.value.get(bandId)?.icon;
+  const character = detailCharacterMap.value.get(targetCharacterId(target));
   return character?.thumbnailImage || character?.profileImage;
 };
 
@@ -202,7 +239,10 @@ const selectedEntities = computed<ArchiveEntityItem[]>(() =>
 );
 const selectedFacts = computed(() =>
   selected.value
-    ? [{ label: t("band"), value: resolveLocalized(selectedBand.value?.bandName, { sourceHint: "ja" }) }]
+    ? [
+        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
+        { label: t("band"), value: resolveLocalized(selectedBand.value?.bandName, { sourceHint: "ja" }) },
+      ]
     : [],
 );
 const tableColumns = computed(() => [
@@ -227,10 +267,6 @@ watch(
   () => {
     if (!items.value.length) return;
     const routeItem = items.value.find((item) => itemId(item) === selectedId.value);
-    if (selectedId.value && !routeItem) {
-      selectedId.value = "";
-      return;
-    }
     const nextBand = routeItem
       ? bandIdOf(routeItem)
       : availableBandIds.value.includes(bandQuery.value)
@@ -315,9 +351,9 @@ useSeoMeta({ title: () => `${copy.value.title} · haneoka` });
                 <TextFallbackMedia
                   :image="itemImage(item)"
                   :label="nameOf(item)"
-                  :secondary-label="resolveLocalized(selectedBand?.bandName, { sourceHint: 'ja' }) || ''"
+                  :secondary-label="resolveLocalized(activeBand?.bandName, { sourceHint: 'ja' }) || ''"
                   icon="inventory_2"
-                  :color="selectedBand?.color"
+                  :color="activeBand?.color"
                 />
               </span>
               <span class="band-item-card__copy">
@@ -364,7 +400,7 @@ useSeoMeta({ title: () => `${copy.value.title} · haneoka` });
           :open="Boolean(selected)"
           :title="selected ? nameOf(selected) : copy.title"
           :subtitle="resolveLocalized(selectedBand?.bandName, { sourceHint: 'ja' }) || ''"
-          :image="selected ? itemImage(selected) : ''"
+          :image="selected ? itemImageForOrigin(selected, detailOrigin) : ''"
           image-ratio="portrait"
           image-fit="contain"
           :accent="selectedBand?.color || 'var(--md-sys-color-primary)'"

@@ -2,10 +2,11 @@ import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import os, { type NetworkInterfaceInfo } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { SonolusLevelService } from "@haneoka/sonolus-core";
 import {
-  releaseAssetPath,
+  parseReleaseChartDataId,
   ReleaseChartCatalogProvider,
   ReleaseLevelTemplateProvider,
   RuntimeChartDataProvider,
@@ -27,19 +28,20 @@ interface WorkspaceSelection {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, ".output", "public");
-const BESTDORI_MIRROR_ROOT = process.env.BESTDORI_MIRROR_ROOT
-  ? path.resolve(process.env.BESTDORI_MIRROR_ROOT)
+const BESTDORI_RAW_MIRROR_ROOT = process.env.BESTDORI_RAW_MIRROR_ROOT
+  ? path.resolve(process.env.BESTDORI_RAW_MIRROR_ROOT)
   : undefined;
-if (BESTDORI_MIRROR_ROOT && !fs.statSync(BESTDORI_MIRROR_ROOT, { throwIfNoEntry: false })?.isDirectory()) {
-  throw new Error(`BESTDORI_MIRROR_ROOT is not a directory: ${BESTDORI_MIRROR_ROOT}`);
+if (BESTDORI_RAW_MIRROR_ROOT && !fs.statSync(BESTDORI_RAW_MIRROR_ROOT, { throwIfNoEntry: false })?.isDirectory()) {
+  throw new Error(`BESTDORI_RAW_MIRROR_ROOT is not a directory: ${BESTDORI_RAW_MIRROR_ROOT}`);
 }
-const SERVERS = (process.env.ASSET_SERVERS ?? "jp-cbt")
+const BESTDORI_PROVIDER_ORIGIN = configuredHttpOrigin("BESTDORI_PROVIDER_ORIGIN");
+const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "jp-cbt")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
 const workspaceSelectionsAreFixed = Boolean(process.env.RESOURCE_BUILD_ROOT || process.env.RESOURCE_RELEASE_ROOT);
 const WORKSPACES = new Map<string, WorkspaceSelection>(
-  SERVERS.map((server): [string, WorkspaceSelection] => {
+  RELEASE_SERVERS.map((server): [string, WorkspaceSelection] => {
     const workspace = releaseWorkspace(server, ROOT);
     const pointerFile = path.join(workspace.serverRoot, "current.json");
     const pointerModifiedAt = fs.existsSync(pointerFile) ? fs.statSync(pointerFile).mtimeMs : 0;
@@ -51,7 +53,26 @@ const PORT = parsePort(process.env.PORT);
 const sonolusLevelService = new SonolusLevelService(3);
 const allowedMethods: ReadonlySet<string> = new Set(["GET", "HEAD"]);
 const catalogRouteKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:~-]{0,255}$/u;
-const bestdoriMirrorPathPattern = /^\/(?:api\/(?!v1(?:\/|$))|assets\/(?:jp|en|tw|cn|kr)(?:\/|$)|res(?:\/|$))/u;
+const BESTDORI_PROVIDER_API_PREFIX = "/api/v1/garupa/bestdori";
+const BESTDORI_SONOLUS_LEVEL_PREFIX = "/sonolus/levels/bestdori-level-";
+const BESTDORI_SONOLUS_PLAYLIST_PREFIX = "/sonolus/playlists/bestdori-playlist-";
+// The raw mirror is a private upstream transport for the Worker. Keeping it
+// below a provider-internal prefix means `/assets/jp/...` always remains an
+// Our Notes release URL, including when a future Our Notes server is named jp.
+const BESTDORI_RAW_MIRROR_PREFIX = "/_internal/providers/garupa/bestdori/raw";
+const bestdoriRawPathPattern = /^\/(?:api(?:\/|$)|assets\/(?:jp|en|tw|cn|kr)(?:\/|$)|res(?:\/|$))/u;
+const proxyExcludedHeaders = new Set([
+  "connection",
+  "content-encoding",
+  "content-length",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
 const mime: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -77,6 +98,28 @@ function parsePort(value: string | undefined): number {
     throw new Error(`Invalid preview port: ${value ?? ""}`);
   }
   return port;
+}
+
+function configuredHttpOrigin(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute HTTP(S) origin`);
+  }
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(`${name} must be an HTTP(S) origin without credentials, a path, query, or fragment`);
+  }
+  return url.origin;
 }
 
 function isJsonObject(value: unknown): value is JsonObject {
@@ -109,6 +152,130 @@ function json(res: ServerResponse, status: number, value: JsonValue, cache = "no
     "Cache-Control": cache,
   });
   res.end(body);
+}
+
+function isBestdoriProviderApiRequest(url: URL): boolean {
+  return url.pathname === BESTDORI_PROVIDER_API_PREFIX || url.pathname.startsWith(`${BESTDORI_PROVIDER_API_PREFIX}/`);
+}
+
+function isBestdoriSonolusRequest(url: URL): boolean {
+  return (
+    url.searchParams.get("type") === "bestdori" ||
+    url.searchParams.get("source") === "bestdori" ||
+    url.pathname.startsWith(BESTDORI_SONOLUS_LEVEL_PREFIX) ||
+    url.pathname.startsWith(BESTDORI_SONOLUS_PLAYLIST_PREFIX)
+  );
+}
+
+function isBestdoriRawMirrorRequest(pathname: string): boolean {
+  return pathname === BESTDORI_RAW_MIRROR_PREFIX || pathname.startsWith(`${BESTDORI_RAW_MIRROR_PREFIX}/`);
+}
+
+function bestdoriRawMirrorPath(pathname: string): string | null {
+  if (!pathname.startsWith(`${BESTDORI_RAW_MIRROR_PREFIX}/`)) return null;
+  const rawPath = `/${pathname.slice(BESTDORI_RAW_MIRROR_PREFIX.length + 1)}`;
+  return bestdoriRawPathPattern.test(rawPath) ? rawPath : null;
+}
+
+function bestdoriProviderUnavailable(req: IncomingMessage, res: ServerResponse, sonolus: boolean): void {
+  const message =
+    "Bestdori provider is not configured; set BESTDORI_PROVIDER_ORIGIN to a Worker/provider HTTP(S) origin";
+  if (sonolus) {
+    sonolusJson(req, res, 503, { message }, "no-store");
+    return;
+  }
+  json(res, 503, { error: { code: "bestdori_provider_unavailable", message } }, "no-store");
+}
+
+function bestdoriProviderUnreachable(
+  req: IncomingMessage,
+  res: ServerResponse,
+  sonolus: boolean,
+  error: unknown,
+): void {
+  const message = `Bestdori provider is unavailable: ${errorMessage(error)}`;
+  if (sonolus) {
+    sonolusJson(req, res, 503, { message }, "no-store");
+    return;
+  }
+  json(res, 503, { error: { code: "bestdori_provider_unreachable", message } }, "no-store");
+}
+
+function forwardedProviderHeaders(req: IncomingMessage): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const name of ["accept", "if-none-match", "if-range", "range"] as const) {
+    const value = req.headers[name];
+    if (typeof value === "string") headers[name] = value;
+  }
+  return headers;
+}
+
+function proxiedResponseHeaders(response: Response): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of response.headers) {
+    if (!proxyExcludedHeaders.has(name.toLowerCase())) headers[name] = value;
+  }
+  return headers;
+}
+
+async function sendBestdoriProviderResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  response: Response,
+  localSonolusOrigin: string | undefined,
+): Promise<void> {
+  const headers = proxiedResponseHeaders(response);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (localSonolusOrigin && req.method !== "HEAD" && contentType.includes("application/json")) {
+    const body = await response.text();
+    let localized = body;
+    try {
+      const document: unknown = JSON.parse(body);
+      if (isJsonValue(document)) localized = JSON.stringify(localizeSonolusDocument(document, localSonolusOrigin));
+    } catch {
+      // Preserve a provider's non-JSON error body verbatim rather than turning
+      // a transport proxy into an additional parser boundary.
+    }
+    headers["Content-Length"] = String(Buffer.byteLength(localized));
+    res.writeHead(response.status, headers);
+    res.end(localized);
+    return;
+  }
+
+  res.writeHead(response.status, headers);
+  if (req.method === "HEAD" || !response.body) {
+    res.end();
+    return;
+  }
+  const body = Readable.fromWeb(response.body);
+  body.once("error", (error) => res.destroy(error));
+  body.pipe(res);
+}
+
+async function proxyBestdoriProvider(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  localSonolusOrigin: string | undefined,
+): Promise<void> {
+  const sonolus = localSonolusOrigin !== undefined;
+  if (!BESTDORI_PROVIDER_ORIGIN) {
+    bestdoriProviderUnavailable(req, res, sonolus);
+    return;
+  }
+  const target = new URL(`${url.pathname}${url.search}`, BESTDORI_PROVIDER_ORIGIN);
+  let response: Response;
+  try {
+    response = await fetch(target, {
+      headers: forwardedProviderHeaders(req),
+      method: req.method === "HEAD" ? "HEAD" : "GET",
+      redirect: "manual",
+    });
+  } catch (error) {
+    bestdoriProviderUnreachable(req, res, sonolus, error);
+    return;
+  }
+  await sendBestdoriProviderResponse(req, res, response, localSonolusOrigin);
 }
 
 function decodePathPart(value: string): string | null {
@@ -424,6 +591,79 @@ function localReleaseBytes(workspace: Readonly<ReleaseWorkspace>, releasePath: s
   return file ? new Uint8Array(fs.readFileSync(file)) : null;
 }
 
+interface LocalSonolusRelease {
+  readonly server: string;
+  readonly workspace: Readonly<ReleaseWorkspace>;
+}
+
+function localSonolusReleaseKey(release: { readonly releaseId: string; readonly server: string }): string {
+  return `${release.server}\u0000${release.releaseId}`;
+}
+
+function localSonolusReleases(): readonly LocalSonolusRelease[] {
+  const releases = new Map<string, LocalSonolusRelease>();
+  for (const configuredServer of RELEASE_SERVERS) {
+    const workspace = selectedWorkspace(configuredServer);
+    if (workspace) releases.set(workspace.id, { server: workspace.id, workspace });
+  }
+  return Object.freeze([...releases.values()].sort((left, right) => left.server.localeCompare(right.server, "en")));
+}
+
+function localSonolusRevision(releases: readonly LocalSonolusRelease[], origin: string): string {
+  if (!releases.length) throw new Error("No local Our Notes releases are available for Sonolus");
+  return `${origin}:our-notes:${releases.map((release) => `${release.server}@${release.workspace.releaseId}`).join(",")}`;
+}
+
+function localSonolusCatalogProvider(releases: readonly LocalSonolusRelease[], origin: string, revision: string) {
+  return {
+    async load() {
+      const catalogs = await Promise.all(
+        releases.map(async (release) => {
+          const catalog = await new ReleaseChartCatalogProvider({
+            mediaBaseUrl: origin,
+            onInvalidCharts: (names) => {
+              console.warn(
+                `Ignoring invalid local Sonolus charts from ${release.server}/${release.workspace.releaseId}`,
+                names,
+              );
+            },
+            readJson: async (releasePath) => localReleaseJson(release.workspace, releasePath),
+            release: { releaseId: release.workspace.releaseId, server: release.server },
+            revision: `${release.server}:${release.workspace.releaseId}`,
+          }).load();
+          return catalog;
+        }),
+      );
+      const charts = new Map<string, (typeof catalogs)[number]["charts"][number]>();
+      for (const catalog of catalogs) {
+        for (const chart of catalog.charts) {
+          const key = `${chart.songId}\u0000${chart.difficulty.toLocaleLowerCase("en-US")}`;
+          if (!charts.has(key)) charts.set(key, chart);
+        }
+      }
+      return { charts: [...charts.values()], revision: { id: revision } };
+    },
+  };
+}
+
+function localSonolusDataProvider(releases: readonly LocalSonolusRelease[]): RuntimeChartDataProvider {
+  const releasesByKey = new Map(
+    releases.map((release) => [
+      localSonolusReleaseKey({ releaseId: release.workspace.releaseId, server: release.server }),
+      release,
+    ]),
+  );
+  return new RuntimeChartDataProvider({
+    readBytes: async (dataId) => {
+      const reference = parseReleaseChartDataId(dataId);
+      if (!reference) return null;
+      const release = releasesByKey.get(localSonolusReleaseKey(reference));
+      return release ? localReleaseBytes(release.workspace, reference.path) : null;
+    },
+    onInvalidChart: (chart, error) => console.warn(`Ignoring invalid local Sonolus chart ${chart.name}`, error),
+  });
+}
+
 function sonolusJson(req: IncomingMessage, res: ServerResponse, status: number, value: JsonValue, cache: string): void {
   const body = JSON.stringify(value);
   res.writeHead(status, {
@@ -454,6 +694,19 @@ function localizeSonolusDocument(value: JsonValue, localOrigin: string): JsonVal
   );
 }
 
+function localReleaseRegistry(): JsonObject {
+  return {
+    releases: RELEASE_SERVERS.map((id) => ({
+      id,
+      // Preview has no D1 resource-server administration data. Keep this
+      // intentionally minimal while preserving the same public registry shape
+      // as the Worker, so the client never invents a Bestdori pseudo-server.
+      displayName: id,
+      region: id.split("-", 1)[0] || "global",
+    })),
+  };
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://preview.invalid");
   if (!allowedMethods.has(req.method ?? "GET")) {
@@ -461,38 +714,60 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
-  // Bestdori and Haneoka both use top-level /api and /assets paths. Match only
-  // Bestdori's published namespaces here so the mirror cannot shadow the
-  // canonical /api/v1 and /assets/<Haneoka server> release routes below.
-  if (BESTDORI_MIRROR_ROOT && bestdoriMirrorPathPattern.test(url.pathname)) {
-    const file = safeFile(BESTDORI_MIRROR_ROOT, url.pathname.slice(1));
+  // The transformed Garupa API belongs to a configured provider/Worker. It is
+  // never a file in a raw Bestdori mirror, even when a mirror is available for
+  // that Worker to use as its upstream.
+  if (isBestdoriProviderApiRequest(url)) {
+    await proxyBestdoriProvider(req, res, url, undefined);
+    return;
+  }
+
+  // Bestdori Sonolus is a separate catalog, not a release-server member of
+  // the local Our Notes union. Its details/data routes retain their source in
+  // the path, while initial list/info routes retain it in the query.
+  if (url.pathname.startsWith("/sonolus/") && isBestdoriSonolusRequest(url)) {
+    const localOrigin = `http://${req.headers.host ?? `127.0.0.1:${PORT}`}`;
+    await proxyBestdoriProvider(req, res, url, localOrigin);
+    return;
+  }
+
+  // Raw Bestdori data is a Worker-only upstream transport. It never occupies
+  // a top-level application path, so Our Notes release media owns `/assets`
+  // without depending on route priority or a special server-slug exclusion.
+  if (isBestdoriRawMirrorRequest(url.pathname)) {
+    const rawPath = bestdoriRawMirrorPath(url.pathname);
+    if (!rawPath) {
+      json(res, 404, { error: { code: "bestdori_raw_path_not_found", message: "Bestdori raw path not found" } });
+      return;
+    }
+    if (!BESTDORI_RAW_MIRROR_ROOT) {
+      json(res, 503, {
+        error: {
+          code: "bestdori_raw_mirror_unavailable",
+          message: "Bestdori raw mirror is not configured; set BESTDORI_RAW_MIRROR_ROOT",
+        },
+      });
+      return;
+    }
+    const file = safeFile(BESTDORI_RAW_MIRROR_ROOT, rawPath.slice(1));
     if (file) sendFile(req, res, file, "no-cache");
     else json(res, 404, { error: { code: "mirror_not_found", message: "Bestdori mirror object not found" } });
     return;
   }
 
   if (url.pathname.startsWith("/sonolus/")) {
-    const server = SERVERS[0] ?? "jp-cbt";
-    const workspace = selectedWorkspace(server);
-    if (!workspace) {
+    const releases = localSonolusReleases();
+    const canonicalRelease = releases[0];
+    if (!canonicalRelease) {
       sonolusJson(req, res, 404, { message: "Not found" }, "no-store");
       return;
     }
     const localOrigin = `http://${req.headers.host ?? `127.0.0.1:${PORT}`}`;
-    const revision = `${workspace.id}:${workspace.releaseId}:${localOrigin}`;
-    const readJson = async (releasePath: string) => localReleaseJson(workspace, releasePath);
+    const revision = localSonolusRevision(releases, localOrigin);
+    const readJson = async (releasePath: string) => localReleaseJson(canonicalRelease.workspace, releasePath);
     const projected = await sonolusLevelService.handle({
-      catalogProvider: new ReleaseChartCatalogProvider({
-        mediaBaseUrl: localOrigin,
-        readJson,
-        resolveChartDataId: (_songId, _difficulty, rawDifficulty) =>
-          typeof rawDifficulty.file === "string" ? releaseAssetPath(rawDifficulty.file, server) : null,
-        revision,
-      }),
-      dataProvider: new RuntimeChartDataProvider({
-        readBytes: async (releasePath) => localReleaseBytes(workspace, releasePath),
-        onInvalidChart: (chart, error) => console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error),
-      }),
+      catalogProvider: localSonolusCatalogProvider(releases, localOrigin, revision),
+      dataProvider: localSonolusDataProvider(releases),
       levelTemplateProvider: new ReleaseLevelTemplateProvider({ readJson }),
       pathname: url.pathname,
       randomIndex: (length) => Math.floor(Math.random() * length),
@@ -524,7 +799,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
 
-    const file = localSonolusAssetFile(workspace, url.pathname);
+    const file = localSonolusAssetFile(canonicalRelease.workspace, url.pathname);
     if (!file) {
       sonolusJson(req, res, 404, { message: "Not found" }, "no-store");
       return;
@@ -534,6 +809,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       "Access-Control-Allow-Origin": "*",
       "Sonolus-Version": "1.1.2",
     });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/releases") {
+    json(res, 200, localReleaseRegistry(), "public, max-age=86400, stale-while-revalidate=604800");
     return;
   }
 
@@ -647,6 +927,7 @@ http
       .map((address) => address.address);
     const hosts = HOST === "0.0.0.0" ? ["127.0.0.1", ...new Set(addresses)] : [HOST];
 
-    console.log(`Preview listening on ${HOST}:${PORT} (${SERVERS.join(", ")})`);
+    console.log(`Preview listening on ${HOST}:${PORT} (${RELEASE_SERVERS.join(", ")})`);
     for (const host of hosts) console.log(`  http://${host}:${PORT}`);
+    if (BESTDORI_PROVIDER_ORIGIN) console.log(`  Bestdori provider: ${BESTDORI_PROVIDER_ORIGIN}`);
   });

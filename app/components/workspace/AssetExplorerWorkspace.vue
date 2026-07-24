@@ -3,6 +3,7 @@ import { MaterialIcon, UiIconButton, UiLinearProgress, UiList, UiListItem } from
 
 import type { AssetTreeNode } from "~/composables/useAssetExplorer";
 import { assetGroupOf, assetPathSegments, assetTreeNode, encodeAssetPath } from "~/composables/useAssetExplorer";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 interface DirectoryEntry {
   name: string;
@@ -26,7 +27,7 @@ const route = useRoute();
 const router = useRouter();
 const config = useRuntimeConfig();
 const { t } = useLocale();
-const { assetServer: server } = useAssetServer();
+const { releaseServer: server } = useReleaseServer();
 const selectedFile = useRouteQueryText("file");
 const fileLayer = useRouteQueryLayer("file");
 const columnsViewport = ref<HTMLElement>();
@@ -46,7 +47,10 @@ const {
   refresh: refreshTree,
 } = useAsyncData<Record<string, AssetTreeNode>>(
   () => `asset-tree:${server.value}`,
-  () => $fetch<Record<string, AssetTreeNode>>(catalogApiUrl(config.public.apiBase, server.value, "sources/tree")),
+  () =>
+    $fetch<Record<string, AssetTreeNode>>(
+      catalogApiUrl(config.public.apiBase, ourNotesReleaseOrigin(server.value), "sources/tree"),
+    ),
   { deep: false, server: false, default: () => ({}) },
 );
 
@@ -118,7 +122,7 @@ const refreshFiles = async () => {
   filesPending.value = true;
   try {
     const descriptor = await $fetch<SourceDescriptor>(
-      catalogApiUrl(config.public.apiBase, server.value, `sources/${path.value}`),
+      catalogApiUrl(config.public.apiBase, ourNotesReleaseOrigin(server.value), `sources/${path.value}`),
       { signal: request.signal },
     );
     if (request.signal.aborted) return;

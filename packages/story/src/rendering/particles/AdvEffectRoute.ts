@@ -12,7 +12,10 @@ export interface AdvEffectRoute {
 const CHARACTER_POSITION_TYPES = new Set([1, 3, 5, 7, 9]);
 
 /** Only CanvasLayers[0] is consulted when routing an effect, mirroring AdvEffectCommand.SetEffect. */
-export function resolveAdvEffectRoute(canvasLayers: readonly unknown[] | null | undefined, positionType: unknown): AdvEffectRoute {
+export function resolveAdvEffectRoute(
+  canvasLayers: readonly unknown[] | null | undefined,
+  positionType: unknown,
+): AdvEffectRoute {
   const firstLayer = Array.isArray(canvasLayers) && canvasLayers.length ? Number(canvasLayers[0]) : Number.NaN;
   if (firstLayer === 0 || firstLayer === 1) {
     return { phase: "advBack", unityLayer: 12, sortingOrder: 1, canvasLayer: firstLayer };

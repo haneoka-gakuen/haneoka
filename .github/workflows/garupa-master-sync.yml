@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: resource-pipeline-jp-cbt
+  group: garupa-master-sync
   cancel-in-progress: false
 
 jobs:
@@ -26,6 +26,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_EC2_METADATA_DISABLED: "true"
       PYTHONPATH: scripts
+      R2_BUCKET: hotdori-assets
 
     steps:
       - name: Check out the default branch
@@ -182,5 +183,4 @@ jobs:
             --schema-dir "$RUNNER_TEMP/garupa-runtime-schema" \
             --projection-dir "$RUNNER_TEMP/garupa-projections" \
             --server jp \
-            --storage-config jp-cbt \
             --concurrency 64

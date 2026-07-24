@@ -1,6 +1,13 @@
-import { createApiClient, type ApiClient } from "@haneoka/api-client";
+import { ApiClientError, createApiClient, type ApiClient } from "@haneoka/api-client";
 import { BESTDORI_CACHE_POLICY } from "@haneoka/bestdori/cache-policy";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
+import {
+  contentOriginKey,
+  isBestdoriOrigin,
+  ourNotesReleaseOrigin,
+  releaseFallbackOrder,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 
 let browserApiClient: ApiClient | undefined;
 const catalogJson = <T>(url: string): Promise<T> => {
@@ -9,58 +16,67 @@ const catalogJson = <T>(url: string): Promise<T> => {
   return browserApiClient.get<T>(new URL(url, window.location.origin).toString());
 };
 
-export const catalogApiUrl = (apiBase: unknown, server: unknown, path: unknown): string => {
-  const base = String(apiBase || "/api/v1").replace(/\/+$/, "");
-  const serverId = encodeURIComponent(normalizeAssetServer(server));
-  const segments = String(path || "")
+const catalogPath = (path: unknown): string =>
+  String(path || "")
     .replace(/^\/+|\/+$/g, "")
     .split("/")
     .filter(Boolean)
-    .map(encodeURIComponent);
-  return `${base}/servers/${serverId}/${segments.join("/")}`;
+    .map(encodeURIComponent)
+    .join("/");
+
+/**
+ * Resolve a catalog URL from a namespaced origin.
+ *
+ * Our Notes release archives remain under the release API. Garupa content is
+ * deliberately routed through its own API namespace, so a Bestdori region can
+ * never be mistaken for an Our Notes release with the same slug (for example
+ * `jp`).
+ */
+export const catalogApiUrl = (apiBase: unknown, origin: CatalogContentOrigin, path: unknown): string => {
+  const base = String(apiBase || "/api/v1").replace(/\/+$/, "");
+  const segments = catalogPath(path);
+  if (origin.provider === "release") return `${base}/servers/${encodeURIComponent(origin.releaseId)}/${segments}`;
+  return `${base}/garupa/bestdori/${encodeURIComponent(origin.region)}/${segments}`;
 };
 
 const appendCatalogQuery = (url: string, query: string): string =>
   query ? `${url}${url.includes("?") ? "&" : "?"}${query.replace(/^\?/, "")}` : url;
 
-const useCatalogRequestContext = (server?: MaybeRefOrGetter<string | undefined>) => {
+const useCatalogRequestContext = (origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>) => {
   const config = useRuntimeConfig();
-  const { assetServer } = useAssetServer();
+  const { releaseServer } = useReleaseServer();
   const { locale } = useLocale();
-  // Most catalog requests follow the selected release server. Catalog-shaped
-  // proxy sources can opt into their stable server name without duplicating
-  // URL, cache-key, or shallow-response behavior at each call site.
-  const catalogServer = computed(() => {
-    // A reactive optional override can resolve to undefined; that means
-    // “follow the selected server,” not “pin the default server.”
-    const requested = server === undefined ? undefined : toValue(server);
-    return normalizeAssetServer(requested === undefined ? assetServer.value : requested);
+  // Most catalog requests follow the selected Our Notes release. Bestdori is
+  // a provider source, not a release-server slug, and is modeled separately.
+  const catalogOrigin = computed<CatalogContentOrigin>(() => {
+    const requested = origin === undefined ? undefined : toValue(origin);
+    return requested === undefined ? ourNotesReleaseOrigin(releaseServer.value) : requested;
   });
-  // Bestdori publishes independent regional resources. Every catalog-shaped
-  // request carries the UI locale so the worker can apply one shared fallback
-  // order instead of silently choosing JP while transforming the response.
+  // Region is part of the Bestdori URL. Locale is intentionally separate: it
+  // controls localized labels only and must not choose a different upstream
+  // region or asset.
   const catalogQueryPart = computed(() =>
-    catalogServer.value === "bestdori"
+    isBestdoriOrigin(catalogOrigin.value)
       ? `lang=${encodeURIComponent(locale.value)}&v=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}`
       : "",
   );
   const requestUrl = (path: MaybeRefOrGetter<string>) =>
     computed(() =>
       appendCatalogQuery(
-        catalogApiUrl(config.public.apiBase, catalogServer.value, toValue(path)),
+        catalogApiUrl(config.public.apiBase, catalogOrigin.value, toValue(path)),
         catalogQueryPart.value,
       ),
     );
   const dataKey = (path: MaybeRefOrGetter<string>) =>
-    computed(() => `catalog:${catalogServer.value}:${toValue(path)}?${catalogQueryPart.value}`);
-  return { assetServer, catalogServer, catalogQueryPart, requestUrl, dataKey };
+    computed(() => `catalog:${contentOriginKey(catalogOrigin.value)}:${toValue(path)}?${catalogQueryPart.value}`);
+  return { releaseServer, catalogOrigin, catalogQueryPart, requestUrl, dataKey };
 };
 
 export const useCatalogDocument = <T>(
   resource: MaybeRefOrGetter<string>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
 ) => {
-  const { requestUrl, dataKey } = useCatalogRequestContext(server);
+  const { requestUrl, dataKey } = useCatalogRequestContext(origin);
   const url = requestUrl(resource);
   // Catalog payloads are immutable snapshots. Keeping them shallow avoids
   // recursively proxying tens of thousands of fields before a page can render.
@@ -74,11 +90,11 @@ export const useCatalogDocument = <T>(
 export const useCatalogView = <T>(
   resource: string,
   view: MaybeRefOrGetter<string>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
 ) =>
   useCatalogDocument<T>(
     computed(() => `${resource}/views/${toValue(view)}`),
-    server,
+    origin,
   );
 
 interface LazyCatalogCacheEntry {
@@ -92,8 +108,8 @@ const lazyCatalogInflight = new Map<string, Promise<unknown>>();
 // Normal archive releases are immutable snapshots for the current session.
 // Bestdori is a live upstream: bound its in-memory list cache so navigating
 // back to a story or song catalog eventually requests a fresh response.
-const lazyCatalogCacheTtlMs = (catalogServer: string): number =>
-  catalogServer === "bestdori" ? BESTDORI_CACHE_POLICY.catalog.clientTtlMs : Number.POSITIVE_INFINITY;
+const lazyCatalogCacheTtlMs = (origin: CatalogContentOrigin): number =>
+  isBestdoriOrigin(origin) ? BESTDORI_CACHE_POLICY.catalog.clientTtlMs : Number.POSITIVE_INFINITY;
 
 const readLazyCatalogCache = (key: string): LazyCatalogCacheEntry | undefined => {
   const entry = lazyCatalogCache.get(key);
@@ -105,10 +121,10 @@ const readLazyCatalogCache = (key: string): LazyCatalogCacheEntry | undefined =>
   return entry;
 };
 
-const writeLazyCatalogCache = (key: string, value: unknown, catalogServer: string): void => {
+const writeLazyCatalogCache = (key: string, value: unknown, origin: CatalogContentOrigin): void => {
   lazyCatalogCache.set(key, {
     value,
-    expiresAt: Date.now() + lazyCatalogCacheTtlMs(catalogServer),
+    expiresAt: Date.now() + lazyCatalogCacheTtlMs(origin),
   });
 };
 
@@ -121,17 +137,17 @@ export const useLazyCatalogDocument = <T>(
   resource: MaybeRefOrGetter<string>,
   active: MaybeRefOrGetter<boolean>,
   fallback?: LazyCatalogFallback<T>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
 ) => {
   const config = useRuntimeConfig();
-  const { catalogServer, catalogQueryPart } = useCatalogRequestContext(server);
+  const { catalogOrigin, catalogQueryPart } = useCatalogRequestContext(origin);
   const data = shallowRef<T>();
   const pending = ref(false);
   const error = shallowRef<unknown>();
   let loadedKey = "";
   let requestVersion = 0;
 
-  const cacheKey = (path: string) => `${catalogServer.value}:${path}?${catalogQueryPart.value}`;
+  const cacheKey = (path: string) => `${contentOriginKey(catalogOrigin.value)}:${path}?${catalogQueryPart.value}`;
   const requestDocument = async <Value>(path: string, force: boolean): Promise<Value> => {
     const key = cacheKey(path);
     const cached = force ? undefined : readLazyCatalogCache(key);
@@ -139,7 +155,7 @@ export const useLazyCatalogDocument = <T>(
     let request = lazyCatalogInflight.get(key) as Promise<Value> | undefined;
     if (!request) {
       request = catalogJson<Value>(
-        appendCatalogQuery(catalogApiUrl(config.public.apiBase, catalogServer.value, path), catalogQueryPart.value),
+        appendCatalogQuery(catalogApiUrl(config.public.apiBase, catalogOrigin.value, path), catalogQueryPart.value),
       );
       lazyCatalogInflight.set(key, request);
       void request.then(
@@ -148,7 +164,7 @@ export const useLazyCatalogDocument = <T>(
       );
     }
     const response = await request;
-    writeLazyCatalogCache(key, response, catalogServer.value);
+    writeLazyCatalogCache(key, response, catalogOrigin.value);
     return response;
   };
 
@@ -183,7 +199,7 @@ export const useLazyCatalogDocument = <T>(
       } catch (reason) {
         if (!fallback || !fallbackPath) throw reason;
         response = fallback.select(await requestDocument<unknown>(fallbackPath, force));
-        writeLazyCatalogCache(fallbackResultKey, response, catalogServer.value);
+        writeLazyCatalogCache(fallbackResultKey, response, catalogOrigin.value);
       }
       if (version === requestVersion) {
         data.value = response;
@@ -199,7 +215,7 @@ export const useLazyCatalogDocument = <T>(
   watch(
     [
       () => Boolean(toValue(active)),
-      catalogServer,
+      () => contentOriginKey(catalogOrigin.value),
       catalogQueryPart,
       () => toValue(resource),
       () => (fallback ? toValue(fallback.resource) : ""),
@@ -216,20 +232,20 @@ export const useLazyCatalogView = <T>(
   view: MaybeRefOrGetter<string>,
   active: MaybeRefOrGetter<boolean>,
   fallback?: LazyCatalogFallback<T>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
 ) =>
   useLazyCatalogDocument<T>(
     computed(() => `${resource}/views/${toValue(view)}`),
     active,
     fallback,
-    server,
+    origin,
   );
 
 export const useLazyCatalogCollection = <T>(
   resource: string,
   active: MaybeRefOrGetter<boolean>,
-  server?: MaybeRefOrGetter<string | undefined>,
-) => useLazyCatalogDocument<Record<string, T>>(resource, active, undefined, server);
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
+) => useLazyCatalogDocument<Record<string, T>>(resource, active, undefined, origin);
 
 export interface CatalogSummaryResource {
   count: number;
@@ -241,8 +257,11 @@ export interface CatalogSummary {
 
 export const useCatalogSummary = () => useCatalogDocument<CatalogSummary>("catalog/summary");
 
-export const useCatalogCollection = <T>(resource: string, server?: MaybeRefOrGetter<string | undefined>) => {
-  const { requestUrl, dataKey } = useCatalogRequestContext(server);
+export const useCatalogCollection = <T>(
+  resource: string,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
+) => {
+  const { requestUrl, dataKey } = useCatalogRequestContext(origin);
   const url = requestUrl(resource);
   return useAsyncData<Record<string, T>>(dataKey(resource), () => catalogJson<Record<string, T>>(url.value), {
     deep: false,
@@ -255,11 +274,11 @@ export const useCatalogCollection = <T>(resource: string, server?: MaybeRefOrGet
 export const useCatalogRecord = <T>(
   resource: string,
   id: MaybeRefOrGetter<string>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
   query?: MaybeRefOrGetter<CatalogRecordsQuery | undefined>,
 ) => {
   const path = computed(() => `${resource}/${toValue(id)}`);
-  const { requestUrl, dataKey } = useCatalogRequestContext(server);
+  const { requestUrl, dataKey } = useCatalogRequestContext(origin);
   const queryPart = computed(() => {
     const entries = Object.entries(toValue(query) || {})
       .filter(([, value]) => value !== undefined && value !== null && value !== "")
@@ -279,9 +298,14 @@ export const useCatalogRelation = <T>(
   resource: string,
   relation: string,
   key: MaybeRefOrGetter<string | number | null | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
 ) => {
   const config = useRuntimeConfig();
-  const { assetServer } = useAssetServer();
+  const { releaseServer } = useReleaseServer();
+  const catalogOrigin = computed<CatalogContentOrigin>(() => {
+    const requested = origin === undefined ? undefined : toValue(origin);
+    return requested === undefined ? ourNotesReleaseOrigin(releaseServer.value) : requested;
+  });
   const data = shallowRef<Record<string, T>>({});
   const pending = ref(false);
   const error = shallowRef<unknown>();
@@ -300,7 +324,7 @@ export const useCatalogRelation = <T>(
     try {
       const url = catalogApiUrl(
         config.public.apiBase,
-        assetServer.value,
+        catalogOrigin.value,
         `${resource}/relations/${relation}/${selected}`,
       );
       const response = await catalogJson<Record<string, T>>(url);
@@ -312,7 +336,7 @@ export const useCatalogRelation = <T>(
     }
   };
 
-  watch([() => toValue(key), assetServer], () => void load(), { immediate: true });
+  watch([() => toValue(key), () => contentOriginKey(catalogOrigin.value)], () => void load(), { immediate: true });
   return { data, pending, error, refresh: load };
 };
 
@@ -326,15 +350,15 @@ type CatalogRecordsQuery = Readonly<Record<string, boolean | number | string | n
 export const useCatalogRecords = <T>(
   resource: string,
   ids: MaybeRefOrGetter<readonly string[]>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
   query?: MaybeRefOrGetter<CatalogRecordsQuery | undefined>,
 ) => {
   const config = useRuntimeConfig();
-  const { assetServer } = useAssetServer();
+  const { releaseServer } = useReleaseServer();
   const { locale } = useLocale();
-  const catalogServer = computed(() => {
-    const requested = server === undefined ? undefined : toValue(server);
-    return normalizeAssetServer(requested === undefined ? assetServer.value : requested);
+  const catalogOrigin = computed<CatalogContentOrigin>(() => {
+    const requested = origin === undefined ? undefined : toValue(origin);
+    return requested === undefined ? ourNotesReleaseOrigin(releaseServer.value) : requested;
   });
   const data = shallowRef<Record<string, T>>({});
   const pending = ref(false);
@@ -345,7 +369,7 @@ export const useCatalogRecords = <T>(
     [...new Set(toValue(ids).map(String).filter(Boolean))].sort((left, right) => left.localeCompare(right));
   const normalizedQuery = () => {
     const entries = new Map<string, string>();
-    if (catalogServer.value === "bestdori") {
+    if (isBestdoriOrigin(catalogOrigin.value)) {
       entries.set("lang", locale.value);
       entries.set("v", BESTDORI_CATALOG_VERSION);
     }
@@ -374,7 +398,7 @@ export const useCatalogRecords = <T>(
     }
     pending.value = true;
     try {
-      const baseUrl = catalogApiUrl(config.public.apiBase, catalogServer.value, resource);
+      const baseUrl = catalogApiUrl(config.public.apiBase, catalogOrigin.value, resource);
       const response = await catalogJson<CatalogRecordsResponse<T>>(`${baseUrl}?${requestParameters()}`);
       if (version === requestVersion) data.value = response.items;
     } catch (reason) {
@@ -394,7 +418,7 @@ export const useCatalogRecords = <T>(
         normalizedQuery()
           .map(([key, value]) => `${key}=${value}`)
           .join("\0"),
-      catalogServer,
+      () => contentOriginKey(catalogOrigin.value),
     ],
     () => void load(),
     { immediate: true },
@@ -402,22 +426,47 @@ export const useCatalogRecords = <T>(
   return { data, pending, error, refresh: load };
 };
 
+export interface CatalogSelectionOptions {
+  /** Try the selected Our Notes release before the configured release fallback chain. */
+  fallbackAcrossReleases?: boolean;
+  /** Provider-specific parameters for a detail request. */
+  query?: MaybeRefOrGetter<CatalogRecordsQuery | undefined>;
+}
+
 export const useCatalogSelection = <T>(
   resource: string,
   id: MaybeRefOrGetter<string | number | undefined>,
-  server?: MaybeRefOrGetter<string | undefined>,
+  origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>,
+  options: CatalogSelectionOptions = {},
 ) => {
   const config = useRuntimeConfig();
-  const { assetServer } = useAssetServer();
+  const { releaseServer, fallbackReleaseServers } = useReleaseServer();
   const { locale } = useLocale();
-  const catalogServer = computed(() => {
-    const requested = server === undefined ? undefined : toValue(server);
-    return normalizeAssetServer(requested === undefined ? assetServer.value : requested);
+  const requestedOrigin = computed<CatalogContentOrigin>(() => {
+    const requested = origin === undefined ? undefined : toValue(origin);
+    return requested === undefined ? ourNotesReleaseOrigin(releaseServer.value) : requested;
   });
   const data = shallowRef<T>();
+  const resolvedOrigin = shallowRef<CatalogContentOrigin>();
   const pending = ref(false);
   const error = shallowRef<unknown>();
   let requestVersion = 0;
+
+  const requestQuery = (candidate: CatalogContentOrigin): string => {
+    const entries = new Map<string, string>();
+    if (isBestdoriOrigin(candidate)) {
+      entries.set("lang", locale.value);
+      entries.set("v", BESTDORI_CATALOG_VERSION);
+    }
+    for (const [key, value] of Object.entries(toValue(options.query) || {})) {
+      if (value === undefined || value === null || value === "") continue;
+      entries.set(key, String(value));
+    }
+    return [...entries]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join("&");
+  };
 
   const load = async () => {
     const selected = toValue(id);
@@ -425,25 +474,42 @@ export const useCatalogSelection = <T>(
     error.value = undefined;
     if (import.meta.server || selected === undefined || selected === null || selected === "") {
       data.value = undefined;
+      resolvedOrigin.value = undefined;
       pending.value = false;
       return;
     }
     data.value = undefined;
+    resolvedOrigin.value = undefined;
     pending.value = true;
     try {
-      const query =
-        catalogServer.value === "bestdori"
-          ? `lang=${encodeURIComponent(locale.value)}&v=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}`
-          : "";
-      const url = appendCatalogQuery(
-        catalogApiUrl(config.public.apiBase, catalogServer.value, `${resource}/${selected}`),
-        query,
-      );
-      const response = await catalogJson<T>(url);
-      if (version === requestVersion) data.value = response;
+      const candidates =
+        options.fallbackAcrossReleases && requestedOrigin.value.provider === "release"
+          ? releaseFallbackOrder(requestedOrigin.value.releaseId, fallbackReleaseServers.value)
+          : [requestedOrigin.value];
+      let lastError: unknown;
+      for (const candidate of candidates) {
+        const url = appendCatalogQuery(
+          catalogApiUrl(config.public.apiBase, candidate, `${resource}/${selected}`),
+          requestQuery(candidate),
+        );
+        try {
+          const response = await catalogJson<T>(url);
+          if (version === requestVersion) {
+            data.value = response;
+            resolvedOrigin.value = candidate;
+          }
+          lastError = undefined;
+          break;
+        } catch (reason) {
+          lastError = reason;
+          if (!(reason instanceof ApiClientError) || reason.status !== 404) throw reason;
+        }
+      }
+      if (lastError !== undefined) throw lastError;
     } catch (reason) {
       if (version === requestVersion) {
         data.value = undefined;
+        resolvedOrigin.value = undefined;
         error.value = reason;
       }
     } finally {
@@ -451,8 +517,18 @@ export const useCatalogSelection = <T>(
     }
   };
 
-  watch([() => toValue(id), catalogServer, locale], () => void load(), { immediate: true });
-  return { data, pending, error, refresh: load };
+  watch(
+    [
+      () => toValue(id),
+      () => contentOriginKey(requestedOrigin.value),
+      () => fallbackReleaseServers.value.join("\0"),
+      locale,
+      () => requestQuery(requestedOrigin.value),
+    ],
+    () => void load(),
+    { immediate: true },
+  );
+  return { data, resolvedOrigin, pending, error, refresh: load };
 };
 
 export const recordValues = <T>(record: Record<string, T> | null | undefined): T[] => {

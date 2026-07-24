@@ -1,5 +1,6 @@
 import { importBestdoriScenario } from "@haneoka/bestdori/story-editor";
 import { normalizeSongType } from "~/config/songTypes";
+import { bestdoriOrigin } from "~/features/catalog/contentSource";
 import { registerSongCatalogSource } from "~/features/catalog/songSources";
 import { registerExternalResourceUrlPolicy } from "~/features/resources/sourcePolicies";
 import { registerStoryCatalogSource } from "~/features/story/catalogSources";
@@ -11,7 +12,7 @@ const SOURCE_ID = "bestdori";
 export const registerBestdoriCommunitySource = (): void => {
   registerSongCatalogSource({
     id: SOURCE_ID,
-    catalogServer: SOURCE_ID,
+    catalogOrigin: bestdoriOrigin("jp"),
     titleKey: "communityPage.songsBestDori",
     domain: "community",
     maxDifficulty: 4,
@@ -39,6 +40,6 @@ export const registerBestdoriCommunitySource = (): void => {
     accepts: ({ fileName, parsed }) =>
       /\.asset$/i.test(fileName) ||
       Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed) && "Base" in parsed),
-    import: ({ parsed, title, assetServer }) => importBestdoriScenario(parsed, { title, assetServer }),
+    import: ({ parsed, title, releaseServer }) => importBestdoriScenario(parsed, { title, releaseServer }),
   });
 };

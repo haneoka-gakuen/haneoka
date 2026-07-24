@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -18,6 +20,13 @@ from .client import (
 from .package import PackagePreparationError, prepare_package
 from .projection import ProjectionError, build_projections
 from .schema import generate_schema, load_schema, write_schema
+
+
+@dataclass(frozen=True)
+class _R2BucketConfig:
+    """The only resource-pipeline configuration Garupa R2 needs."""
+
+    r2_bucket: str
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -102,7 +111,11 @@ def _parser() -> argparse.ArgumentParser:
     r2_publish.add_argument("--schema-dir", type=Path, required=True)
     r2_publish.add_argument("--projection-dir", type=Path, required=True)
     r2_publish.add_argument("--server", default="jp")
-    r2_publish.add_argument("--storage-config", default="jp-cbt")
+    r2_publish.add_argument(
+        "--r2-bucket",
+        default=os.environ.get("R2_BUCKET"),
+        help="shared R2 bucket for Garupa snapshots (or set R2_BUCKET)",
+    )
     r2_publish.add_argument("--concurrency", type=int, default=32)
 
     r2_verify = commands.add_parser(
@@ -110,7 +123,11 @@ def _parser() -> argparse.ArgumentParser:
         help="verify the selected Garupa Master snapshot and every referenced CAS object",
     )
     r2_verify.add_argument("--server", default="jp")
-    r2_verify.add_argument("--storage-config", default="jp-cbt")
+    r2_verify.add_argument(
+        "--r2-bucket",
+        default=os.environ.get("R2_BUCKET"),
+        help="shared R2 bucket for Garupa snapshots (or set R2_BUCKET)",
+    )
     r2_verify.add_argument("--snapshot-id")
     r2_verify.add_argument("--concurrency", type=int, default=32)
 
@@ -255,7 +272,7 @@ def _sync(args: argparse.Namespace) -> int:
     return 0
 
 
-def _r2_store(storage_config: str, concurrency: int):
+def _r2_store(r2_bucket: object, concurrency: int):
     # The resource pipeline modules are also executable as top-level modules
     # with PYTHONPATH=scripts. Make the same imports work for the package-style
     # `python -m scripts.garupa_master` entry point used in local runs.
@@ -263,17 +280,19 @@ def _r2_store(storage_config: str, concurrency: int):
     scripts_path = str(scripts_root)
     if scripts_path not in sys.path:
         sys.path.insert(0, scripts_path)
-    from core.config import load_server_config
     from publish.r2 import R2Store
 
-    return R2Store(load_server_config(storage_config), concurrency)
+    bucket = str(r2_bucket or "").strip()
+    if not bucket:
+        raise ValueError("set --r2-bucket or R2_BUCKET for Garupa R2 publication")
+    return R2Store(_R2BucketConfig(bucket), concurrency)
 
 
 def _publish_r2(args: argparse.Namespace) -> int:
     from .r2 import publish_snapshot
 
     result = publish_snapshot(
-        _r2_store(args.storage_config, args.concurrency),
+        _r2_store(args.r2_bucket, args.concurrency),
         args.archive_dir,
         args.schema_dir,
         args.projection_dir,
@@ -287,7 +306,7 @@ def _verify_r2(args: argparse.Namespace) -> int:
     from .r2 import verify_snapshot
 
     result = verify_snapshot(
-        _r2_store(args.storage_config, args.concurrency),
+        _r2_store(args.r2_bucket, args.concurrency),
         server=args.server,
         snapshot_id=args.snapshot_id,
     )

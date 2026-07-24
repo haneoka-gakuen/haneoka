@@ -12,6 +12,7 @@ import {
 } from "@haneoka/ui";
 import type { Band, Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
+import { isBestdoriOrigin, isCatalogContentOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { sourceLocaleOf, textOf, type DisplayText } from "~/types/displayText";
 
 const {
@@ -34,48 +35,25 @@ const {
   seek,
   setVolume,
   cyclePlaybackMode,
-  reconcileQueue,
 } = useAudioPlayer();
 const router = useRouter();
-const { t, resolveLocalized, locale } = useLocale();
-const catalogSongIds = computed(() =>
-  queue.value.filter((item) => item.catalogSource !== "bestdori").map((item) => String(item.id)),
-);
-const bestdoriSongIds = computed(() =>
-  queue.value.filter((item) => item.catalogSource === "bestdori").map((item) => String(item.id)),
-);
-const { data: catalogSongRecord } = useCatalogRecords<Song>("songs", catalogSongIds);
-const { data: bestdoriSongRecord } = useCatalogRecords<Song>("songs", bestdoriSongIds, "bestdori");
-const catalogBandIds = computed(() =>
-  Object.values(catalogSongRecord.value || {})
-    .map((song) => Number(song.bandId || 0))
-    .filter((id) => id > 0)
-    .map(String),
-);
-const bestdoriBandIds = computed(() =>
-  Object.values(bestdoriSongRecord.value || {})
-    .map((song) => Number(song.bandId || 0))
-    .filter((id) => id > 0)
-    .map(String),
-);
-const { data: catalogBandRecord } = useCatalogRecords<Band>("bands", catalogBandIds);
-const { data: bestdoriBandRecord } = useCatalogRecords<Band>("bands", bestdoriBandIds, "bestdori");
-const creditResolver = useSongCreditVisualResolver();
-const creditSourceOf = (catalogSource: string) => (catalogSource === "bestdori" ? "bestdori" : "jp-cbt");
-const songRecordFor = (catalogSource: string) =>
-  catalogSource === "bestdori" ? bestdoriSongRecord.value : catalogSongRecord.value;
-const bandRecordFor = (catalogSource: string) =>
-  catalogSource === "bestdori" ? bestdoriBandRecord.value : catalogBandRecord.value;
-const activeSong = computed(() => {
-  const current = track.value;
-  return current ? songRecordFor(current.catalogSource)?.[String(current.id)] : undefined;
+const { t, resolveLocalized } = useLocale();
+const activeCatalogOrigin = computed<CatalogContentOrigin | undefined>(() => {
+  const origin = track.value?.origin;
+  return isCatalogContentOrigin(origin) ? origin : undefined;
 });
-const activeBand = computed(() => {
-  const current = track.value;
-  const song = activeSong.value;
-  return current && song
-    ? bandRecordFor(current.catalogSource)?.[String(song.bandId || current.bandId || 0)]
-    : undefined;
+const creditResolver = useSongCreditVisualResolver(activeCatalogOrigin);
+const activeSongId = computed(() => (activeCatalogOrigin.value ? track.value?.id : undefined));
+const { data: activeSong } = useCatalogSelection<Song>("songs", activeSongId, activeCatalogOrigin);
+const activeBandId = computed(() => {
+  if (!activeCatalogOrigin.value) return undefined;
+  const bandId = Number(activeSong.value?.bandId || track.value?.bandId || 0);
+  return bandId > 0 ? bandId : undefined;
+});
+const { data: activeBand } = useCatalogSelection<Band>("bands", activeBandId, activeCatalogOrigin);
+const activeCreditVisuals = computed<readonly CompositeEntityVisual[]>(() => {
+  if (!activeSong.value || !activeCatalogOrigin.value) return [];
+  return creditResolver.value.song(activeSong.value, activeCatalogOrigin.value, "logo");
 });
 const localizedTrackTitle = computed<DisplayText>(() => {
   const current = track.value;
@@ -91,9 +69,7 @@ const localizedTrackTitle = computed<DisplayText>(() => {
 const localizedTrackBand = computed<DisplayText>(() => {
   const current = track.value;
   if (!current) return "";
-  const composite = activeSong.value
-    ? creditResolver.value.song(activeSong.value, creditSourceOf(current.catalogSource), "logo").length > 1
-    : (current.bandVisuals?.length || 0) > 1;
+  const composite = activeSong.value ? activeCreditVisuals.value.length > 1 : (current.bandVisuals?.length || 0) > 1;
   return (
     resolveLocalized(activeSong.value?.artistName, {
       candidates: composite ? [] : [activeBand.value?.bandName],
@@ -106,10 +82,7 @@ const localizedTrackBand = computed<DisplayText>(() => {
 const trackBandVisuals = computed<readonly CompositeEntityVisual[]>(() => {
   const current = track.value;
   if (!current) return [];
-  if (activeSong.value) {
-    const resolved = creditResolver.value.song(activeSong.value, creditSourceOf(current.catalogSource), "logo");
-    if (resolved.length) return resolved;
-  }
+  if (activeCreditVisuals.value.length) return activeCreditVisuals.value;
   if (current.bandVisuals?.length) return current.bandVisuals;
   return current.bandIcon ? [{ image: current.bandIcon, fit: "contain" }] : [];
 });
@@ -117,8 +90,10 @@ const trackDetailPath = computed(() => {
   const current = track.value;
   if (!current) return "/catalog/songs";
   if (current.detailPath) return current.detailPath;
-  const base = current.catalogSource === "bestdori" ? "/community/songs-bestdori" : "/catalog/songs";
-  return `${base}?song=${current.id}`;
+  const base = isBestdoriOrigin(current.origin) ? "/community/songs-bestdori" : "/catalog/songs";
+  const release =
+    current.origin.provider === "release" ? `&release=${encodeURIComponent(current.origin.releaseId)}` : "";
+  return `${base}?song=${current.id}${release}`;
 });
 const trackDetailLabel = computed(() => `${t("details")}: ${textOf(localizedTrackTitle.value)}`);
 
@@ -190,8 +165,8 @@ const closeQueue = async (restoreFocus = false) => {
   closeOverlayHistoryEntry();
   if (restoreFocus) {
     await nextTick();
-    if (queueOpenedFromMobileControls) mobileControlsButton.value?.focus();
-    else queueButton.value?.focus();
+    if (queueOpenedFromMobileControls) mobileControlsButton.value?.getElement()?.focus({ preventScroll: true });
+    else queueButton.value?.getElement()?.focus({ preventScroll: true });
   }
   queueOpenedFromMobileControls = false;
 };
@@ -211,7 +186,7 @@ const closeMobileControls = async (restoreFocus = false) => {
   closeOverlayHistoryEntry();
   if (restoreFocus) {
     await nextTick();
-    mobileControlsButton.value?.focus();
+    mobileControlsButton.value?.getElement()?.focus({ preventScroll: true });
   }
 };
 
@@ -277,13 +252,13 @@ const onKeydown = (event: KeyboardEvent) => {
   const last = focusable[focusable.length - 1];
   if (!panel?.contains(document.activeElement)) {
     event.preventDefault();
-    (event.shiftKey ? last : first)?.focus();
+    (event.shiftKey ? last : first)?.focus({ preventScroll: true });
   } else if (event.shiftKey && document.activeElement === first) {
     event.preventDefault();
-    last?.focus();
+    last?.focus({ preventScroll: true });
   } else if (!event.shiftKey && document.activeElement === last) {
     event.preventDefault();
-    first?.focus();
+    first?.focus({ preventScroll: true });
   }
 };
 
@@ -293,45 +268,6 @@ watch(track, (value) => {
     closeOverlayHistoryEntry();
   }
 });
-watch(
-  [catalogSongRecord, bestdoriSongRecord, catalogBandRecord, bestdoriBandRecord, creditResolver, locale],
-  () => {
-    const canonical = queue.value.flatMap((item) => {
-      const songs = songRecordFor(item.catalogSource) || {};
-      const bands = bandRecordFor(item.catalogSource) || {};
-      const song = songs[String(item.id)];
-      if (!song) return [];
-      const band = bands[String(song.bandId || item.bandId || 0)];
-      const resolvedVisuals = creditResolver.value.song(song, creditSourceOf(item.catalogSource), "logo");
-      const composite = resolvedVisuals.length > 1;
-      return [
-        {
-          ...item,
-          title:
-            resolveLocalized(song.musicTitle, {
-              sourceHint: "ja",
-              fallback: textOf(item.title),
-              fallbackSourceHint: sourceLocaleOf(item.title),
-            }) || item.title,
-          band:
-            resolveLocalized(song.artistName, {
-              candidates: composite ? [] : [band?.bandName],
-              sourceHint: "ja",
-              fallback: textOf(item.band),
-              fallbackSourceHint: sourceLocaleOf(item.band),
-            }) || item.band,
-          bandId: Number(song.bandId || item.bandId || 0) || undefined,
-          bandIcon: resolvedVisuals[0]?.image || item.bandIcon,
-          bandVisuals: resolvedVisuals.length ? resolvedVisuals : item.bandVisuals,
-          cover: song.jacketUrl || song.jacketThumbUrl || item.cover,
-          source: song.musicUrl || item.source,
-        },
-      ];
-    });
-    if (canonical.length) reconcileQueue(canonical);
-  },
-  { deep: true },
-);
 watch(overlayOpen, (open) => {
   if (!import.meta.client) return;
   setQueueModalIsolation(open);
@@ -342,14 +278,14 @@ watch(queueOpen, async (open) => {
     await nextTick();
     queuePanel.value?.centerCurrent?.();
     const panel = queuePanel.value?.$el;
-    if (panel) collectFocusableElements(panel)[0]?.focus();
+    if (panel) collectFocusableElements(panel)[0]?.focus({ preventScroll: true });
   }
 });
 watch(mobileControlsOpen, async (open) => {
   if (!import.meta.client || !open) return;
   await nextTick();
   const panel = mobileControlsPanel.value?.$el;
-  if (panel) collectFocusableElements(panel)[0]?.focus();
+  if (panel) collectFocusableElements(panel)[0]?.focus({ preventScroll: true });
 });
 const centerQueueCurrent = () => queuePanel.value?.centerCurrent?.();
 const closeActiveOverlay = (restoreFocus = false) => {
@@ -368,9 +304,13 @@ onMounted(() => {
     applyOverlayKind(kind);
     if (previousKind && !kind) {
       void nextTick(() => {
-        if (previousKind === "queue" && queueOpenedFromMobileControls) mobileControlsButton.value?.focus();
-        else if (previousKind === "queue") queueButton.value?.focus();
-        else mobileControlsButton.value?.focus();
+        if (previousKind === "queue" && queueOpenedFromMobileControls) {
+          mobileControlsButton.value?.getElement()?.focus({ preventScroll: true });
+        } else if (previousKind === "queue") {
+          queueButton.value?.getElement()?.focus({ preventScroll: true });
+        } else {
+          mobileControlsButton.value?.getElement()?.focus({ preventScroll: true });
+        }
         queueOpenedFromMobileControls = false;
       });
     }

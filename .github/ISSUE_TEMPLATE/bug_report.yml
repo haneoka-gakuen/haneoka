@@ -76,7 +76,7 @@ body:
     attributes:
       label: Environment
       description: Include the relevant OS, browser/runtime, device, viewport/orientation, selected resource server, and physical/emulated status. Enter N/A for details that cannot affect this report.
-      placeholder: macOS 15; Chrome 138; 1440 × 900; jp-cbt; physical device
+      placeholder: macOS 15; Chrome 138; 1440 × 900; jp; physical device
     validations:
       required: true
   - type: textarea

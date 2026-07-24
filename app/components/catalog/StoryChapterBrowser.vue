@@ -5,6 +5,7 @@ import type { Band, StoryChapter, StoryEpisode } from "~/types/archive";
 import { langOf, replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 import type { FacetOption } from "~/components/ui/FacetGroup.vue";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 type ImageExpander = (url: string | null | undefined) => readonly string[];
 
@@ -17,8 +18,10 @@ const props = withDefaults(
     title: string;
     domain?: CapabilityDomain;
     /** Pass-through source identifiers for `StoryColumnWorkbench`. */
-    catalogServer?: string;
-    server?: string;
+    catalogOrigin?: CatalogContentOrigin;
+    catalogAdapter?: string;
+    /** Fallback renderer release for a non-Our Notes catalog source. */
+    releaseServer?: string;
     /** Show the band `FacetGroup` filter (band section only). */
     enableBandFilter?: boolean;
     /** Optional source-defined chapter grouping (for example mixed-character events). */
@@ -323,8 +326,9 @@ const selectChapter = (value: string | number) => {
       <StoryColumnWorkbench
         :story-id="openedEpisodeId"
         :story-title="playerEpisode ? displayTitleOfEpisode(playerEpisode) : ''"
-        :catalog-server="catalogServer"
-        :server="server"
+        :catalog-origin="catalogOrigin"
+        :catalog-adapter="catalogAdapter"
+        :release-server="releaseServer"
         @close="closeStory"
       >
         <div v-if="view === 'grid'" class="band-story-browser">

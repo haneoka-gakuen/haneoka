@@ -89,7 +89,10 @@ const focusPanel = async (selector: string) => {
   await nextTick();
   const panel = workspaceRoot.value?.querySelector<HTMLElement>(selector);
   const target = panel ? collectFocusableElements(panel)[0] : undefined;
-  (target || panel)?.focus();
+  // A mobile drawer is still translated outside the viewport on its first
+  // frame. Letting focus scroll there makes iOS pan the entire app before the
+  // drawer settles, which looks like the page has jumped.
+  (target || panel)?.focus({ preventScroll: true });
 };
 
 const closePanels = async (restoreFocus = false) => {
@@ -99,8 +102,8 @@ const closePanels = async (restoreFocus = false) => {
   activePanel.value = null;
   if (!restoreFocus) return;
   await nextTick();
-  if (panel === "filters") filterButton.value?.focus();
-  if (panel === "detail") detailButton.value?.focus();
+  if (panel === "filters") filterButton.value?.getElement()?.focus({ preventScroll: true });
+  if (panel === "detail") detailButton.value?.getElement()?.focus({ preventScroll: true });
 };
 
 const toggleFilters = () => {
@@ -146,17 +149,17 @@ const onKeydown = (event: KeyboardEvent) => {
   const elements = collectFocusableElements(panel);
   if (!elements.length) {
     event.preventDefault();
-    panel.focus();
+    panel.focus({ preventScroll: true });
     return;
   }
   const first = elements[0]!;
   const last = elements.at(-1)!;
   if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
     event.preventDefault();
-    last.focus();
+    last.focus({ preventScroll: true });
   } else if (!event.shiftKey && document.activeElement === last) {
     event.preventDefault();
-    first.focus();
+    first.focus({ preventScroll: true });
   }
 };
 
@@ -476,6 +479,7 @@ onBeforeUnmount(() => {
   max-height: calc(100% - var(--workspace-top-app-bar-offset) - var(--md-sys-spacing-5));
   grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
+  overscroll-behavior: contain;
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface-container-high);
   box-shadow: var(--md-sys-elevation-level3);
@@ -485,6 +489,7 @@ onBeforeUnmount(() => {
   transition:
     opacity var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
     transform var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-emphasized-decelerate);
+  will-change: opacity, transform;
 }
 
 .workspace-screen__filters.is-open {
@@ -615,6 +620,7 @@ onBeforeUnmount(() => {
     pointer-events: none;
     transform: translateX(100%);
     transition: transform var(--md-sys-motion-duration-medium2) var(--md-sys-motion-easing-emphasized-decelerate);
+    will-change: transform;
   }
 
   .workspace-screen__detail.is-open,

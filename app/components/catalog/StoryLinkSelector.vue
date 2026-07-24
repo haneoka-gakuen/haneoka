@@ -39,7 +39,7 @@ const emit = defineEmits<{
 }>();
 
 const { resolveLocalized, t } = useLocale();
-const { assetRoot, assetUrl } = useAssetServer();
+const { assetRoot, assetUrl } = useReleaseServer();
 const releaseAssetUrl = (path: string) => assetUrl(`${assetRoot.value}/${path}`);
 const first = computed(() => props.characters.find((character) => character.characterId === props.firstId));
 const second = computed(() => props.partners.find((character) => character.characterId === props.secondId));

@@ -1,3 +1,4 @@
+import { isBestdoriServer } from "@haneoka/bestdori";
 import { hasBestdoriCharacterIcon } from "@haneoka/bestdori/resources";
 
 import { bestdoriRawResourceUrl } from "./resources";
@@ -48,7 +49,10 @@ export const bestdoriEditorAssetRawPath = (server: string, bundlePath: readonly 
   `/assets/${server}/${bundlePath.join("/")}_rip/${fileName}`;
 
 export const bestdoriEditorAssetUrl = (server: string, bundlePath: readonly string[], fileName: string): string =>
-  bestdoriRawResourceUrl(bestdoriEditorAssetRawPath(server, bundlePath, fileName));
+  bestdoriRawResourceUrl(
+    bestdoriEditorAssetRawPath(server, bundlePath, fileName),
+    isBestdoriServer(server) ? server : "jp",
+  );
 
 export const bestdoriLive2dCharacterIcon = (costumeId: string): string | undefined => {
   const characterId = Number(costumeId.match(/^(\d+)/)?.[1]);

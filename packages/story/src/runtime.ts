@@ -1,12 +1,14 @@
 export interface StoryRuntimeAdapters {
   assetUrl(path: string, server?: string): string;
-  sourceAssetUrl(path: string, server?: string): string;
+  /** Resolve a canonical source asset from a concrete Our Notes release. */
+  releaseSourceAssetUrl(path: string, releaseServer?: string): string;
   validateResourceUrl(value: unknown, label?: string): string;
-  resourceBelongsToServer(url: string, server: string): boolean;
+  /** Check whether a URL belongs to a concrete Our Notes release namespace. */
+  resourceBelongsToRelease(url: string, releaseServer: string): boolean;
   localize(value: unknown): string;
   resolveLocalized?(value: unknown): StoryResolvedText | null | undefined;
   message(key: StoryMessageKey): string;
-  defaultAssetServer: string;
+  defaultReleaseServer: string;
   cubismCoreUrl: string;
   motionSyncCoreUrl: string;
   /** Optional legacy Cubism 2 core (`live2d.min.js`). */
@@ -106,12 +108,12 @@ function defaultLocalize(value: unknown): string {
 
 const defaults: StoryRuntimeAdapters = {
   assetUrl: defaultAssetUrl,
-  sourceAssetUrl: (path) => defaultAssetUrl(canonicalStorySourceAssetPath(path)),
+  releaseSourceAssetUrl: (path) => defaultAssetUrl(canonicalStorySourceAssetPath(path)),
   validateResourceUrl: defaultValidateResourceUrl,
-  resourceBelongsToServer: () => true,
+  resourceBelongsToRelease: () => true,
   localize: defaultLocalize,
   message: (key) => DEFAULT_MESSAGES[key],
-  defaultAssetServer: "default",
+  defaultReleaseServer: "default",
   cubismCoreUrl: "/Core/live2dcubismcore.js",
   motionSyncCoreUrl: "/Core/CRI/live2dcubismmotionsynccore.min.js",
   live2d2CoreUrl: "/Core/live2d.min.js",

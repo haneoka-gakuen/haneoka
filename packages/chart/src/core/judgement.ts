@@ -1,9 +1,4 @@
-import {
-  JudgeTiming,
-  NoteDirection,
-  NoteJudgementType,
-  NoteSimulateJudgement,
-} from "./enums";
+import { JudgeTiming, NoteDirection, NoteJudgementType, NoteSimulateJudgement } from "./enums";
 
 export interface JudgeWindow {
   judgement: NoteSimulateJudgement;
@@ -11,8 +6,16 @@ export interface JudgeWindow {
   after: number;
 }
 
-const symmetric = (judgement: NoteSimulateJudgement, value: number): JudgeWindow => ({ judgement, before: value, after: value });
-const window = (judgement: NoteSimulateJudgement, before: number, after: number): JudgeWindow => ({ judgement, before, after });
+const symmetric = (judgement: NoteSimulateJudgement, value: number): JudgeWindow => ({
+  judgement,
+  before: value,
+  after: value,
+});
+const window = (judgement: NoteSimulateJudgement, before: number, after: number): JudgeWindow => ({
+  judgement,
+  before,
+  after,
+});
 const J = NoteSimulateJudgement;
 
 /**
@@ -64,9 +67,29 @@ export function isTargetDirectionFlick(
 }
 
 // MasterLiveJudgmentRangeParameter, assist level 0. Priority is strictest-first.
-const NORMAL = [symmetric(J.Just, 1), symmetric(J.Perfect, 42), symmetric(J.Great, 83), symmetric(J.Good, 108), symmetric(J.Bad, 125), symmetric(J.Miss, 130)];
-const FLICK = [symmetric(J.Just, 1), window(J.Perfect, 83, 58), window(J.Great, 0, 83), window(J.Good, 0, 108), window(J.Bad, 0, 125), window(J.Miss, 0, 130)];
-const SLIDE_END = [window(J.Perfect, 42, 66), window(J.Great, 99, 166), window(J.Good, 124, 191), window(J.Bad, 141, 208), symmetric(J.Miss, 150)];
+const NORMAL = [
+  symmetric(J.Just, 1),
+  symmetric(J.Perfect, 42),
+  symmetric(J.Great, 83),
+  symmetric(J.Good, 108),
+  symmetric(J.Bad, 125),
+  symmetric(J.Miss, 130),
+];
+const FLICK = [
+  symmetric(J.Just, 1),
+  window(J.Perfect, 83, 58),
+  window(J.Great, 0, 83),
+  window(J.Good, 0, 108),
+  window(J.Bad, 0, 125),
+  window(J.Miss, 0, 130),
+];
+const SLIDE_END = [
+  window(J.Perfect, 42, 66),
+  window(J.Great, 99, 166),
+  window(J.Good, 124, 191),
+  window(J.Bad, 141, 208),
+  symmetric(J.Miss, 150),
+];
 const EASY = [symmetric(J.Just, 1), window(J.Perfect, 58, 66), window(J.Miss, 58, 130)];
 const TRACE = [window(J.Perfect, 58, 66), window(J.Miss, 58, 130)];
 

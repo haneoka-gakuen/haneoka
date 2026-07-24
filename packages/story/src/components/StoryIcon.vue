@@ -1,6 +1,5 @@
 <script setup lang="ts">
-export type StoryIconName =
-  "play" | "replay" | "skip" | "settings" | "volume" | "mute" | "fullscreen" | "user";
+export type StoryIconName = "play" | "replay" | "skip" | "settings" | "volume" | "mute" | "fullscreen" | "user";
 
 defineOptions({ name: "StoryIcon" });
 defineProps<{ name: StoryIconName }>();

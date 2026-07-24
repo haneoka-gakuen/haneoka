@@ -9,7 +9,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import boto3
 from boto3.s3.transfer import TransferConfig
@@ -56,8 +56,14 @@ UPLOAD_CHECKPOINT_SCHEMA = "haneoka-r2-upload-checkpoint-v3"
 STREAM_CHUNK_BYTES = 1024 * 1024
 
 
+class R2BucketConfig(Protocol):
+    """Minimum configuration needed to connect an :class:`R2Store`."""
+
+    r2_bucket: str
+
+
 class R2Store:
-    def __init__(self, config: ServerConfig, concurrency: int = 64):
+    def __init__(self, config: R2BucketConfig, concurrency: int = 64):
         account_id = os.environ.get("R2_ACCOUNT_ID") or os.environ.get(
             "CLOUDFLARE_ACCOUNT_ID"
         )
@@ -68,7 +74,9 @@ class R2Store:
             raise ValueError("set R2_ENDPOINT or CLOUDFLARE_ACCOUNT_ID")
         profile = os.environ.get("R2_AWS_PROFILE") or os.environ.get("AWS_PROFILE")
         session = boto3.Session(profile_name=profile) if profile else boto3.Session()
-        self.bucket = os.environ.get("R2_BUCKET", config.r2_bucket)
+        self.bucket = str(os.environ.get("R2_BUCKET") or config.r2_bucket).strip()
+        if not self.bucket:
+            raise ValueError("set R2_BUCKET or configure r2_bucket")
         self.concurrency = max(1, concurrency)
         self.client = session.client(
             "s3",

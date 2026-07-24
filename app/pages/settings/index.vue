@@ -2,7 +2,7 @@
 import { localeFlagIconUrls } from "~/utils/flagIcons";
 
 const { locale, locales, setLocale, t } = useLocale();
-const { assetServer, assetServers, setAssetServer } = useAssetServer();
+const { releaseServer, releases, setReleaseServer } = useReleaseServer();
 const localeOptions = computed(() =>
   locales.map((option) => ({
     value: option.value,
@@ -11,7 +11,15 @@ const localeOptions = computed(() =>
     image: localeFlagIconUrls[option.value],
   })),
 );
-const serverOptions = computed(() => assetServers.value.map((server) => ({ value: server, label: server })));
+const releaseOptions = computed(() =>
+  releases.value.map((release) => ({
+    value: release.id,
+    label:
+      release.displayName === release.id
+        ? release.id
+        : `${release.displayName} · ${release.region.toLocaleUpperCase()} (${release.id})`,
+  })),
+);
 
 useHead(() => ({ title: `${t("settings")} · haneoka` }));
 </script>
@@ -29,13 +37,13 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
         />
       </PageSection>
 
-      <PageSection :title="t('server')" icon="dns" divided>
+      <PageSection :title="t('releaseServer')" icon="dns" divided>
         <SingleChoiceList
-          name="asset-server"
-          :label="t('server')"
-          :model-value="assetServer"
-          :options="serverOptions"
-          @update:model-value="setAssetServer"
+          name="release-server"
+          :label="t('releaseServer')"
+          :model-value="releaseServer"
+          :options="releaseOptions"
+          @update:model-value="setReleaseServer"
         >
           <template #leading="{ option }">
             <ServerIcon :server="option.value" :size="40" />

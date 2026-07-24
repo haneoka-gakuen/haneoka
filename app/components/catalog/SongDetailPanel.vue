@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { MaterialIcon, UiButton, UiIconButton, UiSegmentedControl } from "@haneoka/ui";
+import { releaseChartLevelName } from "@haneoka/sonolus";
 
 import type { DetailHeaderIconItem } from "~/components/detail/types";
 import { songTypeDefinition } from "~/config/songTypes";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
+import {
+  contentOriginLabel,
+  runtimeReleaseForCatalogOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
+import { assetRootForRelease } from "~/composables/useReleaseServer";
 import type { Song, SongDifficulty, SongMetaChart } from "~/types/archive";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { isScoreRank, scoreRankIconUrl } from "~/utils/scoreRankAssets";
@@ -15,7 +22,7 @@ const props = defineProps<{
   song: Song;
   title: DisplayText;
   bandName: DisplayText;
-  creditSource?: string;
+  origin: CatalogContentOrigin;
   difficulty: number;
   meta?: SongMetaChart;
   hideSonolus?: boolean;
@@ -31,12 +38,12 @@ const emit = defineEmits<{
 }>();
 
 const { resolveLocalized, formatDate, locale, t } = useLocale();
-const { assetRoot } = useAssetServer();
+const { releaseServer } = useReleaseServer();
 const { pause: pauseGlobalAudio } = useAudioPlayer();
 const selectedVideo = useRouteQueryInteger("mv", 0, { min: 0 });
 const bandVisuals = useSongCreditVisuals(
   () => props.song,
-  () => props.creditSource || "jp-cbt",
+  () => props.origin,
 );
 const activeDifficulty = computed({
   get: () => props.difficulty,
@@ -102,6 +109,9 @@ const publishedAt = computed(() => {
   const value = songReleaseTimestamp(props.song);
   return value ? formatDate(value) : "";
 });
+const sourceLabel = computed(() => contentOriginLabel(props.origin));
+const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.origin, releaseServer.value));
+const sourceAssetRoot = computed(() => assetRootForRelease(runtimeRelease.value.releaseId));
 
 const videos = computed(() => Object.values(props.song.musicVideos || {}));
 const videoItems = computed(() => {
@@ -184,6 +194,7 @@ async function playVideo() {
 }
 const facts = computed(() => {
   const values = [
+    { key: "source", label: t("source"), value: sourceLabel.value, wrap: true },
     {
       key: "composer",
       label: t("composer"),
@@ -233,10 +244,15 @@ const activeNoteCount = computed(() => {
 const sonolusLevelUrl = computed(() => {
   const difficulty = ["easy", "normal", "hard", "expert"][activeDifficulty.value];
   const chart = props.song.difficulty?.[activeDifficulty.value];
-  if (!difficulty || !chart?.file) return "";
-  return `https://open.sonolus.com/haneoka.org/levels/chart-${props.song.musicId}-${difficulty}`;
+  if (!difficulty || !chart?.file || props.origin.provider !== "release") return "";
+  return `https://open.sonolus.com/haneoka.org/levels/${releaseChartLevelName(
+    props.origin.releaseId,
+    props.song.musicId,
+    difficulty,
+  )}`;
 });
-const scoreRankIcon = (rank: string | undefined) => (isScoreRank(rank) ? scoreRankIconUrl(assetRoot.value, rank) : "");
+const scoreRankIcon = (rank: string | undefined) =>
+  isScoreRank(rank) ? scoreRankIconUrl(sourceAssetRoot.value, rank) : "";
 const scoreRewardItems = computed(() =>
   [...(props.song.scoreRewards || [])]
     .sort((left, right) => Number(left.liveScoreRank || 99) - Number(right.liveScoreRank || 99))
@@ -303,7 +319,13 @@ watch(
     @after-leave="emit('afterLeave')"
   >
     <template #leading>
-      <AttributeMark v-if="song.musicType" :attribute="song.musicType" variant="live" icon-only />
+      <AttributeMark
+        v-if="song.musicType"
+        :attribute="song.musicType"
+        :runtime-release="runtimeRelease"
+        variant="live"
+        icon-only
+      />
     </template>
 
     <template #actions>

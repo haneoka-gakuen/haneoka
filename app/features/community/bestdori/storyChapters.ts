@@ -1,4 +1,5 @@
 import type { Band, Character, LocalizedValue, StoryChapter, StoryEpisode } from "~/types/archive";
+import { bestdoriOrigin } from "~/features/catalog/contentSource";
 import type { BestdoriChapterStorySection, BestdoriStoryListItem } from "./stories";
 
 const numericChapterId = (value: unknown): number => {
@@ -14,9 +15,13 @@ export const useBestdoriStoryChapters = (section: BestdoriChapterStorySection) =
   const isBand = section === "band";
   const isEvent = section === "event";
   const usesEntities = isBand || isEvent;
-  const storyCollection = useLazyCatalogCollection<BestdoriStoryListItem>(`stories/${section}`, () => true, "bestdori");
-  const bandsCollection = useLazyCatalogCollection<Band>("bands", () => usesEntities, "bestdori");
-  const charactersCollection = useLazyCatalogCollection<Character>("characters", () => isEvent, "bestdori");
+  const storyCollection = useLazyCatalogCollection<BestdoriStoryListItem>(
+    `stories/${section}`,
+    () => true,
+    bestdoriOrigin("jp"),
+  );
+  const bandsCollection = useLazyCatalogCollection<Band>("bands", () => usesEntities, bestdoriOrigin("jp"));
+  const charactersCollection = useLazyCatalogCollection<Character>("characters", () => isEvent, bestdoriOrigin("jp"));
 
   const bands = computed(() => recordValues(bandsCollection.data.value));
   const characters = computed(() => recordValues(charactersCollection.data.value));

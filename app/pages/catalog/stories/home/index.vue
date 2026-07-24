@@ -200,12 +200,12 @@ watch(selectedSpotId, () => {
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" @retry="refresh()" />
     <StoryColumnWorkbench
-      v-else-if="selectedSpot"
+      v-else-if="selectedSpot || selectedEpisodeId"
       :story-id="selectedEpisodeId"
       :story-title="playerEpisode ? displayEpisodeTitle(playerEpisode) : ''"
       @close="closeStory"
     >
-      <div class="home-browser">
+      <div v-if="selectedSpot" class="home-browser">
         <StoryMediaRail
           class="home-browser__spots"
           :items="spotItems"
@@ -232,6 +232,10 @@ watch(selectedSpotId, () => {
         />
         <EmptyState v-else />
       </div>
+      <!-- A direct episode URL may resolve in another Our Notes release even
+      when this release has no matching home spot. Keep the detail workbench
+      mounted; the player performs the release fallback independently. -->
+      <EmptyState v-else />
     </StoryColumnWorkbench>
     <EmptyState v-else />
 

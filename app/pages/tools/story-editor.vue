@@ -55,7 +55,7 @@ const previewPlayer = ref<{ executeTo(commandIndex: number): Promise<boolean> }>
 const editorBody = ref<HTMLElement>();
 const previewCompilation = shallowRef<CompileStoryResult>();
 const previewRevision = ref(0);
-const previewServer = ref("");
+const previewReleaseServer = ref("");
 const previewMounted = ref(false);
 const previewMode = ref<"text" | "play">("play");
 const previewCanPlay = ref(false);
@@ -138,7 +138,7 @@ const statusText = computed(() => {
   return labels[status.value];
 });
 const statusError = computed(() => ["draftConflict", "importFailed", "saveFailed"].includes(status.value));
-const projectServer = computed(() => normalizeAssetServer(project.value.meta.assetServer));
+const projectReleaseServer = computed(() => normalizeReleaseServer(project.value.meta.releaseServer));
 const currentSceneIndex = computed(() =>
   Math.max(
     0,
@@ -175,7 +175,7 @@ const refreshPreview = (): CompileStoryResult | undefined => {
   previewApplyGeneration += 1;
   const result = editor.compileNow();
   previewCompilation.value = result;
-  previewServer.value = projectServer.value;
+  previewReleaseServer.value = projectReleaseServer.value;
   previewAppliedSceneId = currentSceneId.value;
   previewRevision.value += 1;
   return result;
@@ -567,7 +567,7 @@ useSeoMeta({
                     :key="currentSceneId"
                     v-model:mode="previewMode"
                     :story="previewCompilation.story"
-                    :server="previewServer"
+                    :release-server="previewReleaseServer"
                     :revision="previewRevision"
                     compact
                     @playback-availability="previewCanPlay = $event"
@@ -582,7 +582,7 @@ useSeoMeta({
             <section class="story-editor-browser">
               <div v-if="sidebarTab === 'resources'" class="story-editor-browser__resources">
                 <StoryEditorResourceLibrary
-                  :project-server="projectServer"
+                  :project-release-server="projectReleaseServer"
                   :preferred-kind="resourceTarget?.resource"
                   :preferred-audio-usage="resourceTarget?.audioUsage"
                   @insert="onResourceInsert"
@@ -613,7 +613,7 @@ useSeoMeta({
 
               <div v-else class="story-editor-browser__resources">
                 <StoryEditorResourceLibrary
-                  :project-server="projectServer"
+                  :project-release-server="projectReleaseServer"
                   :project-scenes="projectSceneFiles"
                   :project-scene-folders="projectSceneFolders"
                   :active-scene-id="currentSceneId"
@@ -796,7 +796,7 @@ useSeoMeta({
       <template #content>
         <div class="story-editor-dialog__fields">
           <UiTextField :model-value="project.meta.title" :label="copy.title" @update:model-value="setProjectTitle" />
-          <UiTextField :model-value="project.meta.assetServer || ''" :label="copy.assetServer" readonly />
+          <UiTextField :model-value="project.meta.releaseServer || ''" :label="copy.releaseServer" readonly />
           <UiSelect
             :model-value="project.entrySceneId"
             :options="entrySceneOptions"

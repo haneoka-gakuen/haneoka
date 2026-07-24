@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, Comic } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
 
 const { resolveLocalized, t, formatDate, compareText } = useLocale();
 useSeoMeta({ title: () => `${t("comics")} · haneoka` });
-const { data: comicRecord, pending, error, refresh } = useCatalogCollection<Comic>("comics");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
+const { releaseServer } = useReleaseServer();
+const catalogOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const { data: comicRecord, pending, error, refresh } = useCatalogCollection<Comic>("comics", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band", true);
 const characterFilters = useRouteQueryList("character", true);
@@ -38,14 +41,15 @@ const bandIdsOf = (comic: Comic) =>
         .filter(Boolean),
     ),
   ].sort((left, right) => left - right);
-const characterNames = (comic: Comic) =>
+const characterNamesFor = (comic: Comic, charactersById: ReadonlyMap<number, Character>) =>
   characterIdsOf(comic)
-    .map((id) => textOf(resolveLocalized(characterMap.value.get(id)?.characterName, { sourceHint: "ja" })))
+    .map((id) => textOf(resolveLocalized(charactersById.get(id)?.characterName, { sourceHint: "ja" })))
     .filter(Boolean)
     .join(" · ") || "—";
-const characterItems = (comic: Comic) =>
+const characterNames = (comic: Comic) => characterNamesFor(comic, characterMap.value);
+const characterItemsFor = (comic: Comic, charactersById: ReadonlyMap<number, Character>) =>
   characterIdsOf(comic).flatMap((id) => {
-    const character = characterMap.value.get(id);
+    const character = charactersById.get(id);
     return character
       ? [
           {
@@ -56,6 +60,7 @@ const characterItems = (comic: Comic) =>
         ]
       : [];
   });
+const characterItems = (comic: Comic) => characterItemsFor(comic, characterMap.value);
 
 const filteredComics = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
@@ -90,17 +95,39 @@ const filteredComics = computed(() => {
     });
 });
 
-const selected = computed(() => filteredComics.value.find((comic) => comic.comicId === selectedId.value));
+const selectedSummary = computed(() => comics.value.find((comic) => comic.comicId === selectedId.value));
+const { data: selectedComic, resolvedOrigin: selectedComicOrigin } = useCatalogSelection<Comic>(
+  "comics",
+  selectedId,
+  catalogOrigin,
+  { fallbackAcrossReleases: true },
+);
+// The visible catalog intentionally stays on the selected release. A direct
+// comic URL can still resolve from another Our Notes release, and its character
+// data must come from that same release rather than the visible collection.
+const detailOrigin = computed(() =>
+  selectedComicOrigin.value?.provider === "release" ? selectedComicOrigin.value : catalogOrigin.value,
+);
+const { data: detailCharacterRecord } = useLazyCatalogCollection<Character>(
+  "characters",
+  () => selectedId.value !== undefined,
+  detailOrigin,
+);
+const detailCharacterMap = computed(
+  () => new Map(recordValues(detailCharacterRecord.value).map((character) => [character.characterId, character])),
+);
+const selected = computed(() => selectedComic.value || selectedSummary.value);
 const selectedTitle = computed(() => (selected.value ? titleOf(selected.value) : t("comics")));
 const selectedSubtitle = computed(() => {
   if (!selected.value) return "";
-  const names = characterNames(selected.value);
+  const names = characterNamesFor(selected.value, detailCharacterMap.value);
   return names === "—" ? "" : names;
 });
 const selectedImage = computed(() => selected.value?.image || selected.value?.thumbnail || "");
 const selectedFacts = computed(() =>
   selected.value
     ? [
+        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         { label: t("subtitle"), value: subtitleOf(selected.value) },
         {
           label: t("release"),
@@ -132,16 +159,6 @@ const setTableSort = (value: string) => {
 const selectComic = (comic: Comic) => {
   void comicLayer.toggle(comic.comicId);
 };
-
-watch(
-  [filteredComics, pending],
-  ([values, isPending]) => {
-    if (!isPending && selectedId.value !== undefined && !values.some((comic) => comic.comicId === selectedId.value)) {
-      selectedId.value = undefined;
-    }
-  },
-  { immediate: true },
-);
 </script>
 
 <template>
@@ -267,7 +284,7 @@ watch(
         :image="selectedImage"
         image-ratio="comic"
         :facts="selectedFacts"
-        :entities="selected ? characterItems(selected) : []"
+        :entities="selected ? characterItemsFor(selected, detailCharacterMap) : []"
         entity-shape="avatar"
         @close="comicLayer.close"
       />

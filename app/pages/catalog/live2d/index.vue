@@ -2,6 +2,7 @@
 import type { Band, Character, Live2DDetail, Live2DModel } from "~/types/archive";
 import type { DetailHeaderIconItem } from "~/components/detail/types";
 import type { FacetOption } from "~/components/ui/FacetGroup.vue";
+import { contentOriginLabel, ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 
@@ -9,6 +10,9 @@ const live2dSortKeys = ["id", "title", "type", "character", "band"] as const;
 type Live2DSort = (typeof live2dSortKeys)[number];
 
 const { resolveLocalized, t, compareText } = useLocale();
+const { releaseServer } = useReleaseServer();
+type OurNotesCatalogOrigin = Extract<CatalogContentOrigin, { provider: "release" }>;
+const catalogOrigin = computed<OurNotesCatalogOrigin>(() => ourNotesReleaseOrigin(releaseServer.value));
 const route = useRoute();
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band", true);
@@ -22,16 +26,21 @@ const sort = useRouteQueryEnum("sort", live2dSortKeys, "id");
 const order = useRouteQueryEnum("order", ["asc", "desc"] as const, "asc");
 const selectedKey = useRouteQueryText("model");
 const modelLayer = useRouteQueryLayer("model");
-const { data: live2dRecord, pending, error, refresh } = useCatalogCollection<Live2DModel>("live2d");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
+const { data: live2dRecord, pending, error, refresh } = useCatalogCollection<Live2DModel>("live2d", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
 const selectedPath = computed(() => selectedKey.value || undefined);
 const {
   data: selectedDetail,
+  resolvedOrigin: selectedDetailOrigin,
   pending: selectedPending,
   error: selectedError,
   refresh: refreshSelected,
-} = useCatalogSelection<Live2DDetail>("live2d", selectedPath);
+} = useCatalogSelection<Live2DDetail>("live2d", selectedPath, catalogOrigin, { fallbackAcrossReleases: true });
+const detailOrigin = computed<OurNotesCatalogOrigin>(() => {
+  const resolved = selectedDetailOrigin.value;
+  return resolved?.provider === "release" ? resolved : catalogOrigin.value;
+});
 
 const normalized = (value: unknown) =>
   String(value || "")
@@ -63,6 +72,12 @@ const bands = computed(() => recordValues(bandRecord.value));
 const characters = computed(() => recordValues(characterRecord.value));
 const bandMap = computed(() => new Map(bands.value.map((band) => [band.bandId, band])));
 const characterMap = computed(() => new Map(characters.value.map((character) => [character.characterId, character])));
+const selectedCharacterRequest = useCatalogSelection<Character>(
+  "characters",
+  () => selectedDetail.value?.characterId,
+  detailOrigin,
+);
+const selectedDetailCharacter = computed(() => selectedCharacterRequest.data.value);
 const characterImageOf = (model: Live2DModel) => {
   const character = characterMap.value.get(model.characterId || 0);
   return (
@@ -178,28 +193,63 @@ const selectedTitle = computed(() =>
       ? titleOf(selectedSummary.value)
       : t("live2d"),
 );
-const selectedCharacter = computed(() =>
-  selectedEntry.value
-    ? characterOf(selectedEntry.value)
-    : selectedSummary.value
-      ? characterOf(selectedSummary.value)
-      : "",
-);
+const selectedCharacter = computed(() => {
+  const model = selectedEntry.value || selectedSummary.value;
+  if (!model) return "";
+  const character = selectedDetailCharacter.value;
+  return (
+    resolveLocalized(model.characterName, {
+      candidates: [character?.characterName, character?.englishName],
+      sourceHint: "ja",
+    }) ||
+    withoutSubCharacterPrefix(model.characterKey) ||
+    String(model.characterId || "")
+  );
+});
 const selectedModelType = computed(() => selectedEntry.value?.modelType || selectedSummary.value?.modelType);
-const selectedSubtitle = computed(() => selectedCharacter.value);
+const selectedSubtitle = computed(() => {
+  const provenance =
+    detailOrigin.value.releaseId === catalogOrigin.value.releaseId ? "" : contentOriginLabel(detailOrigin.value);
+  return [selectedCharacter.value, provenance].filter(Boolean).join(" · ");
+});
+const selectedCharacterImage = computed(() => {
+  const model = selectedEntry.value || selectedSummary.value;
+  const character = selectedDetailCharacter.value;
+  return (
+    model?.faceImage ||
+    model?.thumbnailImage ||
+    character?.faceImage ||
+    character?.thumbnailImage ||
+    character?.profileImage
+  );
+});
+const selectedCharacterShortName = computed(() => {
+  const model = selectedEntry.value || selectedSummary.value;
+  const character = selectedDetailCharacter.value;
+  if (!model) return "";
+  return (
+    resolveLocalized(model.characterName, {
+      candidates: [character?.characterName, character?.englishName],
+      sourceHint: "ja",
+    }) ||
+    withoutSubCharacterPrefix(model.characterKey) ||
+    String(model.characterId || "")
+  );
+});
+const selectedCharacterColor = computed(
+  () => selectedDetailCharacter.value?.colorCode || "var(--md-sys-color-primary)",
+);
 const selectedHeaderIcons = computed<DetailHeaderIconItem[]>(() => {
   const model = selectedModel.value;
   if (!model) return [];
-  const characterImage = characterImageOf(model);
-  const characterShortName = characterShortNameOf(model);
   return [
     {
       id: `character:${characterIdentityOf(model)}`,
       label: selectedCharacter.value,
-      image: characterImage,
-      text: entityAvatarText(characterShortName),
-      lang: langOf(characterShortName),
-      color: characterColorOf(model),
+      image: selectedCharacterImage.value,
+      text: entityAvatarText(selectedCharacterShortName.value),
+      lang: langOf(selectedCharacterShortName.value),
+      color: selectedCharacterColor.value,
       shape: "avatar",
     },
     {
@@ -251,16 +301,6 @@ const rowFieldsOf = (model: Live2DModel) => [
 const closeModel = () => {
   void modelLayer.close();
 };
-
-watch(
-  [models, pending],
-  ([values, isPending]) => {
-    if (!isPending && selectedKey.value && !values.some((model) => model.live2dKey === selectedKey.value)) {
-      selectedKey.value = "";
-    }
-  },
-  { immediate: true },
-);
 
 const tableColumns = computed(() => [
   { key: "id", label: t("id"), sortable: true },
@@ -339,7 +379,12 @@ useHead(() => ({
         <LoadingState v-if="selectedPending || (!selectedEntry && !selectedError)" />
         <ErrorState v-else-if="selectedError || !selectedEntry" @retry="refreshSelected()" />
         <ClientOnly v-else>
-          <LazyLive2DStage :key="selectedEntry.live2dKey" :entry="selectedEntry" :title="textOf(selectedTitle)" />
+          <LazyLive2DStage
+            :key="selectedEntry.live2dKey"
+            :entry="selectedEntry"
+            :origin="detailOrigin"
+            :title="textOf(selectedTitle)"
+          />
           <template #fallback><LoadingState /></template>
         </ClientOnly>
       </RuntimeColumn>

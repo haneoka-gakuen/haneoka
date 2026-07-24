@@ -144,16 +144,33 @@ HOST=127.0.0.1 PORT=3000 pnpm preview
 
 Open `http://127.0.0.1:3000/catalog` for the catalog home or `http://127.0.0.1:3000/catalog/songs` for the song and chart catalog. Keep the preview process running while browsing; opening `.output/public/index.html` directly cannot serve the catalog API or generated media.
 
-The preview defaults to `HOST=0.0.0.0`, `PORT=3000`, and `ASSET_SERVERS=jp-cbt`. Binding to all interfaces is useful for testing an actual phone on the same trusted network, but it also makes the development server reachable from that network.
+The preview defaults to `HOST=0.0.0.0`, `PORT=3000`, and `RELEASE_SERVERS=jp-cbt`. Binding to all interfaces is useful for testing an actual phone on the same trusted network, but it also makes the development server reachable from that network.
 
-| Variable                | Purpose                                              | Default                         |
-| ----------------------- | ---------------------------------------------------- | ------------------------------- |
-| `ASSET_SERVERS`         | Comma-separated local or deployed server identifiers | `jp-cbt`                        |
-| `ASSET_SERVER`          | Preferred server selected at build time              | first configured server         |
-| `RESOURCE_RELEASE_ROOT` | Explicit local immutable release directory           | selected `current.json` release |
-| `RESOURCE_BUILD_ROOT`   | Explicit prepared build directory                    | unset                           |
-| `HOST`                  | Local preview bind address                           | `0.0.0.0`                       |
-| `PORT`                  | Local preview TCP port                               | `3000`                          |
+| Variable                   | Purpose                                                                                            | Default                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `RELEASE_SERVERS`          | Ordered Our Notes releases for preview and detail/playlist fallback (never Bestdori regions)       | `jp-cbt`                        |
+| `RELEASE_SERVER`           | Preferred Our Notes release selected at build time                                                 | first configured release        |
+| `RESOURCE_RELEASE_ROOT`    | Explicit local immutable release directory                                                         | selected `current.json` release |
+| `RESOURCE_BUILD_ROOT`      | Explicit prepared build directory                                                                  | unset                           |
+| `BESTDORI_PROVIDER_ORIGIN` | Optional Worker/provider origin for transformed Garupa v1 API and `source=bestdori` Sonolus routes | unset (those routes return 503) |
+| `BESTDORI_RAW_MIRROR_ROOT` | Optional local raw Bestdori tree, exposed only to the local Worker under an internal path          | unset                           |
+| `HOST`                     | Local preview bind address                                                                         | `0.0.0.0`                       |
+| `PORT`                     | Local preview TCP port                                                                             | `3000`                          |
+
+`BESTDORI_PROVIDER_ORIGIN` is an HTTP(S) origin for a running Haneoka
+Worker/Bestdori adapter, for example
+`BESTDORI_PROVIDER_ORIGIN=http://127.0.0.1:8787 pnpm preview`. It is not a
+Bestdori mirror URL and does not add a selectable Our Notes release. The
+preview server proxies only `/api/v1/garupa/bestdori/*` and Sonolus requests
+explicitly marked `source=bestdori` (or their Bestdori detail/data paths) to
+that provider. Without it, those requests return a clear `503` instead of
+falling through to a local-release or mirror `404`.
+
+The Worker has a separate `BESTDORI_UPSTREAM_BASE`: it defaults to the public
+Bestdori upstream and may instead be a path-prefixed HTTP(S) base for a raw
+mirror. It is not `BESTDORI_PROVIDER_ORIGIN`. `pnpm dev` wires it automatically
+to the local gateway's private raw-mirror path when a raw mirror is configured
+or offline mode is selected.
 
 `pnpm dev` starts Nuxt, the read-only release gateway, and the complete Worker
 on available loopback ports. It initializes an isolated local D1 from the
@@ -169,12 +186,20 @@ require explicitly configured development credentials.
 Use `pnpm dev:offline` when every request must remain on the machine. Without a
 Bestdori mirror, its routes report an upstream error in this mode while the
 first-party release remains fully available. For a complete network-independent
-session, point `BESTDORI_MIRROR_ROOT` at a local mirror whose root contains
+session, point `BESTDORI_RAW_MIRROR_ROOT` at a local mirror whose root contains
 `api/`, `assets/`, and `res/`, then use the strict commands:
 
 ```sh
-BESTDORI_MIRROR_ROOT=/absolute/path/to/bestdori-mirror pnpm dev:offline:full
+BESTDORI_RAW_MIRROR_ROOT=/absolute/path/to/bestdori-mirror pnpm dev:offline:full
 ```
+
+The mirror contains only original Bestdori paths (`/api/*`,
+`/assets/<region>/*`, and `/res/*`). During `pnpm dev`, the release gateway
+serves them only below `/_internal/providers/garupa/bestdori/raw/*` to the
+Worker's `BESTDORI_UPSTREAM_BASE`; it never maps them onto top-level `/api` or
+`/assets`. Its separate `BESTDORI_PROVIDER_ORIGIN` points back at that Worker
+for transformed v1 and Bestdori Sonolus requests. A raw mirror must never be
+used as the v1 provider.
 
 The strict commands fail before startup when the mirror root or any required
 top-level directory is missing. `pnpm dev` remains the explicit connected mode:
@@ -259,7 +284,7 @@ The Cloudflare deployment workflow builds first, applies pending committed D1 mi
 | State or feature                                                                                                                       | Recommended store                                                                |
 | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Users, linked OAuth identities, sessions, roles, bans, profiles, posts, comments, reactions, follows, favorites, and revision metadata | D1                                                                               |
-| Locale, asset server, story/chart settings                                                                                             | Keep local-first; synchronize to D1 after sign-in                                |
+| Locale, release server, story/chart settings                                                                                           | Keep local-first; synchronize to D1 after sign-in                                |
 | Audio queue, favorites, and viewing/play history                                                                                       | Move to D1 only when cross-device continuity is a product requirement            |
 | Current playback time, scroll position, sidebar state                                                                                  | Keep in browser storage; these are device-local and write frequently             |
 | Search/filter/detail selections encoded in the URL                                                                                     | Keep in the URL so views remain shareable                                        |

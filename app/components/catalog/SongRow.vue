@@ -5,6 +5,7 @@ import type { Song, SongDifficulty, SongMetaChart } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
+import { runtimeReleaseForCatalogOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 const props = defineProps<{
   song: Song;
@@ -18,7 +19,7 @@ const props = defineProps<{
   rowIndex?: number;
   displayId?: string | number;
   sourceLabel?: string;
-  creditSource?: string;
+  creditOrigin?: CatalogContentOrigin;
 }>();
 
 const emit = defineEmits<{
@@ -28,6 +29,8 @@ const emit = defineEmits<{
   difficulty: [value: number];
 }>();
 const { t, resolveLocalized, formatDate } = useLocale();
+const { releaseServer } = useReleaseServer();
+const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.creditOrigin, releaseServer.value));
 const effectiveBandVisuals = computed<readonly CompositeEntityVisual[]>(() => {
   if (props.bandVisuals?.length) return props.bandVisuals;
   return props.bandIcon ? [{ image: props.bandIcon, fit: "contain" }] : [];
@@ -107,7 +110,7 @@ const release = computed(() => {
     </div>
 
     <span class="song-row__attribute-cell song-row__visual-cell" role="gridcell">
-      <AttributeMark :attribute="song.musicType" variant="live" />
+      <AttributeMark :attribute="song.musicType" :runtime-release="runtimeRelease" variant="live" />
     </span>
 
     <span class="song-row__band-cell song-row__visual-cell" role="gridcell">
@@ -116,7 +119,7 @@ const release = computed(() => {
           class="song-row__band-visual"
           :items="effectiveBandVisuals"
           :song="song"
-          :source-server="creditSource"
+          :origin="creditOrigin"
           :label="textOf(band)"
         />
         <span v-if="textOf(band)" class="song-row__band-label"><DisplayText :value="band" /></span>

@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const localWorkerConfig = path.join(root, "tooling", "local-worker", "wrangler.jsonc");
-const bestdoriMirrorRoot = process.env.BESTDORI_MIRROR_ROOT?.trim();
+const BESTDORI_RAW_MIRROR_PREFIX = "/_internal/providers/garupa/bestdori/raw";
+const bestdoriRawMirrorRoot = process.env.BESTDORI_RAW_MIRROR_ROOT?.trim();
 const localNetworkMode = process.env.LOCAL_NETWORK_MODE?.trim() || "connected";
 const requireCompleteMirror = process.env.LOCAL_REQUIRE_COMPLETE_MIRROR === "1";
 
@@ -15,16 +16,19 @@ if (localNetworkMode !== "connected" && localNetworkMode !== "offline") {
   throw new Error(`LOCAL_NETWORK_MODE must be 'connected' or 'offline', received '${localNetworkMode}'`);
 }
 
-const resolvedBestdoriMirrorRoot = bestdoriMirrorRoot ? path.resolve(bestdoriMirrorRoot) : undefined;
-if (resolvedBestdoriMirrorRoot && !fs.statSync(resolvedBestdoriMirrorRoot, { throwIfNoEntry: false })?.isDirectory()) {
-  throw new Error(`BESTDORI_MIRROR_ROOT is not a directory: ${resolvedBestdoriMirrorRoot}`);
+const resolvedBestdoriRawMirrorRoot = bestdoriRawMirrorRoot ? path.resolve(bestdoriRawMirrorRoot) : undefined;
+if (
+  resolvedBestdoriRawMirrorRoot &&
+  !fs.statSync(resolvedBestdoriRawMirrorRoot, { throwIfNoEntry: false })?.isDirectory()
+) {
+  throw new Error(`BESTDORI_RAW_MIRROR_ROOT is not a directory: ${resolvedBestdoriRawMirrorRoot}`);
 }
 if (requireCompleteMirror) {
-  if (!resolvedBestdoriMirrorRoot) {
-    throw new Error("LOCAL_REQUIRE_COMPLETE_MIRROR=1 requires BESTDORI_MIRROR_ROOT");
+  if (!resolvedBestdoriRawMirrorRoot) {
+    throw new Error("LOCAL_REQUIRE_COMPLETE_MIRROR=1 requires BESTDORI_RAW_MIRROR_ROOT");
   }
   const missing = ["api", "assets", "res"].filter(
-    (entry) => !fs.statSync(path.join(resolvedBestdoriMirrorRoot, entry), { throwIfNoEntry: false })?.isDirectory(),
+    (entry) => !fs.statSync(path.join(resolvedBestdoriRawMirrorRoot, entry), { throwIfNoEntry: false })?.isDirectory(),
   );
   if (missing.length) {
     throw new Error(`Bestdori mirror is incomplete; missing directories: ${missing.join(", ")}`);
@@ -54,6 +58,10 @@ const workerPort = await availablePort(8787, reserved);
 reserved.add(workerPort);
 const releasePort = await availablePort(8788, reserved);
 reserved.add(releasePort);
+const localBestdoriUpstreamBase =
+  resolvedBestdoriRawMirrorRoot || localNetworkMode === "offline"
+    ? `http://127.0.0.1:${releasePort}${BESTDORI_RAW_MIRROR_PREFIX}`
+    : undefined;
 
 const configuredStateRoot = process.env.LOCAL_STACK_STATE_ROOT?.trim();
 const localStateRoot = configuredStateRoot
@@ -123,7 +131,7 @@ function prepareLocalDatabase(): void {
   }
 }
 
-function prepareLocalWorkerEnv(publicOrigin: string, bestdoriOrigin?: string): void {
+function prepareLocalWorkerEnv(publicOrigin: string, bestdoriUpstreamBase?: string): void {
   fs.mkdirSync(localStateRoot, { recursive: true });
   if (!fs.existsSync(localWorkerSecret)) {
     fs.writeFileSync(localWorkerSecret, `${randomBytes(48).toString("base64url")}\n`, { mode: 0o600 });
@@ -135,7 +143,7 @@ function prepareLocalWorkerEnv(publicOrigin: string, bestdoriOrigin?: string): v
     [
       `BETTER_AUTH_SECRET=${secret}`,
       `BETTER_AUTH_URL=${publicOrigin}`,
-      ...(bestdoriOrigin ? [`BESTDORI_ORIGIN=${bestdoriOrigin}`] : []),
+      ...(bestdoriUpstreamBase ? [`BESTDORI_UPSTREAM_BASE=${bestdoriUpstreamBase}`] : []),
       "AUTH_EMAIL_FROM=noreply@haneoka.local",
       "LOCAL_MODERATION_MODE=deterministic",
       "TURNSTILE_ENABLED=false",
@@ -147,10 +155,7 @@ function prepareLocalWorkerEnv(publicOrigin: string, bestdoriOrigin?: string): v
 }
 
 prepareLocalDatabase();
-prepareLocalWorkerEnv(
-  `http://127.0.0.1:${webPort}`,
-  resolvedBestdoriMirrorRoot || localNetworkMode === "offline" ? `http://127.0.0.1:${releasePort}` : undefined,
-);
+prepareLocalWorkerEnv(`http://127.0.0.1:${webPort}`, localBestdoriUpstreamBase);
 
 const children = new Set<ChildProcess>();
 let stopping = false;
@@ -202,13 +207,17 @@ console.log(`[dev] release   http://127.0.0.1:${releasePort}`);
 console.log(`[dev] worker    http://127.0.0.1:${workerPort}`);
 console.log(`[dev] state     ${localStateRoot}`);
 console.log(`[dev] network   ${localNetworkMode}`);
-if (resolvedBestdoriMirrorRoot) console.log(`[dev] bestdori  ${resolvedBestdoriMirrorRoot} (local mirror)`);
+if (resolvedBestdoriRawMirrorRoot) console.log(`[dev] bestdori  ${resolvedBestdoriRawMirrorRoot} (raw local mirror)`);
 else if (localNetworkMode === "offline") console.log("[dev] bestdori  unavailable (offline mode, no local mirror)");
 
 run("release gateway", "node", ["server/preview.ts"], {
   HOST: "127.0.0.1",
   PORT: String(releasePort),
-  ...(resolvedBestdoriMirrorRoot ? { BESTDORI_MIRROR_ROOT: resolvedBestdoriMirrorRoot } : {}),
+  // The release gateway may serve raw Bestdori mirror files to the local
+  // Worker, but transformed `/api/v1/garupa/bestdori/*` and Bestdori Sonolus
+  // requests travel in the other direction through that Worker provider.
+  BESTDORI_PROVIDER_ORIGIN: `http://127.0.0.1:${workerPort}`,
+  ...(resolvedBestdoriRawMirrorRoot ? { BESTDORI_RAW_MIRROR_ROOT: resolvedBestdoriRawMirrorRoot } : {}),
 });
 run(
   "local Worker",
@@ -238,7 +247,7 @@ run(
   { WRANGLER_SEND_METRICS: "false" },
 );
 run("Nuxt", "pnpm", ["exec", "nuxt", "dev", "--host", "127.0.0.1", "--port", String(webPort)], {
-  LOCAL_BESTDORI_ORIGIN: `http://127.0.0.1:${workerPort}`,
+  LOCAL_BESTDORI_PROVIDER_ORIGIN: `http://127.0.0.1:${workerPort}`,
   LOCAL_RELEASE_ORIGIN: `http://127.0.0.1:${releasePort}`,
   LOCAL_WORKER_ORIGIN: `http://127.0.0.1:${workerPort}`,
   // This orchestrator already reserves an isolated port set. Nuxt's

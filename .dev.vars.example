@@ -1,6 +1,11 @@
 # Copy this file to .dev.vars for local Wrangler development. Never commit real values.
 BETTER_AUTH_SECRET=
 
+# Optional raw Bestdori upstream base used only by the Worker. It may include a
+# path prefix (for example the local preview gateway's private raw-mirror
+# namespace), but must not include credentials, a query, or a fragment.
+# BESTDORI_UPSTREAM_BASE=
+
 # Optional OAuth providers.
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=

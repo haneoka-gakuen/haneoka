@@ -10,12 +10,12 @@ const props = withDefaults(
   defineProps<{
     story: AdvStory;
     uiSprites: StoryUiSprites;
-    server?: string;
+    releaseServer?: string;
     controls?: StoryPlayerControls;
     showProgress?: boolean;
     showStart?: boolean;
   }>(),
-  { server: undefined, controls: undefined, showProgress: true, showStart: true },
+  { releaseServer: undefined, controls: undefined, showProgress: true, showStart: true },
 );
 
 const storyRoot = ref<HTMLElement | null>(null);
@@ -71,7 +71,7 @@ defineExpose({ controls, progress, resize, startOrAdvance, seekProgress, skipCur
       ref="fullPlayer"
       :story="props.story"
       :ui-sprites="props.uiSprites"
-      :server="props.server"
+      :release-server="props.releaseServer"
       :volume="volume"
       :volume-bgm="volumeBgm"
       :enable-bgm="enableBgm"

@@ -23,6 +23,7 @@ import {
   type BestdoriEditorAssetMediaKind,
 } from "~/features/community/bestdori/editorAssets";
 import { mergeStoryRuntime } from "~/features/story/runtime";
+import { bestdoriOrigin, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Live2DDetail, Live2DModel, Song, StoryCatalog, StoryEpisode } from "~/types/archive";
 
 export type StoryEditorVisualResourceKind = "background" | "still" | "frame" | "effect" | "post-effect" | "video";
@@ -114,7 +115,7 @@ type ResourceEntry = ResourceDirectory | ResourceFile;
 type ResourceView = "grid" | "list";
 
 const props = defineProps<{
-  projectServer: string;
+  projectReleaseServer: string;
   disabled?: boolean;
   preferredKind?: CommandResourceKind;
   preferredAudioUsage?: StoryEditorAudioUsage;
@@ -132,7 +133,7 @@ const emit = defineEmits<{
   "delete-scene": [id: string];
 }>();
 
-const { assetServer } = useAssetServer();
+const { releaseServer } = useReleaseServer();
 const config = useRuntimeConfig();
 const { t, localize, compareText, locale, messages } = useLocale();
 const copy = messages("storyEditorPage");
@@ -168,7 +169,7 @@ const recordField =
   (document: unknown) =>
     recordData<T>(recordData<unknown>(document)[field]);
 const mismatch = computed(
-  () => !projectSceneMode.value && normalizeAssetServer(props.projectServer) !== assetServer.value,
+  () => !projectSceneMode.value && normalizeReleaseServer(props.projectReleaseServer) !== releaseServer.value,
 );
 const unavailable = computed(() => props.disabled || mismatch.value);
 const requestEnabled = computed(() => !projectSceneMode.value && !unavailable.value);
@@ -204,7 +205,7 @@ const bestdoriIndexRequest = useLazyCatalogDocument<BestdoriEditorAssetIndexResp
   "editor-assets",
   bestdoriActive,
   undefined,
-  "bestdori",
+  bestdoriOrigin("jp"),
 );
 const bestdoriCurrentNode = computed(() =>
   bestdoriEditorAssetNodeAt(bestdoriIndexRequest.data.value?.tree, bestdoriRelativePath.value),
@@ -215,7 +216,7 @@ const bestdoriBundleRequest = useLazyCatalogDocument<BestdoriEditorAssetBundleRe
   bestdoriBundleResource,
   bestdoriBundleActive,
   undefined,
-  "bestdori",
+  bestdoriOrigin("jp"),
 );
 
 const live2dRequest = useLazyCatalogCollection<Live2DModel>("live2d", live2dActive);
@@ -792,9 +793,10 @@ const goBack = () => {
   if (currentPath.value.length > basePathDepth.value) openDirectory(currentPath.value.slice(0, -1));
 };
 
-const resourceUrl = (path: string) => catalogApiUrl(config.public.apiBase, props.projectServer, path);
+const resourceUrl = (path: string) =>
+  catalogApiUrl(config.public.apiBase, ourNotesReleaseOrigin(props.projectReleaseServer), path);
 const bestdoriResourceUrl = (path: string) => {
-  const url = catalogApiUrl(config.public.apiBase, "bestdori", path);
+  const url = catalogApiUrl(config.public.apiBase, bestdoriOrigin("jp"), path);
   return `${url}?lang=${encodeURIComponent(locale.value)}`;
 };
 
@@ -952,7 +954,7 @@ const insertStory = async (item: StoryEpisode) => {
       : [];
     const scriptAsset = String(item.scriptAsset || "");
     const scriptUrl = scriptAsset
-      ? `${assetRootForServer(props.projectServer)}/${normalizePath(scriptAsset).map(encodeURIComponent).join("/")}`
+      ? `${assetRootForRelease(props.projectReleaseServer)}/${normalizePath(scriptAsset).map(encodeURIComponent).join("/")}`
       : "";
     const [live2d, sourceContent] = await Promise.all([
       Promise.all([...new Set(live2dKeys)].map((key) => $fetch<Record<string, unknown>>(resourceUrl(`live2d/${key}`)))),

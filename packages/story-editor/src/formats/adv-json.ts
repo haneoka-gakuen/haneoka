@@ -18,7 +18,7 @@ export interface ImportAdvStoryOptions {
   title?: string;
   sceneId?: string;
   sceneName?: string;
-  assetServer?: string;
+  releaseServer?: string;
   provenance?: JsonObject;
 }
 
@@ -273,7 +273,7 @@ const parseNormalizedAdvStoryJson = (root: JsonObject, options: ImportAdvStoryOp
     version: STORY_PROJECT_VERSION,
     meta: {
       title: options.title ?? inferredTitle,
-      ...(options.assetServer === undefined ? {} : { assetServer: options.assetServer }),
+      ...(options.releaseServer === undefined ? {} : { releaseServer: options.releaseServer }),
       ...(options.provenance === undefined ? {} : { provenance: cloneStoryValue(options.provenance) }),
     },
     entrySceneId: sceneId,

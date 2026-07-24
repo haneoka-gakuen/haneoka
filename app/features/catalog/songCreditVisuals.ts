@@ -2,16 +2,22 @@ import type { Band, Character, Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import { resolveArchiveValue } from "~/i18n/locales";
 import { contributingSongBandIds, uniqueSongCreditIds } from "~/features/catalog/songCredits";
+import { contentOriginKey, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { runtimeRootForRelease } from "~/composables/useReleaseServer";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 
 export type SongCreditVisualVariant = "logo" | "icon";
 
+/** The exact catalog that supplied the entities used to render a credit. */
+export interface SongCreditCatalogSource {
+  readonly origin: CatalogContentOrigin;
+  readonly bands: readonly Band[];
+  readonly characters: readonly Character[];
+}
+
 export interface SongCreditCatalogs {
-  catalogBands: readonly Band[];
-  catalogCharacters: readonly Character[];
-  bestdoriBands: readonly Band[];
-  bestdoriCharacters: readonly Character[];
+  readonly sources: readonly SongCreditCatalogSource[];
 }
 
 export interface SongCreditIdentity {
@@ -22,13 +28,17 @@ export interface SongCreditIdentity {
 }
 
 export interface SongCreditVisualResolver {
-  identity: (song: Song, sourceServer: string) => SongCreditIdentity;
-  songKey: (song: Song, sourceServer: string) => string;
-  bandCreditKey: (band: Band, sourceServer: string) => string;
-  song: (song: Song, sourceServer: string, variant?: SongCreditVisualVariant) => CompositeEntityVisual[];
-  band: (band: Band, sourceServer: string, variant?: SongCreditVisualVariant) => CompositeEntityVisual;
-  character: (character: Character, sourceServer: string, variant?: SongCreditVisualVariant) => CompositeEntityVisual;
-  bandCredit: (band: Band, sourceServer: string, variant?: SongCreditVisualVariant) => CompositeEntityVisual[];
+  identity: (song: Song, origin: CatalogContentOrigin) => SongCreditIdentity;
+  songKey: (song: Song, origin: CatalogContentOrigin) => string;
+  bandCreditKey: (band: Band, origin: CatalogContentOrigin) => string;
+  song: (song: Song, origin: CatalogContentOrigin, variant?: SongCreditVisualVariant) => CompositeEntityVisual[];
+  band: (band: Band, origin: CatalogContentOrigin, variant?: SongCreditVisualVariant) => CompositeEntityVisual;
+  character: (
+    character: Character,
+    origin: CatalogContentOrigin,
+    variant?: SongCreditVisualVariant,
+  ) => CompositeEntityVisual;
+  bandCredit: (band: Band, origin: CatalogContentOrigin, variant?: SongCreditVisualVariant) => CompositeEntityVisual[];
 }
 
 const identityKey = (value: unknown): string =>
@@ -56,11 +66,20 @@ const localizedAliases = (value: unknown): string[] => {
   return [...new Set(values.map((entry) => identityKey(entry)).filter(Boolean))];
 };
 
-export const catalogBandLogo = (band: Band | undefined): string | undefined => {
+/**
+ * Some releases omit the special MUGENDAI MYUTYPE logo from their catalog
+ * metadata. Keep the fallback in the same release namespace as the catalog
+ * that supplied the band; it must never silently point at `jp-cbt`.
+ */
+export const catalogBandLogo = (band: Band | undefined, origin: CatalogContentOrigin): string | undefined => {
   if (!band) return undefined;
   if (band.logo) return band.logo;
-  if (band.bandId === 3 && identityKey(japaneseText(band.bandName)) === identityKey("夢限大みゅーたいぷ")) {
-    return "/runtime/jp-cbt/unity/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2/band_logo_mugendai--Sprite-1531089103092969011.png";
+  if (
+    origin.provider === "release" &&
+    band.bandId === 3 &&
+    identityKey(japaneseText(band.bandName)) === identityKey("夢限大みゅーたいぷ")
+  ) {
+    return `${runtimeRootForRelease(origin.releaseId)}/unity/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2/band_logo_mugendai--Sprite-1531089103092969011.png`;
   }
   return band.icon;
 };
@@ -79,92 +98,33 @@ const memberVisual = (name: string): CompositeEntityVisual => {
   };
 };
 
+const emptyCatalog = { bands: [], characters: [] } as const satisfies Omit<SongCreditCatalogSource, "origin">;
+
+/**
+ * Resolves credits only against the catalog identified by the supplied
+ * origin. This deliberately does not merge entity IDs from Our Notes and
+ * Garupa: identical numeric IDs are not evidence that they are one entity.
+ */
 export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): SongCreditVisualResolver => {
-  const catalogBandMap = new Map(catalogs.catalogBands.map((band) => [band.bandId, band]));
-  const bestdoriBandMap = new Map(catalogs.bestdoriBands.map((band) => [band.bandId, band]));
-  const catalogCharacterMap = new Map(
-    catalogs.catalogCharacters.map((character) => [character.characterId, character]),
-  );
-  const bestdoriCharacterMap = new Map(
-    catalogs.bestdoriCharacters.map((character) => [character.characterId, character]),
-  );
-  const aliasMap = <T>(values: readonly T[], aliases: (value: T) => string[]): Map<string, T> => {
-    const output = new Map<string, T>();
-    for (const value of values) {
-      for (const alias of aliases(value)) if (!output.has(alias)) output.set(alias, value);
-    }
-    return output;
-  };
-  const catalogBandsByName = aliasMap(catalogs.catalogBands, (band) => localizedAliases(band.bandName));
-  const bestdoriBandsByName = aliasMap(
-    catalogs.bestdoriBands.filter((band) => band.official !== false),
-    (band) => localizedAliases(band.bandName),
-  );
-  const catalogCharactersByName = aliasMap(catalogs.catalogCharacters, (character) =>
-    localizedAliases([character.characterName, character.englishName]),
-  );
-  const bestdoriCharactersByName = aliasMap(catalogs.bestdoriCharacters, (character) =>
-    localizedAliases([character.characterName, character.englishName]),
-  );
-  const sourceBandMap = (sourceServer: string) => (sourceServer === "bestdori" ? bestdoriBandMap : catalogBandMap);
-  const sourceCharacterMap = (sourceServer: string) =>
-    sourceServer === "bestdori" ? bestdoriCharacterMap : catalogCharacterMap;
-  const firstAliasMatch = <T>(aliases: readonly string[], index: ReadonlyMap<string, T>): T | undefined =>
-    aliases.flatMap((alias) => {
-      const match = index.get(alias);
-      return match ? [match] : [];
-    })[0];
-  const matchedBand = (source: Band) => {
-    const aliases = localizedAliases(source.bandName);
-    return {
-      catalog: firstAliasMatch(aliases, catalogBandsByName),
-      bestdori: firstAliasMatch(aliases, bestdoriBandsByName),
-    };
-  };
-  const matchedCharacter = (source: Character) => {
-    const aliases = localizedAliases([source.characterName, source.englishName]);
-    return {
-      catalog: firstAliasMatch(aliases, catalogCharactersByName),
-      bestdori: firstAliasMatch(aliases, bestdoriCharactersByName),
-    };
-  };
-  const bandKey = (source: Band): string => {
-    const matched = matchedBand(source);
-    return localizedAliases(matched.catalog?.bandName || matched.bestdori?.bandName || source.bandName)[0] || "";
-  };
-  const characterKey = (source: Character): string => {
-    const matched = matchedCharacter(source);
-    return (
-      localizedAliases(matched.catalog?.characterName || matched.bestdori?.characterName || source.characterName)[0] ||
-      ""
-    );
-  };
+  const sources = new Map(catalogs.sources.map((source) => [contentOriginKey(source.origin), source] as const));
+  const catalogFor = (origin: CatalogContentOrigin) => sources.get(contentOriginKey(origin)) || emptyCatalog;
+  const sourceBandMap = (origin: CatalogContentOrigin) =>
+    new Map(catalogFor(origin).bands.map((band) => [band.bandId, band]));
+  const sourceCharacterMap = (origin: CatalogContentOrigin) =>
+    new Map(catalogFor(origin).characters.map((character) => [character.characterId, character]));
+  const bandKey = (source: Band): string => localizedAliases(source.bandName)[0] || "";
+  const characterKey = (source: Character): string => localizedAliases(source.characterName)[0] || "";
 
   const band = (
     source: Band,
-    _sourceServer: string,
+    origin: CatalogContentOrigin,
     variant: SongCreditVisualVariant = "logo",
   ): CompositeEntityVisual => {
-    const { catalog, bestdori } = matchedBand(source);
     const imageCandidates =
       variant === "icon"
-        ? uniqueImages(
-            catalog?.icon,
-            catalogBandLogo(catalog),
-            bestdori?.icon,
-            bestdori?.logo,
-            source.icon,
-            source.logo,
-          )
-        : uniqueImages(
-            catalogBandLogo(catalog),
-            catalog?.icon,
-            bestdori?.logo,
-            bestdori?.icon,
-            source.logo,
-            source.icon,
-          );
-    const label = japaneseDisplayText(source.bandName || catalog?.bandName || bestdori?.bandName);
+        ? uniqueImages(source.icon, catalogBandLogo(source, origin), source.logo)
+        : uniqueImages(catalogBandLogo(source, origin), source.icon, source.logo);
+    const label = japaneseDisplayText(source.bandName);
     return {
       image: imageCandidates[0],
       imageCandidates,
@@ -172,28 +132,17 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
       lang: variant === "icon" ? langOf(label) : undefined,
       icon: variant === "icon" && !imageCandidates.length ? "music_note" : undefined,
       fit: "contain",
-      color: catalog?.color || bestdori?.color || source.color,
+      color: source.color,
     };
   };
 
   const character = (
     source: Character,
-    _sourceServer: string,
+    _origin: CatalogContentOrigin,
     variant: SongCreditVisualVariant = "icon",
   ): CompositeEntityVisual => {
-    const { catalog, bestdori } = matchedCharacter(source);
-    const imageCandidates = uniqueImages(
-      catalog?.faceImage,
-      catalog?.thumbnailImage,
-      catalog?.profileImage,
-      bestdori?.faceImage,
-      bestdori?.thumbnailImage,
-      bestdori?.profileImage,
-      source.faceImage,
-      source.thumbnailImage,
-      source.profileImage,
-    );
-    const label = japaneseDisplayText(source.characterName || catalog?.characterName || bestdori?.characterName);
+    const imageCandidates = uniqueImages(source.faceImage, source.thumbnailImage, source.profileImage);
+    const label = japaneseDisplayText(source.characterName);
     return {
       image: imageCandidates[0],
       imageCandidates,
@@ -201,13 +150,13 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
       lang: variant === "icon" ? langOf(label) : undefined,
       icon: variant === "icon" && !imageCandidates.length ? "person" : undefined,
       fit: "cover",
-      color: catalog?.colorCode || bestdori?.colorCode || source.colorCode,
+      color: source.colorCode,
     };
   };
 
-  const identity = (song: Song, sourceServer: string): SongCreditIdentity => {
-    const bands = sourceBandMap(sourceServer);
-    const characters = sourceCharacterMap(sourceServer);
+  const identity = (song: Song, origin: CatalogContentOrigin): SongCreditIdentity => {
+    const bands = sourceBandMap(origin);
+    const characters = sourceCharacterMap(origin);
     const sourceBand = bands.get(song.bandId || 0);
     const bandIds = contributingSongBandIds(song, sourceBand);
     const bandIdSet = new Set(bandIds);
@@ -234,12 +183,12 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
 
   const song = (
     value: Song,
-    sourceServer: string,
+    origin: CatalogContentOrigin,
     variant: SongCreditVisualVariant = "logo",
   ): CompositeEntityVisual[] => {
-    const bands = sourceBandMap(sourceServer);
-    const characters = sourceCharacterMap(sourceServer);
-    const resolved = identity(value, sourceServer);
+    const bands = sourceBandMap(origin);
+    const characters = sourceCharacterMap(origin);
+    const resolved = identity(value, origin);
     const seenBands = new Set<string>();
     const seenCharacters = new Set<string>();
     const seenNames = new Set<string>();
@@ -250,7 +199,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
         const key = bandKey(source);
         if (seenBands.has(key)) return [];
         seenBands.add(key);
-        return [band(source, sourceServer, variant)];
+        return [band(source, origin, variant)];
       }),
       ...resolved.characterIds.flatMap((id) => {
         const source = characters.get(id);
@@ -258,7 +207,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
         const key = characterKey(source);
         if (seenCharacters.has(key)) return [];
         seenCharacters.add(key);
-        return [character(source, sourceServer, variant)];
+        return [character(source, origin, variant)];
       }),
       ...(variant === "icon"
         ? resolved.memberNames.flatMap((name) => {
@@ -273,12 +222,12 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
 
   const bandCredit = (
     source: Band,
-    sourceServer: string,
+    origin: CatalogContentOrigin,
     variant: SongCreditVisualVariant = "icon",
   ): CompositeEntityVisual[] => {
-    if (source.official !== false) return [band(source, sourceServer, variant)];
-    const bands = sourceBandMap(sourceServer);
-    const characters = sourceCharacterMap(sourceServer);
+    if (source.official !== false) return [band(source, origin, variant)];
+    const bands = sourceBandMap(origin);
+    const characters = sourceCharacterMap(origin);
     const seenBands = new Set<string>();
     const seenCharacters = new Set<string>();
     const seenNames = new Set<string>();
@@ -289,7 +238,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
         const key = bandKey(member);
         if (!key || seenBands.has(key)) return [];
         seenBands.add(key);
-        return [band(member, sourceServer, variant)];
+        return [band(member, origin, variant)];
       }),
       ...uniqueSongCreditIds(source.memberCharacterIds || []).flatMap((id) => {
         const member = characters.get(id);
@@ -297,7 +246,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
         const key = characterKey(member);
         if (!key || seenCharacters.has(key)) return [];
         seenCharacters.add(key);
-        return [character(member, sourceServer, variant)];
+        return [character(member, origin, variant)];
       }),
       ...(variant === "icon"
         ? (source.memberNames || []).flatMap((name) => {
@@ -310,10 +259,10 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
     ];
   };
 
-  const bandCreditKey = (source: Band, sourceServer: string): string => {
+  const bandCreditKey = (source: Band, origin: CatalogContentOrigin): string => {
     if (source.official !== false) return `band:${bandKey(source)}`;
-    const bands = sourceBandMap(sourceServer);
-    const characters = sourceCharacterMap(sourceServer);
+    const bands = sourceBandMap(origin);
+    const characters = sourceCharacterMap(origin);
     const bandKeys = uniqueSongCreditIds(source.memberBandIds || [])
       .flatMap((id) => {
         const member = bands.get(id);
@@ -331,10 +280,10 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
     if (parts.some(Boolean)) return `credit:${parts.join(":")}`;
     return `credit-name:${localizedAliases(source.bandName).sort().join(".")}`;
   };
-  const songKey = (value: Song, sourceServer: string): string => {
-    const resolved = identity(value, sourceServer);
-    const bands = sourceBandMap(sourceServer);
-    const characters = sourceCharacterMap(sourceServer);
+  const songKey = (value: Song, origin: CatalogContentOrigin): string => {
+    const resolved = identity(value, origin);
+    const bands = sourceBandMap(origin);
+    const characters = sourceCharacterMap(origin);
     const bandKeys = resolved.bandIds
       .flatMap((id) => {
         const source = bands.get(id);
@@ -360,7 +309,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
 
 export const resolveSongCreditVisuals = (
   song: Song,
-  sourceServer: string,
+  origin: CatalogContentOrigin,
   catalogs: SongCreditCatalogs,
   variant: SongCreditVisualVariant = "logo",
-): CompositeEntityVisual[] => createSongCreditVisualResolver(catalogs).song(song, sourceServer, variant);
+): CompositeEntityVisual[] => createSongCreditVisualResolver(catalogs).song(song, origin, variant);

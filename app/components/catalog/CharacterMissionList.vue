@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { UiList, UiListItem, UiSelect } from "@haneoka/ui";
 import type { ResourceReferenceItem } from "~/components/catalog/ResourceReferenceList.vue";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { CatalogResolvedResource, Character, LocalizedValue } from "~/types/archive";
 import { replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
@@ -39,10 +40,11 @@ interface ItemDocument {
 const props = defineProps<{
   missions: CharacterMissionEntry[];
   character: Character;
+  origin: Extract<CatalogContentOrigin, { provider: "release" }>;
 }>();
 
 const { resolveLocalized, t } = useLocale();
-const { data: itemDocument } = useCatalogDocument<ItemDocument>("items");
+const { data: itemDocument } = useCatalogDocument<ItemDocument>("items", () => props.origin);
 
 const humanize = (value?: string) =>
   String(value || "")

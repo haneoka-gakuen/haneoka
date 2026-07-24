@@ -4,44 +4,62 @@ import type { Character } from "~/types/archive";
 import { hydrateStoryPayload, hydrateStoryTextPayload } from "~/features/story/hydrate";
 import { mergeStoryRuntime } from "~/features/story/runtime";
 import { resolveStoryCatalogSource } from "~/features/story/catalogSources";
+import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 type StoryRuntimeRecord = AdvStory & Record<string, unknown>;
 type StoryMode = "text" | "play";
 
 const props = defineProps<{
   storyId: string;
-  /** Catalog-shaped API server; defaults to the selected release server. */
-  catalogServer?: string;
-  /** Runtime asset server used by the story renderer. */
-  server?: string;
+  /** Exact origin for catalog-shaped story records. */
+  catalogOrigin?: CatalogContentOrigin;
+  /** Optional provider-specific story adapter, separate from the content origin. */
+  catalogAdapter?: string;
+  /** Fallback renderer release for a non-Our Notes catalog source. */
+  releaseServer?: string;
 }>();
 
 const mode = defineModel<StoryMode>("mode", { default: "text" });
 const rotation = defineModel<number>("rotation", { default: 0 });
 
-const { assetServer } = useAssetServer();
+const { releaseServer: selectedReleaseServer } = useReleaseServer();
 const { locale } = useLocale();
-const resolvedServer = computed(() => normalizeAssetServer(props.server || assetServer.value));
-const sourceAdapter = computed(() => resolveStoryCatalogSource(props.catalogServer));
+const sourceAdapter = computed(() => resolveStoryCatalogSource(props.catalogAdapter));
 const detailQuery = computed(() => sourceAdapter.value?.detailQuery?.({ locale: locale.value }));
-const detailRequest = useCatalogRecord<Record<string, unknown>>(
+// A normal catalog page lists one selected Our Notes release, but a direct
+// story link is durable across releases. Resolve that detail independently so
+// an older episode remains playable after the selected release advances.
+// Bestdori has an explicit provider origin, so the shared selection helper
+// deliberately keeps it to that one source rather than entering this chain.
+const requestedCatalogOrigin = computed<CatalogContentOrigin>(
+  () => props.catalogOrigin || ourNotesReleaseOrigin(selectedReleaseServer.value),
+);
+const detailRequest = useCatalogSelection<Record<string, unknown>>(
   "stories",
   () => props.storyId,
-  () => props.catalogServer,
-  detailQuery,
+  requestedCatalogOrigin,
+  { fallbackAcrossReleases: true, query: detailQuery },
+);
+const resolvedCatalogOrigin = computed<CatalogContentOrigin>(
+  () => detailRequest.resolvedOrigin.value || requestedCatalogOrigin.value,
+);
+// A resolved Our Notes story brings its own release runtime. This includes the
+// renderer server and every release-bound companion resource, rather than the
+// release that happened to be selected when the URL was opened. External
+// providers retain their explicit story source; their renderer fallback stays
+// on the caller-selected Our Notes runtime until they supply a runtime source.
+const resolvedReleaseServer = computed(() =>
+  resolvedCatalogOrigin.value.provider === "release"
+    ? normalizeReleaseServer(resolvedCatalogOrigin.value.releaseId)
+    : normalizeReleaseServer(props.releaseServer || selectedReleaseServer.value),
 );
 const playMode = computed(() => mode.value === "play");
-// Story data may come from a catalog-shaped third-party source, while the
-// renderer's chrome is tied to the selected game runtime.  Keep those two
-// sources separate: StoryPlayerFull only accepts sprite URLs under this
-// runtime namespace.
-const runtimeRequest = useLazyCatalogDocument<Record<string, unknown>>(
-  "story-runtime",
-  playMode,
-  undefined,
-  resolvedServer,
+// StoryPlayerFull only accepts sprite URLs under an Our Notes runtime
+// namespace. For a release-backed detail this is the exact resolved release.
+const runtimeRequest = useLazyCatalogDocument<Record<string, unknown>>("story-runtime", playMode, undefined, () =>
+  ourNotesReleaseOrigin(resolvedReleaseServer.value),
 );
-const runtimePrefix = computed(() => `${runtimeRootForServer(resolvedServer.value)}/`);
+const runtimePrefix = computed(() => `${runtimeRootForRelease(resolvedReleaseServer.value)}/`);
 const uiSpriteKeys = ["tapNext", "tapNextGlow", "next", "psychEdge", "psychLine", "choice", "choiceActive"] as const;
 const uiSprites = computed<StoryUiSprites | undefined>(() => {
   const value = runtimeRequest.data.value?.uiSprites;
@@ -73,11 +91,11 @@ const live2dQuery = computed(() => {
 const live2dRequest = useCatalogRecords<Record<string, unknown>>(
   "live2d",
   live2dKeys,
-  () => props.catalogServer,
+  resolvedCatalogOrigin,
   live2dQuery,
 );
 const textCharacterIds = computed(() => {
-  if (playMode.value || props.catalogServer === "bestdori") return [];
+  if (playMode.value || resolvedCatalogOrigin.value.provider === "bestdori") return [];
   const detail = detailRequest.data.value;
   if (!detail) return [];
   const ids = new Set<number>();
@@ -93,7 +111,7 @@ const textCharacterIds = computed(() => {
   }
   return [...ids].sort((left, right) => left - right).map(String);
 });
-const textCharacterRequest = useCatalogRecords<Character>("characters", textCharacterIds, resolvedServer);
+const textCharacterRequest = useCatalogRecords<Character>("characters", textCharacterIds, resolvedCatalogOrigin);
 const storyState = computed<{ data?: StoryRuntimeRecord; error?: unknown }>(() => {
   if (!detailRequest.data.value) return {};
   try {
@@ -178,7 +196,7 @@ watch(
         v-model:rotation="rotation"
         :story="story"
         :ui-sprites="uiSprites"
-        :server="resolvedServer"
+        :release-server="resolvedReleaseServer"
         :show-mode-control="false"
       />
       <template #fallback><LoadingState /></template>

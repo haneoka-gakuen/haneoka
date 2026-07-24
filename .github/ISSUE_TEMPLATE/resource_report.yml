@@ -29,7 +29,7 @@ body:
     attributes:
       label: Resource server
       description: Give the selected server identifier, or N/A if the report is server-independent.
-      placeholder: jp-cbt
+      placeholder: jp
     validations:
       required: true
   - type: input

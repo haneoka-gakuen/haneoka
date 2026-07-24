@@ -323,8 +323,7 @@ export class AdvEpisodeResourceLoader {
     addFile("live2d-physics", runtime.physics || "");
     for (const url of runtime.textures || []) addTexture(url);
     for (const motion of advCharacterMotions(live2d)) addFile("live2d-motion", motion?.runtime || "");
-    for (const expression of advCharacterExpressions(live2d))
-      addFile("live2d-expression", expression?.runtime || "");
+    for (const expression of advCharacterExpressions(live2d)) addFile("live2d-expression", expression?.runtime || "");
   }
 
   fetchUrl(url: string) {

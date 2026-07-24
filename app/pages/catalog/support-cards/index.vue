@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { liveMusicTypeLabel, liveMusicTypeValues } from "~/config/liveMusic";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, SupportCard } from "~/types/archive";
 import { isResolvedDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
 const { locale, localize, resolveLocalized, t, formatDate, compareText } = useLocale();
 useSeoMeta({ title: () => `${t("supportCards")} · haneoka` });
-const { data: cardRecord, pending, error, refresh } = useCatalogCollection<SupportCard>("support-cards");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
+const { releaseServer } = useReleaseServer();
+const catalogOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const { data: cardRecord, pending, error, refresh } = useCatalogCollection<SupportCard>("support-cards", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
 
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band", true);
@@ -208,10 +211,15 @@ const selectedSummary = computed(() => filteredCards.value.find((card) => card.s
 const selectedPath = computed(() => selectedId.value || undefined);
 const {
   data: selectedCard,
+  resolvedOrigin: selectedCardOrigin,
   pending: selectedPending,
   error: selectedError,
   refresh: refreshSelected,
-} = useCatalogSelection<SupportCard>("support-cards", selectedPath);
+} = useCatalogSelection<SupportCard>("support-cards", selectedPath, catalogOrigin, { fallbackAcrossReleases: true });
+// A direct detail URL may name a card absent from the selected release or
+// current filters. The list remains release-local; the detail uses the exact
+// release that resolved the card.
+const detailOrigin = computed(() => selectedCardOrigin.value || catalogOrigin.value);
 const selectedTitle = computed(() =>
   selectedCard.value
     ? displayTitleOf(selectedCard.value)
@@ -234,20 +242,6 @@ const selectedAccent = computed(() => {
 const selectCard = (card: SupportCard) => {
   void cardLayer.toggle(card.supportCardId);
 };
-
-watch(
-  [filteredCards, pending],
-  ([values, isPending]) => {
-    if (
-      !isPending &&
-      selectedId.value !== undefined &&
-      !values.some((card) => card.supportCardId === selectedId.value)
-    ) {
-      selectedId.value = undefined;
-    }
-  },
-  { immediate: true },
-);
 
 const availableCharacterIds = computed(() => [...new Set(cards.value.flatMap(characterIdsOf))]);
 const availableBandIds = computed(() => [...new Set(cards.value.flatMap(bandIdsOf))]);
@@ -399,6 +393,7 @@ const setTableSort = (value: string) => {
         v-if="selectedId !== undefined"
         :open="selectedId !== undefined"
         :card="selectedCard"
+        :origin="detailOrigin"
         kind="snap"
         :title="selectedTitle"
         :subtitle="selectedCharacterNames"

@@ -1,8 +1,10 @@
 /**
  * Bestdori reverse-proxy + transformer.
  *
- * Exposes Bestdori's official song/chart/asset data under our existing catalog
- * contract by treating `bestdori` as a pseudo-server. The worker fetches
+ * Exposes Garupa data from Bestdori under its own provider namespace. This is
+ * deliberately separate from the Our Notes resource-server catalog: Bestdori
+ * is a source for a different game, and its `jp`/`en`/… values are Garupa
+ * regions rather than Our Notes release-server slugs. The worker fetches
  * bestdori.com on demand, transforms responses into our `Song`/`Band`/
  * `SongMetaByDifficulty` shapes (see app/types/archive.ts), converts charts to
  * our SS text, and proxies media bytes (jacket /
@@ -10,20 +12,18 @@
  * by the shared Bestdori policy, and concurrent work is single-flighted to
  * keep upstream concurrency low.
  *
- * Routes (all same-origin under /api/v1, dispatched before handleCatalogApi):
- *   GET /api/v1/servers/bestdori/bands
- *   GET /api/v1/servers/bestdori/songs
- *   GET /api/v1/servers/bestdori/song-meta
- *   GET /api/v1/servers/bestdori/songs/{id}
- *   GET /api/v1/servers/bestdori/cards | /cards/{id}
- *   GET /api/v1/servers/bestdori/stories/{event|band|main|afterlive}
- *   GET /api/v1/servers/bestdori/stories/{canonicalStoryId}
- *   GET /api/v1/servers/bestdori/editor-assets[/{bundlePath}]             -> lazy asset tree / files
- *   GET /api/v1/bestdori/charts/{id}/{easy|normal|hard|expert|special}   -> SS text
- *   GET /api/v1/bestdori/media/jacket/{pkg}/{image}                       -> PNG
- *   GET /api/v1/bestdori/media/jacket-thumb/{pkg}/{image}                 -> PNG
- *   GET /api/v1/bestdori/media/sound/{num}                                -> MP3
- *   GET /api/v1/bestdori/media/mv/{assetBundleName}                       -> MP4
+ * Routes (all same-origin and dispatched before the Our Notes catalog API):
+ *   GET /api/v1/garupa/bestdori/{region}/bands
+ *   GET /api/v1/garupa/bestdori/{region}/songs
+ *   GET /api/v1/garupa/bestdori/{region}/song-meta
+ *   GET /api/v1/garupa/bestdori/{region}/songs/{id}
+ *   GET /api/v1/garupa/bestdori/{region}/cards | /cards/{id}
+ *   GET /api/v1/garupa/bestdori/{region}/stories/{event|band|main|afterlive}
+ *   GET /api/v1/garupa/bestdori/{region}/stories/{canonicalStoryId}
+ *   GET /api/v1/garupa/bestdori/{region}/editor-assets[/{bundlePath}]     -> lazy asset tree / files
+ *   GET /api/v1/garupa/bestdori/{region}/charts/{id}/{difficulty}         -> SS text
+ *   GET /api/v1/garupa/bestdori/{region}/media/{jacket|jacket-thumb|sound|mv}/…
+ *   GET /api/v1/garupa/bestdori/{region}/raw/…
  */
 
 import { bestdoriBuildDataToLive2dEntry, bestdoriBuildDataTransitionPath } from "@haneoka/bestdori/live2d";
@@ -32,8 +32,8 @@ import { convertBestdoriScenario } from "@haneoka/bestdori/scenario";
 import { bestdoriChartToSsText } from "@haneoka/bestdori/chart";
 import { BESTDORI_CACHE_POLICY, bestdoriCacheControl } from "@haneoka/bestdori/cache-policy";
 
-const DEFAULT_ORIGIN = "https://bestdori.com";
-let upstreamOrigin = DEFAULT_ORIGIN;
+const DEFAULT_UPSTREAM_BASE = new URL("https://bestdori.com/");
+let upstreamBase = new URL(DEFAULT_UPSTREAM_BASE);
 
 const JSON_CACHE_CONTROL = bestdoriCacheControl(BESTDORI_CACHE_POLICY.catalog);
 const CHART_CACHE_CONTROL = bestdoriCacheControl(BESTDORI_CACHE_POLICY.chart);
@@ -84,16 +84,38 @@ const BESTDORI_META_PROFILE = {
 const upstreamMemo = new Map<string, Promise<unknown>>();
 const upstreamTextMemo = new Map<string, Promise<string>>();
 
-const configureUpstreamOrigin = (value: string | undefined): void => {
-  if (!value?.trim()) {
-    upstreamOrigin = DEFAULT_ORIGIN;
-    return;
-  }
+const resolveUpstreamBase = (value: string | undefined): URL => {
+  if (!value?.trim()) return new URL(DEFAULT_UPSTREAM_BASE);
   const url = new URL(value);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/") {
-    throw new Error("BESTDORI_ORIGIN must be an HTTP(S) origin without credentials or a path");
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error("BESTDORI_UPSTREAM_BASE must be an HTTP(S) URL without credentials, a query, or a fragment");
   }
-  upstreamOrigin = url.origin;
+  url.pathname = `${url.pathname.replace(/\/+$/u, "")}/`;
+  return url;
+};
+
+const configureUpstreamBase = (value: string | undefined): void => {
+  upstreamBase = resolveUpstreamBase(value);
+};
+
+const upstreamBaseRevisionIdentity = (base: URL): string => {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(base.toString())) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+};
+
+const upstreamUrl = (path: string): string => {
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\0")) {
+    throw new Error(`Invalid Bestdori upstream path: ${path}`);
+  }
+  const target = new URL(path.slice(1), upstreamBase);
+  if (!target.pathname.startsWith(upstreamBase.pathname)) {
+    throw new Error(`Bestdori upstream path escapes configured base: ${path}`);
+  }
+  return target.toString();
 };
 
 type Obj = Record<string, unknown>;
@@ -132,27 +154,36 @@ const invalidPathResponse = (): Response =>
     headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 
-// Bestdori publishes per-server; publication timelines use [jp, en, tw, cn, kr].
-// Prefer the server matching the current UI locale, then the Japanese source,
-// then the remaining published servers. Some entries exist only on one server
-// (for example CN-only songs), so every regional resource lookup must preserve
-// this availability fallback instead of blindly replacing the server segment.
-const SERVER_NAMES = ["jp", "en", "tw", "cn", "kr"] as const;
-type BestdoriServerName = (typeof SERVER_NAMES)[number];
-const isBestdoriServer = (value: string): value is (typeof SERVER_NAMES)[number] =>
-  SERVER_NAMES.includes(value as (typeof SERVER_NAMES)[number]);
+// Bestdori publishes per-region; publication timelines use [jp, en, tw, cn, kr].
+// Public data is queried against one exact region. The region-less Sonolus
+// projection is the only aggregate consumer and may inspect every region.
+export const BESTDORI_REGIONS = ["jp", "en", "tw", "cn", "kr"] as const;
+export type BestdoriRegion = (typeof BESTDORI_REGIONS)[number];
+export const isBestdoriRegion = (value: string): value is BestdoriRegion =>
+  BESTDORI_REGIONS.includes(value as BestdoriRegion);
 
-// Map a UI archive locale to its Bestdori asset-server slot in the [jp,en,tw,cn,kr]
-// timeline, then build a server preference chain (locale first, jp source next,
-// then the rest) — mirroring the app's `archiveLocaleFallbacks`. Used to load a
-// story scenario and every regional media resource in the viewer's actual
-// language instead of always JP.
+export const BESTDORI_API_PREFIX = "/api/v1/garupa/bestdori";
+const bestdoriApiBase = (region: BestdoriRegion): string => `${BESTDORI_API_PREFIX}/${region}`;
+const bestdoriApiPath = (region: BestdoriRegion, path: string): string =>
+  `${bestdoriApiBase(region)}/${path.replace(/^\/+/, "")}`;
+
+const REGION_LOCALE: Readonly<Record<BestdoriRegion, string>> = {
+  jp: "ja",
+  en: "en",
+  tw: "zh-TW",
+  cn: "zh-CN",
+  kr: "ko",
+};
+
+// Map a requested Garupa region to its Bestdori timeline slot. Public API
+// requests always supply a concrete region (through `REGION_LOCALE`), so their
+// selection is intentionally exact. The region-less Sonolus projection keeps
+// the full order for its legacy aggregate behavior.
 const LOCALE_SERVER_INDEX: Record<string, number> = { ja: 0, en: 1, "zh-TW": 2, "zh-CN": 3, ko: 4 };
-const localeServerChain = (lang: string | undefined): readonly BestdoriServerName[] => {
+const regionChainForLocale = (lang: string | undefined): readonly BestdoriRegion[] => {
   const index = lang ? LOCALE_SERVER_INDEX[lang] : undefined;
-  const preferred = index === undefined ? undefined : SERVER_NAMES[index];
-  if (!preferred || preferred === "jp") return SERVER_NAMES;
-  return [preferred, "jp", ...SERVER_NAMES.filter((server) => server !== preferred && server !== "jp")];
+  const preferred = index === undefined ? undefined : BESTDORI_REGIONS[index];
+  return preferred ? [preferred] : BESTDORI_REGIONS;
 };
 // Release chronology is deliberately distinct from asset-language selection:
 // the Japanese schedule is canonical when present. Only when JP is missing do
@@ -164,64 +195,80 @@ const validReleaseTimestamp = (value: unknown): number | undefined => {
   if (parsed === null) return undefined;
   return new Date(parsed).getUTCFullYear() === 2100 ? undefined : parsed;
 };
+const isPublishedInRegion = (
+  entry: Obj,
+  field: "publishedAt" | "releasedAt" | "startAt",
+  region: BestdoriRegion,
+): boolean => {
+  const timeline = asArray(entry[field]);
+  if (!timeline.length) return true;
+  const index = BESTDORI_REGIONS.indexOf(region);
+  return index >= 0 && validReleaseTimestamp(timeline[index]) !== undefined;
+};
+const recordsPublishedInRegion = (
+  records: Record<string, unknown>,
+  field: "publishedAt" | "releasedAt" | "startAt",
+  region: BestdoriRegion,
+): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(records).filter(([, value]) => isPublishedInRegion(asObj(value), field, region)));
 const releaseTimestampForTimeline = (
   entry: Obj,
   field: "publishedAt" | "releasedAt" | "startAt",
   lang?: string,
 ): number | undefined => {
   const timeline = asArray(entry[field]);
-  const candidates = ["jp" as const, ...localeServerChain(lang)].filter(
+  const candidates = ["jp" as const, ...regionChainForLocale(lang)].filter(
     (server, index, values) => values.indexOf(server) === index,
   );
   for (const server of candidates) {
-    const index = SERVER_NAMES.indexOf(server);
+    const index = BESTDORI_REGIONS.indexOf(server);
     const value = index < 0 ? undefined : validReleaseTimestamp(timeline[index]);
     if (value !== undefined) return value;
   }
   return undefined;
 };
-const serverForTimeline = (
+const regionForTimeline = (
   entry: Obj,
   field: "publishedAt" | "releasedAt" | "startAt" = "publishedAt",
   lang?: string,
-): BestdoriServerName => {
+): BestdoriRegion => {
   const timeline = asArray(entry[field]);
-  const candidates = localeServerChain(lang);
+  const candidates = regionChainForLocale(lang);
   if (!timeline.length) return candidates[0] ?? "jp";
   for (const server of candidates) {
-    const index = SERVER_NAMES.indexOf(server);
+    const index = BESTDORI_REGIONS.indexOf(server);
     if (index >= 0 && timeline[index] != null) return server;
   }
   return candidates[0] ?? "jp";
 };
-const serverFor = (entry: Obj, lang?: string): BestdoriServerName => serverForTimeline(entry, "publishedAt", lang);
-const serverForCard = (entry: Obj, lang?: string): BestdoriServerName => serverForTimeline(entry, "releasedAt", lang);
+const regionFor = (entry: Obj, lang?: string): BestdoriRegion => regionForTimeline(entry, "publishedAt", lang);
+const regionForCard = (entry: Obj, lang?: string): BestdoriRegion => regionForTimeline(entry, "releasedAt", lang);
 // Metadata is useful for ordering, but it is not authoritative: localized
 // scenario files can be missing, stale, malformed, or replaced by Bestdori's
 // HTML application fallback. Return a complete retry chain so the actual asset
 // response decides whether fallback is needed.
-const storyServerCandidates = (
+const storyRegionCandidates = (
   publishedAt: Array<number | null> | undefined,
   lang: string | undefined,
   fallback: string,
   requested?: string,
-): BestdoriServerName[] => {
-  const published = localeServerChain(lang).filter((server) => {
-    const index = SERVER_NAMES.indexOf(server);
+): BestdoriRegion[] => {
+  const published = regionChainForLocale(lang).filter((server) => {
+    const index = BESTDORI_REGIONS.indexOf(server);
     return !publishedAt?.length || (index >= 0 && publishedAt[index] != null);
   });
-  return [requested, ...published, fallback, ...localeServerChain(lang)]
-    .filter((server): server is BestdoriServerName => Boolean(server && isBestdoriServer(server)))
+  return [requested, ...published, fallback, ...regionChainForLocale(lang)]
+    .filter((server): server is BestdoriRegion => Boolean(server && isBestdoriRegion(server)))
     .filter((server, index, values) => values.indexOf(server) === index);
 };
 
 const fetchUpstream = async (path: string): Promise<unknown> => {
-  const origin = upstreamOrigin;
-  const key = `${origin}\u0000${path}`;
+  const base = upstreamBase.toString();
+  const key = `${base}\u0000${path}`;
   const cached = upstreamMemo.get(key);
   if (cached) return cached;
   const promise = (async () => {
-    const response = await fetch(`${origin}${path}`, {
+    const response = await fetch(upstreamUrl(path), {
       headers: { Accept: "application/json", "User-Agent": "HaneokaBestdoriProxy/1.0 (+https://haneoka.org/)" },
       cf: { cacheTtl: BESTDORI_CACHE_POLICY.upstream.edgeTtlSeconds, cacheEverything: true },
     });
@@ -292,10 +339,10 @@ const bestdoriExplorerPath = (value: string | null): string[] | null => {
 };
 
 const bestdoriExplorerPayload = async (
-  lang: string | undefined,
+  region: BestdoriRegion,
   path: readonly string[],
-): Promise<{ server: BestdoriServerName; tree?: BestdoriExplorerTree; files?: string[]; path?: string }> => {
-  const candidates = localeServerChain(lang);
+): Promise<{ server: BestdoriRegion; tree?: BestdoriExplorerTree; files?: string[]; path?: string }> => {
+  const candidates = [region] as const;
   if (!path.length) {
     const responses = await Promise.allSettled(
       candidates.map(async (server) => ({
@@ -304,7 +351,7 @@ const bestdoriExplorerPayload = async (
       })),
     );
     const tree: BestdoriExplorerTree = {};
-    let firstServer: BestdoriServerName | undefined;
+    let firstServer: BestdoriRegion | undefined;
     for (const response of responses) {
       if (response.status !== "fulfilled" || !Object.keys(response.value.tree).length) continue;
       firstServer ??= response.value.server;
@@ -350,26 +397,23 @@ const BESTDORI_RESPONSE_VERSION = BESTDORI_CATALOG_VERSION;
 
 /**
  * A Bestdori catalog is refreshed on the same cadence as the public catalog
- * proxy. Keeping the time bucket in the revision lets the Sonolus projection
- * discard its in-isolate snapshot when Bestdori has had a chance to change.
+ * proxy. Keeping both the time bucket and a non-reversible upstream-base
+ * identity in the revision lets the Sonolus projection discard its in-isolate
+ * snapshot when Bestdori changes or a local mirror base is switched.
  */
-export const bestdoriSonolusRevision = (now = Date.now()): string => {
+export const bestdoriSonolusRevision = (now = Date.now(), configuredUpstreamBase?: string): string => {
   const interval = BESTDORI_CACHE_POLICY.catalog.maxAgeSeconds * 1_000;
-  return `bestdori:${BESTDORI_RESPONSE_VERSION}:${Math.floor(now / interval)}`;
+  return `bestdori:${BESTDORI_RESPONSE_VERSION}:${upstreamBaseRevisionIdentity(resolveUpstreamBase(configuredUpstreamBase))}:${Math.floor(now / interval)}`;
 };
 
 const cacheKeyUrl = (value: string): string => {
   const source = new URL(value);
   const canonical = new URL(source.pathname, source.origin);
-  if (canonical.pathname === "/api/v1/servers/bestdori/live2d") {
+  if (/^\/api\/v1\/garupa\/bestdori\/(?:jp|en|tw|cn|kr)\/live2d$/.test(canonical.pathname)) {
     for (const id of [...new Set(source.searchParams.getAll("id"))].sort()) canonical.searchParams.append("id", id);
   }
-  for (const key of ["lang", "server"] as const) {
-    const parameter = source.searchParams.get(key);
-    if (parameter) canonical.searchParams.set(key, parameter);
-  }
   canonical.searchParams.set("_cv", BESTDORI_RESPONSE_VERSION);
-  canonical.searchParams.set("_source", upstreamOrigin);
+  canonical.searchParams.set("_source", upstreamBase.toString());
   return canonical.toString();
 };
 
@@ -417,7 +461,7 @@ const jsonBody = (value: unknown): CachedBody => ({
 // ---- media proxy (Range passthrough) ----
 
 const proxyMedia = async (request: Request, upstreamPath: string, fallbackContentType: string): Promise<Response> => {
-  const upstream = new Request(`${upstreamOrigin}${upstreamPath}`, { method: request.method });
+  const upstream = new Request(upstreamUrl(upstreamPath), { method: request.method });
   for (const header of ["range", "if-range", "if-none-match"]) {
     const value = request.headers.get(header);
     if (value) upstream.headers.set(header, value);
@@ -449,10 +493,10 @@ const proxyMedia = async (request: Request, upstreamPath: string, fallbackConten
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 };
 
-const proxyMediaWithServerFallback = async (
+const proxyMediaWithRegionFallback = async (
   request: Request,
-  servers: readonly BestdoriServerName[],
-  upstreamPath: (server: BestdoriServerName) => string,
+  servers: readonly BestdoriRegion[],
+  upstreamPath: (server: BestdoriRegion) => string,
   fallbackContentType: string,
 ): Promise<Response> => {
   let lastResponse: Response | undefined;
@@ -498,18 +542,18 @@ const pad3 = (value: number | string): string => String(value).padStart(3, "0");
  * a broken image. The core bands additionally have a dedicated round SVG at
  * `/res/icon/band_{id}.svg`; `logoL` is the full logo used next to song titles.
  */
-const BESTDORI_BAND_LOGOS: Record<number, { availableServers: readonly BestdoriServerName[]; roundIcon: boolean }> = {
-  1: { availableServers: SERVER_NAMES, roundIcon: true },
-  2: { availableServers: SERVER_NAMES, roundIcon: true },
-  3: { availableServers: SERVER_NAMES, roundIcon: true },
-  4: { availableServers: SERVER_NAMES, roundIcon: true },
-  5: { availableServers: SERVER_NAMES, roundIcon: true },
+const BESTDORI_BAND_LOGOS: Record<number, { availableRegions: readonly BestdoriRegion[]; roundIcon: boolean }> = {
+  1: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
+  2: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
+  3: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
+  4: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
+  5: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
   // Glitter*Green only has a compact logoL asset (84×82) in Bestdori.
-  6: { availableServers: ["cn"], roundIcon: false },
-  18: { availableServers: SERVER_NAMES, roundIcon: true },
-  21: { availableServers: SERVER_NAMES, roundIcon: true },
+  6: { availableRegions: ["cn"], roundIcon: false },
+  18: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
+  21: { availableRegions: BESTDORI_REGIONS, roundIcon: true },
   // The KR mirror does not publish MyGO!!!!!'s logoL bundle.
-  45: { availableServers: ["jp", "en", "tw", "cn"], roundIcon: true },
+  45: { availableRegions: ["jp", "en", "tw", "cn"], roundIcon: true },
 };
 
 // Bestdori assigns numeric band IDs to formal bands, solo singers, guests,
@@ -524,36 +568,43 @@ const BESTDORI_FORMAL_BAND_IDS = new Set([1, 2, 3, 4, 5, 6, 18, 21, 45, 46]);
 // as JSON (often `application/octet-stream`), so they need a text-returning
 // fetcher instead of the JSON-only `fetchUpstream`. All produced asset URLs
 // are rewritten to our generic raw proxy below so they pass the story
-// runtime canonical-URL gate and bypass bestdori's closed CORS.
+// runtime canonical-URL gate and bypass Bestdori's closed CORS. The proxy URL
+// always declares the exact Garupa region that owns an `/assets/{region}/…`
+// path; shared `/res/…` files retain the caller's preferred region.
 
-const BESTDORI_RAW_PROXY = "/api/v1/bestdori/raw";
-/** Rewrite a raw bestdori path (`/assets/jp/...` or `/res/...`) to our proxy URL. */
-const proxify = (rawBestdoriPath: string): string => {
+const rawAssetRegion = (path: string): BestdoriRegion | undefined => {
+  const match = /^\/assets\/([^/]+)(?:\/|$)/.exec(path);
+  return match?.[1] && isBestdoriRegion(match[1]) ? match[1] : undefined;
+};
+/** Rewrite a raw Bestdori path (`/assets/jp/...` or `/res/...`) to our provider API. */
+const proxify = (rawBestdoriPath: string, fallbackRegion: BestdoriRegion = "jp"): string => {
   const path = rawBestdoriPath.startsWith("/") ? rawBestdoriPath : `/${rawBestdoriPath}`;
-  return `${BESTDORI_RAW_PROXY}${path}`;
+  return `${bestdoriApiBase(rawAssetRegion(path) ?? fallbackRegion)}/raw${path}`;
 };
 
 const bandVisuals = (bandId: number, lang?: string): Obj => {
   const source = BESTDORI_BAND_LOGOS[bandId];
   if (!source) return {};
   const server =
-    localeServerChain(lang).find((candidate) => source.availableServers.includes(candidate)) ??
-    source.availableServers[0];
+    regionChainForLocale(lang).find((candidate) => source.availableRegions.includes(candidate)) ??
+    source.availableRegions[0];
   if (!server) return {};
   const directory = `/assets/${server}/band/logo/${pad3(bandId)}_rip`;
   return {
-    icon: source.roundIcon ? proxify(`/res/icon/band_${bandId}.svg`) : proxify(`${directory}/logoL.png`),
-    logo: proxify(`${directory}/logoL.png`),
+    icon: source.roundIcon
+      ? proxify(`/res/icon/band_${bandId}.svg`, server)
+      : proxify(`${directory}/logoL.png`, server),
+    logo: proxify(`${directory}/logoL.png`, server),
   };
 };
 
 const fetchUpstreamText = async (path: string): Promise<string> => {
-  const origin = upstreamOrigin;
-  const key = `${origin}\u0000${path}`;
+  const base = upstreamBase.toString();
+  const key = `${base}\u0000${path}`;
   const cached = upstreamTextMemo.get(key);
   if (cached) return cached;
   const promise = (async () => {
-    const response = await fetch(`${origin}${path}`, {
+    const response = await fetch(upstreamUrl(path), {
       headers: { "User-Agent": "HaneokaBestdoriProxy/1.0 (+https://haneoka.org/)" },
       cf: { cacheTtl: BESTDORI_CACHE_POLICY.upstream.edgeTtlSeconds, cacheEverything: true },
     });
@@ -591,7 +642,7 @@ const afterLiveIndex = (): Promise<Record<string, unknown>> =>
   fetchUpstreamJsonCached("/api/misc/afterlivetalks.5.json") as Promise<Record<string, unknown>>;
 
 // ---- characters / cards (for filters + card-story selection page) ----
-const transformCharacters = (raw: Record<string, unknown>): Obj => {
+const transformCharacters = (raw: Record<string, unknown>, region: BestdoriRegion = "jp"): Obj => {
   const out: Obj = {};
   for (const [key, value] of Object.entries(raw)) {
     const id = Number(key);
@@ -602,7 +653,7 @@ const transformCharacters = (raw: Record<string, unknown>): Obj => {
       characterName: entry.characterName ?? null,
       bandId: num(entry.bandId),
       colorCode: entry.colorCode ?? null,
-      ...(hasBestdoriCharacterIcon(id) ? { faceImage: proxify(`/res/icon/chara_icon_${id}.png`) } : {}),
+      ...(hasBestdoriCharacterIcon(id) ? { faceImage: proxify(`/res/icon/chara_icon_${id}.png`, region) } : {}),
     };
   }
   return out;
@@ -620,14 +671,14 @@ const transformCards = (raw: Record<string, unknown>, lang?: string): Obj => {
       : asArray(asObj(entry.episodes).entries).map((episode) => asObj(episode));
     const hasStory =
       episodes.some((episode) => Boolean(episode.scenarioId)) || asArray(asObj(entry.stat).episodes).length > 0;
-    const assetServer = serverForCard(entry, lang);
+    const assetRegion = regionForCard(entry, lang);
     const normalImage = resourceSetName
-      ? proxify(`/assets/${assetServer}/characters/resourceset/${resourceSetName}_rip/card_normal.png`)
+      ? proxify(`/assets/${assetRegion}/characters/resourceset/${resourceSetName}_rip/card_normal.png`)
       : null;
     const hasTraining = Object.keys(asObj(asObj(entry.stat).training)).length > 0;
     const trainedImage =
       resourceSetName && hasTraining
-        ? proxify(`/assets/${assetServer}/characters/resourceset/${resourceSetName}_rip/card_after_training.png`)
+        ? proxify(`/assets/${assetRegion}/characters/resourceset/${resourceSetName}_rip/card_after_training.png`)
         : null;
     out[key] = {
       cardId: id,
@@ -706,7 +757,7 @@ const whenDefined = <Key extends string, Value>(key: Key, value: Value | undefin
 const eventThumbnail = (event: Obj, lang?: string): string | undefined => {
   const assetBundleName = String(event.assetBundleName || "");
   if (!assetBundleName) return undefined;
-  return proxify(`/assets/${serverForTimeline(event, "startAt", lang)}/event/${assetBundleName}/images_rip/logo.png`);
+  return proxify(`/assets/${regionForTimeline(event, "startAt", lang)}/event/${assetBundleName}/images_rip/logo.png`);
 };
 
 // Event art: the wide memorial banner (`banner_memorial_event{id}.png`) drives
@@ -715,15 +766,22 @@ const eventThumbnail = (event: Obj, lang?: string): string | undefined => {
 // stage's large film frame (`episodeImage`).
 const eventMemorialBanner = (eventId: number, event: Obj, lang?: string): string =>
   proxify(
-    `/assets/${serverForTimeline(event, "startAt", lang)}/story/banner/memorial_rip/banner_memorial_event${pad3(eventId)}.png`,
+    `/assets/${regionForTimeline(event, "startAt", lang)}/story/banner/memorial_rip/banner_memorial_event${pad3(eventId)}.png`,
   );
 
 const eventScreenImage = (eventId: number, episode: number, event: Obj, lang?: string): string =>
   proxify(
-    `/assets/${serverForTimeline(event, "startAt", lang)}/story/bg/event/eventstory${eventId}_${episode}_rip/EventStoryScreenImage${eventId}_${episode}.png`,
+    `/assets/${regionForTimeline(event, "startAt", lang)}/story/bg/event/eventstory${eventId}_${episode}_rip/EventStoryScreenImage${eventId}_${episode}.png`,
   );
 
-const storyListFromEvent = (eventId: number, rawStories: Obj, event: Obj, lang?: string): StoryListItem[] => {
+const storyListFromEvent = (
+  eventId: number,
+  rawStories: Obj,
+  event: Obj,
+  lang?: string,
+  region?: BestdoriRegion,
+): StoryListItem[] => {
+  if (region && !isPublishedInRegion(event, "startAt", region)) return [];
   const eventName = event.eventName ?? rawStories.eventName ?? "";
   const publishedAt = timestamps(event.startAt);
   const releaseAt = releaseTimestampForTimeline(event, "startAt", lang);
@@ -768,14 +826,14 @@ const storyListFromEvent = (eventId: number, rawStories: Obj, event: Obj, lang?:
 // rail; the logo (`story/band/{id}{ch}/screen_rip/logo.png`) is the stage's
 // corner title mark. Per-episode art is `BandStoryScreenImage{N}.png` under
 // `bandstory{N}_rip/`, where N is bestdori's global story key.
-const bandMemorialBanner = (server: BestdoriServerName, bandId: number, chapterNumber: number): string =>
+const bandMemorialBanner = (server: BestdoriRegion, bandId: number, chapterNumber: number): string =>
   proxify(`/assets/${server}/story/banner/band_rip/banner_memorial_band${pad3(bandId)}${pad3(chapterNumber)}.png`);
-const bandLogo = (server: BestdoriServerName, bandId: number, chapterNumber: number): string =>
+const bandLogo = (server: BestdoriRegion, bandId: number, chapterNumber: number): string =>
   proxify(`/assets/${server}/story/band/${pad3(bandId)}${pad3(chapterNumber)}/screen_rip/logo.png`);
-const bandScreenImage = (server: BestdoriServerName, episodeKey: number): string =>
+const bandScreenImage = (server: BestdoriRegion, episodeKey: number): string =>
   proxify(`/assets/${server}/story/bg/band/bandstory${episodeKey}_rip/BandStoryScreenImage${episodeKey}.png`);
 
-const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryListItem[] => {
+const storyListFromBand = (raw: Record<string, unknown>, lang?: string, region?: BestdoriRegion): StoryListItem[] => {
   const out: StoryListItem[] = [];
   // bestdori duplicates each original band's "Story 1" under two chapter keys
   // (e.g. ch1≡ch8 for Poppin'Party) with identical scenarioIds; the duplicate
@@ -789,7 +847,8 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryLi
     const chapterId = numericId(chapterKey);
     const chapterName = chapter.subTitle ?? chapter.mainTitle ?? "";
     const chapterPublishedAt = timestamps(chapter.publishedAt);
-    const chapterServer = serverFor(chapter, lang);
+    if (region && !isPublishedInRegion(chapter, "publishedAt", region)) continue;
+    const chapterRegion = regionFor(chapter, lang);
     const stories = Object.entries(asObj(chapter.stories));
     const firstScenario = String(asObj(stories[0]?.[1]).scenarioId || "");
     if (firstScenario) {
@@ -802,14 +861,15 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryLi
       const ep = asObj(epRaw);
       const scenarioId = String(ep.scenarioId || "");
       if (!scenarioId) return;
+      if (region && asArray(ep.publishedAt).length && !isPublishedInRegion(ep, "publishedAt", region)) return;
       // bestdori's episode key is a GLOBAL story index (the screen-image N),
       // not a per-chapter episode number — display the within-chapter position
       // and use the global key only for the screen-image URL.
       const episodeNumber = index + 1;
       const screenKey = numericId(episodeKey);
-      const episodeServer = asArray(ep.publishedAt).some((value) => value != null)
-        ? serverFor(ep, lang)
-        : chapterServer;
+      const episodeRegion = asArray(ep.publishedAt).some((value) => value != null)
+        ? regionFor(ep, lang)
+        : chapterRegion;
       const storyId = `band.${scenarioId}`;
       out.push({
         storyId,
@@ -828,11 +888,11 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryLi
         ...whenDefined("bandId", bandId),
         ...(bandId !== undefined && chapterNumber !== undefined
           ? {
-              image: bandMemorialBanner(chapterServer, bandId, chapterNumber),
-              thumbnail: bandLogo(chapterServer, bandId, chapterNumber),
+              image: bandMemorialBanner(chapterRegion, bandId, chapterNumber),
+              thumbnail: bandLogo(chapterRegion, bandId, chapterNumber),
             }
           : {}),
-        ...(screenKey !== undefined ? { episodeImage: bandScreenImage(episodeServer, screenKey) } : {}),
+        ...(screenKey !== undefined ? { episodeImage: bandScreenImage(episodeRegion, screenKey) } : {}),
       });
     });
   }
@@ -842,7 +902,7 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryLi
 // Main-story art uses per-episode `MainStoryScreenImage{id}.png` under
 // `mainstory{id}_rip/`. The main story has no per-season banner asset, so each
 // season chapter reuses its first episode's localized screen image on the rail.
-const mainScreenImage = (server: BestdoriServerName, mainId: number): string =>
+const mainScreenImage = (server: BestdoriRegion, mainId: number): string =>
   proxify(`/assets/${server}/story/bg/main/mainstory${mainId}_rip/MainStoryScreenImage${mainId}.png`);
 const mainSeasonName = (season: number): unknown => [
   `シーズン${season}`,
@@ -858,10 +918,11 @@ const isMainSeasonStart = (entry: Obj): boolean => {
   return caption.some((slot) => typeof slot === "string" && /^(?:Opening\s*1|オープニング１)$/.test(slot.trim()));
 };
 
-const storyListFromMain = (raw: Record<string, unknown>, lang?: string): StoryListItem[] => {
+const storyListFromMain = (raw: Record<string, unknown>, lang?: string, region?: BestdoriRegion): StoryListItem[] => {
   const ids = Object.keys(raw)
     .map(Number)
     .filter((id) => Number.isFinite(id))
+    .filter((id) => !region || isPublishedInRegion(asObj(raw[String(id)]), "publishedAt", region))
     .sort((left, right) => left - right);
   // Bestdori ships 3 main-story seasons (ids 1–25, 26–48, 49–73 at time of
   // writing). Split by the "Opening 1" caption resets so it tracks future
@@ -903,8 +964,8 @@ const storyListFromMain = (raw: Record<string, unknown>, lang?: string): StoryLi
         ...whenDefined("description", entry.synopsis),
         ...whenDefined("caption", entry.caption),
         ...whenDefined("publishedAt", timestamps(entry.publishedAt)),
-        image: mainScreenImage(serverFor(firstEntry, lang), firstId),
-        episodeImage: mainScreenImage(serverFor(entry, lang), id),
+        image: mainScreenImage(regionFor(firstEntry, lang), firstId),
+        episodeImage: mainScreenImage(regionFor(entry, lang), id),
       },
     ];
   });
@@ -945,12 +1006,17 @@ const afterLiveCharacterIds = (entry: Obj, aliases: ReadonlyMap<string, number>)
   return ids.filter((id, index) => ids.indexOf(id) === index);
 };
 
-const storyListFromAfterLive = (raw: Record<string, unknown>, characters: Record<string, unknown>): StoryListItem[] => {
+const storyListFromAfterLive = (
+  raw: Record<string, unknown>,
+  characters: Record<string, unknown>,
+  region?: BestdoriRegion,
+): StoryListItem[] => {
   const aliases = afterLiveCharacterAliases(characters);
   return Object.entries(raw).flatMap(([id, value]) => {
     const entry = asObj(value);
     const episodeNumber = numericId(id);
     if (episodeNumber === undefined) return [];
+    if (region && asArray(entry.publishedAt).length && !isPublishedInRegion(entry, "publishedAt", region)) return [];
     const storyId = `afterlive.${id}`;
     return [
       {
@@ -967,20 +1033,24 @@ const storyListFromAfterLive = (raw: Record<string, unknown>, characters: Record
   });
 };
 
-const buildStoryCollection = async (section: "event" | "band" | "main" | "afterlive", lang?: string): Promise<Obj> => {
+const buildStoryCollection = async (
+  section: "event" | "band" | "main" | "afterlive",
+  lang?: string,
+  region?: BestdoriRegion,
+): Promise<Obj> => {
   if (section === "event") {
     const [stories, events] = await Promise.all([allEventStories(), allEvents()]);
     return storyItemRecord(
       Object.entries(stories).flatMap(([eventId, value]) => {
         const id = numericId(eventId);
-        return id === undefined ? [] : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang);
+        return id === undefined ? [] : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang, region);
       }),
     );
   }
-  if (section === "band") return storyItemRecord(storyListFromBand(await bandStoriesIndex(), lang));
-  if (section === "main") return storyItemRecord(storyListFromMain(await mainStoriesIndex(), lang));
+  if (section === "band") return storyItemRecord(storyListFromBand(await bandStoriesIndex(), lang, region));
+  if (section === "main") return storyItemRecord(storyListFromMain(await mainStoriesIndex(), lang, region));
   const [stories, characters] = await Promise.all([afterLiveIndex(), allCharactersFull()]);
-  return storyItemRecord(storyListFromAfterLive(stories, characters));
+  return storyItemRecord(storyListFromAfterLive(stories, characters, region));
 };
 
 // ---- single story → AdvStory ----
@@ -1011,7 +1081,7 @@ const resolveEventScenario = async (eventId: number, chapter: number, lang?: str
     if (bandEpisode) return { ...bandEpisode, storyId };
   }
   return {
-    server: serverForTimeline(event, "startAt", lang),
+    server: regionForTimeline(event, "startAt", lang),
     publishedAt: timestamps(event.startAt) ?? [],
     storyId,
     scenarioPath: `/scenario/eventstory/event${eventId}_rip/Scenario${scenarioId}.asset`,
@@ -1022,7 +1092,7 @@ const resolveBandScenario = async (scenarioId: string, lang?: string): Promise<R
   const index = await bandStoriesIndex();
   let bandId = "";
   let voiceBundle = "";
-  let server: BestdoriServerName = localeServerChain(lang)[0] ?? "jp";
+  let server: BestdoriRegion = regionChainForLocale(lang)[0] ?? "jp";
   let publishedAt: Array<number | null> = [];
   for (const bandValues of Object.values(index)) {
     const chapter = asObj(bandValues);
@@ -1034,7 +1104,7 @@ const resolveBandScenario = async (scenarioId: string, lang?: string): Promise<R
       bandId = pad3(Number(chapter.bandId) || 0);
       voiceBundle = `sound/voice/scenario/${entry.voiceAssetBundleName}_rip/`;
       const useEntryTimeline = asArray(entry.publishedAt).some((value) => value != null);
-      server = useEntryTimeline ? serverFor(entry, lang) : serverFor(chapter, lang);
+      server = useEntryTimeline ? regionFor(entry, lang) : regionFor(chapter, lang);
       publishedAt = (useEntryTimeline ? timestamps(entry.publishedAt) : timestamps(chapter.publishedAt)) ?? [];
       break;
     }
@@ -1060,7 +1130,7 @@ const resolveBandStoryEpisode = async (episodeKey: string, lang?: string): Promi
     const bandId = pad3(Number(chapter.bandId) || 0);
     const useEntryTimeline = asArray(entry.publishedAt).some((value) => value != null);
     return {
-      server: useEntryTimeline ? serverFor(entry, lang) : serverFor(chapter, lang),
+      server: useEntryTimeline ? regionFor(entry, lang) : regionFor(chapter, lang),
       publishedAt: (useEntryTimeline ? timestamps(entry.publishedAt) : timestamps(chapter.publishedAt)) ?? [],
       storyId: `band.${entry.scenarioId}`,
       scenarioPath: `/scenario/band/${bandId}_rip/Scenario${entry.scenarioId}.asset`,
@@ -1074,7 +1144,7 @@ const resolveMainScenario = async (mainId: string, lang?: string): Promise<Resol
   const scenarioId = String(entry.scenarioId || "");
   if (!scenarioId) throw new Error(`unknown bestdori main story: ${mainId}`);
   return {
-    server: serverFor(entry, lang),
+    server: regionFor(entry, lang),
     publishedAt: timestamps(entry.publishedAt) ?? [],
     storyId: `main.${mainId}`,
     scenarioPath: `/scenario/main_rip/Scenario${scenarioId}.asset`,
@@ -1094,7 +1164,7 @@ const resolveCardScenario = async (
     .map((value) => asObj(value))
     .find((entry) => String(entry.resourceSetName || "") === resourceSetName);
   return {
-    server: card ? serverForCard(card, lang) : (localeServerChain(lang)[0] ?? "jp"),
+    server: card ? regionForCard(card, lang) : (regionChainForLocale(lang)[0] ?? "jp"),
     publishedAt: card ? (timestamps(card.releasedAt) ?? []) : [],
     storyId: `card.${resourceSetName}.${scenarioId}`,
     scenarioPath: `/characters/resourceset/${resourceSetName}_rip/Scenario${scenarioId}.asset`,
@@ -1108,7 +1178,7 @@ const resolveAfterLiveScenario = async (id: string, lang?: string): Promise<Reso
   const scenarioId = String(entry.scenarioId || "");
   if (!scenarioId) throw new Error(`unknown bestdori after-live story: ${id}`);
   return {
-    server: serverFor(entry, lang),
+    server: regionFor(entry, lang),
     publishedAt: timestamps(entry.publishedAt) ?? [],
     storyId: `afterlive.${id}`,
     scenarioPath: `/scenario/afterlivetalk/group${Math.floor(numericId / 256)}_rip/Scenario${scenarioId}.asset`,
@@ -1212,7 +1282,7 @@ const storyDetail = async (storyId: string, requestedServer?: string, lang?: str
   } else {
     throw new Error(`unknown bestdori story kind: ${kind}`);
   }
-  const candidates = storyServerCandidates(resolved.publishedAt, lang, resolved.server, requestedServer);
+  const candidates = storyRegionCandidates(resolved.publishedAt, lang, resolved.server, requestedServer);
   const failures: string[] = [];
   for (const server of candidates) {
     // Normalize legacy leading slashes: Bestdori's CN host treats a double
@@ -1244,7 +1314,7 @@ const storyDetail = async (storyId: string, requestedServer?: string, lang?: str
 };
 
 // ---- live2d entries (buildData.asset -> host-neutral Live2D resources) ----
-const live2dEntries = async (ids: string[], serverCandidates: readonly BestdoriServerName[]): Promise<CachedBody> => {
+const live2dEntries = async (ids: string[], serverCandidates: readonly BestdoriRegion[]): Promise<CachedBody> => {
   const items: Record<string, unknown> = {};
   const missing: string[] = [];
   // A scene normally requests fewer than a dozen costumes, but cap parallel
@@ -1383,7 +1453,7 @@ const resolvedReward = (rewardType: string, rewardId: number | undefined, server
   };
 };
 
-const difficultyList = (musicId: number, entry: Obj): Obj[] => {
+const difficultyList = (musicId: number, entry: Obj, region: BestdoriRegion): Obj[] => {
   const difficulty = asObj(entry.difficulty);
   const notes = asObj(entry.notes);
   return DIFFICULTY_NAMES.flatMap((name, index) => {
@@ -1396,7 +1466,7 @@ const difficultyList = (musicId: number, entry: Obj): Obj[] => {
         playLevel: num(cell.playLevel),
         noteCount,
         publishedAt: timestamps(cell.publishedAt),
-        file: `/api/v1/bestdori/charts/${musicId}/${name}`,
+        file: bestdoriApiPath(region, `charts/${musicId}/${name}`),
       },
     ];
   });
@@ -1406,7 +1476,7 @@ const musicVideosFromKeys = (
   musicVideos: unknown,
   lang?: string,
   titles?: unknown,
-  fallbackServer?: BestdoriServerName,
+  fallbackRegion?: BestdoriRegion,
 ): Obj => {
   const record = asObj(musicVideos);
   const titleMap = asObj(titles);
@@ -1416,11 +1486,11 @@ const musicVideosFromKeys = (
     const assetBundleName = String(video.assetBundleName || key);
     if (!/^[\w().-]+$/.test(assetBundleName)) continue;
     const titleField = asObj(titleMap[key]).title ?? video.title;
-    const server = asArray(video.publishedAt).some((value) => value != null)
-      ? serverFor(video, lang)
-      : (fallbackServer ?? localeServerChain(lang)[0] ?? "jp");
+    const region = asArray(video.publishedAt).some((value) => value != null)
+      ? regionFor(video, lang)
+      : (fallbackRegion ?? regionChainForLocale(lang)[0] ?? "jp");
     out[key] = {
-      playableUrl: `/api/v1/bestdori/media/mv/${server}/${encodeURIComponent(assetBundleName)}`,
+      playableUrl: bestdoriApiPath(region, `media/mv/${encodeURIComponent(assetBundleName)}`),
       type: "video/mp4",
       ...(titleField === undefined ? {} : { title: titleField }),
     };
@@ -1429,13 +1499,13 @@ const musicVideosFromKeys = (
 };
 
 const baseSong = (musicId: number, entry: Obj, lang?: string): Obj => {
-  const server = serverFor(entry, lang);
+  const assetRegion = regionFor(entry, lang);
   const releaseAt = releaseTimestampForTimeline(entry, "publishedAt", lang);
   const image = asArray(entry.jacketImage)[0];
   const jacketImage = typeof image === "string" ? image : String(musicId);
-  const jacketBase = "/api/v1/bestdori/media";
-  const jacket = `${jacketBase}/jacket/${server}/${jacketPackageFor(musicId)}/${encodeURIComponent(jacketImage)}`;
-  const jacketThumb = `${jacketBase}/jacket-thumb/${server}/${jacketPackageFor(musicId)}/${encodeURIComponent(jacketImage)}`;
+  const jacketBase = bestdoriApiPath(assetRegion, "media");
+  const jacket = `${jacketBase}/jacket/${jacketPackageFor(musicId)}/${encodeURIComponent(jacketImage)}`;
+  const jacketThumb = `${jacketBase}/jacket-thumb/${jacketPackageFor(musicId)}/${encodeURIComponent(jacketImage)}`;
   const bgmId = String(entry.bgmId || "");
   const bgmNumber = /^bgm(\d+)$/i.exec(bgmId)?.[1] || bgmNumberFor(musicId);
   return {
@@ -1444,16 +1514,16 @@ const baseSong = (musicId: number, entry: Obj, lang?: string): Obj => {
     bandId: num(entry.bandId),
     jacketUrl: jacket,
     jacketThumbUrl: jacketThumb,
-    musicUrl: `/api/v1/bestdori/media/sound/${server}/${bgmNumber}`,
+    musicUrl: `${jacketBase}/sound/${bgmNumber}`,
     composer: entry.composer ?? null,
     lyricist: entry.lyricist ?? null,
     arranger: entry.arranger ?? null,
     publishedAt: timestamps(entry.publishedAt) ?? null,
     releaseAt: releaseAt ?? null,
-    difficulty: difficultyList(musicId, entry),
+    difficulty: difficultyList(musicId, entry, assetRegion),
     musicCategories: typeof entry.tag === "string" && entry.tag ? [entry.tag] : [],
     musicType: 0,
-    musicVideos: musicVideosFromKeys(entry.musicVideos, lang, undefined, server),
+    musicVideos: musicVideosFromKeys(entry.musicVideos, lang, undefined, assetRegion),
   };
 };
 
@@ -1658,9 +1728,9 @@ const transformSongs = (raw: Record<string, unknown>, lang?: string): Obj => {
  * while raw band names already match the catalog projection's locale shape.
  */
 export async function loadBestdoriSonolusCatalog(
-  configuredOrigin?: string,
+  configuredUpstreamBase?: string,
 ): Promise<{ bands: Record<string, unknown>; songs: Record<string, unknown> }> {
-  configureUpstreamOrigin(configuredOrigin);
+  configureUpstreamBase(configuredUpstreamBase);
   const [rawSongs, bands] = await Promise.all([all8(), allBands()]);
   return { bands, songs: transformSongs(rawSongs) };
 }
@@ -1727,7 +1797,7 @@ const transformSongMeta = (raw: Record<string, unknown>, metaRaw: Record<string,
 
 const transformSongDetail = async (musicId: number, detail: Obj, lang?: string): Promise<Obj> => {
   const base = baseSong(musicId, detail, lang);
-  const assetServer = serverFor(detail, lang);
+  const assetRegion = regionFor(detail, lang);
   const achievements = asArray(detail.achievements).map((a) => asObj(a));
   const needsItemTexts = achievements.some((achievement) =>
     REWARD_TYPES_WITH_ITEM_TEXT.has(String(achievement.rewardType || "")),
@@ -1749,7 +1819,7 @@ const transformSongDetail = async (musicId: number, detail: Obj, lang?: string):
     const rewardType = String(achievement.rewardType || "");
     const quantity = num(achievement.quantity);
     const reward = {
-      ...resolvedReward(rewardType, num(achievement.rewardId), assetServer, itemTexts),
+      ...resolvedReward(rewardType, num(achievement.rewardId), assetRegion, itemTexts),
       resourceCount: quantity,
     };
     const comboMatch = type.match(/^(full_combo_|combo_)(easy|normal|hard|expert|special)$/);
@@ -1787,7 +1857,7 @@ const transformSongDetail = async (musicId: number, detail: Obj, lang?: string):
     )
     .find((ranks) => ranks.length);
   // Prefer the richer musicVideos titles from the detail payload.
-  base.musicVideos = musicVideosFromKeys(detail.musicVideos, lang, detail.musicVideos, assetServer);
+  base.musicVideos = musicVideosFromKeys(detail.musicVideos, lang, detail.musicVideos, assetRegion);
   if (scoreRanks?.length) base.scoreRanks = scoreRanks;
   if (scoreRewards.length)
     base.scoreRewards = scoreRewards.sort(
@@ -1810,49 +1880,64 @@ const chartText = async (musicId: number, difficulty: string): Promise<CachedBod
 export async function loadBestdoriSonolusChartText(
   musicId: number,
   difficulty: string,
-  configuredOrigin?: string,
+  configuredUpstreamBase?: string,
 ): Promise<string> {
-  configureUpstreamOrigin(configuredOrigin);
+  configureUpstreamBase(configuredUpstreamBase);
   return (await chartText(musicId, difficulty)).body;
 }
 
 // ---- route handler ----
 
-export async function handleBestdoriProxy(
+export async function handleGarupaBestdoriApi(
   ctx: ExecutionContext,
   request: Request,
   url: URL,
-  configuredOrigin?: string,
+  configuredUpstreamBase?: string,
 ): Promise<Response | null> {
-  configureUpstreamOrigin(configuredOrigin);
+  configureUpstreamBase(configuredUpstreamBase);
   const path = url.pathname;
-  if (!path.startsWith("/api/v1/")) return null;
-  const lang = url.searchParams.get("lang") || undefined;
+  const route = /^\/api\/v1\/garupa\/bestdori\/([^/]+)(?:\/(.*))?$/.exec(path);
+  if (!route) return null;
+  const decodedRegion = decodeRoutePart(route[1]!);
+  if (decodedRegion === null) return invalidPathResponse();
+  if (!isBestdoriRegion(decodedRegion)) {
+    return new Response(JSON.stringify({ error: { code: "region_not_found", message: "Bestdori region not found" } }), {
+      status: 404,
+      headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }
+  const region = decodedRegion;
+  const lang = REGION_LOCALE[region];
+  const tail = route[2] || "";
 
-  if (path === "/api/v1/servers/bestdori/bands") {
+  if (tail === "bands") {
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
       const [bands, characters] = await Promise.all([allBands(), allCharactersFull()]);
       return jsonBody(transformBands(bands, characters, lang));
     });
   }
-  if (path === "/api/v1/servers/bestdori/songs") {
-    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody(transformSongs(await all8(), lang)));
-  }
-  if (path === "/api/v1/servers/bestdori/song-meta") {
-    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
-      const [songs, meta] = await Promise.all([all8(), allSongMeta()]);
-      return jsonBody(transformSongMeta(songs, meta));
-    });
-  }
-  if (path === "/api/v1/servers/bestdori/characters") {
+  if (tail === "songs") {
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(transformCharacters(await allCharactersFull())),
+      jsonBody(transformSongs(recordsPublishedInRegion(await all8(), "publishedAt", region), lang)),
     );
   }
-  if (path === "/api/v1/servers/bestdori/cards") {
-    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody(transformCards(await allCards(), lang)));
+  if (tail === "song-meta") {
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
+      const [songs, meta] = await Promise.all([all8(), allSongMeta()]);
+      return jsonBody(transformSongMeta(recordsPublishedInRegion(songs, "publishedAt", region), meta));
+    });
   }
-  const editorAssets = /^\/api\/v1\/servers\/bestdori\/editor-assets(?:\/(.*))?$/.exec(path);
+  if (tail === "characters") {
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
+      jsonBody(transformCharacters(await allCharactersFull(), region)),
+    );
+  }
+  if (tail === "cards") {
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
+      jsonBody(transformCards(recordsPublishedInRegion(await allCards(), "releasedAt", region), lang)),
+    );
+  }
+  const editorAssets = /^editor-assets(?:\/(.*))?$/.exec(tail);
   if (editorAssets) {
     const encodedResourcePath = editorAssets[1] || "";
     const decodedResourcePath = encodedResourcePath ? decodeRoutePart(encodedResourcePath) : "";
@@ -1860,10 +1945,10 @@ export async function handleBestdoriProxy(
     const resourcePath = bestdoriExplorerPath(decodedResourcePath);
     if (!resourcePath) return invalidPathResponse();
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(await bestdoriExplorerPayload(lang, resourcePath)),
+      jsonBody(await bestdoriExplorerPayload(region, resourcePath)),
     );
   }
-  if (path === "/api/v1/servers/bestdori/live2d") {
+  if (tail === "live2d") {
     const ids = [
       ...new Set(
         url.searchParams
@@ -1872,25 +1957,23 @@ export async function handleBestdoriProxy(
           .filter((id) => /^[A-Za-z0-9_-]+$/.test(id)),
       ),
     ].slice(0, 64);
-    const requestedServer = url.searchParams.get("server");
-    const serverCandidates = [
-      ...(requestedServer && isBestdoriServer(requestedServer) ? [requestedServer] : []),
-      ...localeServerChain(lang),
-    ].filter((server, index, values) => values.indexOf(server) === index);
+    const regionCandidates = [region, ...regionChainForLocale(lang)].filter(
+      (candidate, index, values) => values.indexOf(candidate) === index,
+    );
     if (!ids.length)
       return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody({ items: {}, missing: [] }));
-    return serveCached(request, ctx, JSON_CACHE_CONTROL, () => live2dEntries(ids, serverCandidates));
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, () => live2dEntries(ids, regionCandidates));
   }
-  const storyCollection = /^\/api\/v1\/servers\/bestdori\/stories\/(event|band|main|afterlive)$/.exec(path);
+  const storyCollection = /^stories\/(event|band|main|afterlive)$/.exec(tail);
   if (storyCollection) {
     const section = storyCollection[1]! as "event" | "band" | "main" | "afterlive";
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(await buildStoryCollection(section, lang)),
+      jsonBody(await buildStoryCollection(section, lang, region)),
     );
   }
 
   let match: RegExpMatchArray | null;
-  if ((match = /^\/api\/v1\/servers\/bestdori\/song-meta\/(\d+)$/.exec(path))) {
+  if ((match = /^song-meta\/(\d+)$/.exec(tail))) {
     const musicId = Number(match[1]);
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
       const [songs, meta] = await Promise.all([all8(), allSongMeta()]);
@@ -1901,14 +1984,14 @@ export async function handleBestdoriProxy(
       );
     });
   }
-  if ((match = /^\/api\/v1\/servers\/bestdori\/songs\/(\d+)$/.exec(path))) {
+  if ((match = /^songs\/(\d+)$/.exec(tail))) {
     const musicId = Number(match[1]);
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
       const detail = (await fetchUpstream(`/api/songs/${musicId}.json`)) as Obj;
       return jsonBody(await transformSongDetail(musicId, detail, lang));
     });
   }
-  if ((match = /^\/api\/v1\/servers\/bestdori\/cards\/(\d+)$/.exec(path))) {
+  if ((match = /^cards\/(\d+)$/.exec(tail))) {
     const cardId = Number(match[1]);
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
       const detail = (await fetchUpstream(`/api/cards/${cardId}.json`)) as Obj;
@@ -1917,54 +2000,58 @@ export async function handleBestdoriProxy(
       return jsonBody(card);
     });
   }
-  if ((match = /^\/api\/v1\/bestdori\/charts\/(\d+)\/([a-z]+)$/.exec(path))) {
+  if ((match = /^charts\/(\d+)\/([a-z]+)$/.exec(tail))) {
     const musicId = Number(match[1]);
     const difficulty = match[2]!;
     return serveCached(request, ctx, CHART_CACHE_CONTROL, () => chartText(musicId, difficulty));
   }
-  if ((match = /^\/api\/v1\/bestdori\/media\/(jacket|jacket-thumb|sound|mv)\/([a-z]{2})\/(.+)$/.exec(path))) {
+  if ((match = /^media\/(jacket|jacket-thumb|sound|mv)\/(.+)$/.exec(tail))) {
     const kind = match[1]!;
-    const server = match[2]!;
-    const tail = decodeRoutePart(match[3]!);
-    if (tail === null) return invalidPathResponse();
-    if (!SERVER_NAMES.includes(server as (typeof SERVER_NAMES)[number])) return null;
+    const mediaPath = decodeRoutePart(match[2]!);
+    if (mediaPath === null) return invalidPathResponse();
     if (kind === "jacket" || kind === "jacket-thumb") {
-      const [pkg, image] = tail.split("/");
-      if (!pkg || !image) return null;
+      const [pkg, image, ...rest] = mediaPath.split("/");
+      if (!pkg || !image || rest.length || !/^\d+$/.test(pkg) || image === "." || image === "..") return null;
       return proxyMedia(
         request,
-        kind === "jacket" ? jacketUpstream(server, pkg, image) : jacketThumbUpstream(server, pkg, image),
+        kind === "jacket" ? jacketUpstream(region, pkg, image) : jacketThumbUpstream(region, pkg, image),
         "image/png",
       );
     }
     if (kind === "sound") {
-      if (!/^\d+$/.test(tail)) return null;
-      return proxyMedia(request, soundUpstream(server, tail), "audio/mpeg");
+      if (!/^\d+$/.test(mediaPath)) return null;
+      return proxyMedia(request, soundUpstream(region, mediaPath), "audio/mpeg");
     }
-    if (!/^[\w().-]+$/.test(tail)) return null;
-    return proxyMedia(request, mvUpstream(server, tail), "video/mp4");
+    if (!/^[\w().-]+$/.test(mediaPath)) return null;
+    return proxyMedia(request, mvUpstream(region, mediaPath), "video/mp4");
   }
-  if ((match = /^\/api\/v1\/bestdori\/media\/stage-challenge\/(\d+)$/.exec(path))) {
+  if ((match = /^media\/stage-challenge\/(\d+)$/.exec(tail))) {
     const assetId = match[1]!;
-    return proxyMediaWithServerFallback(
+    return proxyMediaWithRegionFallback(
       request,
-      localeServerChain(lang),
+      [region, ...regionChainForLocale(lang)].filter((candidate, index, values) => values.indexOf(candidate) === index),
       (server) => `/assets/${server}/stage_challenge_${assetId}_rip/image.png`,
       "image/png",
     );
   }
-  if ((match = /^\/api\/v1\/servers\/bestdori\/stories\/([^/]*\.[^/]+)$/.exec(path))) {
+  if ((match = /^stories\/([^/]*\.[^/]+)$/.exec(tail))) {
     const storyId = decodeRoutePart(match[1]!);
     if (storyId === null) return invalidPathResponse();
-    const requestedServer = url.searchParams.get("server");
-    const server = requestedServer && isBestdoriServer(requestedServer) ? requestedServer : undefined;
-    return serveCached(request, ctx, JSON_CACHE_CONTROL, () => storyDetail(storyId, server, lang));
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, () => storyDetail(storyId, region, lang));
   }
-  if ((match = /^\/api\/v1\/bestdori\/raw\/(.+)$/.exec(path))) {
+  if ((match = /^raw\/(.+)$/.exec(tail))) {
     const decodedPath = decodeRoutePart(match[1]!);
     if (decodedPath === null) return invalidPathResponse();
     const upstreamPath = "/" + decodedPath;
-    if (/\.\.|%00/.test(upstreamPath)) return null;
+    const assetRegion = rawAssetRegion(upstreamPath);
+    if (
+      /\.\.|%00/.test(upstreamPath) ||
+      upstreamPath.includes("\0") ||
+      upstreamPath.startsWith("//") ||
+      (upstreamPath.startsWith("/assets/") && !assetRegion) ||
+      (assetRegion !== undefined && assetRegion !== region)
+    )
+      return null;
     // Sniff a friendly content type from the extension for bestdori's textless
     // octet-stream responses; proxyMedia keeps the upstream type when present.
     const fallback = /\.(png|jpe?g)$/i.test(upstreamPath)

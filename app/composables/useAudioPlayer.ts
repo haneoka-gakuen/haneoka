@@ -1,13 +1,22 @@
 import type { Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
+import {
+  bestdoriOrigin,
+  contentOriginKey,
+  isCatalogContentOrigin,
+  ourNotesReleaseOrigin,
+  sameContentOrigin,
+  userUploadOrigin,
+  type ContentOrigin,
+} from "~/features/catalog/contentSource";
 import { displayTextFromUnknown, sameDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
 export interface AudioTrack {
   kind: "song";
   /** Queue-occurrence identity. It allows a playlist to contain the same song more than once. */
   queueId?: string;
-  /** Catalog namespace that owns the song metadata and detail route. */
-  catalogSource: string;
+  /** Exact game/provider/release that supplied this track. */
+  origin: ContentOrigin;
   /** Optional stable source page for queues assembled outside a song catalog. */
   detailPath?: string;
   id: number;
@@ -31,14 +40,13 @@ interface AudioPlayerSnapshot {
   duration: number;
   volume: number;
   playbackMode?: AudioPlaybackMode;
-  /** Legacy v1 fields retained for backwards-compatible local-storage migration. */
   shuffle: boolean;
   repeatMode: AudioRepeatMode;
   shuffleOrder: string[];
   collapsed: boolean;
 }
 
-const STORAGE_KEY = "haneoka:audio:v1";
+const STORAGE_KEY = "haneoka:audio:v2";
 
 let audio: HTMLAudioElement | null = null;
 let bound = false;
@@ -48,7 +56,8 @@ let persistSnapshot: (() => void) | undefined;
 let queueOccurrenceSequence = 0;
 
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
-const trackCatalogKey = (track: Pick<AudioTrack, "catalogSource" | "id">) => `${track.catalogSource}\u0000${track.id}`;
+const trackCatalogKey = (track: Pick<AudioTrack, "origin" | "id">) =>
+  `${contentOriginKey(track.origin)}\u0000${track.id}`;
 const trackKey = (track: AudioTrack) =>
   track.queueId ? `queue\u0000${track.queueId}` : `${trackCatalogKey(track)}\u0000${track.source}`;
 const queueOccurrenceId = (index: number) => {
@@ -86,6 +95,21 @@ const normalizeTrackVisuals = (value: unknown): CompositeEntityVisual[] => {
   });
 };
 
+const normalizeTrackOrigin = (value: unknown): ContentOrigin | null => {
+  if (isCatalogContentOrigin(value)) {
+    return value.provider === "release" ? ourNotesReleaseOrigin(value.releaseId) : bestdoriOrigin(value.region);
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    (value as Partial<ContentOrigin>).game === "community" &&
+    (value as Partial<ContentOrigin>).provider === "user-upload"
+  ) {
+    return userUploadOrigin();
+  }
+  return null;
+};
+
 const sameTrackVisuals = (
   left: readonly CompositeEntityVisual[] | undefined,
   right: readonly CompositeEntityVisual[] | undefined,
@@ -114,12 +138,13 @@ const normalizeTrack = (value: unknown): AudioTrack | null => {
   if ((value as AudioTrack).kind !== "song") return null;
   const source = String((value as AudioTrack).source || "");
   const id = Number((value as AudioTrack).id);
-  if (!source || !Number.isFinite(id)) return null;
+  const origin = normalizeTrackOrigin((value as Partial<AudioTrack>).origin);
+  if (!source || !Number.isFinite(id) || !origin) return null;
   const bandVisuals = normalizeTrackVisuals((value as AudioTrack).bandVisuals);
   return {
     kind: "song",
     queueId: typeof (value as AudioTrack).queueId === "string" ? (value as AudioTrack).queueId : undefined,
-    catalogSource: String((value as Partial<AudioTrack>).catalogSource || "catalog"),
+    origin,
     detailPath: typeof (value as AudioTrack).detailPath === "string" ? (value as AudioTrack).detailPath : undefined,
     id,
     title: displayTextFromUnknown((value as AudioTrack).title, `#${id}`),
@@ -158,13 +183,13 @@ export const audioTrackFromSong = (
   bandIcon = "",
   bandId = Number(song.bandId || 0),
   bandVisuals: readonly CompositeEntityVisual[] = [],
-  catalogSource = "catalog",
+  origin: ContentOrigin,
 ): AudioTrack | null => {
   if (!song.musicUrl) return null;
   const normalizedVisuals = normalizeTrackVisuals(bandVisuals);
   return {
     kind: "song",
-    catalogSource,
+    origin,
     id: song.musicId,
     title,
     band,
@@ -443,7 +468,7 @@ export const useAudioPlayer = () => {
         item.bandIcon === next.bandIcon &&
         sameTrackVisuals(item.bandVisuals, next.bandVisuals) &&
         item.cover === next.cover &&
-        item.catalogSource === next.catalogSource &&
+        sameContentOrigin(item.origin, next.origin) &&
         item.detailPath === next.detailPath &&
         item.source === next.source
       ) {
@@ -470,9 +495,9 @@ export const useAudioPlayer = () => {
     bandIcon = "",
     bandId = Number(song.bandId || 0),
     bandVisuals: readonly CompositeEntityVisual[] = [],
-    catalogSource = "catalog",
+    origin: ContentOrigin,
   ) => {
-    const next = audioTrackFromSong(song, title, band, bandIcon, bandId, bandVisuals, catalogSource);
+    const next = audioTrackFromSong(song, title, band, bandIcon, bandId, bandVisuals, origin);
     if (next) await playInsertedNext(next);
   };
 

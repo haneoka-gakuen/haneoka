@@ -96,7 +96,15 @@ export const validateStoryProject = (value: unknown): StoryProjectValidationResu
     add("error", "meta.type", "$.meta", "Project metadata must be an object");
   } else {
     if (typeof value.meta.title !== "string") add("error", "meta.title", "$.meta.title", "Title must be a string");
-    for (const key of ["description", "locale", "assetServer"] as const) {
+    if (value.meta.assetServer !== undefined) {
+      add(
+        "error",
+        "meta.assetServer.legacy",
+        "$.meta.assetServer",
+        "assetServer is not supported by story project version 2; use releaseServer",
+      );
+    }
+    for (const key of ["description", "locale", "releaseServer"] as const) {
       if (value.meta[key] !== undefined && typeof value.meta[key] !== "string") {
         add("error", `meta.${key}`, `$.meta.${key}`, `${key} must be a string`);
       }

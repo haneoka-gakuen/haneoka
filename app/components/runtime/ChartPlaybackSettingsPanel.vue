@@ -2,19 +2,22 @@
 import { MaterialIcon, UiIconButton, UiRange, UiRuntimeSurface, UiSwitch } from "@haneoka/ui";
 
 import type { ChartStageBackground } from "~/composables/useChartPlayerSettings";
+import { liveStageBackgroundForRelease } from "~/composables/useReleaseServer";
+import type { OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 type PlaybackMode = "chart" | "watch" | "play";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     mode: PlaybackMode;
+    /** Exact release that owns the stage-preview artwork. */
+    runtimeRelease: OurNotesReleaseOrigin;
     audioControls?: boolean;
   }>(),
   { audioControls: true },
 );
 
 const open = defineModel<boolean>({ default: false });
-const { assetServer } = useAssetServer();
 const { t } = useLocale();
 const {
   volume,
@@ -36,7 +39,7 @@ const {
 } = toRefs(useChartPlayerSettings().value);
 
 const stageBackgroundUrl = (value: ChartStageBackground) =>
-  `/assets/${encodeURIComponent(assetServer.value)}/Assets/AddressableResources/Band/${value === "mygo" ? 1 : 2}/live_stage/lightweight_background.png`;
+  liveStageBackgroundForRelease(props.runtimeRelease.releaseId, value);
 const backgrounds = computed(() => [
   { value: "mygo" as const, label: "MyGO!!!!!", image: stageBackgroundUrl("mygo"), imageFit: "cover" as const },
   {

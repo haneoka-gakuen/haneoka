@@ -14,9 +14,13 @@ import { convertBestdoriScenario } from "@haneoka/bestdori/scenario";
 const result = convertBestdoriScenario(source, {
   server: "jp",
   voiceBundle: "sound/voice/scenario/bandstory1_rip/",
-  proxify: (path) => `/api/v1/bestdori/raw${path}`,
+  proxify: (path) => `/api/v1/garupa/bestdori/jp/raw${path}`,
 });
 ```
+
+That URL is a host-owned transformed-provider route. A local Bestdori mirror
+contains only original upstream paths and must not be used as a replacement for
+this V2 namespace.
 
 Chart conversion is exposed separately so an application can keep the generic
 chart runtime independent from Bestdori's wire format:

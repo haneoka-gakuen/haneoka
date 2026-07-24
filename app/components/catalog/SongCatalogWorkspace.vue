@@ -2,6 +2,12 @@
 import { MaterialIcon, UiIconButton } from "@haneoka/ui";
 
 import type { Band, Character, Song, SongDifficulty, SongMetaByDifficulty, SongMetaChart } from "~/types/archive";
+import {
+  ourNotesReleaseOrigin,
+  runtimeReleaseForCatalogOrigin,
+  sameContentOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 import { liveMusicTypeLabel, liveMusicTypeValues } from "~/config/liveMusic";
 import { needsSongMeta } from "~/config/songMeta";
 import { songTypeDefinition } from "~/config/songTypes";
@@ -34,7 +40,6 @@ const songSortKeys = [
   "release",
 ] as const satisfies readonly SongCatalogSort[];
 const sourceProfile = computed(() => resolveSongCatalogSource(props.source));
-const catalogServer = computed(() => sourceProfile.value.catalogServer);
 const maxDifficulty = computed(() => sourceProfile.value.maxDifficulty);
 const screenTitleKey = computed(() => sourceProfile.value.titleKey);
 const screenDomain = computed(() => sourceProfile.value.domain);
@@ -42,12 +47,15 @@ const screenDomain = computed(() => sourceProfile.value.domain);
 const { localize, resolveLocalized, locale, t, compareText } = useLocale();
 const route = useRoute();
 useSeoMeta({ title: () => `${t(screenTitleKey.value)} · haneoka` });
-const { assetRoot, assetUrl } = useAssetServer();
+const { assetRoot, assetUrl, releaseServer } = useReleaseServer();
+const catalogOrigin = computed<CatalogContentOrigin>(
+  () => sourceProfile.value.catalogOrigin || ourNotesReleaseOrigin(releaseServer.value),
+);
 const { playQueue, playSong } = useAudioPlayer();
 const { ready: coverMemoryReady, rememberScroll, scrollPosition } = useWorkspaceMemory();
-const { data: songRecord, pending, error, refresh } = useCatalogCollection<Song>("songs", catalogServer);
-const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogServer);
-const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogServer);
+const { data: songRecord, pending, error, refresh } = useCatalogCollection<Song>("songs", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
 
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band");
@@ -67,7 +75,11 @@ const order = useRouteQueryEnum("order", ["asc", "desc"] as const, "desc");
 const view = useRouteQueryEnum("view", ["grid", "list"] as const, "grid");
 const levelDifficulty = useRouteQueryEnum("levelDiff", ["easy", "normal", "hard", "expert"] as const, "expert");
 const selectedId = useRouteQueryNumber("song");
-const songLayer = useRouteQueryLayer("song", { clearOnClose: ["chart", "difficulty", "mv"] });
+// A shared link may identify the originating Our Notes release explicitly.
+// Without this parameter, details retain the user's currently selected
+// release as their first choice.
+const detailRelease = useRouteQueryText("release");
+const songLayer = useRouteQueryLayer("song", { clearOnClose: ["chart", "difficulty", "mv", "release"] });
 const chartLayer = useRouteQueryLayer("chart");
 interface CatalogCollectionGridInstance {
   element?: HTMLElement;
@@ -82,7 +94,7 @@ const songMetaActive = computed(() => needsSongMeta(view.value, sort.value, sele
 const { data: songMetaRecord } = useLazyCatalogCollection<SongMetaByDifficulty>(
   "song-meta",
   songMetaActive,
-  catalogServer,
+  catalogOrigin,
 );
 const selectedDifficultyValue = useRouteQueryInteger("difficulty", 3, { min: 0, max: 4 });
 const selectedDifficulty = computed<number>({
@@ -111,18 +123,17 @@ const bands = computed(() => recordValues(bandRecord.value));
 const characters = computed(() => recordValues(characterRecord.value));
 const bandMap = computed(() => new Map(bands.value.map((band) => [band.bandId, band])));
 const characterMap = computed(() => new Map(characters.value.map((character) => [character.characterId, character])));
-const creditResolver = useSongCreditVisualResolver();
-const creditSource = computed(() => catalogServer.value || "jp-cbt");
-const creditIdentityOf = (song: Song) => creditResolver.value.identity(song, creditSource.value);
+const creditResolver = useSongCreditVisualResolver(catalogOrigin);
+const creditIdentityOf = (song: Song) => creditResolver.value.identity(song, catalogOrigin.value);
 const contributingBandIdsOf = (song: Song): number[] => creditIdentityOf(song).bandIds;
 const guestCharacterIdsOf = (song: Song): number[] => creditIdentityOf(song).characterIds;
-const creditSignatureOf = (song: Song): string => `credit:${creditResolver.value.songKey(song, creditSource.value)}`;
+const creditSignatureOf = (song: Song): string => `credit:${creditResolver.value.songKey(song, catalogOrigin.value)}`;
 const isCompositeCredit = (song: Song): boolean =>
   contributingBandIdsOf(song).length > 1 ||
   guestCharacterIdsOf(song).length > 0 ||
   creditIdentityOf(song).memberNames.length > 0;
 const creditVisualsOf = (song: Song, variant: SongCreditVisualVariant = "logo"): CompositeEntityVisual[] =>
-  creditResolver.value.song(song, creditSource.value, variant);
+  creditResolver.value.song(song, catalogOrigin.value, variant);
 const creditLabelOf = (song: Song): string => {
   const authored = localize(song.artistName);
   if (authored) return authored;
@@ -201,7 +212,7 @@ const matchesBandFilter = (song: Song, rawFilter: string | number): boolean => {
     const sourceBand = bandMap.value.get(song.bandId || 0);
     return (
       sourceBand?.official === false &&
-      `source-credit:${creditResolver.value.bandCreditKey(sourceBand, creditSource.value)}` === filter
+      `source-credit:${creditResolver.value.bandCreditKey(sourceBand, catalogOrigin.value)}` === filter
     );
   }
   const bandId = Number(filter);
@@ -290,12 +301,41 @@ const filteredSongs = computed(() => {
 });
 
 const selectedSong = computed(() => filteredSongs.value.find((song) => song.musicId === selectedId.value));
-const selectedDetailPath = computed(() => selectedSong.value?.musicId);
-const { data: selectedDetail } = useCatalogSelection<Song>("songs", selectedDetailPath, catalogServer);
-const activeDetailSong = computed(() => {
-  if (!selectedSong.value) return selectedDetail.value;
-  return selectedDetail.value?.musicId === selectedSong.value.musicId ? selectedDetail.value : selectedSong.value;
+const selectedDetailPath = computed(() => selectedId.value);
+const detailRequestOrigin = computed<CatalogContentOrigin>(() => {
+  const requestedRelease = detailRelease.value.trim();
+  if (catalogOrigin.value.provider === "release" && requestedRelease) {
+    // Queue/detail links preserve their exact resolved release. It need not be
+    // selectable today (for example after that release is retired); the
+    // resolver will still try it first and then follow the release-only chain.
+    return ourNotesReleaseOrigin(requestedRelease);
+  }
+  return catalogOrigin.value;
 });
+const { data: selectedDetail, resolvedOrigin: selectedDetailOrigin } = useCatalogSelection<Song>(
+  "songs",
+  selectedDetailPath,
+  detailRequestOrigin,
+  { fallbackAcrossReleases: true },
+);
+// A direct URL may name a song that is unavailable in the selected release.
+// The list remains release-local, while the detail resolver walks release-only
+// fallbacks and retains the exact origin it found.
+const activeDetailSong = computed(() => selectedDetail.value || selectedSong.value);
+const detailOrigin = computed<CatalogContentOrigin>(() => selectedDetailOrigin.value || catalogOrigin.value);
+// A Bestdori chart has no native Our Notes runtime assets. In that case the
+// selected release is an explicit renderer fallback; release-backed details
+// keep the exact release that resolved the song.
+const chartRuntimeRelease = computed(() => runtimeReleaseForCatalogOrigin(detailOrigin.value, releaseServer.value));
+const detailCreditResolver = useSongCreditVisualResolver(detailOrigin);
+const creditVisualsFor = (
+  song: Song,
+  origin: CatalogContentOrigin,
+  variant: SongCreditVisualVariant = "logo",
+): CompositeEntityVisual[] =>
+  sameContentOrigin(origin, catalogOrigin.value)
+    ? creditResolver.value.song(song, origin, variant)
+    : detailCreditResolver.value.song(song, origin, variant);
 const renderedDetailSong = shallowRef<Song>();
 const detailLayerMounted = ref(false);
 watch(
@@ -308,9 +348,11 @@ watch(
   { immediate: true },
 );
 const detailSong = computed(() => activeDetailSong.value || renderedDetailSong.value);
-const detailOpen = computed(() => Boolean(selectedSong.value));
+const detailOpen = computed(() => Boolean(selectedId.value !== undefined && detailSong.value));
 const selectedMeta = computed(() =>
-  detailSong.value ? metaOf(detailSong.value, selectedDifficulty.value) : undefined,
+  detailSong.value && sameContentOrigin(detailOrigin.value, catalogOrigin.value)
+    ? metaOf(detailSong.value, selectedDifficulty.value)
+    : undefined,
 );
 const chartDifficultyOptions = computed(() =>
   (detailSong.value?.difficulty || []).map((difficulty, index) => {
@@ -346,7 +388,9 @@ const chartFile = computed(() => {
   if (!chartLayerMounted.value) return "";
   const file = chartDifficultyData.value?.file;
   if (!file) return "";
-  return sourceProfile.value.resolveChartUrl?.(file, assetUrl) ?? assetUrl(file);
+  const canonicalize = (value: string) =>
+    detailOrigin.value.provider === "release" ? assetUrl(value, detailOrigin.value.releaseId) : value;
+  return sourceProfile.value.resolveChartUrl?.(file, canonicalize) ?? canonicalize(file);
 });
 const {
   chart,
@@ -363,15 +407,6 @@ watch(
     if (!open || difficulty === undefined) return;
     renderedChartDifficulty.value = difficulty;
     chartLayerMounted.value = true;
-  },
-  { immediate: true },
-);
-watch(
-  [filteredSongs, pending],
-  ([value, isPending]) => {
-    if (!isPending && selectedId.value !== undefined && !value.some((song) => song.musicId === selectedId.value)) {
-      selectedId.value = undefined;
-    }
   },
   { immediate: true },
 );
@@ -472,15 +507,15 @@ const selectChartDifficultyValue = (value: string | number) => {
   const difficulty = Number(value);
   if (Number.isInteger(difficulty)) selectChartDifficulty(difficulty);
 };
-const playFromCollection = async (song: Song) => {
+const playFromCollection = async (song: Song, origin: CatalogContentOrigin = catalogOrigin.value) => {
   await playSong(
     song,
     displayTitleOf(song),
     displayBandOf(song),
     bandIconOf(song),
     Number(song.bandId || 0),
-    creditVisualsOf(song),
-    sourceProfile.value.id,
+    creditVisualsFor(song, origin),
+    origin,
   );
 };
 const playableQueue = computed(() =>
@@ -492,7 +527,7 @@ const playableQueue = computed(() =>
       bandIconOf(song),
       Number(song.bandId || 0),
       creditVisualsOf(song),
-      sourceProfile.value.id,
+      catalogOrigin.value,
     );
     return track ? [track] : [];
   }),
@@ -509,7 +544,7 @@ const bandOptions = computed(() => {
     .filter((band) => band.official === false)
     .sort((left, right) => left.bandId - right.bandId);
   const formalOptions = formalBands.map((band) => {
-    const visuals = creditResolver.value.bandCredit(band, creditSource.value, "icon");
+    const visuals = creditResolver.value.bandCredit(band, catalogOrigin.value, "icon");
     const label =
       resolveLocalized(band.bandName, { sourceHint: "ja", fallback: String(band.bandId) }) || String(band.bandId);
     return {
@@ -525,7 +560,7 @@ const bandOptions = computed(() => {
     { value: string; label: DisplayText; color?: string; visuals: CompositeEntityVisual[]; count: number }
   >();
   for (const band of sourceCredits) {
-    const key = creditResolver.value.bandCreditKey(band, creditSource.value);
+    const key = creditResolver.value.bandCreditKey(band, catalogOrigin.value);
     const value = `source-credit:${key}`;
     const existing = sourceOptionMap.get(value);
     const count = songs.value.filter((song) => song.bandId === band.bandId).length;
@@ -541,7 +576,7 @@ const bandOptions = computed(() => {
           fallback: String(band.bandId),
         }) || String(band.bandId),
       color: band.color,
-      visuals: creditResolver.value.bandCredit(band, creditSource.value, "icon"),
+      visuals: creditResolver.value.bandCredit(band, catalogOrigin.value, "icon"),
       count,
     });
   }
@@ -696,7 +731,7 @@ const setTableSort = (value: string) => {
               :thumbnail-image="song.jacketThumbUrl || song.jacketUrl"
               :music-type="song.musicType"
               :categories="song.musicCategories"
-              :credit-source="catalogServer || 'jp-cbt'"
+              :credit-origin="catalogOrigin"
               :selected="song.musicId === selectedId"
               @select="selectSong(song)"
             />
@@ -723,7 +758,7 @@ const setTableSort = (value: string) => {
               :song="song"
               :title="displayTitleOf(song)"
               :band="displayBandOf(song)"
-              :credit-source="catalogServer || 'jp-cbt'"
+              :credit-origin="catalogOrigin"
               :selected="song.musicId === selectedSong?.musicId"
               :difficulty="selectedDifficulty"
               :meta="metaOf(song, selectedDifficulty)"
@@ -743,13 +778,13 @@ const setTableSort = (value: string) => {
           :song="detailSong"
           :title="displayTitleOf(detailSong)"
           :band-name="displayBandOf(detailSong)"
-          :credit-source="creditSource"
+          :origin="detailOrigin"
           :meta="selectedMeta"
           :hide-sonolus="sourceProfile.hideSonolus"
           :covered="chartLayerMounted"
           @close="closeDetail"
           @after-leave="afterDetailLeave"
-          @play="playFromCollection(detailSong)"
+          @play="playFromCollection(detailSong, detailOrigin)"
           @chart="openChart(detailSong, $event)"
         />
       </div>
@@ -771,12 +806,13 @@ const setTableSort = (value: string) => {
           <ClientOnly v-else>
             <RotatableViewport v-model:rotation="chartRotation" :controls="false">
               <LazyChartRuntime
-                :key="`${detailSong.musicId}:${renderedChartDifficulty}`"
+                :key="`${detailSong.musicId}:${renderedChartDifficulty}:${chartRuntimeRelease.releaseId}`"
                 v-model:mode="chartRuntimeMode"
                 v-model:rotation="chartRotation"
                 :chart="chart"
                 :audio-url="detailSong.musicUrl"
                 :score-ranks="selectedScoreRankThresholds"
+                :runtime-release="chartRuntimeRelease"
               />
             </RotatableViewport>
             <template #fallback><LoadingState /></template>

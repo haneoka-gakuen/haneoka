@@ -1,9 +1,11 @@
 import {
   OUR_NOTES_RUNTIME_SOURCES,
-  ourNotesAssetManifestForServer,
+  ourNotesAssetManifestForRelease,
   type OurNotesRuntimeMediaManifest,
 } from "@haneoka/chart/assets";
 import type { RuntimeSourceDescriptor } from "~/composables/useRuntimeSourceDescriptor";
+import { assetRootForRelease } from "~/composables/useReleaseServer";
+import { ourNotesReleaseOrigin, type OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import { liveScoreRankIconUrl } from "~/utils/scoreRankAssets";
 
 const normalComboDigitNames = [
@@ -33,17 +35,28 @@ const perfectComboDigitNames = [
 ] as const;
 
 /**
- * Resolves the decoded Our Notes runtime media once for every consumer.
+ * Resolves decoded native runtime media for one concrete Our Notes release.
  * Chart preview and authoring surfaces must share this manifest so neither
- * can silently drift to substitute note or HUD artwork.
+ * can silently drift to substitute note or HUD artwork. A caller rendering a
+ * detail resolved through release fallback supplies that resolved release.
  */
-export const useOurNotesRuntimeAssets = () => {
-  const { assetRoot, assetServer } = useAssetServer();
-  const noteAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.noteAtlas);
-  const judgementAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.judgementAtlas);
-  const liveAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.liveAtlas);
-  const comboAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.comboAtlas);
-  const fontRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.font);
+export const useOurNotesRuntimeAssets = (
+  requestedRuntimeRelease?: MaybeRefOrGetter<OurNotesReleaseOrigin | undefined>,
+) => {
+  const { releaseServer } = useReleaseServer();
+  // Lists and standalone tools intentionally default to the selected release.
+  // Detail/playlist renderers pass an exact release origin instead.
+  const runtimeRelease = computed<OurNotesReleaseOrigin>(() => {
+    const requested = requestedRuntimeRelease === undefined ? undefined : toValue(requestedRuntimeRelease);
+    return requested || ourNotesReleaseOrigin(releaseServer.value);
+  });
+  const runtimeReleaseId = computed(() => runtimeRelease.value.releaseId);
+  const assetRoot = computed(() => assetRootForRelease(runtimeReleaseId.value));
+  const noteAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.noteAtlas, runtimeRelease);
+  const judgementAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.judgementAtlas, runtimeRelease);
+  const liveAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.liveAtlas, runtimeRelease);
+  const comboAtlasRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.comboAtlas, runtimeRelease);
+  const fontRequest = useRuntimeSourceDescriptor(OUR_NOTES_RUNTIME_SOURCES.font, runtimeRelease);
 
   const error = computed(
     () =>
@@ -73,10 +86,12 @@ export const useOurNotesRuntimeAssets = () => {
     }
 
     const sprite = (descriptor: RuntimeSourceDescriptor, logicalName: string) =>
-      resolveRuntimeOutputUrl(descriptor, assetServer.value, logicalName, "Sprite");
+      resolveRuntimeOutputUrl(descriptor, runtimeReleaseId.value, logicalName, "Sprite");
     const runtimeMedia: OurNotesRuntimeMediaManifest = {
-      noteAtlasTextureUrl: resolveRuntimeOutputUrlByType(noteAtlas, assetServer.value, "Texture2D"),
-      ...(font ? { fontAtlasTextureUrl: resolveRuntimeOutputUrlByType(font, assetServer.value, "Texture2D") } : {}),
+      noteAtlasTextureUrl: resolveRuntimeOutputUrlByType(noteAtlas, runtimeReleaseId.value, "Texture2D"),
+      ...(font
+        ? { fontAtlasTextureUrl: resolveRuntimeOutputUrlByType(font, runtimeReleaseId.value, "Texture2D") }
+        : {}),
       hud: {
         judgementImages: {
           just: sprite(judgementAtlas, "judgment_just.png"),
@@ -115,8 +130,8 @@ export const useOurNotesRuntimeAssets = () => {
         whiteSpriteUrl: sprite(liveAtlas, "live_game_white.png"),
       },
     };
-    return ourNotesAssetManifestForServer(assetServer.value, runtimeMedia);
+    return ourNotesAssetManifestForRelease(runtimeReleaseId.value, runtimeMedia);
   });
 
-  return { assets, error, refresh };
+  return { assets, error, refresh, runtimeRelease };
 };

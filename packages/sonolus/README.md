@@ -12,7 +12,7 @@ It does not translate charts through USC or Project SEKAI semantics. Sonolus rem
 
 ## Package interface
 
-The root export provides chart conversion plus `ReleaseChartCatalogProvider`, `ReleaseLevelTemplateProvider`, and `RuntimeChartDataProvider`. Combine them with `SonolusLevelService` from `@haneoka/sonolus-core` and host-owned `readJson`/`readBytes` functions. The level template is derived from the release's engine document, not from a generated level. A revision change creates a new bounded snapshot, so newly published or removed charts are discovered at request time instead of being frozen into the web build.
+The root export provides chart conversion plus `ReleaseChartCatalogProvider`, `ReleaseLevelTemplateProvider`, and `RuntimeChartDataProvider`. Combine them with `SonolusLevelService` from `@haneoka/sonolus-core` and host-owned `readJson`/`readBytes` functions. A release-backed catalog must receive its immutable `{ server, releaseId }` provenance: it emits stable server-qualified level names through `releaseChartLevelName()` and immutable chart data IDs that hosts decode with `parseReleaseChartDataId()` before reading bytes. The level template is derived from the release's engine document, not from a generated level. A revision change creates a new bounded snapshot, so newly published or removed charts are discovered at request time instead of being frozen into the web build.
 
 The Node utilities under `src/server` are repository tooling rather than part of the browser-neutral root export. Their local release resolver lives inside this package and accepts `RESOURCE_RELEASE_ROOT` or `RESOURCE_BUILD_ROOT`, allowing the package to be moved to an independent repository without importing files from a parent workspace.
 
@@ -77,7 +77,7 @@ The engine build writes these required files under `packages/sonolus/engine/dist
 The root command below builds native effect audio, original-resource Sonolus packs, and Worker-facing Sonolus documents:
 
 ```sh
-ASSET_SERVER=jp-cbt pnpm sonolus:release
+RELEASE_SERVER=jp-cbt pnpm sonolus:release
 ```
 
 It is not a first-run bootstrap command. Before running it:
@@ -89,16 +89,16 @@ It is not a first-run bootstrap command. Before running it:
 
 Useful build variables include:
 
-| Variable                      | Purpose                                              | Default                                |
-| ----------------------------- | ---------------------------------------------------- | -------------------------------------- |
-| `ASSET_SERVER`                | Selected release server                              | `jp-cbt`                               |
-| `OUR_NOTES_ROOT`              | Repository root for standalone scripts               | current directory                      |
-| `SONOLUS_ORIGINAL_ASSETS_DIR` | Original Sonolus pack input/output directory         | `packages/sonolus/assets/original`     |
-| `SONOLUS_WORKER_ASSETS_DIR`   | Generated Worker asset output                        | `packages/sonolus/dist`                |
-| `SONOLUS_ADDRESS`             | Public Sonolus service address embedded in documents | `https://haneoka.org/sonolus`          |
-| `SONOLUS_HANEOKA_BASE`        | Haneoka origin used for catalog URLs                 | `https://haneoka.org`                  |
-| `SONOLUS_SONGS_URL`           | Explicit songs API URL                               | derived from Haneoka origin and server |
-| `FFMPEG`                      | FFmpeg executable                                    | `ffmpeg`                               |
+| Variable                      | Purpose                                              | Default                                        |
+| ----------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| `RELEASE_SERVER`              | Selected Our Notes release server                    | `jp-cbt`                                       |
+| `OUR_NOTES_ROOT`              | Repository root for standalone scripts               | current directory                              |
+| `SONOLUS_ORIGINAL_ASSETS_DIR` | Original Sonolus pack input/output directory         | `packages/sonolus/assets/original`             |
+| `SONOLUS_WORKER_ASSETS_DIR`   | Generated Worker asset output                        | `packages/sonolus/dist`                        |
+| `SONOLUS_ADDRESS`             | Public Sonolus service address embedded in documents | `https://haneoka.org/sonolus`                  |
+| `SONOLUS_HANEOKA_BASE`        | Haneoka origin used for catalog URLs                 | `https://haneoka.org`                          |
+| `SONOLUS_SONGS_URL`           | Explicit songs API URL                               | derived from Haneoka origin and release server |
+| `FFMPEG`                      | FFmpeg executable                                    | `ffmpeg`                                       |
 
 The resource pipeline invokes the same release builders after it has restored the compiled engine artifact and prepared the current build workspace.
 
@@ -110,7 +110,7 @@ Build and start it from the repository root:
 
 ```sh
 node packages/sonolus/scripts/build-serve.ts
-ASSET_SERVER=jp-cbt PORT=3000 node packages/sonolus/dist/serve.mjs
+RELEASE_SERVER=jp-cbt PORT=3000 node packages/sonolus/dist/serve.mjs
 ```
 
 Connect a Sonolus client to `http://<host>:3000/sonolus`. `SONOLUS_ADDRESS` can override the address embedded in generated responses. The same local release prerequisites as the root preview server apply.

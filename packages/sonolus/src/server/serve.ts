@@ -8,7 +8,7 @@
 // Run: `node packages/sonolus/dist/serve.mjs` (bundle via scripts/build-serve.ts).
 // Connect the Sonolus app to http://<host>:<port>/sonolus.
 //
-// Assets are resolved through the selected server workspace (paths derived in
+// Assets are resolved through the selected release-server workspace (paths derived in
 // jacketPath/chartPath). Decoded CRI music is attached when its mapped mp3 is
 // present; missing cues degrade to a silent level without breaking chart data.
 
@@ -38,8 +38,8 @@ const ROOT = process.env.OUR_NOTES_ROOT ?? process.cwd();
 const PORT = Number(process.env.PORT ?? 3000);
 const ADDRESS = process.env.SONOLUS_ADDRESS ?? `http://localhost:${PORT}`;
 const ENGINE_NAME = "ourNotes";
-const SERVER = process.env.ASSET_SERVER || "jp-cbt";
-const workspace = resolveSonolusReleaseWorkspace(SERVER, ROOT);
+const releaseServer = process.env.RELEASE_SERVER || "jp-cbt";
+const workspace = resolveSonolusReleaseWorkspace(releaseServer, ROOT);
 const FEATURED_ITEM_COUNT = 5;
 const RANDOM_LEVEL_DIFFICULTIES = ["hard", "expert", "special", "master"] as const;
 

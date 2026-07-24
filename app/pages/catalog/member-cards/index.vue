@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { liveMusicTypeLabel, liveMusicTypeValues } from "~/config/liveMusic";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, MemberCard } from "~/types/archive";
 import { textOf } from "~/types/displayText";
 
 const { locale, localize, resolveLocalized, t, formatDate, compareText } = useLocale();
 useHead(() => ({ title: `${t("memberCards")} · haneoka` }));
-const { data: cardRecord, pending, error, refresh } = useCatalogCollection<MemberCard>("cards");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
+const { releaseServer } = useReleaseServer();
+const catalogOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const { data: cardRecord, pending, error, refresh } = useCatalogCollection<MemberCard>("cards", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
 
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band", true);
@@ -158,10 +161,15 @@ const selectedSummary = computed(() => filteredCards.value.find((card) => card.c
 const selectedPath = computed(() => selectedId.value || undefined);
 const {
   data: selectedCard,
+  resolvedOrigin: selectedCardOrigin,
   pending: selectedPending,
   error: selectedError,
   refresh: refreshSelected,
-} = useCatalogSelection<MemberCard>("cards", selectedPath);
+} = useCatalogSelection<MemberCard>("cards", selectedPath, catalogOrigin, { fallbackAcrossReleases: true });
+// A direct detail URL may name a card absent from the selected release or
+// current filters. The list remains release-local; the detail uses the exact
+// release that resolved the card.
+const detailOrigin = computed(() => selectedCardOrigin.value || catalogOrigin.value);
 const selectedCharacter = computed(() =>
   characterMap.value.get(selectedCard.value?.characterId || selectedSummary.value?.characterId || 0),
 );
@@ -183,16 +191,6 @@ const selectedCharacterName = computed(() =>
 const selectCard = (card: MemberCard) => {
   void cardLayer.toggle(card.cardId);
 };
-
-watch(
-  [filteredCards, pending],
-  ([values, isPending]) => {
-    if (!isPending && selectedId.value !== undefined && !values.some((card) => card.cardId === selectedId.value)) {
-      selectedId.value = undefined;
-    }
-  },
-  { immediate: true },
-);
 
 const availableCharacterIds = computed(() => [...new Set(cards.value.map(characterIdOf).filter(Boolean))]);
 const availableBandIds = computed(() => [...new Set(cards.value.map(bandIdOf).filter(Boolean))]);
@@ -345,6 +343,7 @@ const setTableSort = (value: string) => {
         v-if="selectedId !== undefined"
         :open="selectedId !== undefined"
         :card="selectedCard"
+        :origin="detailOrigin"
         kind="member"
         :title="selectedTitle"
         :subtitle="selectedCharacterName"

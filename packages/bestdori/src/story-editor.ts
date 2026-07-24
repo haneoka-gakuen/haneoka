@@ -23,19 +23,18 @@ export interface ImportBestdoriScenarioOptions {
   title?: string;
   sceneId?: string;
   sceneName?: string;
-  assetServer?: string;
+  /** Our Notes release attached to the resulting editor project. */
+  releaseServer?: string;
   provenance?: JsonObject;
-  /** Source locale server. `assetServer` is used only when it is a Bestdori server ID. */
+  /** Bestdori's regional source, independent from the project's Our Notes release. */
   server?: BestdoriServer;
   voiceBundle?: string;
   proxify?: BestdoriScenarioContext["proxify"];
   resolveCostume?: BestdoriScenarioContext["resolveCostume"];
 }
 
-const sourceServer = (options: ImportBestdoriScenarioOptions): BestdoriServer => {
-  const candidate = options.server ?? options.assetServer;
-  return isBestdoriServer(candidate) ? candidate : "jp";
-};
+const sourceServer = (options: ImportBestdoriScenarioOptions): BestdoriServer =>
+  isBestdoriServer(options.server) ? options.server : "jp";
 
 const jsonFields = (command: BestdoriAdvCommand): JsonObject => {
   const { command: _command, index: _index, ...fields } = command;
@@ -76,7 +75,7 @@ const projectFromConversion = (
     version: STORY_PROJECT_VERSION,
     meta: {
       title: options.title || story.storyId || "Bestdori scenario",
-      ...(options.assetServer ? { assetServer: options.assetServer } : {}),
+      ...(options.releaseServer ? { releaseServer: options.releaseServer } : {}),
       provenance: {
         format: "bestdori-scenario",
         scenarioSceneId: story.storyId,

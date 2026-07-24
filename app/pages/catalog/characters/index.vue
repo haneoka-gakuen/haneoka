@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Band, Character } from "~/types/archive";
+import { ourNotesReleaseOrigin, sameContentOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 
 interface CharacterBandGroup {
@@ -12,7 +13,9 @@ type CharacterSort = (typeof characterSortKeys)[number];
 
 const { compareText, resolveLocalized, t } = useLocale();
 useSeoMeta({ title: () => `${t("characters")} · haneoka` });
-const { assetRoot, assetUrl } = useAssetServer();
+const { assetRoot, assetUrl, releaseServer } = useReleaseServer();
+type OurNotesCatalogOrigin = Extract<CatalogContentOrigin, { provider: "release" }>;
+const catalogOrigin = computed<OurNotesCatalogOrigin>(() => ourNotesReleaseOrigin(releaseServer.value));
 const { data: characterRecord, pending, error, refresh } = useCatalogCollection<Character>("characters");
 const { data: bandRecord } = useCatalogCollection<Band>("bands");
 
@@ -89,10 +92,20 @@ const visibleCharacters = computed(() => {
       return direction * comparison;
     });
 });
-const selectedCharacter = computed(() =>
-  characters.value.find((character) => character.characterId === selectedCharacterId.value),
-);
-const selectedCharacterBand = computed(() => bandMap.value.get(selectedCharacter.value?.bandId || 0));
+const {
+  data: selectedCharacterData,
+  resolvedOrigin: selectedCharacterOrigin,
+  pending: selectedCharacterPending,
+  error: selectedCharacterError,
+  refresh: refreshSelectedCharacter,
+} = useCatalogSelection<Character>("characters", selectedCharacterId, catalogOrigin, { fallbackAcrossReleases: true });
+const selectedCharacter = computed(() => selectedCharacterData.value);
+const detailOrigin = computed<OurNotesCatalogOrigin>(() => {
+  const resolved = selectedCharacterOrigin.value;
+  return resolved?.provider === "release" ? resolved : catalogOrigin.value;
+});
+const characterBandRequest = useCatalogSelection<Band>("bands", () => selectedCharacter.value?.bandId, detailOrigin);
+const selectedCharacterBand = computed(() => characterBandRequest.data.value);
 const rosterBackground = computed(() => {
   const bandId = selectedBand.value?.bandId;
   if (!bandId) return "none";
@@ -137,15 +150,18 @@ watch(
 );
 
 watch(
-  [characters, selectedCharacterId],
-  ([values, characterId]) => {
-    if (characterId === undefined) return;
-    const character = values.find((entry) => entry.characterId === characterId);
-    if (!character) {
-      if (values.length) selectedCharacterId.value = undefined;
-      return;
+  [selectedCharacter, selectedCharacterId, detailOrigin],
+  ([character, characterId, origin]) => {
+    if (characterId === undefined || !character) return;
+    // Keep the visible list scoped to the selected release. A fallback detail
+    // must not mutate its current-release band/filter state.
+    if (
+      sameContentOrigin(origin, catalogOrigin.value) &&
+      character.bandId &&
+      selectedBandId.value !== character.bandId
+    ) {
+      selectedBandId.value = character.bandId;
     }
-    if (character.bandId && selectedBandId.value !== character.bandId) selectedBandId.value = character.bandId;
   },
   { immediate: true },
 );
@@ -274,12 +290,13 @@ watch(
         :open="selectedCharacterId !== undefined"
         :character="selectedCharacter"
         :band="selectedCharacterBand"
+        :origin="detailOrigin"
         :title="selectedCharacter ? displayNameOf(selectedCharacter) : t('characters')"
         :subtitle="selectedCharacter ? displaySubtitleOf(selectedCharacter) : ''"
-        :pending="pending"
-        :error="error"
+        :pending="selectedCharacterPending"
+        :error="selectedCharacterError"
         @close="characterLayer.close"
-        @retry="refresh()"
+        @retry="refreshSelectedCharacter()"
       />
     </template>
   </CatalogCollectionScreen>

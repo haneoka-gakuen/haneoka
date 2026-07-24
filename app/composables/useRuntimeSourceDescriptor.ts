@@ -1,4 +1,5 @@
-import { resourceUrl, runtimeRootForServer } from "~/composables/useAssetServer";
+import { releaseResourceUrl, runtimeRootForRelease } from "~/composables/useReleaseServer";
+import type { OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 export interface RuntimeSourceOutput {
   objectId: string | number;
@@ -23,7 +24,7 @@ export const runtimeOutputLogicalName = (output: RuntimeSourceOutput): string | 
 
 export const resolveRuntimeOutputUrl = (
   descriptor: RuntimeSourceDescriptor,
-  server: string,
+  releaseServer: string,
   logicalName: string,
   type: string,
 ): string => {
@@ -39,13 +40,13 @@ export const resolveRuntimeOutputUrl = (
   if (!path.startsWith("runtime/")) {
     throw new Error(`Runtime output ${logicalName} has a non-canonical path: ${path || "<empty>"}`);
   }
-  const canonicalUrl = `${runtimeRootForServer(server)}/${path.slice("runtime/".length)}`;
-  return resourceUrl(canonicalUrl, server);
+  const canonicalUrl = `${runtimeRootForRelease(releaseServer)}/${path.slice("runtime/".length)}`;
+  return releaseResourceUrl(canonicalUrl, releaseServer);
 };
 
 export const resolveRuntimeOutputUrlByType = (
   descriptor: RuntimeSourceDescriptor,
-  server: string,
+  releaseServer: string,
   type: string,
 ): string => {
   const matches = (descriptor.outputs || []).filter((output) => output.type === type);
@@ -58,9 +59,16 @@ export const resolveRuntimeOutputUrlByType = (
   if (!path.startsWith("runtime/")) {
     throw new Error(`Runtime ${type} output has a non-canonical path: ${path || "<empty>"}`);
   }
-  const canonicalUrl = `${runtimeRootForServer(server)}/${path.slice("runtime/".length)}`;
-  return resourceUrl(canonicalUrl, server);
+  const canonicalUrl = `${runtimeRootForRelease(releaseServer)}/${path.slice("runtime/".length)}`;
+  return releaseResourceUrl(canonicalUrl, releaseServer);
 };
 
-export const useRuntimeSourceDescriptor = (sourcePath: string) =>
-  useCatalogDocument<RuntimeSourceDescriptor>(`sources/${sourcePath}`);
+/**
+ * Runtime source descriptors are archived with an Our Notes release. Callers
+ * rendering resolved detail content pass that exact release; the optional
+ * default keeps release-local list surfaces on the selected release.
+ */
+export const useRuntimeSourceDescriptor = (
+  sourcePath: string,
+  runtimeRelease?: MaybeRefOrGetter<OurNotesReleaseOrigin | undefined>,
+) => useCatalogDocument<RuntimeSourceDescriptor>(`sources/${sourcePath}`, runtimeRelease);

@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, Stamp } from "~/types/archive";
 
 const { locale, localize, resolveLocalized, t, formatDate, compareText } = useLocale();
 useSeoMeta({ title: () => `${t("stamps")} · haneoka` });
-const { data: stampRecord, pending, error, refresh } = useCatalogCollection<Stamp>("stamps");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
-const { data: bandRecord } = useCatalogCollection<Band>("bands");
+const { releaseServer } = useReleaseServer();
+const catalogOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const { data: stampRecord, pending, error, refresh } = useCatalogCollection<Stamp>("stamps", catalogOrigin);
+const { data: characterRecord } = useCatalogCollection<Character>("characters", catalogOrigin);
+const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogOrigin);
 const query = useRouteQueryText("q");
 const bandFilters = useRouteQueryList("band", true);
 const characterFilters = useRouteQueryList("character", true);
@@ -42,14 +45,15 @@ const bandIdsOf = (stamp: Stamp) =>
         .filter(Boolean),
     ),
   ].sort((left, right) => left - right);
-const characterNames = (stamp: Stamp) =>
+const characterNamesFor = (stamp: Stamp, charactersById: ReadonlyMap<number, Character>) =>
   characterIdsOf(stamp)
-    .map((id) => localize(characterMap.value.get(id)?.characterName))
+    .map((id) => localize(charactersById.get(id)?.characterName))
     .filter(Boolean)
     .join(" · ") || "—";
-const characterItems = (stamp: Stamp) =>
+const characterNames = (stamp: Stamp) => characterNamesFor(stamp, characterMap.value);
+const characterItemsFor = (stamp: Stamp, charactersById: ReadonlyMap<number, Character>) =>
   characterIdsOf(stamp).flatMap((id) => {
-    const character = characterMap.value.get(id);
+    const character = charactersById.get(id);
     return character
       ? [
           {
@@ -60,6 +64,7 @@ const characterItems = (stamp: Stamp) =>
         ]
       : [];
   });
+const characterItems = (stamp: Stamp) => characterItemsFor(stamp, characterMap.value);
 
 const filteredStamps = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
@@ -88,17 +93,39 @@ const filteredStamps = computed(() => {
     });
 });
 
-const selected = computed(() => filteredStamps.value.find((stamp) => stamp.stampId === selectedId.value));
+const selectedSummary = computed(() => stamps.value.find((stamp) => stamp.stampId === selectedId.value));
+const { data: selectedStamp, resolvedOrigin: selectedStampOrigin } = useCatalogSelection<Stamp>(
+  "stamps",
+  selectedId,
+  catalogOrigin,
+  { fallbackAcrossReleases: true },
+);
+// A detail URL is allowed to resolve from another Our Notes release. The
+// collection and all filters above intentionally remain scoped to the selected
+// release; only the detail uses the release that actually contains this stamp.
+const detailOrigin = computed(() =>
+  selectedStampOrigin.value?.provider === "release" ? selectedStampOrigin.value : catalogOrigin.value,
+);
+const { data: detailCharacterRecord } = useLazyCatalogCollection<Character>(
+  "characters",
+  () => selectedId.value !== undefined,
+  detailOrigin,
+);
+const detailCharacterMap = computed(
+  () => new Map(recordValues(detailCharacterRecord.value).map((character) => [character.characterId, character])),
+);
+const selected = computed(() => selectedStamp.value || selectedSummary.value);
 const selectedTitle = computed(() => (selected.value ? displayTitleOf(selected.value) : t("stamps")));
 const selectedSubtitle = computed(() => {
   if (!selected.value) return "";
-  const names = characterNames(selected.value);
+  const names = characterNamesFor(selected.value, detailCharacterMap.value);
   return names === "—" ? "" : names;
 });
 const selectedImage = computed(() => selected.value?.image || "");
 const selectedFacts = computed(() =>
   selected.value
     ? [
+        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         {
           label: t("release"),
           value: selected.value.releasedAt?.[0] ? formatDate(selected.value.releasedAt[0]) : "",
@@ -128,16 +155,6 @@ const setTableSort = (value: string) => {
 const selectStamp = (stamp: Stamp) => {
   void stampLayer.toggle(stamp.stampId);
 };
-
-watch(
-  [filteredStamps, pending],
-  ([values, isPending]) => {
-    if (!isPending && selectedId.value !== undefined && !values.some((stamp) => stamp.stampId === selectedId.value)) {
-      selectedId.value = undefined;
-    }
-  },
-  { immediate: true },
-);
 </script>
 
 <template>
@@ -262,7 +279,7 @@ watch(
         :image="selectedImage"
         image-ratio="stamp"
         :facts="selectedFacts"
-        :entities="selected ? characterItems(selected) : []"
+        :entities="selected ? characterItemsFor(selected, detailCharacterMap) : []"
         entity-shape="avatar"
         @close="stampLayer.close"
       />

@@ -57,19 +57,19 @@ import { configureStoryRuntime, requireCanonicalStoryResourceUrl } from "@haneok
 
 configureStoryRuntime({
   assetUrl: (path) => requireCanonicalStoryResourceUrl(path),
-  sourceAssetUrl: (path) => requireCanonicalStoryResourceUrl(`/story-assets/${path}`),
+  releaseSourceAssetUrl: (path) => requireCanonicalStoryResourceUrl(`/story-assets/${path}`),
   validateResourceUrl: (value, label) => requireCanonicalStoryResourceUrl(value, label),
-  resourceBelongsToServer: () => true,
+  resourceBelongsToRelease: () => true,
   localize: (value) => String(value ?? ""),
   resolveLocalized: (value) => ({ text: String(value ?? ""), lang: "und" }),
   message: (key) => key,
-  defaultAssetServer: "default",
+  defaultReleaseServer: "default",
 });
 ```
 
 `localize` is the required string adapter. Hosts that retain source-language metadata should also provide `resolveLocalized`; the full player and transcript then apply `lang` only to story titles, speakers, dialogue, locations, subtitles, choices, and chat content. Player controls continue to inherit the host interface language and global font. If the source language is unknown, omit `lang` or return the BCP 47 value `und` rather than inferring it from glyphs.
 
-The engine has no knowledge of a site's asset namespaces. `assetUrl`, `sourceAssetUrl`, `validateResourceUrl`, and `resourceBelongsToServer` form the resource-resolution port. Hosts may accept same-origin paths, signed URLs, `blob:` URLs, or another policy, but should reject traversal and unsafe schemes at that boundary. The default validator accepts ordinary relative paths and `data:`, `blob:`, and HTTP(S) URLs while rejecting control characters, protocol-relative URLs, and `.`/`..` path segments.
+The engine has no knowledge of a site's asset namespaces. `assetUrl`, `releaseSourceAssetUrl`, `validateResourceUrl`, and `resourceBelongsToRelease` form the resource-resolution port. The release-specific adapters identify a concrete Our Notes release, while `assetUrl` remains a generic URL adapter. Hosts may accept same-origin paths, signed URLs, `blob:` URLs, or another policy, but should reject traversal and unsafe schemes at that boundary. The default validator accepts ordinary relative paths and `data:`, `blob:`, and HTTP(S) URLs while rejecting control characters, protocol-relative URLs, and `.`/`..` path segments.
 
 ## Architecture
 

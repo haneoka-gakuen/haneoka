@@ -1,4 +1,3 @@
-
 import type { MaybeRefOrGetter } from "vue";
 
 interface SortableCatalogColumn {

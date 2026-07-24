@@ -2,11 +2,12 @@
 import type { AdvStory, StoryUiSprites } from "@haneoka/story";
 import { hydrateStoryPayload } from "~/features/story/hydrate";
 import { mergeStoryRuntime } from "~/features/story/runtime";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 
 const props = withDefaults(
   defineProps<{
     story: Record<string, unknown>;
-    server: string;
+    releaseServer: string;
     revision: number;
     compact?: boolean;
   }>(),
@@ -17,7 +18,9 @@ const emit = defineEmits<{
   playbackAvailability: [available: boolean];
 }>();
 
-const runtimeRequest = useCatalogDocument<Record<string, unknown>>("story-runtime", () => props.server);
+const runtimeRequest = useCatalogDocument<Record<string, unknown>>("story-runtime", () =>
+  ourNotesReleaseOrigin(props.releaseServer),
+);
 const mode = defineModel<"text" | "play">("mode", { default: "play" });
 const storyRuntime = ref<{ seekProgress(ratio: number, delay?: number): boolean }>();
 const hydrated = shallowRef<AdvStory>();
@@ -36,7 +39,7 @@ const mergedRuntime = computed<Record<string, unknown>>(() => {
 
 const uiSprites = computed<StoryUiSprites | undefined>(() => {
   const value = record(mergedRuntime.value.uiSprites);
-  const prefix = `${runtimeRootForServer(props.server)}/`;
+  const prefix = `${runtimeRootForRelease(props.releaseServer)}/`;
   const keys = ["tapNext", "tapNextGlow", "next", "psychEdge", "psychLine", "choice", "choiceActive"];
   if (!keys.every((key) => typeof value[key] === "string" && String(value[key]).startsWith(prefix))) return undefined;
   return value as unknown as StoryUiSprites;
@@ -112,9 +115,13 @@ const flushRebuild = () => {
 // The parent replaces this applied snapshot only for an explicit preview
 // refresh, scene switch, or execute-to action. Catalog runtime refreshes remain
 // independent so a newly available runtime can recover the same snapshot.
-watch([() => props.story, () => props.revision, () => runtimeRequest.data.value, () => props.server], scheduleRebuild, {
-  immediate: true,
-});
+watch(
+  [() => props.story, () => props.revision, () => runtimeRequest.data.value, () => props.releaseServer],
+  scheduleRebuild,
+  {
+    immediate: true,
+  },
+);
 
 /** Seek through the full compiled story, then let the requested command execute normally. */
 const executeTo = async (commandIndex: number): Promise<boolean> => {
@@ -163,7 +170,7 @@ defineExpose({ executeTo });
       v-model:mode="mode"
       :story="hydrated"
       :ui-sprites="uiSprites"
-      :server="server"
+      :release-server="releaseServer"
       :show-mode-control="false"
       :show-rotation-controls="false"
     />

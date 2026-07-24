@@ -72,7 +72,17 @@ The Git repository does not include a generated catalog release. Runtime work ne
 - `RESOURCE_RELEASE_ROOT` pointing to a valid immutable release;
 - `RESOURCE_BUILD_ROOT` pointing to a prepared build workspace.
 
-The project preview defaults to `HOST=0.0.0.0`, `PORT=3000`, and `ASSET_SERVERS=jp-cbt`. Use `HOST=127.0.0.1` unless another device needs to reach the server on a trusted network.
+The project preview defaults to `HOST=0.0.0.0`, `PORT=3000`, and `RELEASE_SERVERS=jp-cbt`. This ordered list contains Our Notes releases only; it is also the local detail/playlist fallback policy, never a list of Bestdori regions. Use `HOST=127.0.0.1` unless another device needs to reach the server on a trusted network.
+
+Bestdori is an external Garupa provider, not a release server. To exercise its
+transformed v1 API or its separate Sonolus catalog through `pnpm preview`, set
+`BESTDORI_PROVIDER_ORIGIN` to a running Haneoka Worker/provider origin. A
+`BESTDORI_RAW_MIRROR_ROOT` is only a raw upstream mirror (`/api`, `/assets`,
+and `/res`) for that Worker. The Worker reaches it through its separate,
+path-capable `BESTDORI_UPSTREAM_BASE`, under the preview gateway's private
+`/_internal/providers/garupa/bestdori/raw` namespace. It must not receive
+`/api/v1/garupa/bestdori`, expose top-level `/assets`, or stand in for an Our
+Notes release.
 
 ## Make a focused change
 

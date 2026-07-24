@@ -4,7 +4,8 @@ export interface StoryFileImportContext {
   readonly fileName: string;
   readonly parsed: unknown;
   readonly title: string;
-  readonly assetServer: string;
+  /** Selected Our Notes release used for any imported local runtime assets. */
+  readonly releaseServer: string;
 }
 
 export interface StoryFileImporter {

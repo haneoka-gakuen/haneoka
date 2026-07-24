@@ -23,17 +23,17 @@ const props = withDefaults(
   defineProps<{
     story: AdvStory;
     uiSprites?: StoryUiSprites;
-    server?: string;
+    releaseServer?: string;
     showModeControl?: boolean;
     showRotationControls?: boolean;
   }>(),
-  { server: undefined, showModeControl: true, showRotationControls: true },
+  { releaseServer: undefined, showModeControl: true, showRotationControls: true },
 );
 const mode = defineModel<StoryRuntimeMode>("mode", { default: "play" });
 const rotation = defineModel<number>("rotation", { default: 0 });
 
 const { pause } = useAudioPlayer();
-const { assetServer } = useAssetServer();
+const { releaseServer: selectedReleaseServer } = useReleaseServer();
 const { t } = useLocale();
 const root = useTemplateRef<HTMLElement>("root");
 const textPlayer = ref<{ pause(): void; play(): void }>();
@@ -83,7 +83,9 @@ setInstantText(playerSettings.value.instantText ? 0 : 1);
 setTextSize(playerSettings.value.textSize);
 setSubtitlesEnabled(playerSettings.value.subtitlesEnabled);
 setAutoPlay(1);
-const resolvedServer = computed(() => normalizeAssetServer(props.server || assetServer.value));
+const resolvedReleaseServer = computed(() =>
+  normalizeReleaseServer(props.releaseServer || selectedReleaseServer.value),
+);
 const autoAdvance = computed(() => autoPlay.value === 0);
 const autoPlayDelaySeconds = computed(() => autoPlayIntervalSeconds(autoPlayInterval.value));
 const maximumAutoPlayDelaySeconds = AUTO_PLAY_INTERVAL_SECONDS[AUTO_PLAY_INTERVAL_SECONDS.length - 1];
@@ -210,14 +212,14 @@ defineExpose({ seekProgress });
             :auto-play="autoPlay"
             :auto-play-interval="autoPlayInterval"
             :text-size="textSize"
-            :server="resolvedServer"
+            :release-server="resolvedReleaseServer"
           />
           <StoryPlayer
             v-else-if="uiSprites"
             ref="player"
             :story="story"
             :ui-sprites="uiSprites"
-            :server="resolvedServer"
+            :release-server="resolvedReleaseServer"
             :controls="controls"
             :show-progress="false"
             :show-start="false"

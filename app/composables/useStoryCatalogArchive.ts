@@ -1,4 +1,5 @@
 import type { Band, Character, HomeSpot, StoryCatalog, StoryEpisode } from "~/types/archive";
+import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 const emptyStoryCatalog: StoryCatalog = { chapters: {}, episodes: {}, homeSpots: {} };
 
@@ -54,11 +55,12 @@ const normalizeStoryText = (value: unknown) =>
     .normalize("NFKC")
     .toLocaleLowerCase();
 
-export const useStoryCatalogArchive = () => {
+/** Load one exact catalog origin; omitted means the selected Our Notes release. */
+export const useStoryCatalogArchive = (origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>) => {
   const { localize, formatDate } = useLocale();
-  const storyRequest = useCatalogDocument<StoryCatalog>("stories");
-  const characterRequest = useCatalogCollection<Character>("characters");
-  const bandRequest = useCatalogCollection<Band>("bands");
+  const storyRequest = useCatalogDocument<StoryCatalog>("stories", origin);
+  const characterRequest = useCatalogCollection<Character>("characters", origin);
+  const bandRequest = useCatalogCollection<Band>("bands", origin);
 
   const catalog = computed(() => storyRequest.data.value || emptyStoryCatalog);
   const characters = computed(() => recordValues(characterRequest.data.value).sort(byCharacterId));

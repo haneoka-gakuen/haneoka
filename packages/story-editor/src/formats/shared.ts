@@ -32,7 +32,9 @@ export const stringifyStoryJson = (value: JsonValue, pretty = true): string => {
   try {
     compact = JSON.stringify(value);
   } catch (error) {
-    throw new TypeError(`value must contain valid JSON data: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TypeError(
+      `value must contain valid JSON data: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (compact === undefined) throw new TypeError("value must contain valid JSON data");
 
@@ -53,7 +55,9 @@ export const jsonClone = <T extends JsonValue>(value: T, label = "value"): T => 
   try {
     serialized = stringifyStoryJson(value, false);
   } catch (error) {
-    throw new TypeError(`${label} must contain valid JSON data: ${error instanceof Error ? error.message : String(error)}`);
+    throw new TypeError(
+      `${label} must contain valid JSON data: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   if (serialized === undefined) throw new TypeError(`${label} must contain valid JSON data`);
   const cloned = JSON.parse(serialized) as T;

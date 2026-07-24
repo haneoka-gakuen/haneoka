@@ -2,19 +2,22 @@
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import type { Song } from "~/types/archive";
 import type { SongCreditVisualVariant } from "~/features/catalog/songCreditVisuals";
+import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 const props = defineProps<{
   items?: readonly CompositeEntityVisual[];
   label?: string;
   song?: Song;
-  sourceServer?: string;
+  origin?: CatalogContentOrigin;
   variant?: SongCreditVisualVariant;
 }>();
 
 const failedImages = reactive(new Set<string>());
+const { releaseServer } = useReleaseServer();
+const inferredOrigin = computed(() => props.origin || ourNotesReleaseOrigin(releaseServer.value));
 const inferredItems = useSongCreditVisuals(
   () => props.song,
-  () => props.sourceServer || "jp-cbt",
+  inferredOrigin,
   () => props.variant || "logo",
 );
 const sourceItems = computed(() => (props.items?.length ? props.items : inferredItems.value));
@@ -26,7 +29,7 @@ const visibleItems = computed(() =>
   }),
 );
 
-watch([() => props.items, () => props.song, () => props.sourceServer, () => props.variant], () => failedImages.clear());
+watch([() => props.items, () => props.song, () => props.origin, () => props.variant], () => failedImages.clear());
 </script>
 
 <template>

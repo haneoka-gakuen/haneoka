@@ -10,14 +10,6 @@ declare module "*.png" {
   export default value;
 }
 
-interface ImportMetaEnv {
-  readonly VITE_ASSET_SERVERS?: string;
-}
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
-}
-
 type GLint = number;
 type GLuint = number;
 type GLenum = number;

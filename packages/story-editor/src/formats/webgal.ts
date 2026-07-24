@@ -9,11 +9,7 @@
  * See packages/story-editor/NOTICE.webgal.md for complete provenance.
  */
 import { ADV_COMMAND } from "../commands.js";
-import {
-  storyDiagnostic,
-  type StoryConversionFidelity,
-  type StoryDiagnostic,
-} from "../diagnostics.js";
+import { storyDiagnostic, type StoryConversionFidelity, type StoryDiagnostic } from "../diagnostics.js";
 import {
   STORY_PROJECT_VERSION,
   cloneStoryValue,
@@ -265,7 +261,7 @@ export interface ImportWebGalOptions {
   title?: string;
   sceneId?: string;
   sceneName?: string;
-  assetServer?: string;
+  releaseServer?: string;
   localeIndex?: number;
 }
 
@@ -402,16 +398,11 @@ const mapStatement = (
     const fidelity: StoryConversionFidelity = extraArgs.length ? "approximate" : "exact";
     return {
       commands: [
-        commandFrom(
-          statement,
-          0,
-          ADV_COMMAND.Talk,
-          {
-            targetName: statement.name,
-            text: statement.content,
-            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-          },
-        ),
+        commandFrom(statement, 0, ADV_COMMAND.Talk, {
+          targetName: statement.name,
+          text: statement.content,
+          ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+        }),
       ],
       fidelity,
       message: extraArgs.length
@@ -426,16 +417,11 @@ const mapStatement = (
       const fidelity: StoryConversionFidelity = ignored.length ? "approximate" : "exact";
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Talk,
-            {
-              targetName: typeof speaker === "string" ? speaker : "",
-              text: statement.content,
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Talk, {
+            targetName: typeof speaker === "string" ? speaker : "",
+            text: statement.content,
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity,
         message: ignored.length
@@ -448,17 +434,12 @@ const mapStatement = (
       const volume = normalizedVolume(statement);
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Bgm,
-            {
-              bgmRef: statement.content,
-              ...(enter === undefined ? {} : { params: [Math.max(0, enter) / 1000] }),
-              ...(volume === undefined ? {} : { volume }),
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Bgm, {
+            bgmRef: statement.content,
+            ...(enter === undefined ? {} : { params: [Math.max(0, enter) / 1000] }),
+            ...(volume === undefined ? {} : { volume }),
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "BGM maps to Bgm; bind the filename to an available audio resource",
@@ -469,17 +450,12 @@ const mapStatement = (
       const volume = normalizedVolume(statement);
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Se,
-            {
-              seRef: statement.content,
-              ...(typeof id === "string" && id ? { targetName: id } : {}),
-              ...(volume === undefined ? {} : { volume }),
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Se, {
+            seRef: statement.content,
+            ...(typeof id === "string" && id ? { targetName: id } : {}),
+            ...(volume === undefined ? {} : { volume }),
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "Effect audio maps to Se; bind the filename to an available sound resource",
@@ -488,15 +464,10 @@ const mapStatement = (
     case "playvideo":
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Movie,
-            {
-              videoRef: statement.content,
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Movie, {
+            videoRef: statement.content,
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "Video maps to Movie; bind the filename to an available video resource",
@@ -505,14 +476,7 @@ const mapStatement = (
       const milliseconds = Number(statement.content);
       const valid = Number.isFinite(milliseconds) && milliseconds >= 0;
       return {
-        commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Delay,
-            { duration: valid ? milliseconds / 1000 : 0 },
-          ),
-        ],
+        commands: [commandFrom(statement, 0, ADV_COMMAND.Delay, { duration: valid ? milliseconds / 1000 : 0 })],
         fidelity: valid ? "exact" : "approximate",
         message: valid
           ? "WebGAL milliseconds map to Haneoka seconds"
@@ -542,20 +506,15 @@ const mapStatement = (
       }
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.ChoiceShow,
-            {
-              advId: 0,
-              params: ["0"],
-              choices: choices.map((choice, index) => ({
-                choiceValue: index,
-                text: choice.text,
-                nextKey: choice.target,
-              })),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.ChoiceShow, {
+            advId: 0,
+            params: ["0"],
+            choices: choices.map((choice, index) => ({
+              choiceValue: index,
+              text: choice.text,
+              nextKey: choice.target,
+            })),
+          }),
         ],
         fidelity: "exact",
         message: "WebGAL choice maps to one structured ChoiceShow group",
@@ -565,16 +524,11 @@ const mapStatement = (
       const duration = durationSecondsArgument(statement);
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Stage,
-            {
-              backgroundRef: statement.content,
-              ...(duration === undefined ? {} : { duration }),
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Stage, {
+            backgroundRef: statement.content,
+            ...(duration === undefined ? {} : { duration }),
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "Background command imported; bind the filename to a Haneoka/R2 background resource",
@@ -587,20 +541,15 @@ const mapStatement = (
       const duration = durationSecondsArgument(statement);
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Character,
-            {
-              targetName: typeof id === "string" && id ? id : defaultFigureTarget(statement),
-              live2dKey: statement.content,
-              positionType: positionFromArguments(statement),
-              ...(typeof motion === "string" && motion ? { motionName: motion } : {}),
-              ...(typeof expression === "string" && expression ? { expressionName: expression } : {}),
-              ...(duration === undefined ? {} : { duration }),
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Character, {
+            targetName: typeof id === "string" && id ? id : defaultFigureTarget(statement),
+            live2dKey: statement.content,
+            positionType: positionFromArguments(statement),
+            ...(typeof motion === "string" && motion ? { motionName: motion } : {}),
+            ...(typeof expression === "string" && expression ? { expressionName: expression } : {}),
+            ...(duration === undefined ? {} : { duration }),
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "Figure command imported; bind the filename to a Live2D resource",
@@ -609,15 +558,10 @@ const mapStatement = (
     case "intro":
       return {
         commands: [
-          commandFrom(
-            statement,
-            0,
-            ADV_COMMAND.Subtitles,
-            {
-              text: statement.content,
-              ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
-            },
-          ),
+          commandFrom(statement, 0, ADV_COMMAND.Subtitles, {
+            text: statement.content,
+            ...(argument(statement, "next") === undefined ? {} : { noWait: true }),
+          }),
         ],
         fidelity: "approximate",
         message: "Intro maps to Haneoka subtitles without WebGAL typography",
@@ -665,7 +609,7 @@ const importWebGalPlain = (input: string | Uint8Array, options: ImportWebGalOpti
     version: STORY_PROJECT_VERSION,
     meta: {
       title: options.title ?? "",
-      ...(options.assetServer === undefined ? {} : { assetServer: options.assetServer }),
+      ...(options.releaseServer === undefined ? {} : { releaseServer: options.releaseServer }),
     },
     entrySceneId: sceneId,
     scenes: [
@@ -1945,8 +1889,7 @@ const archiveFieldConflict = (extensions: JsonObject, conflict: WebGalFieldConfl
 
 const blockKey = (ids: readonly string[]): string => JSON.stringify(ids);
 
-const projectionFieldsForCommand = (_command: number | null, fields: JsonObject): JsonObject =>
-  cloneStoryValue(fields);
+const projectionFieldsForCommand = (_command: number | null, fields: JsonObject): JsonObject => cloneStoryValue(fields);
 
 const canonicalProjectionForCommands = (
   baseline: readonly StoryProjectCommand[],

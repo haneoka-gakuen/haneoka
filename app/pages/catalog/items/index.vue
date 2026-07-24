@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ResourceReferenceItem } from "~/components/catalog/ResourceReferenceList.vue";
+import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { LocalizedValue } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
 
@@ -60,7 +61,9 @@ const itemSortKeys = ["id", "title", "type", "max"] as const;
 type ItemSort = (typeof itemSortKeys)[number];
 
 const { locale, localize, resolveLocalized, t, messages, compareText, formatDate } = useLocale();
-const { data: document, pending, error, refresh } = useCatalogDocument<ItemDocument>("items");
+const { releaseServer } = useReleaseServer();
+const catalogOrigin = computed(() => ourNotesReleaseOrigin(releaseServer.value));
+const { data: document, pending, error, refresh } = useCatalogDocument<ItemDocument>("items", catalogOrigin);
 const query = useRouteQueryText("q");
 const typeFilters = useRouteQueryList("type");
 const { activeFilterCount, resetFilters } = useCatalogFilterState({ texts: [query], facets: [typeFilters] });
@@ -109,7 +112,30 @@ const filtered = computed(() => {
       return direction * comparison;
     });
 });
-const selected = computed(() => entries.value.find((entry) => entry.itemKey === selectedKey.value));
+const selectedSummary = computed(() => entries.value.find((entry) => entry.itemKey === selectedKey.value));
+const { data: selectedItem, resolvedOrigin: selectedItemOrigin } = useCatalogSelection<ItemEntry>(
+  "items",
+  selectedKey,
+  catalogOrigin,
+  { fallbackAcrossReleases: true },
+);
+// Keep the inventory list local to the selected release. A direct item URL may
+// resolve elsewhere, in which case reward/source lookups must follow that exact
+// release rather than the document already loaded for the list.
+const detailOrigin = computed(() =>
+  selectedItemOrigin.value?.provider === "release" ? selectedItemOrigin.value : catalogOrigin.value,
+);
+const { data: detailDocument } = useLazyCatalogDocument<ItemDocument>(
+  "items",
+  () => Boolean(selectedKey.value),
+  undefined,
+  detailOrigin,
+);
+const selected = computed<NormalizedItem | undefined>(() =>
+  selectedItem.value
+    ? { ...selectedItem.value, itemKey: String(selectedItem.value.itemId || selectedKey.value) }
+    : selectedSummary.value,
+);
 const typeOptions = computed(() =>
   [...new Set(entries.value.map(typeOf).filter(Boolean))].sort(compareText).map((value) => {
     const entry = entries.value.find((candidate) => typeOf(candidate) === value);
@@ -119,7 +145,7 @@ const typeOptions = computed(() =>
 const rewardAppearances = computed(() => {
   if (!selected.value) return [];
   const id = Number(selected.value.itemId || 0);
-  return Object.entries(document.value?.rewards || {}).flatMap(([table, rows]) =>
+  return Object.entries(detailDocument.value?.rewards || {}).flatMap(([table, rows]) =>
     (Array.isArray(rows) ? rows : [])
       .filter(
         (reward) =>
@@ -235,6 +261,7 @@ const rewardReferences = computed<ResourceReferenceItem[]>(() => {
 const selectedFacts = computed(() =>
   selected.value
     ? [
+        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         { label: t("id"), value: selected.value.itemId || selected.value.itemKey },
         { label: t("type"), value: typeLabelOf(selected.value) },
         { label: t("size"), value: selected.value.max },
@@ -253,16 +280,6 @@ const sortOptions = useCatalogSortOptions<ItemSort>(tableColumns);
 const setSort = (value: string) => {
   if ((itemSortKeys as readonly string[]).includes(value)) sort.value = value as ItemSort;
 };
-
-watch(
-  [filtered, pending],
-  ([values, isPending]) => {
-    if (!isPending && selectedKey.value && !values.some((entry) => entry.itemKey === selectedKey.value)) {
-      selectedKey.value = "";
-    }
-  },
-  { immediate: true },
-);
 
 useHead(() => ({ title: `${t("items")} · haneoka` }));
 </script>

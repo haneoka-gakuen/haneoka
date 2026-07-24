@@ -260,10 +260,8 @@ const easeOptions = computed<UiSelectOption[]>(() => [
 const optionsWithMixed = (mixed: boolean, options: readonly UiSelectOption[]): readonly UiSelectOption[] =>
   mixed ? [{ value: "", label: "—", disabled: true }, ...options] : options;
 const patchNoteType = (value: UiFieldValue) => emit("patch-selection", { type: String(value) as NoteType });
-const patchDirection = (value: UiFieldValue) =>
-  emit("patch-selection", { direction: String(value) as NoteDirection });
-const patchLineKind = (value: UiFieldValue) =>
-  emit("patch-selection", { lineKind: String(value) as NoteLine["kind"] });
+const patchDirection = (value: UiFieldValue) => emit("patch-selection", { direction: String(value) as NoteDirection });
+const patchLineKind = (value: UiFieldValue) => emit("patch-selection", { lineKind: String(value) as NoteLine["kind"] });
 const updateToolDirection = (value: UiFieldValue) => emit("update:direction", String(value) as NoteDirection);
 
 const updateTempoNumber = (item: TempoEvent, key: "bpm", event: Event) => {
@@ -328,201 +326,304 @@ const close = () => emit("update:modelValue", false);
     </template>
     <template #content>
       <div class="chart-properties-dialog__body">
-          <section v-if="context === 'selection'" class="chart-properties-dialog__fields">
-            <template v-if="selectedNotes.length">
-              <UiSelect
-                class="chart-properties-dialog__field"
-                :label="copy.noteType"
-                :model-value="displayValue(noteTypeValue)"
-                :options="optionsWithMixed(noteTypeValue.mixed, noteTypeOptions)"
-                @update:model-value="patchNoteType"
-              />
-              <UiTextField
-                class="chart-properties-dialog__field"
-                :label="copy.beat"
-                type="number"
-                min="0"
-                step="any"
-                :model-value="displayValue(beatValue)"
-                :placeholder="beatValue.mixed ? '—' : ''"
-                @change="patchBeat"
-              />
-              <div class="chart-properties-dialog__field-with-data">
-                <UiTextField
-                  class="chart-properties-dialog__field"
-                  :label="copy.lane"
-                  :type="canAutoLane ? 'text' : 'number'"
-                  step="any"
-                  :model-value="displayValue(laneValue)"
-                  :placeholder="laneValue.mixed ? '—' : ''"
-                  :list="canAutoLane ? laneListId : undefined"
-                  @change="patchLane"
-                />
-                <datalist v-if="canAutoLane" :id="laneListId">
-                  <option value="auto">{{ copy.autoLane }}</option>
-                </datalist>
-              </div>
-              <UiTextField
-                class="chart-properties-dialog__field"
-                :label="copy.width"
-                type="number"
-                min="0"
-                step="any"
-                :model-value="displayValue(sizeValue)"
-                :placeholder="sizeValue.mixed ? '—' : ''"
-                @change="patchSize"
-              />
-              <UiSwitch
-                class="chart-properties-dialog__switch"
-                :label="copy.critical"
-                :model-value="criticalValue.value === true"
-                @update:model-value="emit('patch-selection', { critical: $event })"
-              />
-              <UiSelect
-                v-if="allFlicks"
-                class="chart-properties-dialog__field"
-                :label="copy.direction"
-                :model-value="displayValue(directionValue)"
-                :options="optionsWithMixed(directionValue.mixed, directionOptions)"
-                @update:model-value="patchDirection"
-              />
-              <UiSwitch
-                class="chart-properties-dialog__switch"
-                :label="copy.visible"
-                :model-value="visibleValue.value === true"
-                @update:model-value="emit('patch-selection', { visible: $event })"
-              />
-            </template>
-
+        <section v-if="context === 'selection'" class="chart-properties-dialog__fields">
+          <template v-if="selectedNotes.length">
             <UiSelect
-              v-if="selectedLines.length"
               class="chart-properties-dialog__field"
-              :label="copy.lineType"
-              :model-value="displayValue(lineKindValue)"
-              :options="optionsWithMixed(lineKindValue.mixed, lineKindOptions)"
-              @update:model-value="patchLineKind"
+              :label="copy.noteType"
+              :model-value="displayValue(noteTypeValue)"
+              :options="optionsWithMixed(noteTypeValue.mixed, noteTypeOptions)"
+              @update:model-value="patchNoteType"
             />
-            <template v-if="selectedPoint">
-              <UiSelect
-                class="chart-properties-dialog__field"
-                :label="copy.leftEase"
-                :model-value="selectedPoint.note.ease.left"
-                :options="easeOptions"
-                @update:model-value="patchEase('left', $event)"
-              />
-              <UiSelect
-                class="chart-properties-dialog__field"
-                :label="copy.rightEase"
-                :model-value="selectedPoint.note.ease.right"
-                :options="easeOptions"
-                @update:model-value="patchEase('right', $event)"
-              />
-            </template>
-          </section>
-
-          <section v-else-if="context === 'tool'" class="chart-properties-dialog__fields">
-            <template v-if="isNoteOrSlideTool">
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.beat"
+              type="number"
+              min="0"
+              step="any"
+              :model-value="displayValue(beatValue)"
+              :placeholder="beatValue.mixed ? '—' : ''"
+              @change="patchBeat"
+            />
+            <div class="chart-properties-dialog__field-with-data">
               <UiTextField
                 class="chart-properties-dialog__field"
-                :label="copy.noteSize"
-                type="number"
-                min="0"
-                step="1"
-                :model-value="noteSize"
-                @change="emit('update:noteSize', Math.max(0, Number(inputElement($event).value)))"
+                :label="copy.lane"
+                :type="canAutoLane ? 'text' : 'number'"
+                step="any"
+                :model-value="displayValue(laneValue)"
+                :placeholder="laneValue.mixed ? '—' : ''"
+                :list="canAutoLane ? laneListId : undefined"
+                @change="patchLane"
               />
-              <UiSwitch
-                class="chart-properties-dialog__switch"
-                :label="copy.defaultCritical"
-                :model-value="critical"
-                @update:model-value="emit('update:critical', $event)"
-              />
-              <UiSelect
-                v-if="tool === 'flick'"
-                class="chart-properties-dialog__field"
-                :label="copy.defaultDirection"
-                :model-value="direction"
-                :options="directionOptions"
-                @update:model-value="updateToolDirection"
-              />
-            </template>
-          </section>
-
-          <section v-else-if="context === 'project'" class="chart-properties-dialog__fields">
-            <UiTextField class="chart-properties-dialog__field" :label="copy.title" :model-value="project.meta.title" maxlength="180" @change="patchMeta('title', $event)" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.artist" :model-value="project.meta.artist" maxlength="180" @change="patchMeta('artist', $event)" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.charter" :model-value="project.meta.charter" maxlength="180" @change="patchMeta('charter', $event)" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.difficulty" :model-value="project.meta.difficulty" maxlength="80" @change="patchMeta('difficulty', $event)" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.level" :model-value="project.meta.level" maxlength="40" @change="patchMeta('level', $event)" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.audioOffset" type="number" step="0.001" :model-value="project.audioOffset" @change="patchAudioOffset" />
-            <UiTextField class="chart-properties-dialog__field" :label="copy.laneBasis" type="number" min="1" step="1" :model-value="project.laneBasis" @change="patchLaneBasis" />
-          </section>
-
-          <section v-else-if="context === 'tempo'" class="chart-properties-dialog__events">
-            <div v-for="item in tempos" :key="item.id" class="chart-properties-dialog__event-row">
-              <UiTextField class="chart-properties-dialog__field" label="BPM" type="number" min="0.001" step="0.001" :model-value="item.bpm" @change="updateTempoNumber(item, 'bpm', $event)" />
-              <UiTextField class="chart-properties-dialog__field" :label="copy.beat" type="number" min="0" step="any" :model-value="eventBeat(item.tick)" :disabled="!canMoveTempo(item)" @change="updateTempoBeat(item, $event)" />
-              <UiIconButton
-                class="chart-properties-dialog__delete-event"
-                size="compact"
-                :disabled="!canDeleteTempo(item)"
-                :label="copy.deleteBpm"
-                @click="emit('delete-tempo', item.id)"
-              >
-                <MaterialIcon name="delete" :size="18" />
-              </UiIconButton>
+              <datalist v-if="canAutoLane" :id="laneListId">
+                <option value="auto">{{ copy.autoLane }}</option>
+              </datalist>
             </div>
-            <footer>
-              <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-tempo', eventTick)">
-                <template #icon><MaterialIcon name="add" :size="18" /></template>
-                {{ copy.addBpm }}
-              </UiButton>
-            </footer>
-          </section>
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.width"
+              type="number"
+              min="0"
+              step="any"
+              :model-value="displayValue(sizeValue)"
+              :placeholder="sizeValue.mixed ? '—' : ''"
+              @change="patchSize"
+            />
+            <UiSwitch
+              class="chart-properties-dialog__switch"
+              :label="copy.critical"
+              :model-value="criticalValue.value === true"
+              @update:model-value="emit('patch-selection', { critical: $event })"
+            />
+            <UiSelect
+              v-if="allFlicks"
+              class="chart-properties-dialog__field"
+              :label="copy.direction"
+              :model-value="displayValue(directionValue)"
+              :options="optionsWithMixed(directionValue.mixed, directionOptions)"
+              @update:model-value="patchDirection"
+            />
+            <UiSwitch
+              class="chart-properties-dialog__switch"
+              :label="copy.visible"
+              :model-value="visibleValue.value === true"
+              @update:model-value="emit('patch-selection', { visible: $event })"
+            />
+          </template>
 
-          <section v-else-if="context === 'meter'" class="chart-properties-dialog__events">
-            <div v-for="item in meters" :key="item.id" class="chart-properties-dialog__event-row">
-              <UiTextField class="chart-properties-dialog__field" :label="copy.beat" type="number" min="0" step="any" :model-value="eventBeat(item.tick)" :disabled="!canMoveMeter(item)" @change="updateMeterBeat(item, $event)" />
-              <UiTextField class="chart-properties-dialog__field" :label="`${copy.meter} N`" type="number" min="1" step="1" :model-value="item.numerator" @change="updateMeterNumber(item, 'numerator', $event)" />
-              <UiTextField class="chart-properties-dialog__field" :label="`${copy.meter} D`" type="number" min="1" step="1" :model-value="item.denominator" @change="updateMeterNumber(item, 'denominator', $event)" />
-              <UiIconButton
-                class="chart-properties-dialog__delete-event"
-                size="compact"
-                :disabled="!canDeleteMeter(item)"
-                :label="copy.deleteMeter"
-                @click="emit('delete-meter', item.id)"
-              >
-                <MaterialIcon name="delete" :size="18" />
-              </UiIconButton>
-            </div>
-            <footer>
-              <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-meter', eventTick)">
-                <template #icon><MaterialIcon name="add" :size="18" /></template>
-                {{ copy.addMeter }}
-              </UiButton>
-            </footer>
-          </section>
+          <UiSelect
+            v-if="selectedLines.length"
+            class="chart-properties-dialog__field"
+            :label="copy.lineType"
+            :model-value="displayValue(lineKindValue)"
+            :options="optionsWithMixed(lineKindValue.mixed, lineKindOptions)"
+            @update:model-value="patchLineKind"
+          />
+          <template v-if="selectedPoint">
+            <UiSelect
+              class="chart-properties-dialog__field"
+              :label="copy.leftEase"
+              :model-value="selectedPoint.note.ease.left"
+              :options="easeOptions"
+              @update:model-value="patchEase('left', $event)"
+            />
+            <UiSelect
+              class="chart-properties-dialog__field"
+              :label="copy.rightEase"
+              :model-value="selectedPoint.note.ease.right"
+              :options="easeOptions"
+              @update:model-value="patchEase('right', $event)"
+            />
+          </template>
+        </section>
 
-          <section v-else class="chart-properties-dialog__events">
-            <div v-for="item in timeScales" :key="item.id" class="chart-properties-dialog__event-row">
-              <UiTextField class="chart-properties-dialog__field" :label="copy.timeScale" type="number" min="0.001" step="0.001" :model-value="item.scale" @change="updateTimeScaleNumber(item, $event)" />
-              <UiTextField class="chart-properties-dialog__field" :label="copy.beat" type="number" min="0" step="any" :model-value="eventBeat(item.tick)" @change="updateTimeScaleBeat(item, $event)" />
-              <UiIconButton
-                class="chart-properties-dialog__delete-event"
-                size="compact"
-                :label="copy.deleteTimeScale"
-                @click="emit('delete-time-scale', item.id)"
-              >
-                <MaterialIcon name="delete" :size="18" />
-              </UiIconButton>
-            </div>
-            <footer>
-              <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-time-scale', eventTick)">
-                <template #icon><MaterialIcon name="add" :size="18" /></template>
-                {{ copy.addTimeScale }}
-              </UiButton>
-            </footer>
-          </section>
+        <section v-else-if="context === 'tool'" class="chart-properties-dialog__fields">
+          <template v-if="isNoteOrSlideTool">
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.noteSize"
+              type="number"
+              min="0"
+              step="1"
+              :model-value="noteSize"
+              @change="emit('update:noteSize', Math.max(0, Number(inputElement($event).value)))"
+            />
+            <UiSwitch
+              class="chart-properties-dialog__switch"
+              :label="copy.defaultCritical"
+              :model-value="critical"
+              @update:model-value="emit('update:critical', $event)"
+            />
+            <UiSelect
+              v-if="tool === 'flick'"
+              class="chart-properties-dialog__field"
+              :label="copy.defaultDirection"
+              :model-value="direction"
+              :options="directionOptions"
+              @update:model-value="updateToolDirection"
+            />
+          </template>
+        </section>
+
+        <section v-else-if="context === 'project'" class="chart-properties-dialog__fields">
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.title"
+            :model-value="project.meta.title"
+            maxlength="180"
+            @change="patchMeta('title', $event)"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.artist"
+            :model-value="project.meta.artist"
+            maxlength="180"
+            @change="patchMeta('artist', $event)"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.charter"
+            :model-value="project.meta.charter"
+            maxlength="180"
+            @change="patchMeta('charter', $event)"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.difficulty"
+            :model-value="project.meta.difficulty"
+            maxlength="80"
+            @change="patchMeta('difficulty', $event)"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.level"
+            :model-value="project.meta.level"
+            maxlength="40"
+            @change="patchMeta('level', $event)"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.audioOffset"
+            type="number"
+            step="0.001"
+            :model-value="project.audioOffset"
+            @change="patchAudioOffset"
+          />
+          <UiTextField
+            class="chart-properties-dialog__field"
+            :label="copy.laneBasis"
+            type="number"
+            min="1"
+            step="1"
+            :model-value="project.laneBasis"
+            @change="patchLaneBasis"
+          />
+        </section>
+
+        <section v-else-if="context === 'tempo'" class="chart-properties-dialog__events">
+          <div v-for="item in tempos" :key="item.id" class="chart-properties-dialog__event-row">
+            <UiTextField
+              class="chart-properties-dialog__field"
+              label="BPM"
+              type="number"
+              min="0.001"
+              step="0.001"
+              :model-value="item.bpm"
+              @change="updateTempoNumber(item, 'bpm', $event)"
+            />
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.beat"
+              type="number"
+              min="0"
+              step="any"
+              :model-value="eventBeat(item.tick)"
+              :disabled="!canMoveTempo(item)"
+              @change="updateTempoBeat(item, $event)"
+            />
+            <UiIconButton
+              class="chart-properties-dialog__delete-event"
+              size="compact"
+              :disabled="!canDeleteTempo(item)"
+              :label="copy.deleteBpm"
+              @click="emit('delete-tempo', item.id)"
+            >
+              <MaterialIcon name="delete" :size="18" />
+            </UiIconButton>
+          </div>
+          <footer>
+            <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-tempo', eventTick)">
+              <template #icon><MaterialIcon name="add" :size="18" /></template>
+              {{ copy.addBpm }}
+            </UiButton>
+          </footer>
+        </section>
+
+        <section v-else-if="context === 'meter'" class="chart-properties-dialog__events">
+          <div v-for="item in meters" :key="item.id" class="chart-properties-dialog__event-row">
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.beat"
+              type="number"
+              min="0"
+              step="any"
+              :model-value="eventBeat(item.tick)"
+              :disabled="!canMoveMeter(item)"
+              @change="updateMeterBeat(item, $event)"
+            />
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="`${copy.meter} N`"
+              type="number"
+              min="1"
+              step="1"
+              :model-value="item.numerator"
+              @change="updateMeterNumber(item, 'numerator', $event)"
+            />
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="`${copy.meter} D`"
+              type="number"
+              min="1"
+              step="1"
+              :model-value="item.denominator"
+              @change="updateMeterNumber(item, 'denominator', $event)"
+            />
+            <UiIconButton
+              class="chart-properties-dialog__delete-event"
+              size="compact"
+              :disabled="!canDeleteMeter(item)"
+              :label="copy.deleteMeter"
+              @click="emit('delete-meter', item.id)"
+            >
+              <MaterialIcon name="delete" :size="18" />
+            </UiIconButton>
+          </div>
+          <footer>
+            <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-meter', eventTick)">
+              <template #icon><MaterialIcon name="add" :size="18" /></template>
+              {{ copy.addMeter }}
+            </UiButton>
+          </footer>
+        </section>
+
+        <section v-else class="chart-properties-dialog__events">
+          <div v-for="item in timeScales" :key="item.id" class="chart-properties-dialog__event-row">
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.timeScale"
+              type="number"
+              min="0.001"
+              step="0.001"
+              :model-value="item.scale"
+              @change="updateTimeScaleNumber(item, $event)"
+            />
+            <UiTextField
+              class="chart-properties-dialog__field"
+              :label="copy.beat"
+              type="number"
+              min="0"
+              step="any"
+              :model-value="eventBeat(item.tick)"
+              @change="updateTimeScaleBeat(item, $event)"
+            />
+            <UiIconButton
+              class="chart-properties-dialog__delete-event"
+              size="compact"
+              :label="copy.deleteTimeScale"
+              @click="emit('delete-time-scale', item.id)"
+            >
+              <MaterialIcon name="delete" :size="18" />
+            </UiIconButton>
+          </div>
+          <footer>
+            <UiButton class="chart-properties-dialog__add" tone="text" @click="emit('add-time-scale', eventTick)">
+              <template #icon><MaterialIcon name="add" :size="18" /></template>
+              {{ copy.addTimeScale }}
+            </UiButton>
+          </footer>
+        </section>
       </div>
     </template>
   </UiDialog>

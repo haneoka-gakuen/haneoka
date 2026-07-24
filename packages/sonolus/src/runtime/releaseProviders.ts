@@ -17,10 +17,29 @@ import { convertChartAsync } from "../convert/index.js";
 
 const DEFAULT_MAX_CACHE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_CHART_BYTES = 4 * 1024 * 1024;
+const RELEASE_CHART_DATA_ID_PREFIX = "release:";
+const RELEASE_ID_PATTERN = /^r-[a-f0-9]{20}$/u;
+const RELEASE_SERVER_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u;
+const SONOLUS_NAME_PART_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u;
 const SHA1_PATTERN = /^[a-f0-9]{40}$/u;
 
 export type ReleaseJsonReader = (releasePath: string) => Promise<unknown | null>;
 export type ReleaseByteReader = (releasePath: string) => Promise<Uint8Array | null>;
+
+/**
+ * Identifies one immutable Our Notes release within a logical resource
+ * server. `server` is the public release-server slug; `releaseId` is the
+ * immutable snapshot selected by that server's current pointer.
+ */
+export interface ReleaseChartProvenance {
+  readonly releaseId: string;
+  readonly server: string;
+}
+
+/** A chart source path together with the immutable release that owns it. */
+export interface ReleaseChartDataReference extends ReleaseChartProvenance {
+  readonly path: string;
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -75,7 +94,7 @@ function isEngineItem(value: unknown): value is JsonObject {
 }
 
 export function releaseAssetPath(publicPath: string, server: string): string | null {
-  if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/u.test(server)) return null;
+  if (!RELEASE_SERVER_PATTERN.test(server)) return null;
   const prefix = `/assets/${server}/`;
   if (!publicPath.startsWith(prefix)) return null;
   const relative = publicPath.slice(prefix.length);
@@ -90,16 +109,83 @@ export function releaseAssetPath(publicPath: string, server: string): string | n
   return `assets/${relative}`;
 }
 
+function isReleaseAssetPath(path: string): boolean {
+  if (!path.startsWith("assets/") || path.length <= "assets/".length || path.includes("\\")) return false;
+  return path
+    .slice("assets/".length)
+    .split("/")
+    .every((part) => Boolean(part) && part !== "." && part !== "..");
+}
+
+function releaseChartProvenance(value: ReleaseChartProvenance): ReleaseChartProvenance {
+  if (
+    !isObject(value) ||
+    typeof value.server !== "string" ||
+    typeof value.releaseId !== "string" ||
+    !RELEASE_SERVER_PATTERN.test(value.server) ||
+    !RELEASE_ID_PATTERN.test(value.releaseId)
+  ) {
+    throw new TypeError("Release chart provenance is invalid");
+  }
+  return { releaseId: value.releaseId, server: value.server };
+}
+
+function sonolusNamePart(value: string | number, label: string): string {
+  if (typeof value !== "string" && (typeof value !== "number" || !Number.isFinite(value))) {
+    throw new TypeError(`Invalid Sonolus ${label}`);
+  }
+  const part = String(value).trim();
+  if (!SONOLUS_NAME_PART_PATTERN.test(part)) throw new TypeError(`Invalid Sonolus ${label}`);
+  return part;
+}
+
+/**
+ * Returns a stable, collision-free level name for a chart in one logical
+ * resource server. The immutable snapshot is carried by the chart data ID so
+ * a pointer update can keep this public level URL stable.
+ */
+export function releaseChartLevelName(releaseServer: string, songId: string | number, difficulty: string): string {
+  if (typeof releaseServer !== "string" || !RELEASE_SERVER_PATTERN.test(releaseServer)) {
+    throw new TypeError("Invalid release server");
+  }
+  if (typeof difficulty !== "string") throw new TypeError("Invalid Sonolus difficulty");
+  const normalizedSongId = sonolusNamePart(songId, "song ID");
+  const normalizedDifficulty = sonolusNamePart(difficulty.toLocaleLowerCase("en-US"), "difficulty");
+  // Length prefixes make the tuple unambiguous even when a valid segment
+  // contains hyphens, while keeping the result inside Sonolus's name alphabet.
+  const name = `release-level-${releaseServer.length}-${releaseServer}-${normalizedSongId.length}-${normalizedSongId}-${normalizedDifficulty.length}-${normalizedDifficulty}`;
+  if (name.length > 255) throw new TypeError("Sonolus level name is too long");
+  return name;
+}
+
+/** Encodes an immutable release and its release-relative chart source path. */
+export function encodeReleaseChartDataId(provenance: ReleaseChartProvenance, path: string): string {
+  const release = releaseChartProvenance(provenance);
+  if (!isReleaseAssetPath(path)) throw new TypeError("Release chart data path is invalid");
+  return `${RELEASE_CHART_DATA_ID_PREFIX}${release.server}:${release.releaseId}:${path}`;
+}
+
+/**
+ * Decodes a chart data reference without ever resolving a server's current
+ * pointer. Hosts must use the returned immutable `{ server, releaseId }` pair
+ * to select the exact release captured when the catalog was projected.
+ */
+export function parseReleaseChartDataId(dataId: string): ReleaseChartDataReference | null {
+  if (typeof dataId !== "string" || !dataId.startsWith(RELEASE_CHART_DATA_ID_PREFIX)) return null;
+  const match = /^release:([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?):(r-[a-f0-9]{20}):(.*)$/u.exec(dataId);
+  const server = match?.[1];
+  const releaseId = match?.[2];
+  const path = match?.[3];
+  if (!server || !releaseId || !path || !isReleaseAssetPath(path)) return null;
+  return { path, releaseId, server };
+}
+
 export interface ReleaseChartCatalogProviderOptions {
   localeOrder?: readonly CatalogLocale[];
   mediaBaseUrl?: string;
   onInvalidCharts?: (names: readonly string[]) => void;
   readJson: ReleaseJsonReader;
-  resolveChartDataId?: (
-    songId: string,
-    difficulty: string,
-    rawDifficulty: Readonly<Record<string, unknown>>,
-  ) => string | null;
+  release: ReleaseChartProvenance;
   revision: string;
 }
 
@@ -108,6 +194,7 @@ export class ReleaseChartCatalogProvider implements ChartCatalogProvider {
 
   constructor(options: ReleaseChartCatalogProviderOptions) {
     if (!options.revision.trim()) throw new TypeError("A non-empty release revision is required");
+    releaseChartProvenance(options.release);
     this.#options = options;
   }
 
@@ -117,10 +204,16 @@ export class ReleaseChartCatalogProvider implements ChartCatalogProvider {
     const bandsPath = catalogIndexPath(manifest, "bands");
     const [songs, bands] = await Promise.all([this.#options.readJson(songsPath), this.#options.readJson(bandsPath)]);
     if (songs === null || bands === null) throw new Error("Release is missing songs or bands catalog data");
+    const release = releaseChartProvenance(this.#options.release);
     const projection = projectCatalogCharts(songs, bands, {
       ...(this.#options.localeOrder ? { localeOrder: this.#options.localeOrder } : {}),
       ...(this.#options.mediaBaseUrl ? { mediaBaseUrl: this.#options.mediaBaseUrl } : {}),
-      ...(this.#options.resolveChartDataId ? { chartDataId: this.#options.resolveChartDataId } : {}),
+      chartDataId: (_songId, _difficulty, rawDifficulty) => {
+        if (typeof rawDifficulty.file !== "string") return null;
+        const path = releaseAssetPath(rawDifficulty.file, release.server);
+        return path ? encodeReleaseChartDataId(release, path) : null;
+      },
+      levelName: (songId, difficulty) => releaseChartLevelName(release.server, songId, difficulty),
     });
     if (projection.invalidChartNames.length) this.#options.onInvalidCharts?.(projection.invalidChartNames);
     return { charts: projection.charts, revision: { id: this.#options.revision } };

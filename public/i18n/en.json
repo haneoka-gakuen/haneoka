@@ -146,7 +146,7 @@
     "noSelection": "No command selected",
     "project": "Project",
     "title": "Title",
-    "assetServer": "Asset server",
+    "releaseServer": "Release server",
     "entryScene": "Entry scene",
     "type": "Type",
     "fields": "Fields",
@@ -177,7 +177,7 @@
     "insertResource": "Insert",
     "loadingResources": "Loading resources…",
     "noResources": "No resources",
-    "serverMismatch": "Switch to the project asset server to use these resources.",
+    "serverMismatch": "Switch to the project's release server to use these resources.",
     "diagnostics": "Diagnostics",
     "errors": "Errors",
     "warnings": "Warnings",
@@ -410,6 +410,7 @@
   "longNotes": "Long notes",
   "language": "Language",
   "server": "Server",
+  "releaseServer": "Release server",
   "loading": "Loading",
   "empty": "No results",
   "unavailable": "Unavailable",
@@ -1326,7 +1327,7 @@
         "title": "Network, IP-region, and device information"
       },
       {
-        "body": "The Service uses strictly necessary cookies or equivalent credentials to maintain authentication, protect sessions, and complete OAuth flows. Browser local storage may retain language, asset-server and layout choices, player settings, workspace state, locally saved post drafts, and similar preferences. Locally stored information generally remains on your device until you clear it or the application replaces it.\n\nThe Service does not currently operate third-party advertising, cross-site behavioral advertising, or advertising-profile trackers. Google, GitHub, X, Discord, Cloudflare Turnstile, or other third-party services may use their own cookies or device information when you actively interact with them, under their own policies.",
+        "body": "The Service uses strictly necessary cookies or equivalent credentials to maintain authentication, protect sessions, and complete OAuth flows. Browser local storage may retain language, release-server and layout choices, player settings, workspace state, locally saved post drafts, and similar preferences. Locally stored information generally remains on your device until you clear it or the application replaces it.\n\nThe Service does not currently operate third-party advertising, cross-site behavioral advertising, or advertising-profile trackers. Google, GitHub, X, Discord, Cloudflare Turnstile, or other third-party services may use their own cookies or device information when you actively interact with them, under their own policies.",
         "title": "Cookies and local device storage"
       },
       {
@@ -1342,7 +1343,7 @@
         "title": "Moderation and recommendations"
       },
       {
-        "body": "We use service providers where reasonably necessary, including Cloudflare for network delivery, request metadata, bot verification, serverless execution, database and object storage, and AI inference for automated moderation; an email delivery service for account messages; and Google, GitHub, X, or Discord when you choose their sign-in service. Providers process information under their own terms and, where applicable, contractual or legal safeguards.\n\nDefault avatars are generated locally in the application. Pages may retrieve archive or profile media from game publishers, configured asset servers, or other identified source hosts. A direct browser request ordinarily discloses the requesting IP address, User-Agent, time, requested URL, and ordinary request metadata to that host even if you do not click the media. Those hosts process the request under their own policies.\n\nWe may disclose information when reasonably necessary to comply with valid legal process; protect users, rights holders, the public, or the Service; investigate fraud, security incidents, or abuse; obtain professional advice; or complete a reorganization, transfer, or succession of the project subject to appropriate safeguards. We do not sell personal information, disclose it to data brokers, or share it for cross-context behavioral advertising.",
+        "body": "We use service providers where reasonably necessary, including Cloudflare for network delivery, request metadata, bot verification, serverless execution, database and object storage, and AI inference for automated moderation; an email delivery service for account messages; and Google, GitHub, X, or Discord when you choose their sign-in service. Providers process information under their own terms and, where applicable, contractual or legal safeguards.\n\nDefault avatars are generated locally in the application. Pages may retrieve archive or profile media from game publishers, configured Our Notes release servers, or other identified source hosts. A direct browser request ordinarily discloses the requesting IP address, User-Agent, time, requested URL, and ordinary request metadata to that host even if you do not click the media. Those hosts process the request under their own policies.\n\nWe may disclose information when reasonably necessary to comply with valid legal process; protect users, rights holders, the public, or the Service; investigate fraud, security incidents, or abuse; obtain professional advice; or complete a reorganization, transfer, or succession of the project subject to appropriate safeguards. We do not sell personal information, disclose it to data brokers, or share it for cross-context behavioral advertising.",
         "title": "Service providers and disclosures"
       },
       {
@@ -1419,7 +1420,7 @@
         "title": "Privacy"
       },
       {
-        "body": "The Service may depend on or link to Cloudflare, Google, GitHub, X, Discord, email providers, game publishers, asset servers, news sources, or other third parties. The Operator does not control their availability, security, accuracy, content, terms, or privacy practices and is not responsible for them except to the extent liability cannot lawfully be excluded. Your use of a third-party service is governed by its terms. A link or integration does not constitute endorsement.",
+        "body": "The Service may depend on or link to Cloudflare, Google, GitHub, X, Discord, email providers, game publishers, Our Notes release servers, news sources, or other third parties. The Operator does not control their availability, security, accuracy, content, terms, or privacy practices and is not responsible for them except to the extent liability cannot lawfully be excluded. Your use of a third-party service is governed by its terms. A link or integration does not constitute endorsement.",
         "title": "Third-party services and links"
       },
       {

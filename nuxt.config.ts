@@ -1,24 +1,31 @@
 import { DEFAULT_ARCHIVE_LOCALE } from "./app/i18n/locales";
 
-const configuredAssetServers = [
+const configuredReleaseServers = [
   ...new Set(
-    String(process.env.ASSET_SERVERS || "jp-cbt")
+    String(process.env.RELEASE_SERVERS || "jp-cbt")
       .split(",")
       .map((server) => server.trim())
       .filter(Boolean),
   ),
 ];
-const preferredAssetServer = String(process.env.ASSET_SERVER || "").trim();
-const defaultAssetServer = preferredAssetServer || configuredAssetServers[0] || "jp-cbt";
+const preferredReleaseServer = String(process.env.RELEASE_SERVER || "").trim();
+const defaultReleaseServer = preferredReleaseServer || configuredReleaseServers[0] || "jp-cbt";
 const siteOrigin = "https://haneoka.org";
 const siteTitle = "haneoka";
 const siteDescription = "A public resource archive, event dashboard, and community for BanG Dream! Our Notes.";
 const socialImage = `${siteOrigin}/images/haneoka-social-card.png`;
-const localBestdoriOrigin = String(process.env.LOCAL_BESTDORI_ORIGIN || "").trim();
-const localGarupaOrigin = String(process.env.LOCAL_GARUPA_ORIGIN || "").trim();
+const localBestdoriProviderOrigin = String(process.env.LOCAL_BESTDORI_PROVIDER_ORIGIN || "").trim();
 const localReleaseOrigin = String(process.env.LOCAL_RELEASE_ORIGIN || "").trim();
 const localWorkerOrigin = String(process.env.LOCAL_WORKER_ORIGIN || "").trim();
 const localProxy = {
+  // Keep the explicitly namespaced provider route ahead of the broader Garupa
+  // API route. A Bestdori region must never be resolved as an Our Notes
+  // release-server ID even in local development.
+  ...(localBestdoriProviderOrigin
+    ? {
+        "/api/v1/garupa/bestdori": { target: localBestdoriProviderOrigin, changeOrigin: true },
+      }
+    : {}),
   ...(localWorkerOrigin
     ? {
         "/api/auth": { target: localWorkerOrigin, changeOrigin: true },
@@ -26,18 +33,8 @@ const localProxy = {
         "/api/v1/admin": { target: localWorkerOrigin, changeOrigin: true },
         "/api/v1/community": { target: localWorkerOrigin, changeOrigin: true },
         "/api/v1/garupa": { target: localWorkerOrigin, changeOrigin: true },
+        "/api/v1/releases": { target: localWorkerOrigin, changeOrigin: true },
         "/api/v1/home": { target: localWorkerOrigin, changeOrigin: true },
-      }
-    : {}),
-  ...(localGarupaOrigin
-    ? {
-        "/api/v1/garupa": { target: localGarupaOrigin, changeOrigin: true },
-      }
-    : {}),
-  ...(localBestdoriOrigin
-    ? {
-        "/api/v1/servers/bestdori": { target: localBestdoriOrigin, changeOrigin: true },
-        "/api/v1/bestdori": { target: localBestdoriOrigin, changeOrigin: true },
       }
     : {}),
   ...(localReleaseOrigin
@@ -112,8 +109,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: "/api/v1",
-      assetServer: defaultAssetServer,
-      assetServers: configuredAssetServers,
+      releaseServer: defaultReleaseServer,
+      releaseServers: configuredReleaseServers,
       canonicalOrigin: siteOrigin,
     },
   },

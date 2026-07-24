@@ -167,7 +167,7 @@ const closeNavigation = (restoreFocus = true) => {
     navigationHistoryEntryActive.value = false;
     router.back();
   }
-  if (restoreFocus) nextTick(() => navigationReturnFocus.value?.focus());
+  if (restoreFocus) nextTick(() => navigationReturnFocus.value?.focus({ preventScroll: true }));
 };
 
 const activateNavigationDestination = (event: MouseEvent, to: string) => {
@@ -291,10 +291,10 @@ const handleNavigationKeydown = (event: KeyboardEvent) => {
   if (!first || !last) return;
   if (event.shiftKey && document.activeElement === first) {
     event.preventDefault();
-    last.focus();
+    last.focus({ preventScroll: true });
   } else if (!event.shiftKey && document.activeElement === last) {
     event.preventDefault();
-    first.focus();
+    first.focus({ preventScroll: true });
   }
 };
 

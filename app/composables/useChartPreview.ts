@@ -12,7 +12,7 @@ const chartSourceCache = new Map<string, ChartSourceCacheEntry>();
 
 const isBestdoriChartUrl = (url: string): boolean => {
   try {
-    return new URL(url, "https://haneoka.invalid").pathname.startsWith("/api/v1/bestdori/charts/");
+    return /^\/api\/v1\/garupa\/bestdori\/[^/]+\/charts\//u.test(new URL(url, "https://haneoka.invalid").pathname);
   } catch {
     return false;
   }

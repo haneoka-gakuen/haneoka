@@ -552,7 +552,7 @@ function bakeSlideLineColors(input: Buffer): Buffer {
 
 writeFileSync(resolve(out, "skin.texture.png"), bakeSlideLineColors(readFileSync(resolve(source, "skin.texture.png"))));
 
-const workspace = resolveSonolusReleaseWorkspace(process.env.ASSET_SERVER || "jp-cbt", root);
+const workspace = resolveSonolusReleaseWorkspace(process.env.RELEASE_SERVER || "jp-cbt", root);
 const nativeEffectRoot = resolve(
   workspace.runtimeRoot,
   "unity-json/Assets/AddressableResources/Live/NoteEffect/effect001",

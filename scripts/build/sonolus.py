@@ -30,8 +30,8 @@ def _verify_engine_artifact(directory: Path) -> None:
         )
 
 
-def build_sonolus(server: str, build_id: str) -> dict:
-    layout = build_layout(server, build_id)
+def build_sonolus(release_server: str, build_id: str) -> dict:
+    layout = build_layout(release_server, build_id)
     _verify_engine_artifact(PROJECT_ROOT / "packages" / "sonolus" / "engine" / "dist")
     inputs = layout.root / "sonolus-inputs"
     if inputs.exists():
@@ -39,7 +39,7 @@ def build_sonolus(server: str, build_id: str) -> dict:
     shutil.copytree(PROJECT_ROOT / "packages" / "sonolus" / "assets" / "original", inputs)
     environment = {
         **os.environ,
-        "ASSET_SERVER": server,
+        "RELEASE_SERVER": release_server,
         "RESOURCE_BUILD_ROOT": str(layout.root.resolve()),
         "SONOLUS_ORIGINAL_ASSETS_DIR": str(inputs.resolve()),
         "SONOLUS_WORKER_ASSETS_DIR": str(layout.runtime.resolve()),
@@ -48,4 +48,4 @@ def build_sonolus(server: str, build_id: str) -> dict:
         subprocess.run(["pnpm", "sonolus:release"], cwd=PROJECT_ROOT, env=environment, check=True)
     finally:
         shutil.rmtree(inputs, ignore_errors=True)
-    return {"server": server, "buildId": build_id, "path": "runtime/sonolus", "built": True}
+    return {"server": release_server, "buildId": build_id, "path": "runtime/sonolus", "built": True}

@@ -2,6 +2,11 @@
 import { MaterialIcon } from "@haneoka/ui";
 
 import type { DetailHeaderIconItem, DetailMediaItem } from "~/components/detail/types";
+import {
+  contentOriginLabel,
+  runtimeReleaseForCatalogOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 import type { CardStatLevel, Character, MemberCard, SupportCard } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
 
@@ -17,6 +22,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean;
     card?: MemberCard | SupportCard;
+    origin: CatalogContentOrigin;
     kind: "member" | "snap";
     title: DisplayText;
     subtitle?: DisplayText;
@@ -39,11 +45,13 @@ const emit = defineEmits<{
 }>();
 
 const { resolveLocalized, formatDate, t } = useLocale();
+const { releaseServer } = useReleaseServer();
 const layerLink = useRouteQueryLayerLink();
 const isSnap = computed(() => props.kind === "snap");
-const { data: characterRecord } = useCatalogCollection<Character>("characters");
+const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.origin, releaseServer.value));
+const { data: characterRecord } = useCatalogCollection<Character>("characters", () => props.origin);
 const progressionView = computed(() => (isSnap.value ? "support-card-levels" : "member-card-levels"));
-const { data: cardLevelEntries } = useCatalogView<CardLevelRate[]>("progression", progressionView);
+const { data: cardLevelEntries } = useCatalogView<CardLevelRate[]>("progression", progressionView, () => props.origin);
 const memberCard = computed(() => (isSnap.value ? undefined : (props.card as MemberCard | undefined)));
 const snapCard = computed(() => (isSnap.value ? (props.card as SupportCard | undefined) : undefined));
 const cardKey = computed(() => memberCard.value?.cardId || snapCard.value?.supportCardId || 0);
@@ -75,6 +83,30 @@ const headerEntities = computed<DetailHeaderIconItem[]>(() =>
     shape: "avatar",
   })),
 );
+const detailTitle = computed<DisplayText>(() => {
+  const candidates = isSnap.value ? [snapCard.value?.cardName] : [cardCharacters.value[0]?.characterName];
+  return (
+    resolveLocalized(props.card?.prefix, {
+      candidates,
+      sourceHint: "ja",
+      fallback: textOf(props.title) || (isSnap.value ? t("supportCards") : t("memberCards")),
+    }) || props.title
+  );
+});
+const detailSubtitle = computed<DisplayText>(() => {
+  const names = cardCharacters.value
+    .map(
+      (character) =>
+        resolveLocalized(character.characterName, {
+          sourceHint: "ja",
+          fallback: String(character.characterId),
+        }) || String(character.characterId),
+    )
+    .map((value) => textOf(value))
+    .filter(Boolean);
+  return names.length ? names.join(" · ") : props.subtitle || "";
+});
+const detailAccent = computed(() => cardCharacters.value[0]?.colorCode || props.accent);
 const mediaItems = computed<DetailMediaItem[]>(() => {
   const images = props.card?.images;
   const items: DetailMediaItem[] = [];
@@ -183,6 +215,7 @@ const selectedSkillLevel = useRouteQueryInteger("skillLevel", 0, { min: 0 });
 const diary = computed(() => resolveLocalized(snapCard.value?.diary, { sourceHint: "ja" }));
 const hasDiary = computed(() => Boolean(textOf(diary.value)));
 const identityFacts = computed(() => [
+  { label: t("source"), value: contentOriginLabel(props.origin) },
   { label: t("id"), value: cardKey.value },
   { label: t("rarity"), value: props.card?.rarity },
   { label: `${t("cards")} ${t("type")}`, value: props.card?.cardType },
@@ -218,21 +251,21 @@ watch(
 <template>
   <FullscreenDetailSurface
     :open="open"
-    :title="title"
-    :subtitle="subtitle"
-    :accent="accent"
+    :title="detailTitle"
+    :subtitle="detailSubtitle"
+    :accent="detailAccent"
     :leading-icons="headerEntities"
     body-overflow="hidden"
     @close="emit('close')"
   >
     <template v-if="card" #leading>
-      <RarityMark :rarity="card.rarity" />
-      <AttributeMark :attribute="card.cardType" icon-only />
+      <RarityMark :rarity="card.rarity" :runtime-release="runtimeRelease" />
+      <AttributeMark :attribute="card.cardType" :runtime-release="runtimeRelease" icon-only />
     </template>
 
     <LoadingState v-if="pending" />
     <ErrorState v-else-if="error" @retry="emit('retry')" />
-    <DetailLayout v-else-if="card" class="card-detail-surface" :style="{ '--md-comp-detail-accent': accent }">
+    <DetailLayout v-else-if="card" class="card-detail-surface" :style="{ '--md-comp-detail-accent': detailAccent }">
       <template #media>
         <DetailMediaStage v-model="activeMedia" :items="mediaItems" compact />
         <p v-if="activeMediaItem" class="card-detail-surface__media-label">

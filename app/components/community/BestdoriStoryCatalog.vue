@@ -9,6 +9,7 @@ import {
   type BestdoriStoryListItem,
 } from "~/features/community/bestdori/stories";
 import { createBestdoriRarityOptions } from "~/features/community/bestdori/rarity";
+import { bestdoriOrigin } from "~/features/catalog/contentSource";
 
 interface BestdoriCardEpisode {
   scenarioId: string;
@@ -70,13 +71,13 @@ const view = useRouteQueryEnum("view", ["grid", "list"] as const, "grid");
 const storyCollection = useLazyCatalogCollection<BestdoriStoryListItem>(
   `stories/${props.section}`,
   () => !isCardSection.value,
-  "bestdori",
+  bestdoriOrigin("jp"),
 );
-const cardsCollection = useLazyCatalogCollection<BestdoriCard>("cards", isCardSection, "bestdori");
-const charactersCollection = useLazyCatalogCollection<Character>("characters", usesCharacters, "bestdori");
-const bandsCollection = useLazyCatalogCollection<Band>("bands", usesCharacters, "bestdori");
+const cardsCollection = useLazyCatalogCollection<BestdoriCard>("cards", isCardSection, bestdoriOrigin("jp"));
+const charactersCollection = useLazyCatalogCollection<Character>("characters", usesCharacters, bestdoriOrigin("jp"));
+const bandsCollection = useLazyCatalogCollection<Band>("bands", usesCharacters, bestdoriOrigin("jp"));
 const selectedCardRequestId = computed(() => (isCardSection.value ? selectedCardId.value || undefined : undefined));
-const selectedCardRequest = useCatalogSelection<BestdoriCard>("cards", selectedCardRequestId, "bestdori");
+const selectedCardRequest = useCatalogSelection<BestdoriCard>("cards", selectedCardRequestId, bestdoriOrigin("jp"));
 
 const asLocalizedValue = (value: unknown) => value as LocalizedValueInput;
 const displayLocalized = (value: unknown, fallback = ""): DisplayText =>
@@ -387,7 +388,8 @@ watch([isCardSection, () => storyCollection.data.value], () => {
       v-model:story-id="selectedEpisodeId"
       :story-title="playerTitle"
       :story-options="cardEpisodeOptions"
-      catalog-server="bestdori"
+      :catalog-origin="bestdoriOrigin('jp')"
+      catalog-adapter="bestdori"
       @close="closePlayer"
     >
       <template v-if="isCardSection">

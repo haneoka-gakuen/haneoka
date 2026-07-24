@@ -80,7 +80,7 @@ const props = withDefaults(
     autoPlay?: number;
     autoPlayInterval?: AdvAutoPlayInterval;
     textSize?: number;
-    server?: string;
+    releaseServer?: string;
   }>(),
   {
     story: null,
@@ -91,7 +91,7 @@ const props = withDefaults(
     autoPlay: 0,
     autoPlayInterval: 1,
     textSize: 1,
-    server: undefined,
+    releaseServer: undefined,
   },
 );
 
@@ -104,9 +104,9 @@ let howlTalkGeneration = 0;
 let queueId: ReturnType<typeof setTimeout> | null = null;
 
 const activeStory = computed(() => props.storyData ?? props.story);
-const assetServer = computed(() => {
-  const value = props.server || activeStory.value?.assetServer || activeStory.value?.assetServerKey;
-  return typeof value === "string" && value ? value : storyRuntime().defaultAssetServer;
+const resolvedReleaseServer = computed(() => {
+  const value = props.releaseServer;
+  return typeof value === "string" && value ? value : storyRuntime().defaultReleaseServer;
 });
 const runtime = computed(() => mergeAdvRuntime(activeStory.value?.runtime));
 const snippets = shallowRef<TextSnippet[]>([]);
@@ -613,8 +613,8 @@ function characterImage(value: Record<string, unknown> | null | undefined) {
 
 function canonicalResourceUrl(value: unknown, label: string) {
   const url = requireCanonicalStoryResourceUrl(value, label);
-  if (storyRuntime().resourceBelongsToServer(url, assetServer.value)) return url;
-  throw new TypeError(`Story ${label} URL does not belong to asset server ${assetServer.value}: ${url}`);
+  if (storyRuntime().resourceBelongsToRelease(url, resolvedReleaseServer.value)) return url;
+  throw new TypeError(`Story ${label} URL does not belong to release ${resolvedReleaseServer.value}: ${url}`);
 }
 
 function parseDialogueUsername(value: string) {

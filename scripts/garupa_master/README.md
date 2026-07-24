@@ -53,6 +53,10 @@ to Git. Server-reported client, data, and Master versions remain diagnostic
 fields inside the archived response only; they are not compatibility gates.
 There is no manual review or fallback path.
 
+Publishing uses an explicit `R2_BUCKET` setting for the shared object store.
+That storage setting is independent of both an Our Notes release ID and the
+Garupa Master `jp` server namespace.
+
 R2 layout:
 
 ```text

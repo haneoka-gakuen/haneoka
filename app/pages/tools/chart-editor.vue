@@ -12,6 +12,13 @@ import { CHART_PLAYER_SETTING_LIMITS, useChartPlayerSettings } from "~/composabl
 import type { Band, Song, SongDifficulty } from "~/types/archive";
 import { textOf } from "~/types/displayText";
 import type { ChartEditorTool, EditorPointDraft } from "~/composables/useChartEditorWorkspace";
+import {
+  bestdoriOrigin,
+  contentOriginKey,
+  ourNotesReleaseOrigin,
+  runtimeReleaseForCatalogOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 
 type PreviewResizeAxis = "x" | "y";
 type PreviewMode = "chart" | "watch" | "play";
@@ -87,15 +94,24 @@ let previewResizeState: PreviewResizeState | undefined;
 
 const editor = useChartEditorWorkspace();
 const { resolveLocalized } = useLocale();
-const { assetServer, assetUrl } = useAssetServer();
-const catalogServer = computed(() => (catalogSource.value === "bestdori" ? "bestdori" : assetServer.value));
-const songRequest = useLazyCatalogCollection<Song>("songs", catalogPickerOpen, catalogServer);
-const bandRequest = useLazyCatalogCollection<Band>("bands", catalogPickerOpen, catalogServer);
+const { releaseServer, assetUrl } = useReleaseServer();
+const catalogOrigin = computed<CatalogContentOrigin>(() =>
+  catalogSource.value === "bestdori" ? bestdoriOrigin("jp") : ourNotesReleaseOrigin(releaseServer.value),
+);
+// Bestdori supplies charts, not Our Notes runtime artwork. Keep its renderer
+// fallback explicit instead of treating the Bestdori region as a release.
+const chartRuntimeRelease = computed(() => runtimeReleaseForCatalogOrigin(catalogOrigin.value, releaseServer.value));
+const songRequest = useLazyCatalogCollection<Song>("songs", catalogPickerOpen, catalogOrigin);
+const bandRequest = useLazyCatalogCollection<Band>("bands", catalogPickerOpen, catalogOrigin);
 const catalogSongs = computed(() => recordValues(songRequest.data.value));
 const catalogBands = computed(() => recordValues(bandRequest.data.value));
 const catalogPending = computed(() => songRequest.pending.value);
 const catalogError = computed(() => songRequest.error.value);
-const { assets: chartAssets, error: chartAssetsError, refresh: refreshChartAssets } = useOurNotesRuntimeAssets();
+const {
+  assets: chartAssets,
+  error: chartAssetsError,
+  refresh: refreshChartAssets,
+} = useOurNotesRuntimeAssets(chartRuntimeRelease);
 const {
   project,
   chart,
@@ -359,7 +375,7 @@ const createNewProject = async () => {
 const difficultyName = difficultyNameOf;
 const difficultyLevel = (difficulty: SongDifficulty) =>
   Math.trunc(Number(difficulty.displayLevel ?? difficulty.playLevel ?? 0)) || undefined;
-const audioFilename = (song: Song, catalogServer: string) => {
+const audioFilename = (song: Song, origin: CatalogContentOrigin) => {
   const url = String(song.musicUrl || "");
   const pathname = (() => {
     try {
@@ -370,12 +386,12 @@ const audioFilename = (song: Song, catalogServer: string) => {
   })();
   const name = decodeURIComponent(pathname.split("/").at(-1) || "");
   if (/\.[a-z0-9]{2,5}$/i.test(name)) return name;
-  return catalogServer === "bestdori" ? `${name || song.musicId}.mp3` : name || `${song.musicId}.audio`;
+  return origin.provider === "bestdori" ? `${name || song.musicId}.mp3` : name || `${song.musicId}.audio`;
 };
 
-const catalogResourceUrl = (value: unknown, catalogServer: string): string => {
+const catalogResourceUrl = (value: unknown, origin: CatalogContentOrigin): string => {
   const url = String(value || "");
-  return catalogServer === "bestdori" ? url : assetUrl(url, catalogServer);
+  return origin.provider === "bestdori" ? url : assetUrl(url, origin.releaseId);
 };
 
 const openCatalogPicker = () => {
@@ -383,7 +399,7 @@ const openCatalogPicker = () => {
 };
 
 const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => {
-  const { catalogServer, song, band, chart: includeChart, audio: includeAudio } = selection;
+  const { origin, song, band, chart: includeChart, audio: includeAudio } = selection;
   const difficulty = selection.difficulty === undefined ? undefined : song.difficulty?.[selection.difficulty];
   if (includeChart && (!difficulty?.file || selection.difficulty === undefined)) return;
   if (includeAudio && !song.musicUrl) return;
@@ -394,7 +410,7 @@ const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => 
   );
   const artist = textOf(resolveLocalized(band?.bandName, { sourceHint: "ja", fallback: "" }));
   const level = difficulty ? difficultyLevel(difficulty) : undefined;
-  const source = `catalog:${catalogServer}:${song.musicId}${selection.difficulty === undefined ? "" : `:${selection.difficulty}`}`;
+  const source = `catalog:${contentOriginKey(origin)}:${song.musicId}${selection.difficulty === undefined ? "" : `:${selection.difficulty}`}`;
   catalogPickerOpen.value = false;
 
   try {
@@ -402,8 +418,8 @@ const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => 
       ...(includeChart && difficulty?.file
         ? {
             chart: {
-              url: catalogResourceUrl(difficulty.file, catalogServer),
-              name: `${song.musicId}-${selection.difficulty}.${catalogServer === "bestdori" ? "ss" : "json"}`,
+              url: catalogResourceUrl(difficulty.file, origin),
+              name: `${song.musicId}-${selection.difficulty}.${origin.provider === "bestdori" ? "ss" : "json"}`,
               metadata: {
                 title,
                 artist,
@@ -411,7 +427,7 @@ const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => 
                 level: level === undefined ? "" : String(level),
                 source,
                 extra: {
-                  catalogServer,
+                  origin,
                   musicId: song.musicId,
                   difficulty: selection.difficulty!,
                 },
@@ -422,8 +438,8 @@ const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => 
       ...(includeAudio && song.musicUrl
         ? {
             audio: {
-              url: catalogResourceUrl(song.musicUrl, catalogServer),
-              name: audioFilename(song, catalogServer),
+              url: catalogResourceUrl(song.musicUrl, origin),
+              name: audioFilename(song, origin),
             },
           }
         : {}),
@@ -640,6 +656,7 @@ useSeoMeta({
                 :playing="playing"
                 :audio-available="Boolean(audioUrl)"
                 :duration-seconds="audioDuration"
+                :runtime-release="chartRuntimeRelease"
                 :bgm-offset-ms="project.audioOffset * 1000"
                 @toggle-playback="togglePlayback"
                 @seek="seekEditor"
@@ -794,7 +811,7 @@ useSeoMeta({
     <ChartEditorCatalogPicker
       v-model="catalogPickerOpen"
       v-model:source="catalogSource"
-      :current-server="assetServer"
+      :current-release="releaseServer"
       :songs="catalogSongs"
       :bands="catalogBands"
       :pending="catalogPending"

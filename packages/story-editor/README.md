@@ -30,11 +30,11 @@ The root entry additionally exports draft-conflict helpers. Deep entry points ex
 
 ## Formats
 
-| Format                     | Import | Export | Notes                                                                                            |
-| -------------------------- | ------ | ------ | ------------------------------------------------------------------------------------------------ |
-| Haneoka Project JSON       | Yes    | Yes    | Complete canonical editing format, including explicit codec extensions                           |
-| Normalized ADV story JSON  | Yes    | Yes    | Open object shape consumed by `@haneoka/story`                                                   |
-| Original ADV Episode table | Yes    | Yes    | Preserves source rows, header presence, indexes, and unknown fields                              |
+| Format                     | Import | Export | Notes                                                                                               |
+| -------------------------- | ------ | ------ | --------------------------------------------------------------------------------------------------- |
+| Haneoka Project JSON       | Yes    | Yes    | Complete canonical editing format, including explicit codec extensions                              |
+| Normalized ADV story JSON  | Yes    | Yes    | Open object shape consumed by `@haneoka/story`                                                      |
+| Original ADV Episode table | Yes    | Yes    | Preserves source rows, header presence, indexes, and unknown fields                                 |
 | WebGAL scene text          | Yes    | Yes    | Representable statements are mapped; diagnostics describe approximations and unsupported statements |
 
 WebGAL export can emit plain text or add `@haneoka-lossless` comments. A plain export should be used for interchange with WebGAL; lossless metadata should be used when the same file must return to Haneoka without losing native-only commands.
@@ -49,7 +49,7 @@ import {
   serializeStoryProjectJson,
 } from "@haneoka/story-editor";
 
-const imported = importAdvStoryJson(sourceJson, { assetServer: "jp-cbt" });
+const imported = importAdvStoryJson(sourceJson, { releaseServer: "jp-cbt" });
 const scene = imported.project.scenes[0];
 
 scene?.commands.push(

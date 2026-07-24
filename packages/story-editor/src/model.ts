@@ -1,4 +1,9 @@
-export const STORY_PROJECT_VERSION = 1 as const;
+/**
+ * Version 2 names the Our Notes release which supplied project resources
+ * explicitly. Version 1 projects used the ambiguous `assetServer` key and
+ * are deliberately not accepted by this schema.
+ */
+export const STORY_PROJECT_VERSION = 2 as const;
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
@@ -41,7 +46,8 @@ export interface StoryProjectMeta {
   title: string;
   description?: string;
   locale?: string;
-  assetServer?: string;
+  /** Our Notes release used to resolve this project's resource snapshot. */
+  releaseServer?: string;
   tags?: string[];
   provenance?: JsonObject;
   extra?: JsonObject;
@@ -108,7 +114,7 @@ export const createEmptyStoryProject = (meta: Partial<StoryProjectMeta> = {}): S
     title: meta.title ?? "",
     ...(meta.description === undefined ? {} : { description: meta.description }),
     ...(meta.locale === undefined ? {} : { locale: meta.locale }),
-    ...(meta.assetServer === undefined ? {} : { assetServer: meta.assetServer }),
+    ...(meta.releaseServer === undefined ? {} : { releaseServer: meta.releaseServer }),
     ...(meta.tags === undefined ? {} : { tags: [...meta.tags] }),
     ...(meta.provenance === undefined ? {} : { provenance: cloneStoryValue(meta.provenance) }),
     ...(meta.extra === undefined ? {} : { extra: cloneStoryValue(meta.extra) }),

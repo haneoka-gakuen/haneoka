@@ -217,7 +217,7 @@ interface ReadAtRow {
 }
 
 interface PreferenceDatabaseRow {
-  assetServer: string | null;
+  releaseServer: string | null;
   locale: string | null;
   settings: string | null;
   updatedAt: number;
@@ -225,7 +225,7 @@ interface PreferenceDatabaseRow {
 }
 
 interface PreferenceResponse {
-  assetServer: string | null;
+  releaseServer: string | null;
   locale: string | null;
   settings: JsonValue;
   updatedAt: number;
@@ -2568,7 +2568,7 @@ const markAllNotificationsRead = async (request: Request, env: Env): Promise<Res
 
 const readPreferences = async (request: Request, env: Env, userId: string): Promise<Response> => {
   const value = await env.DB.prepare(
-    `SELECT locale, asset_server AS assetServer, settings_json AS settings, version, updated_at AS updatedAt
+    `SELECT locale, release_server AS releaseServer, settings_json AS settings, version, updated_at AS updatedAt
      FROM user_preference WHERE user_id = ?`,
   )
     .bind(userId)
@@ -2597,28 +2597,28 @@ const preferences = async (request: Request, env: Env): Promise<Response> => {
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
   const locale = typeof payload.value.locale === "string" ? payload.value.locale : null;
-  const assetServer = typeof payload.value.assetServer === "string" ? payload.value.assetServer.trim() : null;
+  const releaseServer = typeof payload.value.releaseServer === "string" ? payload.value.releaseServer.trim() : null;
   const settings = payload.value.settings == null ? null : JSON.stringify(payload.value.settings);
   if (locale && !ALLOWED_LOCALES.has(locale)) return error(request, 422, "invalid_locale", "Unsupported locale");
-  if (assetServer && !/^[a-z0-9][a-z0-9-]{0,31}$/i.test(assetServer)) {
-    return error(request, 422, "invalid_asset_server", "Invalid asset server identifier");
+  if (releaseServer && !/^[a-z0-9][a-z0-9-]{0,31}$/i.test(releaseServer)) {
+    return error(request, 422, "invalid_release_server", "Invalid release server identifier");
   }
   if (settings && new TextEncoder().encode(settings).byteLength > 16 * 1024) {
     return error(request, 422, "settings_too_large", "Settings exceed 16 KiB");
   }
   const now = Date.now();
   const result = await env.DB.prepare(
-    `INSERT INTO user_preference (user_id, locale, asset_server, settings_json, version, updated_at)
+    `INSERT INTO user_preference (user_id, locale, release_server, settings_json, version, updated_at)
      SELECT ?, ?, ?, ?, 1, ?
      WHERE ${activeSessionProfileWhere}
      ON CONFLICT(user_id) DO UPDATE SET
        locale = excluded.locale,
-       asset_server = excluded.asset_server,
+       release_server = excluded.release_server,
        settings_json = excluded.settings_json,
        version = user_preference.version + 1,
        updated_at = excluded.updated_at`,
   )
-    .bind(session.user.id, locale, assetServer, settings, now, session.user.id)
+    .bind(session.user.id, locale, releaseServer, settings, now, session.user.id)
     .run();
   if (!result.meta.changes) {
     return error(request, 403, "account_deleted", "This account cannot write to the community");
