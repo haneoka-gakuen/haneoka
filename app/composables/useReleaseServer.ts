@@ -106,10 +106,15 @@ const applyRuntimeBackgrounds = (value: string) => {
   );
 };
 
-const applyReleaseServerToDocument = (value: string) => {
-  if (appliedReleaseServer === value || !import.meta.client) return;
+const applyReleaseServerToDocument = (value: string, persist = true) => {
+  if (!import.meta.client) return;
+  // A stored release can be valid even when it is absent from the initial
+  // build-time bootstrap list. Do not replace that preference until the
+  // authoritative registry has settled, but do apply its visual namespace
+  // while the registry request is in flight.
+  if (persist) persistReleaseServer(value);
+  if (appliedReleaseServer === value) return;
   appliedReleaseServer = value;
-  persistReleaseServer(value);
   document.documentElement.dataset.releaseServer = value;
   if (backgroundLoadTimer) window.clearTimeout(backgroundLoadTimer);
 
@@ -155,6 +160,10 @@ export const useReleaseServer = () => {
     return configured.length ? configured : releaseServers.value;
   });
   const releaseServer = useState<string>("release-server", () => defaultRelease);
+  // Keep the user's requested release separate from the effective bootstrap
+  // fallback. Otherwise an active stored release is overwritten before the
+  // API registry has a chance to confirm it.
+  const preferredReleaseServer = useState<string | null>("release-server-preference", () => null);
   const ready = useState("release-server-ready", () => false);
 
   const refreshReleaseRegistry = async () => {
@@ -212,19 +221,44 @@ export const useReleaseServer = () => {
   }
 
   if (import.meta.client && !ready.value) {
-    releaseServer.value = resolveReleaseServer(readStoredReleaseServer(), releaseServers.value, defaultRelease);
+    const storedRelease = String(readStoredReleaseServer() || "").trim();
+    preferredReleaseServer.value = storedRelease || defaultRelease;
+    // Treat a persisted selection as provisionally valid until the registry
+    // confirms or rejects it. This avoids replacing a future active release
+    // with the bootstrap default during initial load.
+    releaseServer.value = preferredReleaseServer.value;
     ready.value = true;
   }
 
   watch(
-    [releaseServer, releaseServers],
-    ([value, available]) => {
-      const resolved = resolveReleaseServer(value, available, defaultRelease);
+    [releaseServer, releaseServers, preferredReleaseServer, releaseRegistryPending, releaseRegistryLoaded],
+    ([value, available, preferred, registryPending, registryLoaded]) => {
+      const requested = preferred || value || defaultRelease;
+      if (!registryLoaded && registryPending) {
+        if (value !== requested) {
+          releaseServer.value = requested;
+          return;
+        }
+        // Keep the persisted value intact until the active registry says
+        // whether it is valid. Assets still use the provisional namespace.
+        applyReleaseServerToDocument(requested, false);
+        return;
+      }
+
+      const resolved = resolveReleaseServer(requested, available, defaultRelease);
       if (resolved !== value) {
         releaseServer.value = resolved;
         return;
       }
-      applyReleaseServerToDocument(resolved);
+      if (registryLoaded && preferred !== resolved) {
+        // The registry is authoritative: normalize a retired/unknown stored
+        // value to the selected active release from this point onward.
+        preferredReleaseServer.value = resolved;
+        return;
+      }
+      // When the registry request fails, retain the saved preference for a
+      // later retry while safely rendering from the bootstrap fallback now.
+      applyReleaseServerToDocument(resolved, registryLoaded);
     },
     { immediate: true },
   );
@@ -233,7 +267,12 @@ export const useReleaseServer = () => {
   const runtimeRoot = computed(() => runtimeRootForRelease(releaseServer.value));
   const assetUrl = (value: unknown, server: unknown = releaseServer.value) => releaseResourceUrl(value, server);
   const setReleaseServer = (value: unknown) => {
-    releaseServer.value = resolveReleaseServer(value, releaseServers.value, defaultRelease);
+    const requested = String(value || "").trim() || defaultRelease;
+    preferredReleaseServer.value = requested;
+    releaseServer.value =
+      !releaseRegistryLoaded.value && releaseRegistryPending.value
+        ? requested
+        : resolveReleaseServer(requested, releaseServers.value, defaultRelease);
   };
 
   return {

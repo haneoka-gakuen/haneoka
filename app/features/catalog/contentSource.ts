@@ -78,10 +78,10 @@ export const contentOriginKey = (origin: ContentOrigin): string => {
   return "community:user-upload";
 };
 
-/** A compact, unambiguous label for provenance in UI and exported metadata. */
+/** A user-facing source brand. Internal release/region identifiers stay out of UI labels. */
 export const contentOriginLabel = (origin: ContentOrigin): string => {
-  if (origin.provider === "release") return `Our Notes · ${origin.releaseId}`;
-  if (origin.provider === "bestdori") return `Bestdori · ${origin.region.toLocaleUpperCase()}`;
+  if (origin.provider === "release") return "Our Notes";
+  if (origin.provider === "bestdori") return "Bestdori";
   return "Community upload";
 };
 

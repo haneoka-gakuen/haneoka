@@ -2,6 +2,8 @@ import type { ContentOrigin, GarupaMasterOrigin } from "~/features/catalog/conte
 
 export type GarupaPlaylistKind = "game" | "system";
 export type GarupaPlaylistSource = "band" | "stage-challenge";
+/** The catalogue family that owns a band playlist's presentation. */
+export type PlaylistBandGroup = "our-notes" | "bestdori";
 
 /**
  * The exact asset reference emitted by the immutable
@@ -99,6 +101,8 @@ export interface ResolvedPlaylist extends Omit<GarupaPlaylist, "tracks"> {
   titleText: import("~/types/displayText").DisplayText;
   thumbnail?: string;
   filterVisual?: import("~/types/compositeVisual").CompositeEntityVisual;
+  /** Present for band playlists; stage challenges do not belong to a band group. */
+  bandGroup?: PlaylistBandGroup;
   bandKeys: string[];
   tracks: ResolvedPlaylistTrack[];
 }

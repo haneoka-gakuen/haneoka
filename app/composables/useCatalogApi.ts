@@ -271,6 +271,76 @@ export const useCatalogCollection = <T>(
   });
 };
 
+/** One immutable catalog collection for each concrete content origin. */
+export interface CatalogCollectionSource<T> {
+  readonly origin: CatalogContentOrigin;
+  readonly records: Record<string, T>;
+}
+
+/**
+ * Fetch a collection from a reactive set of origins.
+ *
+ * This is intentionally separate from `useCatalogCollection`: callers that
+ * need a cross-release view (currently Garupa playlist resolution) must keep
+ * each origin attached to its records instead of flattening data from
+ * different games or releases into one ambiguous map. Failed optional origins
+ * are omitted so one unavailable release does not prevent the remaining
+ * sources from participating in the fallback chain.
+ */
+export const useCatalogCollectionSet = <T>(
+  resource: MaybeRefOrGetter<string>,
+  origins: MaybeRefOrGetter<readonly CatalogContentOrigin[]>,
+  key: string,
+) => {
+  const config = useRuntimeConfig();
+  const { locale } = useLocale();
+  const uniqueOrigins = computed<CatalogContentOrigin[]>(() => {
+    const byKey = new Map<string, CatalogContentOrigin>();
+    for (const origin of toValue(origins)) {
+      const originKey = contentOriginKey(origin);
+      if (!byKey.has(originKey)) byKey.set(originKey, origin);
+    }
+    return [...byKey.values()];
+  });
+  const signature = computed(() =>
+    [
+      toValue(resource),
+      ...uniqueOrigins.value.map(
+        (origin) =>
+          `${contentOriginKey(origin)}${isBestdoriOrigin(origin) ? `?${locale.value}:${BESTDORI_CATALOG_VERSION}` : ""}`,
+      ),
+    ].join("|"),
+  );
+
+  return useAsyncData<CatalogCollectionSource<T>[]>(
+    key,
+    async () => {
+      const path = toValue(resource);
+      const results = await Promise.allSettled(
+        uniqueOrigins.value.map(async (origin): Promise<CatalogCollectionSource<T>> => {
+          const query = isBestdoriOrigin(origin)
+            ? `lang=${encodeURIComponent(locale.value)}&v=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}`
+            : "";
+          const url = appendCatalogQuery(catalogApiUrl(config.public.apiBase, origin, path), query);
+          return { origin, records: await catalogJson<Record<string, T>>(url) };
+        }),
+      );
+      const collections = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+      if (!collections.length && results.length) {
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") throw failed.reason;
+      }
+      return collections;
+    },
+    {
+      deep: false,
+      server: false,
+      default: () => [],
+      watch: [signature],
+    },
+  );
+};
+
 export const useCatalogRecord = <T>(
   resource: string,
   id: MaybeRefOrGetter<string>,
