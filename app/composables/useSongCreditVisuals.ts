@@ -2,7 +2,11 @@ import { toValue, type MaybeRefOrGetter } from "vue";
 
 import type { Band, Character, Song } from "~/types/archive";
 import { createSongCreditVisualResolver, type SongCreditVisualVariant } from "~/features/catalog/songCreditVisuals";
-import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import {
+  contentLocaleForOrigin,
+  ourNotesReleaseOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 
 /**
  * Credit entities are loaded from one exact origin. Passing the origin is
@@ -10,7 +14,8 @@ import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/cat
  * Our Notes release, never a fictional `bestdori` server.
  */
 export const useSongCreditVisualResolver = (origin?: MaybeRefOrGetter<CatalogContentOrigin | undefined>) => {
-  const { releaseServer } = useReleaseServer();
+  const { releaseServer, releases } = useReleaseServer();
+  const { locale } = useLocale();
   const resolvedOrigin = computed<CatalogContentOrigin>(() => {
     const requested = origin === undefined ? undefined : toValue(origin);
     return requested || ourNotesReleaseOrigin(releaseServer.value);
@@ -20,9 +25,11 @@ export const useSongCreditVisualResolver = (origin?: MaybeRefOrGetter<CatalogCon
 
   return computed(() =>
     createSongCreditVisualResolver({
+      requestedLocale: locale.value,
       sources: [
         {
           origin: resolvedOrigin.value,
+          sourceLocale: contentLocaleForOrigin(resolvedOrigin.value, releases.value),
           bands: recordValues(bands.data.value),
           characters: recordValues(characters.data.value),
         },

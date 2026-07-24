@@ -6,6 +6,7 @@ import type { DetailHeaderIconItem } from "~/components/detail/types";
 import { songTypeDefinition } from "~/config/songTypes";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
 import {
+  contentLocaleForOrigin,
   contentOriginLabel,
   runtimeReleaseForCatalogOrigin,
   type CatalogContentOrigin,
@@ -38,7 +39,8 @@ const emit = defineEmits<{
 }>();
 
 const { resolveLocalized, formatDate, locale, t } = useLocale();
-const { releaseServer } = useReleaseServer();
+const { releaseServer, releases } = useReleaseServer();
+const sourceLocale = computed(() => contentLocaleForOrigin(props.origin, releases.value));
 const { pause: pauseGlobalAudio } = useAudioPlayer();
 const selectedVideo = useRouteQueryInteger("mv", 0, { min: 0 });
 const bandVisuals = useSongCreditVisuals(
@@ -121,7 +123,7 @@ const videoItems = computed(() => {
       url: video.playableUrl || "",
       label:
         resolveLocalized(video.title, {
-          sourceHint: "ja",
+          sourceHint: sourceLocale.value,
           fallback: values.length > 1 ? `MV ${index + 1}` : "MV",
         }) || "MV",
       type: video.type || "video/mp4",
@@ -198,19 +200,19 @@ const facts = computed(() => {
     {
       key: "composer",
       label: t("composer"),
-      value: resolveLocalized(props.song.composer, { sourceHint: "ja" }),
+      value: resolveLocalized(props.song.composer, { sourceHint: sourceLocale.value }),
       wrap: true,
     },
     {
       key: "lyrics",
       label: t("lyrics"),
-      value: resolveLocalized(props.song.lyricist, { sourceHint: "ja" }),
+      value: resolveLocalized(props.song.lyricist, { sourceHint: sourceLocale.value }),
       wrap: true,
     },
     {
       key: "arrangement",
       label: t("arrangement"),
-      value: resolveLocalized(props.song.arranger, { sourceHint: "ja" }),
+      value: resolveLocalized(props.song.arranger, { sourceHint: sourceLocale.value }),
       wrap: true,
     },
     { key: "release", label: t("release"), value: publishedAt.value, numeric: true },
@@ -263,7 +265,7 @@ const scoreRewardItems = computed(() =>
         rank,
         name:
           resolveLocalized(reward.resolved?.name, {
-            sourceHint: "ja",
+            sourceHint: sourceLocale.value,
             fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
           }) || "—",
         image: reward.resolved?.image,
@@ -287,7 +289,7 @@ const comboRewardItems = computed(() =>
       percentage: percentage === 100 ? "FULL" : percentage ? `${percentage}%` : "",
       name:
         resolveLocalized(reward.resolved?.name, {
-          sourceHint: "ja",
+          sourceHint: sourceLocale.value,
           fallback: reward.resourceTypeName || `${reward.resourceType}:${reward.resourceId}`,
         }) || "—",
       image: reward.resolved?.image,

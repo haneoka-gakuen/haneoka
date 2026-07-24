@@ -108,6 +108,15 @@ body {
   font-family: var(--md-ref-typeface-plain);
 }
 
+/*
+ * Localized content may also carry a component typography rule whose font
+ * token was resolved in the document locale. Keep the content language
+ * authoritative after those component rules are applied.
+ */
+:root .localized-text[lang] {
+  font-family: var(--md-ref-typeface-plain);
+}
+
 button,
 input,
 select,

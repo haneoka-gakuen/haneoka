@@ -1,6 +1,6 @@
 import type { Band, Character, Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
-import { resolveArchiveValue } from "~/i18n/locales";
+import { localizeArchiveValue, resolveArchiveValue, type ArchiveLocale } from "~/i18n/locales";
 import { contributingSongBandIds, uniqueSongCreditIds } from "~/features/catalog/songCredits";
 import { contentOriginKey, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { runtimeRootForRelease } from "~/composables/useReleaseServer";
@@ -12,11 +12,14 @@ export type SongCreditVisualVariant = "logo" | "icon";
 /** The exact catalog that supplied the entities used to render a credit. */
 export interface SongCreditCatalogSource {
   readonly origin: CatalogContentOrigin;
+  /** Language of plain strings already projected by this exact catalog. */
+  readonly sourceLocale?: ArchiveLocale | null;
   readonly bands: readonly Band[];
   readonly characters: readonly Character[];
 }
 
 export interface SongCreditCatalogs {
+  readonly requestedLocale: ArchiveLocale;
   readonly sources: readonly SongCreditCatalogSource[];
 }
 
@@ -47,13 +50,7 @@ const identityKey = (value: unknown): string =>
     .toLocaleLowerCase("ja")
     .replace(/[\p{P}\p{S}\s]+/gu, "");
 
-const japaneseDisplayText = (value: Parameters<typeof resolveArchiveValue>[0], fallback = ""): DisplayText =>
-  resolveArchiveValue(value, "ja", {
-    sourceHint: "ja",
-    fallback,
-    fallbackSourceHint: "ja",
-  }) || fallback;
-const japaneseText = (value: Parameters<typeof resolveArchiveValue>[0]): string => textOf(japaneseDisplayText(value));
+const japaneseText = (value: Parameters<typeof localizeArchiveValue>[0]): string => localizeArchiveValue(value, "ja");
 const localizedAliases = (value: unknown): string[] => {
   const values =
     typeof value === "string"
@@ -88,8 +85,23 @@ const uniqueImages = (...values: Array<string | null | undefined>): string[] => 
   ...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
 ];
 const fallbackText = (value: string) => entityAvatarText(value, { cjkLength: 4 });
-const memberVisual = (name: string): CompositeEntityVisual => {
-  const label = japaneseDisplayText(name);
+const displayText = (
+  value: Parameters<typeof resolveArchiveValue>[0],
+  requestedLocale: ArchiveLocale,
+  sourceLocale: ArchiveLocale | null | undefined,
+  fallback = "",
+): DisplayText =>
+  resolveArchiveValue(value, requestedLocale, {
+    sourceHint: sourceLocale,
+    fallback,
+    fallbackSourceHint: sourceLocale,
+  }) || fallback;
+const memberVisual = (
+  name: string,
+  requestedLocale: ArchiveLocale,
+  sourceLocale: ArchiveLocale | null | undefined,
+): CompositeEntityVisual => {
+  const label = displayText(name, requestedLocale, sourceLocale);
   return {
     text: fallbackText(textOf(label)),
     lang: langOf(label),
@@ -98,7 +110,11 @@ const memberVisual = (name: string): CompositeEntityVisual => {
   };
 };
 
-const emptyCatalog = { bands: [], characters: [] } as const satisfies Omit<SongCreditCatalogSource, "origin">;
+const emptyCatalog = {
+  sourceLocale: null,
+  bands: [],
+  characters: [],
+} as const satisfies Omit<SongCreditCatalogSource, "origin">;
 
 /**
  * Resolves credits only against the catalog identified by the supplied
@@ -124,7 +140,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
       variant === "icon"
         ? uniqueImages(source.icon, catalogBandLogo(source, origin), source.logo)
         : uniqueImages(catalogBandLogo(source, origin), source.icon, source.logo);
-    const label = japaneseDisplayText(source.bandName);
+    const label = displayText(source.bandName, catalogs.requestedLocale, catalogFor(origin).sourceLocale);
     return {
       image: imageCandidates[0],
       imageCandidates,
@@ -142,7 +158,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
     variant: SongCreditVisualVariant = "icon",
   ): CompositeEntityVisual => {
     const imageCandidates = uniqueImages(source.faceImage, source.thumbnailImage, source.profileImage);
-    const label = japaneseDisplayText(source.characterName);
+    const label = displayText(source.characterName, catalogs.requestedLocale, catalogFor(_origin).sourceLocale);
     return {
       image: imageCandidates[0],
       imageCandidates,
@@ -214,7 +230,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
             const key = localizedAliases(name)[0];
             if (!key || seenNames.has(key)) return [];
             seenNames.add(key);
-            return [memberVisual(name)];
+            return [memberVisual(name, catalogs.requestedLocale, catalogFor(origin).sourceLocale)];
           })
         : []),
     ];
@@ -253,7 +269,7 @@ export const createSongCreditVisualResolver = (catalogs: SongCreditCatalogs): So
             const key = localizedAliases(name)[0];
             if (!key || seenNames.has(key)) return [];
             seenNames.add(key);
-            return [memberVisual(name)];
+            return [memberVisual(name, catalogs.requestedLocale, catalogFor(origin).sourceLocale)];
           })
         : []),
     ];

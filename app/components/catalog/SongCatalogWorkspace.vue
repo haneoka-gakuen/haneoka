@@ -3,6 +3,7 @@ import { MaterialIcon, UiIconButton } from "@haneoka/ui";
 
 import type { Band, Character, Song, SongDifficulty, SongMetaByDifficulty, SongMetaChart } from "~/types/archive";
 import {
+  contentLocaleForOrigin,
   ourNotesReleaseOrigin,
   runtimeReleaseForCatalogOrigin,
   sameContentOrigin,
@@ -47,10 +48,11 @@ const screenDomain = computed(() => sourceProfile.value.domain);
 const { localize, resolveLocalized, locale, t, compareText } = useLocale();
 const route = useRoute();
 useSeoMeta({ title: () => `${t(screenTitleKey.value)} · haneoka` });
-const { assetRoot, assetUrl, releaseServer } = useReleaseServer();
+const { assetRoot, assetUrl, releaseServer, releases } = useReleaseServer();
 const catalogOrigin = computed<CatalogContentOrigin>(
   () => sourceProfile.value.catalogOrigin || ourNotesReleaseOrigin(releaseServer.value),
 );
+const sourceLocaleForOrigin = (origin: CatalogContentOrigin) => contentLocaleForOrigin(origin, releases.value);
 const { playQueue, playSong } = useAudioPlayer();
 const { ready: coverMemoryReady, rememberScroll, scrollPosition } = useWorkspaceMemory();
 const { data: songRecord, pending, error, refresh } = useCatalogCollection<Song>("songs", catalogOrigin);
@@ -152,24 +154,25 @@ const creditLabelOf = (song: Song): string => {
 
 const titleOf = (song: Song) => localize(song.musicTitle) || String(song.musicId);
 const bandOf = (song: Song) => creditLabelOf(song) || localize(bandMap.value.get(song.bandId || 0)?.bandName);
-const displayTitleOf = (song: Song) =>
+const displayTitleOf = (song: Song, origin: CatalogContentOrigin = catalogOrigin.value) =>
   resolveLocalized(song.musicTitle, {
-    sourceHint: "ja",
+    sourceHint: sourceLocaleForOrigin(origin),
     fallback: String(song.musicId),
   }) || titleOf(song);
-const displayBandOf = (song: Song) => {
+const displayBandOf = (song: Song, origin: CatalogContentOrigin = catalogOrigin.value) => {
+  const sourceLocale = sourceLocaleForOrigin(origin);
   const authored = resolveLocalized(song.artistName, {
-    sourceHint: "ja",
+    sourceHint: sourceLocale,
     fallback: creditLabelOf(song),
-    fallbackSourceHint: "ja",
+    fallbackSourceHint: sourceLocale,
   });
   if (authored) return authored;
   const band = bandMap.value.get(song.bandId || 0);
   return (
     resolveLocalized(band?.bandName, {
-      sourceHint: "ja",
+      sourceHint: sourceLocale,
       fallback: bandOf(song),
-      fallbackSourceHint: "ja",
+      fallbackSourceHint: sourceLocale,
     }) || bandOf(song)
   );
 };
@@ -510,8 +513,8 @@ const selectChartDifficultyValue = (value: string | number) => {
 const playFromCollection = async (song: Song, origin: CatalogContentOrigin = catalogOrigin.value) => {
   await playSong(
     song,
-    displayTitleOf(song),
-    displayBandOf(song),
+    displayTitleOf(song, origin),
+    displayBandOf(song, origin),
     bandIconOf(song),
     Number(song.bandId || 0),
     creditVisualsFor(song, origin),
@@ -546,7 +549,10 @@ const bandOptions = computed(() => {
   const formalOptions = formalBands.map((band) => {
     const visuals = creditResolver.value.bandCredit(band, catalogOrigin.value, "icon");
     const label =
-      resolveLocalized(band.bandName, { sourceHint: "ja", fallback: String(band.bandId) }) || String(band.bandId);
+      resolveLocalized(band.bandName, {
+        sourceHint: sourceLocaleForOrigin(catalogOrigin.value),
+        fallback: String(band.bandId),
+      }) || String(band.bandId);
     return {
       value: String(band.bandId),
       label,
@@ -572,7 +578,7 @@ const bandOptions = computed(() => {
       value,
       label:
         resolveLocalized(band.bandName, {
-          sourceHint: "ja",
+          sourceHint: sourceLocaleForOrigin(catalogOrigin.value),
           fallback: String(band.bandId),
         }) || String(band.bandId),
       color: band.color,
@@ -776,8 +782,8 @@ const setTableSort = (value: string) => {
           v-model:difficulty="selectedDifficulty"
           :open="detailOpen"
           :song="detailSong"
-          :title="displayTitleOf(detailSong)"
-          :band-name="displayBandOf(detailSong)"
+          :title="displayTitleOf(detailSong, detailOrigin)"
+          :band-name="displayBandOf(detailSong, detailOrigin)"
           :origin="detailOrigin"
           :meta="selectedMeta"
           :hide-sonolus="sourceProfile.hideSonolus"
@@ -793,7 +799,7 @@ const setTableSort = (value: string) => {
         v-if="chartLayerMounted && detailSong && renderedChartDifficulty !== undefined"
         v-model:mode="chartRuntimeMode"
         :open="chartOpen"
-        :title="displayTitleOf(detailSong)"
+        :title="displayTitleOf(detailSong, detailOrigin)"
         :difficulty="renderedChartDifficulty"
         :difficulty-options="chartDifficultyOptions"
         @update:difficulty="selectChartDifficultyValue"

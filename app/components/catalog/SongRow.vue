@@ -5,7 +5,12 @@ import type { Song, SongDifficulty, SongMetaChart } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
-import { runtimeReleaseForCatalogOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import {
+  contentLocaleForOrigin,
+  ourNotesReleaseOrigin,
+  runtimeReleaseForCatalogOrigin,
+  type CatalogContentOrigin,
+} from "~/features/catalog/contentSource";
 
 const props = defineProps<{
   song: Song;
@@ -29,7 +34,11 @@ const emit = defineEmits<{
   difficulty: [value: number];
 }>();
 const { t, resolveLocalized, formatDate } = useLocale();
-const { releaseServer } = useReleaseServer();
+const { releaseServer, releases } = useReleaseServer();
+const contentOrigin = computed<CatalogContentOrigin>(
+  () => props.creditOrigin || ourNotesReleaseOrigin(releaseServer.value),
+);
+const sourceLocale = computed(() => contentLocaleForOrigin(contentOrigin.value, releases.value));
 const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.creditOrigin, releaseServer.value));
 const effectiveBandVisuals = computed<readonly CompositeEntityVisual[]>(() => {
   if (props.bandVisuals?.length) return props.bandVisuals;
@@ -71,9 +80,9 @@ const percent = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? "—" : `${fixed(value * 100)}%`;
 const activeDifficultyItem = computed(() => props.song.difficulty?.[props.difficulty]);
 const activeNotes = computed(() => props.meta?.n ?? activeDifficultyItem.value?.noteCount);
-const composer = computed(() => resolveLocalized(props.song.composer, { sourceHint: "ja" }) || "—");
-const lyricist = computed(() => resolveLocalized(props.song.lyricist, { sourceHint: "ja" }) || "—");
-const arranger = computed(() => resolveLocalized(props.song.arranger, { sourceHint: "ja" }) || "—");
+const composer = computed(() => resolveLocalized(props.song.composer, { sourceHint: sourceLocale.value }) || "—");
+const lyricist = computed(() => resolveLocalized(props.song.lyricist, { sourceHint: sourceLocale.value }) || "—");
+const arranger = computed(() => resolveLocalized(props.song.arranger, { sourceHint: sourceLocale.value }) || "—");
 const release = computed(() => {
   const timestamp = songReleaseTimestamp(props.song);
   return timestamp ? formatDate(timestamp) : "—";

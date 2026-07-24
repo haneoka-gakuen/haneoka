@@ -5,14 +5,15 @@ import type { CatalogContentOrigin, ContentOrigin, OurNotesReleaseId } from "~/f
 import type { GarupaPlaylist, GarupaPlaylistTrack, ResolvedPlaylist, ResolvedPlaylistTrack } from "~/types/playlists";
 import {
   bestdoriOrigin,
+  contentLocaleForOrigin,
   contentOriginKey,
   isBestdoriOrigin,
   ourNotesReleaseOrigin,
   releaseFallbackOrder,
 } from "~/features/catalog/contentSource";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
-import { resolveArchiveValue } from "~/i18n/locales";
-import { textOf } from "~/types/displayText";
+import { resolveArchiveValue, type ArchiveLocale } from "~/i18n/locales";
+import { langOf, textOf } from "~/types/displayText";
 
 type ReleaseOrigin = Extract<ContentOrigin, { provider: "release" }>;
 
@@ -43,18 +44,22 @@ const stageAssetNumber = (playlist: GarupaPlaylist): string => {
 const japaneseText = (value: Parameters<typeof resolveArchiveValue>[0], fallback = ""): DisplayText =>
   resolveArchiveValue(value, "ja", { sourceHint: "ja", fallback }) || fallback;
 
-const bandVisualsFor = (song: Song, bands: ReadonlyMap<number, Band>): CompositeEntityVisual[] => {
+const bandVisualsFor = (
+  song: Song,
+  bands: ReadonlyMap<number, Band>,
+  labelForBand: (band: Band) => DisplayText,
+): CompositeEntityVisual[] => {
   const bandIds = [...new Set((song.bandIds?.length ? song.bandIds : [song.bandId]).map(Number).filter(Boolean))];
   return bandIds.flatMap((bandId) => {
     const band = bands.get(bandId);
     if (!band) return [];
     const images = [band.logo, band.icon].filter((image): image is string => Boolean(image));
-    const label = textOf(japaneseText(band.bandName, String(band.bandId)));
+    const label = labelForBand(band);
     return [
       {
         ...(images[0] ? { image: images[0] } : {}),
         ...(images.length > 1 ? { imageCandidates: images } : {}),
-        ...(images.length ? {} : { text: label, icon: "groups" }),
+        ...(images.length ? {} : { text: textOf(label), lang: langOf(label), icon: "groups" }),
         ...(band.color ? { color: band.color } : {}),
         fit: "contain" as const,
       },
@@ -115,7 +120,23 @@ const chronologicalBandTracks = (tracks: readonly ResolvedPlaylistTrack[]): Reso
  */
 export const usePlaylistCatalog = () => {
   const garupa = useGarupaPlaylists();
-  const { releaseServer, fallbackReleaseServers } = useReleaseServer();
+  const { locale } = useLocale();
+  const { releaseServer, fallbackReleaseServers, releases: releaseRegistry } = useReleaseServer();
+  const catalogText = (
+    value: Parameters<typeof resolveArchiveValue>[0],
+    origin: CatalogContentOrigin,
+    fallback = "",
+    fallbackSourceHint: ArchiveLocale | null = "ja",
+  ): DisplayText => {
+    const sourceLocale = contentLocaleForOrigin(origin, releaseRegistry.value);
+    return (
+      resolveArchiveValue(value, locale.value, {
+        sourceHint: sourceLocale,
+        fallback,
+        fallbackSourceHint,
+      }) || fallback
+    );
+  };
 
   // Always request the currently selected release reactively: an active
   // release discovered through the registry may not be part of the configured
@@ -172,9 +193,11 @@ export const usePlaylistCatalog = () => {
         origin,
         language: "ja",
         song,
-        title: japaneseText(song.musicTitle, definition.title || String(song.musicId)),
-        artist: japaneseText(song.artistName || sourceBand?.bandName || definition.bandName || "", ""),
-        bandVisuals: bandVisualsFor(song, bands),
+        title: catalogText(song.musicTitle, origin, definition.title || String(song.musicId)),
+        artist: catalogText(song.artistName || sourceBand?.bandName || "", origin, definition.bandName || ""),
+        bandVisuals: bandVisualsFor(song, bands, (band) =>
+          catalogText(band.bandName, origin, String(band.bandId), null),
+        ),
         available: Boolean(song.musicUrl),
         ...(song.musicUrl ? {} : { missingReason: "audio-unavailable" }),
       };

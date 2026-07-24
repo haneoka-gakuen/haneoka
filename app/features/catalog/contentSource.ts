@@ -1,4 +1,5 @@
 import { isBestdoriServer, type BestdoriServer } from "@haneoka/bestdori";
+import { matchArchiveLocale, type ArchiveLocale } from "~/i18n/locales";
 
 /** A configured Our Notes resource-release slug, such as `jp-cbt` or `jp`. */
 export type OurNotesReleaseId = string;
@@ -86,6 +87,41 @@ export const contentOriginLabel = (origin: ContentOrigin): string => {
 
 export const sameContentOrigin = (left: ContentOrigin, right: ContentOrigin): boolean =>
   contentOriginKey(left) === contentOriginKey(right);
+
+const regionLocales: Readonly<Record<string, ArchiveLocale>> = {
+  jp: "ja",
+  ja: "ja",
+  en: "en",
+  tw: "zh-TW",
+  cn: "zh-CN",
+  kr: "ko",
+  ko: "ko",
+};
+
+/** Resolve provider/release region identifiers to the app's content locale. */
+export const contentRegionLocale = (value: unknown): ArchiveLocale | null => {
+  const region = String(value || "")
+    .trim()
+    .replaceAll("_", "-")
+    .toLocaleLowerCase();
+  if (!region) return null;
+  return matchArchiveLocale(region) || regionLocales[region] || regionLocales[region.split("-")[0]!] || null;
+};
+
+/**
+ * Resolve the language of plain strings supplied by a catalog origin.
+ *
+ * Localized arrays/objects still carry their own slot language; this hint is
+ * only used when a provider has already projected a field to a plain string.
+ */
+export const contentLocaleForOrigin = (
+  origin: CatalogContentOrigin,
+  releases: readonly OurNotesRelease[] = [],
+): ArchiveLocale | null => {
+  if (origin.provider === "bestdori") return contentRegionLocale(origin.region);
+  const release = releases.find((candidate) => candidate.id === origin.releaseId);
+  return contentRegionLocale(release?.region) || contentRegionLocale(origin.releaseId);
+};
 
 export const isCatalogContentOrigin = (value: unknown): value is CatalogContentOrigin => {
   if (!value || typeof value !== "object") return false;
