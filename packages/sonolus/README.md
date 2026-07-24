@@ -104,7 +104,7 @@ The resource pipeline invokes the same release builders after it has restored th
 
 ## Optional standalone server
 
-The standalone server is a development utility. It reads Master tables, charts, jackets, and decoded audio from a selected local release and constructs Sonolus levels at startup.
+The standalone server is a development utility. It reads Master tables, charts, jackets, and decoded audio from a selected local release and constructs Sonolus levels plus one song playlist per available track at startup.
 
 Build and start it from the repository root:
 
@@ -115,25 +115,29 @@ ASSET_SERVER=jp-cbt PORT=3000 node packages/sonolus/dist/serve.mjs
 
 Connect a Sonolus client to `http://<host>:3000/sonolus`. `SONOLUS_ADDRESS` can override the address embedded in generated responses. The same local release prerequisites as the root preview server apply.
 
-This server is not the production deployment path. Production projects level routes at runtime and serves immutable non-level documents and repository objects from R2 through `worker/index.ts`.
+This server is not the production deployment path. Production projects the server menu, level routes, and playlist routes at runtime and serves immutable resource documents and repository objects from R2 through `worker/index.ts`.
 
 ## Production routes and versions
 
 The public service is available under `/sonolus/*` on the main origin. Content-addressed repository resources are served under `/sonolus/repository/*` with immutable caching.
 
-Level info, lists, details, random selection, and chart data are projected from
-the current release catalog at request time. A release revision change creates
-a new bounded snapshot, so added and removed charts appear without rebuilding
-the web application or Sonolus package. Level routes never fall back to the
-build-time static chart list when projection fails; they return an explicit
-error instead of exposing stale content. Static release documents remain only
-for engine, skin, background, effect, particle, and configuration resources.
-Runtime level discovery does not read generated level documents.
+The server menu, level info/lists/details/chart data, and playlist
+info/lists/details are projected from the current release catalog at request
+time. A release revision change creates a new bounded snapshot, so added and
+removed charts appear without rebuilding the web application or Sonolus
+package. Level and playlist routes never fall back to build-time catalog
+documents when projection fails; they return an explicit error instead of
+exposing stale content. Each info route contains five random and five newest
+items; random levels are restricted to Hard, Expert, Special, and Master.
+Each playlist represents one song and embeds all of its available difficulties.
+Static release documents remain only for engine, skin, background, effect,
+particle, and configuration resources.
 
 The Worker reports Sonolus version `1.1.2`. Generated item schemas use the fixed versions required by this implementation:
 
 | Item       | Version |
 | ---------- | ------: |
+| Playlist   |       1 |
 | Level      |       1 |
 | Skin       |       4 |
 | Background |       2 |

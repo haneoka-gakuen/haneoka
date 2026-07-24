@@ -33,6 +33,14 @@ export interface SonolusLevelItem extends JsonObject {
   title: string;
 }
 
+export interface SonolusPlaylistItem extends JsonObject {
+  author: string;
+  levels: SonolusLevelItem[];
+  name: string;
+  subtitle: string;
+  title: string;
+}
+
 export interface ChartDescriptor {
   artists: string;
   bgmUrl?: string;
@@ -40,6 +48,7 @@ export interface ChartDescriptor {
   dataId: string;
   difficulty: string;
   name: string;
+  publishedAt: number;
   rating: number;
   songId: string;
   title: string;
@@ -106,7 +115,11 @@ export interface CatalogProjectionResult {
 
 export interface LevelInfoOptions {
   itemCount?: number;
+  quickSearchValues?: string;
+  randomCharts?: readonly ChartRecord[];
+  randomSectionTitle?: string;
   sectionTitle?: string;
+  title?: string;
 }
 
 export interface LevelDetailsOptions {

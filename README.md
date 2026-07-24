@@ -12,7 +12,7 @@ Haneoka is an unofficial resource archive and in-browser viewer for _BanG Dream!
 
 - Public catalog: [haneoka.org/catalog](https://haneoka.org/catalog)
 - Source: [github.com/haneoka-gakuen/haneoka](https://github.com/haneoka-gakuen/haneoka)
-- Sonolus endpoint: [haneoka.org/sonolus](https://haneoka.org/sonolus)
+- Sonolus endpoint: [haneoka.org](https://haneoka.org)
 
 > [!IMPORTANT]
 > Haneoka is a pre-release community project. The home page, catalog, community, chart editor, and story editor are available, while several catalog routes remain construction surfaces. Interfaces, generated schemas, editor project formats, and deployment procedures may change without a compatibility guarantee.

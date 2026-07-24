@@ -24,12 +24,13 @@ import {
   type EngineItemModel,
   type LevelItemModel,
   type ParticleItemModel,
+  type PlaylistItemModel,
   type SkinItemModel,
 } from "@sonolus/express";
 import { packPath } from "@sonolus/free-pack";
 import { chartToLevelData, convertChart } from "../convert";
 import { SONOLUS_ITEM_VERSIONS } from "./itemVersions";
-import { buildLevelMetas, type BandRow, type MusicRow, type ScoreRow, type TextRow } from "./levelMeta";
+import { buildLevelMetas, type BandRow, type LevelMeta, type MusicRow, type ScoreRow, type TextRow } from "./levelMeta";
 import { resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
 
 // Repo root: the server is run from the repo root (cwd), or set OUR_NOTES_ROOT.
@@ -39,6 +40,8 @@ const ADDRESS = process.env.SONOLUS_ADDRESS ?? `http://localhost:${PORT}`;
 const ENGINE_NAME = "ourNotes";
 const SERVER = process.env.ASSET_SERVER || "jp-cbt";
 const workspace = resolveSonolusReleaseWorkspace(SERVER, ROOT);
+const FEATURED_ITEM_COUNT = 5;
+const RANDOM_LEVEL_DIFFICULTIES = ["hard", "expert", "special", "master"] as const;
 
 const EMPTY_SRL: Srl = {};
 
@@ -54,6 +57,21 @@ interface SoundCueSheetRow {
 
 type MasterRow = MusicRow | ScoreRow | TextRow | BandRow | SoundCueSheetRow;
 type JsonRowGuard<T> = (value: JsonValue) => value is JsonObject & T;
+type LevelEntry = { meta: LevelMeta; level: LevelItemModel };
+
+function pickRandomItems<T>(items: readonly T[], count = FEATURED_ITEM_COUNT): T[] {
+  const shuffled = [...items];
+  const limit = Math.min(count, shuffled.length);
+  for (let index = 0; index < limit; index++) {
+    const selected = index + Math.floor(Math.random() * (shuffled.length - index));
+    [shuffled[index], shuffled[selected]] = [shuffled[selected], shuffled[index]];
+  }
+  return shuffled.slice(0, limit);
+}
+
+function isRandomLevelCandidate(level: LevelItemModel): boolean {
+  return RANDOM_LEVEL_DIFFICULTIES.some((difficulty) => level.name.endsWith(`-${difficulty}`));
+}
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -188,20 +206,7 @@ function main() {
   // cache the added bgm SRL per song (shared across its 4 difficulties).
   const bgmCache = new Map<string, Srl>();
 
-  const s = new Sonolus({
-    address: ADDRESS,
-    fallbackLocale: "ja",
-    level: {
-      searches: {
-        random: {
-          title: { ja: "ランダム", en: "#RANDOM" },
-          icon: "shuffle",
-          requireConfirmation: false,
-          options: {},
-        },
-      },
-    },
-  });
+  const s = new Sonolus({ address: ADDRESS, fallbackLocale: "ja" });
   // Keep the free pack's server plumbing, but do not expose its pixel/8bit
   // gameplay resources. This engine is only valid with its projected Our Notes
   // resources; substituting a generic pack silently changes the presentation.
@@ -214,6 +219,9 @@ function main() {
   // our identity AFTER loading.
   s.title = { ja: "haneoka", en: "haneoka" };
   s.description = { ja: "BanG Dream! Our Notes", en: "BanG Dream! Our Notes" };
+  const bannerFile = resolve(ROOT, "packages/sonolus/assets/server-banner.png");
+  if (!existsSync(bannerFile)) throw new Error(`Sonolus server banner missing: ${bannerFile}`);
+  const banner = s.add(readFileSync(bannerFile));
 
   // The note/lane skin is generated from skin001, the note sounds come from
   // the original CRI cues, and supported effect001 ParticleSystem data is
@@ -356,6 +364,7 @@ function main() {
   // --- level items (one per registered chart) ---
   let added = 0;
   let skipped = 0;
+  const levelEntries: LevelEntry[] = [];
   for (const meta of metasJa) {
     const cp = chartPath(meta.chartFile);
     if (!cp) {
@@ -406,41 +415,84 @@ function main() {
       bgm,
       data,
     };
-    s.level.items.push(level);
+    levelEntries.push({ meta, level });
     added++;
   }
 
-  const randomLevels = s.level.items.filter(({ name }) => name.endsWith("-hard") || name.endsWith("-expert"));
-  const pickRandomLevel = () => randomLevels[Math.floor(Math.random() * randomLevels.length)];
-  const defaultLevelInfoHandler = s.level.infoHandler;
-  s.level.infoHandler = (ctx) => {
-    if (ctx.type !== "random") return defaultLevelInfoHandler(ctx);
-    const item = pickRandomLevel();
-    return {
-      title: { ja: "ランダム", en: "#RANDOM" },
-      searches: { random: true },
-      sections: item
-        ? [{ title: { ja: "ランダム", en: "#RANDOM" }, icon: "shuffle", itemType: "level", items: [item] }]
-        : [],
+  // MasterLiveMusic is ordered from older to newer songs. Reverse the level
+  // entries so both normal lists and the #NEWEST section lead with new songs;
+  // every song's difficulties are then Expert → Easy.
+  levelEntries.reverse();
+  s.level.items.push(...levelEntries.map(({ level }) => level));
+
+  // Sonolus playlists represent songs. Their embedded levels are the
+  // available difficulties, while their thumbnail/title come from the song's
+  // highest available difficulty.
+  const levelsByMusicId = new Map<number, LevelEntry[]>();
+  for (const entry of levelEntries) {
+    const entries = levelsByMusicId.get(entry.meta.musicId);
+    if (entries) entries.push(entry);
+    else levelsByMusicId.set(entry.meta.musicId, [entry]);
+  }
+
+  const featuredLevels: LevelItemModel[] = [];
+  for (const entries of levelsByMusicId.values()) {
+    const primary = entries[0];
+    if (!primary) continue;
+    const en = enByName.get(primary.meta.name);
+    const playlist: PlaylistItemModel = {
+      name: `ourNotes-${primary.meta.musicId}`,
+      version: 1,
+      title: { ja: primary.meta.title, en: en?.title || primary.meta.title },
+      subtitle: { ja: primary.meta.artists, en: en?.artists || primary.meta.artists },
+      author: { ja: "haneoka", en: "haneoka" },
+      tags: [],
+      levels: entries.map(({ level }) => level),
+      thumbnail: primary.level.cover,
     };
-  };
-  const defaultLevelListHandler = s.level.listHandler;
-  s.level.listHandler = (ctx) => {
-    if (ctx.search.type !== "random") return defaultLevelListHandler(ctx);
-    const item = pickRandomLevel();
-    return {
-      title: { ja: "ランダム", en: "#RANDOM" },
-      pageCount: 1,
-      items: item ? [item] : [],
-      searches: { random: true },
-    };
-  };
+    s.playlist.items.push(playlist);
+    featuredLevels.push(primary.level);
+  }
+  const preferredRandomLevels = featuredLevels.filter(isRandomLevelCandidate);
+  const randomLevels = preferredRandomLevels;
+
+  s.level.infoHandler = () => ({
+    sections: [
+      {
+        title: { ja: "ランダム", en: "#RANDOM" },
+        icon: "shuffle",
+        itemType: "level",
+        items: pickRandomItems(randomLevels),
+      },
+      {
+        title: { ja: "最新", en: "#NEWEST" },
+        itemType: "level",
+        items: featuredLevels.slice(0, FEATURED_ITEM_COUNT),
+      },
+    ],
+  });
+  s.playlist.infoHandler = () => ({
+    sections: [
+      {
+        title: { ja: "ランダム", en: "#RANDOM" },
+        icon: "shuffle",
+        itemType: "playlist",
+        items: pickRandomItems(s.playlist.items),
+      },
+      {
+        title: { ja: "最新", en: "#NEWEST" },
+        itemType: "playlist",
+        items: s.playlist.items.slice(0, FEATURED_ITEM_COUNT),
+      },
+    ],
+  });
   s.serverInfoHandler = () => ({
     title: s.title,
     description: s.description,
+    banner,
     buttons: [
+      { type: "playlist" },
       { type: "level" },
-      { type: "level", title: { ja: "ランダム", en: "#RANDOM" }, icon: "shuffle", infoType: "random" },
       { type: "skin" },
       { type: "background" },
       { type: "effect" },

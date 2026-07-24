@@ -5,8 +5,13 @@ export {
   projectLevelInfo,
   projectLevelItem,
   projectLevelList,
+  projectPlaylistDetails,
+  projectPlaylistInfo,
+  projectPlaylistItem,
+  projectPlaylistList,
   projectRandomLevelInfo,
   projectRandomLevelList,
+  projectServerInfo,
 } from "./projection.js";
 export { SonolusLevelService } from "./service.js";
 export type {
@@ -31,6 +36,7 @@ export type {
   LevelDetailsOptions,
   LevelInfoOptions,
   SonolusLevelItem,
+  SonolusPlaylistItem,
   PreparedChartData,
 } from "./types.js";
 export type {

@@ -2,14 +2,19 @@ import { handleAdminRequest } from "./admin";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
 import { handleAvatarRequest } from "./avatar";
 import { handleAppealRequest } from "./appeals";
-import { handleBestdoriProxy } from "./bestdori";
+import {
+  bestdoriSonolusRevision,
+  handleBestdoriProxy,
+  loadBestdoriSonolusCatalog,
+  loadBestdoriSonolusChartText,
+} from "./bestdori";
 import { handleCommunityRequest } from "./community";
 import { handleCommunityActivityRequest } from "./community-activity";
 import { handleModerationQueue, reconcileModerationState } from "./moderation";
 import { handleProfileRequest } from "./profile";
 import { handlePublicProfileRequest } from "./public-profile";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
-import { SonolusLevelService } from "@haneoka/sonolus-core";
+import { projectCatalogCharts, SonolusLevelService } from "@haneoka/sonolus-core";
 import {
   releaseAssetPath,
   ReleaseChartCatalogProvider,
@@ -1740,6 +1745,68 @@ async function handleArtifact(
   });
 }
 
+const BESTDORI_SONOLUS_DATA_ID = /^bestdori:(\d+):(easy|normal|hard|expert|special)$/u;
+const BESTDORI_SONOLUS_LEVEL_PREFIX = "/sonolus/levels/bestdori-level-";
+const BESTDORI_SONOLUS_PLAYLIST_PREFIX = "/sonolus/playlists/bestdori-playlist-";
+
+function isBestdoriSonolusCatalogRequest(url: URL): boolean {
+  return (
+    url.searchParams.get("type") === "bestdori" ||
+    url.searchParams.get("source") === "bestdori" ||
+    url.pathname.startsWith(BESTDORI_SONOLUS_LEVEL_PREFIX) ||
+    url.pathname.startsWith(BESTDORI_SONOLUS_PLAYLIST_PREFIX)
+  );
+}
+
+function bestdoriSonolusCatalogProvider(origin: string | undefined, revision: string) {
+  return {
+    async load() {
+      const { bands, songs } = await loadBestdoriSonolusCatalog(origin);
+      const projection = projectCatalogCharts(songs, bands, {
+        chartDataId: (songId, difficulty) => `bestdori:${songId}:${difficulty}`,
+        levelName: (songId, difficulty) => `bestdori-level-${songId}-${difficulty}`,
+        mediaBaseUrl: "https://haneoka.org",
+      });
+      if (projection.invalidChartNames.length) {
+        console.warn("Ignoring invalid Bestdori Sonolus charts", projection.invalidChartNames);
+      }
+      return { charts: projection.charts, revision: { id: revision } };
+    },
+  };
+}
+
+function bestdoriSonolusDataProvider(origin: string | undefined): RuntimeChartDataProvider {
+  return new RuntimeChartDataProvider({
+    readBytes: async (dataId) => {
+      const match = BESTDORI_SONOLUS_DATA_ID.exec(dataId);
+      const musicId = Number(match?.[1]);
+      const difficulty = match?.[2];
+      if (!Number.isSafeInteger(musicId) || musicId < 1 || !difficulty) return null;
+      try {
+        return new TextEncoder().encode(await loadBestdoriSonolusChartText(musicId, difficulty, origin));
+      } catch (error) {
+        console.warn(`Unable to load Bestdori Sonolus chart ${musicId}/${difficulty}`, error);
+        return null;
+      }
+    },
+    onInvalidChart: (chart, error) => {
+      console.warn(`Ignoring invalid Bestdori Sonolus chart ${chart.name}`, error);
+    },
+  });
+}
+
+function sonolusServerBanner(value: unknown): JsonObject | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const banner = (value as Record<string, unknown>).banner;
+  if (banner === null || typeof banner !== "object" || Array.isArray(banner)) return undefined;
+  const { hash, url } = banner as Record<string, unknown>;
+  if (typeof hash !== "string" && typeof url !== "string") return undefined;
+  return {
+    ...(typeof hash === "string" ? { hash } : {}),
+    ...(typeof url === "string" ? { url } : {}),
+  };
+}
+
 async function handleSonolus(
   env: Env,
   ctx: ExecutionContext,
@@ -1751,7 +1818,12 @@ async function handleSonolus(
   const assetPathname = pathname;
   const assetUrl = new URL(request.url);
   assetUrl.pathname = assetPathname;
-  const isLevelRoute = assetUrl.pathname === "/sonolus/levels" || assetUrl.pathname.startsWith("/sonolus/levels/");
+  const isCatalogRoute =
+    assetUrl.pathname === "/sonolus/levels" ||
+    assetUrl.pathname.startsWith("/sonolus/levels/") ||
+    assetUrl.pathname === "/sonolus/playlists" ||
+    assetUrl.pathname.startsWith("/sonolus/playlists/");
+  const isBestdoriCatalog = isBestdoriSonolusCatalogRequest(assetUrl);
   const server = await activeResourceServer(env, DEFAULT_SONOLUS_SERVER);
   const release = server ? await currentRelease(env, server) : null;
   if (!release) {
@@ -1759,23 +1831,40 @@ async function handleSonolus(
   }
   const cacheRequest = releaseCacheRequest(request, release.releaseId);
   try {
-    const revision = `${release.server}:${release.releaseId}`;
+    const revision = isBestdoriCatalog
+      ? `${release.server}:${release.releaseId}:${bestdoriSonolusRevision()}`
+      : `${release.server}:${release.releaseId}`;
     const readJson = (releasePath: string) => readReleaseJson(env, release, releasePath);
-    const dataProvider = new RuntimeChartDataProvider({
-      readBytes: (releasePath) => readReleaseBytes(env, release, releasePath),
-      onInvalidChart: (chart, error) => {
-        console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
-      },
-    });
+    const catalogProvider = isBestdoriCatalog
+      ? bestdoriSonolusCatalogProvider(env.BESTDORI_ORIGIN, revision)
+      : new ReleaseChartCatalogProvider({
+          mediaBaseUrl: "https://haneoka.org",
+          readJson,
+          resolveChartDataId: (_songId, _difficulty, rawDifficulty) =>
+            typeof rawDifficulty.file === "string" ? releaseAssetPath(rawDifficulty.file, release.server) : null,
+          revision,
+        });
+    const dataProvider = isBestdoriCatalog
+      ? bestdoriSonolusDataProvider(env.BESTDORI_ORIGIN)
+      : new RuntimeChartDataProvider({
+          readBytes: (releasePath) => readReleaseBytes(env, release, releasePath),
+          onInvalidChart: (chart, error) => {
+            console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
+          },
+        });
+    const serverBanner =
+      assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const projected = await sonolusLevelService.handle({
-      catalogProvider: new ReleaseChartCatalogProvider({
-        mediaBaseUrl: "https://haneoka.org",
-        readJson,
-        resolveChartDataId: (_songId, _difficulty, rawDifficulty) =>
-          typeof rawDifficulty.file === "string" ? releaseAssetPath(rawDifficulty.file, release.server) : null,
-        revision,
-      }),
+      catalogProvider,
       dataProvider,
+      ...(isBestdoriCatalog
+        ? {
+            levelInfoTitle: "Bestdori Levels",
+            playlistInfoTitle: "Bestdori Playlists",
+            playlistName: (songId: string) => `bestdori-playlist-${songId}`,
+            quickSearchValues: "source=bestdori",
+          }
+        : {}),
       levelTemplateProvider: new ReleaseLevelTemplateProvider({ readJson }),
       pathname: assetUrl.pathname,
       randomIndex: (length) => {
@@ -1787,6 +1876,7 @@ async function handleSonolus(
       },
       revision,
       searchParams: assetUrl.searchParams,
+      ...(serverBanner ? { serverBanner } : {}),
     });
     if (projected) {
       const produce = async (): Promise<Response> => {
@@ -1811,14 +1901,14 @@ async function handleSonolus(
     }
   } catch (error) {
     console.warn("Unable to project the current Sonolus chart catalog", error);
-    if (isLevelRoute) {
+    if (isCatalogRoute) {
       return new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Service unavailable" }), {
         status: 503,
         headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },
       });
     }
   }
-  if (isLevelRoute) {
+  if (isCatalogRoute) {
     return new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Not found" }), {
       status: 404,
       headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },

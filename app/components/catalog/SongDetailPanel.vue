@@ -234,7 +234,7 @@ const sonolusLevelUrl = computed(() => {
   const difficulty = ["easy", "normal", "hard", "expert"][activeDifficulty.value];
   const chart = props.song.difficulty?.[activeDifficulty.value];
   if (!difficulty || !chart?.file) return "";
-  return `https://open.sonolus.com/haneoka.org/sonolus/levels/chart-${props.song.musicId}-${difficulty}`;
+  return `https://open.sonolus.com/haneoka.org/levels/chart-${props.song.musicId}-${difficulty}`;
 });
 const scoreRankIcon = (rank: string | undefined) => (isScoreRank(rank) ? scoreRankIconUrl(assetRoot.value, rank) : "");
 const scoreRewardItems = computed(() =>

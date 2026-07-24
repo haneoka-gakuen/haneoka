@@ -8,7 +8,7 @@ import type {
   EngineItem,
   LevelItem,
   ParticleItem,
-  ServerForm,
+  PlaylistItem,
   ServerInfo,
   ServerItemDetails,
   ServerItemInfo,
@@ -44,8 +44,10 @@ interface SongDifficulty {
   file?: string | null;
   chartUrl?: string | null;
   url?: string | null;
+  difficultyName?: string | null;
   playLevel?: number | null;
   displayLevel?: string | number | null;
+  publishedAt?: number | Array<number | null> | null;
 }
 
 interface SongAudio {
@@ -67,6 +69,7 @@ interface Song {
   difficulty?: SongDifficulty[] | null;
   jacketUrl?: string | null;
   musicUrl?: string | null;
+  publishedAt?: number | Array<number | null> | null;
   audio?: SongAudio | null;
 }
 
@@ -85,6 +88,7 @@ interface MasterBandRow {
 }
 
 interface SonolusItemMap {
+  playlist: PlaylistItem;
   level: LevelItem;
   skin: SkinItem;
   background: BackgroundItem;
@@ -102,14 +106,8 @@ type GroupDetails<T extends SonolusItemType> = Omit<ServerItemDetails<SonolusIte
 };
 
 const emptySrl: Srl = {};
-const difficultyNames = ["easy", "normal", "hard", "expert"] as const;
-const randomSearch = {
-  type: "random",
-  title: "#RANDOM",
-  icon: "shuffle",
-  requireConfirmation: false,
-  options: [],
-} satisfies ServerForm;
+const difficultyNames = ["easy", "normal", "hard", "expert", "special", "master"] as const;
+const randomDifficulties = new Set(["hard", "expert", "special", "master"]);
 
 function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -133,17 +131,39 @@ function isOptionalLocalizedValue(value: JsonValue | undefined): boolean {
   return value === undefined || value === null || isLocalizedValue(value);
 }
 
+function isOptionalPublishedAt(value: JsonValue | undefined): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    typeof value === "number" ||
+    (Array.isArray(value) && value.every((entry) => entry === null || typeof entry === "number"))
+  );
+}
+
+function publishedAt(value: SongDifficulty["publishedAt"] | Song["publishedAt"] | undefined): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  if (Array.isArray(value)) {
+    const timestamp = value.find(
+      (entry): entry is number => typeof entry === "number" && Number.isFinite(entry) && entry > 0,
+    );
+    if (timestamp !== undefined) return Math.max(0, timestamp);
+  }
+  return 0;
+}
+
 function isSongDifficulty(value: JsonValue): value is JsonObject & SongDifficulty {
   if (!isJsonObject(value)) return false;
   return (
     isOptionalString(value.file) &&
     isOptionalString(value.chartUrl) &&
     isOptionalString(value.url) &&
+    (value.difficultyName === undefined || value.difficultyName === null || typeof value.difficultyName === "string") &&
     (value.playLevel === undefined || value.playLevel === null || typeof value.playLevel === "number") &&
     (value.displayLevel === undefined ||
       value.displayLevel === null ||
       typeof value.displayLevel === "string" ||
-      typeof value.displayLevel === "number")
+      typeof value.displayLevel === "number") &&
+    isOptionalPublishedAt(value.publishedAt)
   );
 }
 
@@ -170,6 +190,7 @@ function isSong(value: JsonValue): value is JsonObject & Song {
       (Array.isArray(value.difficulty) && value.difficulty.every(isSongDifficulty))) &&
     isOptionalString(value.jacketUrl) &&
     isOptionalString(value.musicUrl) &&
+    isOptionalPublishedAt(value.publishedAt) &&
     (value.audio === undefined || value.audio === null || isSongAudio(value.audio))
   );
 }
@@ -383,16 +404,31 @@ function paginate<T>(items: readonly T[], page: number, perPage = 20): ServerIte
   };
 }
 
+function sampleRandom<T>(items: readonly T[], count = 5): T[] {
+  const remaining = [...items];
+  const result: T[] = [];
+  while (remaining.length && result.length < count) {
+    const index = Math.floor(Math.random() * remaining.length);
+    const [item] = remaining.splice(index, 1);
+    if (item !== undefined) result.push(item);
+  }
+  return result;
+}
+
 function writeGroup<T extends SonolusItemType>(
   path: string,
   type: T,
   items: SonolusItemMap[T][],
-  searches: ServerForm[] = [],
+  randomItems?: readonly SonolusItemMap[T][],
 ) {
+  const sections: Array<ServerItemSectionTyped<T, SonolusItemMap[T]>> = [
+    ...(randomItems ? [{ title: "#RANDOM", icon: "shuffle", itemType: type, items: randomItems.slice(0, 5) }] : []),
+    { title: "#NEWEST", itemType: type, items: items.slice(0, 5) },
+  ];
   const info: GroupInfo<T> = {
     creates: [],
-    searches,
-    sections: [{ title: "#NEWEST", itemType: type, items: items.slice(0, 5) }],
+    searches: [],
+    sections,
   };
   writeJson(`sonolus/${path}/info`, info);
 
@@ -407,14 +443,17 @@ function writeGroup<T extends SonolusItemType>(
       actions: [],
       hasCommunity: false,
       leaderboards: [],
-      sections: [
-        {
-          title: "#RECOMMENDED",
-          icon: "star",
-          itemType: type,
-          items: items.slice(index + 1, index + 6),
-        },
-      ],
+      sections:
+        type === "playlist"
+          ? []
+          : [
+              {
+                title: "#RECOMMENDED",
+                icon: "star",
+                itemType: type,
+                items: items.slice(index + 1, index + 6),
+              },
+            ],
     };
     writeJson(`sonolus/${path}/${item.name}`, details);
   }
@@ -434,6 +473,7 @@ async function main() {
 
   const resourceDir = resolve(pkg, "dist/our-notes");
   const engineDir = resolve(pkg, "engine/dist");
+  const banner = addFile(requireFile(resolve(pkg, "assets/server-banner.png")));
 
   const skin: SkinItem = {
     ...itemBase("ourNotesSkin", SONOLUS_ITEM_VERSIONS.skin, "Our Notes", "Original skin001", "haneoka"),
@@ -496,6 +536,9 @@ async function main() {
   const songs = parseSongs(await fetchJson(songsUrl));
   const bandNames = buildBandNames();
   const levels: LevelItem[] = [];
+  const levelsByMusicId = new Map<number, LevelItem[]>();
+  const levelPublishedAt = new Map<string, number>();
+  const songPublishedAt = new Map<number, number>();
 
   for (const song of songs.sort((a, b) => Number(a.musicId) - Number(b.musicId))) {
     const artist =
@@ -510,9 +553,9 @@ async function main() {
 
       const chart = convertChart(await fetchText(fileUrl));
       const levelData = chartToLevelData(chart);
-      const difficulty = difficultyNames[index] || `difficulty-${index}`;
-
-      levels.push({
+      const difficulty =
+        diff.difficultyName?.toLocaleLowerCase("en-US") || difficultyNames[index] || `difficulty-${index}`;
+      const item: LevelItem = {
         name: `ourNotes-${song.musicId}-${difficulty}`,
         source: address,
         version: SONOLUS_ITEM_VERSIONS.level,
@@ -529,11 +572,53 @@ async function main() {
         cover: externalSrl(song.jacketUrl),
         bgm: externalSrl(song.musicUrl || song.audio?.playableUrl),
         data: addJson(levelData),
-      });
+      };
+      levels.push(item);
+      const songLevels = levelsByMusicId.get(song.musicId);
+      if (songLevels) songLevels.push(item);
+      else levelsByMusicId.set(song.musicId, [item]);
+      const releaseAt = publishedAt(diff.publishedAt ?? song.publishedAt);
+      levelPublishedAt.set(item.name, releaseAt);
+      songPublishedAt.set(song.musicId, Math.max(songPublishedAt.get(song.musicId) ?? 0, releaseAt));
     }
   }
 
+  const difficultyOrder = (item: LevelItem): number => {
+    const difficulty = item.name.split("-").at(-1)?.toLocaleLowerCase("en-US");
+    return { master: 0, special: 1, expert: 2, hard: 3, normal: 4, easy: 5 }[difficulty ?? ""] ?? 99;
+  };
+  const latestLevels = [...levels].sort((left, right) => {
+    const published = (levelPublishedAt.get(right.name) ?? 0) - (levelPublishedAt.get(left.name) ?? 0);
+    if (published) return published;
+    const songId = Number(right.name.split("-")[1]) - Number(left.name.split("-")[1]);
+    return songId || difficultyOrder(left) - difficultyOrder(right);
+  });
+  const playlists: PlaylistItem[] = [...levelsByMusicId.entries()]
+    .sort(([leftId], [rightId]) => {
+      const published = (songPublishedAt.get(rightId) ?? 0) - (songPublishedAt.get(leftId) ?? 0);
+      return published || rightId - leftId;
+    })
+    .flatMap(([musicId, songLevels]) => {
+      const orderedLevels = [...songLevels].sort((left, right) => difficultyOrder(left) - difficultyOrder(right));
+      const primary = orderedLevels[0];
+      if (!primary) return [];
+      return [
+        {
+          ...itemBase(
+            `playlist-${musicId}`,
+            SONOLUS_ITEM_VERSIONS.playlist,
+            primary.title,
+            primary.artists,
+            primary.artists,
+          ),
+          levels: orderedLevels,
+          thumbnail: primary.cover,
+        },
+      ];
+    });
+
   assertItemVersions("level", levels);
+  assertItemVersions("playlist", playlists);
   assertItemVersions("skin", [skin]);
   assertItemVersions("background", [backgroundBlue, backgroundTheatre]);
   assertItemVersions("effect", [effect]);
@@ -555,9 +640,10 @@ async function main() {
   const serverInfo = {
     title: "haneoka",
     description: "BanG Dream! Our Notes",
+    banner,
     buttons: [
+      { type: "playlist" },
       { type: "level" },
-      { type: "level", title: "#RANDOM", icon: "shuffle", infoType: "random" },
       { type: "skin" },
       { type: "background" },
       { type: "effect" },
@@ -569,9 +655,12 @@ async function main() {
   } satisfies ServerInfo;
   writeJson("sonolus/info", serverInfo);
 
-  const randomLevels = levels.filter(({ name }) => name.endsWith("-hard") || name.endsWith("-expert"));
-  writeJson("sonolus/_internal/random-levels", { search: randomSearch, items: randomLevels });
-  writeGroup("levels", "level", levels, [randomSearch]);
+  const randomLevels = playlists.flatMap((playlist) => {
+    const level = playlist.levels.find((item) => randomDifficulties.has(item.name.split("-").at(-1) ?? ""));
+    return level ? [level] : [];
+  });
+  writeGroup("playlists", "playlist", playlists, sampleRandom(playlists));
+  writeGroup("levels", "level", latestLevels, sampleRandom(randomLevels));
   writeGroup("skins", "skin", [skin]);
   writeGroup("backgrounds", "background", [backgroundBlue, backgroundTheatre]);
   writeGroup("effects", "effect", [effect]);

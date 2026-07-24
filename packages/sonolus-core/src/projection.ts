@@ -10,6 +10,7 @@ import type {
   LevelDetailsOptions,
   LevelInfoOptions,
   SonolusLevelItem,
+  SonolusPlaylistItem,
 } from "./types.js";
 
 const DEFAULT_LOCALES: readonly CatalogLocale[] = ["ja", "en", "zh-TW", "zh-CN", "ko"];
@@ -20,7 +21,7 @@ const LOCALE_INDEX: Readonly<Record<CatalogLocale, number>> = Object.freeze({
   "zh-CN": 3,
   ko: 4,
 });
-const DIFFICULTIES = ["easy", "normal", "hard", "expert"] as const;
+const DIFFICULTIES = ["easy", "normal", "hard", "expert", "special", "master"] as const;
 
 const randomSearch: JsonObject = Object.freeze({
   type: "random",
@@ -113,6 +114,21 @@ function rating(value: Record<string, unknown>): number | null {
     if (Number.isFinite(number) && number >= 0) return number;
   }
   return null;
+}
+
+function publishedAt(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const timestamp = publishedAt(entry);
+      if (timestamp > 0) return timestamp;
+    }
+  }
+  return 0;
 }
 
 function bandNames(value: unknown, locales: readonly CatalogLocale[]): Map<string, string> {
@@ -233,6 +249,7 @@ export function projectCatalogCharts(
         dataId,
         difficulty,
         name,
+        publishedAt: publishedAt(rawDifficulty.publishedAt ?? song.publishedAt),
         rating: levelRating,
         songId,
         title,
@@ -247,10 +264,23 @@ export function projectCatalogCharts(
 
 export function projectLevelInfo(charts: readonly ChartRecord[], options: LevelInfoOptions = {}): JsonObject {
   const count = Math.max(1, options.itemCount ?? 5);
+  const hasRandomSection = options.randomCharts !== undefined;
   return {
+    ...(options.title ? { title: options.title } : {}),
     creates: [],
-    searches: [randomSearch],
+    searches: hasRandomSection ? [] : [randomSearch],
+    ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
     sections: [
+      ...(hasRandomSection
+        ? [
+            {
+              title: options.randomSectionTitle ?? "#RANDOM",
+              icon: "shuffle",
+              itemType: "level",
+              items: options.randomCharts?.slice(0, count).map((chart) => chart.item) ?? [],
+            },
+          ]
+        : []),
       {
         title: options.sectionTitle ?? "#NEWEST",
         itemType: "level",
@@ -260,11 +290,16 @@ export function projectLevelInfo(charts: readonly ChartRecord[], options: LevelI
   };
 }
 
-export function projectLevelList(page: ChartPage<ChartRecord>): JsonObject {
+export function projectLevelList(
+  page: ChartPage<ChartRecord>,
+  options: Pick<LevelInfoOptions, "quickSearchValues" | "title"> = {},
+): JsonObject {
   return {
+    ...(options.title ? { title: options.title } : {}),
     pageCount: Math.max(1, page.pageCount),
     items: page.items.map((chart) => chart.item),
     searches: [],
+    ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
   };
 }
 
@@ -341,4 +376,97 @@ export function projectRandomLevelInfo(chart: ChartRecord): JsonObject {
 
 export function projectRandomLevelList(chart: ChartRecord): JsonObject {
   return { title: "#RANDOM", pageCount: 1, items: [chart.item], searches: [randomSearch] };
+}
+
+export function projectPlaylistItem(
+  metadata: Pick<ChartDescriptor, "artists" | "songId" | "title"> & { name: string },
+  charts: readonly ChartRecord[],
+): SonolusPlaylistItem {
+  const first = charts[0];
+  const item: SonolusPlaylistItem = {
+    author: "haneoka",
+    levels: charts.map((chart) => chart.item),
+    name: metadata.name,
+    subtitle: metadata.artists,
+    tags: [],
+    title: metadata.title,
+    version: 1,
+  };
+  if (typeof first?.item.source === "string" && first.item.source) item.source = first.item.source;
+  const thumbnail = jsonObject(first?.item.cover);
+  if (thumbnail) item.thumbnail = thumbnail;
+  return item;
+}
+
+export function projectPlaylistInfo(
+  playlists: readonly SonolusPlaylistItem[],
+  randomPlaylists: readonly SonolusPlaylistItem[],
+  itemCount = 5,
+  options: Pick<LevelInfoOptions, "quickSearchValues" | "title"> = {},
+): JsonObject {
+  const count = Math.max(1, itemCount);
+  return {
+    ...(options.title ? { title: options.title } : {}),
+    creates: [],
+    searches: [],
+    ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+    sections: [
+      {
+        title: "#RANDOM",
+        icon: "shuffle",
+        itemType: "playlist",
+        items: randomPlaylists.slice(0, count),
+      },
+      {
+        title: "#NEWEST",
+        itemType: "playlist",
+        items: playlists.slice(0, count),
+      },
+    ],
+  };
+}
+
+export function projectPlaylistList(
+  playlists: readonly SonolusPlaylistItem[],
+  pageCount: number,
+  options: Pick<LevelInfoOptions, "quickSearchValues" | "title"> = {},
+): JsonObject {
+  return {
+    ...(options.title ? { title: options.title } : {}),
+    pageCount: Math.max(1, pageCount),
+    items: [...playlists],
+    searches: [],
+    ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+  };
+}
+
+export function projectPlaylistDetails(playlist: SonolusPlaylistItem): JsonObject {
+  return {
+    item: playlist,
+    actions: [],
+    hasCommunity: false,
+    leaderboards: [],
+    sections: [],
+  };
+}
+
+export function projectServerInfo(options: { banner?: JsonObject } = {}): JsonObject {
+  return {
+    title: "haneoka",
+    description: "BanG Dream! Our Notes",
+    buttons: [
+      { type: "playlist" },
+      { type: "level" },
+      { type: "playlist", title: "Bestdori Playlists", infoType: "bestdori" },
+      { type: "level", title: "Bestdori Levels", infoType: "bestdori" },
+      { type: "skin" },
+      { type: "background" },
+      { type: "effect" },
+      { type: "particle" },
+      { type: "engine" },
+      { type: "configuration" },
+    ],
+    configuration: { options: [] },
+    ...(options.banner ? { banner: options.banner } : {}),
+  };
 }

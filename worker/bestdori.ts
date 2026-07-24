@@ -347,6 +347,17 @@ const inFlight = new Map<string, Promise<CachedBody>>();
 // cache policy changes: the cache key gains `?_cv=VERSION`, so the new deploy
 // misses previous long-lived entries and recomputes without a manual purge.
 const BESTDORI_RESPONSE_VERSION = BESTDORI_CATALOG_VERSION;
+
+/**
+ * A Bestdori catalog is refreshed on the same cadence as the public catalog
+ * proxy. Keeping the time bucket in the revision lets the Sonolus projection
+ * discard its in-isolate snapshot when Bestdori has had a chance to change.
+ */
+export const bestdoriSonolusRevision = (now = Date.now()): string => {
+  const interval = BESTDORI_CACHE_POLICY.catalog.maxAgeSeconds * 1_000;
+  return `bestdori:${BESTDORI_RESPONSE_VERSION}:${Math.floor(now / interval)}`;
+};
+
 const cacheKeyUrl = (value: string): string => {
   const source = new URL(value);
   const canonical = new URL(source.pathname, source.origin);
@@ -1641,6 +1652,19 @@ const transformSongs = (raw: Record<string, unknown>, lang?: string): Obj => {
   return out;
 };
 
+/**
+ * Supplies the existing Bestdori conversion as a catalog source for Sonolus.
+ * The song projection retains our same-origin chart, jacket, and audio URLs,
+ * while raw band names already match the catalog projection's locale shape.
+ */
+export async function loadBestdoriSonolusCatalog(
+  configuredOrigin?: string,
+): Promise<{ bands: Record<string, unknown>; songs: Record<string, unknown> }> {
+  configureUpstreamOrigin(configuredOrigin);
+  const [rawSongs, bands] = await Promise.all([all8(), allBands()]);
+  return { bands, songs: transformSongs(rawSongs) };
+}
+
 const transformSongMeta = (raw: Record<string, unknown>, metaRaw: Record<string, unknown>): Obj => {
   const out: Obj = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -1781,6 +1805,16 @@ const chartText = async (musicId: number, difficulty: string): Promise<CachedBod
   const chart = await fetchUpstream(`/api/charts/${musicId}/${difficulty}.json`);
   return { contentType: "text/plain; charset=utf-8", body: bestdoriChartToSsText(chart) };
 };
+
+/** Returns one Bestdori chart in the SS format consumed by the Sonolus converter. */
+export async function loadBestdoriSonolusChartText(
+  musicId: number,
+  difficulty: string,
+  configuredOrigin?: string,
+): Promise<string> {
+  configureUpstreamOrigin(configuredOrigin);
+  return (await chartText(musicId, difficulty)).body;
+}
 
 // ---- route handler ----
 

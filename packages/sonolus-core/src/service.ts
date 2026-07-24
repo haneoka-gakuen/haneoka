@@ -4,8 +4,13 @@ import {
   projectLevelInfo,
   projectLevelItem,
   projectLevelList,
+  projectPlaylistDetails,
+  projectPlaylistInfo,
+  projectPlaylistItem,
+  projectPlaylistList,
   projectRandomLevelInfo,
   projectRandomLevelList,
+  projectServerInfo,
 } from "./projection.js";
 import type {
   ChartCatalogProvider,
@@ -15,30 +20,63 @@ import type {
   JsonObject,
   LevelTemplate,
   LevelTemplateProvider,
+  SonolusPlaylistItem,
 } from "./types.js";
 
+const FEATURED_ITEM_COUNT = 5;
 const LEVEL_PAGE_SIZE = 20;
 const DEFAULT_PREPARE_CONCURRENCY = 4;
 const MAX_PREPARE_CONCURRENCY = 16;
 const SHA1_PATTERN = /^[a-f0-9]{40}$/u;
 const LEVEL_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,254}$/u;
+const DIFFICULTY_ORDER: Readonly<Record<string, number>> = Object.freeze({
+  master: 0,
+  special: 1,
+  expert: 2,
+  hard: 3,
+  normal: 4,
+  easy: 5,
+});
+const RANDOM_DIFFICULTIES = new Set(["hard", "expert", "special", "master"]);
+
+interface PlaylistDescriptor {
+  artists: string;
+  charts: readonly ChartDescriptor[];
+  name: string;
+  publishedAt: number;
+  songId: string;
+  title: string;
+}
+
+interface PlaylistRecord extends PlaylistDescriptor {
+  item: SonolusPlaylistItem;
+}
 
 interface SonolusLevelSnapshot {
   byName: ReadonlyMap<string, ChartDescriptor>;
+  byPlaylistName: ReadonlyMap<string, PlaylistDescriptor>;
   charts: readonly ChartDescriptor[];
   dataProvider: ChartDataProvider;
+  latestCharts: readonly ChartDescriptor[];
+  latestPlaylists: readonly PlaylistDescriptor[];
+  playlists: readonly PlaylistDescriptor[];
   template: LevelTemplate;
 }
 
 export interface SonolusLevelRouteOptions {
   catalogProvider: ChartCatalogProvider;
   dataProvider: ChartDataProvider;
+  levelInfoTitle?: string;
   levelTemplateProvider: LevelTemplateProvider;
   pathname: string;
+  playlistInfoTitle?: string;
+  playlistName?: (songId: string) => string;
   preparationConcurrency?: number;
+  quickSearchValues?: string;
   randomIndex?: (length: number) => number;
   revision: string;
   searchParams: URLSearchParams;
+  serverBanner?: JsonObject;
   sonolusBaseUrl?: string;
 }
 
@@ -112,6 +150,62 @@ async function prepareCharts(
   return records.filter((record): record is ChartRecord => record !== null);
 }
 
+function difficultyOrder(difficulty: string): number {
+  return DIFFICULTY_ORDER[difficulty.toLocaleLowerCase("en-US")] ?? Number.MAX_SAFE_INTEGER;
+}
+
+function featuredLevelForPlaylist(playlist: PlaylistDescriptor): ChartDescriptor | null {
+  return playlist.charts[0] ?? null;
+}
+
+function randomLevelPool(playlists: readonly PlaylistDescriptor[]): ChartDescriptor[] {
+  return playlists.flatMap((playlist) => {
+    const chart = playlist.charts.find((candidate) =>
+      RANDOM_DIFFICULTIES.has(candidate.difficulty.toLocaleLowerCase("en-US")),
+    );
+    return chart ? [chart] : [];
+  });
+}
+
+function compareNewest(
+  left: Pick<ChartDescriptor, "publishedAt" | "songId"> & { difficulty?: string },
+  right: Pick<ChartDescriptor, "publishedAt" | "songId"> & { difficulty?: string },
+): number {
+  if (left.publishedAt !== right.publishedAt) return right.publishedAt - left.publishedAt;
+  const songId = right.songId.localeCompare(left.songId, "en", { numeric: true });
+  if (songId) return songId;
+  return difficultyOrder(left.difficulty ?? "") - difficultyOrder(right.difficulty ?? "");
+}
+
+function groupedPlaylists(
+  charts: readonly ChartDescriptor[],
+  playlistName: ((songId: string) => string) | undefined,
+): PlaylistDescriptor[] {
+  const groups = new Map<string, ChartDescriptor[]>();
+  for (const chart of charts) {
+    const group = groups.get(chart.songId);
+    if (group) group.push(chart);
+    else groups.set(chart.songId, [chart]);
+  }
+  return [...groups.entries()].map(([songId, grouped]) => {
+    const first = grouped[0];
+    if (!first) throw new Error(`Sonolus playlist is missing its first chart: ${songId}`);
+    const name = playlistName ? playlistName(songId) : `playlist-${songId}`;
+    if (!LEVEL_NAME_PATTERN.test(name)) throw new Error(`Invalid Sonolus playlist name: ${name}`);
+    const orderedCharts = [...grouped].sort(
+      (left, right) => difficultyOrder(left.difficulty) - difficultyOrder(right.difficulty),
+    );
+    return {
+      artists: first.artists,
+      charts: Object.freeze(orderedCharts),
+      name,
+      publishedAt: Math.max(...grouped.map((chart) => chart.publishedAt)),
+      songId,
+      title: first.title,
+    };
+  });
+}
+
 async function loadSnapshot(options: SonolusLevelRouteOptions): Promise<SonolusLevelSnapshot> {
   const [catalog, template] = await Promise.all([options.catalogProvider.load(), options.levelTemplateProvider.load()]);
   if (catalog.revision.id !== options.revision) {
@@ -122,10 +216,21 @@ async function loadSnapshot(options: SonolusLevelRouteOptions): Promise<SonolusL
     if (!chart.name || byName.has(chart.name)) throw new Error(`Duplicate Sonolus chart name: ${chart.name}`);
     byName.set(chart.name, chart);
   }
+  const charts = Object.freeze([...catalog.charts]);
+  const playlists = Object.freeze(groupedPlaylists(charts, options.playlistName));
+  const byPlaylistName = new Map<string, PlaylistDescriptor>();
+  for (const playlist of playlists) {
+    if (byPlaylistName.has(playlist.name)) throw new Error(`Duplicate Sonolus playlist name: ${playlist.name}`);
+    byPlaylistName.set(playlist.name, playlist);
+  }
   return {
     byName,
-    charts: Object.freeze([...catalog.charts]),
+    byPlaylistName,
+    charts,
     dataProvider: options.dataProvider,
+    latestCharts: Object.freeze([...charts].sort(compareNewest)),
+    latestPlaylists: Object.freeze([...playlists].sort(compareNewest)),
+    playlists,
     template,
   };
 }
@@ -162,27 +267,58 @@ async function prepareSnapshotCharts(
   );
 }
 
-async function prepareRandomChart(
+function randomDescriptors<T>(
+  descriptors: readonly T[],
+  count: number,
+  randomIndex: SonolusLevelRouteOptions["randomIndex"],
+): T[] {
+  const remaining = [...descriptors];
+  const selected: T[] = [];
+  while (remaining.length && selected.length < count) {
+    const requestedIndex = randomIndex ? randomIndex(remaining.length) : Math.floor(Math.random() * remaining.length);
+    if (!Number.isSafeInteger(requestedIndex) || requestedIndex < 0) {
+      throw new Error("Sonolus random index is invalid");
+    }
+    const [selectedDescriptor] = remaining.splice(requestedIndex % remaining.length, 1);
+    if (selectedDescriptor !== undefined) selected.push(selectedDescriptor);
+  }
+  return selected;
+}
+
+function uniqueCharts(charts: readonly ChartDescriptor[]): ChartDescriptor[] {
+  const result: ChartDescriptor[] = [];
+  const names = new Set<string>();
+  for (const chart of charts) {
+    if (names.has(chart.name)) continue;
+    names.add(chart.name);
+    result.push(chart);
+  }
+  return result;
+}
+
+function recordsFor(descriptors: readonly ChartDescriptor[], records: readonly ChartRecord[]): ChartRecord[] {
+  const byName = new Map(records.map((record) => [record.name, record]));
+  return descriptors.flatMap((descriptor) => {
+    const record = byName.get(descriptor.name);
+    return record ? [record] : [];
+  });
+}
+
+async function preparePlaylistRecords(
   snapshot: SonolusLevelSnapshot,
+  descriptors: readonly PlaylistDescriptor[],
   options: SonolusLevelRouteOptions,
-): Promise<ChartRecord | null> {
-  const preferred = snapshot.charts.filter((chart) => chart.difficulty === "hard" || chart.difficulty === "expert");
-  const pool = preferred.length ? preferred : snapshot.charts;
-  if (!pool.length) return null;
-  const requestedIndex = options.randomIndex
-    ? options.randomIndex(pool.length)
-    : Math.floor(Math.random() * pool.length);
-  if (!Number.isSafeInteger(requestedIndex) || requestedIndex < 0) {
-    throw new Error("Sonolus random index is invalid");
-  }
-  const start = requestedIndex % pool.length;
-  for (let offset = 0; offset < pool.length; offset += 1) {
-    const chart = pool[(start + offset) % pool.length];
-    if (!chart) continue;
-    const [prepared] = await prepareSnapshotCharts(snapshot, [chart], options);
-    if (prepared) return prepared;
-  }
-  return null;
+): Promise<PlaylistRecord[]> {
+  const charts = uniqueCharts(descriptors.flatMap((descriptor) => descriptor.charts));
+  const prepared = await prepareSnapshotCharts(snapshot, charts, options);
+  const byName = new Map(prepared.map((record) => [record.name, record]));
+  return descriptors.flatMap((descriptor) => {
+    const levels = descriptor.charts.flatMap((chart) => {
+      const record = byName.get(chart.name);
+      return record ? [record] : [];
+    });
+    return levels.length ? [{ ...descriptor, item: projectPlaylistItem(descriptor, levels) }] : [];
+  });
 }
 
 function parsedPage(value: string | null): number {
@@ -204,7 +340,7 @@ function notFound(): SonolusLevelDocumentRouteResult {
   return document(404, { message: "Not found" }, "no-store");
 }
 
-function decodeLevelName(encodedName: string | undefined): string | null {
+function decodeName(encodedName: string | undefined): string | null {
   if (!encodedName) return null;
   try {
     const name = decodeURIComponent(encodedName);
@@ -226,16 +362,39 @@ export class SonolusLevelService {
   }
 
   async handle(options: SonolusLevelRouteOptions): Promise<SonolusLevelRouteResult | null> {
-    const isInfo = options.pathname === "/sonolus/levels/info";
-    const isList = options.pathname === "/sonolus/levels/list";
-    const detailMatch = /^\/sonolus\/levels\/([^/]+)$/u.exec(options.pathname);
-    const dataMatch = /^\/sonolus\/levels\/([^/]+)\/data\/([a-f0-9]{40})$/u.exec(options.pathname);
-    if (!isInfo && !isList && !detailMatch && !dataMatch) return null;
+    const isServerInfo = options.pathname === "/sonolus/info";
+    const isLevelInfo = options.pathname === "/sonolus/levels/info";
+    const isLevelList = options.pathname === "/sonolus/levels/list";
+    const levelDetailMatch = /^\/sonolus\/levels\/([^/]+)$/u.exec(options.pathname);
+    const levelDataMatch = /^\/sonolus\/levels\/([^/]+)\/data\/([a-f0-9]{40})$/u.exec(options.pathname);
+    const isPlaylistInfo = options.pathname === "/sonolus/playlists/info";
+    const isPlaylistList = options.pathname === "/sonolus/playlists/list";
+    const playlistDetailMatch = /^\/sonolus\/playlists\/([^/]+)$/u.exec(options.pathname);
+    if (
+      !isServerInfo &&
+      !isLevelInfo &&
+      !isLevelList &&
+      !levelDetailMatch &&
+      !levelDataMatch &&
+      !isPlaylistInfo &&
+      !isPlaylistList &&
+      !playlistDetailMatch
+    ) {
+      return null;
+    }
+
+    if (isServerInfo) {
+      return document(
+        200,
+        projectServerInfo(options.serverBanner ? { banner: options.serverBanner } : {}),
+        "public, max-age=600, stale-while-revalidate=86400",
+      );
+    }
 
     const snapshot = await this.#snapshotCache.getOrCreate(options.revision, () => loadSnapshot(options));
-    if (dataMatch) {
-      const name = decodeLevelName(dataMatch[1]);
-      const hash = dataMatch[2];
+    if (levelDataMatch) {
+      const name = decodeName(levelDataMatch[1]);
+      const hash = levelDataMatch[2];
       if (!name || !hash) return notFound();
       const descriptor = snapshot.byName.get(name);
       if (!descriptor) return notFound();
@@ -258,21 +417,41 @@ export class SonolusLevelService {
     }
 
     const random = options.searchParams.get("type") === "random";
-    if (random && (isInfo || isList)) {
-      const chart = await prepareRandomChart(snapshot, options);
+    if (random && (isLevelInfo || isLevelList)) {
+      const [descriptor] = randomDescriptors(randomLevelPool(snapshot.playlists), 1, options.randomIndex);
+      if (!descriptor) return notFound();
+      const [chart] = await prepareSnapshotCharts(snapshot, [descriptor], options);
       if (!chart) return notFound();
-      return document(200, isInfo ? projectRandomLevelInfo(chart) : projectRandomLevelList(chart), "no-store");
+      return document(200, isLevelInfo ? projectRandomLevelInfo(chart) : projectRandomLevelList(chart), "no-store");
     }
-    if (isInfo) {
-      const charts = await prepareSnapshotCharts(snapshot, snapshot.charts.slice(0, 5), options);
-      return document(200, projectLevelInfo(charts), "public, max-age=600, stale-while-revalidate=86400");
+
+    if (isLevelInfo) {
+      const randomCharts = randomDescriptors(
+        randomLevelPool(snapshot.playlists),
+        FEATURED_ITEM_COUNT,
+        options.randomIndex,
+      );
+      const newestCharts = snapshot.latestPlaylists.slice(0, FEATURED_ITEM_COUNT).flatMap((playlist) => {
+        const chart = featuredLevelForPlaylist(playlist);
+        return chart ? [chart] : [];
+      });
+      const prepared = await prepareSnapshotCharts(snapshot, uniqueCharts([...randomCharts, ...newestCharts]), options);
+      return document(
+        200,
+        projectLevelInfo(recordsFor(newestCharts, prepared), {
+          randomCharts: recordsFor(randomCharts, prepared),
+          ...(options.levelInfoTitle ? { title: options.levelInfoTitle } : {}),
+          ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+        }),
+        "no-store",
+      );
     }
-    if (isList) {
+    if (isLevelList) {
       const pageIndex = parsedPage(options.searchParams.get("page"));
       const start = pageIndex * LEVEL_PAGE_SIZE;
       const charts = await prepareSnapshotCharts(
         snapshot,
-        snapshot.charts.slice(start, start + LEVEL_PAGE_SIZE),
+        snapshot.latestCharts.slice(start, start + LEVEL_PAGE_SIZE),
         options,
       );
       const page = {
@@ -283,16 +462,77 @@ export class SonolusLevelService {
         revision: { id: options.revision },
         total: snapshot.charts.length,
       };
-      return document(200, projectLevelList(page), "public, max-age=600, stale-while-revalidate=86400");
+      return document(
+        200,
+        projectLevelList(page, {
+          ...(options.levelInfoTitle ? { title: options.levelInfoTitle } : {}),
+          ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+        }),
+        "public, max-age=600, stale-while-revalidate=86400",
+      );
+    }
+    if (isPlaylistInfo) {
+      const randomPlaylists = randomDescriptors(snapshot.playlists, FEATURED_ITEM_COUNT, options.randomIndex);
+      const newestPlaylists = snapshot.latestPlaylists.slice(0, FEATURED_ITEM_COUNT);
+      const prepared = await preparePlaylistRecords(
+        snapshot,
+        [...new Map([...randomPlaylists, ...newestPlaylists].map((playlist) => [playlist.name, playlist])).values()],
+        options,
+      );
+      const byName = new Map(prepared.map((playlist) => [playlist.name, playlist.item]));
+      const itemsFor = (playlists: readonly PlaylistDescriptor[]): SonolusPlaylistItem[] =>
+        playlists.flatMap((playlist) => {
+          const item = byName.get(playlist.name);
+          return item ? [item] : [];
+        });
+      return document(
+        200,
+        projectPlaylistInfo(itemsFor(newestPlaylists), itemsFor(randomPlaylists), FEATURED_ITEM_COUNT, {
+          ...(options.playlistInfoTitle ? { title: options.playlistInfoTitle } : {}),
+          ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+        }),
+        "no-store",
+      );
+    }
+    if (isPlaylistList) {
+      const pageIndex = parsedPage(options.searchParams.get("page"));
+      const start = pageIndex * LEVEL_PAGE_SIZE;
+      const playlists = await preparePlaylistRecords(
+        snapshot,
+        snapshot.latestPlaylists.slice(start, start + LEVEL_PAGE_SIZE),
+        options,
+      );
+      return document(
+        200,
+        projectPlaylistList(
+          playlists.map((playlist) => playlist.item),
+          Math.ceil(snapshot.playlists.length / LEVEL_PAGE_SIZE),
+          {
+            ...(options.playlistInfoTitle ? { title: options.playlistInfoTitle } : {}),
+            ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
+          },
+        ),
+        "public, max-age=600, stale-while-revalidate=86400",
+      );
+    }
+    if (playlistDetailMatch) {
+      const name = decodeName(playlistDetailMatch[1]);
+      if (!name) return notFound();
+      const descriptor = snapshot.byPlaylistName.get(name);
+      if (!descriptor) return notFound();
+      const [playlist] = await preparePlaylistRecords(snapshot, [descriptor], options);
+      return playlist
+        ? document(200, projectPlaylistDetails(playlist.item), "public, max-age=600, stale-while-revalidate=86400")
+        : notFound();
     }
 
-    const name = decodeLevelName(detailMatch?.[1]);
+    const name = decodeName(levelDetailMatch?.[1]);
     if (!name) return notFound();
     const descriptor = snapshot.byName.get(name);
     if (!descriptor) return notFound();
     const prepared = await prepareSnapshotCharts(
       snapshot,
-      [descriptor, ...descriptorRecommendations(descriptor, snapshot.charts, 5)],
+      [descriptor, ...descriptorRecommendations(descriptor, snapshot.charts, FEATURED_ITEM_COUNT)],
       options,
     );
     const chart = prepared.find((candidate) => candidate.name === name);
