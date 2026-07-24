@@ -57,7 +57,8 @@ const emit = defineEmits<{ retry: []; resetFilters: [] }>();
       <slot name="heading-actions" />
     </template>
 
-    <template v-if="showViewControl || $slots.actions" #actions>
+    <template v-if="showViewControl || $slots['before-view-actions'] || $slots.actions" #actions>
+      <slot name="before-view-actions" />
       <CollectionViewControl v-if="showViewControl" v-model="view" />
       <slot name="actions" />
     </template>

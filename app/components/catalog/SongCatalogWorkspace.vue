@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { MaterialIcon, UiIconButton } from "@haneoka/ui";
+
 import type { Band, Character, Song, SongDifficulty, SongMetaByDifficulty, SongMetaChart } from "~/types/archive";
 import { liveMusicTypeLabel, liveMusicTypeValues } from "~/config/liveMusic";
 import { needsSongMeta } from "~/config/songMeta";
@@ -40,7 +42,7 @@ const { localize, resolveLocalized, locale, t, compareText } = useLocale();
 const route = useRoute();
 useSeoMeta({ title: () => `${t(screenTitleKey.value)} · haneoka` });
 const { assetRoot, assetUrl } = useAssetServer();
-const { playSong } = useAudioPlayer();
+const { playQueue, playSong } = useAudioPlayer();
 const { ready: coverMemoryReady, rememberScroll, scrollPosition } = useWorkspaceMemory();
 const { data: songRecord, pending, error, refresh } = useCatalogCollection<Song>("songs", catalogServer);
 const { data: bandRecord } = useCatalogCollection<Band>("bands", catalogServer);
@@ -470,6 +472,23 @@ const playFromCollection = async (song: Song) => {
     sourceProfile.value.id,
   );
 };
+const playableQueue = computed(() =>
+  filteredSongs.value.flatMap((song) => {
+    const track = audioTrackFromSong(
+      song,
+      displayTitleOf(song),
+      displayBandOf(song),
+      bandIconOf(song),
+      Number(song.bandId || 0),
+      creditVisualsOf(song),
+      sourceProfile.value.id,
+    );
+    return track ? [track] : [];
+  }),
+);
+const playAllFromCollection = async () => {
+  if (playableQueue.value.length) await playQueue(playableQueue.value);
+};
 
 const bandOptions = computed(() => {
   const formalBands = bands.value
@@ -592,6 +611,16 @@ const setTableSort = (value: string) => {
     @retry="refresh()"
     @reset-filters="resetFilters"
   >
+    <template v-if="!chartOpen" #before-view-actions>
+      <UiIconButton
+        :label="t('communityPage.playlistPage.playAll')"
+        :disabled="!playableQueue.length"
+        @click="playAllFromCollection"
+      >
+        <MaterialIcon name="playlist_play" :size="20" />
+      </UiIconButton>
+    </template>
+
     <template v-if="!chartOpen" #filters>
       <SearchField v-model="query" :label="t('search')" />
       <FacetGroup v-model="bandFilters" :title="t('band')" :options="bandOptions" icon-only />

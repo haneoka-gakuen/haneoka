@@ -101,14 +101,6 @@ export const usePlaylistCatalog = () => {
           candidates.push({ song, source: "catalog", bands: localBandMap });
         }
       }
-      candidates.sort((left, right) =>
-        left.source === right.source ? left.song.musicId - right.song.musicId : left.source === "catalog" ? -1 : 1,
-      );
-      const unique = new Map<string, (typeof candidates)[number]>();
-      for (const candidate of candidates) {
-        const key = titleKey(textOf(japaneseText(candidate.song.musicTitle, String(candidate.song.musicId))));
-        if (!unique.has(key)) unique.set(key, candidate);
-      }
       const releaseTimestamp = (song: Song): number => {
         const canonical = Number(song.releaseAt);
         if (Number.isFinite(canonical) && canonical > 0) return canonical;
@@ -116,10 +108,29 @@ export const usePlaylistCatalog = () => {
         const japanese = Number(song.publishedAt[0]);
         return Number.isFinite(japanese) && japanese > 0 ? japanese : 0;
       };
+      const sourceOrder = (source: PlaylistTrackSource) => (source === "bestdori" ? 0 : source === "catalog" ? 1 : 2);
+      // Band playlists receive stable, compact IDs ordered by their shared
+      // release timeline. Source only breaks ties, with Bestdori first.
+      candidates.sort(
+        (left, right) =>
+          releaseTimestamp(left.song) - releaseTimestamp(right.song) ||
+          sourceOrder(left.source) - sourceOrder(right.source) ||
+          left.song.musicId - right.song.musicId,
+      );
+      const unique = new Map<string, (typeof candidates)[number]>();
+      // A local catalog song carries the preferred playable metadata whenever
+      // the same title is also available from Bestdori. Keep source ordering
+      // for the final playlist IDs separate from this source-selection rule.
+      for (const candidate of [...candidates].sort((left, right) => sourceOrder(right.source) - sourceOrder(left.source))) {
+        const key = titleKey(textOf(japaneseText(candidate.song.musicTitle, String(candidate.song.musicId))));
+        if (!unique.has(key)) unique.set(key, candidate);
+      }
       return [...unique.values()]
         .sort(
           (left, right) =>
-            releaseTimestamp(right.song) - releaseTimestamp(left.song) || right.song.musicId - left.song.musicId,
+            releaseTimestamp(left.song) - releaseTimestamp(right.song) ||
+            sourceOrder(left.source) - sourceOrder(right.source) ||
+            left.song.musicId - right.song.musicId,
         )
         .map((candidate, index) => makeTrack(candidate.song, candidate.source, index + 1, candidate.bands));
     };

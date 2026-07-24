@@ -84,7 +84,7 @@ const audioTrack = (item: ResolvedPlaylistTrack): AudioTrack | null => {
   };
 };
 const playableQueue = computed(() =>
-  (playlist.value?.tracks || []).flatMap((item) => {
+  sortedTracks.value.flatMap((item) => {
     const audio = audioTrack(item);
     return audio ? [audio] : [];
   }),
