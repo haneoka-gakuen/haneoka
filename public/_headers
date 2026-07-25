@@ -1,2 +1,9 @@
 /images/*
   Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+
+# _nuxt assets are content-hashed → immutable. Pin them at the edge so they
+# never revalidate against the origin (eliminates the deploy-window / origin
+# 503s on the prefetch burst). The HTML entry keeps its default short cache so
+# new deploys are still picked up.
+/_nuxt/*
+  Cache-Control: public, max-age=31536000, immutable
