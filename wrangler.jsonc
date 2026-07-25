@@ -30,30 +30,22 @@
     "directory": "./.output/public",
     "binding": "ASSETS",
     "not_found_handling": "none",
+    // Only dynamic routes need the Worker. Static browsing (the SPA shell at
+    // "/", prerendered Nuxt pages, _nuxt assets) and every dead path are served
+    // directly by the static-asset layer without invoking the Worker.
+    // Verified dead paths removed 2026-07-25: "/", "/levels/*", "/playlists/*",
+    // "/backgrounds/*", "/effects/*", "/engines/*", "/particles/*", "/rooms/*",
+    // "/skins/*", "/repository/*", "/asset/*", "/Android/*", "/master/*",
+    // "/info", "/MasterDataSystemVersion.txt", "/*.bin" (no handler, no static
+    // file, zero source references since the initial commit).
     "run_worker_first": [
-      "/",
       "/api/*",
       "/artifacts/*",
       "/assets/*",
-      "/backgrounds/*",
-      "/effects/*",
-      "/engines/*",
       "/game-client/*",
-      "/info",
-      "/levels/*",
       "/objects/*",
-      "/particles/*",
-      "/playlists/*",
-      "/repository/*",
-      "/rooms/*",
       "/runtime/*",
-      "/skins/*",
       "/sonolus/*",
-      "/asset/*",
-      "/Android/*",
-      "/master/*",
-      "/MasterDataSystemVersion.txt",
-      "/*.bin",
     ],
   },
 

@@ -2125,17 +2125,11 @@ function shouldServeSpaEntry(request: Request, url: URL): boolean {
   return navigation || acceptsHtml;
 }
 
-function withHomeLcpPreload(response: Response, url: URL): Response {
-  if (url.pathname !== "/") return response;
-  const headers = new Headers(response.headers);
-  return new Response(response.body, { headers, status: response.status, statusText: response.statusText });
-}
-
 async function serveStaticAsset(request: Request, env: Env, url: URL): Promise<Response> {
   if (!env.ASSETS) return new Response("not found", { status: 404 });
 
   const assetResponse = await env.ASSETS.fetch(request);
-  if (assetResponse.status !== 404 || !shouldServeSpaEntry(request, url)) return withHomeLcpPreload(assetResponse, url);
+  if (assetResponse.status !== 404 || !shouldServeSpaEntry(request, url)) return assetResponse;
 
   await assetResponse.body?.cancel();
   const indexRequest = new Request(new URL("/index.html", request.url), {
@@ -2143,17 +2137,14 @@ async function serveStaticAsset(request: Request, env: Env, url: URL): Promise<R
     method: request.method,
   });
   const indexResponse = await env.ASSETS.fetch(indexRequest);
-  if (request.method !== "HEAD" || !indexResponse.body) return withHomeLcpPreload(indexResponse, url);
+  if (request.method !== "HEAD" || !indexResponse.body) return indexResponse;
 
   await indexResponse.body.cancel();
-  return withHomeLcpPreload(
-    new Response(null, {
-      headers: indexResponse.headers,
-      status: indexResponse.status,
-      statusText: indexResponse.statusText,
-    }),
-    url,
-  );
+  return new Response(null, {
+    headers: indexResponse.headers,
+    status: indexResponse.status,
+    statusText: indexResponse.statusText,
+  });
 }
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
