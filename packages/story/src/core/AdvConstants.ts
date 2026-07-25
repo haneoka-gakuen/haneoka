@@ -380,6 +380,7 @@ export const DEFAULT_ADV_RUNTIME = Object.freeze({
   preloadBackgroundConcurrency: 6,
   textureCacheEntryMax: 48,
   textureCacheMegabytes: 384,
+  arrayBufferCacheBytesMax: 256 * 1024 * 1024,
   compressedTextureVariants: {},
   live2dMaskResolutionScale: 1,
   live2dMaskBufferMax: 1024,

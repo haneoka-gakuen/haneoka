@@ -29,7 +29,7 @@ import { Cubism2Model } from "../cubism/Cubism2Model";
 import type { StoryCharacterModel } from "../StoryCharacterModel";
 import { StaticPortraitModel } from "../portrait/StaticPortraitModel";
 import { ensureCubismFramework } from "../cubism/CubismCoreRuntime";
-import { configureCubismResourceCache, loadCachedImage } from "../cubism/CubismResourceCache";
+import { configureCubismArrayBufferCache, configureCubismResourceCache, loadCachedImage } from "../cubism/CubismResourceCache";
 import { evaluateAdvHarmonicMotion, type AdvHarmonicMotionData } from "../cubism/AdvHarmonicMotion";
 import {
   DEFAULT_UNITY_CUBISM_LIGHTING,
@@ -585,6 +585,7 @@ export class ThreeStoryScene {
       targetFps: finite(this.runtime.targetFrameRate, 60),
     });
     configureCubismResourceCache(finite(this.runtime.textureCacheEntryMax, 48));
+    configureCubismArrayBufferCache(finite(this.runtime.arrayBufferCacheBytesMax, 256 * 1024 * 1024));
     sharedTextureCache.configure(Math.max(8, Math.trunc(finite(this.runtime.textureCacheEntryMax, 48))));
     this.state = state;
     const initialCameraPosition = vec3(this.runtime.stage.initialCameraPosition, ZERO_VEC3);

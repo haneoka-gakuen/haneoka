@@ -151,6 +151,8 @@ export interface AdvRuntimeConfig {
   seekCheckpointLimit?: number;
   textureCacheEntryMax: number;
   textureCacheMegabytes: number;
+  /** Byte budget for the in-memory moc3 / model3.json / physics3.json cache. */
+  arrayBufferCacheBytesMax: number;
   compressedTextureVariants: Record<string, string>;
   live2dMaskResolutionScale: number;
   live2dMaskBufferMax: number;

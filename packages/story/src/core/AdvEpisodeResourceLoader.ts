@@ -3,6 +3,8 @@ import type { AdvCharacterVariant, AdvCommand, AdvRuleTransitionEntry, AdvStory 
 import type { StoryResourceBackend } from "../rendering/StorySceneBackend";
 import { isCanonicalStoryResourceUrl, requireCanonicalStoryResourceUrl } from "../runtime";
 import { advCommandGroupCommands } from "./AdvCommandGroup";
+import { ADV_COMMAND } from "./AdvConstants";
+import { splitAdvTargetNames } from "./AdvCommandText";
 import { sortAdvTimelineSignals } from "./AdvPlayableDirector";
 
 const sharedFetchedUrls = new Map<string, Promise<void>>();
@@ -92,6 +94,14 @@ export class AdvEpisodeResourceLoader {
   async preload(story: AdvStory | null | undefined, signal?: AbortSignal) {
     assertNestedCanonicalResourceUrls(story);
     const commands = story?.commands || [];
+    // Pre-scan the script to attribute each referenced motion/expression to the
+    // specific model that plays it, by replaying the placement state machine
+    // (Character registers a variant, In/Costume set the active variant). Motion
+    // names are generic and collide across every character's catalog, so a global
+    // name set would warm ~N× too many URLs; per-model attribution is required.
+    // This uses local state only — it never touches the loader's shared
+    // characterVariants/characterAssetIndices, which playback populates itself.
+    const referencedAnimations = collectReferencedAnimations(commands);
     const textureUrls = new Set<string>();
     const fileUrls = new Map<string, string>();
     const firstCmdIndex = new Map<string, number>();
@@ -147,6 +157,8 @@ export class AdvEpisodeResourceLoader {
             cmd.live2d,
             (label, url) => addFile(label, url, i),
             (url) => addTexture(url, i),
+            referencedAnimations.motions.get(cmd.live2dKey || ""),
+            referencedAnimations.expressions.get(cmd.live2dKey || ""),
           );
         }
       }
@@ -305,13 +317,19 @@ export class AdvEpisodeResourceLoader {
   }
 
   /**
-   * Collect every declared Live2D asset so playback never needs to fetch a
-   * model, texture, motion, or expression after the story has started.
+   * Collect the Live2D assets this story actually uses. Core files
+   * (model/moc/physics/textures) are always declared — they are needed the
+   * moment a character is placed. Motions and expressions are filtered to the
+   * per-model referenced sets computed by collectReferencedAnimations; any name
+   * not pre-warmed here is fetched lazily by the model on first play. Each
+   * model's default idle motion is always included so placement is instant.
    */
   collectLive2DManifest(
     live2d: AdvCommand["live2d"],
     addFile: (label: string, url: string) => void,
     addTexture: (url: string) => void,
+    usedMotions?: Set<string>,
+    usedExpressions?: Set<string>,
   ) {
     const runtime = live2d?.runtime;
     if (!runtime) return;
@@ -322,8 +340,20 @@ export class AdvEpisodeResourceLoader {
     // in the core manifest so entry does not trigger another network round trip.
     addFile("live2d-physics", runtime.physics || "");
     for (const url of runtime.textures || []) addTexture(url);
-    for (const motion of advCharacterMotions(live2d)) addFile("live2d-motion", motion?.runtime || "");
-    for (const expression of advCharacterExpressions(live2d)) addFile("live2d-expression", expression?.runtime || "");
+    const defaultIdle = readDefaultIdleMotionName(live2d);
+    for (const motion of advCharacterMotions(live2d)) {
+      const name = motion?.name || "";
+      // When no referenced set is supplied (defensive fallback), keep the legacy
+      // behavior of warming the whole catalog. Otherwise warm only names this
+      // story references on this model, plus the model's own default idle.
+      if (usedMotions && !usedMotions.has(name) && name !== defaultIdle) continue;
+      addFile("live2d-motion", motion?.runtime || "");
+    }
+    for (const expression of advCharacterExpressions(live2d)) {
+      const name = expression?.name || "";
+      if (usedExpressions && !usedExpressions.has(name)) continue;
+      addFile("live2d-expression", expression?.runtime || "");
+    }
   }
 
   fetchUrl(url: string) {
@@ -456,12 +486,145 @@ function collectDeclaredResourceUrls(
     return;
   }
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    // Animation catalogs are preloaded by collectLive2DManifest, which warms only
+    // the motions/expressions a story actually references (plus each model's idle).
+    // Skip them here so this catch-all does not re-warm every entry in every
+    // appearing character's catalog — that would fully defeat the per-story filter.
+    if (key === "motions" || key === "expressions") continue;
     collectDeclaredResourceUrls(entry, add, key, valuesAreResources, seen);
   }
 }
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Read a model's default idle motion name from its catalog entry. Sourced from
+ * the same fields the renderer uses (profile.defaultMotionName, then
+ * runtime.defaultMotionName) so the warmed idle matches the one played on
+ * placement. AdvCharacterModelEntry exposes profile via its index signature, so
+ * the access is narrowed here rather than at every call site.
+ */
+function readDefaultIdleMotionName(live2d: AdvCommand["live2d"]): string {
+  const profile = (live2d as { profile?: { defaultMotionName?: unknown } } | null | undefined)?.profile;
+  const fromProfile = typeof profile?.defaultMotionName === "string" ? profile.defaultMotionName : "";
+  const runtime = live2d?.runtime as { defaultMotionName?: unknown } | undefined;
+  const fromRuntime = typeof runtime?.defaultMotionName === "string" ? runtime.defaultMotionName : "";
+  return String(fromProfile || fromRuntime || "");
+}
+
+/**
+ * Walk the script in playback order and attribute every referenced motion and
+ * expression name to the specific model (by live2dKey) that plays it. Motion
+ * and expression names are generic and collide across every character's
+ * catalog, so a global name set would warm roughly N× too many files; this
+ * replays the placement state machine the engine uses at runtime to pin each
+ * reference to the one model actually playing it:
+ *
+ *   Character — registers a variant at (target, index)
+ *   In        — places the active variant, plays its layout presentation
+ *   Costume   — switches the active variant by index
+ *
+ * Uses local state only and never touches the loader's characterVariants /
+ * characterAssetIndices (playback populates those itself). A misattribution
+ * here only fails to pre-warm a file; the model layer fetches it lazily on
+ * first play, so playback is never affected.
+ */
+function collectReferencedAnimations(commands: AdvCommand[]): {
+  motions: Map<string, Set<string>>;
+  expressions: Map<string, Set<string>>;
+} {
+  const motions = new Map<string, Set<string>>();
+  const expressions = new Map<string, Set<string>>();
+  const variantsByTarget = new Map<string, Map<number, string>>();
+  const activeIndex = new Map<string, number>();
+
+  const targetsOf = (cmd: AdvCommand): string[] => {
+    const keys = (cmd?.targets || [])
+      .map((entry) => entry?.target)
+      .filter((key): key is string => Boolean(key && typeof key === "string"));
+    return keys.length ? keys : splitAdvTargetNames(cmd?.targetName);
+  };
+  const registerVariant = (target: string, index: number, live2dKey: string | undefined) => {
+    if (!target || !live2dKey) return;
+    let byIndex = variantsByTarget.get(target);
+    if (!byIndex) {
+      byIndex = new Map<number, string>();
+      variantsByTarget.set(target, byIndex);
+    }
+    byIndex.set(index, live2dKey);
+  };
+  const activeKey = (target: string, fallbackIndex: number): string | undefined => {
+    const byIndex = variantsByTarget.get(target);
+    if (!byIndex) return undefined;
+    const idx = activeIndex.has(target) ? (activeIndex.get(target) as number) : fallbackIndex;
+    return byIndex.get(idx) ?? byIndex.get(0);
+  };
+  const note = (store: Map<string, Set<string>>, live2dKey: string | undefined, name: unknown) => {
+    const trimmed = String(name || "").trim();
+    if (!live2dKey || !trimmed) return;
+    let bucket = store.get(live2dKey);
+    if (!bucket) {
+      bucket = new Set<string>();
+      store.set(live2dKey, bucket);
+    }
+    bucket.add(trimmed);
+  };
+  const attribute = (cmd: AdvCommand, target: string) => {
+    const key = activeKey(target, Number(cmd.targetAssetIndex) || 0);
+    note(motions, key, cmd.motionName);
+    note(expressions, key, cmd.expressionName);
+    const presentation = cmd.characterPresentation;
+    if (presentation) {
+      note(motions, key, presentation.motionName);
+      note(expressions, key, presentation.expressionName);
+    }
+  };
+
+  for (let i = 0; i < commands.length; i += 1) {
+    for (const cmd of commandsIncludingTimelineEpisodes(commands[i])) {
+      if (!cmd) continue;
+      const op = Number(cmd.command);
+      const targets = targetsOf(cmd);
+      switch (op) {
+        case ADV_COMMAND.Character: {
+          const index = Number(cmd.targetAssetIndex) || 0;
+          for (const target of targets) registerVariant(target, index, cmd.live2dKey);
+          break;
+        }
+        case ADV_COMMAND.In: {
+          // In places the currently-active variant. It only sets the active
+          // index when none is set yet (matching resolveCharacterForIn); an In
+          // that carries its own model registers and activates it. The layout
+          // presentation plays on the target being placed.
+          const fallback = Number(cmd.targetAssetIndex) || 0;
+          for (const target of targets) {
+            if (cmd.live2d) {
+              registerVariant(target, fallback, cmd.live2dKey);
+              activeIndex.set(target, fallback);
+            } else if (!activeIndex.has(target)) {
+              activeIndex.set(target, fallback);
+            }
+            attribute(cmd, target);
+          }
+          break;
+        }
+        case ADV_COMMAND.Costume: {
+          const index = Number(cmd.targetAssetIndex) || 0;
+          for (const target of targets) activeIndex.set(target, index);
+          break;
+        }
+        default:
+          break;
+      }
+      // Motion/Expression/Talk carry the reference on the command itself.
+      if (op !== ADV_COMMAND.In && (cmd.motionName || cmd.expressionName || cmd.characterPresentation)) {
+        for (const target of targets) attribute(cmd, target);
+      }
+    }
+  }
+  return { motions, expressions };
 }
 
 function preloadConcurrency(value: unknown, fallback = 8, max = 16) {
