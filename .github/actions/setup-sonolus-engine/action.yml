@@ -12,7 +12,7 @@ runs:
   steps:
     - name: Restore compiled engine
       id: engine-cache
-      uses: actions/cache@v6
+      uses: actions/cache/restore@v6
       with:
         path: packages/sonolus/engine/dist
         key: sonolus-engine-v1-${{ runner.os }}-node24-${{ hashFiles('packages/sonolus/engine/**', 'LICENSE') }}
@@ -44,3 +44,10 @@ runs:
         cp packages/sonolus/engine/LICENSE.pjsekai.txt "$output/LICENSE.pjsekai.txt"
         printf 'Corresponding Haneoka Source Code Form:\nhttps://github.com/haneoka-gakuen/haneoka/tree/%s\n' \
           "$GITHUB_SHA" > "$output/SOURCE.txt"
+
+    - name: Save compiled engine
+      if: steps.engine-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: packages/sonolus/engine/dist
+        key: sonolus-engine-v1-${{ runner.os }}-node24-${{ hashFiles('packages/sonolus/engine/**', 'LICENSE') }}

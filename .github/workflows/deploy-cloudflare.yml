@@ -49,7 +49,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: "true"
-          CUBISM_RUNTIME_BUCKET: haneoka-resource-package-ingress
+          CUBISM_RUNTIME_BUCKET: hotdori-assets
           CUBISM_RUNTIME_KEY: private/cubism-runtime/haneoka-cubism-web-runtime-v1.tar.gz
         run: |
           set -euo pipefail
