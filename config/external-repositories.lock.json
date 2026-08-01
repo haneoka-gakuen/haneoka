@@ -6,7 +6,7 @@
       "name": "vega",
       "url": "https://github.com/haneoka-gakuen/vega.git",
       "branch": "main",
-      "commit": "af2c9f3c76a1816b13de1d9a7ebb637b720718e1",
+      "commit": "1fe0fea4f510a3ed806d3faa10c9ac1dc0db9bc1",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -46,7 +46,7 @@
       "name": "vega-renderer-three",
       "url": "https://github.com/haneoka-gakuen/vega-renderer-three.git",
       "branch": "main",
-      "commit": "6505dfff22097b2222ff0885219ba874c2736757",
+      "commit": "362599824b1b0544f906e30925abc702af40a588",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -134,7 +134,7 @@
       "name": "vega-plugin-cubism",
       "url": "https://github.com/haneoka-gakuen/vega-plugin-cubism.git",
       "branch": "main",
-      "commit": "e7c565639518c8ece138a00f3b69a9dbd5a483df",
+      "commit": "5daf858ff9b128c0494875aba334f33b3effcbb6",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -142,7 +142,7 @@
       "name": "vega-plugin-spine",
       "url": "https://github.com/haneoka-gakuen/vega-plugin-spine.git",
       "branch": "main",
-      "commit": "27cb85e0232f2474a935290906ba208df97d0682",
+      "commit": "053f3b4a36a91ae3efa0bad4c2c7b6e112c6e3b9",
       "version": "0.1.0",
       "kind": "node"
     },
