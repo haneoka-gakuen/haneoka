@@ -5,7 +5,7 @@ import type { Band, StoryChapter, StoryEpisode } from "~/types/archive";
 import { langOf, replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 import type { FacetOption } from "~/components/ui/FacetGroup.vue";
-import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { contentLocaleForOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 
 type ImageExpander = (url: string | null | undefined) => readonly string[];
 
@@ -20,6 +20,11 @@ const props = withDefaults(
     /** Pass-through source identifiers for `StoryColumnWorkbench`. */
     catalogOrigin?: CatalogContentOrigin;
     catalogAdapter?: string;
+    /** Resolve a per-episode origin when a mixed catalog carries item provenance. */
+    resolveStoryCatalogOrigin?: (
+      episode: StoryEpisode | undefined,
+      fallback: CatalogContentOrigin | undefined,
+    ) => CatalogContentOrigin | undefined;
     /** Fallback renderer release for a non-Our Notes catalog source. */
     releaseServer?: string;
     /** Show the band `FacetGroup` filter (band section only). */
@@ -181,18 +186,41 @@ const stageEpisode = computed(
     chapterEpisodeSource.value[0],
 );
 const playerEpisode = computed(() => props.episodes[openedEpisodeId.value]);
+const collectionSourceHint = computed(() =>
+  props.catalogOrigin ? (contentLocaleForOrigin(props.catalogOrigin) ?? "ja") : "ja",
+);
+const sourceHintOfEpisode = (episode: StoryEpisode) => {
+  const origin = props.resolveStoryCatalogOrigin
+    ? props.resolveStoryCatalogOrigin(episode, props.catalogOrigin)
+    : props.catalogOrigin;
+  return origin ? (contentLocaleForOrigin(origin) ?? collectionSourceHint.value) : collectionSourceHint.value;
+};
+const playerCatalogOrigin = computed(() =>
+  props.resolveStoryCatalogOrigin
+    ? props.resolveStoryCatalogOrigin(playerEpisode.value, props.catalogOrigin)
+    : props.catalogOrigin,
+);
 const isSingleChapter = computed(() => filteredChapters.value.length <= 1);
 
 // Formatters mirror the encyclopedia band-stories page verbatim so the
 // encyclopedia renders byte-identically through this shared component.
 const titleOfEpisode = (episode: StoryEpisode) => localize(episode.title) || episode.storyId;
-const displayTitleOfChapter = (chapter: StoryChapter): DisplayText =>
-  resolveLocalized(chapter.chapterName, { sourceHint: "ja", fallback: String(chapter.chapterId) }) ||
-  String(chapter.chapterId);
+const displayTitleOfChapter = (chapter: StoryChapter): DisplayText => {
+  const sourceEpisode = chapter.episodes.map((storyId) => props.episodes[storyId]).find(Boolean);
+  return (
+    resolveLocalized(chapter.chapterName, {
+      sourceHint: sourceEpisode ? sourceHintOfEpisode(sourceEpisode) : collectionSourceHint.value,
+      fallback: String(chapter.chapterId),
+    }) || String(chapter.chapterId)
+  );
+};
 const displayTitleOfEpisode = (episode: StoryEpisode): DisplayText =>
-  resolveLocalized(episode.title, { sourceHint: "ja", fallback: titleOfEpisode(episode) }) || titleOfEpisode(episode);
+  resolveLocalized(episode.title, {
+    sourceHint: sourceHintOfEpisode(episode),
+    fallback: titleOfEpisode(episode),
+  }) || titleOfEpisode(episode);
 const displayDescriptionOf = (episode: StoryEpisode): DisplayText => {
-  const resolved = resolveLocalized(episode.description, { sourceHint: "ja" });
+  const resolved = resolveLocalized(episode.description, { sourceHint: sourceHintOfEpisode(episode) });
   if (!resolved) return "";
   const value = stripUnityMarkup(textOf(resolved));
   return !value || /^Story_[A-Za-z0-9_]+$/.test(value) ? "" : replaceDisplayText(resolved, value);
@@ -232,8 +260,10 @@ const listItems = computed(() =>
 const bandOptions = computed(() =>
   chapterGroups.value.map((group) => {
     const label =
-      resolveLocalized(group.band?.bandName, { sourceHint: "ja", fallback: String(group.bandId) }) ||
-      String(group.bandId);
+      resolveLocalized(group.band?.bandName, {
+        sourceHint: collectionSourceHint.value,
+        fallback: String(group.bandId),
+      }) || String(group.bandId);
     return {
       value: group.bandId,
       label,
@@ -326,7 +356,7 @@ const selectChapter = (value: string | number) => {
       <StoryColumnWorkbench
         :story-id="openedEpisodeId"
         :story-title="playerEpisode ? displayTitleOfEpisode(playerEpisode) : ''"
-        :catalog-origin="catalogOrigin"
+        :catalog-origin="playerCatalogOrigin"
         :catalog-adapter="catalogAdapter"
         :release-server="releaseServer"
         @close="closeStory"

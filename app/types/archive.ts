@@ -288,6 +288,8 @@ export interface StoryEpisode {
   publishedAt?: Array<number | null>;
   /** Source-selected canonical publication time when server timelines differ. */
   releaseAt?: number;
+  /** Provider server selected for this record after language/availability fallback. */
+  sourceServer?: string;
   closedAt?: Array<number | null>;
   playTime?: number;
   scriptAsset?: string;

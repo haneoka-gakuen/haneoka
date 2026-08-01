@@ -5,7 +5,7 @@
 
   The command-card layout is adapted from OpenWebGAL/WebGAL_Terre's
   AddSentence component at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import {
@@ -18,9 +18,13 @@ import {
   type UiTextFieldHandle,
 } from "@haneoka/ui";
 
-import { COMMAND_DESCRIPTORS, type CommandCategory, type CommandDescriptor } from "@haneoka/story-editor";
+import type { CommandCategory, CommandDescriptor } from "@haneoka/altair-plugin-adv";
+import type { HaneokaAdvAuthoringService } from "~/composables/useStoryEditorWorkspace";
 
-const props = defineProps<{ modelValue: boolean }>();
+const props = defineProps<{
+  modelValue: boolean;
+  adv: HaneokaAdvAuthoringService;
+}>();
 
 const emit = defineEmits<{
   "update:modelValue": [open: boolean];
@@ -36,7 +40,7 @@ const category = ref<CommandCategory | "all">("all");
 const searchInput = ref<UiTextFieldHandle>();
 const commandGrid = ref<HTMLElement>();
 const categories = computed(
-  () => ["all", ...new Set(COMMAND_DESCRIPTORS.map((descriptor) => descriptor.category))] as const,
+  () => ["all", ...new Set(props.adv.commands.map((descriptor) => descriptor.category))] as const,
 );
 const categoryLabels = computed<Record<CommandCategory | "all", string>>(() => ({
   all: copy.value.allCommands,
@@ -82,7 +86,7 @@ const descriptionFor = (descriptor: CommandDescriptor) => {
 };
 const items = computed(() => {
   const needle = query.value.normalize("NFKC").trim().toLocaleLowerCase();
-  return COMMAND_DESCRIPTORS.filter((descriptor) => {
+  return props.adv.commands.filter((descriptor) => {
     if (category.value !== "all" && descriptor.category !== category.value) return false;
     const localized = commandLabel(descriptor.name, descriptor.label);
     const fields = descriptor.fields.map(fieldLabel).join(" ");

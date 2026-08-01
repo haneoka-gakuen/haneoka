@@ -5,22 +5,18 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's GraphicalEditor
   and graphicalEditor.module.scss at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import { MaterialIcon, UiButton } from "@haneoka/ui";
 
-import {
-  commandFieldDescriptors,
-  type CommandFieldDescriptor,
-  type JsonObject,
-  type JsonValue,
-  type StoryProjectCommand,
-  type StoryValidationIssue,
-} from "@haneoka/story-editor";
+import type { CommandFieldDescriptor, StoryValidationIssue } from "@haneoka/altair-plugin-adv";
+import type { JsonObject, JsonValue, StoryProjectCommand } from "@haneoka/altair";
+import type { HaneokaAdvAuthoringService } from "~/composables/useStoryEditorWorkspace";
 import type { StoryEditorResourceTarget } from "./StoryEditorSentenceCard.vue";
 
 const props = defineProps<{
+  adv: HaneokaAdvAuthoringService;
   commands: readonly StoryProjectCommand[];
   selectedId?: string;
   issues?: readonly StoryValidationIssue[];
@@ -91,7 +87,7 @@ const estimatedCommandRowHeight = (command: StoryProjectCommand): number => {
     return cached.height;
   }
 
-  const fields = commandFieldDescriptors(command);
+  const fields = props.adv.commandFieldDescriptors(command);
   if (!fields.length) {
     estimatedRowHeightCache.set(command.id, {
       command: command.command,
@@ -392,6 +388,7 @@ onBeforeUnmount(() => {
               </UiButton>
             </div>
             <StoryEditorSentenceCard
+              :adv="adv"
               :command="entry.command"
               :index="entry.index"
               :selected="entry.command.id === selectedId"

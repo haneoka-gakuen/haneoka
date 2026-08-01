@@ -5,7 +5,7 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's EditorToolbar
   component at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import { MaterialIcon, UiButton, UiList, UiListItem, type UiButtonHandle } from "@haneoka/ui";
@@ -13,7 +13,15 @@ import type { ComponentPublicInstance } from "vue";
 
 export type StoryEditorMode = "visual" | "graph" | "webgal" | "project";
 
-const props = defineProps<{ modelValue: StoryEditorMode }>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: StoryEditorMode;
+    availableModes?: readonly StoryEditorMode[];
+  }>(),
+  {
+    availableModes: () => ["visual", "graph", "webgal", "project"],
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [mode: StoryEditorMode];
@@ -26,14 +34,18 @@ const menuTrigger = ref<UiButtonHandle>();
 const menu = ref<HTMLElement>();
 const menuOpen = ref(false);
 const modeButtons = new Map<StoryEditorMode, HTMLButtonElement>();
-const options = computed(() => [
+const allOptions = computed(() => [
   { value: "visual" as const, label: copy.value.visual, icon: "playlist_add" },
   { value: "graph" as const, label: copy.value.graph, icon: "account_tree" },
   { value: "webgal" as const, label: copy.value.webgalCode, icon: "data_object" },
   { value: "project" as const, label: copy.value.projectCode, icon: "code_blocks" },
 ]);
+const options = computed(() => {
+  const available = new Set(props.availableModes);
+  return allOptions.value.filter(({ value }) => available.has(value));
+});
 const currentOption = computed(
-  () => options.value.find((option) => option.value === props.modelValue) ?? options.value[0]!,
+  () => options.value.find((option) => option.value === props.modelValue) ?? options.value[0] ?? allOptions.value[0]!,
 );
 
 const setModeButton = (mode: StoryEditorMode, element: Element | ComponentPublicInstance | null) => {

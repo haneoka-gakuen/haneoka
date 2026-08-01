@@ -6,6 +6,7 @@ builder never infers a Unity source path from a downloaded bundle filename.
 
 from __future__ import annotations
 
+import copy
 import math
 import re
 import shutil
@@ -647,6 +648,19 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
             "expressions": expressions,
             "harmonicMotion": harmonic,
         }
+
+    # Unity's live-stage low exports omit the MotionSyncData component while
+    # their normal sibling carries the exact character-specific CRI profile.
+    # Copy that authored profile instead of substituting one global fallback
+    # (010/Sakiko intentionally uses a different I sensitivity).
+    for key, model in models.items():
+        runtime = model["runtime"]
+        if runtime.get("motionSync") is not None or not key.casefold().endswith("_low"):
+            continue
+        normal = models.get(key[:-4])
+        normal_motion_sync = normal.get("runtime", {}).get("motionSync") if normal else None
+        if normal_motion_sync is not None:
+            runtime["motionSync"] = copy.deepcopy(normal_motion_sync)
 
     result = {
         "schema": "haneoka-live2d-build-v1",

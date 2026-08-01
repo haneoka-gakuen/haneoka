@@ -5,12 +5,12 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's TagsManager
   component at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import { MaterialIcon, UiIconButton } from "@haneoka/ui";
 
-import type { StoryScene } from "@haneoka/story-editor";
+import type { StoryScene } from "@haneoka/altair";
 
 const props = defineProps<{
   modelValue: string[];

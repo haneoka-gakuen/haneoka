@@ -5,7 +5,7 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's GraphicalEditor
   and SentenceEditor components at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import {
@@ -19,26 +19,13 @@ import {
   type UiSelectOption,
 } from "@haneoka/ui";
 
-import {
-  commandFieldDescriptors,
-  commandDescriptor,
-  replaceStoryLocalizedTextForEditor,
-  storyCommandFieldValue,
-  storyLocalizedTextForEditor,
-  storyNumberFromInput,
-  storyNumberInputValue,
-  storyTargetNameForEditor,
-  storyTargetNameFromEditor,
-  type CommandFieldDescriptor,
-  type CommandResourceKind,
-  type JsonObject,
-  type JsonValue,
-  type StoryProjectCommand,
-  type StoryValidationIssue,
-} from "@haneoka/story-editor";
+import type { CommandFieldDescriptor, CommandResourceKind, StoryValidationIssue } from "@haneoka/altair-plugin-adv";
+import type { JsonObject, JsonValue, StoryProjectCommand } from "@haneoka/altair";
+import type { HaneokaAdvAuthoringService } from "~/composables/useStoryEditorWorkspace";
 import type { ArchiveLocale } from "~/i18n/locales";
 import { createStoryEditorCommitQueue } from "~/utils/storyEditorCommitQueue";
-import type { StoryEditorAudioUsage } from "./StoryEditorResourceLibrary.vue";
+
+type StoryEditorAudioUsage = "bgm" | "se" | "voice";
 
 export interface StoryEditorResourceTarget {
   commandId: string;
@@ -48,6 +35,7 @@ export interface StoryEditorResourceTarget {
 }
 
 const props = defineProps<{
+  adv: HaneokaAdvAuthoringService;
   command: StoryProjectCommand;
   index: number;
   selected?: boolean;
@@ -73,13 +61,13 @@ const { locale, messages } = useLocale();
 const copy = messages("storyEditorPage");
 const { commandLabel, fieldLabel, choiceLabel: localizeChoiceLabel } = useStoryEditorLabels();
 const visibleFields = computed(() =>
-  commandFieldDescriptors(props.command).map((field) => ({
+  props.adv.commandFieldDescriptors(props.command).map((field) => ({
     field,
-    value: storyCommandFieldValue(props.command, field),
+    value: props.adv.storyCommandFieldValue(props.command, field),
   })),
 );
 const title = computed(() => {
-  const descriptor = commandDescriptor(props.command.command);
+  const descriptor = props.adv.commandDescriptor(props.command.command);
   return descriptor
     ? commandLabel(descriptor.name, descriptor.label)
     : props.command.source?.command || `#${props.command.command ?? "?"}`;
@@ -97,7 +85,7 @@ const committedDrafts = new Map<string, string>();
 const commitQueue = createStoryEditorCommitQueue(300);
 
 const localizedText = (value: JsonValue | undefined): string =>
-  storyLocalizedTextForEditor(value, localeIndexes[locale.value]);
+  props.adv.storyLocalizedTextForEditor(value, localeIndexes[locale.value]);
 
 const localizedListText = (value: JsonValue | undefined): string => {
   if (!Array.isArray(value)) return localizedText(value);
@@ -108,7 +96,7 @@ const localizedListText = (value: JsonValue | undefined): string => {
 };
 
 const localizedValue = (original: JsonValue | undefined, localeIndex: number, text: string): JsonValue =>
-  replaceStoryLocalizedTextForEditor(original, localeIndex, text);
+  props.adv.replaceStoryLocalizedTextForEditor(original, localeIndex, text);
 
 const replaceField = (field: CommandFieldDescriptor, value?: JsonValue) => {
   const sourceKey = field.sourceKey || field.key;
@@ -136,7 +124,7 @@ const replaceField = (field: CommandFieldDescriptor, value?: JsonValue) => {
 };
 
 const numericInputValue = (value: JsonValue | undefined): string => {
-  if (typeof value === "number") return storyNumberInputValue(value);
+  if (typeof value === "number") return props.adv.storyNumberInputValue(value);
   if (typeof value !== "string" || !value.trim() || !Number.isFinite(Number(value))) return "";
   return value;
 };
@@ -217,7 +205,7 @@ const replaceVectorComponent = (
   source: string,
 ) => {
   const current = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-  const component = storyNumberFromInput(source);
+  const component = props.adv.storyNumberFromInput(source);
   if (component === undefined) delete current[axis];
   else current[axis] = component;
   replaceField(field, Object.keys(current).length ? current : undefined);
@@ -226,14 +214,14 @@ const replaceVectorComponent = (
 const isTargetNameField = (field: CommandFieldDescriptor): boolean => (field.sourceKey || field.key) === "targetName";
 
 const editorText = (field: CommandFieldDescriptor, value: JsonValue | undefined): string =>
-  isTargetNameField(field) ? storyTargetNameForEditor(value) : String(value ?? "");
+  isTargetNameField(field) ? props.adv.storyTargetNameForEditor(value) : String(value ?? "");
 
 const draftText = (field: CommandFieldDescriptor, fallback: string): string =>
   fieldDrafts.get(field.key)?.source ?? fallback;
 
 const draftValue = (draft: FieldDraft): JsonValue | undefined => {
-  const original = storyCommandFieldValue(props.command, draft.field);
-  if (draft.kind === "number") return storyNumberFromInput(draft.source);
+  const original = props.adv.storyCommandFieldValue(props.command, draft.field);
+  if (draft.kind === "number") return props.adv.storyNumberFromInput(draft.source);
   if (draft.kind === "resource-list") {
     return draft.source
       .split(/[,，]/)
@@ -249,7 +237,7 @@ const draftValue = (draft: FieldDraft): JsonValue | undefined => {
     const existing = Array.isArray(original) ? original : [];
     return names.map((name, index) => localizedValue(existing[index], draft.localeIndex, name));
   }
-  if (draft.kind === "text" && isTargetNameField(draft.field)) return storyTargetNameFromEditor(draft.source);
+  if (draft.kind === "text" && isTargetNameField(draft.field)) return props.adv.storyTargetNameFromEditor(draft.source);
   return draft.source;
 };
 
@@ -469,7 +457,7 @@ onBeforeUnmount(() => commitQueue.flushAll());
                     entry.value,
                     choiceIndex,
                     'choiceValue',
-                    storyNumberFromInput(fieldSource($event)),
+                    adv.storyNumberFromInput(fieldSource($event)),
                   )
                 "
               />

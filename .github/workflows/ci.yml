@@ -26,11 +26,22 @@ jobs:
         with:
           node-version: 24
 
+      - name: Check out locked external repositories
+        run: node scripts/external-repositories.mjs checkout
+
       - name: Install pnpm
         run: corepack enable
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify external repository compatibility lock
+        run: pnpm dependencies:verify
+
       - name: Generate production application
         run: pnpm build
+        env:
+          HANEOKA_CUBISM_RUNTIME_POLICY: optional
+
+      - name: Check resource pipeline
+        run: python3 -m unittest discover -s scripts/garupa_master/tests -t .

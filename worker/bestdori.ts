@@ -155,8 +155,9 @@ const invalidPathResponse = (): Response =>
   });
 
 // Bestdori publishes per-region; publication timelines use [jp, en, tw, cn, kr].
-// Public data is queried against one exact region. The region-less Sonolus
-// projection is the only aggregate consumer and may inspect every region.
+// Catalog routes keep their requested region as provenance, while regional
+// assets and stories fall back locale-first, then to JP and the remaining
+// published regions. Some content exists only outside the requested region.
 export const BESTDORI_REGIONS = ["jp", "en", "tw", "cn", "kr"] as const;
 export type BestdoriRegion = (typeof BESTDORI_REGIONS)[number];
 export const isBestdoriRegion = (value: string): value is BestdoriRegion =>
@@ -175,19 +176,18 @@ const REGION_LOCALE: Readonly<Record<BestdoriRegion, string>> = {
   kr: "ko",
 };
 
-// Map a requested Garupa region to its Bestdori timeline slot. Public API
-// requests always supply a concrete region (through `REGION_LOCALE`), so their
-// selection is intentionally exact. The region-less Sonolus projection keeps
-// the full order for its legacy aggregate behavior.
+// Map a UI locale to the Bestdori timeline slot, then preserve the established
+// content fallback order: requested locale, JP source, remaining regions.
 const LOCALE_SERVER_INDEX: Record<string, number> = { ja: 0, en: 1, "zh-TW": 2, "zh-CN": 3, ko: 4 };
 const regionChainForLocale = (lang: string | undefined): readonly BestdoriRegion[] => {
   const index = lang ? LOCALE_SERVER_INDEX[lang] : undefined;
   const preferred = index === undefined ? undefined : BESTDORI_REGIONS[index];
-  return preferred ? [preferred] : BESTDORI_REGIONS;
+  if (!preferred || preferred === "jp") return BESTDORI_REGIONS;
+  return [preferred, "jp", ...BESTDORI_REGIONS.filter((region) => region !== preferred && region !== "jp")];
 };
 // Release chronology is deliberately distinct from asset-language selection:
-// the Japanese schedule is canonical when present. Only when JP is missing do
-// we consult the current locale, followed by the normal regional fallback.
+// always use the fixed Bestdori timeline order [jp, en, tw, cn, kr]. Locale
+// affects displayed content and asset provenance, never catalogue chronology.
 // Bestdori also uses dates in 2100 as unpublished card placeholders; treating
 // those as real would incorrectly pin undated cards above released content.
 const validReleaseTimestamp = (value: unknown): number | undefined => {
@@ -211,16 +211,21 @@ const recordsPublishedInRegion = (
   region: BestdoriRegion,
 ): Record<string, unknown> =>
   Object.fromEntries(Object.entries(records).filter(([, value]) => isPublishedInRegion(asObj(value), field, region)));
+const isPublishedInAnyRegion = (entry: Obj, field: "publishedAt" | "releasedAt" | "startAt"): boolean => {
+  const timeline = asArray(entry[field]);
+  return !timeline.length || BESTDORI_REGIONS.some((region) => isPublishedInRegion(entry, field, region));
+};
+const recordsPublishedInAnyRegion = (
+  records: Record<string, unknown>,
+  field: "publishedAt" | "releasedAt" | "startAt",
+): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(records).filter(([, value]) => isPublishedInAnyRegion(asObj(value), field)));
 const releaseTimestampForTimeline = (
   entry: Obj,
   field: "publishedAt" | "releasedAt" | "startAt",
-  lang?: string,
 ): number | undefined => {
   const timeline = asArray(entry[field]);
-  const candidates = ["jp" as const, ...regionChainForLocale(lang)].filter(
-    (server, index, values) => values.indexOf(server) === index,
-  );
-  for (const server of candidates) {
+  for (const server of BESTDORI_REGIONS) {
     const index = BESTDORI_REGIONS.indexOf(server);
     const value = index < 0 ? undefined : validReleaseTimestamp(timeline[index]);
     if (value !== undefined) return value;
@@ -237,7 +242,7 @@ const regionForTimeline = (
   if (!timeline.length) return candidates[0] ?? "jp";
   for (const server of candidates) {
     const index = BESTDORI_REGIONS.indexOf(server);
-    if (index >= 0 && timeline[index] != null) return server;
+    if (index >= 0 && validReleaseTimestamp(timeline[index]) !== undefined) return server;
   }
   return candidates[0] ?? "jp";
 };
@@ -255,7 +260,7 @@ const storyRegionCandidates = (
 ): BestdoriRegion[] => {
   const published = regionChainForLocale(lang).filter((server) => {
     const index = BESTDORI_REGIONS.indexOf(server);
-    return !publishedAt?.length || (index >= 0 && publishedAt[index] != null);
+    return !publishedAt?.length || (index >= 0 && validReleaseTimestamp(publishedAt[index]) !== undefined);
   });
   return [requested, ...published, fallback, ...regionChainForLocale(lang)]
     .filter((server): server is BestdoriRegion => Boolean(server && isBestdoriRegion(server)))
@@ -411,6 +416,8 @@ const cacheKeyUrl = (value: string): string => {
   const canonical = new URL(source.pathname, source.origin);
   if (/^\/api\/v1\/garupa\/bestdori\/(?:jp|en|tw|cn|kr)\/live2d$/.test(canonical.pathname)) {
     for (const id of [...new Set(source.searchParams.getAll("id"))].sort()) canonical.searchParams.append("id", id);
+    const sourceServer = source.searchParams.get("server")?.trim();
+    if (sourceServer && isBestdoriRegion(sourceServer)) canonical.searchParams.set("server", sourceServer);
   }
   canonical.searchParams.set("_cv", BESTDORI_RESPONSE_VERSION);
   canonical.searchParams.set("_source", upstreamBase.toString());
@@ -688,7 +695,7 @@ const transformCards = (raw: Record<string, unknown>, lang?: string): Obj => {
       attribute: entry.attribute ?? entry.attr ?? null,
       cardType: entry.type ?? entry.cardType ?? null,
       releasedAt: timestamps(entry.releasedAt),
-      releaseAt: releaseTimestampForTimeline(entry, "releasedAt", lang) ?? null,
+      releaseAt: releaseTimestampForTimeline(entry, "releasedAt") ?? null,
       hasStory,
       resourceSetName: resourceSetName || null,
       // Keep the legacy singular field for existing clients while exposing
@@ -737,6 +744,8 @@ interface StoryListItem {
   publishedAt?: Array<number | null>;
   /** Canonical JP-first date used for chronology and display. */
   releaseAt?: number;
+  /** Region selected for this record after applying locale-first availability fallback. */
+  sourceServer?: BestdoriRegion;
   bandId?: number;
   eventId?: number;
   eventName?: unknown;
@@ -754,39 +763,32 @@ const storyItemRecord = (stories: StoryListItem[]): Obj =>
 const whenDefined = <Key extends string, Value>(key: Key, value: Value | undefined): { [K in Key]?: Value } =>
   value === undefined ? {} : ({ [key]: value } as { [K in Key]?: Value });
 
-const eventThumbnail = (event: Obj, lang?: string): string | undefined => {
+const eventThumbnail = (event: Obj, sourceServer: BestdoriRegion): string | undefined => {
   const assetBundleName = String(event.assetBundleName || "");
   if (!assetBundleName) return undefined;
-  return proxify(`/assets/${regionForTimeline(event, "startAt", lang)}/event/${assetBundleName}/images_rip/logo.png`);
+  return proxify(`/assets/${sourceServer}/event/${assetBundleName}/images_rip/logo.png`);
 };
 
 // Event art: the wide memorial banner (`banner_memorial_event{id}.png`) drives
 // the chapter rail; `logo.png` is the stage's corner title mark (`thumbnail`);
 // per-episode `EventStoryScreenImage{id}_{ep}.png` drives the filmstrip and the
 // stage's large film frame (`episodeImage`).
-const eventMemorialBanner = (eventId: number, event: Obj, lang?: string): string =>
+const eventMemorialBanner = (eventId: number, sourceServer: BestdoriRegion): string =>
+  proxify(`/assets/${sourceServer}/story/banner/memorial_rip/banner_memorial_event${pad3(eventId)}.png`);
+
+const eventScreenImage = (eventId: number, episode: number, sourceServer: BestdoriRegion): string =>
   proxify(
-    `/assets/${regionForTimeline(event, "startAt", lang)}/story/banner/memorial_rip/banner_memorial_event${pad3(eventId)}.png`,
+    `/assets/${sourceServer}/story/bg/event/eventstory${eventId}_${episode}_rip/EventStoryScreenImage${eventId}_${episode}.png`,
   );
 
-const eventScreenImage = (eventId: number, episode: number, event: Obj, lang?: string): string =>
-  proxify(
-    `/assets/${regionForTimeline(event, "startAt", lang)}/story/bg/event/eventstory${eventId}_${episode}_rip/EventStoryScreenImage${eventId}_${episode}.png`,
-  );
-
-const storyListFromEvent = (
-  eventId: number,
-  rawStories: Obj,
-  event: Obj,
-  lang?: string,
-  region?: BestdoriRegion,
-): StoryListItem[] => {
-  if (region && !isPublishedInRegion(event, "startAt", region)) return [];
+const storyListFromEvent = (eventId: number, rawStories: Obj, event: Obj, lang?: string): StoryListItem[] => {
+  if (!isPublishedInAnyRegion(event, "startAt")) return [];
   const eventName = event.eventName ?? rawStories.eventName ?? "";
   const publishedAt = timestamps(event.startAt);
-  const releaseAt = releaseTimestampForTimeline(event, "startAt", lang);
-  const logo = eventThumbnail(event, lang);
-  const memorial = eventMemorialBanner(eventId, event, lang);
+  const releaseAt = releaseTimestampForTimeline(event, "startAt");
+  const sourceServer = regionForTimeline(event, "startAt", lang);
+  const logo = eventThumbnail(event, sourceServer);
+  const memorial = eventMemorialBanner(eventId, sourceServer);
   const characterIds = asArray(event.characters)
     .map((value) => num(asObj(value).characterId))
     .filter((value): value is number => value !== undefined)
@@ -810,11 +812,12 @@ const storyListFromEvent = (
       ...whenDefined("caption", entry.caption),
       ...whenDefined("publishedAt", publishedAt),
       ...whenDefined("releaseAt", releaseAt),
+      sourceServer,
       eventId,
       eventName,
       ...(characterIds.length ? { characterIds } : {}),
       image: memorial,
-      episodeImage: eventScreenImage(eventId, index, event, lang),
+      episodeImage: eventScreenImage(eventId, index, sourceServer),
       ...(logo ? { thumbnail: logo } : {}),
     };
   });
@@ -1043,7 +1046,7 @@ const buildStoryCollection = async (
     return storyItemRecord(
       Object.entries(stories).flatMap(([eventId, value]) => {
         const id = numericId(eventId);
-        return id === undefined ? [] : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang, region);
+        return id === undefined ? [] : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang);
       }),
     );
   }
@@ -1500,7 +1503,7 @@ const musicVideosFromKeys = (
 
 const baseSong = (musicId: number, entry: Obj, lang?: string): Obj => {
   const assetRegion = regionFor(entry, lang);
-  const releaseAt = releaseTimestampForTimeline(entry, "publishedAt", lang);
+  const releaseAt = releaseTimestampForTimeline(entry, "publishedAt");
   const image = asArray(entry.jacketImage)[0];
   const jacketImage = typeof image === "string" ? image : String(musicId);
   const jacketBase = bestdoriApiPath(assetRegion, "media");
@@ -1918,13 +1921,13 @@ export async function handleGarupaBestdoriApi(
   }
   if (tail === "songs") {
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(transformSongs(recordsPublishedInRegion(await all8(), "publishedAt", region), lang)),
+      jsonBody(transformSongs(recordsPublishedInAnyRegion(await all8(), "publishedAt"), lang)),
     );
   }
   if (tail === "song-meta") {
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
       const [songs, meta] = await Promise.all([all8(), allSongMeta()]);
-      return jsonBody(transformSongMeta(recordsPublishedInRegion(songs, "publishedAt", region), meta));
+      return jsonBody(transformSongMeta(recordsPublishedInAnyRegion(songs, "publishedAt"), meta));
     });
   }
   if (tail === "characters") {
@@ -1957,9 +1960,11 @@ export async function handleGarupaBestdoriApi(
           .filter((id) => /^[A-Za-z0-9_-]+$/.test(id)),
       ),
     ].slice(0, 64);
-    const regionCandidates = [region, ...regionChainForLocale(lang)].filter(
-      (candidate, index, values) => values.indexOf(candidate) === index,
-    );
+    const requestedServer = url.searchParams.get("server")?.trim();
+    const sourceServer = requestedServer && isBestdoriRegion(requestedServer) ? requestedServer : undefined;
+    const regionCandidates = [sourceServer, region, ...regionChainForLocale(lang)]
+      .filter((candidate): candidate is BestdoriRegion => candidate !== undefined)
+      .filter((candidate, index, values) => values.indexOf(candidate) === index);
     if (!ids.length)
       return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody({ items: {}, missing: [] }));
     return serveCached(request, ctx, JSON_CACHE_CONTROL, () => live2dEntries(ids, regionCandidates));

@@ -30,7 +30,7 @@ export interface BestdoriLive2dContext {
   characterId?: number;
 }
 
-export interface BestdoriLive2dMotion {
+export interface BestdoriLive2dMotion extends Record<string, unknown> {
   name: string;
   runtime: string;
 }
@@ -45,7 +45,7 @@ export interface BestdoriLive2dProfile extends Record<string, unknown> {
 }
 
 export interface BestdoriLive2dRuntime extends Record<string, unknown> {
-  format: "cubism2";
+  format?: "cubism2";
   model: string;
   moc: string;
   physics: string;
@@ -111,15 +111,22 @@ export const bestdoriBuildDataToLive2dEntry = (
     const raw = resolveBundlePath(ctx.server, value, options);
     return raw ? ctx.proxify(raw) : "";
   };
+  const rawMoc = resolveBundlePath(ctx.server, base.model, {
+    removeBytesSuffix: true,
+  });
+  if (!/\.moc(?:[?#].*)?$/iu.test(rawMoc)) return null;
   const runtime: BestdoriLive2dRuntime = {
-    format: "cubism2",
     model: "",
-    moc: file(base.model, { removeBytesSuffix: true }),
+    moc: ctx.proxify(rawMoc),
     physics: file(base.physics),
     // Texture numbers are authored into the MOC. Keep empty/malformed slots in
     // place so a missing texture 1 never shifts texture 2 onto the wrong atlas.
     textures: (base.textures ?? []).map((item) => file(item, { ensurePngSuffix: true })),
   };
+  if (!runtime.moc.trim() || !runtime.textures.some((texture) => texture.trim())) {
+    return null;
+  }
+  if (!/\.moc(?:[?#].*)?$/iu.test(runtime.moc)) runtime.format = "cubism2";
   const motions = (base.motions ?? [])
     .map((item) => {
       const runtime = file(item, { removeBytesSuffix: true });

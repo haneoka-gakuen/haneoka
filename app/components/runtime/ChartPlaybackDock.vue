@@ -10,6 +10,8 @@ const props = withDefaults(
     ready: boolean;
     currentTime: number;
     duration: number;
+    startLabel?: string;
+    endLabel?: string;
     loop?: boolean;
     settingsOpen?: boolean;
     showLoop?: boolean;
@@ -100,8 +102,8 @@ const fullscreenLabel = computed(() =>
       :max="duration"
       :step="0.01"
       :disabled="mode === 'chart' || !ready"
-      :start-label="mode === 'chart' ? '' : format(currentTime)"
-      :end-label="mode === 'chart' ? '' : format(duration)"
+      :start-label="mode === 'chart' ? '' : (startLabel ?? format(currentTime))"
+      :end-label="mode === 'chart' ? '' : (endLabel ?? format(duration))"
       @preview="emit('preview-seek', $event)"
       @commit="emit('seek', $event)"
       @scrub-start="emit('scrub-start')"

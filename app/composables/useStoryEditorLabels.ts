@@ -1,4 +1,4 @@
-import type { AdvCommandName, CommandFieldDescriptor } from "@haneoka/story-editor";
+import type { AdvCommandName, CommandFieldDescriptor } from "@haneoka/altair-plugin-adv";
 
 const simplifiedCommandLabels: Record<AdvCommandName, string> = {
   In: "角色登场",
@@ -533,8 +533,107 @@ const koreanFieldLabels: Record<string, string> = {
   "Stage position": "스테이지 위치",
 };
 
+const storyEditorWorkspaceLabels = {
+  en: {
+    openFolder: "Open project folder",
+    refreshFolder: "Refresh project files",
+    reimportFolder: "Reimport project",
+    reauthorizeFolder: "Grant folder access",
+    disconnectFolder: "Disconnect folder",
+    folderConnected: "Folder connected",
+    folderReadOnly: "Read only",
+    folderPermission: "Folder access required",
+    folderFiles: "files",
+    flowStart: "Start",
+    flowEnd: "End",
+    flowJump: "Jump",
+    flowCall: "Call",
+    flowReturn: "Return",
+    flowCondition: "Condition",
+    flowReset: "Reset layout",
+    line: "Line",
+  },
+  ja: {
+    openFolder: "プロジェクトフォルダーを開く",
+    refreshFolder: "プロジェクトファイルを更新",
+    reimportFolder: "プロジェクトを再読み込み",
+    reauthorizeFolder: "フォルダーへのアクセスを許可",
+    disconnectFolder: "フォルダーを切断",
+    folderConnected: "フォルダー接続済み",
+    folderReadOnly: "読み取り専用",
+    folderPermission: "フォルダーへのアクセスが必要です",
+    folderFiles: "ファイル",
+    flowStart: "開始",
+    flowEnd: "終了",
+    flowJump: "ジャンプ",
+    flowCall: "呼び出し",
+    flowReturn: "戻る",
+    flowCondition: "条件",
+    flowReset: "配置をリセット",
+    line: "行",
+  },
+  ko: {
+    openFolder: "프로젝트 폴더 열기",
+    refreshFolder: "프로젝트 파일 새로고침",
+    reimportFolder: "프로젝트 다시 가져오기",
+    reauthorizeFolder: "폴더 접근 허용",
+    disconnectFolder: "폴더 연결 해제",
+    folderConnected: "폴더 연결됨",
+    folderReadOnly: "읽기 전용",
+    folderPermission: "폴더 접근 권한이 필요합니다",
+    folderFiles: "파일",
+    flowStart: "시작",
+    flowEnd: "끝",
+    flowJump: "이동",
+    flowCall: "호출",
+    flowReturn: "복귀",
+    flowCondition: "조건",
+    flowReset: "배치 초기화",
+    line: "줄",
+  },
+  "zh-CN": {
+    openFolder: "打开工程文件夹",
+    refreshFolder: "刷新工程文件",
+    reimportFolder: "重新导入工程",
+    reauthorizeFolder: "重新授权文件夹",
+    disconnectFolder: "断开文件夹",
+    folderConnected: "文件夹已连接",
+    folderReadOnly: "只读",
+    folderPermission: "需要文件夹权限",
+    folderFiles: "个文件",
+    flowStart: "开始",
+    flowEnd: "结束",
+    flowJump: "跳转",
+    flowCall: "调用",
+    flowReturn: "返回",
+    flowCondition: "条件",
+    flowReset: "重置布局",
+    line: "行",
+  },
+  "zh-TW": {
+    openFolder: "開啟專案資料夾",
+    refreshFolder: "重新整理專案檔案",
+    reimportFolder: "重新匯入專案",
+    reauthorizeFolder: "重新授權資料夾",
+    disconnectFolder: "中斷資料夾",
+    folderConnected: "資料夾已連線",
+    folderReadOnly: "唯讀",
+    folderPermission: "需要資料夾權限",
+    folderFiles: "個檔案",
+    flowStart: "開始",
+    flowEnd: "結束",
+    flowJump: "跳轉",
+    flowCall: "呼叫",
+    flowReturn: "返回",
+    flowCondition: "條件",
+    flowReset: "重設配置",
+    line: "行",
+  },
+} as const;
+
 export const useStoryEditorLabels = () => {
   const { locale } = useLocale();
+  const workspaceCopy = computed(() => storyEditorWorkspaceLabels[locale.value] || storyEditorWorkspaceLabels.en);
 
   const commandLabel = (name: AdvCommandName, fallback: string) => {
     if (locale.value === "zh-CN") return simplifiedCommandLabels[name];
@@ -558,5 +657,5 @@ export const useStoryEditorLabels = () => {
     return label;
   };
 
-  return { commandLabel, fieldLabel, choiceLabel };
+  return { commandLabel, fieldLabel, choiceLabel, workspaceCopy };
 };

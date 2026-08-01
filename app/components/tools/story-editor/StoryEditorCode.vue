@@ -28,7 +28,13 @@ const copy = useLocale().messages("storyEditorPage");
     <header>
       <MaterialIcon name="data_object" :size="15" />
       <strong>{{ label || copy.formatProject }}</strong>
-      <span v-if="dirty" aria-hidden="true">●</span>
+      <MaterialIcon
+        v-if="dirty"
+        class="story-code-editor__dirty"
+        name="fiber_manual_record"
+        :size="9"
+        aria-hidden="true"
+      />
       <UiIconButton v-if="canFormat" size="compact" :label="label" @click="emit('format')">
         <MaterialIcon name="auto_fix_high" :size="18" />
       </UiIconButton>
@@ -85,9 +91,8 @@ const copy = useLocale().messages("storyEditorPage");
   text-transform: uppercase;
 }
 
-.story-code-editor > header > span {
+.story-code-editor__dirty {
   color: var(--md-sys-color-primary);
-  font-size: 0.6rem;
 }
 
 .story-code-editor__action {

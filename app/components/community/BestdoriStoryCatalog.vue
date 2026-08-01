@@ -9,7 +9,6 @@ import {
   type BestdoriStoryListItem,
 } from "~/features/community/bestdori/stories";
 import { createBestdoriRarityOptions } from "~/features/community/bestdori/rarity";
-import { bestdoriOrigin } from "~/features/catalog/contentSource";
 
 interface BestdoriCardEpisode {
   scenarioId: string;
@@ -41,7 +40,8 @@ interface BestdoriCard {
 const props = defineProps<{ section: BestdoriFlatStorySection }>();
 
 const ATTRIBUTE_TO_CARD_TYPE: Record<string, number> = { powerful: 1, cool: 2, pure: 3, happy: 4 };
-const { compareText, resolveLocalized, t } = useLocale();
+const { compareText, locale, resolveLocalized, t } = useLocale();
+const catalogOrigin = computed(() => bestdoriCatalogOrigin(locale.value));
 const isCardSection = computed(() => props.section === "card");
 const isAfterLiveSection = computed(() => props.section === "afterlive");
 const usesCharacters = computed(() => isCardSection.value || isAfterLiveSection.value);
@@ -71,13 +71,13 @@ const view = useRouteQueryEnum("view", ["grid", "list"] as const, "grid");
 const storyCollection = useLazyCatalogCollection<BestdoriStoryListItem>(
   `stories/${props.section}`,
   () => !isCardSection.value,
-  bestdoriOrigin("jp"),
+  catalogOrigin,
 );
-const cardsCollection = useLazyCatalogCollection<BestdoriCard>("cards", isCardSection, bestdoriOrigin("jp"));
-const charactersCollection = useLazyCatalogCollection<Character>("characters", usesCharacters, bestdoriOrigin("jp"));
-const bandsCollection = useLazyCatalogCollection<Band>("bands", usesCharacters, bestdoriOrigin("jp"));
+const cardsCollection = useLazyCatalogCollection<BestdoriCard>("cards", isCardSection, catalogOrigin);
+const charactersCollection = useLazyCatalogCollection<Character>("characters", usesCharacters, catalogOrigin);
+const bandsCollection = useLazyCatalogCollection<Band>("bands", usesCharacters, catalogOrigin);
 const selectedCardRequestId = computed(() => (isCardSection.value ? selectedCardId.value || undefined : undefined));
-const selectedCardRequest = useCatalogSelection<BestdoriCard>("cards", selectedCardRequestId, bestdoriOrigin("jp"));
+const selectedCardRequest = useCatalogSelection<BestdoriCard>("cards", selectedCardRequestId, catalogOrigin);
 
 const asLocalizedValue = (value: unknown) => value as LocalizedValueInput;
 const displayLocalized = (value: unknown, fallback = ""): DisplayText =>
@@ -388,7 +388,7 @@ watch([isCardSection, () => storyCollection.data.value], () => {
       v-model:story-id="selectedEpisodeId"
       :story-title="playerTitle"
       :story-options="cardEpisodeOptions"
-      :catalog-origin="bestdoriOrigin('jp')"
+      :catalog-origin="catalogOrigin"
       catalog-adapter="bestdori"
       @close="closePlayer"
     >

@@ -1,4 +1,7 @@
 import type { ArchiveMessageKey } from "~/i18n/messages";
+import { bestdoriOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { isBestdoriServer } from "@haneoka/bestdori";
+import type { StoryEpisode } from "~/types/archive";
 
 export const BESTDORI_STORY_SECTION_DEFINITIONS = [
   { id: "event", messageKey: "storyNavigation.bestdoriEvent" },
@@ -28,6 +31,7 @@ export interface BestdoriStoryListItem {
   caption?: unknown;
   publishedAt?: Array<number | null>;
   releaseAt?: number;
+  sourceServer?: string;
   bandId?: number;
   eventId?: number;
   eventName?: unknown;
@@ -36,5 +40,11 @@ export interface BestdoriStoryListItem {
   image?: string;
   episodeImage?: string;
 }
+
+export const bestdoriEpisodeCatalogOrigin = (
+  episode: Pick<StoryEpisode, "sourceServer"> | undefined,
+  fallback: CatalogContentOrigin | undefined,
+): CatalogContentOrigin | undefined =>
+  isBestdoriServer(episode?.sourceServer) ? bestdoriOrigin(episode.sourceServer) : fallback;
 
 export const bestdoriStoryPath = (section: BestdoriStorySection): string => `/community/stories-bestdori/${section}`;

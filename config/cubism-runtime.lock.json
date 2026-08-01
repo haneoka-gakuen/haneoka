@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "runtimeId": "haneoka-cubism-web-runtime-v1",
+  "managedRoots": {
+    "target": ["public/Core", "public/cubism-runtime", "public/licenses/cubism-framework"],
+    "output": ["Core", "cubism-runtime", "licenses/cubism-framework"]
+  },
+  "files": [
+    {
+      "source": "Framework/vega-cubism-web-runtime.mjs",
+      "target": "public/cubism-runtime/vega-cubism-web-runtime.mjs",
+      "output": "cubism-runtime/vega-cubism-web-runtime.mjs",
+      "bytes": 1597050,
+      "sha256": "3510de8a606cc90adb195c00a0d4d595288ede038836e2c17cc09178d28178f0"
+    },
+    {
+      "source": "Framework/LICENSE.md",
+      "target": "public/licenses/cubism-framework/LICENSE.md",
+      "output": "licenses/cubism-framework/LICENSE.md",
+      "bytes": 2234,
+      "sha256": "7ed849bff1e6499aa7cd882e47d246ddbbe06817c1e84cb974df949488302614"
+    },
+    {
+      "source": "Core/live2dcubismcore.js",
+      "target": "public/Core/live2dcubismcore.js",
+      "output": "Core/live2dcubismcore.js",
+      "bytes": 207155,
+      "sha256": "25ae938cb4fe282ce189b357bcc97e603d1e1f7ec78bf04150d401c23cdc792f"
+    },
+    {
+      "source": "Core/live2d.min.js",
+      "target": "public/Core/live2d.min.js",
+      "output": "Core/live2d.min.js",
+      "bytes": 129056,
+      "sha256": "e4ea1f18bdd44b65394ffd5a1bab16982e88757d45134d1bd0737c8a6b3ddd08"
+    },
+    {
+      "source": "Core/CRI/live2dcubismmotionsynccore.min.js",
+      "target": "public/Core/CRI/live2dcubismmotionsynccore.min.js",
+      "output": "Core/CRI/live2dcubismmotionsynccore.min.js",
+      "bytes": 563022,
+      "sha256": "60e2a8ba9b422a0f8a3d7e066739352e9b903cc1011339984ad922e80a3cd19a"
+    },
+    {
+      "source": "Core/CRI/live2dcubismmotionsynccore.d.ts",
+      "target": "public/Core/CRI/live2dcubismmotionsynccore.d.ts",
+      "output": null,
+      "bytes": 9100,
+      "sha256": "a4aedace54df065bcd2d93115021b3fdd580c36cf76e3724b02ef084ffccca5e"
+    },
+    {
+      "source": "Core/CRI/LICENSE.md",
+      "target": "public/Core/CRI/LICENSE.md",
+      "output": "Core/CRI/LICENSE.md",
+      "bytes": 531,
+      "sha256": "9888e8d0e69969430e4fbd800a243bacc915213b5a6f052bcf7b1fa7ecc80066"
+    },
+    {
+      "source": "Core/CRI/RedistributableFiles.txt",
+      "target": "public/Core/CRI/RedistributableFiles.txt",
+      "output": "Core/CRI/RedistributableFiles.txt",
+      "bytes": 271,
+      "sha256": "408ded6e78c1cb7898adb5f4756b4d497e0cc660b3b64504160d9d0d39c03b3a"
+    }
+  ]
+}

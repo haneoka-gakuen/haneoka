@@ -54,6 +54,30 @@ export const assetRootForRelease = (releaseServer: unknown): string =>
 export const runtimeRootForRelease = (releaseServer: unknown): string =>
   `/runtime/${encodeURIComponent(normalizeReleaseServer(releaseServer))}`;
 
+const FIX_UI_SPRITE_ATLAS_RUNTIME_PATH = "unity/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2";
+
+export interface AdvMenuRuntimeSprites {
+  arrow: string;
+  auto: string;
+  fast: string;
+  frame: string;
+  fullscreen: string;
+  subtitles: string;
+}
+
+/** Build-derived sprites used by the native ADV menu prefab. */
+export const advMenuRuntimeSpritesForRelease = (releaseServer: unknown): AdvMenuRuntimeSprites => {
+  const root = `${runtimeRootForRelease(releaseServer)}/${FIX_UI_SPRITE_ATLAS_RUNTIME_PATH}`;
+  return {
+    arrow: `${root}/IconArrow_Btn--Sprite-1332140880125028295.png`,
+    auto: `${root}/IconAutoPlay--Sprite--6325977139736251267.png`,
+    fast: `${root}/IconFast--Sprite-140230145516670430.png`,
+    frame: `${root}/FrameNormalButton_H60--Sprite--1282929582334829861.png`,
+    fullscreen: `${root}/IconFullScreen--Sprite-4882497570655274803.png`,
+    subtitles: `${root}/Iconsubtitle--Sprite--3033825232647831412.png`,
+  };
+};
+
 export const gameSceneBackgroundForRelease = (releaseServer: unknown): string =>
   `${runtimeRootForRelease(releaseServer)}/unity/Assets/AddressableResources/Spot/home_001_mygo_02_lobby_0102/Background/home_001_mygo_02_lobby_0102.prefab/home_001_mygo_02_lobby_0102_01--SpotBackgroundPreviewPNG-4135105912622144950.png`;
 

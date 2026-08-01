@@ -1,7 +1,9 @@
 import { ApiClientError, createApiClient, type ApiClient } from "@haneoka/api-client";
+import { resolveBestdoriServer, type BestdoriServer } from "@haneoka/altair-plugin-bestdori/source";
 import { BESTDORI_CACHE_POLICY } from "@haneoka/bestdori/cache-policy";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import {
+  bestdoriOrigin,
   contentOriginKey,
   isBestdoriOrigin,
   ourNotesReleaseOrigin,
@@ -39,6 +41,15 @@ export const catalogApiUrl = (apiBase: unknown, origin: CatalogContentOrigin, pa
   return `${base}/garupa/bestdori/${encodeURIComponent(origin.region)}/${segments}`;
 };
 
+/**
+ * Select the regional Bestdori catalog for a UI/content locale. A persisted
+ * source server is explicit provenance and therefore takes priority.
+ */
+export const bestdoriCatalogOrigin = (
+  locale: unknown,
+  server?: BestdoriServer,
+): Extract<CatalogContentOrigin, { provider: "bestdori" }> => bestdoriOrigin(resolveBestdoriServer({ locale, server }));
+
 const appendCatalogQuery = (url: string, query: string): string =>
   query ? `${url}${url.includes("?") ? "&" : "?"}${query.replace(/^\?/, "")}` : url;
 
@@ -52,9 +63,9 @@ const useCatalogRequestContext = (origin?: MaybeRefOrGetter<CatalogContentOrigin
     const requested = origin === undefined ? undefined : toValue(origin);
     return requested === undefined ? ourNotesReleaseOrigin(releaseServer.value) : requested;
   });
-  // Region is part of the Bestdori URL. Locale is intentionally separate: it
-  // controls localized labels only and must not choose a different upstream
-  // region or asset.
+  // The caller has already resolved Bestdori's region from locale and optional
+  // source provenance. Preserve that explicit origin here; the locale query
+  // still selects localized fields and the worker's availability fallbacks.
   const catalogQueryPart = computed(() =>
     isBestdoriOrigin(catalogOrigin.value)
       ? `lang=${encodeURIComponent(locale.value)}&v=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}`

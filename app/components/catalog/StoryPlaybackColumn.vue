@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { flattenAdvCommands, type AdvCommand, type AdvStory, type StoryUiSprites } from "@haneoka/story";
+import { flattenAdvCommands, type AdvCommand, type AdvStory, type StoryUiSprites } from "@haneoka/vega";
 import type { Character } from "~/types/archive";
 import { hydrateStoryPayload, hydrateStoryTextPayload } from "~/features/story/hydrate";
 import { mergeStoryRuntime } from "~/features/story/runtime";
@@ -106,7 +106,9 @@ const textCharacterIds = computed(() => {
   if (Array.isArray(detail.characterIds)) detail.characterIds.forEach(remember);
   const commands = Array.isArray(detail.commands) ? (detail.commands as AdvCommand[]) : [];
   for (const command of flattenAdvCommands(commands)) {
-    remember(command.live2d?.characterId);
+    const source = command as unknown as Record<string, unknown>;
+    const characterModel = (source.characterModel || source.live2d) as Record<string, unknown> | undefined;
+    remember(characterModel?.characterId);
     for (const target of command.targets || []) remember(target.characterId);
   }
   return [...ids].sort((left, right) => left - right).map(String);

@@ -18,7 +18,6 @@ const config = [
       "docs/**",
       "public/**",
       ".wrangler/**",
-      "packages/story/src/vendor/**",
       "worker/worker-configuration.d.ts",
       "*.apks",
       "*.apk",

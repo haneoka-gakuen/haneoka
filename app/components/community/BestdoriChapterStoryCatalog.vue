@@ -3,12 +3,13 @@ import { useBestdoriImageSources } from "~/features/community/bestdori/imageSour
 import { useBestdoriStoryChapters } from "~/features/community/bestdori/storyChapters";
 import {
   BESTDORI_STORY_SECTION_DEFINITIONS,
+  bestdoriEpisodeCatalogOrigin,
   type BestdoriChapterStorySection,
 } from "~/features/community/bestdori/stories";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import { entityAvatarText } from "~/utils/entityAvatar";
-import { bestdoriOrigin } from "~/features/catalog/contentSource";
+import { contentLocaleForOrigin } from "~/features/catalog/contentSource";
 
 /**
  * Bestdori event/band/main story catalog rendered through the shared
@@ -25,8 +26,11 @@ const sectionTitle = computed(() =>
 const pageTitle = computed(() => `${t("communityPage.storiesBestDori")} · ${sectionTitle.value}`);
 useSeoMeta({ title: () => `${pageTitle.value} · haneoka` });
 
-const { chapters, episodes, bands, characters, pending, error, refresh } = useBestdoriStoryChapters(props.section);
+const { catalogOrigin, chapters, episodes, bands, characters, pending, error, refresh } = useBestdoriStoryChapters(
+  props.section,
+);
 const expandImage = useBestdoriImageSources();
+const catalogSourceHint = computed(() => contentLocaleForOrigin(catalogOrigin.value) ?? "ja");
 
 const bandsById = computed(() => new Map(bands.value.map((band) => [band.bandId, band])));
 const charactersById = computed(() => new Map(characters.value.map((character) => [character.characterId, character])));
@@ -78,8 +82,10 @@ const eventFilterOptions = computed(() => {
     if (entry.sharedBandId) {
       const band = bandsById.value.get(entry.sharedBandId);
       const label =
-        resolveLocalized(band?.bandName, { sourceHint: "ja", fallback: String(entry.sharedBandId) }) ||
-        String(entry.sharedBandId);
+        resolveLocalized(band?.bandName, {
+          sourceHint: catalogSourceHint.value,
+          fallback: String(entry.sharedBandId),
+        }) || String(entry.sharedBandId);
       entries.set(entry.value, {
         value: entry.value,
         label,
@@ -98,8 +104,10 @@ const eventFilterOptions = computed(() => {
     const visuals = entry.characterIds.map((characterId): CompositeEntityVisual => {
       const character = charactersById.value.get(characterId);
       const label =
-        resolveLocalized(character?.characterName, { sourceHint: "ja", fallback: String(characterId) }) ||
-        String(characterId);
+        resolveLocalized(character?.characterName, {
+          sourceHint: catalogSourceHint.value,
+          fallback: String(characterId),
+        }) || String(characterId);
       return {
         image: character?.faceImage || character?.thumbnailImage || character?.profileImage,
         fit: "cover",
@@ -114,8 +122,10 @@ const eventFilterOptions = computed(() => {
         .map((characterId) => {
           const character = charactersById.value.get(characterId);
           return textOf(
-            resolveLocalized(character?.characterName, { sourceHint: "ja", fallback: String(characterId) }) ||
-              String(characterId),
+            resolveLocalized(character?.characterName, {
+              sourceHint: catalogSourceHint.value,
+              fallback: String(characterId),
+            }) || String(characterId),
           );
         })
         .join("・") || t("character");
@@ -138,8 +148,9 @@ const eventFilterOptions = computed(() => {
   <StoryChapterBrowser
     domain="community"
     :title="pageTitle"
-    :catalog-origin="bestdoriOrigin('jp')"
+    :catalog-origin="catalogOrigin"
     catalog-adapter="bestdori"
+    :resolve-story-catalog-origin="bestdoriEpisodeCatalogOrigin"
     :enable-band-filter="section === 'band'"
     :chapter-filter-title="section === 'event' ? t('band') : undefined"
     :chapter-filter-options="section === 'event' ? eventFilterOptions : []"

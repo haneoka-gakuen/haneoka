@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { MaterialIcon, UiButton, UiIconButton, UiList, UiListItem, UiRange, UiTextField } from "@haneoka/ui";
 
-import { CubismModelViewer, type AdvHarmonicMotionData } from "@haneoka/story/viewer";
+import { type AdvHarmonicMotionData } from "@haneoka/vega-plugin-cubism";
+import { resolveHaneokaLive2DCatalogSource } from "@haneoka/vega-plugin-haneoka";
+import {
+  loadCubismRuntimeProvision,
+  type CubismModelViewer as CubismModelViewerInstance,
+} from "~/features/story/cubismRuntimeProvision";
 import type { Live2DDetail } from "~/types/archive";
 import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { assetRootForRelease, releaseResourceUrl, runtimeRootForRelease } from "~/composables/useReleaseServer";
@@ -9,7 +14,7 @@ import { assetRootForRelease, releaseResourceUrl, runtimeRootForRelease } from "
 type InspectorMode = "motion" | "expression" | "transform" | "parameters";
 type BackgroundMode = "common" | "mygo" | "mujica" | "none";
 type ParameterMode = "none" | "capture" | "pose";
-type CubismParameterValue = ReturnType<CubismModelViewer["parameters"]>[number];
+type CubismParameterValue = ReturnType<CubismModelViewerInstance["parameters"]>[number];
 
 const props = defineProps<{
   entry: Live2DDetail;
@@ -20,7 +25,7 @@ const props = defineProps<{
 
 const container = ref<HTMLElement>();
 const canvas = ref<HTMLCanvasElement>();
-const viewer = shallowRef<CubismModelViewer>();
+const viewer = shallowRef<CubismModelViewerInstance>();
 const ready = ref(false);
 const loading = ref(true);
 const error = ref("");
@@ -49,28 +54,21 @@ const { pause: pauseGlobalAudio } = useAudioPlayer();
 const { releaseServer } = useReleaseServer();
 const { t } = useLocale();
 const resolvedReleaseServer = computed(() => props.origin?.releaseId || releaseServer.value);
-const assetRoot = computed(() => assetRootForRelease(resolvedReleaseServer.value));
-const motions = computed(() => (props.entry.motions || []).map((motion) => motion.name || "").filter(Boolean));
-const expressions = computed(() =>
-  (props.entry.expressions || []).map((expression) => expression.name || "").filter(Boolean),
+const catalogSource = computed(() =>
+  resolveHaneokaLive2DCatalogSource(props.entry, {
+    resolveResource: (value) => releaseResourceUrl(value, resolvedReleaseServer.value),
+    runtimeAsset: (path) =>
+      releaseResourceUrl(`${runtimeRootForRelease(resolvedReleaseServer.value)}/${path}`, resolvedReleaseServer.value),
+    sourceAsset: (path) =>
+      releaseResourceUrl(`${assetRootForRelease(resolvedReleaseServer.value)}/${path}`, resolvedReleaseServer.value),
+  }),
 );
-const defaultMotionName = computed(() => {
-  const preferred = props.entry.profile?.defaultMotionName || "";
-  if (preferred && motions.value.includes(preferred)) return preferred;
-  if (props.entry.modelType === "live" && motions.value.includes("mtn_idle_01")) return "mtn_idle_01";
-  return "";
-});
-const headAnchor = computed(() => props.entry.profile?.anchors?.head?.position || null);
-const modelUrl = computed(
-  () =>
-    releaseResourceUrl(props.entry.runtime?.model, resolvedReleaseServer.value) ||
-    `${runtimeRootForRelease(resolvedReleaseServer.value)}/live2d/${props.entry.live2dKey}/model3.json`,
-);
-const backgroundAsset = (value: Exclude<BackgroundMode, "none">) => {
-  if (value === "mygo") return `${assetRoot.value}/Assets/AddressableResources/Band/1/band_studio_background.png`;
-  if (value === "mujica") return `${assetRoot.value}/Assets/AddressableResources/Band/2/band_studio_background.png`;
-  return `${assetRoot.value}/Assets/AddressableResources/UI/Texture/common_background.png`;
-};
+const motions = computed(() => catalogSource.value.motions);
+const expressions = computed(() => catalogSource.value.expressions);
+const defaultMotionName = computed(() => catalogSource.value.defaultMotionName || "");
+const headAnchor = computed(() => catalogSource.value.headAnchor || null);
+const modelUrl = computed(() => catalogSource.value.modelUrl);
+const backgroundAsset = (value: Exclude<BackgroundMode, "none">) => catalogSource.value.backgrounds[value];
 const backgroundUrl = computed(() => (background.value === "none" ? "" : backgroundAsset(background.value)));
 
 const inspectorOptions = computed(() => [
@@ -181,6 +179,7 @@ const load = async () => {
   pauseGlobalAudio();
   try {
     viewer.value?.destroy();
+    const { CubismModelViewer } = await loadCubismRuntimeProvision();
     const current = markRaw(
       new CubismModelViewer({
         canvas: canvas.value,
@@ -195,14 +194,12 @@ const load = async () => {
     resize();
     await current.load({
       modelUrl: modelUrl.value,
-      harmonicMotion: (props.entry.runtime?.harmonicMotion ||
-        props.entry.harmonicMotion ||
-        null) as AdvHarmonicMotionData | null,
+      harmonicMotion: (catalogSource.value.harmonicMotion || null) as AdvHarmonicMotionData | null,
       defaultMotionName: defaultMotionName.value || undefined,
     });
     if (generation !== loadGeneration) return;
     selectedMotion.value = defaultMotionName.value;
-    loop.value = props.entry.modelType === "live" && Boolean(defaultMotionName.value);
+    loop.value = catalogSource.value.loopDefaultMotion;
     current.setLoopMotion(loop.value ? defaultMotionName.value : null);
     current.setBreathEnabled(breath.value);
     current.setEyeBlinkEnabled(blink.value);
@@ -295,7 +292,7 @@ watch([scale, offsetX, offsetY], () => {
   viewer.value?.setTransform({ scale: scale.value, offsetX: offsetX.value, offsetY: offsetY.value });
   refreshLookPosition();
 });
-watch([() => props.entry.live2dKey, resolvedReleaseServer], load);
+watch(catalogSource, load);
 
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {

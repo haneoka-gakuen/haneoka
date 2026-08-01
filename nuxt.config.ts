@@ -1,4 +1,7 @@
 import { DEFAULT_ARCHIVE_LOCALE } from "./app/i18n/locales";
+import { fileURLToPath } from "node:url";
+
+const materializedDependencyWorkspace = fileURLToPath(new URL("./.dependencies", import.meta.url));
 
 const configuredReleaseServers = [
   ...new Set(
@@ -56,6 +59,14 @@ export default defineNuxtConfig({
   // from the browser URL instead of hydrating the fallback page as home.
   ssr: false,
   components: [{ path: "~/components", pathPrefix: false }],
+  imports: {
+    transform: {
+      // Linked dependency packages are already compiled ESM. Treating
+      // their minified locals as Nuxt composables can inject colliding imports
+      // (for example Vue's `h`) into otherwise valid library modules.
+      exclude: [/[\\/]\.dependencies[\\/]/],
+    },
+  },
   vue: {
     compilerOptions: {
       isCustomElement: (tag) => tag.startsWith("md-"),
@@ -65,7 +76,7 @@ export default defineNuxtConfig({
     "@fontsource/material-symbols-rounded/400.css",
     "@haneoka/design-tokens/tokens.css",
     "@haneoka/ui/styles.css",
-    "@haneoka/story/styles.css",
+    "@haneoka/vega/styles.css",
     "~/assets/styles/main.css",
   ],
   app: {
@@ -140,7 +151,19 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    resolve: {
+      // The app links Vega and the UI package from independent workspaces.
+      // Resolve their shared custom-element runtime once so Material Web
+      // definitions and Lit decorators keep one browser identity.
+      dedupe: ["vue", "@material/web", "lit", "lit-element", "lit-html", "@lit/reactive-element"],
+    },
     server: {
+      fs: {
+        // Local development links the independently versioned dependency
+        // packages from the sibling workspace. Published packages remain inside
+        // node_modules and do not depend on this allowance.
+        allow: [materializedDependencyWorkspace],
+      },
       proxy: localProxy,
     },
     ssr: {
@@ -164,6 +187,8 @@ export default defineNuxtConfig({
         "@material/web/list/list-item.js",
         "@material/web/list/list.js",
         "@material/web/labs/card/filled-card.js",
+        "@material/web/progress/circular-progress.js",
+        "@material/web/progress/linear-progress.js",
         "@material/web/labs/segmentedbutton/outlined-segmented-button.js",
         "@material/web/labs/segmentedbuttonset/outlined-segmented-button-set.js",
         "@material/web/radio/radio.js",
@@ -179,6 +204,11 @@ export default defineNuxtConfig({
         "@vue-flow/controls",
         "@vue-flow/core",
         "@vue-flow/minimap",
+        "@msgpack/msgpack",
+        "@haneoka/vega-shell-default",
+        "howler",
+        "semver",
+        "three",
       ],
       esbuildOptions: {
         // BBob 4.3.1 publishes one extensionless ESM re-export next to render.mjs.

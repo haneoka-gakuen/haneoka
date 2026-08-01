@@ -1,5 +1,6 @@
 import type { CapabilityDomain } from "~/config/capabilities";
 import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
+import type { ArchiveLocale } from "~/i18n/locales";
 import type { ArchiveMessageKey } from "~/i18n/messages";
 import type { Song } from "~/types/archive";
 
@@ -26,6 +27,8 @@ export interface SongCatalogSourceProfile {
   readonly id: string;
   /** Explicit non-release catalog origin. Omit to follow the selected release. */
   readonly catalogOrigin?: CatalogContentOrigin;
+  /** Resolve a locale-sensitive provider origin, such as a Bestdori region. */
+  readonly resolveCatalogOrigin?: (context: { readonly locale: ArchiveLocale }) => CatalogContentOrigin;
   readonly titleKey: ArchiveMessageKey;
   readonly domain: CapabilityDomain;
   readonly maxDifficulty: number;
@@ -61,12 +64,20 @@ export const registerSongCatalogSource = (profile: SongCatalogSourceProfile): vo
 export const resolveSongCatalogSource = (id: string | undefined): SongCatalogSourceProfile =>
   (id ? profiles.get(id) : undefined) || DEFAULT_PROFILE;
 
+const validReleaseTimestamp = (value: unknown): number | undefined => {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return undefined;
+  if (new Date(timestamp).getUTCFullYear() === 2100) return undefined;
+  return timestamp;
+};
+
 export const songReleaseTimestamp = (song: Song): number | undefined => {
-  if (song.releaseAt !== undefined) {
-    const canonical = Number(song.releaseAt);
-    return Number.isFinite(canonical) && canonical > 0 ? canonical : undefined;
-  }
+  const canonical = validReleaseTimestamp(song.releaseAt);
+  if (canonical !== undefined) return canonical;
   if (!Array.isArray(song.publishedAt)) return undefined;
-  const japanese = Number(song.publishedAt[0]);
-  return Number.isFinite(japanese) && japanese > 0 ? japanese : undefined;
+  for (const timestamp of song.publishedAt) {
+    const fallback = validReleaseTimestamp(timestamp);
+    if (fallback !== undefined) return fallback;
+  }
+  return undefined;
 };

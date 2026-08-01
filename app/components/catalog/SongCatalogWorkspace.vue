@@ -50,7 +50,10 @@ const route = useRoute();
 useSeoMeta({ title: () => `${t(screenTitleKey.value)} · haneoka` });
 const { assetRoot, assetUrl, releaseServer, releases } = useReleaseServer();
 const catalogOrigin = computed<CatalogContentOrigin>(
-  () => sourceProfile.value.catalogOrigin || ourNotesReleaseOrigin(releaseServer.value),
+  () =>
+    sourceProfile.value.resolveCatalogOrigin?.({ locale: locale.value }) ||
+    sourceProfile.value.catalogOrigin ||
+    ourNotesReleaseOrigin(releaseServer.value),
 );
 const sourceLocaleForOrigin = (origin: CatalogContentOrigin) => contentLocaleForOrigin(origin, releases.value);
 const { playQueue, playSong } = useAudioPlayer();

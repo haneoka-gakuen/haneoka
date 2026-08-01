@@ -27,18 +27,66 @@ jobs:
         with:
           node-version: 24
 
+      - name: Check out locked external repositories
+        run: node scripts/external-repositories.mjs checkout
+
       - name: Install pnpm
         run: corepack enable
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify external repository compatibility lock
+        run: pnpm dependencies:verify
+
       - uses: ./.github/actions/setup-sonolus-engine
         with:
           dependencies-installed: "true"
 
+      - name: Inject licensed Cubism runtime
+        env:
+          HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL: ${{ secrets.HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL:-}" ]]; then
+            echo "::error::HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL is required for production"
+            exit 1
+          fi
+
+          runtime_archive="$RUNNER_TEMP/haneoka-cubism-runtime.tar.gz"
+          runtime_directory="$RUNNER_TEMP/haneoka-cubism-runtime"
+          curl --fail --silent --show-error --location --retry 3 \
+            --proto '=https' --proto-redir '=https' \
+            "$HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL" \
+            --output "$runtime_archive"
+
+          extract_runtime_file() {
+            local relative_path="$1"
+            local destination="$runtime_directory/$relative_path"
+            mkdir -p "$(dirname "$destination")"
+            tar --extract --gzip --to-stdout \
+              --file "$runtime_archive" \
+              "$relative_path" > "$destination"
+          }
+
+          extract_runtime_file "Framework/vega-cubism-web-runtime.mjs"
+          extract_runtime_file "Framework/LICENSE.md"
+          extract_runtime_file "Core/live2dcubismcore.js"
+          extract_runtime_file "Core/live2d.min.js"
+          extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.min.js"
+          extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.d.ts"
+          extract_runtime_file "Core/CRI/LICENSE.md"
+          extract_runtime_file "Core/CRI/RedistributableFiles.txt"
+          echo "HANEOKA_CUBISM_RUNTIME_DIR=$runtime_directory" >> "$GITHUB_ENV"
+
+      - name: Verify licensed Cubism runtime
+        run: pnpm runtime:cubism:provision
+
       - name: Build production assets before database changes
         run: pnpm build
+
+      - name: Check resource pipeline
+        run: python3 -m unittest discover -s scripts/garupa_master/tests -t .
 
       - name: Apply production D1 migrations
         run: pnpm exec wrangler d1 migrations apply haneoka-community --remote

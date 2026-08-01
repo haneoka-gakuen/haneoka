@@ -3,6 +3,12 @@ import { localeFlagIconUrls } from "~/utils/flagIcons";
 
 const { locale, locales, setLocale, t } = useLocale();
 const { releaseServer, releases, setReleaseServer } = useReleaseServer();
+const { themePreference, setThemePreference } = useUiTheme();
+const themeOptions = computed(() => [
+  { value: "light", label: t("themeLight"), icon: "light_mode" },
+  { value: "system", label: t("themeSystem"), icon: "brightness_auto" },
+  { value: "dark", label: t("themeDark"), icon: "dark_mode" },
+]);
 const localeOptions = computed(() =>
   locales.map((option) => ({
     value: option.value,
@@ -27,7 +33,17 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
 <template>
   <SupportingPageSurface :title="t('settings')" max-width="960px">
     <div class="settings-content">
-      <PageSection :title="t('language')" icon="language">
+      <PageSection :title="t('appearance')" icon="palette">
+        <SingleChoiceList
+          name="ui-theme"
+          :label="t('appearance')"
+          :model-value="themePreference"
+          :options="themeOptions"
+          @update:model-value="setThemePreference"
+        />
+      </PageSection>
+
+      <PageSection :title="t('language')" icon="language" divided>
         <SingleChoiceList
           name="locale"
           :label="t('language')"

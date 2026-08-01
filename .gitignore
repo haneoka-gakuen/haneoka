@@ -1,5 +1,6 @@
 # Dependencies and package-manager caches
 node_modules/
+.dependencies/
 .pnpm-store/
 
 # Framework and build outputs
@@ -8,6 +9,9 @@ dist
 .output/
 public/sitemap.xml
 public/robots.txt
+/public/Core/
+/public/cubism-runtime/
+/public/licenses/cubism-framework/
 packages/sonolus/worker-assets/
 .wrangler/
 
@@ -46,13 +50,10 @@ usmlogs/
 .DS_Store
 *.log
 
-# Published documentation allowlist
+# Local documentation
 /docs/*
 !/docs/assets/
 !/docs/assets/haneoka-header.png
 !/docs/assets/haneoka-header.svg
 !/docs/assets/haneoka-social-card.png
 !/docs/assets/haneoka-social-card.svg
-!/docs/architecture/
-/docs/architecture/*
-!/docs/architecture/garupa-master-playlists.md

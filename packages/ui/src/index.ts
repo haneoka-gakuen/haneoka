@@ -294,6 +294,8 @@ export const UiTextField = defineComponent({
         selectionEnd?: number | null;
         selectionStart?: number | null;
         setSelectionRange?: (start: number, end: number) => void;
+        updateComplete?: Promise<unknown>;
+        value: string;
       }
     >();
     expose({
@@ -318,19 +320,92 @@ export const UiTextField = defineComponent({
       const values = { ...attrs };
       delete values.maxlength;
       delete values.maxLength;
+      delete values.onBlur;
+      delete values.onChange;
+      delete values.onFocusout;
+      delete values.onInput;
       return values;
     };
     const update = (event: Event) => {
-      const target = event.currentTarget as HTMLElement & { value: string };
-      const value = limitValue(target.value);
-      if (value !== target.value) target.value = value;
+      const target = root.value;
+      if (!target) return;
+      const source = event.composedPath()[0] as { value?: unknown } | undefined;
+      const internal =
+        boundControl ?? target.shadowRoot?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+      const sourceValue =
+        source !== target && typeof source?.value === "string" ? source.value : (internal?.value ?? target.value);
+      const value = limitValue(sourceValue);
+      if (source && "value" in source && source.value !== value) source.value = value;
+      if (target.value !== value) target.value = value;
       emit("update:modelValue", props.type === "number" && value !== "" ? Number(value) : value);
     };
-    return () =>
-      h(
+    const invokeEventHandler = (handler: unknown, event: Event) => {
+      const handlers = Array.isArray(handler) ? handler : [handler];
+      for (const candidate of handlers) {
+        if (typeof candidate === "function") (candidate as (event: Event) => unknown)(event);
+      }
+    };
+    const handledEvents = new WeakSet<Event>();
+    const handleInput = (event: Event) => {
+      if (handledEvents.has(event)) return;
+      handledEvents.add(event);
+      update(event);
+      invokeEventHandler(attrs.onInput, event);
+    };
+    const handleChange = (event: Event) => {
+      if (handledEvents.has(event)) return;
+      handledEvents.add(event);
+      update(event);
+      invokeEventHandler(attrs.onChange, event);
+    };
+    const handleFocusout = (event: Event) => {
+      update(event);
+      invokeEventHandler(attrs.onBlur, event);
+      invokeEventHandler(attrs.onFocusout, event);
+    };
+    let boundControl: HTMLInputElement | HTMLTextAreaElement | null = null;
+    let bindGeneration = 0;
+    const unbindControl = () => {
+      boundControl?.removeEventListener("input", handleInput, true);
+      boundControl?.removeEventListener("change", handleChange, true);
+      boundControl = null;
+    };
+    const bindControl = async () => {
+      const generation = ++bindGeneration;
+      const host = root.value;
+      if (!host) {
+        unbindControl();
+        return;
+      }
+      if (typeof customElements !== "undefined" && !customElements.get(host.localName)) {
+        await customElements.whenDefined(host.localName);
+      }
+      if (host.updateComplete) await host.updateComplete;
+      else await nextTick();
+      if (generation !== bindGeneration || root.value !== host) return;
+      const control = host.shadowRoot?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea") ?? null;
+      if (control === boundControl) return;
+      unbindControl();
+      boundControl = control;
+      boundControl?.addEventListener("input", handleInput, true);
+      boundControl?.addEventListener("change", handleChange, true);
+    };
+    watch(root, () => void bindControl(), { flush: "post" });
+    watch(
+      () => props.type,
+      () => void bindControl(),
+      { flush: "post" },
+    );
+    onBeforeUnmount(() => {
+      bindGeneration += 1;
+      unbindControl();
+    });
+    return () => {
+      const forwarded = forwardedAttrs();
+      return h(
         "md-outlined-text-field",
         {
-          ...forwardedAttrs(),
+          ...forwarded,
           ref: root,
           class: ["md3-text-field", attrs.class],
           disabled: props.disabled,
@@ -340,8 +415,10 @@ export const UiTextField = defineComponent({
           required: props.required,
           supportingText: props.supportingText,
           type: props.type,
-          "^value": limitValue(String(props.modelValue)),
-          onInput: update,
+          value: limitValue(String(props.modelValue)),
+          onChange: handleChange,
+          onFocusout: handleFocusout,
+          onInput: handleInput,
         },
         [
           slots["leading-icon"]
@@ -356,6 +433,7 @@ export const UiTextField = defineComponent({
             : null,
         ],
       );
+    };
   },
 });
 

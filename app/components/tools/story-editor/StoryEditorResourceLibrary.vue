@@ -5,146 +5,65 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's Assets.tsx,
   FileElement.tsx, and FileElement.module.scss at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import { MaterialIcon, UiIconButton, UiList, UiListItem, type UiIconButtonHandle } from "@haneoka/ui";
 
-import { BESTDORI_BACKGROUND_STAGE_REF, createBestdoriSceneRuntime } from "@haneoka/bestdori";
-import type { CommandResourceKind } from "@haneoka/story-editor";
-import {
-  bestdoriEditorAssetMediaKind,
-  bestdoriEditorAssetNodeAt,
-  bestdoriEditorAssetRawPath,
-  bestdoriEditorAssetUrl,
-  bestdoriLive2dCharacterIcon,
-  type BestdoriEditorAssetBundleResponse,
-  type BestdoriEditorAssetIndexResponse,
-  type BestdoriEditorAssetMediaKind,
-} from "~/features/community/bestdori/editorAssets";
-import { mergeStoryRuntime } from "~/features/story/runtime";
-import { bestdoriOrigin, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
-import type { Live2DDetail, Live2DModel, Song, StoryCatalog, StoryEpisode } from "~/types/archive";
+import type {
+  ResourceBrowserFile,
+  ResourceBrowserInsert,
+  ResourceBrowserNode,
+  ResourceBrowserPath,
+  ResourceBrowserProvider,
+  ResourceBrowserRequest,
+} from "@haneoka/altair/resource-browser";
 
-export type StoryEditorVisualResourceKind = "background" | "still" | "frame" | "effect" | "post-effect" | "video";
-export type StoryEditorAudioUsage = "bgm" | "se" | "voice";
-export interface StoryEditorProjectSceneFile {
-  id: string;
-  name: string;
-  path: string[];
-  commandCount: number;
-  isEntry: boolean;
-  canDelete: boolean;
-}
-export type StoryEditorResourceInsert =
-  | { kind: "live2d"; key: string; value: Record<string, unknown> }
-  | { kind: StoryEditorVisualResourceKind; key: string; value: Record<string, unknown> }
-  | { kind: "audio"; usage: StoryEditorAudioUsage; key: string; value: Record<string, unknown> }
-  | {
-      kind: "story";
-      key: string;
-      value: Record<string, unknown>;
-      sourceSnapshot?: Record<string, unknown>;
-    };
-
-interface StoryAssetSummary extends Record<string, unknown> {
-  assetId?: string;
-  kind?: string;
-  assetName?: string;
-  resourceRef?: string;
-  soundId?: string | number;
-  videoId?: string | number;
-  cueName?: string;
-  cueSheetName?: string;
-  playableUrl?: string;
-  url?: string;
-  sourcePath?: string;
-  runtimeAvailable?: boolean;
-  resolution?: Record<string, unknown>;
-}
-
-interface AudioPickerItem {
-  key: string;
-  label: string;
-  meta: string;
-  playableUrl: string;
-  usage: StoryEditorAudioUsage;
-  value: Record<string, unknown>;
-  detailPath?: string;
-}
-
-type FileDisplayKind = "live2d" | "image" | "effect" | "audio" | "video" | "story";
-type ResourceFilePayload =
-  | { type: "live2d"; item: Live2DModel }
-  | { type: "bestdori-live2d"; costumeId: string }
-  | {
-      type: "bestdori-file";
-      server: string;
-      bundlePath: string[];
-      fileName: string;
-      rawPath: string;
-      url: string;
-      mediaKind: BestdoriEditorAssetMediaKind;
-    }
-  | { type: "visual"; kind: StoryEditorVisualResourceKind; item: StoryAssetSummary }
-  | { type: "audio"; item: AudioPickerItem }
-  | { type: "story"; item: StoryEpisode }
-  | { type: "project-scene"; item: StoryEditorProjectSceneFile };
-
-interface ResourceFile {
-  type: "file";
-  key: string;
-  path: string[];
-  name: string;
-  description: string;
-  meta: string;
-  displayKind: FileDisplayKind;
-  previewUrl?: string;
-  payload: ResourceFilePayload;
-}
-
-interface ResourceDirectory {
-  type: "directory";
-  key: string;
-  path: string[];
-  name: string;
-  description?: string;
-}
-
-type ResourceEntry = ResourceDirectory | ResourceFile;
+type BrowserProvider = ResourceBrowserProvider<unknown, unknown>;
+type BrowserFile = ResourceBrowserFile<unknown>;
 type ResourceView = "grid" | "list";
 
-const props = defineProps<{
-  projectReleaseServer: string;
-  disabled?: boolean;
-  preferredKind?: CommandResourceKind;
-  preferredAudioUsage?: StoryEditorAudioUsage;
-  projectScenes?: readonly StoryEditorProjectSceneFile[];
-  projectSceneFolders?: readonly string[][];
-  activeSceneId?: string;
-}>();
+interface BrowserEntry {
+  readonly key: string;
+  readonly provider: BrowserProvider;
+  readonly node: ResourceBrowserNode<unknown>;
+}
+
+interface BrowserLocation {
+  readonly provider?: BrowserProvider;
+  readonly path: ResourceBrowserPath;
+}
+
+const props = withDefaults(
+  defineProps<{
+    providers: readonly BrowserProvider[];
+    acceptedKinds?: readonly string[];
+    preferredKind?: string;
+    requestContext?: Readonly<Record<string, unknown>>;
+    disabled?: boolean;
+  }>(),
+  {
+    acceptedKinds: () => [],
+    preferredKind: undefined,
+    requestContext: undefined,
+  },
+);
 
 const emit = defineEmits<{
-  insert: [resource: StoryEditorResourceInsert];
-  "select-scene": [id: string];
-  "add-scene": [path: string[]];
-  "add-folder": [path: string[]];
-  "rename-scene": [id: string, name: string];
-  "delete-scene": [id: string];
+  insert: [resource: ResourceBrowserInsert<unknown>];
 }>();
 
-const { releaseServer } = useReleaseServer();
-const config = useRuntimeConfig();
-const { t, localize, compareText, locale, messages } = useLocale();
+const { t, messages } = useLocale();
 const copy = messages("storyEditorPage");
-const projectSceneMode = computed(() => props.projectScenes !== undefined);
-const libraryLabel = computed(() => (projectSceneMode.value ? copy.value.scenes : copy.value.resources));
-const basePathDepth = computed(() => (projectSceneMode.value ? 1 : 0));
-const currentPath = ref<string[]>(projectSceneMode.value ? ["scene"] : []);
+const location = shallowRef<BrowserLocation>({ path: [] });
+const history = shallowRef<readonly BrowserLocation[]>([]);
+const entries = shallowRef<readonly BrowserEntry[]>([]);
 const query = ref("");
 const view = ref<ResourceView>("list");
+const pending = ref(false);
+const error = shallowRef<unknown>();
+const actionError = shallowRef<unknown>();
 const loadingKey = ref("");
-const actionError = ref(false);
 const activeAudioKey = ref("");
 const selectedEntryKey = ref("");
 const sortOrder = ref<"asc" | "desc">("asc");
@@ -159,932 +78,243 @@ const itemsScrollTop = ref(0);
 const itemsWidth = ref(320);
 const itemsHeight = ref(320);
 let itemsObserver: ResizeObserver | undefined;
+let requestGeneration = 0;
+let requestController: AbortController | undefined;
+let actionController: AbortController | undefined;
 
-const pathStartsWith = (prefix: readonly string[]) =>
-  prefix.length <= currentPath.value.length && prefix.every((segment, index) => currentPath.value[index] === segment);
-const recordData = <T,>(value: unknown): Record<string, T> =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, T>) : {};
-const recordField =
-  <T,>(field: string) =>
-  (document: unknown) =>
-    recordData<T>(recordData<unknown>(document)[field]);
-const mismatch = computed(
-  () => !projectSceneMode.value && normalizeReleaseServer(props.projectReleaseServer) !== releaseServer.value,
-);
-const unavailable = computed(() => props.disabled || mismatch.value);
-const requestEnabled = computed(() => !projectSceneMode.value && !unavailable.value);
-
-const advRoot = ["Assets", "AddressableResources", "Adv"] as const;
-const stageRoot = [...advRoot, "Stage"] as const;
-const stagePostEffectRoot = [...stageRoot, "_settings", "posteffect"] as const;
-const backgroundActive = computed(
-  () => requestEnabled.value && pathStartsWith(stageRoot) && !pathStartsWith([...stageRoot, "_settings"]),
-);
-const live2dActive = computed(
-  () => requestEnabled.value && pathStartsWith(["Assets", "AddressableResources", "Character", "Live2D"]),
-);
-const stillActive = computed(() => requestEnabled.value && pathStartsWith([...advRoot, "Still"]));
-const frameActive = computed(() => requestEnabled.value && pathStartsWith([...advRoot, "Frame"]));
-const effectActive = computed(() => requestEnabled.value && pathStartsWith([...advRoot, "Effect"]));
-const postEffectActive = computed(
-  () => requestEnabled.value && (pathStartsWith([...advRoot, "PostEffect"]) || pathStartsWith(stagePostEffectRoot)),
-);
-const videoActive = computed(() => requestEnabled.value && pathStartsWith([...advRoot, "Episode"]));
-const musicActive = computed(() => requestEnabled.value && pathStartsWith(["audio", "bgm"]));
-const soundEffectActive = computed(() => requestEnabled.value && pathStartsWith(["audio", "se"]));
-const voiceActive = computed(
-  () => requestEnabled.value && pathStartsWith(["audio", "vocal"]) && props.preferredAudioUsage === "voice",
-);
-const storyActive = computed(() => requestEnabled.value && pathStartsWith(["scene"]));
-const BESTDORI_ROOT = "Bestdori";
-const bestdoriActive = computed(
-  () => !projectSceneMode.value && !props.disabled && currentPath.value[0] === BESTDORI_ROOT,
-);
-const bestdoriRelativePath = computed(() => currentPath.value.slice(1));
-const bestdoriIndexRequest = useLazyCatalogDocument<BestdoriEditorAssetIndexResponse>(
-  "editor-assets",
-  bestdoriActive,
-  undefined,
-  bestdoriOrigin("jp"),
-);
-const bestdoriCurrentNode = computed(() =>
-  bestdoriEditorAssetNodeAt(bestdoriIndexRequest.data.value?.tree, bestdoriRelativePath.value),
-);
-const bestdoriBundleActive = computed(() => bestdoriActive.value && typeof bestdoriCurrentNode.value === "number");
-const bestdoriBundleResource = computed(() => `editor-assets/${bestdoriRelativePath.value.join("/")}`);
-const bestdoriBundleRequest = useLazyCatalogDocument<BestdoriEditorAssetBundleResponse>(
-  bestdoriBundleResource,
-  bestdoriBundleActive,
-  undefined,
-  bestdoriOrigin("jp"),
-);
-
-const live2dRequest = useLazyCatalogCollection<Live2DModel>("live2d", live2dActive);
-const backgroundRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>(
-  "story-assets",
-  "backgrounds",
-  backgroundActive,
-  { resource: "story-assets", select: recordField<StoryAssetSummary>("backgrounds") },
-);
-const stillRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "stills", stillActive);
-const frameRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "frames", frameActive);
-const effectRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "effects", effectActive);
-const postEffectRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>(
-  "story-assets",
-  "post-effects",
-  postEffectActive,
-);
-const videoRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "videos", videoActive);
-const masterBgmRequest = useLazyCatalogView<Record<string, Record<string, unknown>>>(
-  "audio",
-  "master-bgms",
-  musicActive,
-  { resource: "audio/views/master-sounds", select: recordData<Record<string, unknown>> },
-);
-const masterSoundEffectRequest = useLazyCatalogView<Record<string, Record<string, unknown>>>(
-  "audio",
-  "master-sound-effects",
-  soundEffectActive,
-  { resource: "audio/views/master-sounds", select: recordData<Record<string, unknown>> },
-);
-const masterVoiceRequest = useLazyCatalogView<Record<string, Record<string, unknown>>>(
-  "audio",
-  "master-voices",
-  voiceActive,
-  { resource: "audio/views/master-sounds", select: recordData<Record<string, unknown>> },
-);
-const bgmRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "bgms", musicActive);
-const soundEffectRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>(
-  "story-assets",
-  "sound-effects",
-  soundEffectActive,
-);
-const voiceRequest = useLazyCatalogView<Record<string, StoryAssetSummary>>("story-assets", "voices", voiceActive);
-const songRequest = useLazyCatalogCollection<Song>("songs", musicActive);
-const runtimeRequest = useLazyCatalogDocument<Record<string, unknown>>("story-runtime", storyActive);
-const storyRequest = useLazyCatalogDocument<StoryCatalog>("stories", storyActive);
-
-const pathKey = (path: readonly string[]) => path.join("/");
-const normalizePath = (value: unknown) =>
-  String(value || "")
-    .replaceAll("\\", "/")
-    .replace(/^\/+|\/+$/g, "")
-    .split("/")
-    .filter(Boolean);
-const relativePath = (value: unknown, prefix: string) => {
-  const segments = normalizePath(value);
-  const prefixSegments = normalizePath(prefix);
-  return prefixSegments.every((segment, index) => segments[index] === segment)
-    ? segments.slice(prefixSegments.length)
-    : segments;
-};
-const safeFilePart = (value: unknown, fallback: string) =>
-  String(value || fallback)
-    .trim()
-    .replaceAll(/[\\/:*?"<>|]/g, "_") || fallback;
-const mediaExtension = (url: unknown, fallback: string) => {
-  const match = String(url || "")
-    .split(/[?#]/, 1)[0]
-    .match(/\.[a-z0-9]{2,5}$/i);
-  return match?.[0].toLocaleLowerCase() || fallback;
-};
-const withFallbackFile = (segments: string[], fallback: string) => {
-  if (!segments.length) return [fallback];
-  return segments.at(-1)?.includes(".") ? segments : [...segments, fallback];
-};
-
-const resolvedSound = (value: Record<string, unknown>) => {
-  const resolution = value.resolution;
-  const status =
-    resolution && typeof resolution === "object" && !Array.isArray(resolution)
-      ? String((resolution as Record<string, unknown>).status || "")
-      : "";
-  return Boolean(value.playableUrl) && value.missing !== true && (!status || status === "resolved");
-};
-
-const masterAudioItems = (usage: StoryEditorAudioUsage): AudioPickerItem[] => {
-  const category = usage === "bgm" ? "Bgm" : usage === "se" ? "Se" : "Voice";
-  const source =
-    usage === "bgm"
-      ? masterBgmRequest.data.value
-      : usage === "se"
-        ? masterSoundEffectRequest.data.value
-        : masterVoiceRequest.data.value;
-  return Object.entries(recordData<Record<string, unknown>>(source)).flatMap(([key, value]) => {
-    if (String(value.categoryName || "") !== category || !resolvedSound(value)) return [];
-    const label = String(value.cueName || value.soundId || key);
-    return [
-      {
-        key: `master:${key}`,
-        label,
-        meta: `${category} · ${String(value.cueSheetName || value.soundId || key)}`,
-        playableUrl: String(value.playableUrl),
-        usage,
-        value,
-      },
-    ];
-  });
-};
-
-const storyAudioItems = (usage: StoryEditorAudioUsage): AudioPickerItem[] => {
-  const source =
-    usage === "bgm" ? bgmRequest.data.value : usage === "se" ? soundEffectRequest.data.value : voiceRequest.data.value;
-  const sourceView = usage === "bgm" ? "bgms" : usage === "se" ? "sound-effects" : "voices";
-  return Object.entries(recordData<StoryAssetSummary>(source)).flatMap(([id, value]) => {
-    if (!value.playableUrl) return [];
-    const label = String(value.cueName || value.assetName || value.soundId || id);
-    return [
-      {
-        key: `story:${id}`,
-        label,
-        meta: String(
-          value.cueSheetName ||
-            (usage === "bgm" ? copy.value.music : usage === "se" ? copy.value.soundEffects : copy.value.voices),
-        ),
-        playableUrl: String(value.playableUrl),
-        usage,
-        value,
-        detailPath: `story-assets/views/${sourceView}/${encodeURIComponent(String(value.assetId || id))}`,
-      },
-    ];
-  });
-};
-
-const songItems = computed<AudioPickerItem[]>(() =>
-  Object.values(recordData<Song>(songRequest.data.value)).flatMap((song) => {
-    if (!song.musicUrl) return [];
-    const label = localize(song.musicTitle) || `#${song.musicId}`;
-    const key = `song:${song.musicId}`;
-    return [
-      {
-        key,
-        label,
-        meta: copy.value.music,
-        playableUrl: song.musicUrl,
-        usage: "bgm" as const,
-        value: {
-          resourceRef: key,
-          soundId: key,
-          cueName: label,
-          category: 0,
-          categoryName: "Bgm",
-          playableUrl: song.musicUrl,
-          jacketUrl: song.jacketUrl || song.jacketThumbUrl || "",
-          source: "songs",
-          musicId: song.musicId,
-        },
-      },
-    ];
-  }),
-);
-
-const audioItems = (usage: StoryEditorAudioUsage) => {
-  if (usage === "voice" && props.preferredAudioUsage !== "voice") return [];
-  const items = [...(usage === "bgm" ? songItems.value : []), ...masterAudioItems(usage), ...storyAudioItems(usage)];
-  const urls = new Set<string>();
-  return items
-    .filter((item) => {
-      if (urls.has(item.playableUrl)) return false;
-      urls.add(item.playableUrl);
-      return true;
-    })
-    .sort((left, right) => compareText(left.label, right.label));
-};
-
-const visualAvailable = (item: StoryAssetSummary) => {
-  const resolutionStatus = item.resolution ? String(item.resolution.status || "") : "";
-  return item.runtimeAvailable !== false && !["missing", "unavailable"].includes(resolutionStatus);
-};
-
-const makeVisualFile = (item: StoryAssetSummary, kind: StoryEditorVisualResourceKind): ResourceFile => {
-  const fallbackRoots: Record<StoryEditorVisualResourceKind, string[]> = {
-    background: [...stageRoot],
-    still: [...advRoot, "Still"],
-    frame: [...advRoot, "Frame"],
-    effect: [...advRoot, "Effect"],
-    "post-effect": [...stagePostEffectRoot],
-    video: [...advRoot, "Episode"],
-  };
-  let source = normalizePath(item.sourcePath);
-  let fallback = safeFilePart(item.assetName || item.videoId || item.assetId, String(item.assetId || kind));
-  if (!source.length) source = [...fallbackRoots[kind]];
-  if (kind === "video") {
-    if (source.at(-1)?.endsWith("-Video.txt")) source = source.slice(0, -1);
-    fallback += mediaExtension(item.playableUrl || item.url, ".mp4");
-    source = [...source, fallback];
-  } else {
-    const extension = kind === "post-effect" ? ".asset" : ["effect", "frame"].includes(kind) ? ".prefab" : ".png";
-    source = withFallbackFile(source, `${fallback}${extension}`);
-  }
-  const path = source.length ? source : [...fallbackRoots[kind], fallback];
-  const name = path.at(-1) || fallback;
-  return {
-    type: "file",
-    key: `visual:${kind}:${String(item.assetId)}`,
-    path,
-    name,
-    description: String(item.assetName || item.videoId || ""),
-    meta: String(item.sourcePath || item.assetName || item.assetId || ""),
-    displayKind: kind === "video" ? "video" : ["effect", "post-effect"].includes(kind) ? "effect" : "image",
-    previewUrl: kind === "video" ? undefined : String(item.url || "") || undefined,
-    payload: { type: "visual", kind, item },
-  };
-};
-
-const makeAudioFile = (item: AudioPickerItem): ResourceFile => {
-  const value = item.value;
-  const sourcePath = value.sourcePath || value.outputPath || value.runtimePath;
-  let relative = relativePath(sourcePath, "Assets/AddressableResources/Adv");
-  if (relative.at(-1)?.includes(".")) relative = relative.slice(0, -1);
-  if (String(value.source || "") === "songs") relative = ["songs"];
-  const name = `${safeFilePart(item.label, String(value.soundId || item.key))} [${safeFilePart(
-    value.soundId || value.musicId || item.key,
-    item.key,
-  )}]${mediaExtension(item.playableUrl, ".audio")}`;
-  return {
-    type: "file",
-    key: `audio:${item.key}`,
-    path: ["audio", item.usage === "bgm" ? "bgm" : item.usage === "se" ? "se" : "vocal", ...relative, name],
-    name,
-    description: item.label,
-    meta: item.meta,
-    displayKind: "audio",
-    previewUrl: String(value.jacketThumbUrl || value.jacketUrl || "") || undefined,
-    payload: { type: "audio", item },
-  };
-};
-
-const storyEpisodes = computed(() =>
-  Object.values(recordData<StoryEpisode>(recordData<unknown>(storyRequest.data.value).episodes)),
-);
-
-const directoryLabels = computed(() => {
-  const labels = new Map<string, string>();
-  for (const episode of storyEpisodes.value) {
-    const chapter = safeFilePart(episode.chapterKey || episode.chapterId, "chapter");
-    labels.set(pathKey(["scene", chapter]), localize(episode.chapterName) || episode.chapterKey || chapter);
-  }
-  return labels;
+const requestFor = (
+  signal: AbortSignal,
+  acceptedKinds: readonly string[] = props.acceptedKinds,
+): ResourceBrowserRequest => ({
+  acceptedKinds,
+  ...(props.preferredKind ? { preferredKind: props.preferredKind } : {}),
+  ...(props.requestContext ? { context: props.requestContext } : {}),
+  signal,
 });
 
-const makeStoryFile = (item: StoryEpisode): ResourceFile => {
-  const chapter = safeFilePart(item.chapterKey || item.chapterId, "chapter");
-  const relative = withFallbackFile(
-    relativePath(item.scriptAsset, "Assets/AddressableResources/Adv/Episode"),
-    `${safeFilePart(item.storyKey || item.storyId, item.storyId)}.txt`,
-  );
-  const name = relative.at(-1) || `${item.storyId}.txt`;
-  return {
-    type: "file",
-    key: `story:${item.storyId}`,
-    path: ["scene", chapter, ...relative],
-    name,
-    description: localize(item.title) || item.storyKey,
-    meta: String(item.scriptAsset || item.storyId),
-    displayKind: "story",
-    previewUrl: item.image || item.banner,
-    payload: { type: "story", item },
-  };
-};
+const rootEntries = computed<readonly BrowserEntry[]>(() =>
+  props.providers.flatMap((provider) =>
+    provider.roots.map((node) => ({
+      key: `${provider.id}:${node.id}`,
+      provider,
+      node,
+    })),
+  ),
+);
 
-const bestdoriAudioUsage = (bundlePath: readonly string[]): StoryEditorAudioUsage => {
-  if (props.preferredAudioUsage) return props.preferredAudioUsage;
-  const path = bundlePath.join("/").toLocaleLowerCase();
-  if (/(?:^|\/)(?:voice|vocal)(?:\/|$)/u.test(path)) return "voice";
-  if (/(?:^|\/)(?:bgm\d*|music)(?:\/|$)/u.test(path)) return "bgm";
-  return "se";
-};
-
-const makeBestdoriFile = (server: string, bundlePath: string[], fileName: string): ResourceFile => {
-  const rawPath = bestdoriEditorAssetRawPath(server, bundlePath, fileName);
-  const url = bestdoriEditorAssetUrl(server, bundlePath, fileName);
-  const mediaKind = bestdoriEditorAssetMediaKind(fileName);
-  const key = `bestdori:${server}:${bundlePath.join("/")}:${fileName}`;
-  const path = [BESTDORI_ROOT, ...bundlePath, fileName];
-  if (mediaKind === "audio") {
-    const usage = bestdoriAudioUsage(bundlePath);
-    const item: AudioPickerItem = {
-      key,
-      label: fileName,
-      meta: `${BESTDORI_ROOT} · ${bundlePath.join("/")}`,
-      playableUrl: url,
-      usage,
-      value: {
-        resourceRef: rawPath,
-        soundId: rawPath,
-        cueName: fileName,
-        categoryName: usage === "bgm" ? "Bgm" : usage === "voice" ? "Voice" : "Se",
-        playableUrl: url,
-        url,
-        sourcePath: rawPath,
-        source: "bestdori",
-        sourceServer: server,
-      },
-    };
-    return {
-      type: "file",
-      key,
-      path,
-      name: fileName,
-      description: bundlePath.join("/"),
-      meta: rawPath,
-      displayKind: "audio",
-      payload: { type: "audio", item },
-    };
-  }
-  return {
-    type: "file",
-    key,
-    path,
-    name: fileName,
-    description: bundlePath.join("/"),
-    meta: rawPath,
-    displayKind: mediaKind === "image" ? "image" : mediaKind === "video" ? "video" : "story",
-    ...(mediaKind === "image" ? { previewUrl: url } : {}),
-    payload: { type: "bestdori-file", server, bundlePath, fileName, rawPath, url, mediaKind },
-  };
-};
-
-const bestdoriEntries = computed<ResourceEntry[]>(() => {
-  if (!bestdoriActive.value) return [];
-  const node = bestdoriCurrentNode.value;
-  const current = currentPath.value;
-  if (node === undefined) return [];
-  if (typeof node === "number") {
-    const response = bestdoriBundleRequest.data.value;
-    if (!response?.files) return [];
-    return response.files.map((fileName) => makeBestdoriFile(response.server, bestdoriRelativePath.value, fileName));
-  }
-  const live2dCostumes = bestdoriRelativePath.value.join("/") === "live2d/chara";
-  return Object.entries(node).map(([name]) => {
-    if (live2dCostumes) {
-      return {
-        type: "file",
-        key: `bestdori:live2d:${name}`,
-        path: [...current, `${name}.live2d`],
-        name,
-        description: `${BESTDORI_ROOT} Live2D`,
-        meta: `live2d/chara/${name}`,
-        displayKind: "live2d",
-        previewUrl: bestdoriLive2dCharacterIcon(name),
-        payload: { type: "bestdori-live2d", costumeId: name },
-      } satisfies ResourceFile;
-    }
-    const path = [...current, name];
-    return {
-      type: "directory",
-      key: `directory:${pathKey(path)}`,
-      path,
-      name,
-    } satisfies ResourceDirectory;
-  });
-});
-
-const files = computed<ResourceFile[]>(() => {
-  if (projectSceneMode.value) {
-    return (props.projectScenes || []).map((scene) => {
-      const name = /\.txt$/i.test(scene.name) ? scene.name : `${scene.name}.txt`;
-      return {
-        type: "file",
-        key: `project-scene:${scene.id}`,
-        path: ["scene", ...scene.path, name],
-        name,
-        description: t("storyEditorPage.commandCount", { count: scene.commandCount }),
-        meta: scene.id,
-        displayKind: "story",
-        payload: { type: "project-scene", item: scene },
-      };
-    });
-  }
-  const result: ResourceFile[] = [];
-  if (live2dActive.value) {
-    for (const item of Object.values(recordData<Live2DModel>(live2dRequest.data.value))) {
-      const relative = withFallbackFile(
-        normalizePath(item.sourcePath || item.mocSourcePath),
-        `${safeFilePart(item.live2dKey, "model")}.live2d`,
-      );
-      result.push({
-        type: "file",
-        key: `live2d:${item.live2dKey}`,
-        path: relative.length
-          ? relative
-          : ["Assets", "AddressableResources", "Character", "Live2D", `${item.live2dKey}.live2d`],
-        name: relative.at(-1) || item.live2dKey,
-        description: localize(item.characterName) || localize(item.title) || item.live2dName || item.live2dKey,
-        meta: String(item.sourcePath || item.live2dKey),
-        displayKind: "live2d",
-        previewUrl: item.thumbnailImage || item.faceImage,
-        payload: { type: "live2d", item },
-      });
-    }
-  }
-  if (backgroundActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(backgroundRequest.data.value)))
-      result.push(makeVisualFile(item, "background"));
-  if (stillActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(stillRequest.data.value)))
-      result.push(makeVisualFile(item, "still"));
-  if (frameActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(frameRequest.data.value)))
-      result.push(makeVisualFile(item, "frame"));
-  if (effectActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(effectRequest.data.value)))
-      result.push(makeVisualFile(item, "effect"));
-  if (postEffectActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(postEffectRequest.data.value)))
-      result.push(makeVisualFile(item, "post-effect"));
-  if (videoActive.value)
-    for (const item of Object.values(recordData<StoryAssetSummary>(videoRequest.data.value)))
-      result.push(makeVisualFile(item, "video"));
-  if (musicActive.value) for (const item of audioItems("bgm")) result.push(makeAudioFile(item));
-  if (soundEffectActive.value) for (const item of audioItems("se")) result.push(makeAudioFile(item));
-  if (voiceActive.value) {
-    for (const item of audioItems("voice")) result.push(makeAudioFile(item));
-  }
-  if (storyActive.value) for (const item of storyEpisodes.value) result.push(makeStoryFile(item));
-  return result;
-});
-
-const staticDirectories = computed(() => {
-  if (projectSceneMode.value) {
-    return [["scene"], ...(props.projectSceneFolders || []).map((path) => ["scene", ...path])];
-  }
-  const paths = [
-    [BESTDORI_ROOT],
-    ["Assets"],
-    ["audio"],
-    ["scene"],
-    ["Assets", "AddressableResources"],
-    ["Assets", "AddressableResources", "Adv"],
-    ["Assets", "AddressableResources", "Character"],
-    ["Assets", "AddressableResources", "Adv", "Effect"],
-    ["Assets", "AddressableResources", "Adv", "Episode"],
-    ["Assets", "AddressableResources", "Adv", "Frame"],
-    ["Assets", "AddressableResources", "Adv", "PostEffect"],
-    ["Assets", "AddressableResources", "Adv", "Stage"],
-    ["Assets", "AddressableResources", "Adv", "Still"],
-    ["Assets", "AddressableResources", "Adv", "Stage", "_settings"],
-    ["Assets", "AddressableResources", "Adv", "Stage", "_settings", "posteffect"],
-    ["Assets", "AddressableResources", "Character", "Live2D"],
-    ["audio", "bgm"],
-    ["audio", "se"],
-  ];
-  if (props.preferredAudioUsage === "voice") paths.push(["audio", "vocal"]);
-  return paths;
-});
-
-const currentEntries = computed<ResourceEntry[]>(() => {
-  const entries = new Map<string, ResourceEntry>();
-  const current = currentPath.value;
-  for (const entry of bestdoriEntries.value) entries.set(entry.key, entry);
-  for (const path of staticDirectories.value) {
-    if (path.length !== current.length + 1 || !current.every((segment, index) => path[index] === segment)) continue;
-    const key = pathKey(path);
-    entries.set(`directory:${key}`, {
-      type: "directory",
-      key: `directory:${key}`,
-      path,
-      name: path.at(-1) || "/",
-      description: directoryLabels.value.get(key),
-    });
-  }
-  for (const file of files.value) {
-    if (!current.every((segment, index) => file.path[index] === segment) || file.path.length <= current.length)
-      continue;
-    const remaining = file.path.slice(current.length);
-    if (remaining.length === 1) {
-      entries.set(file.key, file);
-      continue;
-    }
-    const path = [...current, remaining[0]];
-    const key = pathKey(path);
-    entries.set(`directory:${key}`, {
-      type: "directory",
-      key: `directory:${key}`,
-      path,
-      name: remaining[0],
-      description: directoryLabels.value.get(key),
-    });
-  }
+const filteredEntries = computed(() => {
   const needle = query.value.normalize("NFKC").trim().toLocaleLowerCase();
-  return [...entries.values()]
-    .filter(
-      (entry) =>
-        !needle ||
-        entry.name.normalize("NFKC").toLocaleLowerCase().includes(needle) ||
-        (entry.description || "").normalize("NFKC").toLocaleLowerCase().includes(needle),
-    )
+  const source = location.value.provider ? entries.value : rootEntries.value;
+  return [...source]
+    .filter(({ node }) => {
+      if (!needle) return true;
+      return [node.name, node.description, node.type === "file" ? node.detail : undefined]
+        .filter(Boolean)
+        .some((value) => String(value).normalize("NFKC").toLocaleLowerCase().includes(needle));
+    })
     .sort((left, right) => {
-      if (left.type !== right.type) return left.type === "directory" ? -1 : 1;
-      const compared = compareText(left.name, right.name);
+      if (left.node.type !== right.node.type) return left.node.type === "directory" ? -1 : 1;
+      const compared = left.node.name.localeCompare(right.node.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
       return sortOrder.value === "asc" ? compared : -compared;
     });
 });
 
-const currentPathText = computed(() => pathKey(currentPath.value));
-const isAudioFile = (entry: ResourceEntry): entry is ResourceFile & { payload: { type: "audio" } } =>
-  entry.type === "file" && entry.payload.type === "audio";
-const isAcceptedFile = (file: ResourceFile) => {
-  if (file.payload.type === "project-scene") return true;
-  if (!props.preferredKind) return file.payload.type !== "bestdori-file" || file.payload.mediaKind !== "data";
-  if (props.preferredKind === "live2d")
-    return file.payload.type === "live2d" || file.payload.type === "bestdori-live2d";
-  if (props.preferredKind === "audio") {
-    const usage = props.preferredAudioUsage === "voice" ? "voice" : props.preferredAudioUsage === "se" ? "se" : "bgm";
-    return file.payload.type === "audio" && file.payload.item.usage === usage;
-  }
-  if (file.payload.type === "visual") return file.payload.kind === props.preferredKind;
-  if (file.payload.type === "bestdori-file") {
-    if (file.payload.mediaKind === "video") return props.preferredKind === "video";
-    if (file.payload.mediaKind !== "image") return false;
-    return props.preferredKind === "background" || props.preferredKind === "still" || props.preferredKind === "frame";
-  }
-  return false;
-};
-const fileAvailable = (file: ResourceFile) =>
-  (file.payload.type !== "visual" || visualAvailable(file.payload.item)) &&
-  (file.payload.type !== "bestdori-file" || file.payload.mediaKind !== "data");
-const isBestdoriFile = (file: ResourceFile) =>
-  file.payload.type === "bestdori-live2d" ||
-  file.payload.type === "bestdori-file" ||
-  (file.payload.type === "audio" && file.payload.item.value.source === "bestdori");
-const canOpenFile = (file: ResourceFile) =>
-  (file.payload.type === "project-scene" || (isBestdoriFile(file) ? !props.disabled : !unavailable.value)) &&
-  !loadingKey.value &&
-  isAcceptedFile(file) &&
-  fileAvailable(file);
-const directoryIcons: Record<string, string> = {
-  Bestdori: "cloud",
-  Stage: "folder_special",
-  Still: "folder_special",
-  Frame: "folder_special",
-  Live2D: "folder_special",
-  bgm: "folder_music",
-  se: "folder_music",
-  vocal: "folder_music",
-  Episode: "video_library",
-  scene: "folder_copy",
-};
-const entryIconName = (entry: ResourceEntry): string => {
-  if (entry.type === "directory") {
-    const hasSpecialAncestor = entry.path.slice(0, -1).some((segment) => directoryIcons[segment]);
-    return hasSpecialAncestor ? "folder" : directoryIcons[entry.name] || "folder";
-  }
-  if (entry.displayKind === "audio") return "audio_file";
-  if (entry.displayKind === "video") return "video_file";
-  if (entry.displayKind === "image") return "image";
-  if (entry.displayKind === "effect") return "auto_awesome";
-  if (entry.displayKind === "live2d") return "view_in_ar";
-  if (entry.displayKind === "story") return "menu_book";
-  return "description";
+const currentPathText = computed(() => {
+  const provider = location.value.provider;
+  if (!provider) return "/";
+  const path = location.value.path.join("/");
+  return path ? `${provider.name} / ${path}` : provider.name;
+});
+
+const canOpenFile = (file: BrowserFile): boolean => {
+  if (props.disabled || loadingKey.value || !file.available) return false;
+  return props.acceptedKinds.length === 0 || file.acceptedKinds.some((kind) => props.acceptedKinds.includes(kind));
 };
 
-const openDirectory = (path: string[]) => {
-  currentPath.value = path;
-  query.value = "";
-  selectedEntryKey.value = "";
+const entryIconName = ({ node }: BrowserEntry): string => {
+  if (node.type === "directory") return "folder";
+  const icons: Record<string, string> = {
+    audio: "audio_file",
+    data: "description",
+    image: "image",
+    model: "view_in_ar",
+    scene: "movie",
+    video: "video_file",
+  };
+  return icons[node.displayKind] || "draft";
+};
+
+const resetScroll = () => {
   if (itemsRoot.value) itemsRoot.value.scrollTop = 0;
   itemsScrollTop.value = 0;
-  actionError.value = false;
+};
+
+const stopAudio = () => {
   audio.value?.pause();
   activeAudioKey.value = "";
 };
+
+const listLocation = async (next: BrowserLocation) => {
+  requestController?.abort();
+  actionController?.abort();
+  actionController = undefined;
+  loadingKey.value = "";
+  const generation = ++requestGeneration;
+  const controller = new AbortController();
+  requestController = controller;
+  location.value = next;
+  entries.value = [];
+  query.value = "";
+  selectedEntryKey.value = "";
+  error.value = undefined;
+  actionError.value = undefined;
+  stopAudio();
+  resetScroll();
+  if (!next.provider) {
+    pending.value = false;
+    return;
+  }
+  pending.value = true;
+  try {
+    const nodes = await next.provider.list(next.path, requestFor(controller.signal));
+    if (generation !== requestGeneration || controller.signal.aborted) return;
+    entries.value = nodes.map((node) => ({
+      key: `${next.provider!.id}:${node.id}`,
+      provider: next.provider!,
+      node,
+    }));
+  } catch (cause) {
+    if (generation === requestGeneration && !controller.signal.aborted) error.value = cause;
+  } finally {
+    if (generation === requestGeneration) pending.value = false;
+  }
+};
+
+const openDirectory = (provider: BrowserProvider, path: ResourceBrowserPath) => {
+  history.value = [...history.value, location.value];
+  void listLocation({ provider, path });
+};
+
 const goBack = () => {
-  if (currentPath.value.length > basePathDepth.value) openDirectory(currentPath.value.slice(0, -1));
+  const next = history.value.at(-1) ?? { path: [] };
+  history.value = history.value.slice(0, -1);
+  void listLocation(next);
 };
 
-const resourceUrl = (path: string) =>
-  catalogApiUrl(config.public.apiBase, ourNotesReleaseOrigin(props.projectReleaseServer), path);
-const bestdoriResourceUrl = (path: string) => {
-  const url = catalogApiUrl(config.public.apiBase, bestdoriOrigin("jp"), path);
-  return `${url}?lang=${encodeURIComponent(locale.value)}`;
-};
-
-const insertLive2d = async (item: Live2DModel) => {
-  if (unavailable.value) return;
-  actionError.value = false;
-  loadingKey.value = `live2d:${item.live2dKey}`;
+const openFile = async (entry: BrowserEntry) => {
+  if (entry.node.type !== "file") return;
+  const { provider, node } = entry;
+  if (!canOpenFile(node)) return;
+  actionError.value = undefined;
+  loadingKey.value = entry.key;
+  const controller = new AbortController();
+  actionController?.abort();
+  actionController = controller;
   try {
-    const detail = await $fetch<Live2DDetail>(resourceUrl(`live2d/${item.live2dKey}`));
-    emit("insert", { kind: "live2d", key: item.live2dKey, value: detail as unknown as Record<string, unknown> });
-  } catch {
-    actionError.value = true;
+    const acceptedKinds = props.acceptedKinds.length ? props.acceptedKinds : node.acceptedKinds;
+    const resource = await provider.open(node, requestFor(controller.signal, acceptedKinds));
+    if (resource) emit("insert", resource);
+  } catch (cause) {
+    actionError.value = cause;
   } finally {
-    loadingKey.value = "";
+    if (actionController === controller) {
+      actionController = undefined;
+      loadingKey.value = "";
+    }
   }
 };
 
-const insertBestdoriLive2d = async (costumeId: string) => {
-  if (props.disabled) return;
-  actionError.value = false;
-  loadingKey.value = `bestdori:live2d:${costumeId}`;
-  try {
-    const response = await $fetch<{ items?: Record<string, Record<string, unknown>> }>(
-      `${bestdoriResourceUrl("live2d")}&id=${encodeURIComponent(costumeId)}`,
-    );
-    const value = response.items?.[costumeId];
-    if (!value) throw new Error(`Bestdori Live2D resource is unavailable: ${costumeId}`);
-    const key = `bestdori:live2d:${costumeId}`;
-    emit("insert", {
-      kind: "live2d",
-      key,
-      value: {
-        ...value,
-        live2dKey: key,
-        resourceRef: key,
-        bestdoriCostumeId: costumeId,
-      },
-    });
-  } catch {
-    actionError.value = true;
-  } finally {
-    loadingKey.value = "";
-  }
-};
-
-const insertBestdoriFile = (item: Extract<ResourceFilePayload, { type: "bestdori-file" }>) => {
-  if (props.disabled || item.mediaKind === "data") return;
-  const key = item.rawPath;
-  const common = {
-    resourceRef: key,
-    assetId: key,
-    assetName: item.fileName,
-    sourcePath: item.rawPath,
-    url: item.url,
-    source: "bestdori",
-    sourceServer: item.server,
-    runtimeAvailable: true,
-  };
-  if (item.mediaKind === "video") {
-    emit("insert", {
-      kind: "video",
-      key,
-      value: { ...common, videoId: key, playableUrl: item.url },
-    });
-    return;
-  }
-  const requestedKind = props.preferredKind;
-  const kind: "background" | "still" | "frame" =
-    requestedKind === "background" || requestedKind === "still" || requestedKind === "frame"
-      ? requestedKind
-      : item.bundlePath[0] === "bg" || item.bundlePath.slice(0, 2).join("/") === "story/bg"
-        ? "background"
-        : "still";
-  if (kind !== "background") {
-    emit("insert", {
-      kind,
-      key,
-      value: kind === "frame" ? { ...common, texture: item.url } : common,
-    });
-    return;
-  }
-  const runtime = createBestdoriSceneRuntime();
-  emit("insert", {
-    kind,
-    key,
-    value: {
-      ...common,
-      stageRef: key,
-      stage: runtime.stages[BESTDORI_BACKGROUND_STAGE_REF] || runtime.stage,
-    },
-  });
-};
-
-const insertVisual = async (item: StoryAssetSummary, kind: StoryEditorVisualResourceKind) => {
-  if (unavailable.value || !visualAvailable(item)) return;
-  const assetId = String(item.assetId || "");
-  if (!assetId) return;
-  actionError.value = false;
-  loadingKey.value = `visual:${kind}:${assetId}`;
-  try {
-    const views: Record<StoryEditorVisualResourceKind, string> = {
-      background: "",
-      still: "stills",
-      frame: "frames",
-      effect: "effects",
-      "post-effect": "post-effects",
-      video: "videos",
-    };
-    const viewName = views[kind];
-    const path = viewName
-      ? `story-assets/views/${viewName}/${encodeURIComponent(assetId)}`
-      : `story-assets/${encodeURIComponent(assetId)}`;
-    const detail = await $fetch<Record<string, unknown>>(resourceUrl(path));
-    const key = String(detail.resourceRef || detail.assetName || detail.videoId || detail.soundId || assetId);
-    emit("insert", { kind, key, value: detail });
-  } catch {
-    actionError.value = true;
-  } finally {
-    loadingKey.value = "";
-  }
-};
-
-const insertAudio = async (item: AudioPickerItem) => {
-  if (unavailable.value && item.value.source !== "bestdori") return;
-  actionError.value = false;
-  loadingKey.value = `audio:${item.key}`;
-  try {
-    const value = item.detailPath ? await $fetch<Record<string, unknown>>(resourceUrl(item.detailPath)) : item.value;
-    const cueSheet = String(value.cueSheetName || "").trim();
-    const cue = String(value.cueName || "").trim();
-    const key = String(
-      value.resourceRef || (cueSheet && cue ? `${cueSheet}/${cue}` : cue) || value.soundId || item.key || item.label,
-    );
-    emit("insert", { kind: "audio", usage: item.usage, key, value: { ...value, resourceRef: key } });
-  } catch {
-    actionError.value = true;
-  } finally {
-    loadingKey.value = "";
-  }
-};
-
-const insertStory = async (item: StoryEpisode) => {
-  if (unavailable.value) return;
-  actionError.value = false;
-  loadingKey.value = `story:${item.storyId}`;
-  try {
-    const detail = await $fetch<Record<string, unknown>>(resourceUrl(`stories/${item.storyId}`));
-    const assets = detail.assets && typeof detail.assets === "object" ? (detail.assets as Record<string, unknown>) : {};
-    const live2dKeys = Array.isArray(assets.live2d)
-      ? assets.live2d
-          .map((entry) =>
-            entry && typeof entry === "object" ? String((entry as Record<string, unknown>).live2dKey || "") : "",
-          )
-          .filter(Boolean)
-      : [];
-    const scriptAsset = String(item.scriptAsset || "");
-    const scriptUrl = scriptAsset
-      ? `${assetRootForRelease(props.projectReleaseServer)}/${normalizePath(scriptAsset).map(encodeURIComponent).join("/")}`
-      : "";
-    const [live2d, sourceContent] = await Promise.all([
-      Promise.all([...new Set(live2dKeys)].map((key) => $fetch<Record<string, unknown>>(resourceUrl(`live2d/${key}`)))),
-      scriptUrl ? $fetch<unknown>(scriptUrl) : Promise.resolve(undefined),
-    ]);
-    const runtime = mergeStoryRuntime(runtimeRequest.data.value, detail.runtime);
-    emit("insert", {
-      kind: "story",
-      key: item.storyId,
-      value: {
-        ...detail,
-        title: item.title,
-        storyId: item.storyId,
-        assets: { ...assets, live2d },
-        runtime,
-      },
-      sourceSnapshot: {
-        catalog: detail,
-        episode: { path: scriptAsset, content: sourceContent ?? null },
-        runtime,
-        summary: item as unknown as Record<string, unknown>,
-      },
-    });
-  } catch {
-    actionError.value = true;
-  } finally {
-    loadingKey.value = "";
-  }
-};
-
-const openFile = async (file: ResourceFile) => {
-  if (!canOpenFile(file)) return;
-  if (file.payload.type === "project-scene") return emit("select-scene", file.payload.item.id);
-  if (file.payload.type === "bestdori-live2d") return insertBestdoriLive2d(file.payload.costumeId);
-  if (file.payload.type === "bestdori-file") return insertBestdoriFile(file.payload);
-  if (file.payload.type === "live2d") return insertLive2d(file.payload.item);
-  if (file.payload.type === "visual") return insertVisual(file.payload.item, file.payload.kind);
-  if (file.payload.type === "audio") return insertAudio(file.payload.item);
-  return insertStory(file.payload.item);
-};
-const activateEntry = (entry: ResourceEntry) => {
+const activateEntry = (entry: BrowserEntry) => {
   selectedEntryKey.value = entry.key;
-  return entry.type === "directory" ? openDirectory(entry.path) : void openFile(entry);
-};
-const onEntryDragStart = (entry: ResourceEntry, event: DragEvent) => {
-  if (entry.type !== "file" || !event.dataTransfer) return;
-  const relativePath = entry.path.slice(1).join("/");
-  event.dataTransfer.effectAllowed = "copy";
-  event.dataTransfer.setData("application/x-haneoka-story-resource", relativePath);
-  event.dataTransfer.setData("text/plain", relativePath);
+  if (entry.node.type === "directory") {
+    openDirectory(entry.provider, entry.node.path);
+    return;
+  }
+  void openFile(entry as BrowserEntry & { node: BrowserFile });
 };
 
-const toggleAudio = async (item: AudioPickerItem) => {
-  if (!import.meta.client) return;
+const toggleAudio = async (entry: BrowserEntry) => {
+  if (entry.node.type !== "file") return;
+  const source = entry.node.audioPreviewUrl;
+  if (!import.meta.client || props.disabled || !source) return;
   if (!audio.value) {
     audio.value = new Audio();
     audio.value.addEventListener("ended", () => {
       activeAudioKey.value = "";
     });
   }
-  if (activeAudioKey.value === item.key && !audio.value.paused) {
-    audio.value.pause();
-    activeAudioKey.value = "";
+  if (activeAudioKey.value === entry.key && !audio.value.paused) {
+    stopAudio();
     return;
   }
   audio.value.pause();
-  audio.value.src = item.playableUrl;
-  activeAudioKey.value = item.key;
+  audio.value.src = source;
+  activeAudioKey.value = entry.key;
   try {
     await audio.value.play();
-  } catch {
+  } catch (cause) {
     activeAudioKey.value = "";
+    actionError.value = cause;
   }
 };
 
-const activeRequests = computed(() => {
-  if (bestdoriActive.value)
-    return bestdoriBundleActive.value ? [bestdoriIndexRequest, bestdoriBundleRequest] : [bestdoriIndexRequest];
-  if (backgroundActive.value) return [backgroundRequest];
-  if (live2dActive.value) return [live2dRequest];
-  if (stillActive.value) return [stillRequest];
-  if (frameActive.value) return [frameRequest];
-  if (effectActive.value) return [effectRequest];
-  if (postEffectActive.value) return [postEffectRequest];
-  if (videoActive.value) return [videoRequest];
-  if (musicActive.value) return [masterBgmRequest, bgmRequest, songRequest];
-  if (soundEffectActive.value) return [masterSoundEffectRequest, soundEffectRequest];
-  if (voiceActive.value) return [masterVoiceRequest, voiceRequest];
-  if (storyActive.value) return [storyRequest, runtimeRequest];
-  return [];
-});
-const pending = computed(() => activeRequests.value.some((request) => request.pending.value));
-const error = computed(() => activeRequests.value.map((request) => request.error.value).find(Boolean));
+const onEntryDragStart = (entry: BrowserEntry, event: DragEvent) => {
+  if (entry.node.type !== "file" || !event.dataTransfer || !canOpenFile(entry.node)) return;
+  const payload = JSON.stringify({
+    providerId: entry.provider.id,
+    resourceId: entry.node.id,
+    path: [...entry.node.path],
+  });
+  event.dataTransfer.effectAllowed = "copy";
+  event.dataTransfer.setData("application/x-altair-resource", payload);
+  event.dataTransfer.setData("text/plain", entry.node.path.join("/"));
+};
+
 const refresh = async () => {
-  actionError.value = false;
-  await Promise.all(activeRequests.value.map((request) => request.refresh()));
+  actionError.value = undefined;
+  error.value = undefined;
+  const provider = location.value.provider;
+  try {
+    if (provider) await provider.refresh?.(requestFor(new AbortController().signal));
+    await listLocation(location.value);
+  } catch (cause) {
+    error.value = cause;
+  }
   moreMenuOpen.value = false;
 };
 
-const preferredPath = (): string[] => {
-  if (projectSceneMode.value) return ["scene"];
-  if (props.preferredKind === "live2d") return ["Assets", "AddressableResources", "Character", "Live2D"];
-  if (props.preferredKind === "background") return [...stageRoot];
-  if (props.preferredKind === "still") return [...advRoot, "Still"];
-  if (props.preferredKind === "frame") return [...advRoot, "Frame"];
-  if (props.preferredKind === "effect") return [...advRoot, "Effect"];
-  // Post effects live in two physical branches; open their nearest common
-  // directory so neither branch is hidden behind a synthetic category.
-  if (props.preferredKind === "post-effect") return [...advRoot];
-  if (props.preferredKind === "video") return [...advRoot, "Episode"];
-  if (props.preferredKind === "audio") {
-    return [
-      "audio",
-      props.preferredAudioUsage === "voice" ? "vocal" : props.preferredAudioUsage === "se" ? "se" : "bgm",
-    ];
+const applyPreferredLocation = async () => {
+  history.value = [];
+  if (!props.preferredKind) {
+    await listLocation({ path: [] });
+    return;
   }
-  return [];
+  const provider = props.providers[0];
+  if (!provider) {
+    await listLocation({ path: [] });
+    return;
+  }
+  try {
+    const path = provider.preferredPath(requestFor(new AbortController().signal));
+    await listLocation({ provider, path });
+  } catch {
+    await listLocation({ path: [] });
+  }
 };
 
 watch(
-  [projectSceneMode, () => props.preferredKind, () => props.preferredAudioUsage],
-  () => openDirectory(preferredPath()),
+  [() => props.providers, () => props.acceptedKinds, () => props.preferredKind, () => props.requestContext],
+  () => void applyPreferredLocation(),
   { immediate: true },
 );
 
 const setView = (next: ResourceView) => {
   view.value = next;
   if (import.meta.client) localStorage.setItem("story-editor-resource-view", next);
-  if (itemsRoot.value) itemsRoot.value.scrollTop = 0;
-  itemsScrollTop.value = 0;
+  resetScroll();
 };
 const toggleView = () => setView(view.value === "grid" ? "list" : "grid");
 
@@ -1102,7 +332,7 @@ const resourceColumnCount = computed(() =>
   Math.max(1, Math.floor(itemsWidth.value / (view.value === "grid" ? 96 : 192))),
 );
 const resourceRowHeight = computed(() => (view.value === "grid" ? itemsWidth.value / resourceColumnCount.value : 32));
-const resourceRowCount = computed(() => Math.ceil(currentEntries.value.length / resourceColumnCount.value));
+const resourceRowCount = computed(() => Math.ceil(filteredEntries.value.length / resourceColumnCount.value));
 const resourceVirtualRange = computed(() => {
   const rowHeight = Math.max(1, resourceRowHeight.value);
   const startRow = Math.max(0, Math.floor(itemsScrollTop.value / rowHeight) - 2);
@@ -1115,7 +345,7 @@ const resourceVirtualRange = computed(() => {
 const visibleEntries = computed(() => {
   const start = resourceVirtualRange.value.startRow * resourceColumnCount.value;
   const end = resourceVirtualRange.value.endRow * resourceColumnCount.value;
-  return currentEntries.value.slice(start, end);
+  return filteredEntries.value.slice(start, end);
 });
 const resourceCanvasStyle = computed(() => ({ height: `${resourceRowCount.value * resourceRowHeight.value}px` }));
 const resourceWindowStyle = computed(() => ({
@@ -1123,6 +353,7 @@ const resourceWindowStyle = computed(() => ({
   gridAutoRows: `${resourceRowHeight.value}px`,
   transform: `translateY(${resourceVirtualRange.value.startRow * resourceRowHeight.value}px)`,
 }));
+
 const moreMenuStyle = computed(() => ({
   top: `${moreMenuTop.value}px`,
   left: `${moreMenuLeft.value}px`,
@@ -1131,8 +362,8 @@ const updateMoreMenuPosition = () => {
   if (!import.meta.client || !moreMenuOpen.value || !moreButton.value) return;
   const anchor = moreButton.value.getElement()?.getBoundingClientRect();
   if (!anchor) return;
-  const width = morePopover.value?.offsetWidth || 128;
-  const height = morePopover.value?.offsetHeight || 58;
+  const width = morePopover.value?.offsetWidth || 160;
+  const height = morePopover.value?.offsetHeight || 88;
   const viewportPadding = 4;
   moreMenuLeft.value = Math.max(
     viewportPadding,
@@ -1165,8 +396,8 @@ const toggleSortOrder = () => {
 };
 
 onMounted(() => {
-  const stored = localStorage.getItem("story-editor-resource-view");
-  if (stored === "grid" || stored === "list") view.value = stored;
+  const storedView = localStorage.getItem("story-editor-resource-view");
+  if (storedView === "grid" || storedView === "list") view.value = storedView;
   const storedSortOrder = localStorage.getItem("story-editor-resource-sort-order");
   if (storedSortOrder === "asc" || storedSortOrder === "desc") sortOrder.value = storedSortOrder;
   itemsObserver = new ResizeObserver(updateItemsViewport);
@@ -1179,27 +410,29 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  requestController?.abort();
+  actionController?.abort();
   itemsObserver?.disconnect();
   document.removeEventListener("pointerdown", closeMoreMenuFromOutside);
   document.removeEventListener("keydown", closeMoreMenuOnEscape);
   window.removeEventListener("resize", updateMoreMenuPosition);
   window.removeEventListener("scroll", updateMoreMenuPosition, true);
-  audio.value?.pause();
+  stopAudio();
   if (audio.value) audio.value.src = "";
 });
 </script>
 
 <template>
-  <section class="story-resource-library" :aria-label="libraryLabel">
+  <section class="story-resource-library" :aria-label="copy.resources">
     <div class="story-resource-library__filter">
       <slot name="leading" />
-      <SearchField v-model="query" compact :label="projectSceneMode ? copy.scenes : copy.searchResources" />
+      <SearchField v-model="query" compact :label="copy.searchResources" />
     </div>
     <slot name="notice" />
 
     <div class="story-resource-library__pathbar">
       <UiIconButton
-        v-if="currentPath.length > basePathDepth"
+        v-if="location.provider"
         class="story-resource-library__toolbar-button"
         size="compact"
         :label="t('previous')"
@@ -1207,25 +440,7 @@ onBeforeUnmount(() => {
       >
         <MaterialIcon name="arrow_back" :size="20" />
       </UiIconButton>
-      <code class="story-resource-library__path" :aria-label="libraryLabel">{{ currentPathText }}</code>
-      <UiIconButton
-        v-if="projectSceneMode"
-        class="story-resource-library__toolbar-button"
-        size="compact"
-        :label="copy.addScene"
-        @click="emit('add-scene', currentPath.slice(basePathDepth))"
-      >
-        <MaterialIcon name="note_add" :size="20" />
-      </UiIconButton>
-      <UiIconButton
-        v-if="projectSceneMode"
-        class="story-resource-library__toolbar-button"
-        size="compact"
-        :label="copy.addFolder"
-        @click="emit('add-folder', currentPath.slice(basePathDepth))"
-      >
-        <MaterialIcon name="create_new_folder" :size="20" />
-      </UiIconButton>
+      <code class="story-resource-library__path" :aria-label="copy.resources">{{ currentPathText }}</code>
       <UiIconButton
         class="story-resource-library__toolbar-button"
         size="compact"
@@ -1238,7 +453,7 @@ onBeforeUnmount(() => {
         ref="moreButton"
         class="story-resource-library__toolbar-button story-resource-library__more-button"
         size="compact"
-        :label="libraryLabel"
+        :label="copy.resources"
         :pressed="moreMenuOpen"
         aria-haspopup="menu"
         :aria-expanded="moreMenuOpen"
@@ -1274,10 +489,7 @@ onBeforeUnmount(() => {
       </div>
     </Teleport>
 
-    <div v-if="mismatch && !bestdoriActive" class="story-resource-library__notice" role="status">
-      {{ copy.serverMismatch }}
-    </div>
-    <div v-else-if="actionError" class="story-resource-library__notice is-error" role="alert">
+    <div v-if="actionError" class="story-resource-library__notice is-error" role="alert">
       {{ t("error") }}
     </div>
 
@@ -1289,7 +501,7 @@ onBeforeUnmount(() => {
     >
       <LoadingState v-if="pending" />
       <ErrorState v-else-if="error" @retry="refresh" />
-      <EmptyState v-else-if="!currentEntries.length" />
+      <EmptyState v-else-if="!filteredEntries.length" />
       <div v-else class="story-resource-library__canvas" :style="resourceCanvasStyle">
         <div class="story-resource-library__files" :class="`is-${view}`" :style="resourceWindowStyle">
           <article
@@ -1297,18 +509,14 @@ onBeforeUnmount(() => {
             :key="entry.key"
             class="story-resource-file"
             :class="{
-              'is-directory': entry.type === 'directory',
-              'is-disabled': entry.type === 'file' && !canOpenFile(entry),
-              'is-selected':
-                selectedEntryKey === entry.key ||
-                (entry.type === 'file' &&
-                  entry.payload.type === 'project-scene' &&
-                  entry.payload.item.id === activeSceneId),
+              'is-directory': entry.node.type === 'directory',
+              'is-disabled': entry.node.type === 'file' && !canOpenFile(entry.node),
+              'is-selected': selectedEntryKey === entry.key,
             }"
-            :title="entry.path.join('/')"
+            :title="entry.node.path.join('/')"
             role="button"
             tabindex="0"
-            :draggable="entry.type === 'file'"
+            :draggable="entry.node.type === 'file' && canOpenFile(entry.node)"
             @click="activateEntry(entry)"
             @dragstart="onEntryDragStart(entry, $event)"
             @keydown.enter.self.prevent="activateEntry(entry)"
@@ -1316,13 +524,9 @@ onBeforeUnmount(() => {
           >
             <div class="story-resource-file__icon">
               <img
-                v-if="
-                  entry.type === 'file' &&
-                  entry.previewUrl &&
-                  ['image', 'live2d', 'story', 'audio'].includes(entry.displayKind)
-                "
+                v-if="entry.node.type === 'file' && entry.node.previewUrl"
                 class="is-preview"
-                :src="entry.previewUrl"
+                :src="entry.node.previewUrl"
                 alt=""
                 loading="lazy"
                 draggable="false"
@@ -1335,49 +539,27 @@ onBeforeUnmount(() => {
               />
             </div>
             <div class="story-resource-file__name">
-              <span>{{ entry.name }}</span>
-              <span
-                v-if="entry.type === 'file' && entry.payload.type === 'project-scene' && entry.payload.item.isEntry"
-                class="story-resource-file__entry"
-                :title="copy.entryScene"
-                :aria-label="copy.entryScene"
+              <span>{{ entry.node.name }}</span>
+              <small
+                v-if="view === 'list' && (entry.node.description || (entry.node.type === 'file' && entry.node.detail))"
               >
-                <MaterialIcon name="star" :size="16" filled />
-              </span>
-              <small v-if="view === 'list' && entry.description">{{ entry.description }}</small>
+                {{ entry.node.description || (entry.node.type === "file" ? entry.node.detail : "") }}
+              </small>
             </div>
-            <div v-if="entry.type === 'file'" class="story-resource-file__actions">
-              <template v-if="entry.payload.type === 'project-scene'">
-                <UiIconButton
-                  size="compact"
-                  :label="copy.renameScene"
-                  @click.stop="emit('rename-scene', entry.payload.item.id, entry.payload.item.name)"
-                >
-                  <MaterialIcon name="edit" :size="18" />
-                </UiIconButton>
-                <UiIconButton
-                  size="compact"
-                  :disabled="!entry.payload.item.canDelete"
-                  :label="copy.deleteScene"
-                  @click.stop="emit('delete-scene', entry.payload.item.id)"
-                >
-                  <MaterialIcon name="delete" :size="18" />
-                </UiIconButton>
-              </template>
+            <div v-if="entry.node.type === 'file'" class="story-resource-file__actions">
               <UiIconButton
-                v-else-if="isAudioFile(entry)"
+                v-if="entry.node.audioPreviewUrl"
                 size="compact"
-                :label="activeAudioKey === entry.payload.item.key ? t('pause') : t('play')"
-                @click.stop="toggleAudio(entry.payload.item)"
+                :disabled="disabled"
+                :label="activeAudioKey === entry.key ? t('pause') : t('play')"
+                @click.stop="toggleAudio(entry)"
               >
-                <MaterialIcon v-if="activeAudioKey === entry.payload.item.key" name="pause" :size="18" />
-                <MaterialIcon v-else name="play_arrow" :size="18" />
+                <MaterialIcon :name="activeAudioKey === entry.key ? 'pause' : 'play_arrow'" :size="18" />
               </UiIconButton>
               <UiIconButton
-                v-if="entry.payload.type !== 'project-scene'"
-                :disabled="!canOpenFile(entry)"
+                :disabled="!canOpenFile(entry.node)"
                 size="compact"
-                :label="fileAvailable(entry) ? copy.insertResource : copy.resourceUnavailable"
+                :label="entry.node.available ? copy.insertResource : copy.resourceUnavailable"
                 @click.stop="openFile(entry)"
               >
                 <MaterialIcon v-if="loadingKey === entry.key" name="refresh" class="is-spinning" :size="18" />
@@ -1412,13 +594,10 @@ onBeforeUnmount(() => {
 }
 
 .story-resource-library__filter :deep(.search-field) {
-  min-width: 0;
-  flex: 1;
-}
-
-.story-resource-library__filter :deep(.search-field) {
   height: var(--md-comp-control-height-compact);
+  min-width: 0;
   min-height: var(--md-comp-control-height-compact);
+  flex: 1;
 }
 
 .story-resource-library__pathbar {
@@ -1471,15 +650,10 @@ onBeforeUnmount(() => {
 
 .story-resource-library__notice {
   padding: 4px 7px;
-  color: var(--md-sys-color-on-tertiary-container);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-tertiary-container);
-  font-size: var(--md-sys-typescale-label-small-size);
-}
-
-.story-resource-library__notice.is-error {
   color: var(--md-sys-color-on-error-container);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-error-container);
+  font-size: var(--md-sys-typescale-label-small-size);
 }
 
 .story-resource-library__items {
@@ -1499,9 +673,7 @@ onBeforeUnmount(() => {
 
 .story-resource-library__files {
   position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
+  inset: 0 0 auto;
   display: grid;
   align-content: start;
   width: 100%;
@@ -1627,12 +799,6 @@ onBeforeUnmount(() => {
 
 .story-resource-file__name span {
   color: var(--md-sys-color-on-surface-variant);
-}
-
-.story-resource-file__entry {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--md-sys-color-tertiary);
 }
 
 .story-resource-file__name small {

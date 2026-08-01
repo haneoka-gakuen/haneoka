@@ -1,0 +1,74 @@
+name: Update external repositories
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: external-repositories-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update locked repositories
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: corepack enable
+
+      - name: Check out locked repositories
+        run: node scripts/external-repositories.mjs checkout
+
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Advance repository pins
+        run: pnpm dependencies:update
+
+      - name: Verify updated workspace
+        env:
+          HANEOKA_CUBISM_RUNTIME_POLICY: optional
+        run: |
+          pnpm dependencies:verify
+          pnpm format:check
+          pnpm lint
+          python3 -m unittest discover -s scripts/garupa_master/tests -t .
+          pnpm typecheck
+          pnpm build
+
+      - name: Open update pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if git diff --quiet -- config/external-repositories.lock.json pnpm-lock.yaml; then
+            exit 0
+          fi
+
+          branch="codex/external-repositories-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add config/external-repositories.lock.json pnpm-lock.yaml
+          git commit -m "chore: update external repositories"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base "$DEFAULT_BRANCH" \
+            --head "$branch" \
+            --title "chore: update external repositories" \
+            --body "Updates the pinned external repositories and the frozen workspace lock."

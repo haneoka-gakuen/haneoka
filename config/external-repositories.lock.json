@@ -1,0 +1,270 @@
+{
+  "format": "haneoka-external-repositories-lock",
+  "formatVersion": 1,
+  "repositories": [
+    {
+      "name": "vega",
+      "url": "https://github.com/haneoka-gakuen/vega.git",
+      "branch": "main",
+      "commit": "e6280b621e910f27db6b6f2f755df6f8107fef31",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair",
+      "url": "https://github.com/haneoka-gakuen/altair.git",
+      "branch": "main",
+      "commit": "450d81802fa5d4977587f9aeabe592c08c727487",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "deneb",
+      "url": "https://github.com/haneoka-gakuen/deneb.git",
+      "branch": "main",
+      "commit": "535435deaada3cd3510846bde4b9cc10fd83bc55",
+      "version": "0.1.0",
+      "kind": "rust"
+    },
+    {
+      "name": "vega-marketplace",
+      "url": "https://github.com/haneoka-gakuen/vega-marketplace.git",
+      "branch": "main",
+      "commit": "4e64a52354d3b845acd8fc42e581a186c66f0a88",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-renderer-pixi",
+      "url": "https://github.com/haneoka-gakuen/vega-renderer-pixi.git",
+      "branch": "main",
+      "commit": "2233f34aa3b4c531c1d11d56496833744b6d7896",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-renderer-three",
+      "url": "https://github.com/haneoka-gakuen/vega-renderer-three.git",
+      "branch": "main",
+      "commit": "8b8dd9d949a9526ba01eee4b9d08fb8eed40e54a",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-theme-haneoka",
+      "url": "https://github.com/haneoka-gakuen/vega-theme-haneoka.git",
+      "branch": "main",
+      "commit": "af5d6464531e9bc959757584d091080c7717da56",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-webgal",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-webgal.git",
+      "branch": "main",
+      "commit": "442e221466784fd2e786cd19cd1b7046c9134af8",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-shell-default",
+      "url": "https://github.com/haneoka-gakuen/vega-shell-default.git",
+      "branch": "main",
+      "commit": "da9280202a5e8b7f1219c38be66606f0739ca721",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-ui-portable",
+      "url": "https://github.com/haneoka-gakuen/vega-ui-portable.git",
+      "branch": "main",
+      "commit": "39e5596cbb77130b04a659d55487f2d956ed7401",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext.git",
+      "branch": "main",
+      "commit": "4a57d81829718b77e3adb3d7cbb4fb15f93733fb",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext-bbcode",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext-bbcode.git",
+      "branch": "main",
+      "commit": "a70ab45c48aae2300b0aa03ef0a2ff31c2eb5982",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext-html",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext-html.git",
+      "branch": "main",
+      "commit": "239e80430d90524a1294ff22c81ed3b210ed08cf",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext-latex",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext-latex.git",
+      "branch": "main",
+      "commit": "cb1b5409b5cbc7b4810c5a69edbaa71a167ce2bf",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext-markdown",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext-markdown.git",
+      "branch": "main",
+      "commit": "503409a77f53cf0da321d19862603d34f296578d",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-richtext-typst",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-richtext-typst.git",
+      "branch": "main",
+      "commit": "37303b95bbabf1590e05f49fac47d5eb852cc389",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-cubism",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-cubism.git",
+      "branch": "main",
+      "commit": "deb34e476d469c4e35e014fe8fc9e2b7e70b84c0",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-spine",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-spine.git",
+      "branch": "main",
+      "commit": "c669e66c794feb5e30be94747959bead67866270",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-haneoka",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-haneoka.git",
+      "branch": "main",
+      "commit": "2bbfe6e12b5fbd44daaf9eb529993b52f8118013",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-plugin-ending",
+      "url": "https://github.com/haneoka-gakuen/vega-plugin-ending.git",
+      "branch": "main",
+      "commit": "ca0a7750b28b8fdb51249859ecd1716592debc7a",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "vega-preset-full",
+      "url": "https://github.com/haneoka-gakuen/vega-preset-full.git",
+      "branch": "main",
+      "commit": "818feacf91b6e725bac8eccb6c1c4f343cf23272",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-adv",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-adv.git",
+      "branch": "main",
+      "commit": "590f651defd86f18f6bf0b247a0cc39884f1361c",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-bestdori",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-bestdori.git",
+      "branch": "main",
+      "commit": "d2f9a23ecd8362007f798c16119b934b9494fef8",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-haneoka",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-haneoka.git",
+      "branch": "main",
+      "commit": "3b435c0fd508319fa761c1a0b482b90c8c743020",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-flow",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-flow.git",
+      "branch": "main",
+      "commit": "ed0e4005b33e0d9b65c657e695e925ca0554e983",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-history",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-history.git",
+      "branch": "main",
+      "commit": "64cd3f864863735219437aded42924469245a2c9",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-drafts",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-drafts.git",
+      "branch": "main",
+      "commit": "91b9ede20cc03160e2342fc2f05c798498b838e1",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-marketplace",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-marketplace.git",
+      "branch": "main",
+      "commit": "3546a3669f368a01e51ac8cf8be71c95ea6d762a",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-prose",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-prose.git",
+      "branch": "main",
+      "commit": "64d0a82c51a0c8446b0734f335ea129d2f23fa29",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-vega-preview",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-vega-preview.git",
+      "branch": "main",
+      "commit": "b44a0892f3f5e98b59fa0cf5000f8f775a52333d",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-webgal",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-webgal.git",
+      "branch": "main",
+      "commit": "ce559641f8ad188ae4c02bc0c6a20161df2dafc9",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-plugin-workspace-browser",
+      "url": "https://github.com/haneoka-gakuen/altair-plugin-workspace-browser.git",
+      "branch": "main",
+      "commit": "5a524a73b97e808a15311d936998b1b9112670e7",
+      "version": "0.1.0",
+      "kind": "node"
+    },
+    {
+      "name": "altair-preset-full",
+      "url": "https://github.com/haneoka-gakuen/altair-preset-full.git",
+      "branch": "main",
+      "commit": "18b9373efe36229fe841a8f8d2227262b06db0ac",
+      "version": "0.1.0",
+      "kind": "node"
+    }
+  ]
+}

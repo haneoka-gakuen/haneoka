@@ -3,32 +3,29 @@
   License, v. 2.0. If a copy of the MPL was not distributed with this
   file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-  This original integration uses Vue Flow, distributed under the MIT License.
+  The canvas interaction follows OpenWebGAL/WebGAL_Terre's FlowchartEditor
+  at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
+  This implementation uses Altair's executable control-flow graph and Vue Flow.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import { MaterialIcon, UiIconButton } from "@haneoka/ui";
 
+import type { StoryProject } from "@haneoka/altair";
 import {
-  commandDescriptor,
-  storyCommandFieldValue,
-  storyLocalizedTextForEditor,
-  type CommandCategory,
-  type CommandFieldDescriptor,
-  type JsonValue,
-  type StoryProjectCommand,
-} from "@haneoka/story-editor";
+  type StoryFlowEdge,
+  type StoryFlowGraph,
+  type StoryFlowNode,
+  type StoryFlowNodeKind,
+} from "@haneoka/altair-plugin-flow";
 import { Background } from "@vue-flow/background";
 import {
-  ConnectionLineType,
-  ConnectionMode,
   Handle,
   MarkerType,
   Position,
   VueFlow,
   useVueFlow,
-  type Connection,
   type Edge,
-  type EdgeUpdateEvent,
   type GraphNode,
   type Node,
   type NodeChange,
@@ -38,262 +35,368 @@ import {
 } from "@vue-flow/core";
 import { Controls } from "@vue-flow/controls";
 import { MiniMap } from "@vue-flow/minimap";
-import type { ArchiveLocale } from "~/i18n/locales";
 
 import "@vue-flow/core/dist/style.css";
 import "@vue-flow/core/dist/theme-default.css";
 import "@vue-flow/controls/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
+import type { AltairAuthoringHostPort } from "~/features/story/altairAuthoring";
 
 interface StoryGraphNodeData {
-  category: CommandCategory;
-  categoryLabel: string;
-  commandCode: number | null;
-  order: number;
+  accent: string;
+  commandId?: string;
+  detail: string;
+  kind: StoryFlowNodeKind;
+  kindLabel: string;
+  label: string;
+  reachable: boolean;
+  sceneId?: string;
+  sceneName: string;
   selected: boolean;
-  summary: string;
-  title: string;
 }
 
 type StoryGraphNode = Node<StoryGraphNodeData> & { selected?: boolean };
 
 const props = defineProps<{
-  commands: readonly StoryProjectCommand[];
-  selectedId?: string;
+  authoringHost: AltairAuthoringHostPort;
+  project: StoryProject;
+  currentSceneId?: string;
+  selectedCommandId?: string;
 }>();
 
 const emit = defineEmits<{
-  move: [payload: { id: string; index: number }];
-  select: [id: string];
+  open: [payload: { sceneId: string; commandId?: string }];
+  select: [payload: { sceneId: string; commandId?: string }];
 }>();
 
-const { locale, messages, t } = useLocale();
+const { messages } = useLocale();
 const copy = messages("storyEditorPage");
-const { commandLabel } = useStoryEditorLabels();
-const flow = useVueFlow("story-editor-command-graph");
+const { workspaceCopy } = useStoryEditorLabels();
+const flow = useVueFlow("story-editor-project-flow");
 const nodes = shallowRef<StoryGraphNode[]>([]);
 const positions = new Map<string, XYPosition>();
+const STORAGE_KEY = "story-editor-flow-layout-v1";
+let persistFrame: number | undefined;
+let graphGeneration = 0;
+let graphController: AbortController | undefined;
 
-const localeIndexes: Record<ArchiveLocale, number> = {
-  ja: 0,
-  en: 1,
-  "zh-TW": 2,
-  "zh-CN": 3,
-  ko: 4,
-};
-
-const categoryColors: Record<CommandCategory, string> = {
-  dialogue: "var(--md-sys-color-primary)",
-  character: "var(--md-sys-color-tertiary)",
-  stage: "var(--md-sys-color-secondary)",
-  camera: "var(--md-sys-color-primary)",
-  audio: "var(--md-sys-color-tertiary)",
-  transition: "var(--md-sys-color-error)",
-  chat: "var(--md-sys-color-secondary)",
-  flow: "var(--md-sys-color-tertiary)",
-  timing: "var(--md-sys-color-outline)",
-  media: "var(--md-sys-color-primary)",
-  system: "var(--md-sys-color-on-surface-variant)",
-};
-const graphOutline = "var(--md-sys-color-outline)";
-const graphSurface = "var(--md-sys-color-surface-container)";
-const graphSurfaceMask = "color-mix(in srgb, var(--md-sys-color-surface-container) 68%, transparent)";
-
-const categoryLabels = computed<Record<CommandCategory, string>>(() => ({
-  dialogue: copy.value.categoryDialogue,
-  character: copy.value.categoryCharacter,
-  stage: copy.value.categoryStage,
-  camera: copy.value.categoryCamera,
-  audio: copy.value.categoryAudio,
-  transition: copy.value.categoryTransition,
-  chat: copy.value.categoryChat,
-  flow: copy.value.categoryFlow,
-  timing: copy.value.categoryTiming,
-  media: copy.value.categoryMedia,
-  system: copy.value.categorySystem,
+const kindLabels = computed<Record<StoryFlowNodeKind, string>>(() => ({
+  "project-entry": workspaceCopy.value.flowStart,
+  "project-exit": workspaceCopy.value.flowEnd,
+  "scene-entry": copy.value.scene,
+  "scene-exit": workspaceCopy.value.flowReturn,
+  command: copy.value.command,
+  choice: copy.value.categoryFlow,
+  jump: workspaceCopy.value.flowJump,
+  "scene-call": workspaceCopy.value.flowCall,
+  "scene-return": workspaceCopy.value.flowReturn,
+  condition: workspaceCopy.value.flowCondition,
+  end: workspaceCopy.value.flowEnd,
+  "scene-marker": copy.value.scene,
+  unresolved: copy.value.unsupported,
 }));
 
-const defaultPosition = (index: number): XYPosition => ({ x: 96, y: 56 + index * 132 });
-const compactText = (value: string): string => value.replace(/\s+/g, " ").trim().slice(0, 92);
-const fieldValueText = (value: JsonValue | undefined, field: CommandFieldDescriptor): string => {
-  if (value === undefined || value === null || value === "") return "";
-  if (field.kind === "localized-text" || field.kind === "localized-list") {
-    if (field.kind === "localized-list" && Array.isArray(value)) {
-      return compactText(
-        value
-          .map((entry) => storyLocalizedTextForEditor(entry, localeIndexes[locale.value]))
-          .filter(Boolean)
-          .join(", "),
-      );
-    }
-    return compactText(storyLocalizedTextForEditor(value, localeIndexes[locale.value]));
-  }
-  if (Array.isArray(value)) return compactText(value.map(String).filter(Boolean).join(", "));
-  if (typeof value === "object") return compactText(JSON.stringify(value));
-  return compactText(String(value));
+const kindColors: Record<StoryFlowNodeKind, string> = {
+  "project-entry": "var(--md-sys-color-primary)",
+  "project-exit": "var(--md-sys-color-outline)",
+  "scene-entry": "var(--md-sys-color-secondary)",
+  "scene-exit": "var(--md-sys-color-secondary)",
+  command: "var(--md-sys-color-primary)",
+  choice: "var(--md-sys-color-tertiary)",
+  jump: "var(--md-sys-color-tertiary)",
+  "scene-call": "var(--md-sys-color-secondary)",
+  "scene-return": "var(--md-sys-color-secondary)",
+  condition: "var(--md-sys-color-tertiary)",
+  end: "var(--md-sys-color-error)",
+  "scene-marker": "var(--md-sys-color-secondary)",
+  unresolved: "var(--md-sys-color-error)",
 };
 
-const describeCommand = (command: StoryProjectCommand, index: number): StoryGraphNodeData => {
-  const descriptor = commandDescriptor(command.command);
-  const category = descriptor?.category || "system";
-  const fields = descriptor?.primaryField
-    ? [
-        ...descriptor.fields.filter((field) => field.key === descriptor.primaryField),
-        ...descriptor.fields.filter((field) => field.key !== descriptor.primaryField),
-      ]
-    : descriptor?.fields || [];
-  let summary = "";
-  for (const field of fields) {
-    summary = fieldValueText(storyCommandFieldValue(command, field), field);
-    if (summary) break;
-  }
-  return {
-    category,
-    categoryLabel: categoryLabels.value[category],
-    commandCode: command.command,
-    order: index + 1,
-    selected: command.id === props.selectedId,
-    summary,
-    title: descriptor
-      ? commandLabel(descriptor.name, descriptor.label)
-      : command.source?.command || `#${command.command ?? "?"}`,
-  };
+const edgeColors: Record<StoryFlowEdge["kind"], string> = {
+  entry: "var(--md-sys-color-primary)",
+  next: "var(--md-sys-color-outline)",
+  exit: "var(--md-sys-color-outline)",
+  jump: "var(--md-sys-color-tertiary)",
+  choice: "var(--md-sys-color-tertiary)",
+  "scene-call": "var(--md-sys-color-secondary)",
+  "scene-return": "var(--md-sys-color-secondary)",
 };
+
+const fallbackGraph = (project: StoryProject): StoryFlowGraph => ({
+  entryNodeId: "",
+  exitNodeId: "",
+  diagnostics: [],
+  nodes: project.scenes.map((scene): StoryFlowNode => ({
+    id: `fallback:${scene.id}`,
+    kind: "scene-entry",
+    label: scene.name,
+    reachable: scene.id === project.entrySceneId,
+    sceneId: scene.id,
+    sceneName: scene.name,
+  })),
+  edges: [],
+});
+const executableGraph = shallowRef<StoryFlowGraph>(fallbackGraph(props.project));
+
+const rebuildGraph = async () => {
+  const generation = ++graphGeneration;
+  graphController?.abort();
+  const controller = new AbortController();
+  graphController = controller;
+  try {
+    const graph = await props.authoringHost.buildFlow<StoryFlowGraph>("story-flow", props.project, controller.signal);
+    if (!controller.signal.aborted && generation === graphGeneration) executableGraph.value = graph;
+  } catch {
+    if (!controller.signal.aborted && generation === graphGeneration) {
+      executableGraph.value = fallbackGraph(props.project);
+    }
+  } finally {
+    if (graphController === controller) graphController = undefined;
+  }
+};
+
+watch(
+  [() => props.authoringHost, () => props.project],
+  () => {
+    void rebuildGraph();
+  },
+  { immediate: true },
+);
+
+const defaultPositions = computed(() => {
+  const result = new Map<string, XYPosition>();
+  const graph = executableGraph.value;
+  const sceneIndexes = new Map(props.project.scenes.map((scene, index) => [scene.id, index] as const));
+  const sceneRows = new Map<string, number>();
+  const columnWidth = 316;
+  const rowHeight = 118;
+  for (const node of graph.nodes) {
+    if (node.kind === "project-entry") {
+      result.set(node.id, { x: 48, y: 36 });
+      continue;
+    }
+    if (node.kind === "project-exit") continue;
+    const sceneIndex = sceneIndexes.get(node.sceneId || "") ?? props.project.scenes.length;
+    const row = sceneRows.get(node.sceneId || "") || 0;
+    sceneRows.set(node.sceneId || "", row + 1);
+    result.set(node.id, { x: 48 + sceneIndex * columnWidth, y: 160 + row * rowHeight });
+  }
+  const maxRows = Math.max(1, ...sceneRows.values());
+  const exit = graph.nodes.find(({ kind }) => kind === "project-exit");
+  if (exit) {
+    result.set(exit.id, {
+      x: 48 + Math.max(0, props.project.scenes.length - 1) * columnWidth,
+      y: 160 + maxRows * rowHeight,
+    });
+  }
+  return result;
+});
+
+const nodeDetail = (node: StoryFlowNode): string => {
+  if (node.condition) return node.condition;
+  if (node.commandIndex !== undefined) {
+    const source = node.sourceLine ? `${workspaceCopy.value.line} ${node.sourceLine}` : `#${node.commandIndex + 1}`;
+    return node.opcode === undefined ? source : `${source} · ${node.opcode ?? "?"}`;
+  }
+  return node.sceneName || "";
+};
+
+const nodeData = (node: StoryFlowNode): StoryGraphNodeData => ({
+  accent: kindColors[node.kind],
+  ...(node.commandId ? { commandId: node.commandId } : {}),
+  detail: nodeDetail(node),
+  kind: node.kind,
+  kindLabel: kindLabels.value[node.kind],
+  label: node.label.replace(/\s+·\s+(?:start|end)$/i, ""),
+  reachable: node.reachable,
+  ...(node.sceneId ? { sceneId: node.sceneId } : {}),
+  sceneName: node.sceneName || props.project.meta.title || copy.value.project,
+  selected:
+    Boolean(node.sceneId) &&
+    node.sceneId === props.currentSceneId &&
+    (props.selectedCommandId ? node.commandId === props.selectedCommandId : node.kind === "scene-entry"),
+});
 
 watchEffect(() => {
-  const liveIds = new Set(props.commands.map((command) => command.id));
+  const graph = executableGraph.value;
+  const liveIds = new Set(graph.nodes.map(({ id }) => id));
   for (const id of positions.keys()) {
     if (!liveIds.has(id)) positions.delete(id);
   }
-  nodes.value = props.commands.map((command, index) => {
-    const data = describeCommand(command, index);
+  nodes.value = graph.nodes.map((node) => {
+    const data = nodeData(node);
+    const projectBoundary = node.kind === "project-entry" || node.kind === "project-exit";
     return {
-      id: command.id,
-      type: "story-command",
-      position: positions.get(command.id) || defaultPosition(index),
-      width: 264,
-      height: 100,
+      id: node.id,
+      type: "story-flow",
+      position: positions.get(node.id) || defaultPositions.value.get(node.id) || { x: 48, y: 48 },
+      width: 248,
+      height: projectBoundary ? 68 : 92,
       data,
       selected: data.selected,
       draggable: true,
-      selectable: true,
-      connectable: true,
+      selectable: Boolean(node.sceneId),
+      connectable: false,
       focusable: true,
       deletable: false,
-      dragHandle: ".story-graph-node__header",
-      ariaLabel: `${data.order}. ${data.title}${data.summary ? `: ${data.summary}` : ""}`,
+      dragHandle: ".story-flow-node__header",
+      ariaLabel: `${data.sceneName}: ${data.label}`,
     };
   });
 });
 
 const edges = computed<Edge[]>(() =>
-  props.commands.slice(1).map((command, index) => {
-    const source = props.commands[index];
+  executableGraph.value.edges.map((edge) => {
+    const color = edgeColors[edge.kind];
+    const label = edge.label || (edge.kind === "choice" ? edge.choiceText : edge.condition?.outcome ? "✓" : "");
     return {
-      id: `sequence:${source?.id || index}:${command.id}`,
-      source: source?.id || "",
-      target: command.id,
+      id: edge.id,
+      source: edge.from,
+      target: edge.to,
       type: "smoothstep",
-      updatable: "target",
       selectable: true,
       focusable: true,
       deletable: false,
       interactionWidth: 18,
-      markerEnd: { type: MarkerType.ArrowClosed, color: graphOutline, width: 16, height: 16 },
-      style: { stroke: graphOutline, strokeWidth: 1.6 },
-      ariaLabel: t("storyEditorPage.graphConnection", { from: index + 1, to: index + 2 }),
+      ...(label ? { label } : {}),
+      markerEnd: { type: MarkerType.ArrowClosed, color, width: 15, height: 15 },
+      style: {
+        stroke: color,
+        strokeWidth: edge.kind === "next" ? 1.35 : 1.8,
+        ...(edge.condition?.outcome === false ? { strokeDasharray: "5 4" } : {}),
+      },
     };
   }),
 );
 
-const reorderFromConnection = ({ source, target }: Connection) => {
-  if (!source || !target || source === target) return;
-  const sourceIndex = props.commands.findIndex((command) => command.id === source);
-  const targetIndex = props.commands.findIndex((command) => command.id === target);
-  if (sourceIndex < 0 || targetIndex < 0 || targetIndex === sourceIndex + 1) return;
-  emit("move", { id: target, index: targetIndex < sourceIndex ? sourceIndex : sourceIndex + 1 });
-  emit("select", target);
+const persistPositions = () => {
+  if (!import.meta.client) return;
+  if (persistFrame !== undefined) window.cancelAnimationFrame(persistFrame);
+  persistFrame = window.requestAnimationFrame(() => {
+    persistFrame = undefined;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(positions)));
+  });
 };
 
-const isValidConnection = (connection: Connection): boolean =>
-  Boolean(
-    connection.source &&
-    connection.target &&
-    connection.source !== connection.target &&
-    props.commands.some((command) => command.id === connection.source) &&
-    props.commands.some((command) => command.id === connection.target),
-  );
-
-const onEdgeUpdate = ({ connection }: EdgeUpdateEvent) => reorderFromConnection(connection);
-const onNodeClick = ({ node }: NodeMouseEvent) => emit("select", node.id);
-const onNodeDragStop = ({ node }: NodeDragEvent) => positions.set(node.id, { ...node.position });
-const onNodesChange = (changes: NodeChange[]) => {
-  for (const change of changes) {
-    if (change.type === "position") positions.set(change.id, { ...change.position });
-    if (change.type === "select" && change.selected) emit("select", change.id);
+const restorePositions = () => {
+  if (!import.meta.client) return;
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") as Record<string, XYPosition>;
+    for (const [id, position] of Object.entries(stored)) {
+      if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) positions.set(id, position);
+    }
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
   }
 };
-const categoryColor = (category: unknown): string =>
-  typeof category === "string" && Object.hasOwn(categoryColors, category)
-    ? categoryColors[category as CommandCategory]
-    : categoryColors.system;
-const miniMapNodeColor = (node: GraphNode): string =>
-  categoryColor((node.data as StoryGraphNodeData | undefined)?.category);
-const fitGraph = () => flow.fitView({ padding: 0.16, maxZoom: 1 });
-const focusEntry = () => {
-  const id = props.commands.some((command) => command.id === props.selectedId)
-    ? props.selectedId
-    : props.commands[0]?.id;
-  if (id) void flow.fitView({ nodes: [id], padding: 0.32, maxZoom: 1, minZoom: 0.72 });
+
+const selectNode = (node: { data?: unknown }, open = false) => {
+  const data = node.data as StoryGraphNodeData | undefined;
+  if (!data?.sceneId) return;
+  const payload = { sceneId: data.sceneId, ...(data.commandId ? { commandId: data.commandId } : {}) };
+  if (open) emit("open", payload);
+  else emit("select", payload);
 };
+
+const onNodeClick = ({ node }: NodeMouseEvent) => selectNode(node);
+const onNodeDoubleClick = ({ node }: NodeMouseEvent) => selectNode(node, true);
+const onNodeDragStop = ({ node }: NodeDragEvent) => {
+  positions.set(node.id, { ...node.position });
+  persistPositions();
+};
+const onNodesChange = (changes: NodeChange[]) => {
+  for (const change of changes) {
+    if (change.type === "position" && change.position) positions.set(change.id, { ...change.position });
+    if (change.type === "select" && change.selected) {
+      const node = nodes.value.find(({ id }) => id === change.id);
+      if (node) selectNode(node);
+    }
+  }
+};
+
+const fitGraph = () => flow.fitView({ padding: 0.12, minZoom: 0.12, maxZoom: 1 });
+const focusSelection = () => {
+  const id =
+    nodes.value.find(({ data }) => data?.selected)?.id ||
+    nodes.value.find(({ data }) => data?.sceneId === props.currentSceneId && data?.kind === "scene-entry")?.id ||
+    executableGraph.value.entryNodeId;
+  if (id) void flow.fitView({ nodes: [id], padding: 0.38, maxZoom: 1.05, minZoom: 0.5 });
+};
+const resetLayout = () => {
+  positions.clear();
+  localStorage.removeItem(STORAGE_KEY);
+  nodes.value = nodes.value.map((node) => ({
+    ...node,
+    position: defaultPositions.value.get(node.id) || { x: 48, y: 48 },
+  }));
+  void nextTick(fitGraph);
+};
+const miniMapNodeColor = (node: GraphNode): string =>
+  String((node.data as StoryGraphNodeData | undefined)?.accent || kindColors.command);
+
+onMounted(() => {
+  restorePositions();
+  nodes.value = nodes.value.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
+});
+onBeforeUnmount(() => {
+  graphGeneration += 1;
+  graphController?.abort();
+  if (persistFrame !== undefined) window.cancelAnimationFrame(persistFrame);
+});
 </script>
 
 <template>
   <div class="story-editor-graph">
     <VueFlow
-      id="story-editor-command-graph"
+      id="story-editor-project-flow"
       v-model:nodes="nodes"
       :edges="edges"
-      :connection-line-options="{
-        type: ConnectionLineType.SmoothStep,
-        style: { stroke: 'var(--md-sys-color-primary)', strokeWidth: 1.8 },
-      }"
-      :connection-mode="ConnectionMode.Strict"
       :delete-key-code="null"
-      :is-valid-connection="isValidConnection"
-      :min-zoom="0.12"
-      :max-zoom="1.65"
+      :min-zoom="0.08"
+      :max-zoom="2"
+      :nodes-connectable="false"
+      :nodes-draggable="true"
       :only-render-visible-elements="true"
-      :snap-grid="[16, 16]"
+      :pan-on-drag="[0, 1, 2]"
+      :prevent-scrolling="true"
+      :snap-grid="[12, 12]"
       :snap-to-grid="true"
+      :zoom-on-double-click="true"
+      :zoom-on-pinch="true"
+      :zoom-on-scroll="true"
       class="story-editor-graph__flow"
-      @connect="reorderFromConnection"
-      @edge-update="onEdgeUpdate"
       @node-click="onNodeClick"
+      @node-double-click="onNodeDoubleClick"
       @node-drag-stop="onNodeDragStop"
-      @nodes-initialized="focusEntry"
+      @nodes-initialized="focusSelection"
       @nodes-change="onNodesChange"
     >
-      <Background variant="dots" :gap="20" :size="1.15" color="var(--md-sys-color-outline-variant)" />
+      <Background variant="dots" :gap="20" :size="1.1" color="var(--md-sys-color-outline-variant)" />
 
-      <template #node-story-command="{ data, connectable }">
+      <template #node-story-flow="{ data }">
         <article
-          class="story-graph-node"
-          :class="{ 'is-selected': data.selected }"
-          :style="{ '--story-graph-accent': categoryColor(data.category) }"
+          class="story-flow-node"
+          :class="{
+            'is-selected': data.selected,
+            'is-unreachable': !data.reachable,
+            'is-boundary': data.kind === 'project-entry' || data.kind === 'project-exit',
+          }"
+          :style="{ '--story-flow-accent': data.accent }"
         >
-          <Handle type="target" :position="Position.Top" :connectable="connectable" :connectable-start="false" />
-          <header class="story-graph-node__header">
-            <span class="story-graph-node__order">{{ String(data.order).padStart(2, "0") }}</span>
-            <strong>{{ data.title }}</strong>
-            <code>{{ data.commandCode ?? "?" }}</code>
+          <Handle type="target" :position="Position.Top" :connectable="false" />
+          <header class="story-flow-node__header">
+            <span>{{ data.kindLabel }}</span>
+            <strong>{{ data.label }}</strong>
           </header>
-          <p v-if="data.summary">{{ data.summary }}</p>
-          <footer>
-            <span class="story-graph-node__swatch" aria-hidden="true" />
-            <span>{{ data.categoryLabel }}</span>
+          <p v-if="data.detail">{{ data.detail }}</p>
+          <footer v-if="data.sceneId">
+            <span>{{ data.sceneName }}</span>
+            <MaterialIcon v-if="data.reachable" name="check_circle" :size="13" />
           </footer>
-          <Handle type="source" :position="Position.Bottom" :connectable="connectable" :connectable-end="false" />
+          <Handle type="source" :position="Position.Bottom" :connectable="false" />
         </article>
       </template>
 
@@ -310,29 +413,35 @@ const focusEntry = () => {
           <MaterialIcon name="remove" :size="18" />
         </UiIconButton>
         <UiIconButton class="vue-flow__controls-button" size="compact" :label="copy.graphFitView" @click="fitGraph">
-          <MaterialIcon name="fullscreen" :size="18" />
+          <MaterialIcon name="fit_screen" :size="18" />
+        </UiIconButton>
+        <UiIconButton
+          class="vue-flow__controls-button"
+          size="compact"
+          :label="workspaceCopy.flowReset"
+          @click="resetLayout"
+        >
+          <MaterialIcon name="restart_alt" :size="18" />
         </UiIconButton>
       </Controls>
 
       <MiniMap
         :aria-label="copy.graphMiniMap"
         :node-color="miniMapNodeColor"
-        :node-stroke-color="graphSurface"
+        node-stroke-color="var(--md-sys-color-surface-container)"
         :node-stroke-width="2"
-        :node-border-radius="5"
-        :width="150"
-        :height="104"
-        :mask-color="graphSurfaceMask"
-        :mask-stroke-color="graphOutline"
+        :node-border-radius="4"
+        :width="170"
+        :height="112"
+        mask-color="color-mix(in srgb, var(--md-sys-color-surface-container) 66%, transparent)"
+        mask-stroke-color="var(--md-sys-color-outline)"
         :mask-stroke-width="1"
         pannable
         zoomable
       />
     </VueFlow>
 
-    <div v-if="!commands.length" class="story-editor-graph__empty">
-      {{ copy.noCommand }}
-    </div>
+    <div v-if="!nodes.length" class="story-editor-graph__empty">{{ copy.noCommand }}</div>
   </div>
 </template>
 
@@ -343,6 +452,7 @@ const focusEntry = () => {
   min-height: 0;
   overflow: hidden;
   background: var(--md-sys-color-surface-container-low);
+  touch-action: none;
 }
 
 .story-editor-graph__flow {
@@ -352,14 +462,14 @@ const focusEntry = () => {
   background: var(--md-sys-color-surface-container-low);
 }
 
-.story-graph-node {
+.story-flow-node {
   position: relative;
   display: grid;
-  width: 264px;
-  height: 100px;
-  grid-template-rows: 34px 40px 24px;
+  width: 248px;
+  min-height: 92px;
+  grid-template-rows: 38px minmax(26px, auto) 24px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--story-graph-accent) 42%, var(--md-sys-color-outline-variant));
+  border: 1px solid color-mix(in srgb, var(--story-flow-accent) 46%, var(--md-sys-color-outline-variant));
   border-radius: var(--md-sys-shape-corner-medium);
   color: var(--md-sys-color-on-surface);
   background: var(--md-sys-color-surface-container-lowest);
@@ -367,119 +477,107 @@ const focusEntry = () => {
   transition:
     border-color 130ms ease,
     box-shadow 130ms ease,
-    transform 130ms ease;
+    opacity 130ms ease;
 }
 
-.story-graph-node::before {
+.story-flow-node::before {
   position: absolute;
   z-index: 1;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0 auto 0 0;
   width: 3px;
-  background: var(--story-graph-accent);
+  background: var(--story-flow-accent);
   content: "";
 }
 
-.story-graph-node.is-selected {
-  border-color: var(--story-graph-accent);
+.story-flow-node.is-selected {
+  border-color: var(--story-flow-accent);
   box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--story-graph-accent) 22%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--story-flow-accent) 22%, transparent),
     var(--md-sys-elevation-level2);
 }
 
-.story-graph-node__header {
+.story-flow-node.is-unreachable:not(.is-boundary) {
+  opacity: 0.58;
+}
+
+.story-flow-node.is-boundary {
+  min-height: 68px;
+  grid-template-rows: 34px 34px;
+}
+
+.story-flow-node__header {
   display: grid;
   min-width: 0;
-  grid-row: 1;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  padding: 0 10px 0 11px;
+  gap: 8px;
+  padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: color-mix(in srgb, var(--story-graph-accent) 7%, var(--md-sys-color-surface-container-lowest));
+  background: color-mix(in srgb, var(--story-flow-accent) 7%, var(--md-sys-color-surface-container-lowest));
   cursor: grab;
 }
 
-.story-graph-node__header:active {
+.story-flow-node__header:active {
   cursor: grabbing;
 }
 
-.story-graph-node__header strong {
+.story-flow-node__header > span {
+  color: var(--story-flow-accent);
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.story-flow-node__header strong {
+  min-width: 0;
   overflow: hidden;
-  font-family: var(--md-sys-typescale-label-large-font);
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: var(--md-sys-typescale-label-large-weight);
-  letter-spacing: 0;
+  font-size: 0.7rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.story-graph-node__header code {
-  min-width: 22px;
-  color: var(--md-sys-color-outline);
-  font-family: var(--md-ref-typeface-code);
-  font-size: 0.57rem;
-  text-align: right;
-}
-
-.story-graph-node__order {
-  color: var(--story-graph-accent);
-  font-family: var(--md-ref-typeface-code);
-  font-size: 0.59rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.story-graph-node p {
+.story-flow-node p {
   display: -webkit-box;
-  min-width: 0;
-  grid-row: 2;
   margin: 0;
-  padding: 7px 11px 5px 12px;
+  padding: 6px 12px 4px;
   overflow: hidden;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 0.66rem;
-  line-height: 1.35;
+  font: 500 0.61rem/1.35 var(--md-sys-typescale-body-small-font);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.story-graph-node footer {
+.story-flow-node footer {
   display: flex;
-  grid-row: 3;
+  min-width: 0;
   align-items: center;
-  gap: 6px;
-  padding: 0 11px 0 12px;
+  gap: 5px;
+  padding: 0 10px 0 12px;
   color: var(--md-sys-color-outline);
-  font-size: 0.56rem;
+  font-size: 0.55rem;
 }
 
-.story-graph-node__swatch {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  background: var(--story-graph-accent);
+.story-flow-node footer span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .story-editor-graph__empty {
   position: absolute;
   top: 50%;
   left: 50%;
-  padding: 8px 11px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
   color: var(--md-sys-color-outline);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level1);
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
-.story-editor-graph :deep(.vue-flow__node-story-command) {
-  width: 264px;
+.story-editor-graph :deep(.vue-flow__node-story-flow) {
+  width: 248px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -487,17 +585,19 @@ const focusEntry = () => {
 }
 
 .story-editor-graph :deep(.vue-flow__handle) {
-  z-index: 3;
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border: 2px solid var(--md-sys-color-surface-container-lowest);
-  background: var(--story-graph-accent);
-  box-shadow: var(--md-sys-elevation-level1);
+  background: var(--story-flow-accent);
 }
 
-.story-editor-graph :deep(.vue-flow__edge.selected .vue-flow__edge-path) {
-  stroke: var(--md-sys-color-primary);
-  stroke-width: 2.2;
+.story-editor-graph :deep(.vue-flow__edge-textbg) {
+  fill: var(--md-sys-color-surface-container-high);
+}
+
+.story-editor-graph :deep(.vue-flow__edge-text) {
+  fill: var(--md-sys-color-on-surface-variant);
+  font-size: 9px;
 }
 
 .story-editor-graph :deep(.vue-flow__controls) {
@@ -524,7 +624,7 @@ const focusEntry = () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .story-graph-node {
+  .story-flow-node {
     transition: none;
   }
 }

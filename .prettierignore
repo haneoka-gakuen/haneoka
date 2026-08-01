@@ -8,7 +8,6 @@ docs/
 public/
 .wrangler/
 worker/worker-configuration.d.ts
-packages/story/src/vendor/
 pnpm-lock.yaml
 *.apks
 *.apk

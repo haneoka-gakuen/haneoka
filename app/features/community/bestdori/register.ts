@@ -1,10 +1,10 @@
-import { importBestdoriScenario } from "@haneoka/bestdori/story-editor";
+import { resolveBestdoriServer } from "@haneoka/altair-plugin-bestdori/source";
+
 import { normalizeSongType } from "~/config/songTypes";
 import { bestdoriOrigin } from "~/features/catalog/contentSource";
 import { registerSongCatalogSource } from "~/features/catalog/songSources";
 import { registerExternalResourceUrlPolicy } from "~/features/resources/sourcePolicies";
 import { registerStoryCatalogSource } from "~/features/story/catalogSources";
-import { registerStoryFileImporter } from "~/features/story/importers";
 import { isBestdoriRawResourceUrl } from "~/features/community/bestdori/resources";
 
 const SOURCE_ID = "bestdori";
@@ -12,7 +12,7 @@ const SOURCE_ID = "bestdori";
 export const registerBestdoriCommunitySource = (): void => {
   registerSongCatalogSource({
     id: SOURCE_ID,
-    catalogOrigin: bestdoriOrigin("jp"),
+    resolveCatalogOrigin: ({ locale }) => bestdoriOrigin(resolveBestdoriServer({ locale })),
     titleKey: "communityPage.songsBestDori",
     domain: "community",
     maxDifficulty: 4,
@@ -34,12 +34,5 @@ export const registerBestdoriCommunitySource = (): void => {
   registerExternalResourceUrlPolicy({
     id: SOURCE_ID,
     accepts: isBestdoriRawResourceUrl,
-  });
-  registerStoryFileImporter({
-    id: SOURCE_ID,
-    accepts: ({ fileName, parsed }) =>
-      /\.asset$/i.test(fileName) ||
-      Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed) && "Base" in parsed),
-    import: ({ parsed, title, releaseServer }) => importBestdoriScenario(parsed, { title, releaseServer }),
   });
 };

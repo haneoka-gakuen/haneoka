@@ -1,20 +1,25 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from "vue";
 
-import { MaterialIcon, UiIconButton, UiRange, UiRuntimeSurface, UiSwitch, UiTimeline } from "@haneoka/ui";
+import { MaterialIcon, UiIconButton, UiRange, UiRuntimeSurface, UiSwitch } from "@haneoka/ui";
 import {
   AUTO_PLAY_INTERVAL_SECONDS,
   autoPlayIntervalSeconds,
   useStoryPlayerControls,
-} from "@haneoka/story/vue/controls";
-import type { AdvStory, StoryUiSprites } from "@haneoka/story";
-import { StoryPlayerText } from "@haneoka/story/vue/text";
+} from "@haneoka/vega/vue/controls";
+import type { StoryProjectPlugin } from "@haneoka/altair";
+import type { AdvStory, StoryUiSprites } from "@haneoka/vega";
+import { StoryPlayerText } from "@haneoka/vega/vue/text";
+import { createHaneokaReleaseResourceScope, resolveHaneokaChatIconSprites } from "@haneoka/vega-plugin-haneoka";
+import type { HaneokaThemeHost, HaneokaThemeHostSnapshot } from "@haneoka/vega-theme-haneoka";
 import LoadingState from "~/components/ui/LoadingState.vue";
+import { createHaneokaStoryPlugins, createHaneokaStoryTextRichTextBridge } from "~/features/story/haneokaStoryRenderer";
+import { isAcceptedExternalResourceUrl } from "~/features/resources/sourcePolicies";
 
 type StoryRuntimeMode = "text" | "play";
 
 const StoryPlayer = defineAsyncComponent({
-  loader: () => import("@haneoka/story/vue/player").then((module) => module.StoryPlayer),
+  loader: () => import("@haneoka/vega/vue/player").then((module) => module.StoryPlayer),
   loadingComponent: LoadingState,
   delay: 0,
 });
@@ -23,6 +28,7 @@ const props = withDefaults(
   defineProps<{
     story: AdvStory;
     uiSprites?: StoryUiSprites;
+    plugins?: readonly StoryProjectPlugin[];
     releaseServer?: string;
     showModeControl?: boolean;
     showRotationControls?: boolean;
@@ -54,6 +60,7 @@ const player = ref<{
   skipCurrentVideo(): void;
 }>();
 const controlsOpen = ref(false);
+const loop = ref(false);
 const controls = useStoryPlayerControls();
 const {
   volume,
@@ -86,6 +93,30 @@ setAutoPlay(1);
 const resolvedReleaseServer = computed(() =>
   normalizeReleaseServer(props.releaseServer || selectedReleaseServer.value),
 );
+const storyResourceScope = computed(() =>
+  createHaneokaReleaseResourceScope({
+    releaseId: resolvedReleaseServer.value,
+    acceptsExternal: isAcceptedExternalResourceUrl,
+  }),
+);
+const resolveStorySourceAsset = (path: string): string => {
+  const canonicalPath = String(path || "").replace(/^\/+/u, "");
+  const segments = canonicalPath.split("/");
+  if (
+    !/^(?:Assets|Packages)\//u.test(canonicalPath) ||
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    throw new TypeError(`Invalid Haneoka story source-asset path: ${path}`);
+  }
+  const encodedPath = segments.map(encodeURIComponent).join("/");
+  return releaseResourceUrl(
+    `${assetRootForRelease(resolvedReleaseServer.value)}/${encodedPath}`,
+    resolvedReleaseServer.value,
+  );
+};
+const haneokaThemeAssets = computed(() => ({
+  chatIcons: resolveHaneokaChatIconSprites(resolveStorySourceAsset),
+}));
 const autoAdvance = computed(() => autoPlay.value === 0);
 const autoPlayDelaySeconds = computed(() => autoPlayIntervalSeconds(autoPlayInterval.value));
 const maximumAutoPlayDelaySeconds = AUTO_PLAY_INTERVAL_SECONDS[AUTO_PLAY_INTERVAL_SECONDS.length - 1];
@@ -103,16 +134,15 @@ const progress = computed(() =>
         playing: false,
       },
 );
+const progressLabels = computed(() => {
+  const match = /^\s*(.*?)\s*\/\s*(.*?)\s*$/.exec(progress.value.label);
+  return match
+    ? { current: match[1]?.trim() || "", duration: match[2]?.trim() || "" }
+    : { current: "", duration: progress.value.label.trim() };
+});
 const autoAdvanceDisabled = computed(
   () => mode.value === "play" && !progress.value.visible && !progress.value.canStart && !progress.value.canReplay,
 );
-const autoAdvanceLabel = computed(() => {
-  if (autoAdvanceDisabled.value) return t("play");
-  if (mode.value === "play" && progress.value.canReplay) return t("replay");
-  if (mode.value === "play" && progress.value.canStart) return t("play");
-  return autoAdvance.value ? t("pause") : t("play");
-});
-
 let resizeFrame = 0;
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 const resizePlayer = () => {
@@ -133,6 +163,12 @@ watch(rotation, async () => {
   await nextTick();
   resizePlayer();
 });
+watch(
+  () => [loop.value, progress.value.canReplay] as const,
+  ([shouldLoop, canReplay]) => {
+    if (mode.value === "play" && shouldLoop && canReplay) player.value?.startOrAdvance();
+  },
+);
 watch(
   [volume, volumeBgm, enableBgm, autoPlayInterval, instantText, textSize, subtitlesEnabled],
   () => {
@@ -187,6 +223,94 @@ const seekProgress = (value: number, delay = 0): boolean => {
   return true;
 };
 
+const haneokaThemeSnapshot = (): HaneokaThemeHostSnapshot => ({
+  autoAdvance: autoAdvance.value,
+  autoAdvanceDisabled: autoAdvanceDisabled.value,
+  instantText: instantText.value === 0,
+  subtitlesEnabled: subtitlesEnabled.value,
+  videoVisible: progress.value.videoVisible,
+  fullscreen: fullscreen.value,
+  bgmEnabled: enableBgm.value === 0,
+  volume: volume.value,
+  bgmVolume: volumeBgm.value,
+  autoPlayDelaySeconds: autoPlayDelaySeconds.value,
+  maximumAutoPlayDelaySeconds,
+  textSize: textSize.value,
+  progress: progress.value.ratio,
+  progressEnabled: progress.value.visible,
+  progressLabel: progress.value.label,
+});
+
+const haneokaThemeHost: HaneokaThemeHost = {
+  externalPlaybackControls: true,
+  labels: {
+    playback: t("playback"),
+    play: t("play"),
+    pause: t("pause"),
+    settings: t("settings"),
+    close: t("close"),
+    seek: t("seek"),
+    bgm: t("bgm"),
+    instantText: t("instantText"),
+    subtitles: t("subtitles"),
+    volume: t("volume"),
+    bgmVolume: `${t("bgm")} ${t("volume")}`,
+    autoplay: t("autoplay"),
+    textSize: t("textSize"),
+    storyText: t("storyText"),
+    fullscreen: t("fullscreen"),
+  },
+  assets: () => haneokaThemeAssets.value,
+  resolveSourceAsset: resolveStorySourceAsset,
+  snapshot: haneokaThemeSnapshot,
+  subscribe(listener) {
+    listener(haneokaThemeSnapshot());
+    return watch(
+      [
+        autoAdvance,
+        autoAdvanceDisabled,
+        instantText,
+        subtitlesEnabled,
+        progress,
+        fullscreen,
+        enableBgm,
+        volume,
+        volumeBgm,
+        autoPlayDelaySeconds,
+        textSize,
+      ],
+      () => listener(haneokaThemeSnapshot()),
+    );
+  },
+  toggleAutoAdvance,
+  setInstantText: (value) => setInstantText(value ? 0 : 1),
+  setSubtitlesEnabled,
+  setBgmEnabled: (value) => setEnableBgm(value ? 0 : 1),
+  setVolume,
+  setBgmVolume: setVolumeBgm,
+  setAutoPlayDelaySeconds,
+  setTextSize,
+  seekProgress: (value) => {
+    seekProgress(value);
+  },
+  skipCurrentVideo: () => player.value?.skipCurrentVideo(),
+  toggleFullscreen,
+  ...(props.showRotationControls ? { rotateLeft, rotateRight } : {}),
+  ...(props.showModeControl
+    ? {
+        openTextView: () => {
+          mode.value = "text";
+        },
+      }
+    : {}),
+};
+const storyPlugins = createHaneokaStoryPlugins(props.plugins, {
+  inputScope: () => root.value ?? undefined,
+  themeHost: haneokaThemeHost,
+});
+const textRichTextBridge = createHaneokaStoryTextRichTextBridge(props.plugins);
+onBeforeUnmount(() => textRichTextBridge?.dispose());
+
 defineExpose({ seekProgress });
 </script>
 
@@ -212,19 +336,61 @@ defineExpose({ seekProgress });
             :auto-play="autoPlay"
             :auto-play-interval="autoPlayInterval"
             :text-size="textSize"
-            :release-server="resolvedReleaseServer"
+            :resource-scope="storyResourceScope"
+            :rich-text-renderer="textRichTextBridge?.renderer"
           />
           <StoryPlayer
-            v-else-if="uiSprites"
+            v-else
             ref="player"
             :story="story"
             :ui-sprites="uiSprites"
-            :release-server="resolvedReleaseServer"
+            :resource-scope="storyResourceScope"
             :controls="controls"
             :show-progress="false"
             :show-start="false"
+            :official-plugins="storyPlugins"
+            render-backend="vega-three-webgl2"
           />
-          <LoadingState v-else />
+          <ChartPlaybackDock
+            v-if="mode === 'play'"
+            mode="watch"
+            :playing="autoAdvance"
+            :ready="!autoAdvanceDisabled"
+            :current-time="progress.ratio"
+            :duration="1"
+            :start-label="progressLabels.current"
+            :end-label="progressLabels.duration"
+            :loop="loop"
+            :settings-open="controlsOpen"
+            :fullscreen-active="fullscreen"
+            :show-mode-control="false"
+            show-loop
+            :show-rotate="showRotationControls"
+            show-settings
+            show-fullscreen
+            @toggle-play="toggleAutoAdvance"
+            @preview-seek="seekProgress"
+            @seek="seekProgress"
+            @update:loop="loop = $event"
+            @rotate="rotation += $event"
+            @toggle-settings="controlsOpen = !controlsOpen"
+            @fullscreen="toggleFullscreen"
+          />
+
+          <UiRuntimeSurface
+            v-if="mode === 'text' && showModeControl"
+            class="story-runtime__text-utility"
+            variant="dock"
+            :label="t('view')"
+            @click.stop
+          >
+            <UiIconButton tone="runtime" :label="t('play')" @click="mode = 'play'">
+              <MaterialIcon name="movie" :size="16" />
+            </UiIconButton>
+            <UiIconButton tone="runtime" :label="t('settings')" @click="controlsOpen = true">
+              <MaterialIcon name="tune" :size="16" />
+            </UiIconButton>
+          </UiRuntimeSurface>
 
           <UiRuntimeSurface
             v-if="controlsOpen"
@@ -232,6 +398,7 @@ defineExpose({ seekProgress });
             variant="panel"
             class="story-runtime__settings"
             :label="t('settings')"
+            @keydown.esc.stop.prevent="controlsOpen = false"
           >
             <header>
               <strong>{{ t("settings") }}</strong>
@@ -239,14 +406,19 @@ defineExpose({ seekProgress });
                 <MaterialIcon name="close" :size="16" />
               </UiIconButton>
             </header>
-            <UiSwitch
-              v-if="mode === 'play'"
-              class="story-runtime__setting-toggle"
-              tone="runtime"
-              :label="t('bgm')"
-              :model-value="enableBgm === 0"
-              @update:model-value="setEnableBgm($event ? 0 : 1)"
-            />
+            <div
+              v-if="showModeControl"
+              class="story-runtime__mode md3-runtime-control-group"
+              role="group"
+              :aria-label="t('view')"
+            >
+              <UiIconButton tone="runtime" :label="t('storyText')" :pressed="mode === 'text'" @click="mode = 'text'">
+                <MaterialIcon name="chat" :size="16" />
+              </UiIconButton>
+              <UiIconButton tone="runtime" :label="t('play')" :pressed="false" @click="mode = 'play'">
+                <MaterialIcon name="movie" :size="16" />
+              </UiIconButton>
+            </div>
             <UiSwitch
               class="story-runtime__setting-toggle"
               tone="runtime"
@@ -260,6 +432,13 @@ defineExpose({ seekProgress });
               :label="t('subtitles')"
               :model-value="subtitlesEnabled"
               @update:model-value="setSubtitlesEnabled"
+            />
+            <UiSwitch
+              class="story-runtime__setting-toggle"
+              tone="runtime"
+              :label="t('bgm')"
+              :model-value="enableBgm === 0"
+              @update:model-value="setEnableBgm($event ? 0 : 1)"
             />
             <UiRange
               class="story-runtime__range"
@@ -276,16 +455,19 @@ defineExpose({ seekProgress });
               </template>
             </UiRange>
             <UiRange
-              v-if="mode === 'play'"
               class="story-runtime__range"
               tone="runtime"
               :label="`${t('bgm')} ${t('volume')}`"
               :model-value="volumeBgm"
               :value-label="String(Math.round(volumeBgm * 100))"
               :step="0.05"
+              :disabled="enableBgm !== 0"
               @update:model-value="setVolumeBgm"
             >
-              <template #icon><MaterialIcon name="music_note" :size="17" /></template>
+              <template #icon>
+                <MaterialIcon name="music_off" v-if="enableBgm !== 0 || volumeBgm === 0" :size="17" />
+                <MaterialIcon name="music_note" v-else :size="17" />
+              </template>
             </UiRange>
             <UiRange
               class="story-runtime__range"
@@ -313,84 +495,6 @@ defineExpose({ seekProgress });
               <template #icon><MaterialIcon name="text_fields" :size="17" /></template>
             </UiRange>
           </UiRuntimeSurface>
-
-          <UiRuntimeSurface class="story-runtime__dock" variant="dock" :label="t('playback')" @click.stop>
-            <div
-              v-if="showModeControl"
-              class="story-runtime__mode md3-runtime-control-group"
-              role="group"
-              :aria-label="t('view')"
-            >
-              <UiIconButton tone="runtime" :label="t('storyText')" :pressed="mode === 'text'" @click="mode = 'text'">
-                <MaterialIcon name="chat" :size="16" />
-              </UiIconButton>
-              <UiIconButton tone="runtime" :label="t('play')" :pressed="mode === 'play'" @click="mode = 'play'">
-                <MaterialIcon name="movie" :size="16" />
-              </UiIconButton>
-            </div>
-
-            <UiIconButton
-              tone="runtime"
-              emphasis
-              class="story-runtime__autoplay"
-              :disabled="autoAdvanceDisabled"
-              :label="autoAdvanceLabel"
-              @click="toggleAutoAdvance"
-            >
-              <MaterialIcon name="refresh" v-if="mode === 'play' && progress.canReplay" :size="17" />
-              <MaterialIcon
-                name="play_arrow"
-                v-else-if="autoAdvanceDisabled || !autoAdvance || (mode === 'play' && progress.canStart)"
-                :size="17"
-              />
-              <MaterialIcon name="pause" v-else :size="17" />
-            </UiIconButton>
-            <UiIconButton
-              v-if="progress.videoVisible"
-              tone="runtime"
-              :label="t('skip')"
-              @click="player?.skipCurrentVideo()"
-            >
-              <MaterialIcon name="skip_next" :size="17" />
-            </UiIconButton>
-
-            <UiTimeline
-              class="story-runtime__progress"
-              tone="runtime"
-              :label="t('seek')"
-              :model-value="mode === 'play' ? progress.ratio : 0"
-              :max="1"
-              :step="0.001"
-              :busy="progress.seeking"
-              :disabled="mode !== 'play' || !progress.visible"
-              :start-label="mode === 'play' ? progress.label : ''"
-              @commit="seekProgress($event)"
-            />
-
-            <UiIconButton v-if="showRotationControls" tone="runtime" label="-90°" @click="rotateLeft">
-              <MaterialIcon name="rotate_left" :size="17" />
-            </UiIconButton>
-            <UiIconButton v-if="showRotationControls" tone="runtime" label="+90°" @click="rotateRight">
-              <MaterialIcon name="rotate_right" :size="17" />
-            </UiIconButton>
-            <UiIconButton
-              tone="runtime"
-              :label="t('settings')"
-              :pressed="controlsOpen"
-              :aria-expanded="controlsOpen"
-              @click="controlsOpen = !controlsOpen"
-            >
-              <MaterialIcon name="tune" :size="17" />
-            </UiIconButton>
-            <UiIconButton
-              tone="runtime"
-              :label="fullscreen ? `${t('close')}: ${t('fullscreen')}` : t('fullscreen')"
-              :pressed="fullscreen"
-              @click="toggleFullscreen"
-            >
-              <MaterialIcon :name="fullscreen ? 'fullscreen_exit' : 'fullscreen'" :size="17" />
-            </UiIconButton>
-          </UiRuntimeSurface>
         </div>
       </RotatableViewport>
     </div>
@@ -399,6 +503,37 @@ defineExpose({ seekProgress });
 
 <style scoped>
 .story-runtime {
+  color-scheme: light;
+
+  --md-sys-color-primary: #31356e;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #e5e6f3;
+  --md-sys-color-on-primary-container: #242750;
+  --md-sys-color-secondary: #2e6974;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #d9eff2;
+  --md-sys-color-on-secondary-container: #173f46;
+  --md-sys-color-surface: #f6f8f9;
+  --md-sys-color-on-surface: #202428;
+  --md-sys-color-on-surface-variant: #555d63;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f1f4f5;
+  --md-sys-color-surface-container: #eceff1;
+  --md-sys-color-surface-container-high: #e6eaec;
+  --md-sys-color-surface-container-highest: #dce2e5;
+  --md-sys-color-outline: #687177;
+  --md-sys-color-outline-variant: #c7ced2;
+  --md-comp-runtime-surface: #e6eaec;
+  --md-comp-runtime-surface-high: #dce2e5;
+  --md-comp-runtime-outline: #c7ced2;
+  --md-comp-runtime-primary: #31356e;
+  --md-comp-runtime-primary-strong: #31356e;
+  --md-comp-runtime-primary-container: #e5e6f3;
+  --md-comp-runtime-on-surface: #202428;
+  --md-comp-runtime-on-surface-variant: #555d63;
+  --md-comp-runtime-slider-track: #dce2e5;
+  --md-comp-runtime-slider-fill: #31356e;
+  --md-comp-runtime-slider-thumb: #31356e;
   --story-runtime-safe-bottom: 0px;
   --story-runtime-safe-left: 0px;
   --story-runtime-safe-right: 0px;
@@ -434,8 +569,7 @@ defineExpose({ seekProgress });
 }
 
 .story-runtime__orientation {
-  --story-runtime-dock-height: calc(var(--md-comp-runtime-toolbar-height) + var(--story-runtime-safe-bottom));
-  --runtime-dock-reserve: var(--story-runtime-dock-height);
+  --runtime-dock-reserve: 0px;
 
   position: relative;
   width: 100%;
@@ -447,25 +581,18 @@ defineExpose({ seekProgress });
   isolation: isolate;
 }
 
-.story-runtime__dock {
+.story-runtime.is-play .story-runtime__orientation {
+  --runtime-dock-reserve: calc(var(--md-comp-runtime-toolbar-height) + var(--story-runtime-safe-bottom));
+}
+
+.story-runtime__text-utility {
   position: absolute;
   z-index: var(--md-sys-z-index-overlay-drawer);
-  right: 0;
-  bottom: 0;
-  left: 0;
+  top: var(--md-sys-spacing-2);
+  right: var(--md-sys-spacing-2);
   display: flex;
-  width: 100%;
-  height: var(--story-runtime-dock-height);
-  box-sizing: border-box;
-  align-items: flex-start;
-  gap: var(--md-comp-runtime-toolbar-gap);
-  margin: 0;
-  padding: var(--md-comp-runtime-toolbar-padding)
-    max(var(--md-comp-runtime-toolbar-padding), var(--story-runtime-safe-right))
-    calc(var(--md-comp-runtime-toolbar-padding) + var(--story-runtime-safe-bottom))
-    max(var(--md-comp-runtime-toolbar-padding), var(--story-runtime-safe-left));
-  border-radius: 0;
-  box-shadow: none;
+  gap: var(--md-sys-spacing-1);
+  padding: var(--md-sys-spacing-1);
 }
 
 .story-runtime__mode {
@@ -473,22 +600,27 @@ defineExpose({ seekProgress });
 }
 
 .story-runtime__progress {
-  min-width: 64px;
-  flex: 1 1 auto;
-  margin-inline: 2px;
+  width: 100%;
+  min-width: 0;
 }
 
 .story-runtime__settings {
   position: absolute;
   z-index: var(--md-sys-z-index-overlay-raised-backdrop);
+  top: max(var(--md-sys-spacing-2), var(--md-sys-safe-area-inset-top));
   right: max(var(--md-sys-spacing-2), var(--story-runtime-safe-right));
-  bottom: calc(var(--story-runtime-dock-height) + var(--md-sys-spacing-2));
   display: grid;
   width: min(300px, calc(100% - 16px));
-  max-height: min(440px, calc(100% - 70px));
+  max-height: calc(100% - 16px);
   gap: var(--md-sys-spacing-1);
   padding: var(--md-sys-spacing-2);
   overflow: auto;
+}
+
+.story-runtime.is-play .story-runtime__settings {
+  top: auto;
+  bottom: calc(max(var(--md-sys-spacing-2), var(--story-runtime-safe-bottom)) + var(--md-comp-runtime-toolbar-height));
+  max-height: min(480px, calc(100% - var(--md-comp-runtime-toolbar-height) - 24px));
 }
 
 .story-runtime__settings header {
@@ -546,14 +678,19 @@ defineExpose({ seekProgress });
 
 .story-runtime :deep(.adv-story-player-root:fullscreen .adv-story-browser),
 .story-runtime :deep(.adv-story-player-root:fullscreen .adv-player-progress) {
-  width: min(100%, calc((100dvh - 118px) * var(--adv-landscape-aspect))) !important;
+  width: 100% !important;
 }
 
 .story-runtime :deep(.adv-story-browser),
 .story-runtime :deep(.adv-player-progress) {
-  width: min(100%, calc(100cqh * var(--adv-landscape-aspect))) !important;
+  width: 100% !important;
   max-width: none;
   border-radius: 0;
+}
+
+.story-runtime :deep(.adv-story-browser) {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 .story-runtime :deep(.adv-text-player) {
@@ -733,16 +870,8 @@ defineExpose({ seekProgress });
 }
 
 @media (max-width: 560px), (max-width: 959px) and (max-height: 500px), (hover: none) and (pointer: coarse) {
-  .story-runtime__orientation {
-    --story-runtime-dock-height: calc(var(--md-comp-runtime-toolbar-height-touch) + var(--story-runtime-safe-bottom));
-  }
-
-  .story-runtime__dock {
-    width: 100%;
-  }
-
-  .story-runtime__progress-count {
-    display: none;
+  .story-runtime.is-play .story-runtime__orientation {
+    --runtime-dock-reserve: calc(var(--md-comp-runtime-toolbar-height-touch) + var(--story-runtime-safe-bottom));
   }
 
   .story-runtime__progress {
@@ -751,8 +880,16 @@ defineExpose({ seekProgress });
 
   .story-runtime__settings {
     right: max(var(--md-sys-spacing-1), var(--story-runtime-safe-right));
-    bottom: calc(var(--story-runtime-dock-height) + var(--md-sys-spacing-1));
+    top: max(var(--md-sys-spacing-1), var(--md-sys-safe-area-inset-top));
     width: min(300px, calc(100% - 10px));
+  }
+
+  .story-runtime.is-play .story-runtime__settings {
+    top: auto;
+    bottom: calc(
+      max(var(--md-sys-spacing-1), var(--story-runtime-safe-bottom)) + var(--md-comp-runtime-toolbar-height-touch)
+    );
+    max-height: calc(100% - var(--md-comp-runtime-toolbar-height-touch) - 10px);
   }
 
   .story-runtime :deep(.adv-text-player) {
@@ -780,12 +917,6 @@ defineExpose({ seekProgress });
   .story-runtime :deep(.adv-text-player__dialogue) {
     grid-template-columns: 18px minmax(0, 1fr) auto;
     gap: 6px;
-  }
-}
-
-@media (max-width: 340px) {
-  .story-runtime__dock :deep(.md3-icon-button--runtime) {
-    --md-comp-icon-button-visual-size: 34px;
   }
 }
 </style>

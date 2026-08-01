@@ -2,6 +2,42 @@ packages:
   - "."
   - "packages/*"
   - "packages/sonolus/engine"
+  # Materialized privately at the exact locked commits.
+  - ".dependencies/vega"
+  - ".dependencies/vega/packages/*"
+  - ".dependencies/altair"
+  - ".dependencies/altair/apps/*"
+  - ".dependencies/altair/packages/*"
+  - ".dependencies/vega-marketplace"
+  - ".dependencies/vega-renderer-pixi"
+  - ".dependencies/vega-renderer-three"
+  - ".dependencies/vega-theme-haneoka"
+  - ".dependencies/vega-plugin-webgal"
+  - ".dependencies/vega-shell-default"
+  - ".dependencies/vega-ui-portable"
+  - ".dependencies/vega-plugin-cubism"
+  - ".dependencies/vega-plugin-richtext"
+  - ".dependencies/vega-plugin-richtext-bbcode"
+  - ".dependencies/vega-plugin-richtext-html"
+  - ".dependencies/vega-plugin-richtext-latex"
+  - ".dependencies/vega-plugin-richtext-markdown"
+  - ".dependencies/vega-plugin-richtext-typst"
+  - ".dependencies/vega-plugin-spine"
+  - ".dependencies/vega-plugin-haneoka"
+  - ".dependencies/vega-plugin-ending"
+  - ".dependencies/vega-preset-full"
+  - ".dependencies/altair-plugin-adv"
+  - ".dependencies/altair-plugin-bestdori"
+  - ".dependencies/altair-plugin-haneoka"
+  - ".dependencies/altair-plugin-flow"
+  - ".dependencies/altair-plugin-history"
+  - ".dependencies/altair-plugin-drafts"
+  - ".dependencies/altair-plugin-marketplace"
+  - ".dependencies/altair-plugin-prose"
+  - ".dependencies/altair-plugin-vega-preview"
+  - ".dependencies/altair-plugin-webgal"
+  - ".dependencies/altair-plugin-workspace-browser"
+  - ".dependencies/altair-preset-full"
 linkWorkspacePackages: true
 catalog:
   "@bbob/preset": 4.3.1
@@ -38,6 +74,7 @@ catalog:
   multer: 2.2.0
   nuxt: 4.4.8
   prettier: 3.9.4
+  pixi.js: 6.5.10
   three: 0.184.0
   typescript: 6.0.3
   typescript-eslint: 8.62.1

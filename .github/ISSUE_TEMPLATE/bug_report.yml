@@ -36,7 +36,7 @@ body:
     attributes:
       label: Affected page, package, or command
       description: Give a route, URL, workspace package, script, or command when one is known.
-      placeholder: /tools/story-editor, @haneoka/story, pnpm preview, or a public URL
+      placeholder: /tools/story-editor, @haneoka/vega, pnpm preview, or a public URL
   - type: textarea
     id: actual
     attributes:

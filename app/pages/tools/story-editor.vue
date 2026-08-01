@@ -5,7 +5,7 @@
 
   Portions are adapted from OpenWebGAL/WebGAL_Terre's Editor, EditorSidebar,
   MainArea, TagsManager, and Topbar components at commit 7b7a2159a5ccead80327437b7305b8fdb47a4e5f.
-  See packages/story-editor/NOTICE.webgal.md for complete provenance.
+  See THIRD_PARTY_NOTICES.md for attribution and scope.
 -->
 <script setup lang="ts">
 import {
@@ -20,15 +20,20 @@ import {
   type UiFieldValue,
 } from "@haneoka/ui";
 
-import type { CompileStoryResult, StoryValidationIssue } from "@haneoka/story-editor";
+import type { CompileStoryResult, StoryValidationIssue } from "@haneoka/altair-plugin-adv";
+import type { ResourceBrowserInsert } from "@haneoka/altair/resource-browser";
+import type { VegaPreviewBreakpoint, VegaPreviewStageSnapshot } from "@haneoka/vega-protocol";
 import type { StoryEditorResourceTarget } from "~/components/tools/story-editor/StoryEditorSentenceCard.vue";
-import type {
-  StoryEditorProjectSceneFile,
-  StoryEditorResourceInsert,
-} from "~/components/tools/story-editor/StoryEditorResourceLibrary.vue";
+import type { StoryEditorProjectSceneFile } from "~/components/tools/story-editor/StoryEditorSceneLibrary.vue";
+import {
+  createStoryEditorPreviewMountLifecycle,
+  resetStoryEditorPreviewSession,
+  type StoryEditorPreviewMountLifecycle,
+} from "~/features/story/storyEditorPreviewLifecycle";
 
-const { t, localize, messages } = useLocale();
+const { t, messages } = useLocale();
 const copy = messages("storyEditorPage");
+const { workspaceCopy } = useStoryEditorLabels();
 const view = ref<StoryEditorView>("visual");
 interface StoryEditorPendingAction {
   title: string;
@@ -50,8 +55,19 @@ const pendingAction = shallowRef<StoryEditorPendingAction>();
 const commandInsertIndex = ref<number>();
 const resourceTarget = shallowRef<StoryEditorResourceTarget>();
 const projectInput = ref<HTMLInputElement>();
+const directoryInput = ref<HTMLInputElement>();
 const previewFrame = ref<HTMLElement>();
-const previewPlayer = ref<{ executeTo(commandIndex: number): Promise<boolean> }>();
+const previewPlayer = ref<{
+  executeTo(commandIndex: number): Promise<boolean>;
+  runScene(commandIndex?: number): Promise<boolean>;
+  runFrom(commandIndex: number): Promise<boolean>;
+  runSnippet(commands: readonly Record<string, unknown>[], label?: string): Promise<boolean>;
+  setBreakpoints(breakpoints: readonly VegaPreviewBreakpoint[]): Promise<boolean>;
+  pause(): Promise<boolean>;
+  continueDebug(): Promise<boolean>;
+  step(): Promise<boolean>;
+  refreshDebug(): Promise<VegaPreviewStageSnapshot | undefined>;
+}>();
 const editorBody = ref<HTMLElement>();
 const previewCompilation = shallowRef<CompileStoryResult>();
 const previewRevision = ref(0);
@@ -59,11 +75,14 @@ const previewReleaseServer = ref("");
 const previewMounted = ref(false);
 const previewMode = ref<"text" | "play">("play");
 const previewCanPlay = ref(false);
+const previewDebugReady = ref(false);
+const previewDebugSnapshot = shallowRef<VegaPreviewStageSnapshot>();
+const previewDebugError = ref("");
+const previewInspectorOpen = ref(false);
+const previewBreakpoints = ref<Set<number>>(new Set());
 const sidebarWidth = ref(430);
 const editor = useStoryEditorWorkspace();
-let previewMountFrame: number | undefined;
-let previewMountTimer: number | undefined;
-let previewApplyGeneration = 0;
+type StoryEditorResourceInsert = ResourceBrowserInsert<Record<string, unknown>>;
 let previewAppliedSceneId = "";
 const {
   project,
@@ -79,7 +98,14 @@ const {
   saving,
   status,
   statusDetail,
-  formatDiagnostics,
+  authoringReady,
+  authoringError,
+  advAuthoring,
+  authoringOperations,
+  authoringRevision,
+  authoringCapabilities,
+  runtimePlugins,
+  bestdoriRequestContext,
   codeValue,
   codeDirty,
   codeError,
@@ -87,6 +113,14 @@ const {
   sceneCodeDirty,
   sceneCodeError,
   restored,
+  workspaceName,
+  workspaceSource,
+  workspacePermission,
+  workspaceLoading,
+  workspaceFiles,
+  workspaceRevision,
+  canOpenProjectDirectory,
+  resourceBrowserProviders,
 } = editor;
 openedSceneIds.value = [currentSceneId.value || project.value.entrySceneId].filter(Boolean);
 const sceneEditorPath = (value: unknown): string[] =>
@@ -121,9 +155,40 @@ const projectSceneFolders = computed(() => {
   for (const scene of projectSceneFiles.value) addPath(scene.path);
   return [...folders.values()];
 });
+const resourceBrowserAcceptedKinds = computed(() => {
+  const target = resourceTarget.value;
+  if (!target) return [];
+  if (target.resource === "audio" && target.audioUsage) return [target.audioUsage, "audio"];
+  return [target.resource];
+});
+const resourceBrowserPreferredKind = computed(() => {
+  const target = resourceTarget.value;
+  return target?.resource === "audio" ? target.audioUsage || target.resource : target?.resource;
+});
+const resourceBrowserRequestContext = computed(() => ({
+  ...bestdoriRequestContext.value,
+  release: projectReleaseServer.value,
+  ...(resourceTarget.value?.audioUsage ? { audioUsage: resourceTarget.value.audioUsage } : {}),
+}));
 const entrySceneOptions = computed(() => project.value.scenes.map((scene) => ({ label: scene.name, value: scene.id })));
+const availableViews = computed<StoryEditorView[]>(() => {
+  const capabilities = authoringCapabilities.value;
+  return [
+    ...(capabilities.adv && capabilities.history ? (["visual"] as const) : []),
+    ...(capabilities.adv && capabilities.flow ? (["graph"] as const) : []),
+    ...(capabilities.adv && capabilities.webgal && capabilities.drafts && capabilities.history
+      ? (["webgal"] as const)
+      : []),
+    ...(capabilities.adv && capabilities.drafts && capabilities.history ? (["project"] as const) : []),
+  ];
+});
+const previewEnabled = computed(
+  () => authoringReady.value && authoringCapabilities.value.adv && authoringCapabilities.value.vegaPreview,
+);
 
 const statusText = computed(() => {
+  if (authoringError.value) return authoringError.value;
+  if (!authoringReady.value) return t("loading");
   if (saving.value) return copy.value.saving;
   if (status.value === "imported") return t("storyEditorPage.imported", { format: statusDetail.value });
   const labels: Record<StoryEditorStatus, string> = {
@@ -137,7 +202,9 @@ const statusText = computed(() => {
   };
   return labels[status.value];
 });
-const statusError = computed(() => ["draftConflict", "importFailed", "saveFailed"].includes(status.value));
+const statusError = computed(
+  () => Boolean(authoringError.value) || ["draftConflict", "importFailed", "saveFailed"].includes(status.value),
+);
 const projectReleaseServer = computed(() => normalizeReleaseServer(project.value.meta.releaseServer));
 const currentSceneIndex = computed(() =>
   Math.max(
@@ -148,14 +215,28 @@ const currentSceneIndex = computed(() =>
 const executableSourceIndexes = computed<ReadonlySet<number>>(
   () => new Set(compiled.value?.commandSourceIndexes || []),
 );
-const editorBodyStyle = computed(() => ({ "--story-sidebar-width": `${sidebarWidth.value}px` }));
-const fidelity = computed(() => {
-  const result = { exact: 0, approximate: 0, unsupported: 0 };
-  for (const diagnostic of formatDiagnostics.value) {
-    if (diagnostic.fidelity) result[diagnostic.fidelity] += 1;
-  }
-  return result;
+const selectedSourceIndex = computed(() =>
+  currentScene.value?.commands.findIndex((command) => command.id === selectedCommandId.value),
+);
+const selectedPreviewIndex = computed(() => {
+  const sourceIndex = selectedSourceIndex.value;
+  if (sourceIndex === undefined || sourceIndex < 0) return -1;
+  return previewCompilation.value?.commandSourceIndexes.indexOf(sourceIndex) ?? -1;
 });
+const selectedHasBreakpoint = computed(
+  () => selectedPreviewIndex.value >= 0 && previewBreakpoints.value.has(selectedPreviewIndex.value),
+);
+const previewVariables = computed(() => {
+  const value = previewDebugSnapshot.value?.variables;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+});
+const previewPluginKey = computed(() => `${authoringRevision.value}:${JSON.stringify(runtimePlugins.value)}`);
+const previewStageSummary = computed(() => {
+  const snapshot = previewDebugSnapshot.value;
+  if (!snapshot) return "—";
+  return `${snapshot.sceneId} · ${Math.min(snapshot.commandIndex + 1, snapshot.commandCount)}/${snapshot.commandCount}`;
+});
+const editorBodyStyle = computed(() => ({ "--story-sidebar-width": `${sidebarWidth.value}px` }));
 const requestAction = (action: StoryEditorPendingAction) => {
   pendingAction.value = action;
 };
@@ -171,8 +252,7 @@ const confirmPendingAction = async (value: string) => {
   await action.run(value);
 };
 
-const refreshPreview = (): CompileStoryResult | undefined => {
-  previewApplyGeneration += 1;
+const applyPreviewCompilation = (): CompileStoryResult | undefined => {
   const result = editor.compileNow();
   previewCompilation.value = result;
   previewReleaseServer.value = projectReleaseServer.value;
@@ -181,7 +261,44 @@ const refreshPreview = (): CompileStoryResult | undefined => {
   return result;
 };
 
+const previewMountLifecycle: StoryEditorPreviewMountLifecycle = createStoryEditorPreviewMountLifecycle({
+  requestFrame: (callback) => window.requestAnimationFrame(callback),
+  cancelFrame: (handle) => window.cancelAnimationFrame(handle),
+  setTimer: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimer: (handle) => window.clearTimeout(handle),
+  canMount: () => restored.value && previewEnabled.value,
+  isMounted: () => previewMounted.value,
+  reset: () => {
+    resetStoryEditorPreviewSession({
+      mounted: previewMounted,
+      compilation: previewCompilation,
+      player: previewPlayer,
+      canPlay: previewCanPlay,
+      debugReady: previewDebugReady,
+      debugSnapshot: previewDebugSnapshot,
+      debugError: previewDebugError,
+      inspectorOpen: previewInspectorOpen,
+      breakpoints: previewBreakpoints,
+    });
+    previewAppliedSceneId = "";
+  },
+  mount: () => {
+    previewMounted.value = Boolean(applyPreviewCompilation());
+  },
+});
+
+const stopPreview = () => previewMountLifecycle.stop();
+
+const refreshPreview = (): CompileStoryResult | undefined => {
+  if (!previewEnabled.value) {
+    stopPreview();
+    return undefined;
+  }
+  return applyPreviewCompilation();
+};
+
 const importProjectFile = async (file: File) => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
   try {
     await editor.importFile(file);
     view.value = "visual";
@@ -210,7 +327,98 @@ const onProjectInput = async (event: Event) => {
   await importProjectFile(file);
 };
 
+const finishDirectoryImport = () => {
+  view.value = "visual";
+  sidebarTab.value = "scenes";
+  resourceTarget.value = undefined;
+  refreshPreview();
+};
+
+const chooseProjectDirectory = async () => {
+  if (!authoringCapabilities.value.webgal || !authoringCapabilities.value.history) return;
+  try {
+    if (!canOpenProjectDirectory.value) {
+      directoryInput.value?.click();
+      return;
+    }
+    if (await editor.openProjectDirectory()) finishDirectoryImport();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    status.value = "importFailed";
+    statusDetail.value = error instanceof Error ? error.message : String(error);
+  }
+};
+
+const openProjectDirectory = () => {
+  if (!authoringCapabilities.value.webgal || !authoringCapabilities.value.history) return;
+  if (!dirty.value) return void chooseProjectDirectory();
+  requestAction({
+    title: workspaceCopy.value.openFolder,
+    description: copy.value.newProjectConfirm,
+    confirmLabel: workspaceCopy.value.openFolder,
+    icon: "folder_open",
+    run: chooseProjectDirectory,
+  });
+};
+
+const importDirectoryFiles = async (files: File[]) => {
+  if (!authoringCapabilities.value.webgal || !authoringCapabilities.value.history) return;
+  try {
+    if (await editor.importProjectDirectoryFiles(files)) finishDirectoryImport();
+  } catch (error) {
+    status.value = "importFailed";
+    statusDetail.value = error instanceof Error ? error.message : String(error);
+  }
+};
+
+const onDirectoryInput = (event: Event) => {
+  const input = event.currentTarget as HTMLInputElement;
+  const files = [...(input.files || [])];
+  input.value = "";
+  if (!files.length) return;
+  if (!dirty.value) return void importDirectoryFiles(files);
+  requestAction({
+    title: workspaceCopy.value.openFolder,
+    description: copy.value.newProjectConfirm,
+    confirmLabel: copy.value.importProject,
+    icon: "folder_open",
+    run: () => importDirectoryFiles(files),
+  });
+};
+
+const refreshProjectDirectory = async () => {
+  try {
+    if (await editor.refreshProjectDirectory()) refreshPreview();
+  } catch (error) {
+    status.value = "importFailed";
+    statusDetail.value = error instanceof Error ? error.message : String(error);
+  }
+};
+
+const reimportProjectDirectory = () => {
+  if (!authoringCapabilities.value.webgal || !authoringCapabilities.value.history) return;
+  requestAction({
+    title: workspaceCopy.value.reimportFolder,
+    description: copy.value.newProjectConfirm,
+    confirmLabel: workspaceCopy.value.reimportFolder,
+    icon: "sync",
+    run: async () => {
+      if (await editor.refreshProjectDirectory({ importProject: true })) finishDirectoryImport();
+    },
+  });
+};
+
+const reauthorizeProjectDirectory = async () => {
+  try {
+    if (await editor.reauthorizeProjectDirectory()) refreshPreview();
+  } catch (error) {
+    status.value = "importFailed";
+    statusDetail.value = error instanceof Error ? error.message : String(error);
+  }
+};
+
 const resetProject = async () => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
   await editor.newProject();
   view.value = "visual";
   sidebarTab.value = "resources";
@@ -219,6 +427,7 @@ const resetProject = async () => {
 };
 
 const newProject = async () => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
   if (dirty.value) {
     requestAction({
       title: copy.value.newProject,
@@ -283,11 +492,13 @@ const deleteScene = (id: string) => {
 };
 
 const openCommandPicker = (index = currentScene.value?.commands.length || 0) => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
   commandInsertIndex.value = index;
   commandPickerOpen.value = true;
 };
 
 const pickCommand = (code: number) => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
   editor.addCommand(code, commandInsertIndex.value);
   commandInsertIndex.value = undefined;
   view.value = "visual";
@@ -301,12 +512,13 @@ const setProjectTitle = (value: UiFieldValue) => editor.patchMeta({ title: Strin
 const setEntryScene = (value: UiFieldValue) => editor.setEntryScene(String(value));
 
 const switchView = (next: StoryEditorView) => {
-  if (next === view.value) return;
+  if (next === view.value || !availableViews.value.includes(next)) return;
   view.value = next;
 };
 
 const saveWorkspace = async () => {
-  await editor.saveNow();
+  if (!authoringCapabilities.value.adv) return;
+  await editor.saveNow({ writeProject: true });
 };
 
 const beginResourcePick = (target: StoryEditorResourceTarget) => {
@@ -314,13 +526,13 @@ const beginResourcePick = (target: StoryEditorResourceTarget) => {
   sidebarTab.value = "resources";
 };
 
-const onResourceInsert = (resource: StoryEditorResourceInsert) => {
-  if (resource.kind === "story") {
+const onResourceInsert = (candidate: ResourceBrowserInsert<unknown>) => {
+  if (!authoringCapabilities.value.adv || !authoringCapabilities.value.history) return;
+  if (!candidate.value || typeof candidate.value !== "object" || Array.isArray(candidate.value)) return;
+  const resource = candidate as StoryEditorResourceInsert;
+  if (resource.kind === "project") {
     const importStory = () => {
-      const rawTitle = resource.value.title;
-      const title =
-        localize(rawTitle as Parameters<typeof localize>[0]) || String(resource.value.storyKey || resource.key);
-      editor.importStoryResource(resource, title);
+      editor.importStoryResource(resource);
       resourceTarget.value = undefined;
       refreshPreview();
     };
@@ -346,6 +558,7 @@ const onResourceInsert = (resource: StoryEditorResourceInsert) => {
 };
 
 const onIssueSelect = (issue: StoryValidationIssue) => {
+  if (!authoringCapabilities.value.adv) return;
   const match = issue.path.match(/\.scenes\[(\d+)](?:\.commands\[(\d+)])?/);
   if (!match) return;
   const scene = project.value.scenes[Number(match[1])];
@@ -357,18 +570,73 @@ const onIssueSelect = (issue: StoryValidationIssue) => {
   diagnosticsOpen.value = false;
 };
 
+const selectGraphNode = (payload: { sceneId: string; commandId?: string }) => {
+  if (!authoringCapabilities.value.flow) return;
+  selectScene(payload.sceneId);
+  selectedCommandId.value = payload.commandId || "";
+};
+
+const openGraphNode = (payload: { sceneId: string; commandId?: string }) => {
+  selectGraphNode(payload);
+  view.value = "visual";
+};
+
 const fullscreenPreview = async () => {
-  if (!previewFrame.value || document.fullscreenElement) return;
+  if (!previewEnabled.value || !previewFrame.value || document.fullscreenElement) return;
   await previewFrame.value.requestFullscreen();
 };
 
 const executeToCommand = async ({ id, sourceIndex }: { id: string; sourceIndex: number }) => {
+  if (!previewEnabled.value) return;
   selectedCommandId.value = id;
   const result = refreshPreview();
   const commandIndex = result?.commandSourceIndexes.indexOf(sourceIndex) ?? -1;
   if (commandIndex < 0) return;
   await nextTick();
   await previewPlayer.value?.executeTo(commandIndex);
+};
+
+const onPreviewDebugState = (state: { ready: boolean; snapshot?: VegaPreviewStageSnapshot; error?: string }) => {
+  previewDebugReady.value = state.ready;
+  if (state.snapshot) previewDebugSnapshot.value = state.snapshot;
+  previewDebugError.value = state.error || "";
+};
+
+const runPreviewScene = async () => {
+  if (!previewEnabled.value) return;
+  refreshPreview();
+  await nextTick();
+  await previewPlayer.value?.runScene(0);
+};
+
+const runPreviewFromSelection = async () => {
+  if (!previewEnabled.value) return;
+  const commandIndex = selectedPreviewIndex.value;
+  if (commandIndex < 0) return;
+  refreshPreview();
+  await nextTick();
+  await previewPlayer.value?.runFrom(commandIndex);
+};
+
+const runPreviewSnippet = async () => {
+  if (!previewEnabled.value) return;
+  const commandIndex = selectedPreviewIndex.value;
+  const command = commandIndex < 0 ? undefined : previewCompilation.value?.story.commands?.[commandIndex];
+  if (!command || typeof command !== "object" || Array.isArray(command)) return;
+  await previewPlayer.value?.runSnippet([command as Record<string, unknown>], selectedCommandId.value || undefined);
+};
+
+const togglePreviewBreakpoint = async () => {
+  if (!previewEnabled.value) return;
+  const commandIndex = selectedPreviewIndex.value;
+  if (commandIndex < 0) return;
+  const next = new Set(previewBreakpoints.value);
+  if (next.has(commandIndex)) next.delete(commandIndex);
+  else next.add(commandIndex);
+  const breakpoints = [...next]
+    .sort((left, right) => left - right)
+    .map((index) => ({ commandIndex: index, sceneId: currentSceneId.value }));
+  if (await previewPlayer.value?.setBreakpoints(breakpoints)) previewBreakpoints.value = next;
 };
 
 let stopResize: (() => void) | undefined;
@@ -405,12 +673,14 @@ const onKeydown = (event: KeyboardEvent) => {
     return;
   }
   if (command && event.key.toLowerCase() === "z" && !interactiveTarget(event.target)) {
+    if (!authoringCapabilities.value.history) return;
     event.preventDefault();
     if (event.shiftKey) editor.redo();
     else editor.undo();
     return;
   }
   if (command && event.key.toLowerCase() === "d" && selectedCommandId.value && !interactiveTarget(event.target)) {
+    if (!authoringCapabilities.value.adv) return;
     event.preventDefault();
     editor.duplicateCommand(selectedCommandId.value);
     return;
@@ -420,6 +690,7 @@ const onKeydown = (event: KeyboardEvent) => {
     selectedCommandId.value &&
     !interactiveTarget(event.target)
   ) {
+    if (!authoringCapabilities.value.adv) return;
     event.preventDefault();
     editor.deleteCommand(selectedCommandId.value);
     return;
@@ -449,34 +720,45 @@ watch(
     }
   },
 );
+watch(
+  availableViews,
+  (modes) => {
+    if (modes.includes(view.value)) return;
+    view.value = modes[0] ?? "visual";
+  },
+  { immediate: true },
+);
 watch(currentSceneId, (sceneId, previousSceneId) => {
+  previewBreakpoints.value = new Set();
+  previewInspectorOpen.value = false;
   if (!restored.value || !sceneId || sceneId === previousSceneId || previewAppliedSceneId === sceneId) return;
   void nextTick().then(() => {
     if (restored.value && currentSceneId.value === sceneId && previewAppliedSceneId !== sceneId) refreshPreview();
   });
 });
-watch(restored, (ready) => {
+watch(workspaceRevision, (revision, previousRevision) => {
+  if (!previewMounted.value || revision === previousRevision) return;
+  void nextTick().then(refreshPreview);
+});
+watch([restored, previewEnabled, previewPluginKey], ([ready, canPreview, pluginKey], previous) => {
+  if (!canPreview) {
+    stopPreview();
+    return;
+  }
   if (!ready) return;
+  if (pluginKey !== previous[2]) stopPreview();
   if (codeDirty.value) view.value = "project";
-  else if (sceneCodeDirty.value) view.value = "webgal";
-  if (previewMounted.value || previewMountFrame !== undefined || previewMountTimer !== undefined) return;
-  const generation = previewApplyGeneration;
+  else if (sceneCodeDirty.value && authoringCapabilities.value.webgal && authoringCapabilities.value.drafts) {
+    view.value = "webgal";
+  }
   // Give the restored command list a frame to paint before mounting WebGL and
   // hydrating the full runtime payload. The timeout also lets the deferred
   // compilation finish first in the common path.
-  previewMountFrame = window.requestAnimationFrame(() => {
-    previewMountFrame = undefined;
-    previewMountTimer = window.setTimeout(() => {
-      previewMountTimer = undefined;
-      if (previewApplyGeneration === generation) refreshPreview();
-      previewMounted.value = true;
-    }, 100);
-  });
+  previewMountLifecycle.schedule();
 });
 onBeforeUnmount(() => {
   stopResize?.();
-  if (previewMountFrame !== undefined) window.cancelAnimationFrame(previewMountFrame);
-  if (previewMountTimer !== undefined) window.clearTimeout(previewMountTimer);
+  stopPreview();
   window.removeEventListener("keydown", onKeydown);
 });
 
@@ -490,7 +772,17 @@ useSeoMeta({
   <WorkspaceScreen domain="tools" :title="t('storyEditor')" :count="commandCount" :detail-available="false">
     <template #heading-actions>
       <UiButton
-        v-if="view === 'visual'"
+        class="story-editor-open-folder"
+        tone="text"
+        :disabled="!authoringCapabilities.webgal || !authoringCapabilities.history"
+        :title="workspaceCopy.openFolder"
+        @click="openProjectDirectory"
+      >
+        <template #icon><MaterialIcon name="folder_open" :size="18" /></template>
+        <span>{{ workspaceName || workspaceCopy.openFolder }}</span>
+      </UiButton>
+      <UiButton
+        v-if="view === 'visual' && authoringCapabilities.adv && authoringCapabilities.history"
         class="story-editor-add-command"
         tone="accent"
         aria-haspopup="dialog"
@@ -505,23 +797,48 @@ useSeoMeta({
 
     <template #actions>
       <div class="story-editor-page__title-actions" role="toolbar" :aria-label="t('storyEditor')">
-        <UiIconButton size="compact" :label="copy.newProject" @click="newProject">
+        <UiIconButton
+          size="compact"
+          :disabled="!authoringCapabilities.adv || !authoringCapabilities.history"
+          :label="copy.newProject"
+          @click="newProject"
+        >
           <MaterialIcon name="note_add" :size="16" />
         </UiIconButton>
-        <UiIconButton size="compact" :label="copy.importProject" @click="projectInput?.click()">
+        <UiIconButton
+          size="compact"
+          :disabled="!authoringCapabilities.adv || !authoringCapabilities.history"
+          :label="copy.importProject"
+          @click="projectInput?.click()"
+        >
           <MaterialIcon name="upload" :size="16" />
         </UiIconButton>
-        <UiIconButton size="compact" :label="copy.save" @click="saveWorkspace">
+        <UiIconButton size="compact" :disabled="!authoringCapabilities.adv" :label="copy.save" @click="saveWorkspace">
           <MaterialIcon name="save" :size="16" />
         </UiIconButton>
-        <UiIconButton size="compact" :label="copy.projectSettings" @click="settingsOpen = true">
+        <UiIconButton
+          size="compact"
+          :disabled="!authoringCapabilities.adv || !authoringCapabilities.history"
+          :label="copy.projectSettings"
+          @click="settingsOpen = true"
+        >
           <MaterialIcon name="settings" :size="16" />
         </UiIconButton>
         <span class="story-editor-page__title-divider" />
-        <UiIconButton size="compact" :disabled="!canUndo" :label="copy.undo" @click="editor.undo">
+        <UiIconButton
+          size="compact"
+          :disabled="!authoringCapabilities.history || !canUndo"
+          :label="copy.undo"
+          @click="editor.undo"
+        >
           <MaterialIcon name="undo" :size="16" />
         </UiIconButton>
-        <UiIconButton size="compact" :disabled="!canRedo" :label="copy.redo" @click="editor.redo">
+        <UiIconButton
+          size="compact"
+          :disabled="!authoringCapabilities.history || !canRedo"
+          :label="copy.redo"
+          @click="editor.redo"
+        >
           <MaterialIcon name="redo" :size="16" />
         </UiIconButton>
       </div>
@@ -534,10 +851,15 @@ useSeoMeta({
             <section class="story-editor-preview-pane">
               <header>
                 <strong>{{ currentScene?.name || copy.noScene }}</strong>
-                <UiIconButton size="compact" :label="t('refresh')" @click="refreshPreview">
+                <UiIconButton size="compact" :disabled="!previewEnabled" :label="t('refresh')" @click="refreshPreview">
                   <MaterialIcon name="refresh" :size="18" />
                 </UiIconButton>
-                <UiIconButton size="compact" :label="copy.fullscreenPreview" @click="fullscreenPreview">
+                <UiIconButton
+                  size="compact"
+                  :disabled="!previewEnabled"
+                  :label="copy.fullscreenPreview"
+                  @click="fullscreenPreview"
+                >
                   <MaterialIcon name="fullscreen" :size="18" />
                 </UiIconButton>
                 <div class="story-editor-preview-pane__mode" role="group" :aria-label="t('view')">
@@ -553,7 +875,7 @@ useSeoMeta({
                     size="compact"
                     :label="copy.fullPreview"
                     :pressed="previewMode === 'play'"
-                    :disabled="!previewCanPlay"
+                    :disabled="!previewEnabled || !previewCanPlay"
                     @click="previewMode = 'play'"
                   >
                     <MaterialIcon name="movie" :size="17" />
@@ -561,30 +883,183 @@ useSeoMeta({
                 </div>
               </header>
               <div ref="previewFrame" class="story-editor-preview-pane__frame">
-                <ClientOnly v-if="previewMounted && previewCompilation">
+                <ClientOnly
+                  v-if="previewEnabled && authoringOperations && advAuthoring && previewMounted && previewCompilation"
+                >
                   <StoryEditorPreview
+                    :key="previewPluginKey"
                     ref="previewPlayer"
-                    :key="currentSceneId"
                     v-model:mode="previewMode"
+                    :adv="advAuthoring"
+                    :authoring-host="authoringOperations"
                     :story="previewCompilation.story"
+                    :plugins="runtimePlugins"
+                    :scene-id="currentSceneId"
                     :release-server="previewReleaseServer"
                     :revision="previewRevision"
                     compact
                     @playback-availability="previewCanPlay = $event"
+                    @debug-state="onPreviewDebugState"
                   />
                   <template #fallback><LoadingState /></template>
                 </ClientOnly>
-                <LoadingState v-else-if="!previewMounted" />
+                <LoadingState v-else-if="authoringReady && authoringCapabilities.vegaPreview && !previewMounted" />
                 <ErrorState v-else :label="copy.previewUnavailable" />
               </div>
+              <footer class="story-editor-preview-pane__debugbar" :class="{ 'has-error': previewDebugError }">
+                <div role="toolbar" aria-label="Preview debugger">
+                  <UiIconButton
+                    size="compact"
+                    label="Run scene"
+                    :disabled="!previewDebugReady"
+                    @click="runPreviewScene"
+                  >
+                    <MaterialIcon name="play_arrow" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    label="Run from selection"
+                    :disabled="!previewDebugReady || selectedPreviewIndex < 0"
+                    @click="runPreviewFromSelection"
+                  >
+                    <MaterialIcon name="skip_next" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    label="Run selected command"
+                    :disabled="!previewDebugReady || selectedPreviewIndex < 0"
+                    @click="runPreviewSnippet"
+                  >
+                    <MaterialIcon name="bolt" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    :label="t('pause')"
+                    :disabled="!previewDebugReady"
+                    @click="previewPlayer?.pause()"
+                  >
+                    <MaterialIcon name="pause" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    label="Continue"
+                    :disabled="!previewDebugReady"
+                    @click="previewPlayer?.continueDebug()"
+                  >
+                    <MaterialIcon name="resume" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    label="Step"
+                    :disabled="!previewDebugReady"
+                    @click="previewPlayer?.step()"
+                  >
+                    <MaterialIcon name="step" :size="17" />
+                  </UiIconButton>
+                  <UiIconButton
+                    size="compact"
+                    label="Toggle breakpoint"
+                    :pressed="selectedHasBreakpoint"
+                    :disabled="!previewDebugReady || selectedPreviewIndex < 0"
+                    @click="togglePreviewBreakpoint"
+                  >
+                    <MaterialIcon name="fiber_manual_record" :size="14" />
+                  </UiIconButton>
+                </div>
+                <code :title="previewDebugError || undefined">{{ previewDebugError || previewStageSummary }}</code>
+                <UiIconButton
+                  size="compact"
+                  label="Variables and stage"
+                  :pressed="previewInspectorOpen"
+                  :disabled="!previewDebugReady"
+                  @click="previewInspectorOpen = !previewInspectorOpen"
+                >
+                  <MaterialIcon name="data_object" :size="17" />
+                </UiIconButton>
+              </footer>
+              <aside v-if="previewInspectorOpen" class="story-editor-preview-pane__inspector">
+                <section>
+                  <strong>Variables</strong>
+                  <pre>{{ JSON.stringify(previewVariables, null, 2) }}</pre>
+                </section>
+                <section>
+                  <strong>{{ t("stage") }}</strong>
+                  <pre>{{
+                    JSON.stringify(
+                      {
+                        targets: previewDebugSnapshot?.targets || [],
+                        camera: previewDebugSnapshot?.camera || {},
+                        execution: previewDebugSnapshot?.execution || {},
+                      },
+                      null,
+                      2,
+                    )
+                  }}</pre>
+                </section>
+              </aside>
+            </section>
+
+            <section
+              v-if="workspaceSource !== 'none'"
+              class="story-editor-project-folder"
+              :class="{ 'needs-permission': workspacePermission === 'prompt' || workspacePermission === 'denied' }"
+            >
+              <MaterialIcon name="folder_open" :size="17" />
+              <div>
+                <strong>{{ workspaceName }}</strong>
+                <small>
+                  {{
+                    workspacePermission === "prompt" || workspacePermission === "denied"
+                      ? workspaceCopy.folderPermission
+                      : workspacePermission === "read-only"
+                        ? workspaceCopy.folderReadOnly
+                        : `${workspaceFiles.length} ${workspaceCopy.folderFiles}`
+                  }}
+                </small>
+              </div>
+              <UiIconButton
+                v-if="workspacePermission === 'prompt' || workspacePermission === 'denied'"
+                size="compact"
+                :disabled="workspaceLoading"
+                :label="workspaceCopy.reauthorizeFolder"
+                @click="reauthorizeProjectDirectory"
+              >
+                <MaterialIcon name="key" :size="17" />
+              </UiIconButton>
+              <template v-else>
+                <UiIconButton
+                  size="compact"
+                  :disabled="workspaceLoading || workspaceSource !== 'handle'"
+                  :label="workspaceCopy.refreshFolder"
+                  @click="refreshProjectDirectory"
+                >
+                  <MaterialIcon name="refresh" :size="17" />
+                </UiIconButton>
+                <UiIconButton
+                  size="compact"
+                  :disabled="workspaceLoading || workspaceSource !== 'handle'"
+                  :label="workspaceCopy.reimportFolder"
+                  @click="reimportProjectDirectory"
+                >
+                  <MaterialIcon name="sync" :size="17" />
+                </UiIconButton>
+              </template>
+              <UiIconButton
+                size="compact"
+                :label="workspaceCopy.disconnectFolder"
+                @click="editor.disconnectProjectDirectory"
+              >
+                <MaterialIcon name="link_off" :size="17" />
+              </UiIconButton>
             </section>
 
             <section class="story-editor-browser">
-              <div v-if="sidebarTab === 'resources'" class="story-editor-browser__resources">
+              <div v-show="sidebarTab === 'resources'" class="story-editor-browser__resources">
                 <StoryEditorResourceLibrary
-                  :project-release-server="projectReleaseServer"
-                  :preferred-kind="resourceTarget?.resource"
-                  :preferred-audio-usage="resourceTarget?.audioUsage"
+                  :providers="resourceBrowserProviders"
+                  :accepted-kinds="resourceBrowserAcceptedKinds"
+                  :preferred-kind="resourceBrowserPreferredKind"
+                  :request-context="resourceBrowserRequestContext"
                   @insert="onResourceInsert"
                 >
                   <template #leading>
@@ -611,17 +1086,16 @@ useSeoMeta({
                 </StoryEditorResourceLibrary>
               </div>
 
-              <div v-else class="story-editor-browser__resources">
-                <StoryEditorResourceLibrary
-                  :project-release-server="projectReleaseServer"
-                  :project-scenes="projectSceneFiles"
-                  :project-scene-folders="projectSceneFolders"
+              <div v-show="sidebarTab === 'scenes'" class="story-editor-browser__resources">
+                <StoryEditorSceneLibrary
+                  :scenes="projectSceneFiles"
+                  :folders="projectSceneFolders"
                   :active-scene-id="currentSceneId"
-                  @select-scene="selectScene"
-                  @add-scene="addSceneFromBrowser"
+                  @select="selectScene"
+                  @add="addSceneFromBrowser"
                   @add-folder="addFolderFromBrowser"
-                  @rename-scene="renameScene"
-                  @delete-scene="deleteScene"
+                  @rename="renameScene"
+                  @delete="deleteScene"
                 >
                   <template #leading>
                     <SegmentedControl
@@ -635,7 +1109,7 @@ useSeoMeta({
                       @update:model-value="setSidebarTab"
                     />
                   </template>
-                </StoryEditorResourceLibrary>
+                </StoryEditorSceneLibrary>
               </div>
             </section>
 
@@ -649,6 +1123,7 @@ useSeoMeta({
 
           <section class="story-editor-mainarea">
             <StoryEditorSceneTabs
+              v-if="authoringCapabilities.adv && authoringCapabilities.history"
               v-model="openedSceneIds"
               :scenes="project.scenes"
               :current-id="currentSceneId"
@@ -658,7 +1133,8 @@ useSeoMeta({
             />
 
             <StoryEditorSentenceList
-              v-if="view === 'visual'"
+              v-if="view === 'visual' && authoringCapabilities.adv && authoringCapabilities.history && advAuthoring"
+              :adv="advAuthoring"
               :commands="currentScene?.commands || []"
               :selected-id="selectedCommandId"
               :issues="issues"
@@ -675,18 +1151,25 @@ useSeoMeta({
               @execute-to="executeToCommand"
             />
 
-            <ClientOnly v-else-if="view === 'graph'">
+            <ClientOnly v-else-if="view === 'graph' && authoringCapabilities.flow && authoringOperations">
               <LazyStoryEditorGraph
-                :commands="currentScene?.commands || []"
-                :selected-id="selectedCommandId"
-                @select="selectedCommandId = $event"
-                @move="editor.moveCommand($event.id, $event.index)"
+                :authoring-host="authoringOperations"
+                :project="project"
+                :current-scene-id="currentSceneId"
+                :selected-command-id="selectedCommandId"
+                @select="selectGraphNode"
+                @open="openGraphNode"
               />
               <template #fallback><LoadingState /></template>
             </ClientOnly>
 
             <StoryEditorCode
-              v-else-if="view === 'webgal'"
+              v-else-if="
+                view === 'webgal' &&
+                authoringCapabilities.webgal &&
+                authoringCapabilities.drafts &&
+                authoringCapabilities.history
+              "
               :model-value="sceneCodeValue"
               :label="copy.webgalCode"
               language="WebGAL"
@@ -699,7 +1182,12 @@ useSeoMeta({
             />
 
             <StoryEditorCode
-              v-else
+              v-else-if="
+                view === 'project' &&
+                authoringCapabilities.adv &&
+                authoringCapabilities.drafts &&
+                authoringCapabilities.history
+              "
               :model-value="codeValue"
               :label="copy.projectCode"
               language="JSON"
@@ -710,6 +1198,9 @@ useSeoMeta({
               @discard="editor.discardCodeDraft"
               @format="editor.formatCode"
             />
+
+            <ErrorState v-else-if="authoringError" :label="authoringError" />
+            <LoadingState v-else />
 
             <section v-if="diagnosticsOpen" class="story-editor-diagnostics" :aria-label="copy.diagnostics">
               <header>
@@ -757,17 +1248,29 @@ useSeoMeta({
         <span class="story-editor-statusbar__metric">
           {{ t("storyEditorPage.commandCount", { count: commandCount }) }}
         </span>
-        <span v-if="fidelity.approximate" class="story-editor-statusbar__metric">≈ {{ fidelity.approximate }}</span>
-        <span v-if="fidelity.unsupported" class="story-editor-statusbar__metric is-error">
-          × {{ fidelity.unsupported }}
-        </span>
-        <span v-if="dirty" class="story-editor-statusbar__dirty" aria-hidden="true">●</span>
+        <MaterialIcon
+          v-if="dirty"
+          class="story-editor-statusbar__dirty"
+          name="fiber_manual_record"
+          :size="9"
+          aria-hidden="true"
+        />
         <span class="story-editor-statusbar__mode-separator" aria-hidden="true" />
-        <StoryEditorModeSwitch :model-value="view" @update:model-value="switchView" />
+        <StoryEditorModeSwitch
+          v-if="availableViews.length"
+          :model-value="view"
+          :available-modes="availableViews"
+          @update:model-value="switchView"
+        />
       </footer>
     </div>
 
-    <StoryEditorCommandPicker v-model="commandPickerOpen" @pick="pickCommand" />
+    <StoryEditorCommandPicker
+      v-if="authoringCapabilities.adv && authoringCapabilities.history && advAuthoring"
+      v-model="commandPickerOpen"
+      :adv="advAuthoring"
+      @pick="pickCommand"
+    />
 
     <EditorActionDialog
       :open="Boolean(pendingAction)"
@@ -796,7 +1299,7 @@ useSeoMeta({
       <template #content>
         <div class="story-editor-dialog__fields">
           <UiTextField :model-value="project.meta.title" :label="copy.title" @update:model-value="setProjectTitle" />
-          <UiTextField :model-value="project.meta.releaseServer || ''" :label="copy.releaseServer" readonly />
+          <UiTextField :model-value="projectReleaseServer" :label="copy.releaseServer" readonly />
           <UiSelect
             :model-value="project.entrySceneId"
             :options="entrySceneOptions"
@@ -817,6 +1320,7 @@ useSeoMeta({
       accept=".json,.txt,.asset,application/json,text/plain"
       @change="onProjectInput"
     />
+    <input ref="directoryInput" class="sr-only" type="file" multiple webkitdirectory @change="onDirectoryInput" />
   </WorkspaceScreen>
 </template>
 
@@ -826,6 +1330,19 @@ useSeoMeta({
   min-width: 0;
   align-items: center;
   gap: 5px;
+}
+
+.story-editor-open-folder {
+  max-width: min(280px, 34vw);
+  min-height: var(--md-comp-control-height-compact);
+  --md-text-button-container-height: var(--md-comp-control-height-compact);
+  --md-text-button-label-text-size: var(--md-sys-typescale-label-medium-size);
+}
+
+.story-editor-open-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .story-editor-add-command {
@@ -892,10 +1409,11 @@ useSeoMeta({
 }
 
 .story-editor-preview-pane {
+  position: relative;
   display: grid;
   min-width: 0;
   flex: 0 0 auto;
-  grid-template-rows: 30px auto;
+  grid-template-rows: 30px auto 30px;
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-small);
@@ -949,6 +1467,87 @@ useSeoMeta({
   height: 100%;
 }
 
+.story-editor-preview-pane__debugbar {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 3px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container);
+}
+
+.story-editor-preview-pane__debugbar > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.story-editor-preview-pane__debugbar code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-outline);
+  font-size: 0.56rem;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-editor-preview-pane__debugbar.has-error code {
+  color: var(--md-sys-color-error);
+}
+
+.story-editor-preview-pane__inspector {
+  position: absolute;
+  z-index: 4;
+  inset: 30px 0 30px;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-outline-variant);
+}
+
+.story-editor-preview-pane__inspector > section {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 28px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+.story-editor-preview-pane__inspector strong {
+  display: flex;
+  align-items: center;
+  padding-inline: 9px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  font-size: var(--md-sys-typescale-label-small-size);
+}
+
+.story-editor-preview-pane__inspector pre {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font:
+    500 0.58rem/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .story-editor-browser {
   display: block;
   min-width: 0;
@@ -958,6 +1557,53 @@ useSeoMeta({
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface-container-lowest);
+}
+
+.story-editor-project-folder {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  flex: 0 0 34px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 3px 0 8px;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.story-editor-project-folder.needs-permission {
+  color: var(--md-sys-color-on-tertiary-container);
+  border-color: color-mix(in srgb, var(--md-sys-color-tertiary) 35%, var(--md-sys-color-outline-variant));
+  background: var(--md-sys-color-tertiary-container);
+}
+
+.story-editor-project-folder > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+}
+
+.story-editor-project-folder strong,
+.story-editor-project-folder small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-editor-project-folder strong {
+  font-size: 0.62rem;
+}
+
+.story-editor-project-folder small {
+  color: var(--md-sys-color-outline);
+  font-size: 0.52rem;
 }
 
 .story-editor-browser__tabs {

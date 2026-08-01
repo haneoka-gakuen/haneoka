@@ -1,4 +1,5 @@
-import { configureStoryRuntime, type StoryMessageKey } from "@haneoka/story/runtime";
+import { configureStoryRuntime as configureVegaStoryRuntime, type StoryMessageKey } from "@haneoka/vega/runtime";
+import { resolveHaneokaChatIconSprites } from "@haneoka/vega-plugin-haneoka";
 import { isAcceptedExternalResourceUrl } from "~/features/resources/sourcePolicies";
 import type { ArchiveMessageKey } from "~/i18n/messages";
 
@@ -34,28 +35,22 @@ export default defineNuxtPlugin(() => {
     }
     return url;
   };
-  const belongsToRelease = (url: string, releaseServer: string) => {
-    if (/^(?:data:|blob:|https?:\/\/)/i.test(url)) return true;
-    if (isAcceptedExternalResourceUrl(url)) return true;
-    const encoded = encodeURIComponent(normalizeReleaseServer(releaseServer));
-    return url.startsWith(`/assets/${encoded}/`) || url.startsWith(`/runtime/${encoded}/`);
+  const sourceAssetUrl = (path: string) => {
+    const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
+    return releaseResourceUrl(
+      `/assets/${encodeURIComponent(defaultReleaseServer)}/${encodedPath}`,
+      defaultReleaseServer,
+    );
   };
-  configureStoryRuntime({
-    assetUrl: (path, server = defaultReleaseServer) => releaseResourceUrl(path, server),
-    releaseSourceAssetUrl: (path, releaseServer = defaultReleaseServer) => {
-      const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
-      return releaseResourceUrl(`/assets/${encodeURIComponent(releaseServer)}/${encodedPath}`, releaseServer);
-    },
+  const runtimeAdapters = {
+    chatIconSprites: resolveHaneokaChatIconSprites(sourceAssetUrl),
     validateResourceUrl,
-    resourceBelongsToRelease: belongsToRelease,
     localize,
-    resolveLocalized: (value) => {
+    resolveLocalized: (value: unknown) => {
       const resolved = resolveArchiveText(value as Parameters<typeof resolveArchiveText>[0]);
       return resolved ? { text: resolved.text, lang: resolved.lang } : null;
     },
-    message: (key) => t(messageKeys[key]),
-    defaultReleaseServer,
-    cubismCoreUrl: "/Core/live2dcubismcore.js",
-    motionSyncCoreUrl: "/Core/CRI/live2dcubismmotionsynccore.min.js",
-  });
+    message: (key: StoryMessageKey) => t(messageKeys[key]),
+  };
+  configureVegaStoryRuntime(runtimeAdapters);
 });

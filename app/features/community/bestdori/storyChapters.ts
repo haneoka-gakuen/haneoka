@@ -1,5 +1,4 @@
 import type { Band, Character, LocalizedValue, StoryChapter, StoryEpisode } from "~/types/archive";
-import { bestdoriOrigin } from "~/features/catalog/contentSource";
 import type { BestdoriChapterStorySection, BestdoriStoryListItem } from "./stories";
 
 const numericChapterId = (value: unknown): number => {
@@ -11,17 +10,35 @@ const numericChapterId = (value: unknown): number => {
   return 0;
 };
 
+export const compareBestdoriStoryChapters = (
+  section: BestdoriChapterStorySection,
+  left: Pick<StoryChapter, "chapterSort" | "chapterId">,
+  right: Pick<StoryChapter, "chapterSort" | "chapterId">,
+): number => {
+  if (section === "event")
+    return (
+      Number(right.chapterSort || 0) - Number(left.chapterSort || 0) ||
+      Number(right.chapterId || 0) - Number(left.chapterId || 0)
+    );
+  return (
+    Number(left.chapterSort || 0) - Number(right.chapterSort || 0) ||
+    Number(left.chapterId || 0) - Number(right.chapterId || 0)
+  );
+};
+
 export const useBestdoriStoryChapters = (section: BestdoriChapterStorySection) => {
+  const { locale } = useLocale();
+  const catalogOrigin = computed(() => bestdoriCatalogOrigin(locale.value));
   const isBand = section === "band";
   const isEvent = section === "event";
   const usesEntities = isBand || isEvent;
   const storyCollection = useLazyCatalogCollection<BestdoriStoryListItem>(
     `stories/${section}`,
     () => true,
-    bestdoriOrigin("jp"),
+    catalogOrigin,
   );
-  const bandsCollection = useLazyCatalogCollection<Band>("bands", () => usesEntities, bestdoriOrigin("jp"));
-  const charactersCollection = useLazyCatalogCollection<Character>("characters", () => isEvent, bestdoriOrigin("jp"));
+  const bandsCollection = useLazyCatalogCollection<Band>("bands", () => usesEntities, catalogOrigin);
+  const charactersCollection = useLazyCatalogCollection<Character>("characters", () => isEvent, catalogOrigin);
 
   const bands = computed(() => recordValues(bandsCollection.data.value));
   const characters = computed(() => recordValues(charactersCollection.data.value));
@@ -47,6 +64,7 @@ export const useBestdoriStoryChapters = (section: BestdoriChapterStorySection) =
         description: item.description as LocalizedValue | undefined,
         publishedAt: item.publishedAt,
         releaseAt: item.releaseAt,
+        sourceServer: item.sourceServer,
         bandId: item.bandId,
         characterIds: item.characterIds,
         ...(item.episodeImage ? { banner: item.episodeImage, image: item.episodeImage } : {}),
@@ -78,17 +96,7 @@ export const useBestdoriStoryChapters = (section: BestdoriChapterStorySection) =
         icon: item.thumbnail || band?.logo,
       });
     }
-    return [...byKey.values()].sort((left, right) => {
-      if (section === "event")
-        return (
-          Number(right.chapterSort || 0) - Number(left.chapterSort || 0) ||
-          Number(right.chapterId || 0) - Number(left.chapterId || 0)
-        );
-      return (
-        Number(left.chapterSort || 0) - Number(right.chapterSort || 0) ||
-        Number(left.chapterId || 0) - Number(right.chapterId || 0)
-      );
-    });
+    return [...byKey.values()].sort((left, right) => compareBestdoriStoryChapters(section, left, right));
   });
 
   const pending = computed(
@@ -111,5 +119,5 @@ export const useBestdoriStoryChapters = (section: BestdoriChapterStorySection) =
     ]);
   };
 
-  return { chapters, episodes, bands, characters, pending, error, refresh };
+  return { catalogOrigin, chapters, episodes, bands, characters, pending, error, refresh };
 };
