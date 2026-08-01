@@ -266,13 +266,6 @@ const HANEOKA_RICH_TEXT_FORMAT_PLUGINS = Object.freeze({
     load: () => import("@haneoka/vega-plugin-richtext-markdown"),
     loadRenderer: async () => (await import("@haneoka/vega-plugin-richtext-markdown")).vegaMarkdownRichTextRenderer,
   },
-  "haneoka.vega-richtext-typst": {
-    formats: ["typst"],
-    id: "haneoka.vega-richtext-typst",
-    name: "Vega Rich Text — Typst",
-    load: () => import("@haneoka/vega-plugin-richtext-typst"),
-    loadRenderer: async () => (await import("@haneoka/vega-plugin-richtext-typst")).createTypstRichTextRenderer(),
-  },
 } satisfies Readonly<Record<string, LazyHaneokaRichTextPlugin>>);
 
 const createLazyHaneokaRichTextPlugin = ({ id, name, load }: LazyHaneokaRichTextPlugin): VegaPlugin =>
@@ -337,7 +330,6 @@ const HANEOKA_RUNTIME_PLUGIN_ORDER = Object.freeze([
   "haneoka.vega-richtext-html",
   "haneoka.vega-richtext-latex",
   "haneoka.vega-richtext-markdown",
-  "haneoka.vega-richtext-typst",
   "haneoka.vega-portable-ui",
   "haneoka.vega-shell-default",
   "haneoka.renderer-three",
