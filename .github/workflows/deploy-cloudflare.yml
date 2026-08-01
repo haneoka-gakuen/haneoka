@@ -45,20 +45,23 @@ jobs:
 
       - name: Inject licensed Cubism runtime
         env:
-          HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL: ${{ secrets.HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          CUBISM_RUNTIME_BUCKET: haneoka-resource-package-ingress
+          CUBISM_RUNTIME_KEY: private/cubism-runtime/haneoka-cubism-web-runtime-v1.tar.gz
         run: |
           set -euo pipefail
-          if [[ -z "${HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL:-}" ]]; then
-            echo "::error::HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL is required for production"
-            exit 1
-          fi
 
           runtime_archive="$RUNNER_TEMP/haneoka-cubism-runtime.tar.gz"
           runtime_directory="$RUNNER_TEMP/haneoka-cubism-runtime"
-          curl --fail --silent --show-error --location --retry 3 \
-            --proto '=https' --proto-redir '=https' \
-            "$HANEOKA_CUBISM_RUNTIME_ARCHIVE_URL" \
-            --output "$runtime_archive"
+          aws s3 cp \
+            "s3://$CUBISM_RUNTIME_BUCKET/$CUBISM_RUNTIME_KEY" \
+            "$runtime_archive" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto \
+            --no-progress
 
           extract_runtime_file() {
             local relative_path="$1"
