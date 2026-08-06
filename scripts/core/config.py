@@ -29,6 +29,8 @@ class ServerConfig:
     remote_root: str
     cri_hca_key: str
     master_crypto: dict[str, str]
+    catalog_version: str
+    catalog_locales: tuple[str, ...]
     file: Path
 
 
@@ -59,6 +61,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "remoteRoot",
         "criHcaKey",
         "masterCrypto",
+        "catalog",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
@@ -122,6 +125,20 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         not isinstance(item, str) or not HEX_64.fullmatch(item) for item in crypto.values()
     ):
         raise ValueError(f"invalid masterCrypto: {file}")
+    catalog = value.get("catalog", {})
+    if not isinstance(catalog, dict):
+        raise ValueError(f"invalid catalog block: {file}")
+    catalog_version = str(catalog.get("version", "")).strip()
+    if catalog_version and not re.fullmatch(r"[A-Za-z0-9._-]+", catalog_version):
+        raise ValueError(f"invalid catalog.version: {file}")
+    raw_locales = catalog.get("locales", [])
+    if not isinstance(raw_locales, list):
+        raise ValueError(f"invalid catalog.locales: {file}")
+    catalog_locales = tuple(
+        part for part in (str(item).strip() for item in raw_locales) if part
+    )
+    if any(not re.fullmatch(r"[A-Za-z0-9-]+", locale) for locale in catalog_locales):
+        raise ValueError(f"invalid catalog.locales entry: {file}")
     return ServerConfig(
         id=server,
         package_name=value["packageName"],
@@ -136,5 +153,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         remote_root=value.get("remoteRoot", "").rstrip("/"),
         cri_hca_key=str(value.get("criHcaKey", "")),
         master_crypto=crypto,
+        catalog_version=catalog_version,
+        catalog_locales=catalog_locales,
         file=file,
     )

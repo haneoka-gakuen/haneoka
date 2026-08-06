@@ -416,6 +416,7 @@ def _download(
     expected_bytes: int = 0,
     unity_version: str = "",
     missing_ok: bool = False,
+    quiet: bool = False,
 ) -> bool:
     if expected_bytes < 0:
         raise ValueError("download expected size cannot be negative")
@@ -475,7 +476,8 @@ def _download(
             if error.code in {403, 404} and missing_ok:
                 # Some CDNs return 403 instead of 404 for non-existent objects.
                 temporary.unlink(missing_ok=True)
-                sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
+                if not quiet:
+                    sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
                 return False
             if error.code in {401, 403, 404} or error.code < 500:
                 hint = f"; configure {AUTHORIZATION_ENVIRONMENT}" if error.code == 401 else ""
@@ -493,6 +495,98 @@ def _download(
         raise RuntimeError(f"download failed after 5 attempts: {url}: {failure}") from failure
     os.replace(temporary, output)
     return True
+
+
+def _resolve_catalog_version(
+    config: ServerConfig, floor: str, scratch: Path, *, unity_version: str
+) -> str:
+    """Resolve the newest catalog version published at or above ``floor``.
+
+    Versioned-catalog CDNs (e.g. gl-cbt) publish ``catalog_{version}.hash`` with
+    no version pointer, so the live version has to be discovered by probing.
+
+    The build (4th) component is a contiguous hotfix counter within a line and is
+    walked upward from the floor — this tracks every hot-update, the common case
+    (e.g. ``0.3.1.5 -> 0.3.1.6``). Each higher line (next patch ``0.3.2``,
+    minor ``0.4``, major ``1.x``) is then probed at its build-0 catalog, drilling
+    into the build dimension on a hit. Each dimension stops after 3 consecutive
+    misses to tolerate small gaps.
+
+    The higher-line probe assumes a newly published line starts at build 0
+    (verified for the current line — ``0.3.1.0`` exists). If a future bump skips
+    build 0 it will not be auto-found; bump ``catalog.version`` in the server
+    config and the pipeline fetches that floor verbatim. The probe is additive —
+    a wrong assumption only means a missed bump, never a stale wrong answer, and
+    a floor whose own catalog has been unpublished fails loudly downstream.
+
+    Non four-part-numeric schemes are returned unchanged.
+    """
+    parts = floor.split(".")
+    if len(parts) != 4 or not all(part.isdigit() for part in parts):
+        return floor
+    base = tuple(int(part) for part in parts)
+
+    def exists(version_tuple: tuple[int, ...]) -> bool:
+        candidate = ".".join(str(component) for component in version_tuple)
+        probe = scratch / f".probe_catalog_{candidate}.hash"
+        hit = _download(
+            f"{config.remote_root}/catalog_{candidate}.hash",
+            probe,
+            config,
+            unity_version=unity_version,
+            missing_ok=True,
+            quiet=True,
+        )
+        probe.unlink(missing_ok=True)
+        return hit
+
+    def line_max(major: int, minor: int, patch: int, start_build: int) -> int | None:
+        # Highest build on a line walking upward from start_build. Returns None
+        # when start_build itself is absent, so a single request decides whether
+        # a line is published at/above the floor.
+        if not exists((major, minor, patch, start_build)):
+            return None
+        latest = start_build
+        consecutive_misses = 0
+        build = start_build + 1
+        while build <= start_build + 128 and consecutive_misses < 3:
+            if exists((major, minor, patch, build)):
+                latest = build
+                consecutive_misses = 0
+            else:
+                consecutive_misses += 1
+            build += 1
+        return latest
+
+    best = base
+    build = line_max(base[0], base[1], base[2], base[3])
+    if build is not None:
+        best = (base[0], base[1], base[2], build)
+
+    # Probe each higher dimension at build 0 (patch, then minor, then major),
+    # drilling into the build dimension on any line the CDN publishes.
+    for dim in (2, 1, 0):
+        consecutive_misses = 0
+        component = base[dim] + 1
+        while consecutive_misses < 3:
+            line = list(base)
+            for index in range(dim + 1, 4):
+                line[index] = 0
+            line[dim] = component
+            high = line_max(line[0], line[1], line[2], 0)
+            if high is not None:
+                candidate = (line[0], line[1], line[2], high)
+                if candidate > best:
+                    best = candidate
+                consecutive_misses = 0
+            else:
+                consecutive_misses += 1
+            component += 1
+
+    latest = ".".join(str(component) for component in best)
+    if latest != floor:
+        sys.stderr.write(f"catalog: advanced {floor} -> {latest}\n")
+    return latest
 
 
 def _copy_archive_entry(
@@ -613,6 +707,54 @@ def ingest_package(
                 readable_catalog,
                 catalog_encoding,
             ) = _embedded_catalog(asset_pack, scratch)
+        elif config.catalog_version:
+            # Versioned, per-locale Addressables catalogs (e.g. gl-cbt). Unlike the
+            # standard Addressables layout, this CDN publishes
+            # catalog_{version}[_{locale}].{hash,bin} and exposes no version pointer
+            # (catalog_main.hash is absent), so the resource version comes from
+            # configuration. The locale-less base catalog is the primary; each locale
+            # catalog is merged under its locale tag, reusing the same namespacing the
+            # HANEOKA_SOURCE_CATALOGS override applies to locale-variant bundles.
+            # The configured version is a known-good floor; builds on its line are
+            # contiguous, so the newest published build is auto-discovered by probing.
+            catalog_version = _resolve_catalog_version(
+                config, config.catalog_version, scratch, unity_version=unity_version
+            )
+            if not config.remote_root:
+                raise ValueError(f"remoteRoot is not configured for {config.id}")
+            remote_hash_file = scratch / "catalog_main.hash"
+            _download(
+                f"{config.remote_root}/catalog_{catalog_version}.hash",
+                remote_hash_file,
+                config,
+                unity_version=unity_version,
+            )
+            catalog_hash = remote_hash_file.read_text("utf-8").strip()
+            if len(catalog_hash) != 32 or any(
+                character not in "0123456789abcdef" for character in catalog_hash.lower()
+            ):
+                raise ValueError(
+                    f"invalid remote catalog hash for {catalog_version}: {catalog_hash}"
+                )
+            remote_catalog = scratch / f"catalog_{catalog_version}.bin"
+            _download(
+                f"{config.remote_root}/catalog_{catalog_version}.bin",
+                remote_catalog,
+                config,
+                unity_version=unity_version,
+            )
+            catalog_sha = sha256_file(remote_catalog)
+            readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
+            for locale in config.catalog_locales:
+                locale_catalog = scratch / f"catalog_{catalog_version}_{locale}.bin"
+                _download(
+                    f"{config.remote_root}/catalog_{catalog_version}_{locale}.bin",
+                    locale_catalog,
+                    config,
+                    unity_version=unity_version,
+                )
+                extra_readable, _ = _readable_catalog(locale_catalog, scratch)
+                extra_readable_catalogs.append((locale, extra_readable))
         else:
             remote_hash_file = scratch / "catalog_main.hash"
             if not config.remote_root:
