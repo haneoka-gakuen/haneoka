@@ -1969,6 +1969,34 @@ function sonolusServerBanner(value: unknown): JsonObject | undefined {
   };
 }
 
+// The engine + presentation payload is a server-agnostic global asset published
+// under the R2 prefix "sonolus/". Sonolus runtime paths ("runtime/sonolus/<x>")
+// map onto it directly; per-release runtime trees remain as a fallback while the
+// global payload is being rolled out.
+const GLOBAL_SONOLUS_PREFIX = "runtime/sonolus/";
+
+function globalSonolusKey(releasePath: string): string | null {
+  return releasePath.startsWith(GLOBAL_SONOLUS_PREFIX)
+    ? `sonolus/${releasePath.slice(GLOBAL_SONOLUS_PREFIX.length)}`
+    : null;
+}
+
+async function readGlobalSonolusJson(env: Env, releasePath: string): Promise<JsonValue | null> {
+  const key = globalSonolusKey(releasePath);
+  return key ? readR2Json(env, key) : null;
+}
+
+async function serveGlobalSonolusObject(
+  env: Env,
+  request: Request,
+  relative: string,
+  contentType?: string,
+): Promise<Response | null> {
+  // `relative` already begins with "sonolus/" (e.g. "sonolus/repository/<sha>"),
+  // which is exactly the R2 key the global payload is published under.
+  return relative.startsWith("sonolus/") ? serveR2Object(env, request, relative, contentType) : null;
+}
+
 async function handleSonolus(
   env: Env,
   ctx: ExecutionContext,
@@ -2000,7 +2028,8 @@ async function handleSonolus(
     // Runtime documents (engine/template/banner) are server-wide rather than
     // chart data. Choose the first active server slug deterministically; chart
     // data itself remains pinned to the exact release encoded in each data ID.
-    const readJson = (releasePath: string) => readReleaseJson(env, canonicalRelease, releasePath);
+    const readJson = async (releasePath: string) =>
+      (await readGlobalSonolusJson(env, releasePath)) ?? readReleaseJson(env, canonicalRelease, releasePath);
     const catalogProvider = isBestdoriCatalog
       ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
       : ourNotesSonolusCatalogProvider(env, releases, revision);
@@ -2086,6 +2115,7 @@ async function handleSonolus(
     ctx,
     MEDIA_CACHE_TTL,
     async () =>
+      (await serveGlobalSonolusObject(env, request, relative, contentType)) ||
       (await serveReleaseObject(env, request, canonicalRelease, `runtime/${relative}`, contentType)) ||
       new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS }),
   );

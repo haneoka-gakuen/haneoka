@@ -106,21 +106,25 @@ class R2Store:
                 return None
             raise
 
-    def upload_cas(
+    def upload_path(
         self,
         file: Path,
-        digest: str,
+        key: str,
         content_type: str,
+        *,
+        cache_control: str = IMMUTABLE_CACHE,
+        metadata: dict[str, str] | None = None,
     ) -> None:
-        """Write one immutable CAS object without a latency-heavy HEAD first."""
+        """Upload one file to an explicit key without a latency-heavy HEAD first.
 
-        key = cas_key(digest)
+        ``upload_cas`` addresses objects by digest; this addresses them by a stable
+        path-shaped key (used by the shared global Sonolus payload, which is
+        overwritten in place on every rebuild).
+        """
         size = file.stat().st_size
-        extra = {
-            "ContentType": content_type,
-            "CacheControl": IMMUTABLE_CACHE,
-            "Metadata": {"sha256": digest},
-        }
+        extra: dict[str, Any] = {"ContentType": content_type, "CacheControl": cache_control}
+        if metadata:
+            extra["Metadata"] = metadata
         if size < self.transfer.multipart_threshold:
             with file.open("rb") as body:
                 self.client.put_object(
@@ -138,6 +142,15 @@ class R2Store:
             ExtraArgs=extra,
             Config=self.transfer,
         )
+
+    def upload_cas(
+        self,
+        file: Path,
+        digest: str,
+        content_type: str,
+    ) -> None:
+        """Write one immutable CAS object without a latency-heavy HEAD first."""
+        self.upload_path(file, cas_key(digest), content_type, metadata={"sha256": digest})
 
     def put_json(self, key: str, value: Any, cache_control: str) -> None:
         body = stable_json(value).encode()
@@ -421,6 +434,65 @@ def current_release_document(
         "releaseId": pointer["releaseId"],
         "document": document,
         "entries": entries,
+    }
+
+
+def download_current_release_paths(
+    store: R2Store,
+    config: ServerConfig,
+    prefixes: tuple[str, ...],
+    exact_paths: tuple[str, ...],
+    target_root: Path,
+) -> dict[str, Any]:
+    """Materialize selected files from the current release under ``target_root``.
+
+    Each manifest entry whose ``path`` starts with one of ``prefixes`` or equals
+    one of ``exact_paths`` is downloaded from content-addressed storage into
+    ``target_root/<path>``, mirroring the release layout. This is the bridge that
+    lets an independent build (the Sonolus engine payload) read a release's
+    presentation assets without re-running the resource pipeline.
+    """
+
+    pointer, manifest = _current_release_manifest(store, config)
+    if not isinstance(pointer, dict) or not isinstance(manifest, dict):
+        raise ValueError(f"no current release is selected for server {config.id!r}")
+    exact = set(exact_paths)
+    wanted: list[dict[str, Any]] = []
+    for entry in manifest.get("entries", []):
+        if not isinstance(entry, dict):
+            raise ValueError("current release manifest contains a non-object entry")
+        path = str(entry.get("path") or "")
+        if path and (path in exact or any(path.startswith(prefix) for prefix in prefixes)):
+            wanted.append(entry)
+    if not wanted:
+        scanned = len(manifest.get("entries", []))
+        raise ValueError(
+            "the current release declares none of the requested paths "
+            f"(scanned {scanned} entries)"
+        )
+    wanted.sort(key=lambda item: str(item.get("path") or ""))
+    target_root = target_root.resolve()
+
+    def download(entry: dict[str, Any]) -> None:
+        path = str(entry["path"])
+        file = target_root.joinpath(*PurePosixPath(path).parts)
+        if not file.resolve().is_relative_to(target_root):
+            raise ValueError(f"release path escapes the target root: {path}")
+        store.download_file(
+            cas_key(str(entry["sha256"])),
+            file,
+            expected_bytes=int(entry["bytes"]),
+        )
+
+    with ThreadPoolExecutor(max_workers=store.concurrency) as executor:
+        list(executor.map(download, wanted))
+
+    return {
+        "schema": "haneoka-release-fetch-v1",
+        "server": config.id,
+        "releaseId": pointer["releaseId"],
+        "fileCount": len(wanted),
+        "fileBytes": sum(int(entry["bytes"]) for entry in wanted),
     }
 
 

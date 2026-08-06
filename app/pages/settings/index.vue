@@ -34,7 +34,7 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
   <SupportingPageSurface :title="t('settings')" max-width="960px">
     <div class="settings-content">
       <PageSection :title="t('appearance')" icon="palette">
-        <SingleChoiceList
+        <SingleChoiceIconRow
           name="ui-theme"
           :label="t('appearance')"
           :model-value="themePreference"
@@ -44,7 +44,7 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
       </PageSection>
 
       <PageSection :title="t('language')" icon="language" divided>
-        <SingleChoiceList
+        <SingleChoiceIconRow
           name="locale"
           :label="t('language')"
           :model-value="locale"

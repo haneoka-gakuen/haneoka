@@ -2,11 +2,12 @@ import { hash } from "@sonolus/core";
 import type { SonolusCLIConfig } from "@sonolus/sonolus.js";
 import { error, log } from "node:console";
 import { copyFileSync, readFileSync } from "node:fs";
-import { engineEsbuild } from "../esbuild.config.ts";
+import { engineEsbuild, engineOutputPaths } from "../esbuild.config.ts";
 
 export default {
   type: "watch",
   esbuild: engineEsbuild,
+  ...engineOutputPaths,
 
   devServer(sonolus) {
     try {

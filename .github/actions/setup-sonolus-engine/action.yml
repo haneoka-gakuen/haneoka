@@ -33,17 +33,9 @@ runs:
     - name: Build Sonolus engine
       if: steps.engine-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: |
-        for target in play watch preview tutorial; do
-          pnpm --dir packages/sonolus/engine exec sonolus-cli \
-            --build "./$target/sonolus-cli.config.ts"
-        done
-        output="packages/sonolus/engine/dist"
-        cp LICENSE "$output/LICENSE"
-        cp packages/sonolus/engine/NOTICE.txt "$output/NOTICE.txt"
-        cp packages/sonolus/engine/LICENSE.pjsekai.txt "$output/LICENSE.pjsekai.txt"
-        printf 'Corresponding Haneoka Source Code Form:\nhttps://github.com/haneoka-gakuen/haneoka/tree/%s\n' \
-          "$GITHUB_SHA" > "$output/SOURCE.txt"
+      # `pnpm run build` typechecks, builds the play/watch/preview/tutorial facets
+      # in parallel, and stamps dist/ with licenses + the source pointer.
+      run: pnpm --dir packages/sonolus/engine run build
 
     - name: Save compiled engine
       if: steps.engine-cache.outputs.cache-hit != 'true'

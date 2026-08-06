@@ -18,7 +18,6 @@ BUILD_INPUTS = (
     "scripts/extract",
     "scripts/requirements.txt",
     "scripts/verify/release.py",
-    "packages/sonolus",
     "package.json",
     "pnpm-lock.yaml",
     "server/releaseWorkspace.ts",

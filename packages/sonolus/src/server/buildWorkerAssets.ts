@@ -24,7 +24,16 @@ import { resolveLocalReleaseFile, resolveSonolusReleaseWorkspace } from "./relea
 const root = resolve(process.env.OUR_NOTES_ROOT || process.cwd());
 const pkg = resolve(root, "packages/sonolus");
 
-const outRoot = resolve(process.env.SONOLUS_WORKER_ASSETS_DIR || resolve(root, "dist"));
+// The engine + presentation payload is server-agnostic: it changes only when the
+// engine or its assets change, not per release. Built engine-only
+// (`SONOLUS_ENGINE_ONLY`) into `SONOLUS_OUTPUT_DIR` (the shared global target) and
+// served by every server; charts are projected dynamically per release at serve
+// time, so they are never baked here. The legacy per-release bake still targets
+// `SONOLUS_WORKER_ASSETS_DIR`.
+const engineOnly = process.env.SONOLUS_ENGINE_ONLY === "1";
+const outRoot = resolve(
+  process.env.SONOLUS_OUTPUT_DIR || process.env.SONOLUS_WORKER_ASSETS_DIR || resolve(root, "dist"),
+);
 const finalSonolusRoot = resolve(outRoot, "sonolus");
 const stagedSonolusRoot = resolve(outRoot, `.sonolus-build-${process.pid}`);
 const repoRoot = resolve(stagedSonolusRoot, "repository");
@@ -537,53 +546,59 @@ async function main() {
     configuration: addFile(requireFile(resolve(engineDir, "EngineConfiguration"))),
   };
 
-  const songs = parseSongs(await fetchJson(songsUrl));
-  const bandNames = buildBandNames();
+  // Charts are projected dynamically per release at serve time, so the baked
+  // level/playlist tree is only relevant to the legacy per-release payload. Skip it
+  // entirely in engine-only mode and keep just the engine + presentation items.
   const levels: LevelItem[] = [];
   const levelsByMusicId = new Map<number, LevelItem[]>();
   const levelPublishedAt = new Map<string, number>();
   const songPublishedAt = new Map<number, number>();
 
-  for (const song of songs.sort((a, b) => Number(a.musicId) - Number(b.musicId))) {
-    const artist =
-      songBandName(song, bandNames) ||
-      text(song.composer) ||
-      text(song.lyricist) ||
-      text(song.arranger) ||
-      "BanG Dream!";
-    for (const [index, diff] of (song.difficulty || []).entries()) {
-      const fileUrl = chartUrl(song, index, diff);
-      if (!fileUrl) continue;
+  if (!engineOnly) {
+    const songs = parseSongs(await fetchJson(songsUrl));
+    const bandNames = buildBandNames();
 
-      const chart = convertChart(await fetchText(fileUrl));
-      const levelData = chartToLevelData(chart);
-      const difficulty =
-        diff.difficultyName?.toLocaleLowerCase("en-US") || difficultyNames[index] || `difficulty-${index}`;
-      const item: LevelItem = {
-        name: `ourNotes-${song.musicId}-${difficulty}`,
-        source: address,
-        version: SONOLUS_ITEM_VERSIONS.level,
-        rating: Number(diff.playLevel || diff.displayLevel || 0),
-        engine,
-        useSkin: { useDefault: true },
-        useBackground: { useDefault: true },
-        useEffect: { useDefault: true },
-        useParticle: { useDefault: true },
-        title: text(song.musicTitle, `Music ${song.musicId}`),
-        artists: artist,
-        author: artist,
-        tags: [{ title: difficulty }],
-        cover: externalSrl(song.jacketUrl),
-        bgm: externalSrl(song.musicUrl || song.audio?.playableUrl),
-        data: addJson(levelData),
-      };
-      levels.push(item);
-      const songLevels = levelsByMusicId.get(song.musicId);
-      if (songLevels) songLevels.push(item);
-      else levelsByMusicId.set(song.musicId, [item]);
-      const releaseAt = publishedAt(diff.publishedAt ?? song.publishedAt);
-      levelPublishedAt.set(item.name, releaseAt);
-      songPublishedAt.set(song.musicId, Math.max(songPublishedAt.get(song.musicId) ?? 0, releaseAt));
+    for (const song of songs.sort((a, b) => Number(a.musicId) - Number(b.musicId))) {
+      const artist =
+        songBandName(song, bandNames) ||
+        text(song.composer) ||
+        text(song.lyricist) ||
+        text(song.arranger) ||
+        "BanG Dream!";
+      for (const [index, diff] of (song.difficulty || []).entries()) {
+        const fileUrl = chartUrl(song, index, diff);
+        if (!fileUrl) continue;
+
+        const chart = convertChart(await fetchText(fileUrl));
+        const levelData = chartToLevelData(chart);
+        const difficulty =
+          diff.difficultyName?.toLocaleLowerCase("en-US") || difficultyNames[index] || `difficulty-${index}`;
+        const item: LevelItem = {
+          name: `ourNotes-${song.musicId}-${difficulty}`,
+          source: address,
+          version: SONOLUS_ITEM_VERSIONS.level,
+          rating: Number(diff.playLevel || diff.displayLevel || 0),
+          engine,
+          useSkin: { useDefault: true },
+          useBackground: { useDefault: true },
+          useEffect: { useDefault: true },
+          useParticle: { useDefault: true },
+          title: text(song.musicTitle, `Music ${song.musicId}`),
+          artists: artist,
+          author: artist,
+          tags: [{ title: difficulty }],
+          cover: externalSrl(song.jacketUrl),
+          bgm: externalSrl(song.musicUrl || song.audio?.playableUrl),
+          data: addJson(levelData),
+        };
+        levels.push(item);
+        const songLevels = levelsByMusicId.get(song.musicId);
+        if (songLevels) songLevels.push(item);
+        else levelsByMusicId.set(song.musicId, [item]);
+        const releaseAt = publishedAt(diff.publishedAt ?? song.publishedAt);
+        levelPublishedAt.set(item.name, releaseAt);
+        songPublishedAt.set(song.musicId, Math.max(songPublishedAt.get(song.musicId) ?? 0, releaseAt));
+      }
     }
   }
 
@@ -621,8 +636,10 @@ async function main() {
       ];
     });
 
-  assertItemVersions("level", levels);
-  assertItemVersions("playlist", playlists);
+  if (!engineOnly) {
+    assertItemVersions("level", levels);
+    assertItemVersions("playlist", playlists);
+  }
   assertItemVersions("skin", [skin]);
   assertItemVersions("background", [backgroundBlue, backgroundTheatre]);
   assertItemVersions("effect", [effect]);
@@ -659,12 +676,14 @@ async function main() {
   } satisfies ServerInfo;
   writeJson("sonolus/info", serverInfo);
 
-  const randomLevels = playlists.flatMap((playlist) => {
-    const level = playlist.levels.find((item) => randomDifficulties.has(item.name.split("-").at(-1) ?? ""));
-    return level ? [level] : [];
-  });
-  writeGroup("playlists", "playlist", playlists, sampleRandom(playlists));
-  writeGroup("levels", "level", latestLevels, sampleRandom(randomLevels));
+  if (!engineOnly) {
+    const randomLevels = playlists.flatMap((playlist) => {
+      const level = playlist.levels.find((item) => randomDifficulties.has(item.name.split("-").at(-1) ?? ""));
+      return level ? [level] : [];
+    });
+    writeGroup("playlists", "playlist", playlists, sampleRandom(playlists));
+    writeGroup("levels", "level", latestLevels, sampleRandom(randomLevels));
+  }
   writeGroup("skins", "skin", [skin]);
   writeGroup("backgrounds", "background", [backgroundBlue, backgroundTheatre]);
   writeGroup("effects", "effect", [effect]);
@@ -674,7 +693,9 @@ async function main() {
   rmSync(finalSonolusRoot, { recursive: true, force: true });
   renameSync(stagedSonolusRoot, finalSonolusRoot);
 
-  console.log(`built Sonolus Worker assets: ${levels.length} levels -> ${outRoot}`);
+  console.log(
+    `built Sonolus ${engineOnly ? "engine payload" : `Worker assets: ${levels.length} levels`} -> ${outRoot}`,
+  );
 }
 
 try {

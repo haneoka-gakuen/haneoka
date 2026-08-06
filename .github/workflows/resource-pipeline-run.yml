@@ -144,7 +144,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
-      - uses: ./.github/actions/setup-sonolus-engine
       - name: Install FFmpeg
         run: |
           sudo apt-get update
@@ -271,7 +270,6 @@ jobs:
           SOURCE_ID="${{ needs.prepare.outputs.source_id }}"
           BUILD_ID="${{ needs.prepare.outputs.build_id }}"
           python scripts/pipeline.py --server "$RESOURCE_SERVER" build-api --source "$SOURCE_ID" --build "$BUILD_ID"
-          python scripts/pipeline.py --server "$RESOURCE_SERVER" build-sonolus --source "$SOURCE_ID" --build "$BUILD_ID"
           python scripts/pipeline.py --server "$RESOURCE_SERVER" build-release --source "$SOURCE_ID" --build "$BUILD_ID" > "$RUNNER_TEMP/release.json"
       - name: Publish CAS delta and switch current release
         run: |

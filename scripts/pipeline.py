@@ -15,7 +15,6 @@ from build.home_spots import build_home_spots, home_spot_source_bundle_paths
 from build.ktx2 import build_ktx2
 from build.live2d import build_live2d
 from build.release import assemble_release
-from build.sonolus import build_sonolus
 from core.config import ServerConfig, load_server_config
 from core.contracts import SOURCE_SCHEMA
 from core.fingerprints import build_fingerprint
@@ -29,6 +28,7 @@ from ingest.unity import index_unity_dependencies
 from publish.r2 import (
     R2Store,
     current_release_document,
+    download_current_release_paths,
     fetch_package_artifact,
     fetch_source,
     garbage_collect_cas,
@@ -242,12 +242,6 @@ def command_build_ktx2(args: argparse.Namespace) -> None:
     _print(build_ktx2(config.id, identity))
 
 
-def command_build_sonolus(args: argparse.Namespace) -> None:
-    config = load_server_config(args.server)
-    identity = args.build or build_id(config, args.source)
-    _print(build_sonolus(config.id, identity))
-
-
 def command_build_release(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
@@ -270,7 +264,10 @@ def _run_build(config: ServerConfig, source_id: str, identity: str, include_ktx2
         for future in [executor.submit(stage) for stage in stages]:
             future.result()
     build_api(config, source_id, identity)
-    build_sonolus(config.id, identity)
+    # NOTE: the Sonolus payload is intentionally NOT built here. It is decoupled
+    # from the resource pipeline (it is slow and changes independently): the engine
+    # is a shared global asset built via `pnpm sonolus:build`, and chart data is
+    # read from this release at serve time.
     return assemble_release(config.id, source_id, identity)
 
 
@@ -352,6 +349,45 @@ def command_fetch_home_spots(args: argparse.Namespace) -> None:
             config,
             args.source,
             paths=paths,
+        )
+    )
+
+
+def command_fetch_package(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    _print(
+        fetch_package_artifact(
+            R2Store(config, args.concurrency),
+            args.key,
+            Path(args.output),
+        )
+    )
+
+
+# Runtime slices the Sonolus engine payload build reads from a release
+# (see packages/sonolus/scripts/build-{native-effect-assets,original-assets}.ts).
+# Everything else in the payload is built from vendored sources or projected
+# dynamically per release, so these paths are the complete release-side input.
+SONOLUS_INPUT_PREFIXES = (
+    "runtime/note-se/",
+    "runtime/unity-json/Assets/AddressableResources/Live/NoteEffect/effect001/",
+    "runtime/unity-json/Assets/AddressableResources/Live/NoteEffect/common/anim/",
+    "runtime/unity/Assets/AddressableResources/Live/NoteEffect/common/",
+)
+SONOLUS_INPUT_EXACT_PATHS = (
+    "runtime/unity/Assets/AddressableResources/Live/Images/lane_effect_white.png",
+)
+
+
+def command_fetch_sonolus_inputs(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    _print(
+        download_current_release_paths(
+            R2Store(config, args.concurrency),
+            config,
+            SONOLUS_INPUT_PREFIXES,
+            SONOLUS_INPUT_EXACT_PATHS,
+            Path(args.output),
         )
     )
 
@@ -501,11 +537,6 @@ def parser() -> argparse.ArgumentParser:
     ktx2.add_argument("--build")
     ktx2.set_defaults(run=command_build_ktx2)
 
-    sonolus = commands.add_parser("build-sonolus", help="build Sonolus repository objects into the runtime tree")
-    sonolus.add_argument("--source", required=True)
-    sonolus.add_argument("--build")
-    sonolus.set_defaults(run=command_build_sonolus)
-
     release = commands.add_parser("build-release", help="assemble an immutable release")
     release.add_argument("--source", required=True)
     release.add_argument("--build")
@@ -559,6 +590,14 @@ def parser() -> argparse.ArgumentParser:
     home_spot_fetch.add_argument("--build")
     home_spot_fetch.add_argument("--concurrency", type=int, default=12)
     home_spot_fetch.set_defaults(run=command_fetch_home_spots)
+
+    sonolus_inputs = commands.add_parser(
+        "fetch-sonolus-inputs",
+        help="fetch the release runtime slices the Sonolus engine payload build needs",
+    )
+    sonolus_inputs.add_argument("--output", required=True)
+    sonolus_inputs.add_argument("--concurrency", type=int, default=12)
+    sonolus_inputs.set_defaults(run=command_fetch_sonolus_inputs)
 
     release_publish = commands.add_parser("publish-release", help="publish and atomically promote an R2 release")
     release_publish.add_argument("--release", required=True)

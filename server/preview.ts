@@ -681,6 +681,24 @@ function localSonolusAssetFile(workspace: Readonly<ReleaseWorkspace>, pathname: 
   return safeFile(workspace.runtimeRoot, pathname.slice(1));
 }
 
+// The engine + presentation payload is a shared global asset built once (via
+// `pnpm sonolus:build`) rather than per release. Prefer it for the engine
+// template, repository blobs, and licenses; fall back to a per-release runtime
+// tree only while the global payload is absent.
+const GLOBAL_SONOLUS_ROOT = path.resolve(ROOT, "data/sonolus/current/sonolus");
+
+function globalSonolusReleaseJson(releasePath: string): JsonValue | null {
+  const prefix = "runtime/sonolus/";
+  if (!releasePath.startsWith(prefix)) return null;
+  const file = safeFile(GLOBAL_SONOLUS_ROOT, releasePath.slice(prefix.length));
+  return file ? readJsonFile(file) : null;
+}
+
+function globalSonolusAssetFile(pathname: string): string | null {
+  if (!pathname.startsWith("/sonolus/repository/") && !pathname.startsWith("/sonolus/licenses/")) return null;
+  return safeFile(GLOBAL_SONOLUS_ROOT, pathname.slice("/sonolus/".length));
+}
+
 function localizeSonolusDocument(value: JsonValue, localOrigin: string): JsonValue {
   if (typeof value === "string") {
     return value
@@ -774,7 +792,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
     const localOrigin = `http://${req.headers.host ?? `127.0.0.1:${PORT}`}`;
     const revision = localSonolusRevision(releases, localOrigin);
-    const readJson = async (releasePath: string) => localReleaseJson(canonicalRelease.workspace, releasePath);
+    const readJson = async (releasePath: string) =>
+      globalSonolusReleaseJson(releasePath) ?? localReleaseJson(canonicalRelease.workspace, releasePath);
     const projected = await sonolusLevelService.handle({
       catalogProvider: localSonolusCatalogProvider(releases, localOrigin, revision),
       dataProvider: localSonolusDataProvider(releases),
@@ -809,7 +828,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
 
-    const file = localSonolusAssetFile(canonicalRelease.workspace, url.pathname);
+    const file = globalSonolusAssetFile(url.pathname) ?? localSonolusAssetFile(canonicalRelease.workspace, url.pathname);
     if (!file) {
       sonolusJson(req, res, 404, { message: "Not found" }, "no-store");
       return;

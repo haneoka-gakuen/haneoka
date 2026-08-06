@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 UINT32_MAX = 0xFFFFFFFF
 UNICODE_STRING_FLAG = 0x80000000
@@ -15,10 +15,27 @@ def _has_type(type_name: str | None, tail: str) -> bool:
     return bool(type_name and (tail in type_name.split(".") or type_name.endswith(tail)))
 
 
+def _http_safe_url(url: str) -> str:
+    """Percent-encode non-ASCII bytes so ``url`` is a valid HTTP URL (RFC 3986).
+
+    Unity Addressables asset paths occasionally carry non-ASCII characters — e.g.
+    the zero-width space U+200B embedded in some Anontokyo tile bundle names —
+    which are illegal in a URL. Per RFC 3986 each such character is encoded as its
+    UTF-8 byte sequence (U+200B → ``%E2%80%8B``); that is also what the CDN object
+    key decodes to, so the request still reaches the right object. Existing
+    ``%``-escapes and the ``/`` path delimiters are preserved, so URLs that are
+    already ASCII round-trip unchanged.
+    """
+    parsed = urlsplit(url)
+    path = quote(parsed.path, safe="/%") if parsed.path else ""
+    query = quote(parsed.query, safe="=+&;/%") if parsed.query else ""
+    return urlunsplit((parsed.scheme, parsed.netloc, path, query, parsed.fragment))
+
+
 def _remote_url(parts: list[str], remote_root: str = "") -> str:
     if parts and urlsplit(parts[-1]).scheme.lower() in {"http", "https"}:
         values = list(reversed(parts))
-        return f"{values[0]}/{'/'.join(values[1:])}"
+        return _http_safe_url(f"{values[0]}/{'/'.join(values[1:])}")
     # Unity Addressables stores remote bundle paths as
     # "<bundle>/{UnityEngine.AddressableAssets.Addressables.RuntimePath}/Android";
     # the {RuntimePath} token resolves to the CDN RemoteLoadPath at runtime. With no
@@ -37,8 +54,8 @@ def _remote_url(parts: list[str], remote_root: str = "") -> str:
 
         detokenized = [_detokenize(part) for part in parts]
         if detokenized != parts:
-            return "/".join(reversed(detokenized))
-    return "/".join(parts)
+            return _http_safe_url("/".join(reversed(detokenized)))
+    return _http_safe_url("/".join(parts))
 
 
 class CatalogReader:
