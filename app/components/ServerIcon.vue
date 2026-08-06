@@ -42,11 +42,11 @@ const props = withDefaults(
   width: 42%;
   height: 42%;
   place-items: center;
-  color: white;
-  border: max(1px, calc(var(--server-icon-size) * 0.04)) solid white;
+  color: var(--md-sys-color-on-primary);
+  border: max(1px, calc(var(--server-icon-size) * 0.04)) solid var(--md-sys-color-surface);
   border-radius: 50%;
-  background: #2e51a3;
-  box-shadow: 0 1px 3px rgb(28 39 63 / 0.28);
+  background: var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-level1);
   font-family: Arial, Helvetica, sans-serif;
   font-size: calc(var(--server-icon-size) * 0.31);
   font-weight: 700;

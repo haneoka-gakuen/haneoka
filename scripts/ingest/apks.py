@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import gzip
 import ipaddress
+import itertools
 import json
 import os
 import posixpath
 import re
 import socket
+import sys
 import threading
 import time
 import tempfile
@@ -271,6 +273,38 @@ def _asset_pack(package: Path, scratch: Path) -> Path:
         return output
 
 
+def _embedded_catalog(asset_pack: Path, scratch: Path) -> tuple[Path, Path, str, str, Path, str]:
+    """Offline Addressables catalog source: read it from the install-time asset-pack APK.
+
+    Servers without a reachable CDN (e.g. gl-cbt) ship the authoritative
+    ``catalog_main.hash`` / ``catalog_main.bin`` inside ``split_UnityDataAssetPack.apk``.
+    This returns the same tuple shape the remote-fetch path produces so the rest of
+    ``ingest_package`` is unchanged: (hash_file, catalog_file, catalog_hash, catalog_sha,
+    readable_catalog, encoding).
+    """
+    with open_validated_zip(asset_pack, "Unity asset-pack APK") as archive:
+        members = archive.infolist()
+        hash_entries = [member for member in members if member.filename.endswith("assets/aa/Android/catalog_main.hash")]
+        catalog_entries = [
+            member for member in members if member.filename.endswith("assets/aa/Android/catalog_main.bin")
+        ]
+        if len(hash_entries) != 1 or len(catalog_entries) != 1:
+            raise ValueError(
+                "offline ingest requires exactly one embedded catalog_main.hash and one "
+                f"catalog_main.bin in the asset-pack APK; found {len(hash_entries)}/{len(catalog_entries)}"
+            )
+        hash_file = scratch / "catalog_main.hash"
+        _copy_archive_entry(archive, hash_entries[0], hash_file, "embedded catalog hash")
+        catalog_hash = hash_file.read_text("utf-8").strip()
+        if len(catalog_hash) != 32 or any(value not in "0123456789abcdef" for value in catalog_hash.lower()):
+            raise ValueError(f"invalid embedded catalog hash: {catalog_hash}")
+        catalog_file = scratch / f"catalog_{catalog_hash}.bin"
+        _copy_archive_entry(archive, catalog_entries[0], catalog_file, "embedded Addressables catalog")
+    catalog_sha = sha256_file(catalog_file)
+    readable_catalog, catalog_encoding = _readable_catalog(catalog_file, scratch)
+    return hash_file, catalog_file, catalog_hash, catalog_sha, readable_catalog, catalog_encoding
+
+
 def _authorization(config: ServerConfig) -> str:
     value = os.environ.get(AUTHORIZATION_ENVIRONMENT, "").strip()
     if config.authorization_required and not value:
@@ -321,6 +355,10 @@ def _trusted_download_url(url: str, config: ServerConfig) -> str:
 
 
 def _require_public_resolution(url: str, config: ServerConfig) -> None:
+    if config.skip_public_resolution_check:
+        # Opt-out for CDNs reached through a host proxy whose fake-IP DNS maps public
+        # hosts into a reserved range (e.g. RFC 2544 198.18.0.0/15 used by Clash/Surge).
+        return
     parsed = urllib.parse.urlsplit(url)
     hostname = (parsed.hostname or "").lower().rstrip(".")
     port = parsed.port or 443
@@ -377,7 +415,8 @@ def _download(
     *,
     expected_bytes: int = 0,
     unity_version: str = "",
-) -> None:
+    missing_ok: bool = False,
+) -> bool:
     if expected_bytes < 0:
         raise ValueError("download expected size cannot be negative")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -393,9 +432,17 @@ def _download(
             ) as stream:
                 _trusted_download_url(response.geturl(), config)
                 content_encoding = str(response.headers.get("Content-Encoding", "identity")).strip().lower()
-                if content_encoding not in {"", "identity"}:
+                if content_encoding == "gzip":
+                    # Some CDNs (e.g. the jp-cbt Bushiroad CDN) auto-compress responses
+                    # with gzip. Decompress on the fly; Content-Length is the compressed
+                    # size so skip the declared-length check.
+                    source = gzip.GzipFile(fileobj=response)
+                    declared_length = None
+                elif content_encoding not in {"", "identity"}:
                     raise ValueError(f"download returned unsupported Content-Encoding: {content_encoding}")
-                declared_length = response.headers.get("Content-Length")
+                else:
+                    source = response
+                declared_length = response.headers.get("Content-Length") if content_encoding != "gzip" else None
                 if declared_length is not None:
                     try:
                         declared_bytes = int(declared_length)
@@ -408,7 +455,7 @@ def _download(
                             f"download Content-Length mismatch: expected {expected_bytes}, got {declared_bytes}"
                         )
                 actual_bytes = 0
-                for chunk in iter(lambda: response.read(STREAM_CHUNK_BYTES), b""):
+                for chunk in iter(lambda: source.read(STREAM_CHUNK_BYTES), b""):
                     actual_bytes += len(chunk)
                     if expected_bytes and actual_bytes > expected_bytes:
                         raise ValueError(
@@ -425,6 +472,11 @@ def _download(
                 break
         except urllib.error.HTTPError as error:
             failure = error
+            if error.code in {403, 404} and missing_ok:
+                # Some CDNs return 403 instead of 404 for non-existent objects.
+                temporary.unlink(missing_ok=True)
+                sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
+                return False
             if error.code in {401, 403, 404} or error.code < 500:
                 hint = f"; configure {AUTHORIZATION_ENVIRONMENT}" if error.code == 401 else ""
                 temporary.unlink(missing_ok=True)
@@ -440,6 +492,7 @@ def _download(
     if failure is not None:
         raise RuntimeError(f"download failed after 5 attempts: {url}: {failure}") from failure
     os.replace(temporary, output)
+    return True
 
 
 def _copy_archive_entry(
@@ -521,27 +574,67 @@ def ingest_package(
             raise ValueError(f"package name mismatch: {package_metadata['packageName']} != {config.package_name}")
         asset_pack = _asset_pack(package, scratch)
 
-        remote_hash_file = scratch / "catalog_main.hash"
-        if not config.remote_root:
-            raise ValueError(f"remoteRoot is not configured for {config.id}")
-        _download(
-            f"{config.remote_root}/catalog_main.hash",
-            remote_hash_file,
-            config,
-            unity_version=unity_version,
-        )
-        catalog_hash = remote_hash_file.read_text("ascii").strip()
-        if len(catalog_hash) != 32 or any(value not in "0123456789abcdef" for value in catalog_hash.lower()):
-            raise ValueError(f"invalid remote catalog hash: {catalog_hash}")
-        remote_catalog = scratch / f"catalog_{catalog_hash}.bin"
-        _download(
-            f"{config.remote_root}/catalog_{catalog_hash}.bin",
-            remote_catalog,
-            config,
-            unity_version=unity_version,
-        )
-        catalog_sha = sha256_file(remote_catalog)
-        readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
+        # Parse locale:path pairs from HANEOKA_SOURCE_CATALOGS (or single path from
+        # HANEOKA_SOURCE_CATALOG). Each extra-locale catalog's bundles are tagged so
+        # the extraction can namespace locale-variant assets (avoiding path collisions).
+        _raw_catalogs = os.environ.get("HANEOKA_SOURCE_CATALOGS", "").strip()
+        _raw_single = os.environ.get("HANEOKA_SOURCE_CATALOG", "").strip()
+        catalog_entries: list[tuple[str, Path]] = []
+        for entry in (_raw_catalogs.split(",") if _raw_catalogs else [_raw_single] if _raw_single else []):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if ":" in entry and not entry.startswith("/"):
+                locale_str, path_str = entry.split(":", 1)
+                catalog_entries.append((locale_str.strip(), Path(path_str.strip())))
+            else:
+                catalog_entries.append(("", Path(entry)))
+        extra_readable_catalogs: list[tuple[str, Path]] = []
+        if catalog_entries:
+            _primary_locale, catalog_path = catalog_entries[0]
+            catalog_sha = sha256_file(catalog_path)
+            catalog_hash = catalog_sha[:32]
+            remote_hash_file = scratch / "catalog_main.hash"
+            remote_hash_file.write_text(catalog_hash, "utf-8")
+            remote_catalog = scratch / f"catalog_{catalog_hash}.bin"
+            _copy_file(catalog_path, remote_catalog, "override Addressables catalog (primary)")
+            readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
+            for locale_tag, extra_path in catalog_entries[1:]:
+                extra_copy = scratch / f"catalog_extra_{locale_tag or 'x'}.bin"
+                _copy_file(extra_path, extra_copy, f"override Addressables catalog ({locale_tag})")
+                extra_readable, _ = _readable_catalog(extra_copy, scratch)
+                extra_readable_catalogs.append((locale_tag, extra_readable))
+        elif config.offline:
+            (
+                remote_hash_file,
+                remote_catalog,
+                catalog_hash,
+                catalog_sha,
+                readable_catalog,
+                catalog_encoding,
+            ) = _embedded_catalog(asset_pack, scratch)
+        else:
+            remote_hash_file = scratch / "catalog_main.hash"
+            if not config.remote_root:
+                raise ValueError(f"remoteRoot is not configured for {config.id}")
+            _download(
+                f"{config.remote_root}/catalog_main.hash",
+                remote_hash_file,
+                config,
+                unity_version=unity_version,
+            )
+            catalog_hash = remote_hash_file.read_text("utf-8").strip()
+            if len(catalog_hash) != 32 or any(value not in "0123456789abcdef" for value in catalog_hash.lower()):
+                raise ValueError(f"invalid remote catalog hash: {catalog_hash}")
+            remote_catalog = scratch / f"catalog_{catalog_hash}.bin"
+            _download(
+                f"{config.remote_root}/catalog_{catalog_hash}.bin",
+                remote_catalog,
+                config,
+                unity_version=unity_version,
+            )
+            catalog_sha = sha256_file(remote_catalog)
+            readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
 
         version = package_metadata["versionCode"] or "unknown"
         source_id = f"v{version}-{package_sha[:12]}-{catalog_sha[:12]}"
@@ -613,8 +706,13 @@ def ingest_package(
                     f"embedded Unity bundle {entry.filename}",
                 )
 
+        all_locations = [
+            (locale_tag, loc)
+            for locale_tag, cat in [("", readable_catalog), *extra_readable_catalogs]
+            for loc in downloadable_locations(cat, config.remote_root)
+        ]
         plans: dict[str, tuple[dict[str, Any], Path, dict[str, Any], int]] = {}
-        for location in downloadable_locations(readable_catalog):
+        for locale_tag, location in all_locations:
             filename = _download_filename((location.get("primaryParts") or [""])[0])
             is_bundle = filename.endswith(".bundle")
             target = (layout.bundles if is_bundle else layout.cri) / filename
@@ -630,14 +728,19 @@ def ingest_package(
                 "primaryParts": location.get("primaryParts", []),
                 "url": location["remoteUrl"],
             }
+            if locale_tag:
+                addressables["locale"] = locale_tag
             existing_plan = plans.get(filename)
             if existing_plan:
-                if existing_plan[2] != addressables or existing_plan[3] != expected:
+                # Shared bundles appear in multiple locale catalogs. The locale tag
+                # is the only difference; compare without it to detect real collisions.
+                _strip_locale = lambda d: {k: v for k, v in d.items() if k != "locale"}
+                if _strip_locale(existing_plan[2]) != _strip_locale(addressables) or existing_plan[3] != expected:
                     raise ValueError(f"Addressables filename collision: {filename}")
                 continue
             plans[filename] = (location, target, addressables, expected)
 
-        def materialize(plan: tuple[dict[str, Any], Path, dict[str, Any], int]) -> tuple[Path, dict[str, Any]]:
+        def materialize(plan: tuple[dict[str, Any], Path, dict[str, Any], int]) -> tuple[Path, dict[str, Any]] | None:
             location, target, addressables, expected = plan
             filename = target.name
             if target.is_file() and (not expected or target.stat().st_size == expected):
@@ -649,13 +752,16 @@ def ingest_package(
                 if cached and cached.is_file() and (not expected or cached.stat().st_size == expected):
                     actual = _copy_file(cached, target, f"cached artifact {filename}")
                 else:
-                    _download(
+                    if not _download(
                         location["remoteUrl"],
                         target,
                         config,
                         expected_bytes=expected,
                         unity_version=unity_version,
-                    )
+                        missing_ok=True,
+                    ):
+                        sys.stderr.write(f"warning: artifact not on CDN, skipping: {filename}\n")
+                        return None
                     actual = _required_file_size(target, f"artifact {filename}")
             if expected and actual != expected:
                 raise ValueError(
@@ -664,7 +770,10 @@ def ingest_package(
             return target, addressables
 
         with ThreadPoolExecutor(max_workers=max(1, min(int(concurrency), 32))) as executor:
-            for target, addressables in executor.map(materialize, plans.values()):
+            for result in executor.map(materialize, plans.values()):
+                if result is None:
+                    continue
+                target, addressables = result
                 addressables_by_file[target] = addressables
 
         # Embedded and remote catalogs may point to the same filename. Rebuild a

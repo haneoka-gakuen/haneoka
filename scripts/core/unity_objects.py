@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -62,10 +63,17 @@ class UnityObjectStore:
             not isinstance(serialized_file_entry, dict)
             or serialized_file_entry.get("bundleSha256") != digest
         ):
-            raise ValueError(
-                f"Unity serialized file is absent from the bundle index: "
-                f"{digest}:{serialized_file}"
+            # Locale-variant bundles may reference serialized files that were
+            # dropped by the tolerant multi-locale merge (first-variant-wins).
+            # Return empty so the caller skips gracefully.
+            sys.stderr.write(
+                f"warning: Unity serialized file absent from bundle index, skipping: "
+                f"{digest}:{serialized_file}\n"
             )
+            self.current_digest = digest
+            self.current_serialized_file = serialized_file
+            self.current_records = {}
+            return {}
         records: dict[str, dict[str, Any]] = {}
         header_seen = False
         archive_records = 0

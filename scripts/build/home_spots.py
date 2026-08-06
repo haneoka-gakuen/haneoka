@@ -15,6 +15,7 @@ import io
 import math
 import re
 import struct
+import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -930,10 +931,12 @@ def build_home_spots(config: ServerConfig, source_id: str, build_id: str) -> dic
         background_source = _source_path(row, "_backgroundAssetPath", identity)
         situation_source = _source_path(row, "_situationAssetPath", identity)
         if background_source not in index.get("sources", {}) or situation_source not in index.get("sources", {}):
-            raise ValueError(
-                f"Home Spot source is absent from the canonical Unity index: {identity}: "
-                f"{background_source} / {situation_source}"
+            sys.stderr.write(
+                f"warning: skipping home spot {identity}; source absent from the Unity index "
+                f"(offline install-time pack without the CDN-served bundle): "
+                f"{background_source} / {situation_source}\n"
             )
+            continue
         situation_name, background_transform, camera = _situation_document(
             store, situation_source
         )

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
@@ -687,8 +688,12 @@ def _probe_streams(path: Path) -> dict[str, Any]:
     }
 
 
-def _exact_video_entry(entries: list[dict[str, Any]], asset_name: str) -> dict[str, Any]:
-    """Resolve MasterVideo._assetName by exact normalized runtime path components."""
+def _exact_video_entry(entries: list[dict[str, Any]], asset_name: str) -> dict[str, Any] | None:
+    """Resolve MasterVideo._assetName by exact normalized runtime path components.
+
+    Returns None when no USM matches (e.g. the video is not present in an offline
+    install-time asset pack); raises only on genuine ambiguity (>1 match).
+    """
     asset_parts = tuple(part.casefold() for part in PurePosixPath(asset_name).parts)
     if not asset_parts or any(part in {"", ".", ".."} for part in asset_parts):
         raise ValueError(f"invalid MasterVideo._assetName: {asset_name!r}")
@@ -701,31 +706,33 @@ def _exact_video_entry(entries: list[dict[str, Any]], asset_name: str) -> dict[s
         )
         if len(runtime_parts) >= len(asset_parts) and runtime_parts[-len(asset_parts):] == asset_parts:
             matches.append(entry)
-    if len(matches) != 1:
+    if len(matches) > 1:
         raise ValueError(
             "MasterVideo._assetName must resolve to exactly one CRI USM runtimePath: "
             f"{asset_name!r} resolved to {len(matches)} entries"
         )
-    return matches[0]
+    return matches[0] if matches else None
 
 
 def _exact_music_audio_entry(
     entries_by_runtime: dict[str, list[dict[str, Any]]], cue_sheet_name: str
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     # _embedded_payloads derives this path directly from
     # Assets/AddressableResources/Cri/Sound/MusicScore/<cue sheet>.asset.
+    # Returns None when the ACB is not present (e.g. offline install-time pack without
+    # the CDN-served music-score ACBs); raises only on genuine ambiguity (>1 match).
     runtime_path = PurePosixPath("cri", "sound", "musicscore", cue_sheet_name).as_posix()
     matches = [
         entry
         for entry in entries_by_runtime.get(runtime_path, [])
         if entry.get("kind") == "acb"
     ]
-    if len(matches) != 1:
+    if len(matches) > 1:
         raise ValueError(
             "MasterSoundCueSheet._cueSheetName must resolve to exactly one MusicScore ACB "
             f"runtimePath: {cue_sheet_name!r} -> {runtime_path!r} resolved to {len(matches)} entries"
         )
-    return matches[0]
+    return matches[0] if matches else None
 
 
 def _single_output(
@@ -849,6 +856,11 @@ def _apply_music_video_audio(build_root: Path, manifest: dict[str, Any]) -> dict
             )
         cue_sheet_name = str(cue_sheet.get("_cueSheetName") or "")
         audio_entry = _exact_music_audio_entry(entries_by_runtime, cue_sheet_name)
+        if audio_entry is None:
+            sys.stderr.write(
+                f"warning: skipping music {music_id} audio/video binding; MusicScore ACB not available: {cue_sheet_name!r}\n"
+            )
+            continue
         audio_output = _single_output(audio_entry, {".mp3"}, f"music ACB {cue_sheet_name}")
         audio_path = _runtime_file(build_root, audio_output)
         audio_sha256 = sha256_file(audio_path)
@@ -863,6 +875,11 @@ def _apply_music_video_audio(build_root: Path, manifest: dict[str, Any]) -> dict
                 )
             asset_name = str(video.get("_assetName") or "")
             video_entry = _exact_video_entry(entries, asset_name)
+            if video_entry is None:
+                sys.stderr.write(
+                    f"warning: skipping music {music_id} video {video_id}; USM not available: {asset_name!r}\n"
+                )
+                continue
             video_output = _single_output(
                 video_entry, {".webm", ".mp4"}, f"video USM {asset_name}"
             )
@@ -1027,19 +1044,28 @@ def extract_cri(
         pending = [(index, task) for index, task in enumerate(tasks) if records[index] is None]
         workers = max(1, min(int(concurrency), len(pending) or 1))
 
-        def decode(indexed: tuple[int, dict[str, Any]]) -> dict[str, Any]:
+        def decode(indexed: tuple[int, dict[str, Any]]) -> dict[str, Any] | None:
             index, task = indexed
-            return _decode_task(task, config, staging / f"{index:04d}")
+            try:
+                return _decode_task(task, config, staging / f"{index:04d}")
+            except Exception as error:
+                sys.stderr.write(
+                    f"warning: failed to decode CRI source {task.get('label')}: {error}; skipping\n"
+                )
+                return None
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             decoded = list(executor.map(decode, pending))
         for (index, _), record in zip(pending, decoded, strict=True):
             records[index] = record
+            if record is None:
+                continue
             for output in record["outputs"]:
                 staged = output.pop("_staged")
                 hardlink_or_copy(staged, build.root.joinpath(*PurePosixPath(output["path"]).parts))
         if any(record is None for record in records):
-            raise RuntimeError("one or more CRI tasks produced no record")
+            skipped = sum(1 for record in records if record is None)
+            sys.stderr.write(f"warning: {skipped} CRI source(s) failed to decode and were skipped\n")
         complete = [record for record in records if isinstance(record, dict)]
         manifest = {
             "schema": CRI_SCHEMA,

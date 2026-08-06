@@ -35,7 +35,7 @@ if (BESTDORI_RAW_MIRROR_ROOT && !fs.statSync(BESTDORI_RAW_MIRROR_ROOT, { throwIf
   throw new Error(`BESTDORI_RAW_MIRROR_ROOT is not a directory: ${BESTDORI_RAW_MIRROR_ROOT}`);
 }
 const BESTDORI_PROVIDER_ORIGIN = configuredHttpOrigin("BESTDORI_PROVIDER_ORIGIN");
-const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "jp-cbt")
+const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "jp-cbt,gl-cbt")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -694,16 +694,26 @@ function localizeSonolusDocument(value: JsonValue, localOrigin: string): JsonVal
   );
 }
 
+// Preview has no D1 resource-server administration data, so hand-list the labels
+// for known CBT servers (matching the Worker's resource_server seed rows) instead
+// of showing the bare slug. Unknown servers fall back to the slug-derived form.
+const LOCAL_RELEASE_LABELS: Readonly<Record<string, { displayName: string; region: string }>> = {
+  "jp-cbt": { displayName: "Japan CBT", region: "jp" },
+  "gl-cbt": { displayName: "Global CBT", region: "global" },
+};
+
 function localReleaseRegistry(): JsonObject {
   return {
-    releases: RELEASE_SERVERS.map((id) => ({
-      id,
-      // Preview has no D1 resource-server administration data. Keep this
-      // intentionally minimal while preserving the same public registry shape
-      // as the Worker, so the client never invents a Bestdori pseudo-server.
-      displayName: id,
-      region: id.split("-", 1)[0] || "global",
-    })),
+    releases: RELEASE_SERVERS.map((id) => {
+      const label = LOCAL_RELEASE_LABELS[id];
+      return {
+        id,
+        // Keep the same public registry shape as the Worker, so the client
+        // never invents a Bestdori pseudo-server.
+        displayName: label?.displayName ?? id,
+        region: label?.region ?? id.split("-", 1)[0] ?? "global",
+      };
+    }),
   };
 }
 
@@ -897,12 +907,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
 
-  const staticFile = safeFile(DIST, url.pathname === "/" ? "index.html" : url.pathname.slice(1));
-  if (staticFile) {
-    sendFile(req, res, staticFile, "no-cache");
-    return;
+  const relativePath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+  // Resolve prerendered pages whether Nuxt emitted them as ${path}/index.html
+  // (directory style) or ${path}.html, then fall back to the generic SPA shell.
+  const candidates = [relativePath];
+  if (url.pathname !== "/") {
+    candidates.push(`${relativePath}/index.html`, `${relativePath}.html`);
   }
-  const applicationEntry = safeFile(DIST, "index.html");
+  for (const candidate of candidates) {
+    const file = safeFile(DIST, candidate);
+    if (file) {
+      sendFile(req, res, file, "no-cache");
+      return;
+    }
+  }
+  // Unknown route → generic SPA shell. Prefer 200.html (Nuxt SPA fallback) so
+  // the route hydrates from the browser URL; index.html is a last resort.
+  const applicationEntry = safeFile(DIST, "200.html") ?? safeFile(DIST, "index.html");
   if (applicationEntry) {
     sendFile(req, res, applicationEntry, "no-cache");
   } else {

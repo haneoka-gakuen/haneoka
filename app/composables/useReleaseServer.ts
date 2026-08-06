@@ -1,7 +1,7 @@
 import { isAcceptedExternalResourceUrl } from "~/features/resources/sourcePolicies";
 import type { OurNotesRelease } from "~/features/catalog/contentSource";
 
-export const DEFAULT_RELEASE_SERVER = "jp-cbt";
+export const DEFAULT_RELEASE_SERVER = "gl-cbt";
 export const RELEASE_SERVER_STORAGE_KEY = "haneoka.release-server";
 
 /** Normalize an Our Notes release-server identifier. */

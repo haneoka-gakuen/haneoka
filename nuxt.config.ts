@@ -5,14 +5,14 @@ const materializedDependencyWorkspace = fileURLToPath(new URL("./.dependencies",
 
 const configuredReleaseServers = [
   ...new Set(
-    String(process.env.RELEASE_SERVERS || "jp-cbt")
+    String(process.env.RELEASE_SERVERS || "jp-cbt,gl-cbt")
       .split(",")
       .map((server) => server.trim())
       .filter(Boolean),
   ),
 ];
 const preferredReleaseServer = String(process.env.RELEASE_SERVER || "").trim();
-const defaultReleaseServer = preferredReleaseServer || configuredReleaseServers[0] || "jp-cbt";
+const defaultReleaseServer = preferredReleaseServer || "gl-cbt";
 const siteOrigin = "https://haneoka.org";
 const siteTitle = "haneoka";
 const siteDescription = "A public resource archive, event dashboard, and community for BanG Dream! Our Notes.";
@@ -54,10 +54,12 @@ const localProxy = {
 export default defineNuxtConfig({
   compatibilityDate: "2026-02-14",
   devtools: { enabled: false },
-  // The Worker falls back to the root static entry for client-side routes.
-  // Keep this application as an SPA so a direct refresh derives the route
-  // from the browser URL instead of hydrating the fallback page as home.
-  ssr: false,
+  // Public content surfaces are server-rendered so the first paint arrives
+  // with the HTML instead of waiting for the entry chunk to boot. Authenticated
+  // and highly dynamic surfaces stay client-rendered via routeRules below;
+  // unknown routes fall back to the generic SPA shell (200.html) served by the
+  // Worker, so a direct refresh never hydrates a content page as the wrong route.
+  ssr: true,
   components: [{ path: "~/components", pathPrefix: false }],
   imports: {
     transform: {
@@ -135,8 +137,55 @@ export default defineNuxtConfig({
       },
     },
   },
+  routeRules: {
+    // Authenticated and browser-only surfaces render client-side; their session
+    // and catalog work must not run during SSR.
+    "/account/**": { ssr: false },
+    "/admin/**": { ssr: false },
+    "/settings/**": { ssr: false },
+    "/tools/**": { ssr: false },
+    "/community/**": { ssr: false },
+    // The asset explorer is a catch-all ([...path]) with an unbounded param
+    // space, so it is client-rendered rather than prerendered per path.
+    "/catalog/assets/**": { ssr: false },
+  },
   nitro: {
-    prerender: { routes: ["/", "/privacy", "/terms"] },
+    prerender: {
+      // Prerender only the closed set of static public routes. Anything not
+      // listed here is served from the generic SPA fallback (200.html), which
+      // preserves the previous client-rendered behaviour for dynamic routes.
+      crawlLinks: false,
+      routes: [
+        "/",
+        "/about",
+        "/privacy",
+        "/terms",
+        "/catalog",
+        "/catalog/band-items",
+        "/catalog/challenge",
+        "/catalog/characters",
+        "/catalog/circle",
+        "/catalog/comics",
+        "/catalog/events",
+        "/catalog/exchange",
+        "/catalog/gacha",
+        "/catalog/help",
+        "/catalog/items",
+        "/catalog/live2d",
+        "/catalog/login-campaigns",
+        "/catalog/member-cards",
+        "/catalog/shop",
+        "/catalog/songs",
+        "/catalog/stamps",
+        "/catalog/stories",
+        "/catalog/stories/afterlive",
+        "/catalog/stories/band",
+        "/catalog/stories/home",
+        "/catalog/stories/link",
+        "/catalog/stories/tutorial",
+        "/catalog/support-cards",
+      ],
+    },
   },
   experimental: {
     // Route components and full-screen runtimes are loaded lazily. Reload once

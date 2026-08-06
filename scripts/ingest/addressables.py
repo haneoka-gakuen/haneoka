@@ -8,10 +8,10 @@ from typing import Any
 from ingest.catalog import downloadable_locations as _catalog_locations
 
 
-def downloadable_locations(catalog: Path) -> list[dict[str, Any]]:
+def downloadable_locations(catalog: Path, remote_root: str = "") -> list[dict[str, Any]]:
     """Return unique remote locations in deterministic catalog order."""
 
     return sorted(
-        _catalog_locations(catalog),
+        _catalog_locations(catalog, remote_root),
         key=lambda item: (str(item.get("remoteUrl", "")), str(item.get("primaryKey", ""))),
     )

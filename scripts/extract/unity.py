@@ -30,6 +30,21 @@ def _pointer_id(pointer: Any) -> int:
     return int(getattr(pointer, "path_id", None) or getattr(pointer, "m_PathID", 0) or 0)
 
 
+def _locale_namespaced_path(path: str, locale: str) -> str:
+    """Insert ({locale}) before the extension of the last path segment.
+
+    E.g. ``Assets/.../band_logo.png`` → ``Assets/.../band_logo(ja).png``.
+    This lets locale-variant bundles coexist without m_Container path collisions.
+    """
+    slash = path.rfind("/")
+    parent = path[: slash + 1] if slash >= 0 else ""
+    leaf = path[slash + 1 :] if slash >= 0 else path
+    if "." in leaf:
+        stem, dot, ext = leaf.rpartition(".")
+        return f"{parent}{stem}({locale}).{ext}"
+    return f"{parent}{leaf}({locale})"
+
+
 def _safe_name(value: Any, fallback: str) -> str:
     name = re.sub(r"[\\/:\x00]+", "_", str(value or "").strip())
     return name or fallback
@@ -137,7 +152,7 @@ def _pointer_identity(pointer: Any) -> tuple[str, int] | None:
 
 
 def _source_groups(
-    bundle: Any, objects_by_identity: dict[tuple[str, int], Any]
+    bundle: Any, objects_by_identity: dict[tuple[str, int], Any], locale: str = ""
 ) -> list[SourceGroup]:
     groups: dict[str, SourceGroup] = {}
     bundle_serialized_file = str(bundle.object_reader.assets_file.name)
@@ -145,6 +160,8 @@ def _source_groups(
     preload_table = list(getattr(bundle, "m_PreloadTable", []) or [])
     for raw_path, info in list(getattr(bundle, "m_Container", []) or []):
         source_path = validate_unity_path(raw_path)
+        if locale:
+            source_path = _locale_namespaced_path(source_path, locale)
         root_pointer = getattr(info, "asset", None)
         root_reference = _pointer_identity(root_pointer)
         if _pointer_id(root_pointer) and root_reference is None:
@@ -472,8 +489,9 @@ def extract_bundle(
             f"{artifact['originalFilename']}"
         )
     bundle_object = next((obj for obj in objects if obj.type.name == "AssetBundle"), None)
+    locale = str((artifact.get("addressables") or {}).get("locale", ""))
     groups = (
-        _source_groups(bundle_object.read(), objects_by_identity)
+        _source_groups(bundle_object.read(), objects_by_identity, locale)
         if bundle_object
         else []
     )

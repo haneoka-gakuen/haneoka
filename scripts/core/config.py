@@ -24,6 +24,8 @@ class ServerConfig:
     r2_bucket: str
     release_retention: int
     authorization_required: bool
+    offline: bool
+    skip_public_resolution_check: bool
     remote_root: str
     cri_hca_key: str
     master_crypto: dict[str, str]
@@ -52,6 +54,8 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "r2Bucket",
         "releaseRetention",
         "authorizationRequired",
+        "offline",
+        "skipPublicResolutionCheck",
         "remoteRoot",
         "criHcaKey",
         "masterCrypto",
@@ -65,37 +69,49 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     retention = value.get("releaseRetention")
     if not isinstance(retention, int) or not 2 <= retention <= 10:
         raise ValueError(f"invalid releaseRetention: {file}")
-    required_strings = ("packageName", "unityVersion", "r2Bucket", "remoteRoot", "criHcaKey")
+    offline = value.get("offline", False)
+    if not isinstance(offline, bool):
+        raise ValueError(f"invalid offline: {file}")
+    skip_public_resolution_check = value.get("skipPublicResolutionCheck", False)
+    if not isinstance(skip_public_resolution_check, bool):
+        raise ValueError(f"invalid skipPublicResolutionCheck: {file}")
+    required_strings = ("packageName", "unityVersion", "r2Bucket", "criHcaKey")
     if any(not isinstance(value.get(key), str) or not value[key] for key in required_strings):
         raise ValueError(f"required server configuration string is missing: {file}")
-    remote_root = urlsplit(value["remoteRoot"])
-    remote_hostname = (remote_root.hostname or "").lower().rstrip(".")
-    try:
-        remote_port = remote_root.port
-    except ValueError as error:
-        raise ValueError(f"invalid remoteRoot port: {file}") from error
-    if (
-        value.get("platform") != "Android"
-        or remote_root.scheme.lower() != "https"
-        or not remote_hostname
-        or remote_root.username is not None
-        or remote_root.password is not None
-        or remote_root.query
-        or remote_root.fragment
-        or remote_port not in {None, 443}
-        or "\\" in remote_root.path
-        or unquote(unquote(remote_root.path)) != unquote(remote_root.path)
-        or any(part in {".", ".."} for part in unquote(remote_root.path).split("/"))
-    ):
-        raise ValueError(f"unsupported platform or remoteRoot: {file}")
-    try:
-        remote_address = ipaddress.ip_address(remote_hostname)
-    except ValueError:
-        if remote_hostname == "localhost" or remote_hostname.endswith((".localhost", ".local")):
-            raise ValueError(f"remoteRoot must use a public host: {file}")
-    else:
-        if not remote_address.is_global:
-            raise ValueError(f"remoteRoot must use a public address: {file}")
+    remote_root_value = value.get("remoteRoot")
+    if isinstance(remote_root_value, str) and remote_root_value:
+        # Validate whenever a remoteRoot is supplied — for online builds and for offline
+        # builds that still download non-embedded bundles from the CDN (gl-cbt model).
+        remote_root = urlsplit(remote_root_value)
+        remote_hostname = (remote_root.hostname or "").lower().rstrip(".")
+        try:
+            remote_port = remote_root.port
+        except ValueError as error:
+            raise ValueError(f"invalid remoteRoot port: {file}") from error
+        if (
+            value.get("platform") != "Android"
+            or remote_root.scheme.lower() != "https"
+            or not remote_hostname
+            or remote_root.username is not None
+            or remote_root.password is not None
+            or remote_root.query
+            or remote_root.fragment
+            or remote_port not in {None, 443}
+            or "\\" in remote_root.path
+            or unquote(unquote(remote_root.path)) != unquote(remote_root.path)
+            or any(part in {".", ".."} for part in unquote(remote_root.path).split("/"))
+        ):
+            raise ValueError(f"unsupported platform or remoteRoot: {file}")
+        try:
+            remote_address = ipaddress.ip_address(remote_hostname)
+        except ValueError:
+            if remote_hostname == "localhost" or remote_hostname.endswith((".localhost", ".local")):
+                raise ValueError(f"remoteRoot must use a public host: {file}")
+        else:
+            if not remote_address.is_global:
+                raise ValueError(f"remoteRoot must use a public address: {file}")
+    elif not offline:
+        raise ValueError(f"required server configuration string is missing: {file}")
     authorization_required = value.get("authorizationRequired")
     if not isinstance(authorization_required, bool):
         raise ValueError(f"invalid authorizationRequired: {file}")
@@ -115,6 +131,8 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         r2_bucket=value["r2Bucket"],
         release_retention=retention,
         authorization_required=authorization_required,
+        offline=offline,
+        skip_public_resolution_check=skip_public_resolution_check,
         remote_root=value.get("remoteRoot", "").rstrip("/"),
         cri_hca_key=str(value.get("criHcaKey", "")),
         master_crypto=crypto,

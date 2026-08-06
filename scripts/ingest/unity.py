@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -59,10 +60,14 @@ def index_unity_dependencies(source_root: Path, records: list[dict[str, Any]]) -
         for cab in value["cabFiles"]:
             existing = owners.get(cab)
             if existing and existing["sha256"] != record["sha256"]:
-                raise ValueError(
-                    f"Unity CAB identity belongs to different bundles: {cab} "
-                    f"({existing['path']}, {relative})"
+                # Locale variants of the same Unity asset (e.g. band_logo(ja) vs
+                # band_logo(en)) produce different bundles that share the same internal
+                # CAB name. Keep the first owner rather than aborting the multi-locale merge.
+                sys.stderr.write(
+                    f"warning: Unity CAB identity {cab} appears in multiple bundles "
+                    f"({existing['path']}, {relative}); keeping first owner\n"
                 )
+                continue
             if existing is None or relative < existing["path"]:
                 owners[cab] = record
 

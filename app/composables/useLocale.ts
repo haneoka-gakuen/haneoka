@@ -131,22 +131,27 @@ const observeContentFonts = () => {
   else document.addEventListener("DOMContentLoaded", start, { once: true });
 };
 
-const applyLocaleToDocument = (locale: ArchiveLocale) => {
+const applyLocaleToDocument = (locale: ArchiveLocale, options: { persist?: boolean } = {}) => {
   const languageTag = localeTagFor(locale);
   if (!import.meta.client || (appliedLocale === locale && document.documentElement.lang === languageTag)) return;
   appliedLocale = locale;
   loadLocaleFont(locale);
-  try {
-    localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-  } catch {
-    // Locale remains active for the current session.
+  // Persistence is deferred until after the stored preference has been restored
+  // post-hydration, so applying the boot default during setup never overwrites
+  // the user's stored choice.
+  if (options.persist) {
+    try {
+      localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // Locale remains active for the current session.
+    }
+    // Authentication emails are rendered by the worker, so mirror the UI
+    // preference in a same-origin cookie it can read. This is not sensitive
+    // state; the localStorage copy remains the browser-side source of truth.
+    document.cookie = `${LOCALE_STORAGE_KEY}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax${
+      location.protocol === "https:" ? "; Secure" : ""
+    }`;
   }
-  // Authentication emails are rendered by the worker, so mirror the UI
-  // preference in a same-origin cookie it can read. This is not sensitive
-  // state; the localStorage copy remains the browser-side source of truth.
-  document.cookie = `${LOCALE_STORAGE_KEY}=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax${
-    location.protocol === "https:" ? "; Secure" : ""
-  }`;
   document.documentElement.lang = languageTag;
 };
 
@@ -158,15 +163,22 @@ export const useLocale = () => {
 
   observeContentFonts();
 
-  if (import.meta.client && !ready.value) {
-    locale.value = normalizeArchiveLocale(readStoredLocale(), detectLocale());
+  // Resolve the persisted locale after hydration. Resolving during setup would
+  // (a) render the user's locale before the server-rendered default-locale HTML
+  // is hydrated, causing a hydration mismatch, and (b) let the boot default
+  // clobber the stored preference before it is read. The initial client render
+  // therefore stays in the default locale and swaps once mounted.
+  onMounted(() => {
+    if (!import.meta.client || ready.value) return;
     ready.value = true;
-  }
+    const resolved = normalizeArchiveLocale(readStoredLocale(), detectLocale());
+    if (locale.value !== resolved) locale.value = resolved;
+  });
 
   watch(
     locale,
     (value) => {
-      applyLocaleToDocument(value);
+      applyLocaleToDocument(value, { persist: ready.value });
       void loadArchiveMessages(value).catch(() => {
         // Japanese stays available as the deterministic UI fallback.
       });

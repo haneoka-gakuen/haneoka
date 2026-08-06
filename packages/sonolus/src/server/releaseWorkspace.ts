@@ -50,7 +50,7 @@ const isReleaseManifestIdentity = (
   value.server === server &&
   value.releaseId === releaseId;
 
-export const normalizeReleaseServerId = (value = "jp-cbt"): string => {
+export const normalizeReleaseServerId = (value = "gl-cbt"): string => {
   const server = value.trim().toLowerCase();
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(server)) throw new Error(`Invalid server id: ${value}`);
   return server;
@@ -62,7 +62,7 @@ export const normalizeReleaseServerId = (value = "jp-cbt"): string => {
  * RESOURCE_RELEASE_ROOT or RESOURCE_BUILD_ROOT.
  */
 export function resolveSonolusReleaseWorkspace(
-  server = "jp-cbt",
+  server = "gl-cbt",
   root = process.cwd(),
   env: ReleaseEnvironment = process.env,
 ): Readonly<SonolusReleaseWorkspace> {

@@ -54,7 +54,7 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
       </PageSection>
 
       <PageSection :title="t('releaseServer')" icon="dns" divided>
-        <SingleChoiceList
+        <SingleChoiceIconRow
           name="release-server"
           :label="t('releaseServer')"
           :model-value="releaseServer"
@@ -64,7 +64,7 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
           <template #leading="{ option }">
             <ServerIcon :server="option.value" :size="40" />
           </template>
-        </SingleChoiceList>
+        </SingleChoiceIconRow>
       </PageSection>
     </div>
   </SupportingPageSurface>

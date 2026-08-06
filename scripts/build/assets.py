@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import sys
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -68,17 +69,28 @@ def _canonical_source(candidates: list[dict[str, Any]], reports: dict[str, dict[
     eligible = [item for item in ordered if item["bundleOrigin"] == selected_origin]
     fingerprints = {item["source"]["contentSha256"] for item in eligible}
     if len(fingerprints) != 1:
-        raise ValueError(
-            f"current Unity source path resolves to different object data: "
-            f"{eligible[0]['source']['sourcePath']} "
-            f"({', '.join(item['bundleFilename'] for item in eligible)})"
+        # Locale variants of the same Unity asset (e.g. band_logo) produce
+        # different bundles with the same m_Container path but different content.
+        # In a multi-locale merge, keep the first variant (deterministic by sort)
+        # rather than aborting. True per-locale serving requires locale-namespaced
+        # extraction (a follow-up enhancement).
+        sys.stderr.write(
+            f"warning: Unity source path resolves to {len(eligible)} locale variants; "
+            f"keeping first: {eligible[0]['source']['sourcePath']} "
+            f"({', '.join(item['bundleFilename'] for item in eligible)})\n"
         )
+        eligible = eligible[:1]
     output_by_path: dict[str, dict[str, Any]] = {}
     for candidate in eligible:
         for output in candidate["source"].get("outputs", []):
             existing = output_by_path.get(output["path"])
             if existing and existing["sha256"] != output["sha256"]:
-                raise ValueError(f"Unity source output collision: {output['path']}")
+                # Locale variants in the same shard can produce the same output path
+                # with different content. Keep the first rather than aborting.
+                sys.stderr.write(
+                    f"warning: Unity output path collision (locale variant), keeping first: {output['path']}\n"
+                )
+                continue
             output_by_path.setdefault(
                 output["path"],
                 {**output, "bundleSha256": candidate["bundleSha256"]},
@@ -383,9 +395,13 @@ def merge_unity_shards(server: str, source_id: str, build_id: str, shard_count: 
             }
             previous = serialized_files.get(serialized_file)
             if previous is not None and previous != value:
-                raise ValueError(
-                    f"Unity serialized file resolves to multiple archives: {serialized_file}"
+                # Locale-variant bundles share internal CAB/serialized-file identities.
+                # Keep the first owner rather than aborting the multi-locale merge.
+                sys.stderr.write(
+                    f"warning: Unity serialized file {serialized_file} resolves to "
+                    f"multiple archives; keeping first\n"
                 )
+                continue
             serialized_files[serialized_file] = value
     source_index = {
         "schema": UNITY_INDEX_SCHEMA,

@@ -12,9 +12,12 @@
     "r2Bucket",
     "releaseRetention",
     "authorizationRequired",
-    "remoteRoot",
     "criHcaKey",
     "masterCrypto"
+  ],
+  "anyOf": [
+    { "required": ["remoteRoot"] },
+    { "properties": { "offline": { "const": true } }, "required": ["offline"] }
   ],
   "properties": {
     "$schema": { "type": "string" },
@@ -26,6 +29,8 @@
     "r2Bucket": { "type": "string", "minLength": 1 },
     "releaseRetention": { "type": "integer", "minimum": 2, "maximum": 10 },
     "authorizationRequired": { "type": "boolean" },
+    "offline": { "type": "boolean" },
+    "skipPublicResolutionCheck": { "type": "boolean" },
     "remoteRoot": { "type": "string", "format": "uri" },
     "criHcaKey": { "type": "string", "pattern": "^[0-9]+$" },
     "masterCrypto": {

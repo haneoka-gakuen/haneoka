@@ -342,8 +342,12 @@ class BuildData:
                         (owner_serialized_file, str(int(path_id))), set()
                     ).add(serialized_file)
 
-    def home_spot_background(self, identity: int) -> dict[str, Any]:
-        """Resolve one strict build-time Home Spot background derivative."""
+    def home_spot_background(self, identity: int) -> dict[str, Any] | None:
+        """Resolve one strict build-time Home Spot background derivative, or None when absent.
+
+        None is returned (not raised) when the home spot has no built background — e.g. an
+        offline install-time asset pack whose home-spot bundles are CDN-served and were skipped.
+        """
         if self._home_spot_background_index is None:
             file = self.root / "metadata" / "home-spots.json"
             if not file.is_file():
@@ -355,7 +359,7 @@ class BuildData:
                 or document.get("schema") != HOME_SPOT_BACKGROUND_SCHEMA
                 or document.get("server") != self.server
                 or not isinstance(scenes, list)
-                or int(document.get("sceneCount") or -1) != len(scenes)
+                or int(document.get("sceneCount", -1)) != len(scenes)
             ):
                 raise ValueError(f"Home Spot background metadata is invalid: {file}")
             index: dict[int, dict[str, Any]] = {}
@@ -367,10 +371,7 @@ class BuildData:
                     )
                 index[spot_id] = scene
             self._home_spot_background_index = index
-        scene = self._home_spot_background_index.get(identity)
-        if scene is None:
-            raise ValueError(f"Home Spot {identity} has no background derivative")
-        return scene
+        return self._home_spot_background_index.get(identity)
 
     def rows(self, name: str) -> list[dict[str, Any]]:
         return self.tables.get(name, [])
@@ -2949,10 +2950,11 @@ def _story_assets(
             if not media and video_asset_name.casefold().startswith("adv/"):
                 media = data.video_media(video_asset_name.split("/", 1)[1])
             if not media or not media.get("playableUrl"):
-                raise ValueError(
-                    f"ADV story video has no exact playable CRI output: "
-                    f"{asset_name}::{video_id}::{video_asset_name}"
+                sys.stderr.write(
+                    f"warning: ADV story video has no playable CRI output, skipping: "
+                    f"{asset_name}::{video_id}::{video_asset_name}\n"
                 )
+                continue
             playable_url = str(media["playableUrl"])
             video = _present(
                 videoId=video_id,
@@ -3174,6 +3176,8 @@ def _home_spot_spine_runtime(
         )
     background_source_path = f"Assets/AddressableResources/{background_asset}.prefab"
     background_document = data.home_spot_background(identity)
+    if background_document is None:
+        return None
     if (
         background_document.get("sourcePath") != background_source_path
         or background_document.get("situationSourcePath") != source_path

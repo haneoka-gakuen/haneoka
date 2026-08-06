@@ -15,16 +15,36 @@ def _has_type(type_name: str | None, tail: str) -> bool:
     return bool(type_name and (tail in type_name.split(".") or type_name.endswith(tail)))
 
 
-def _remote_url(parts: list[str]) -> str:
-    if not parts or urlsplit(parts[-1]).scheme.lower() not in {"http", "https"}:
-        return "/".join(parts)
-    values = list(reversed(parts))
-    return f"{values[0]}/{'/'.join(values[1:])}"
+def _remote_url(parts: list[str], remote_root: str = "") -> str:
+    if parts and urlsplit(parts[-1]).scheme.lower() in {"http", "https"}:
+        values = list(reversed(parts))
+        return f"{values[0]}/{'/'.join(values[1:])}"
+    # Unity Addressables stores remote bundle paths as
+    # "<bundle>/{UnityEngine.AddressableAssets.Addressables.RuntimePath}/Android";
+    # the {RuntimePath} token resolves to the CDN RemoteLoadPath at runtime. With no
+    # remote catalog (e.g. gl-cbt, which ships only an embedded catalog), substitute
+    # the token with remote_root and reverse the parts to get "<root>/Android/<bundle>".
+    if remote_root:
+        root = remote_root.rstrip("/")
+        if root.endswith("/Android"):
+            root = root[: -len("/Android")]
+
+        def _detokenize(part: str) -> str:
+            if "RuntimePath}" not in part:
+                return part
+            start = part.index("{")
+            return part[:start] + root + part[part.index("}", start) + 1 :]
+
+        detokenized = [_detokenize(part) for part in parts]
+        if detokenized != parts:
+            return "/".join(reversed(detokenized))
+    return "/".join(parts)
 
 
 class CatalogReader:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, remote_root: str = ""):
         self.data = data
+        self._remote_root = remote_root
         self._keys: list[dict[str, Any]] | None = None
 
     def require_range(self, offset: int, size: int) -> None:
@@ -131,7 +151,7 @@ class CatalogReader:
             "primaryParts": self.string_parts(self.u32(offset)),
             "internalId": self.string(self.u32(offset + 4), "/"),
             "internalParts": internal_parts,
-            "remoteUrl": _remote_url(internal_parts),
+            "remoteUrl": _remote_url(internal_parts, self._remote_root),
             "providerId": self.string(self.u32(offset + 8), "."),
             "data": self.object(self.u32(offset + 20)) if self.u32(offset + 20) != UINT32_MAX else None,
             "resourceType": self.type_name(self.u32(offset + 24)),
@@ -166,14 +186,14 @@ class CatalogReader:
         return [found[key] for key in sorted(found)]
 
 
-def read_catalog(file: Path) -> CatalogReader:
-    return CatalogReader(file.read_bytes())
+def read_catalog(file: Path, remote_root: str = "") -> CatalogReader:
+    return CatalogReader(file.read_bytes(), remote_root)
 
 
-def downloadable_locations(file: Path) -> list[dict[str, Any]]:
+def downloadable_locations(file: Path, remote_root: str = "") -> list[dict[str, Any]]:
     return [
         value
-        for value in read_catalog(file).unique_locations()
+        for value in read_catalog(file, remote_root).unique_locations()
         if isinstance(value.get("data"), dict)
         and value["data"].get("bundleName")
         and urlsplit(str(value.get("remoteUrl", ""))).scheme.lower() == "https"

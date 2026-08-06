@@ -2132,19 +2132,27 @@ async function serveStaticAsset(request: Request, env: Env, url: URL): Promise<R
   if (assetResponse.status !== 404 || !shouldServeSpaEntry(request, url)) return assetResponse;
 
   await assetResponse.body?.cancel();
-  const indexRequest = new Request(new URL("/index.html", request.url), {
-    headers: request.headers,
-    method: request.method,
-  });
-  const indexResponse = await env.ASSETS.fetch(indexRequest);
-  if (request.method !== "HEAD" || !indexResponse.body) return indexResponse;
-
-  await indexResponse.body.cancel();
-  return new Response(null, {
-    headers: indexResponse.headers,
-    status: indexResponse.status,
-    statusText: indexResponse.statusText,
-  });
+  // For HTML navigations to a route with no matching static asset, fall back to
+  // the generic SPA shell. Prefer 200.html (the Nuxt SPA fallback) so the route
+  // hydrates from the browser URL; fall back to index.html only if 200.html is
+  // absent, so a direct refresh never hydrates a content page as the home route.
+  for (const fallbackPath of ["/200.html", "/index.html"]) {
+    const fallbackResponse = await env.ASSETS.fetch(
+      new Request(new URL(fallbackPath, request.url), { headers: request.headers, method: request.method }),
+    );
+    if (fallbackResponse.status === 404) {
+      await fallbackResponse.body?.cancel();
+      continue;
+    }
+    if (request.method !== "HEAD" || !fallbackResponse.body) return fallbackResponse;
+    await fallbackResponse.body.cancel();
+    return new Response(null, {
+      headers: fallbackResponse.headers,
+      status: fallbackResponse.status,
+      statusText: fallbackResponse.statusText,
+    });
+  }
+  return new Response("not found", { status: 404 });
 }
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

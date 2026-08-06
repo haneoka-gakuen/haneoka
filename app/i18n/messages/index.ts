@@ -32,6 +32,13 @@ const messageUrls = {
 } as const;
 
 const fetchMessageCatalog = async <Catalog extends ArchiveMessageSchema>(url: string): Promise<Catalog> => {
+  if (import.meta.server) {
+    // Locale catalogs are fetched client-side only. SSR always renders the
+    // default-locale catalog bundled at build time, so a relative-URL fetch must
+    // never run on the server (Node cannot resolve a relative URL, and loading a
+    // non-default catalog into the shared module cache would leak across requests).
+    throw new Error("Locale catalogs are loaded client-side only");
+  }
   const response = await fetch(url, {
     // Locale payloads are a small, versioned part of the UI contract. A
     // force-cache hit can retain an older catalog after deployment, leaving
