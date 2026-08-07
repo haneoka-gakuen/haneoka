@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, Stamp } from "~/types/archive";
 
 const { locale, localize, resolveLocalized, t, formatDate, compareText } = useLocale();
@@ -125,7 +125,6 @@ const selectedImage = computed(() => selected.value?.image || "");
 const selectedFacts = computed(() =>
   selected.value
     ? [
-        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         {
           label: t("release"),
           value: selected.value.releasedAt?.[0] ? formatDate(selected.value.releasedAt[0]) : "",

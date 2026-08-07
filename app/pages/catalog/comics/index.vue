@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character, Comic } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
 
@@ -127,7 +127,6 @@ const selectedImage = computed(() => selected.value?.image || selected.value?.th
 const selectedFacts = computed(() =>
   selected.value
     ? [
-        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         { label: t("subtitle"), value: subtitleOf(selected.value) },
         {
           label: t("release"),

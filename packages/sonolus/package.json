@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@haneoka/sonolus-core": "^0.1.0",
-    "@sonolus/core": "^7.15.2"
+    "@sonolus/core": "^7.15.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

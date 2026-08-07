@@ -58,13 +58,6 @@ const characterName = computed<DisplayText>(
     resolveLocalized(props.character.englishName, { sourceHint: "en" }) ||
     t("character"),
 );
-const characterItems = computed(() => [
-  {
-    id: props.character.characterId,
-    label: characterName.value,
-    image: props.character.faceImage || props.character.thumbnailImage || props.character.profileImage,
-  },
-]);
 
 const itemMap = computed(() => {
   const source = itemDocument.value?.items;
@@ -154,7 +147,6 @@ const rewardsOf = (mission: CharacterMissionEntry): ResourceReferenceItem[] =>
 <template>
   <section class="character-missions">
     <header class="character-missions__toolbar">
-      <ArchiveEntityList :items="characterItems" shape="avatar" />
       <UiSelect v-model="selectedType" class="character-missions__type" :label="t('type')" :options="typeOptions" />
     </header>
 
@@ -173,7 +165,6 @@ const rewardsOf = (mission: CharacterMissionEntry): ResourceReferenceItem[] =>
         </template>
         <template #end>
           <span class="character-missions__context">
-            <ArchiveEntityList :items="characterItems" shape="avatar" :show-label="false" />
             <ResourceReferenceList compact :items="rewardsOf(mission)" />
           </span>
         </template>
@@ -197,11 +188,11 @@ const rewardsOf = (mission: CharacterMissionEntry): ResourceReferenceItem[] =>
   min-width: 0;
   min-height: 44px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
   padding: 6px 0;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: white;
+  background: var(--md-sys-color-surface);
 }
 
 .character-missions__type {
@@ -223,20 +214,14 @@ const rewardsOf = (mission: CharacterMissionEntry): ResourceReferenceItem[] =>
 }
 
 .character-missions__context {
-  display: grid;
+  display: flex;
   min-width: 0;
-  grid-template-columns: minmax(96px, auto) minmax(136px, 1fr);
-  align-items: center;
-  gap: var(--md-sys-spacing-3);
+  justify-content: flex-end;
 }
 
 @media (max-width: 760px) {
   .character-missions__toolbar {
     position: static;
-  }
-
-  .character-missions__context {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 

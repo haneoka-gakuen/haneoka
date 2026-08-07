@@ -13,7 +13,7 @@ import {
   toolRecordValues,
   type ToolRecord,
 } from "~/components/catalog/ToolCatalogData";
-import { contentOriginLabel, ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import type { Band, Character } from "~/types/archive";
 import { langOf, replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
@@ -239,10 +239,7 @@ const selectedEntities = computed<ArchiveEntityItem[]>(() =>
 );
 const selectedFacts = computed(() =>
   selected.value
-    ? [
-        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
-        { label: t("band"), value: resolveLocalized(selectedBand.value?.bandName, { sourceHint: "ja" }) },
-      ]
+    ? [{ label: t("band"), value: resolveLocalized(selectedBand.value?.bandName, { sourceHint: "ja" }) }]
     : [],
 );
 const tableColumns = computed(() => [

@@ -38,6 +38,7 @@ const {
 } = useAudioPlayer();
 const router = useRouter();
 const { t, resolveLocalized } = useLocale();
+const { resolveSongTitle } = useSongTitle();
 const activeCatalogOrigin = computed<CatalogContentOrigin | undefined>(() => {
   const origin = track.value?.origin;
   return isCatalogContentOrigin(origin) ? origin : undefined;
@@ -59,7 +60,7 @@ const localizedTrackTitle = computed<DisplayText>(() => {
   const current = track.value;
   if (!current) return "";
   return (
-    resolveLocalized(activeSong.value?.musicTitle, {
+    resolveSongTitle(activeSong.value?.musicTitle, {
       sourceHint: "ja",
       fallback: textOf(current.title),
       fallbackSourceHint: sourceLocaleOf(current.title),

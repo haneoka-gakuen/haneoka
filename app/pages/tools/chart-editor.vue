@@ -45,6 +45,7 @@ const PREVIEW_BREAKPOINT = "(max-width: 639px)";
 const { t, messages } = useLocale();
 const copy = messages("chartEditorPage");
 const chartPlayerSettings = useChartPlayerSettings();
+const { resolveSongTitle } = useSongTitle();
 const overviewPresentation = computed(() => {
   const settings = chartPlayerSettings.value;
   return chartCanvasOverviewPresentation(settings.zoom, settings.vertical, settings.noteSize, settings.longAlpha);
@@ -405,7 +406,7 @@ const applyCatalogSelection = async (selection: ChartEditorCatalogSelection) => 
   if (includeAudio && !song.musicUrl) return;
 
   const title = textOf(
-    resolveLocalized(song.musicTitle, { sourceHint: "ja", fallback: String(song.musicId) }),
+    resolveSongTitle(song.musicTitle, { sourceHint: "ja", fallback: String(song.musicId) }),
     String(song.musicId),
   );
   const artist = textOf(resolveLocalized(band?.bandName, { sourceHint: "ja", fallback: "" }));

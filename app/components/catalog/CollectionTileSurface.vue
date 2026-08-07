@@ -192,14 +192,25 @@ const rootAttributes = computed(() =>
 }
 
 /*
- * Touch devices do not have a persistent hover state. Some mobile browsers
- * nevertheless keep the last tapped element hovered, which would leave the
- * ripple state layer painted after the finger is released. Keep the pressed
- * feedback, but suppress that synthetic hover layer for coarse pointers.
+ * On touch the Material ripple's pressed state layer is what sticks on iOS
+ * WebKit: its state machine only clears `pressed` on pointerup/pointercancel/
+ * click, and iOS does not deliver those events to the tile when a touch
+ * becomes a scroll — so a finger that dwells ~150ms before swiping leaves the
+ * radial "shadow" painted forever. Chromium dispatches pointercancel at
+ * scroll-start, which is why Android is unaffected. The hover layer is
+ * irrelevant here (the ripple already ignores touch for hover) but is kept
+ * suppressed for mouse emulation on touchscreens. Hide both layers on coarse
+ * pointers and lean on the native :active state instead — the browser
+ * distinguishes a tap from a scroll on iOS, so it can never stick.
  */
 @media (hover: none) and (pointer: coarse) {
   .collection-tile-surface md-ripple {
     --md-ripple-hover-opacity: 0;
+    --md-ripple-pressed-opacity: 0;
+  }
+
+  .collection-tile-surface__action:active {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   }
 }
 

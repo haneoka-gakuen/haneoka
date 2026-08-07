@@ -415,6 +415,8 @@
   "language": "언어",
   "server": "서버",
   "releaseServer": "릴리스 서버",
+  "songTitles": "곡명",
+  "forceJapaneseTitles": "일본어 곡명으로 표시",
   "loading": "불러오는 중",
   "empty": "결과 없음",
   "unavailable": "이용 불가",

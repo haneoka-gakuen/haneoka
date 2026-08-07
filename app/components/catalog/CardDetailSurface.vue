@@ -3,7 +3,6 @@ import { MaterialIcon } from "@haneoka/ui";
 
 import type { DetailHeaderIconItem, DetailMediaItem } from "~/components/detail/types";
 import {
-  contentOriginLabel,
   runtimeReleaseForCatalogOrigin,
   type CatalogContentOrigin,
 } from "~/features/catalog/contentSource";
@@ -215,7 +214,6 @@ const selectedSkillLevel = useRouteQueryInteger("skillLevel", 0, { min: 0 });
 const diary = computed(() => resolveLocalized(snapCard.value?.diary, { sourceHint: "ja" }));
 const hasDiary = computed(() => Boolean(textOf(diary.value)));
 const identityFacts = computed(() => [
-  { label: t("source"), value: contentOriginLabel(props.origin) },
   { label: t("id"), value: cardKey.value },
   { label: t("rarity"), value: props.card?.rarity },
   { label: `${t("cards")} ${t("type")}`, value: props.card?.cardType },

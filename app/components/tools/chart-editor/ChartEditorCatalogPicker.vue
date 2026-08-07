@@ -48,6 +48,7 @@ const emit = defineEmits<{
 }>();
 
 const { resolveLocalized, t, messages } = useLocale();
+const { resolveSongTitle } = useSongTitle();
 const copy = messages("chartEditorPage");
 const SONG_BATCH_SIZE = 30;
 const query = ref("");
@@ -63,7 +64,7 @@ const sourceOptions = computed(() => [
 ]);
 
 const titleOf = (song: Song) =>
-  textOf(resolveLocalized(song.musicTitle, { sourceHint: "ja", fallback: String(song.musicId) }), String(song.musicId));
+  textOf(resolveSongTitle(song.musicTitle, { sourceHint: "ja", fallback: String(song.musicId) }), String(song.musicId));
 const bandOf = (song: Song) =>
   textOf(resolveLocalized(bandMap.value.get(song.bandId || 0)?.bandName, { sourceHint: "ja", fallback: "" }));
 const difficultyEntries = (song: Song) => (song.difficulty || []).map((difficulty, index) => ({ difficulty, index }));

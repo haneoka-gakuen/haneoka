@@ -30,7 +30,7 @@ const { t } = useLocale();
   <div v-if="groups.length" class="voice-groups">
     <section v-for="group in groups" :key="group.key" class="voice-groups__entry">
       <header v-if="textOf(group.label)" class="voice-groups__header">
-        <span><DisplayText :value="group.label" /></span>
+        <code class="voice-groups__label"><DisplayText :value="group.label" /></code>
         <span class="voice-groups__actions">
           <small v-if="group.lines.length > 1" class="display-number">{{ group.lines.length }}</small>
           <UiIconButton
@@ -59,9 +59,6 @@ const { t } = useLocale();
           <template v-if="textOf(line.characterName)" #supporting>
             <small v-if="textOf(line.characterName)"><DisplayText :value="line.characterName" /></small>
           </template>
-          <template v-if="line.cue" #end>
-            <code v-if="line.cue" class="display-number">{{ line.cue }}</code>
-          </template>
         </UiListItem>
       </UiList>
     </section>
@@ -85,9 +82,17 @@ const { t } = useLocale();
   justify-content: space-between;
   gap: 10px;
   padding-inline: var(--md-sys-spacing-4);
+}
+
+.voice-groups__label {
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--md-sys-typescale-label-large-font);
+  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+    var(--md-sys-typescale-label-small-line-height) var(--md-sys-typescale-label-small-font);
+  font-family: var(--md-ref-typeface-plain);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .voice-groups__header small {
@@ -98,6 +103,7 @@ const { t } = useLocale();
 
 .voice-groups__actions {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
 }

@@ -415,6 +415,8 @@
   "language": "Language",
   "server": "Server",
   "releaseServer": "Release server",
+  "songTitles": "Song titles",
+  "forceJapaneseTitles": "Show Japanese song titles",
   "loading": "Loading",
   "empty": "No results",
   "unavailable": "Unavailable",

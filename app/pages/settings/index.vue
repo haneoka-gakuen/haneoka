@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { localeFlagIconUrls } from "~/utils/flagIcons";
+import { UiSwitch } from "@haneoka/ui";
 
 const { locale, locales, setLocale, t } = useLocale();
 const { releaseServer, releases, setReleaseServer } = useReleaseServer();
 const { themePreference, setThemePreference } = useUiTheme();
+const { forceJapaneseTitles } = toRefs(useSongDisplaySettings().value);
 const themeOptions = computed(() => [
   { value: "light", label: t("themeLight"), icon: "light_mode" },
   { value: "system", label: t("themeSystem"), icon: "brightness_auto" },
@@ -66,6 +68,10 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
           :options="localeOptions"
           @update:model-value="setLocale"
         />
+      </PageSection>
+
+      <PageSection :title="t('songTitles')" icon="music_note" divided>
+        <UiSwitch v-model="forceJapaneseTitles" :label="t('forceJapaneseTitles')" />
       </PageSection>
 
       <PageSection :title="t('releaseServer')" icon="dns" divided>

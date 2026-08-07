@@ -2,7 +2,7 @@
 import type { Band, Character, Live2DDetail, Live2DModel } from "~/types/archive";
 import type { DetailHeaderIconItem } from "~/components/detail/types";
 import type { FacetOption } from "~/components/ui/FacetGroup.vue";
-import { contentOriginLabel, ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
 
@@ -207,11 +207,7 @@ const selectedCharacter = computed(() => {
   );
 });
 const selectedModelType = computed(() => selectedEntry.value?.modelType || selectedSummary.value?.modelType);
-const selectedSubtitle = computed(() => {
-  const provenance =
-    detailOrigin.value.releaseId === catalogOrigin.value.releaseId ? "" : contentOriginLabel(detailOrigin.value);
-  return [selectedCharacter.value, provenance].filter(Boolean).join(" · ");
-});
+const selectedSubtitle = computed(() => selectedCharacter.value);
 const selectedCharacterImage = computed(() => {
   const model = selectedEntry.value || selectedSummary.value;
   const character = selectedDetailCharacter.value;

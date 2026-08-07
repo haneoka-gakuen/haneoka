@@ -72,7 +72,6 @@ const tableColumns = computed(() =>
             ]
           : []),
         { key: "release", label: t("release"), sortable: isSortable("release"), align: "end" as const },
-        { key: "duration", label: t("length"), sortable: isSortable("duration"), align: "end" as const },
         { key: "open", label: "", kind: "action" as const },
       ]
     : [
@@ -90,7 +89,6 @@ const tableColumns = computed(() =>
             ]
           : []),
         { key: "release", label: t("release"), sortable: isSortable("release"), align: "end" as const },
-        { key: "duration", label: t("length"), sortable: isSortable("duration"), align: "end" as const },
         { key: "open", label: "", kind: "action" as const },
       ],
 );
@@ -100,7 +98,7 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
   // Story banners are authored at 16:9 and the shared tile lets that artwork
   // keep its natural height.  Estimating them as 4:3 left a large invisible
   // tail on every virtual row, which looked like an oversized grid gap.
-  if (props.media === "thumbnail") return Math.ceil(columnWidth * (9 / 16) + (compact ? 54 : 62));
+  if (props.media === "thumbnail") return Math.ceil(columnWidth * (9 / 16) + (compact ? 68 : 76));
   return compact ? 126 : 142;
 };
 </script>
@@ -199,7 +197,6 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
           {{ item.level ?? "—" }}
         </span>
         <time class="story-catalog-row__release display-number" role="gridcell">{{ item.release || "—" }}</time>
-        <span class="story-catalog-row__duration display-number" role="gridcell">{{ item.duration || "—" }}</span>
         <MaterialIcon name="chevron_right" :size="15" role="gridcell" aria-hidden="true" />
       </CollectionTableRow>
     </template>
@@ -260,7 +257,7 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
         </template>
 
         <CollectionTileIdentity class="story-catalog-row__copy" :title="item.title">
-          <template v-if="textOf(item.subtitle) || item.level !== undefined || item.duration || item.release" #subtitle>
+          <template v-if="textOf(item.subtitle) || item.level !== undefined || item.release" #subtitle>
             <CollectionSubtitleAvatars v-if="textOf(item.subtitle)" :avatars="item.avatars">
               <DisplayText :value="item.subtitle || ''" />
             </CollectionSubtitleAvatars>
@@ -268,10 +265,6 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
             <span v-if="item.release">
               <MaterialIcon name="calendar_month" :size="12" />
               {{ item.release }}
-            </span>
-            <span v-if="item.duration">
-              <MaterialIcon name="schedule" :size="12" />
-              {{ item.duration }}
             </span>
           </template>
         </CollectionTileIdentity>
@@ -375,8 +368,7 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
 }
 
 .story-catalog-row__level,
-.story-catalog-row__release,
-.story-catalog-row__duration {
+.story-catalog-row__release {
   min-width: 0;
   color: var(--md-sys-color-on-surface-variant);
   font-family: var(--md-sys-typescale-label-small-font);
@@ -457,6 +449,23 @@ const gridRowHeight = (columnWidth: number, compact: boolean) => {
 .story-catalog-list.is-layout-grid .story-catalog-row__copy {
   width: 100%;
   padding: 0 2px 2px;
+}
+
+/* The identity subtitle row is flex/nowrap/overflow:hidden by default (see
+   CollectionTileIdentity). On narrow grid tiles CollectionSubtitleAvatars takes
+   the full row width and pushes the trailing release chip into the hidden
+   overflow, so it reads as clipped at the right edge. Let the row wrap and keep
+   each chip intact (no shrink, no internal break) so the release is always shown
+   in full; avatars keeps its own line and ellipsizes long names itself. */
+.story-catalog-list.is-layout-grid .story-catalog-row__copy :deep(.collection-tile-identity__subtitle) {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 2px;
+}
+
+.story-catalog-list.is-layout-grid .story-catalog-row__copy :deep(.collection-tile-identity__subtitle > *) {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 @media (max-width: 760px) {

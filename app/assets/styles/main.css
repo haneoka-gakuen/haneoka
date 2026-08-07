@@ -300,8 +300,12 @@ svg {
   cursor: pointer;
 }
 
-.catalog-selectable-row.is-interactive:hover {
-  background: var(--md-sys-color-surface-container-low);
+/* Guard with `hover: hover` so iOS WebKit's sticky touch-hover cannot paint a
+   row background that lingers after a swipe through the list/table view. */
+@media (hover: hover) {
+  .catalog-selectable-row.is-interactive:hover {
+    background: var(--md-sys-color-surface-container-low);
+  }
 }
 
 .catalog-selectable-row.is-selected {

@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { MaterialIcon } from "@haneoka/ui";
-
-import type { ArchiveEntityItem } from "~/components/catalog/ArchiveEntityList.vue";
 import type { CharacterMissionEntry } from "~/components/catalog/CharacterMissionList.vue";
+import type { ResourceReferenceItem } from "~/components/catalog/ResourceReferenceList.vue";
 import type { StoryCatalogListItem } from "~/components/catalog/StoryCatalogList.vue";
 import type { VoiceDialogueGroup, VoiceDialogueLine } from "~/components/catalog/VoiceDialogueLines.vue";
 import type { DetailHeaderIconItem, DetailPeerItem } from "~/components/detail/types";
-import type { RouteLocationRaw } from "vue-router";
 import type {
   Band,
   Character,
@@ -18,7 +15,7 @@ import type {
   StoryEpisode,
   SupportCard,
 } from "~/types/archive";
-import { contentOriginLabel, type CatalogContentOrigin } from "~/features/catalog/contentSource";
+import { type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 
 const props = withDefaults(
@@ -101,13 +98,32 @@ interface FriendshipEpisode {
   episodeNumber?: number;
   storyKey?: string;
   unlockFriendshipLevel?: number;
+  banner?: string;
+  advId?: number;
+}
+
+interface FriendshipRewardResource {
+  image?: string;
+  name?: LocalizedValue;
+  kind?: string;
+  itemId?: number;
+}
+
+interface FriendshipReward {
+  rank?: number;
+  reward?: {
+    resolved?: FriendshipRewardResource;
+    resourceCount?: number;
+    resourceTypeName?: string;
+    rewardId?: number;
+  };
 }
 
 interface FriendshipEntry {
   friendshipId?: number;
   characterIds?: number[];
   ranks?: Array<{ rank?: number }>;
-  rewards?: unknown[];
+  rewards?: FriendshipReward[];
   episodes?: FriendshipEpisode[];
 }
 
@@ -115,15 +131,8 @@ interface CharacterFriendship extends FriendshipEntry {
   friendshipKey: string;
 }
 
-interface CharacterFriendshipView {
-  key: string;
-  characters: ArchiveEntityItem[];
-  maxRank: number;
-  rewardCount: number;
-  episodes: Array<{ key: string; label: string; to: RouteLocationRaw }>;
-}
-
 const { resolveLocalized, t } = useLocale();
+const { resolveSongTitle } = useSongTitle();
 const creditOrigin = computed(() => props.origin);
 const layerLink = useRouteQueryLayerLink();
 const characterId = computed(() => props.character?.characterId || 0);
@@ -183,6 +192,7 @@ const {
 const {
   catalog: storyCatalog,
   characterMap,
+  characters: archiveCharacters,
   bandMap,
   charactersOf,
   durationOf,
@@ -262,13 +272,10 @@ const voiceGroups = computed<CharacterVoiceGroup[]>(() =>
     const sources = entry.lines?.length
       ? entry.lines
       : [{ characterId: entry.characterIds?.[0], text: entry.text, sound: entry.sound }];
-    const categoryName =
-      entry.characterVoiceTypeName ||
-      entry.collectionVoiceTypeName ||
-      entry.dialogueTypeName ||
-      entry.masterTypeName ||
-      entry.sourceTable;
-    const category = categoryName ? resolveLocalized(categoryName, { sourceHint: "en" }) || categoryName : t("voices");
+    const cues = sources
+      .map((line) => line.sound?.cueName)
+      .filter((cue): cue is string => Boolean(cue));
+    const category = cues.length ? cues.join(" / ") : entry.voiceKey || "";
     return {
       key: entry.voiceKey || "",
       category,
@@ -351,46 +358,78 @@ const modelTitleOf = (model: Live2DModel) =>
   }) ||
   resolveLocalized(model.live2dName, { sourceHint: "en" }) ||
   model.live2dKey;
-const songTitleOf = (song: Song) => resolveLocalized(song.musicTitle, { sourceHint: "ja" }) || t("songs");
+const songTitleOf = (song: Song) => resolveSongTitle(song.musicTitle, { sourceHint: "ja" }) || t("songs");
 const songBandOf = (song: Song) =>
   resolveLocalized(song.artistName, {
     candidates: [bandMap.value.get(song.bandId || 0)?.bandName],
     sourceHint: "ja",
     fallback: textOf(bandName.value),
   }) || "";
-const friendshipItems = computed<CharacterFriendshipView[]>(() =>
-  friendships.value.map((friendship) => {
-    const characterIds = (friendship.characterIds || []).map(Number).filter(Boolean);
-    const relatedCharacters = characterIds
-      .map((id) => (id === characterId.value ? props.character : undefined) || characterMap.value.get(id))
-      .filter((character): character is Character => Boolean(character));
-    return {
-      key: friendship.friendshipKey,
-      characters: relatedCharacters.map((character) => ({
-        id: character.characterId,
-        label: resolveCharacterName(character, t("character")),
-        image: character.faceImage || character.thumbnailImage || character.profileImage,
-      })),
-      maxRank: Math.max(0, ...(friendship.ranks || []).map((rank) => Number(rank.rank || 0))),
-      rewardCount: friendship.rewards?.length || 0,
-      episodes: (friendship.episodes || []).flatMap((episode, index) => {
-        if (!episode.storyKey) return [];
-        const query = new URLSearchParams({
-          episode: episode.storyKey,
-          first: String(characterIds[0] || ""),
-          second: String(characterIds[1] || ""),
-        });
-        return [
-          {
-            key: String(episode.episodeId || episode.storyKey),
-            label: `${t("story")} ${episode.episodeNumber || index + 1}`,
-            to: layerLink(`/catalog/stories/link?${query.toString()}`, "episode"),
-          },
-        ];
-      }),
-    };
+const bondPartners = computed<Character[]>(() => {
+  const partnerIds = new Set<number>();
+  for (const entry of friendships.value) {
+    for (const id of (entry.characterIds || []).map(Number)) {
+      if (id && id !== characterId.value) partnerIds.add(id);
+    }
+  }
+  return [...partnerIds]
+    .map((id) => characterMap.value.get(id))
+    .filter((character): character is Character => Boolean(character))
+    .sort((left, right) => left.characterId - right.characterId);
+});
+// Friendship pairs are strictly within-band, so the partners derived from the
+// data never span more than one band and the board's band switcher can't appear.
+// To behave like the link-story page (羁绊剧情), surface every other character as
+// a candidate — StoryLinkSelector groups them into band tabs — and let rewards
+// and stories render (or stay empty) per selected pair.
+const friendshipPartnerPool = computed<Character[]>(() =>
+  archiveCharacters.value.filter((candidate) => candidate.characterId !== characterId.value),
+);
+const selectedPartnerId = ref<number | undefined>(undefined);
+watch(characterId, () => {
+  selectedPartnerId.value = undefined;
+});
+const selectedFriendship = computed(() =>
+  friendships.value.find((entry) => {
+    const ids = (entry.characterIds || []).map(Number);
+    return Boolean(selectedPartnerId.value) && ids.includes(characterId.value) && ids.includes(selectedPartnerId.value!);
   }),
 );
+const friendshipRewards = computed<ResourceReferenceItem[]>(() => {
+  const entry = selectedFriendship.value;
+  if (!entry?.rewards) return [];
+  return entry.rewards.map((reward, index) => {
+    const resolved = reward.reward?.resolved;
+    const fallbackLabel =
+      resolveLocalized(reward.reward?.resourceTypeName, { sourceHint: "en" }) || resolved?.kind || t("rewards");
+    return {
+      key: String(reward.reward?.rewardId || `${entry.friendshipId}:${reward.rank}:${index}`),
+      title: resolveLocalized(resolved?.name, { sourceHint: "ja" }) || fallbackLabel,
+      subtitle: reward.rank ? `${t("friendshipLevel")} ${reward.rank}` : "",
+      image: resolved?.image,
+      quantity: `×${Math.max(0, Number(reward.reward?.resourceCount || 0))}`,
+    };
+  });
+});
+// Reuse the story tab's link-stories grid verbatim: take the link group already
+// built for the story tab and keep only the episodes involving the selected
+// partner, so the friendship tab shares the same items, titles and styling
+// instead of a bespoke list.
+const friendshipStories = computed<StoryCatalogListItem[]>(() => {
+  const partnerId = selectedPartnerId.value;
+  if (!partnerId) return [];
+  const linkItems = storyGroups.value.find((group) => group.id === "link")?.items || [];
+  return linkItems.filter((item) => item.avatars?.some((avatar) => avatar.id === partnerId));
+});
+const friendshipNameOf = (character: Character): DisplayText =>
+  resolveLocalized(character.characterName, {
+    candidates: [character.englishName],
+    sourceHint: "ja",
+    fallback: String(character.characterId),
+  }) || String(character.characterId);
+const friendshipBandNameOf = (bandId: number): DisplayText =>
+  resolveLocalized(bandMap.value.get(bandId)?.bandName, { sourceHint: "ja", fallback: String(bandId) }) ||
+  String(bandId);
 const storyGroups = computed<CharacterStoryGroup[]>(() => {
   const labels: Record<StoryCategory, string> = {
     band: t("bandStories"),
@@ -446,7 +485,7 @@ const storyGroups = computed<CharacterStoryGroup[]>(() => {
                   }))
                 : undefined,
             duration: durationOf(story),
-            release: category === "home" ? "" : releaseOf(story),
+            release: category === "home" || category === "band" ? "" : releaseOf(story),
           };
         }),
       };
@@ -477,7 +516,7 @@ const sections = computed<DetailPeerItem[]>(() => [
   { id: "stamps", label: t("stamps"), icon: "sticky_note_2", count: stamps.value.length },
   { id: "voices", label: t("voices"), icon: "mic", count: voiceEntries.value.length },
   { id: "story", label: t("story"), icon: "chat", count: stories.value.length },
-  { id: "friendships", label: t("friendships"), icon: "handshake", count: friendshipItems.value.length },
+  { id: "friendships", label: t("friendships"), icon: "handshake", count: bondPartners.value.length },
   { id: "missions", label: t("characterMissions"), icon: "checklist", count: missions.value.length },
   { id: "live2d", label: t("live2d"), icon: "accessibility_new", count: models.value.length },
   { id: "songs", label: t("songs"), icon: "music_note", count: songs.value.length },
@@ -494,7 +533,6 @@ const description = computed(() => resolveProfileText(props.character?.descripti
 const bandName = computed(() => resolveLocalized(props.band?.bandName, { sourceHint: "ja" }));
 const profileFacts = computed(() =>
   [
-    { label: t("source"), value: contentOriginLabel(props.origin) },
     {
       label: t("band"),
       value: bandName.value,
@@ -877,24 +915,35 @@ onBeforeUnmount(() => stopVoicePreview(true));
             class="character-detail__deferred-section"
             :title="t('friendships')"
             icon="handshake"
-            :count="friendshipItems.length"
+            :count="bondPartners.length"
           >
             <LoadingState v-if="friendshipPending" />
             <ErrorState v-else-if="friendshipError" @retry="refreshFriendships()" />
-            <section v-else-if="friendshipItems.length" class="character-detail__friendships">
-              <article v-for="friendship in friendshipItems" :key="friendship.key">
-                <ArchiveEntityList :items="friendship.characters" shape="avatar" :show-label="false" />
-                <small>
-                  {{ t("friendshipLevel") }} {{ friendship.maxRank }} · {{ t("rewards") }}
-                  {{ friendship.rewardCount }} · {{ t("story") }} {{ friendship.episodes.length }}
-                </small>
-                <span class="character-detail__friendship-stories">
-                  <NuxtLink v-for="episode in friendship.episodes" :key="episode.key" :to="episode.to">
-                    {{ episode.label }}
-                    <MaterialIcon name="north_east" :size="13" aria-hidden="true" />
-                  </NuxtLink>
-                </span>
-              </article>
+            <section v-else-if="character && bondPartners.length" class="character-detail__friendships">
+              <div class="character-detail__friendship-selector">
+                <StoryLinkSelector
+                  :characters="[character]"
+                  :partners="friendshipPartnerPool"
+                  :first-id="characterId"
+                  :second-id="selectedPartnerId"
+                  :name-of="friendshipNameOf"
+                  :band-name-of="friendshipBandNameOf"
+                  @second="selectedPartnerId = Number($event) || undefined"
+                />
+              </div>
+              <div v-if="selectedPartnerId" class="character-detail__friendship-detail">
+                <DetailSection
+                  v-if="friendshipStories.length"
+                  :title="t('story')"
+                  :count="friendshipStories.length"
+                >
+                  <StoryCatalogList :items="friendshipStories" media="thumbnail" layout="grid" :show-cast="false" flow />
+                </DetailSection>
+                <DetailSection v-if="friendshipRewards.length" :title="t('rewards')" :count="friendshipRewards.length">
+                  <ResourceReferenceList :items="friendshipRewards" />
+                </DetailSection>
+                <EmptyState v-if="!friendshipStories.length && !friendshipRewards.length" />
+              </div>
             </section>
             <EmptyState v-else />
           </DetailSection>
@@ -1006,7 +1055,7 @@ onBeforeUnmount(() => stopVoicePreview(true));
   grid-template-columns: minmax(245px, 0.78fr) minmax(0, 1.52fr);
   overflow: hidden;
   border-radius: 6px;
-  background: white;
+  background: var(--md-sys-color-surface);
 }
 
 .character-detail__visual {
@@ -1017,7 +1066,7 @@ onBeforeUnmount(() => stopVoicePreview(true));
   overflow: hidden;
   background:
     repeating-linear-gradient(90deg, transparent 0 71px, rgb(255 255 255 / 0.24) 72px 73px),
-    color-mix(in srgb, var(--md-comp-detail-accent) 72%, white);
+    color-mix(in srgb, var(--md-comp-detail-accent) 72%, var(--md-sys-color-surface));
 }
 
 .character-detail__visual::after {
@@ -1192,54 +1241,45 @@ onBeforeUnmount(() => stopVoicePreview(true));
 }
 
 .character-detail__friendships {
-  display: grid;
-  gap: 7px;
-}
-
-.character-detail__friendships article {
-  display: grid;
-  min-width: 0;
-  min-height: 58px;
-  grid-template-columns: minmax(160px, 0.72fr) minmax(180px, 1fr) auto;
-  align-items: center;
-  gap: var(--md-sys-spacing-3);
-  padding: var(--md-sys-spacing-2) var(--md-sys-spacing-3);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-
-.character-detail__friendships article > small {
-  color: var(--md-sys-color-on-surface-variant);
-  font-family: var(--md-sys-typescale-label-small-font);
-  font-size: var(--md-sys-typescale-label-small-size);
-  line-height: var(--md-sys-typescale-label-small-line-height);
-}
-
-.character-detail__friendship-stories {
   display: flex;
-  align-items: center;
-  gap: var(--md-sys-spacing-1);
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--md-sys-spacing-4);
 }
 
-.character-detail__friendship-stories a {
-  display: inline-flex;
-  min-height: var(--md-comp-control-height);
-  align-items: center;
-  gap: var(--md-sys-spacing-1);
-  padding: 0 var(--md-sys-spacing-2);
-  color: var(--md-sys-color-primary);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
-  font-family: var(--md-sys-typescale-label-small-font);
-  font-size: var(--md-sys-typescale-label-small-size);
-  line-height: var(--md-sys-typescale-label-small-line-height);
+/* Reuse the link-story photo board as a fixed-height bond picker. The lead is
+   locked to this character, so the left character rail is hidden and the board
+   spans full width; the embedded story list is hidden — stories and rewards
+   render below in the normal flow. */
+.character-detail__friendship-selector {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-medium);
 }
 
-.character-detail__friendship-stories a:hover,
-.character-detail__friendship-stories a:focus-visible {
-  color: var(--md-sys-color-on-primary);
-  background: var(--md-sys-color-primary);
+.character-detail__friendship-selector :deep(.link-selector) {
+  height: auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+}
+
+.character-detail__friendship-selector :deep(.link-selector__first-rail),
+.character-detail__friendship-selector :deep(.link-selector__stories),
+.character-detail__friendship-selector :deep(.link-selector__swap) {
+  display: none;
+}
+
+.character-detail__friendship-selector :deep(.link-selector__stage) {
+  grid-column: 1;
+  grid-row: 1;
+  height: clamp(260px, 44vh, 420px);
+}
+
+.character-detail__friendship-detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--md-sys-spacing-4);
 }
 
 @keyframes character-figure-in {
@@ -1288,19 +1328,13 @@ onBeforeUnmount(() => stopVoicePreview(true));
     grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
   }
 
-  .character-detail__friendships article {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+  .character-detail__friendship-selector :deep(.link-selector) {
+    grid-template-rows: auto;
   }
 
-  .character-detail__friendship-stories a {
-    min-height: var(--md-comp-control-height-touch);
-  }
-}
-
-@media (max-width: 959px) and (max-height: 500px), (hover: none) and (pointer: coarse) {
-  .character-detail__friendship-stories a {
-    min-height: var(--md-comp-control-height-touch);
+  .character-detail__friendship-selector :deep(.link-selector__stage) {
+    grid-row: 1;
+    height: clamp(220px, 36vh, 320px);
   }
 }
 

@@ -415,6 +415,8 @@
   "language": "言語",
   "server": "サーバー",
   "releaseServer": "リリースサーバー",
+  "songTitles": "楽曲名",
+  "forceJapaneseTitles": "日本語の楽曲名で表示",
   "loading": "読み込み中",
   "empty": "該当なし",
   "unavailable": "利用不可",

@@ -7,7 +7,6 @@ import { songTypeDefinition } from "~/config/songTypes";
 import { songReleaseTimestamp } from "~/features/catalog/songSources";
 import {
   contentLocaleForOrigin,
-  contentOriginLabel,
   runtimeReleaseForCatalogOrigin,
   type CatalogContentOrigin,
 } from "~/features/catalog/contentSource";
@@ -111,7 +110,6 @@ const publishedAt = computed(() => {
   const value = songReleaseTimestamp(props.song);
   return value ? formatDate(value) : "";
 });
-const sourceLabel = computed(() => contentOriginLabel(props.origin));
 const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.origin, releaseServer.value));
 const sourceAssetRoot = computed(() => assetRootForRelease(runtimeRelease.value.releaseId));
 
@@ -196,7 +194,6 @@ async function playVideo() {
 }
 const facts = computed(() => {
   const values = [
-    { key: "source", label: t("source"), value: sourceLabel.value },
     {
       key: "composer",
       label: t("composer"),

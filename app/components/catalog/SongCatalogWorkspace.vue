@@ -46,6 +46,7 @@ const screenTitleKey = computed(() => sourceProfile.value.titleKey);
 const screenDomain = computed(() => sourceProfile.value.domain);
 
 const { localize, resolveLocalized, locale, t, compareText } = useLocale();
+const { localizeSongTitle, resolveSongTitle } = useSongTitle();
 const route = useRoute();
 useSeoMeta({ title: () => `${t(screenTitleKey.value)} · haneoka` });
 const { assetRoot, assetUrl, releaseServer, releases } = useReleaseServer();
@@ -155,10 +156,10 @@ const creditLabelOf = (song: Song): string => {
     .join(" × ");
 };
 
-const titleOf = (song: Song) => localize(song.musicTitle) || String(song.musicId);
+const titleOf = (song: Song) => localizeSongTitle(song.musicTitle) || String(song.musicId);
 const bandOf = (song: Song) => creditLabelOf(song) || localize(bandMap.value.get(song.bandId || 0)?.bandName);
 const displayTitleOf = (song: Song, origin: CatalogContentOrigin = catalogOrigin.value) =>
-  resolveLocalized(song.musicTitle, {
+  resolveSongTitle(song.musicTitle, {
     sourceHint: sourceLocaleForOrigin(origin),
     fallback: String(song.musicId),
   }) || titleOf(song);

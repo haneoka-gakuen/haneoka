@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ResourceReferenceItem } from "~/components/catalog/ResourceReferenceList.vue";
-import { contentOriginLabel, ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
+import { ourNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import type { LocalizedValue } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
 
@@ -261,7 +261,6 @@ const rewardReferences = computed<ResourceReferenceItem[]>(() => {
 const selectedFacts = computed(() =>
   selected.value
     ? [
-        { label: t("source"), value: contentOriginLabel(detailOrigin.value) },
         { label: t("id"), value: selected.value.itemId || selected.value.itemKey },
         { label: t("type"), value: typeLabelOf(selected.value) },
         { label: t("size"), value: selected.value.max },

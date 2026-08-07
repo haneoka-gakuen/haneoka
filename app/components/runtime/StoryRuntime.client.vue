@@ -503,37 +503,10 @@ defineExpose({ seekProgress });
 
 <style scoped>
 .story-runtime {
-  color-scheme: light;
-
-  --md-sys-color-primary: #31356e;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #e5e6f3;
-  --md-sys-color-on-primary-container: #242750;
-  --md-sys-color-secondary: #2e6974;
-  --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #d9eff2;
-  --md-sys-color-on-secondary-container: #173f46;
-  --md-sys-color-surface: #f6f8f9;
-  --md-sys-color-on-surface: #202428;
-  --md-sys-color-on-surface-variant: #555d63;
-  --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f1f4f5;
-  --md-sys-color-surface-container: #eceff1;
-  --md-sys-color-surface-container-high: #e6eaec;
-  --md-sys-color-surface-container-highest: #dce2e5;
-  --md-sys-color-outline: #687177;
-  --md-sys-color-outline-variant: #c7ced2;
-  --md-comp-runtime-surface: #e6eaec;
-  --md-comp-runtime-surface-high: #dce2e5;
-  --md-comp-runtime-outline: #c7ced2;
-  --md-comp-runtime-primary: #31356e;
-  --md-comp-runtime-primary-strong: #31356e;
-  --md-comp-runtime-primary-container: #e5e6f3;
-  --md-comp-runtime-on-surface: #202428;
-  --md-comp-runtime-on-surface-variant: #555d63;
-  --md-comp-runtime-slider-track: #dce2e5;
-  --md-comp-runtime-slider-fill: #31356e;
-  --md-comp-runtime-slider-thumb: #31356e;
+  /* Theme tokens (surface/primary/slider-track/…) are intentionally NOT redefined
+     here. The player teleports to <body>, a descendant of :root, so it inherits the
+     resolved theme tokens that switch via :root[data-ui-resolved-theme="dark"].
+     Hardcoding the light palette here would shadow dark mode — see tokens.css. */
   --story-runtime-safe-bottom: 0px;
   --story-runtime-safe-left: 0px;
   --story-runtime-safe-right: 0px;
