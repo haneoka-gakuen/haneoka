@@ -24,13 +24,21 @@ const props = withDefaults(
   },
 );
 
-const imageFailed = ref(false);
-watch(
-  () => props.image,
-  () => {
-    imageFailed.value = false;
-  },
-);
+// Walk the locale-fallback candidate chain for `image` (locale-tagged variant
+// first, then the ja base; language-neutral paths collapse to one candidate),
+// mirroring TextFallbackMedia / MediaFrame. When every candidate errors we fall
+// back to the `<EntityAvatar>` initials, identical to the no-image case.
+const expand = useLocalizedAssetSources();
+const sources = computed<readonly string[]>(() => (props.image ? expand(props.image) : []));
+const candidateIndex = ref(0);
+watch(sources, () => {
+  candidateIndex.value = 0;
+});
+const imageFailed = computed(() => candidateIndex.value >= sources.value.length);
+const currentSrc = computed(() => sources.value[candidateIndex.value] ?? "");
+const onImageError = () => {
+  candidateIndex.value += 1;
+};
 const fallbackText = computed(() => entityAvatarText(textOf(props.mediaText) ? props.mediaText : props.title));
 </script>
 
@@ -42,14 +50,14 @@ const fallbackText = computed(() => entityAvatarText(textOf(props.mediaText) ? p
       aria-hidden="true"
     >
       <img
-        v-if="image && !imageFailed"
-        :src="image"
+        v-if="currentSrc"
+        :src="currentSrc"
         :alt="textOf(title)"
         :lang="langOf(title)"
         loading="lazy"
         decoding="async"
         :class="{ 'is-cover': imageFit === 'cover' }"
-        @error="imageFailed = true"
+        @error="onImageError"
       />
       <EntityAvatar
         v-else

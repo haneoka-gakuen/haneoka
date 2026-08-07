@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { MaterialIcon } from "@haneoka/ui";
 import type { SingleChoiceOption } from "~/components/ui/SingleChoiceList.vue";
 
 defineProps<{
@@ -33,7 +34,7 @@ defineEmits<{ "update:modelValue": [value: string] }>();
           class="icon-row__image"
           :loading="'lazy'"
         />
-        <span v-else class="material-symbols-rounded icon-row__icon">{{ option.icon }}</span>
+        <MaterialIcon v-else-if="option.icon" :name="option.icon" :size="24" class="icon-row__symbol" />
       </slot>
     </button>
   </div>
@@ -87,18 +88,14 @@ defineEmits<{ "update:modelValue": [value: string] }>();
   pointer-events: none;
 }
 
-.icon-row__image,
-.icon-row__icon {
+.icon-row__image {
   width: 40px;
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
 }
 
-.icon-row__icon {
-  display: grid;
-  place-items: center;
-  font-size: 24px;
+.icon-row__symbol {
   color: var(--md-sys-color-on-surface);
 }
 

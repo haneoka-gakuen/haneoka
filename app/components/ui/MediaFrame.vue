@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
   defineProps<{
     src?: string;
     alt?: string;
@@ -9,11 +9,30 @@ withDefaults(
   }>(),
   { ratio: "square", loading: "lazy", fit: "cover", src: "", alt: "" },
 );
+// Walk the locale-fallback candidate chain for `src` (locale-tagged variant
+// first, then the ja base; language-neutral paths collapse to one candidate).
+const expand = useLocalizedAssetSources();
+const sources = computed<readonly string[]>(() => (props.src ? expand(props.src) : []));
+const candidateIndex = ref(0);
+watch(sources, () => {
+  candidateIndex.value = 0;
+});
+const currentSrc = computed(() => sources.value[candidateIndex.value] ?? "");
+const onImageError = () => {
+  candidateIndex.value += 1;
+};
 </script>
 
 <template>
   <figure class="media-frame" :class="[`media-frame--${ratio}`, `media-frame--${fit}`]">
-    <img v-if="src" :src="src" :alt="alt" :loading="loading" decoding="async" />
+    <img
+      v-if="currentSrc"
+      :src="currentSrc"
+      :alt="alt"
+      :loading="loading"
+      decoding="async"
+      @error="onImageError"
+    />
     <div v-else class="media-frame__empty" />
     <slot />
   </figure>

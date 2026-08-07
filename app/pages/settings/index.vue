@@ -17,15 +17,30 @@ const localeOptions = computed(() =>
     image: localeFlagIconUrls[option.value],
   })),
 );
-const releaseOptions = computed(() =>
-  releases.value.map((release) => ({
-    value: release.id,
-    label:
-      release.displayName === release.id
-        ? release.id
-        : `${release.displayName} · ${release.region.toLocaleUpperCase()} (${release.id})`,
-  })),
-);
+const releaseOptions = computed(() => {
+  // gl-cbt remains the default *selected* server (DEFAULT_RELEASE_SERVER). The
+  // canonical registry order is left intact because it also drives asset
+  // fallback priority; here we only reorder the displayed list so the two CBT
+  // builds sit together — jp-cbt first, gl-cbt right behind it.
+  const displayPriority = ["jp-cbt", "gl-cbt"];
+  return [...releases.value]
+    .map((release, index) => ({ release, index }))
+    .sort((a, b) => {
+      const pa = displayPriority.indexOf(a.release.id);
+      const pb = displayPriority.indexOf(b.release.id);
+      if (pa !== -1 && pb !== -1) return pa - pb;
+      if (pa !== -1) return -1;
+      if (pb !== -1) return 1;
+      return a.index - b.index;
+    })
+    .map(({ release }) => ({
+      value: release.id,
+      label:
+        release.displayName === release.id
+          ? release.id
+          : `${release.displayName} · ${release.region.toLocaleUpperCase()} (${release.id})`,
+    }));
+});
 
 useHead(() => ({ title: `${t("settings")} · haneoka` }));
 </script>

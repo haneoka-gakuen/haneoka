@@ -59,7 +59,13 @@ def _tool(name: str) -> str:
 
 
 def _run(command: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    # vgmstream/ffmpeg may emit non-UTF-8 bytes (e.g. Shift-JIS cue names embedded
+    # in ACB UTF tables, or binary-ish header lines). Decode leniently so a stray
+    # byte in tool output never crashes an otherwise-decodable source; the JSON
+    # metadata parser only consumes well-formed "{" lines regardless.
+    result = subprocess.run(
+        command, cwd=cwd, text=True, capture_output=True, errors="replace"
+    )
     if result.returncode:
         detail = (result.stderr or result.stdout).strip()[:1000]
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}\n{detail}")

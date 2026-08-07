@@ -3,6 +3,7 @@ import type { StoryChapter } from "~/types/archive";
 
 const { t } = useLocale();
 useSeoMeta({ title: () => `${t("storyNavigation.tutorial")} · haneoka` });
+const localizedAssetSources = useLocalizedAssetSources();
 const { catalog, bands, pending, error, refresh } = useStoryCatalogArchive();
 
 // Tutorial stories use the same chapter workspace as band stories. Keeping the
@@ -24,6 +25,7 @@ const chapters = computed<StoryChapter[]>(() => {
     :episodes="catalog.episodes"
     :bands="bands"
     :allow-list="false"
+    :expand-image="localizedAssetSources"
     :pending="pending"
     :error="error"
     @refresh="refresh()"

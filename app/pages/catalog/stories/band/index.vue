@@ -3,6 +3,7 @@ import type { StoryChapter } from "~/types/archive";
 
 const { t } = useLocale();
 useSeoMeta({ title: () => `${t("storyNavigation.band")} · haneoka` });
+const localizedAssetSources = useLocalizedAssetSources();
 const { catalog, bands, pending, error, refresh } = useStoryCatalogArchive();
 
 // Encyclopedia band stories keep the master-data chapters only; the synthetic
@@ -23,6 +24,7 @@ const chapters = computed<StoryChapter[]>(() =>
     :bands="bands"
     :allow-list="false"
     enable-band-filter
+    :expand-image="localizedAssetSources"
     :pending="pending"
     :error="error"
     @refresh="refresh()"
