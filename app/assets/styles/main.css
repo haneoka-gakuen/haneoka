@@ -131,6 +131,32 @@ a {
   touch-action: manipulation;
 }
 
+/*
+ * iOS WebKit never delivers pointerup/pointercancel/click to an element once a
+ * touch becomes a scroll. The Material ripple clears its `pressed` state layer
+ * only on those events, so a finger that dwells ~150ms before swiping leaves the
+ * radial "shadow" painted forever. Chromium dispatches pointercancel at
+ * scroll-start, so Android is unaffected. Material defines the ripple opacity
+ * tokens only as var() fallbacks inside its shadow DOM (not on :host), so
+ * setting them on :root inherits through every shadow boundary and disables both
+ * state layers on every ripple at once — md-ripple, md-button, md-list-item, ….
+ * Tap feedback is preserved with a native :active state layer on each ripple's
+ * host; `:has(> md-ripple)` matches exactly those hosts, and its 0,1,1
+ * specificity beats a plain base background yet yields to any component's own
+ * intentional :active. See CollectionTileSurface.vue for the original
+ * per-component form of this fix.
+ */
+@media (hover: none) and (pointer: coarse) {
+  :root {
+    --md-ripple-hover-opacity: 0;
+    --md-ripple-pressed-opacity: 0;
+  }
+
+  :has(> md-ripple):active {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+}
+
 :focus-visible {
   outline: none !important;
 }
