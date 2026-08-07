@@ -55,16 +55,6 @@ export const localizedAssetPath = (basePath: string, locale: Locale): string =>
 export const localizedAssetFallbackChain = (basePath: string, locale: Locale): readonly string[] =>
   contentLocaleFallbacks(locale).map((candidate) => localizedAssetPath(basePath, candidate));
 
-/**
- * Catalog Addressables image categories that actually ship per-locale `(tag)`
- * variants in a release (verified against the gl-cbt asset tree). Other
- * categories — card art, song jackets, episode banners, character sprites —
- * are language-neutral, so tagging them would only ever miss and 404 back to
- * the base. Keep this list narrow so locale resolution is exact and waste-free.
- */
-const LOCALE_BEARING_ASSET =
-  /\/AddressableResources\/(?:Stamp\/illust|Story\/Banner\/Chapter|Story\/Icon)\//;
-
 /** Expand a single asset URL into its ordered language-fallback candidates. */
 export type AssetImageExpander = (url: string | null | undefined) => readonly string[];
 
@@ -72,17 +62,20 @@ export type AssetImageExpander = (url: string | null | undefined) => readonly st
  * Per-locale candidate chain for an Our Notes Addressables image.
  *
  * The release stores the Japanese source as the untagged base (`x.png`) and
- * each other locale as `x(tag).png` (`x(en).png`, `x(zh-Hant).png`, …). So the
- * image fallback is simply the requested locale's tag, then the untagged (ja)
- * base — which always exists. Only {@link LOCALE_BEARING_ASSET} paths are
- * tagged; everything else resolves straight to its single base path.
+ * each other locale as `x(tag).png` (`x(en).png`, `x(zh-Hant).png`, …). The
+ * resource pipeline fans every shared-bundle asset out to a variant per locale,
+ * so the chain is simply the requested locale's tagged path, then the untagged
+ * (ja) base — which always exists as the final fallback when an asset has no
+ * variant for the requested locale. Consumers (MediaFrame, CollectionPrimaryCell)
+ * walk the chain on `<img @error>`, so a missing variant transparently falls
+ * back instead of rendering broken.
  */
 export const localizedAssetSources = (
   basePath: string | null | undefined,
   locale: Locale,
 ): readonly string[] => {
   if (!basePath) return [];
-  if (locale === "ja" || !LOCALE_BEARING_ASSET.test(basePath)) return [basePath];
+  if (locale === "ja") return [basePath];
   return [localizedAssetPath(basePath, locale), basePath];
 };
 

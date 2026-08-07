@@ -69,14 +69,14 @@ def _canonical_source(candidates: list[dict[str, Any]], reports: dict[str, dict[
     eligible = [item for item in ordered if item["bundleOrigin"] == selected_origin]
     fingerprints = {item["source"]["contentSha256"] for item in eligible}
     if len(fingerprints) != 1:
-        # Locale variants of the same Unity asset (e.g. band_logo) produce
-        # different bundles with the same m_Container path but different content.
-        # In a multi-locale merge, keep the first variant (deterministic by sort)
-        # rather than aborting. True per-locale serving requires locale-namespaced
-        # extraction (a follow-up enhancement).
+        # Locale variants now carry distinct namespaced source paths, so a single
+        # source path resolving to several fingerprints is a genuine conflict (e.g.
+        # two bundles both claim the same `(locale)` variant with different content)
+        # rather than the expected multi-locale case. Keep the first deterministically
+        # and warn rather than abort the whole merge.
         sys.stderr.write(
-            f"warning: Unity source path resolves to {len(eligible)} locale variants; "
-            f"keeping first: {eligible[0]['source']['sourcePath']} "
+            f"warning: Unity source path resolves to {len(eligible)} conflicting "
+            f"variants; keeping first: {eligible[0]['source']['sourcePath']} "
             f"({', '.join(item['bundleFilename'] for item in eligible)})\n"
         )
         eligible = eligible[:1]
@@ -101,6 +101,7 @@ def _canonical_source(candidates: list[dict[str, Any]], reports: dict[str, dict[
     return {
         "schema": "haneoka-unity-source-v1",
         "sourcePath": source_path,
+        "basePath": selected["source"].get("basePath") or source_path,
         "serializedFile": selected["source"]["serializedFile"],
         "contentSha256": selected["source"]["contentSha256"],
         "selectedOrigin": selected_origin,
@@ -370,9 +371,17 @@ def merge_unity_shards(server: str, source_id: str, build_id: str, shard_count: 
                 )
 
     sources = [_canonical_source(candidates[path], reports_by_sha) for path in sorted(candidates)]
+    # Locale variants (`sourcePath != basePath`) are materialized as files so the
+    # runtime can fetch e.g. stamp_illust_x(zh-Hans).png, but they stay out of
+    # source-index.json and the database: api.py resolves each Unity media pointer
+    # to a *unique* source, and indexing the locale siblings of a shared bundle
+    # would make its pointers resolve to several sources and abort the build. The
+    # canonical (locale-less ja base) source is the single indexed entry; variant
+    # files ride along to the release via the assets tree walk.
+    canonical_sources = [source for source in sources if source["sourcePath"] == source["basePath"]]
     media_output_count = _materialize_outputs(layout, sources, shard_count)
-    runtime_object_count = _runtime_projections(layout, sources)
-    for source in sources:
+    runtime_object_count = _runtime_projections(layout, canonical_sources)
+    for source in canonical_sources:
         write_json(layout.root / source["descriptor"], source)
     serialized_files: dict[str, dict[str, Any]] = {}
     for digest, report in sorted(reports_by_sha.items()):
@@ -408,12 +417,12 @@ def merge_unity_shards(server: str, source_id: str, build_id: str, shard_count: 
         "server": server,
         "sourceId": source_id,
         "bundleCount": len(reports_by_sha),
-        "sourceCount": len(sources),
+        "sourceCount": len(canonical_sources),
         "objectCount": sum(report["objectArchive"]["objectCount"] for report in reports_by_sha.values()),
         "runtimeObjectCount": runtime_object_count,
         "mediaOutputCount": media_output_count,
         "serializedFiles": serialized_files,
-        "tree": _tree(source["sourcePath"] for source in sources),
+        "tree": _tree(source["sourcePath"] for source in canonical_sources),
         "sources": {
             source["sourcePath"]: {
                 "descriptor": source["descriptor"].removeprefix("metadata/"),
@@ -422,11 +431,11 @@ def merge_unity_shards(server: str, source_id: str, build_id: str, shard_count: 
                 "rootTypes": source["rootTypes"],
                 "outputs": source["outputs"],
             }
-            for source in sources
+            for source in canonical_sources
         },
     }
     write_json(layout.metadata / "source-index.json", source_index)
-    _write_database(layout.database, list(reports_by_sha.values()), sources)
+    _write_database(layout.database, list(reports_by_sha.values()), canonical_sources)
     summary = {
         "schema": "haneoka-unity-merge-v1",
         "server": server,
@@ -434,7 +443,7 @@ def merge_unity_shards(server: str, source_id: str, build_id: str, shard_count: 
         "buildId": build_id,
         "shardCount": shard_count,
         "bundleCount": len(reports_by_sha),
-        "sourceCount": len(sources),
+        "sourceCount": len(canonical_sources),
         "objectCount": source_index["objectCount"],
         "runtimeObjectCount": runtime_object_count,
         "mediaOutputCount": media_output_count,

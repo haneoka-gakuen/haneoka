@@ -131,6 +131,7 @@ def _save_png(file: Path, obj: Any) -> None:
 @dataclass
 class SourceGroup:
     source_path: str
+    base_path: str
     serialized_file: str
     roots: set[int] = field(default_factory=set)
     preloads: set[int] = field(default_factory=set)
@@ -152,20 +153,29 @@ def _pointer_identity(pointer: Any) -> tuple[str, int] | None:
 
 
 def _source_groups(
-    bundle: Any, objects_by_identity: dict[tuple[str, int], Any], locale: str = ""
+    bundle: Any,
+    objects_by_identity: dict[tuple[str, int], Any],
+    locales: list[str] | None = None,
 ) -> list[SourceGroup]:
+    if not locales:
+        locales = [""]
     groups: dict[str, SourceGroup] = {}
     bundle_serialized_file = str(bundle.object_reader.assets_file.name)
     serialized_files = {identity[0] for identity in objects_by_identity}
     preload_table = list(getattr(bundle, "m_PreloadTable", []) or [])
     for raw_path, info in list(getattr(bundle, "m_Container", []) or []):
-        source_path = validate_unity_path(raw_path)
-        if locale:
-            source_path = _locale_namespaced_path(source_path, locale)
+        base_path = validate_unity_path(raw_path)
+        # Fan every container out to a variant per locale when the bundle is shared
+        # across locales. The locale-less ("") entry is the ja base; each non-empty
+        # locale gets a `(tag)`-namespaced sibling so the per-locale variant file
+        # exists for the runtime to fetch. Byte-identical variants still share one
+        # content-addressed blob at publish time, so universal fan-out costs no extra
+        # storage — it only ensures no locale is silently missing its variant.
+        path_locales = locales
         root_pointer = getattr(info, "asset", None)
         root_reference = _pointer_identity(root_pointer)
         if _pointer_id(root_pointer) and root_reference is None:
-            raise ValueError(f"Unity source root pointer is unresolved: {source_path}")
+            raise ValueError(f"Unity source root pointer is unresolved: {base_path}")
         if root_reference is not None:
             serialized_file = root_reference[0]
         else:
@@ -177,43 +187,65 @@ def _source_groups(
             else:
                 raise ValueError(
                     f"Unity zero-root container cannot identify its scene file: "
-                    f"{source_path} ({', '.join(sorted(serialized_files))})"
+                    f"{base_path} ({', '.join(sorted(serialized_files))})"
                 )
-        group = groups.setdefault(
-            source_path, SourceGroup(source_path, serialized_file)
-        )
-        if group.serialized_file != serialized_file:
-            raise ValueError(
-                f"Unity source spans multiple root serialized files: {source_path}"
+        for locale in path_locales:
+            source_path = _locale_namespaced_path(base_path, locale) if locale else base_path
+            group = groups.setdefault(
+                source_path, SourceGroup(source_path, base_path, serialized_file)
             )
-        if root_reference is not None:
-            group.root_references.add(root_reference)
-            group.roots.add(root_reference[1])
-            root_object = objects_by_identity.get(root_reference)
-            if root_object is not None:
-                group.root_types.add(root_object.type.name)
-        start = max(0, int(getattr(info, "preloadIndex", 0) or 0))
-        size = max(0, int(getattr(info, "preloadSize", 0) or 0))
-        for pointer in preload_table[start : start + size]:
-            reference = _pointer_identity(pointer)
-            if reference is None:
-                continue
-            group.preload_references.add(reference)
-            if reference[0] == group.serialized_file:
-                group.preloads.add(reference[1])
+            if group.serialized_file != serialized_file:
+                raise ValueError(
+                    f"Unity source spans multiple root serialized files: {source_path}"
+                )
+            if root_reference is not None:
+                group.root_references.add(root_reference)
+                group.roots.add(root_reference[1])
+                root_object = objects_by_identity.get(root_reference)
+                if root_object is not None:
+                    group.root_types.add(root_object.type.name)
+            start = max(0, int(getattr(info, "preloadIndex", 0) or 0))
+            size = max(0, int(getattr(info, "preloadSize", 0) or 0))
+            for pointer in preload_table[start : start + size]:
+                reference = _pointer_identity(pointer)
+                if reference is None:
+                    continue
+                group.preload_references.add(reference)
+                if reference[0] == group.serialized_file:
+                    group.preloads.add(reference[1])
     return [groups[key] for key in sorted(groups)]
 
 
-def _owner(
+def _owning_groups(
     groups: list[SourceGroup], identity: tuple[str, int]
-) -> tuple[SourceGroup | None, bool]:
+) -> list[tuple[SourceGroup, bool]]:
+    """Groups that own ``identity``, scoped to one base path plus its locale siblings.
+
+    A shared object can be referenced by several containers, but the API build
+    resolves each Unity media pointer to a *unique* source. Returning every owning
+    group would let one object map to several indexed source paths and break that
+    uniqueness, so we pick a single owning base path (deterministic by sort,
+    matching the prior first-match behaviour) and fan out only to its locale
+    variants. The canonical variant is the one that ends up indexed; the rest are
+    materialized as locale-variant files but excluded from source-index.json in the
+    merge step.
+    """
+
     direct = [group for group in groups if identity in group.root_references]
-    if direct:
-        return direct[0], True
-    preload = [group for group in groups if identity in group.preload_references]
-    if preload:
-        return preload[0], False
-    return (groups[0], False) if len(groups) == 1 else (None, False)
+    pool = direct if direct else [
+        group for group in groups if identity in group.preload_references
+    ]
+    if pool:
+        chosen_base = sorted(pool, key=lambda group: group.source_path)[0].base_path
+        return [(group, bool(direct)) for group in groups if group.base_path == chosen_base]
+    # Unreferenced derivative (e.g. a Sprite cut from a texture but not listed in
+    # m_Container): attribute it only when ownership is unambiguous. When every
+    # group is a locale variant of a single asset (one base path), fan out to all of
+    # them so derivatives inherit every locale variant too; otherwise fall back to
+    # the single-group case (matching prior behaviour) or skip when ambiguous.
+    if len({group.base_path for group in groups}) == 1:
+        return [(group, False) for group in groups]
+    return [(groups[0], False)] if len(groups) == 1 else []
 
 
 def _preferred_png_object(
@@ -489,9 +521,16 @@ def extract_bundle(
             f"{artifact['originalFilename']}"
         )
     bundle_object = next((obj for obj in objects if obj.type.name == "AssetBundle"), None)
-    locale = str((artifact.get("addressables") or {}).get("locale", ""))
+    addressables = artifact.get("addressables") or {}
+    locale_list = list(addressables.get("locales") or [])
+    if not locale_list:
+        # Legacy source manifests carry a single "locale" tag.
+        locale_list = [str(addressables.get("locale", ""))]
+    # ja is served as the locale-less base (`x.png`), never `x(ja).png`; collapse it
+    # onto "" and de-duplicate so the un-namespaced base is produced exactly once.
+    locale_list = list(dict.fromkeys("" if loc == "ja" else loc for loc in locale_list))
     groups = (
-        _source_groups(bundle_object.read(), objects_by_identity, locale)
+        _source_groups(bundle_object.read(), objects_by_identity, locale_list)
         if bundle_object
         else []
     )
@@ -509,17 +548,18 @@ def extract_bundle(
         if obj.type.name not in MEDIA_TYPES:
             continue
         identity = (str(obj.assets_file.name), int(obj.path_id))
-        group, direct = _owner(groups, identity)
-        if not group:
+        owning = _owning_groups(groups, identity)
+        if not owning:
             continue
-        if group.source_path in preferred_png_objects:
-            direct = identity == preferred_png_objects[group.source_path]
-        try:
-            output = _export_media(candidate_root, group, obj, direct)
-            if output:
-                group.outputs.append(output)
-        except Exception as error:
-            raise RuntimeError(f"failed to export {artifact['originalFilename']}:{obj.path_id}: {error}") from error
+        for group, direct in owning:
+            if group.source_path in preferred_png_objects:
+                direct = identity == preferred_png_objects[group.source_path]
+            try:
+                output = _export_media(candidate_root, group, obj, direct)
+                if output:
+                    group.outputs.append(output)
+            except Exception as error:
+                raise RuntimeError(f"failed to export {artifact['originalFilename']}:{obj.path_id}: {error}") from error
 
     archive_file = shard_root / "objects" / "unity" / f"{digest}.jsonl.gz"
     archive, fingerprints = _write_object_archive(objects, artifact["originalFilename"], digest, archive_file)
@@ -538,6 +578,7 @@ def extract_bundle(
         "sources": [
             {
                 "sourcePath": group.source_path,
+                "basePath": group.base_path,
                 "serializedFile": group.serialized_file,
                 "rootObjects": [str(value) for value in sorted(group.roots)],
                 "preloadObjects": [str(value) for value in sorted(group.preloads)],

@@ -869,16 +869,25 @@ def ingest_package(
                 "primaryKey": location.get("primaryKey", ""),
                 "primaryParts": location.get("primaryParts", []),
                 "url": location["remoteUrl"],
+                # Every locale catalog that references this artifact. A bundle shared
+                # across locales (identical content, same hash) used to be dropped
+                # after the first locale, which silently lost per-locale variant files
+                # — e.g. when zh-Hans artwork is byte-identical to zh-Hant, the
+                # zh-Hans bundle was discarded and stamp_illust_x(zh-Hans).png was
+                # never created, leaving locale clients to 404 into the fallback
+                # chain. Recording every locale lets extraction emit a namespaced
+                # variant per locale from this single shared bundle. "" is the
+                # locale-less primary catalog (served as the ja base).
+                "locales": [locale_tag],
             }
-            if locale_tag:
-                addressables["locale"] = locale_tag
             existing_plan = plans.get(filename)
             if existing_plan:
-                # Shared bundles appear in multiple locale catalogs. The locale tag
+                # Shared bundles appear in multiple locale catalogs. The locale list
                 # is the only difference; compare without it to detect real collisions.
-                _strip_locale = lambda d: {k: v for k, v in d.items() if k != "locale"}
-                if _strip_locale(existing_plan[2]) != _strip_locale(addressables) or existing_plan[3] != expected:
+                _strip_locales = lambda d: {k: v for k, v in d.items() if k != "locales"}
+                if _strip_locales(existing_plan[2]) != _strip_locales(addressables) or existing_plan[3] != expected:
                     raise ValueError(f"Addressables filename collision: {filename}")
+                existing_plan[2]["locales"].append(locale_tag)
                 continue
             plans[filename] = (location, target, addressables, expected)
 
