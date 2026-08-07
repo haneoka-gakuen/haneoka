@@ -373,10 +373,9 @@ SONOLUS_INPUT_PREFIXES = (
     "runtime/unity-json/Assets/AddressableResources/Live/NoteEffect/effect001/",
     "runtime/unity-json/Assets/AddressableResources/Live/NoteEffect/common/anim/",
     "runtime/unity/Assets/AddressableResources/Live/NoteEffect/common/",
+    "runtime/unity/Assets/AddressableResources/Live/Images/lane_effect_white.png/",
 )
-SONOLUS_INPUT_EXACT_PATHS = (
-    "runtime/unity/Assets/AddressableResources/Live/Images/lane_effect_white.png",
-)
+SONOLUS_INPUT_EXACT_PATHS = ()
 
 
 def command_fetch_sonolus_inputs(args: argparse.Namespace) -> None:

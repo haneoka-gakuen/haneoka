@@ -24,6 +24,8 @@ from verify.source import validate_source_manifest
 
 
 MASTER_TABLE_FILE = re.compile(r"^Master[A-Za-z0-9_]+\.bin$")
+CATALOG_FILE = re.compile(r"^catalog_[A-Za-z0-9._-]+\.bin$")
+CATALOG_HASH = re.compile(r"^[a-f0-9]{32}$")
 ADDRESSABLE_ROLES = frozenset(
     {"catalog", "catalog-hash", "embedded-catalog", "unity-bundle"}
 )
@@ -63,9 +65,7 @@ def _source_addressables(
         filename = "catalog_main.bin" if role == "embedded-catalog" else original
         if role == "catalog-hash" and filename != "catalog_main.hash":
             raise ValueError(f"unexpected catalog hash filename: {filename}")
-        if role == "catalog" and not re.fullmatch(
-            r"catalog_[a-f0-9]{32}\.bin", filename
-        ):
+        if role == "catalog" and not CATALOG_FILE.fullmatch(filename):
             raise ValueError(f"unexpected remote catalog filename: {filename}")
         if role == "unity-bundle" and not filename.endswith(".bundle"):
             raise ValueError(f"unexpected Unity bundle filename: {filename}")
@@ -83,13 +83,14 @@ def _source_addressables(
         raise ValueError("source catalog metadata is missing")
     catalog_hash = catalog.get("hash")
     catalog_file = PurePosixPath(str(catalog.get("file") or "")).name
+    catalog_entry = entries.get(catalog_file)
     if (
         not isinstance(catalog_hash, str)
-        or not re.fullmatch(r"[a-f0-9]{32}", catalog_hash)
-        or catalog_file != f"catalog_{catalog_hash}.bin"
-        or catalog_file not in entries
+        or not CATALOG_HASH.fullmatch(catalog_hash)
+        or catalog_entry is None
+        or catalog_entry[2] != "catalog"
     ):
-        raise ValueError("source catalog hash and filename do not agree")
+        raise ValueError("source catalog metadata does not match its addressable")
     return source, entries
 
 

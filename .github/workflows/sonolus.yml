@@ -5,6 +5,11 @@ name: Sonolus engine payload
 # and are projected dynamically, so this workflow only rebuilds when the engine
 # or its build inputs change. A manual dispatch republishes after a game update
 # refreshes the note-se / NoteEffect presentation assets.
+#
+# The four engine facets (play/watch/preview/tutorial) compile on separate
+# runners in the `engine` matrix job, then the `payload` fan-in merges them and
+# publishes. Each facet is cached independently, so editing one facet only
+# recompiles that one.
 on:
   push:
     branches: [main]
@@ -17,7 +22,6 @@ on:
       - scripts/publish/sonolus.py
       - scripts/publish/r2.py
       - .github/workflows/sonolus.yml
-      - .github/actions/setup-sonolus-engine/**
   workflow_dispatch: {}
 
 permissions:
@@ -28,10 +32,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build and publish the global Sonolus payload
+  engine:
+    name: Compile ${{ matrix.facet }} facet
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        facet: [play, watch, preview, tutorial]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Enable pnpm
+        # Must precede setup-node so its `cache: pnpm` can resolve the store path.
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Check out locked external repositories
+        run: node scripts/external-repositories.mjs checkout
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore compiled ${{ matrix.facet }} facet
+        id: engine-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          # Exact-key match only (no restore-keys): a stale output must never ship.
+          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('packages/sonolus/engine/{0}/**', matrix.facet), 'packages/sonolus/engine/shared/**', 'packages/sonolus/engine/esbuild.config.ts', 'packages/sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+
+      - name: Compile ${{ matrix.facet }} facet
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: node packages/sonolus/engine/scripts/build.ts ${{ matrix.facet }}
+
+      - name: Save compiled ${{ matrix.facet }} facet
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('packages/sonolus/engine/{0}/**', matrix.facet), 'packages/sonolus/engine/shared/**', 'packages/sonolus/engine/esbuild.config.ts', 'packages/sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+
+      - name: Upload ${{ matrix.facet }} facet artifact
+        # Always uploaded, even on a cache hit (re-uploaded from the restored
+        # path), so the fan-in job has every facet.
+        uses: actions/upload-artifact@v7
+        with:
+          name: engine-facet-${{ matrix.facet }}
+          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  payload:
+    name: Assemble and publish the global payload
+    needs: engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -44,16 +106,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Enable pnpm
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: pnpm
 
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout
-
-      - name: Install pnpm
-        run: corepack enable
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -73,10 +136,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg
 
-      - name: Build or restore the Sonolus engine
-        uses: ./.github/actions/setup-sonolus-engine
+      - name: Typecheck engine tooling
+        # Runs once here (was bundled into the per-machine build before).
+        run: pnpm --dir packages/sonolus/engine run typecheck:tools
+
+      - name: Download compiled facets
+        # Each artifact contributes EngineConfiguration (byte-identical across
+        # facets, so the merge overwrite is safe) plus one Engine<Facet>Data.
+        uses: actions/download-artifact@v8
         with:
-          dependencies-installed: "true"
+          pattern: engine-facet-*
+          path: packages/sonolus/engine/dist
+          merge-multiple: true
+
+      - name: Stamp engine distribution with licenses
+        run: node packages/sonolus/engine/scripts/copy-upstream-license.ts
 
       - name: Fetch release presentation assets
         # Materialize only the runtime slices the build reads (note-se audio,
@@ -86,7 +160,7 @@ jobs:
             --output "$RUNNER_TEMP/sonolus-release"
 
       - name: Build the global Sonolus payload
-        run: pnpm sonolus:build
+        run: pnpm sonolus:payload
         env:
           RESOURCE_BUILD_ROOT: ${{ runner.temp }}/sonolus-release
 

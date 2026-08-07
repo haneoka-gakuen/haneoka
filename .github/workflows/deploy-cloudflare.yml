@@ -39,10 +39,6 @@ jobs:
       - name: Verify external repository compatibility lock
         run: pnpm dependencies:verify
 
-      - uses: ./.github/actions/setup-sonolus-engine
-        with:
-          dependencies-installed: "true"
-
       - name: Inject licensed Cubism runtime
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

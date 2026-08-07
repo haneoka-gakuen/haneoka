@@ -7,6 +7,9 @@ node_modules/
 dist
 .nuxt/
 .output/
+# Sonolus engine compile workspaces (full-build staging + single-facet matrix output)
+.build-parallel/
+.build-matrix/
 public/sitemap.xml
 public/robots.txt
 /public/Core/
