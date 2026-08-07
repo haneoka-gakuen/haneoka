@@ -3,7 +3,7 @@ import { MaterialIcon, UiIconButton, UiList, UiListItem } from "@haneoka/ui";
 
 import type { AudioTrack } from "~/composables/useAudioPlayer";
 import { contentOriginKey } from "~/features/catalog/contentSource";
-import { textOf } from "~/types/displayText";
+import { sourceLocaleOf, textOf } from "~/types/displayText";
 
 const props = defineProps<{
   queue: AudioTrack[];
@@ -21,6 +21,18 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useLocale();
+// Re-resolve each queue title from the raw song record so the "force Japanese
+// song titles" display setting updates the queue live (mirrors the now-playing
+// line). Tracks enqueued before this field existed fall back to the stored title.
+const { resolveSongTitle } = useSongTitle();
+const resolvedTitle = (item: AudioTrack) =>
+  item.musicTitle
+    ? resolveSongTitle(item.musicTitle, {
+        sourceHint: "ja",
+        fallback: textOf(item.title),
+        fallbackSourceHint: sourceLocaleOf(item.title),
+      }) || item.title
+    : item.title;
 const playLabelId = useId();
 const removeLabelId = useId();
 const titleId = useId();
@@ -77,7 +89,9 @@ defineExpose({ centerCurrent });
 const announceMove = (fromIndex: number, toIndex: number) => {
   const item = props.queue[fromIndex];
   if (!item || fromIndex === toIndex) return;
-  reorderStatus.value = `${textOf(item.title)} — ${toIndex < fromIndex ? t("moveUp") : t("moveDown")} — ${toIndex + 1}/${props.queue.length}`;
+  reorderStatus.value = `${textOf(resolvedTitle(item))} — ${
+    toIndex < fromIndex ? t("moveUp") : t("moveDown")
+  } — ${toIndex + 1}/${props.queue.length}`;
 };
 
 const resetPointerDrag = (target?: EventTarget | null) => {
@@ -246,7 +260,7 @@ onBeforeUnmount(() => {
             tone="runtime"
             size="compact"
             :disabled="queue.length < 2"
-            :label="`${t('reorder')} ${textOf(item.title)}`"
+            :label="`${t('reorder')} ${textOf(resolvedTitle(item))}`"
             aria-keyshortcuts="ArrowUp ArrowDown Home End"
             @click.stop
             @keydown="onReorderKeydown($event, index)"
@@ -262,7 +276,7 @@ onBeforeUnmount(() => {
           <span v-else class="audio-queue-panel__placeholder"><MaterialIcon name="queue_music" :size="15" /></span>
         </template>
         <template #headline>
-          <strong :id="itemTitleId(index)"><DisplayText :value="item.title" /></strong>
+          <strong :id="itemTitleId(index)"><DisplayText :value="resolvedTitle(item)" /></strong>
         </template>
         <template v-if="textOf(item.band)" #supporting>
           <span class="audio-queue-panel__band">

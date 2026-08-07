@@ -95,9 +95,16 @@ const { t } = useLocale();
 }
 
 @media (max-width: 760px) {
+  /* The detail layout's media pane only sets a min-height on narrow screens, so
+     an uncapped frame can grow past it — worst for the 270:740 band-item sprite,
+     which would render ~2.7x the viewport width. Let the frame size by its ratio
+     but clamp it to the same ceiling the layout intends, shrinking + centering
+     (the media pane uses place-items: center) instead of dominating the screen. */
   .resource-detail__frame {
+    width: auto;
     height: auto;
-    max-height: none;
+    max-width: 100%;
+    max-height: min(50dvh, 400px);
   }
 }
 </style>

@@ -61,17 +61,16 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
       </PageSection>
 
       <PageSection :title="t('language')" icon="language" divided>
-        <SingleChoiceIconRow
-          name="locale"
-          :label="t('language')"
-          :model-value="locale"
-          :options="localeOptions"
-          @update:model-value="setLocale"
-        />
-      </PageSection>
-
-      <PageSection :title="t('songTitles')" icon="music_note" divided>
-        <UiSwitch v-model="forceJapaneseTitles" :label="t('forceJapaneseTitles')" />
+        <div class="settings-controls">
+          <SingleChoiceIconRow
+            name="locale"
+            :label="t('language')"
+            :model-value="locale"
+            :options="localeOptions"
+            @update:model-value="setLocale"
+          />
+          <UiSwitch v-model="forceJapaneseTitles" :label="t('forceJapaneseTitles')" />
+        </div>
       </PageSection>
 
       <PageSection :title="t('releaseServer')" icon="dns" divided>
@@ -95,5 +94,10 @@ useHead(() => ({ title: `${t("settings")} · haneoka` }));
 .settings-content {
   display: grid;
   gap: var(--md-sys-spacing-5);
+}
+
+.settings-controls {
+  display: grid;
+  gap: var(--md-sys-spacing-2);
 }
 </style>

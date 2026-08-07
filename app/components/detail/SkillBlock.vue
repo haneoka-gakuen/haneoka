@@ -1,53 +1,34 @@
 <script setup lang="ts">
-import type { ArchiveSkill } from "~/types/archive";
-import {
-  buildSkillReferenceIndex,
-  localizeSkillValue,
-  resolveSkillDescription,
-  resolveSkillLevelEffects,
-  stripSkillDescriptionMarkup,
-  type SkillReferenceDocument,
-} from "~/components/detail/skillText";
-import { replaceDisplayText } from "~/types/displayText";
+import type { DisplayText } from "~/types/displayText";
 
-const props = defineProps<{
-  skill?: ArchiveSkill;
-  label: string;
-  level?: number;
+/**
+ * Pure presentational shell for a "skill"-style block: an icon + label + name
+ * header, an optional description, and an open slot for trailing detail (effect
+ * rows, a cost breakdown, target chips, …). It owns no data fetching so it can be
+ * reused by anything that renders a skill-like surface — card skills (whose text
+ * resolution lives in `CardSkillBlock`) and band-item level effects alike.
+ */
+defineProps<{
+  icon?: string;
+  label?: string;
+  name?: DisplayText;
+  description?: DisplayText | null;
 }>();
-
-const { locale, resolveLocalized } = useLocale();
-const localizeDescription = (value: Parameters<typeof localizeSkillValue>[0]) =>
-  localizeSkillValue(value, locale.value);
-const referenceRequest = useCatalogDocument<SkillReferenceDocument>("skill-reference");
-const reference = computed(() => buildSkillReferenceIndex(referenceRequest.data.value));
-const name = computed(() => resolveLocalized(props.skill?.skillName, { sourceHint: "ja" }));
-const effects = computed<Record<string, unknown>[]>(() => {
-  const source = props.skill?.effects || [];
-  return resolveSkillLevelEffects(source, reference.value, props.level).effects;
-});
-const description = computed(() => {
-  const source = resolveLocalized(props.skill?.description, { sourceHint: "ja" });
-  if (!source) return null;
-  return replaceDisplayText(
-    source,
-    stripSkillDescriptionMarkup(resolveSkillDescription(source.text, effects.value, localizeDescription)),
-  );
-});
 </script>
 
 <template>
-  <section v-if="skill" class="skill-block">
-    <header class="skill-block__header">
-      <span v-if="skill.icon" class="skill-block__icon" aria-hidden="true">
-        <img :src="skill.icon" alt="" loading="lazy" decoding="async" />
+  <section class="skill-block">
+    <header v-if="icon || label || name" class="skill-block__header">
+      <span v-if="icon" class="skill-block__icon" aria-hidden="true">
+        <img :src="icon" alt="" loading="lazy" decoding="async" />
       </span>
       <span class="skill-block__heading">
-        <span class="skill-block__label meta-label">{{ label }}</span>
-        <strong><DisplayText :value="name || '—'" /></strong>
+        <span v-if="label" class="skill-block__label meta-label">{{ label }}</span>
+        <strong v-if="name"><DisplayText :value="name" /></strong>
       </span>
     </header>
     <p v-if="description"><DisplayText :value="description" /></p>
+    <slot />
   </section>
 </template>
 

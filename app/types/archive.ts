@@ -214,6 +214,17 @@ export interface MemberCard {
   stat?: CardStat;
   levelLimit?: number;
   memberCardLevelGroup?: number;
+  memberCardRankGroup?: number;
+  memberCardAwakeGroup?: number;
+  /** 特訓 (training) cost table key — `progression/member-card-awake-resources`. */
+  memberCardAwakeResourceGroup?: number;
+  /** 覚醒 (awakening) consumes this card-specific メンバーピース per rank. */
+  rankUpItemId?: number;
+  /** Skill-level resource groups: each live/link/gekisou track levels by spending
+   *  items resolved through the `progression/skill-level-resources` view. */
+  linkSkillLevelResourceGroup?: number;
+  liveSkillLevelResourceGroup?: number;
+  gekisouSkillLevelResourceGroup?: number;
   resolvedSkills: MemberCardResolvedSkills;
   [key: string]: unknown;
 }
@@ -232,6 +243,10 @@ export interface SupportCard {
   stat?: CardStat;
   levelLimit?: number;
   supportCardLevelGroup?: number;
+  /** Support skills rise with rank (one duplicate per rank), so the rank group is
+   *  the cost source for leveling them. */
+  supportCardRankGroup?: number;
+  rankUpItemId?: number;
   resolvedSkills: SupportCardResolvedSkills;
   diary?: LocalizedValue;
   [key: string]: unknown;

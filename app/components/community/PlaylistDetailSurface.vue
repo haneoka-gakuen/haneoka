@@ -7,6 +7,7 @@ import type { CatalogContentOrigin, ContentOrigin } from "~/features/catalog/con
 import type { ResolvedPlaylistTrack } from "~/types/playlists";
 import {
   bestdoriOrigin,
+  contentLocaleForOrigin,
   contentOriginLabel,
   contentOriginKey,
   isBestdoriOrigin,
@@ -58,6 +59,19 @@ const order = ref<"asc" | "desc">("asc");
 const playlistId = computed(() => props.playlistId);
 const playlist = computed(() => playlists.value.find((candidate) => candidate.id === playlistId.value));
 const originKey = (origin: CatalogContentOrigin | null): string => (origin ? contentOriginKey(origin) : "");
+// Re-resolve track titles from the raw song record so the "force Japanese song
+// titles" display setting takes effect on this surface (the catalog pre-resolves
+// `item.title` once, at build time, ignoring the setting).
+const { resolveSongTitle, localizeSongTitle } = useSongTitle();
+const trackSourceLocale = (item: ResolvedPlaylistTrack) =>
+  item.origin ? contentLocaleForOrigin(item.origin, releaseRegistry.value) : "ja";
+const trackTitle = (item: ResolvedPlaylistTrack) =>
+  item.song
+    ? resolveSongTitle(item.song.musicTitle, { sourceHint: trackSourceLocale(item), fallback: textOf(item.title) }) ||
+      item.title
+    : item.title;
+const trackTitleString = (item: ResolvedPlaylistTrack): string =>
+  item.song ? localizeSongTitle(item.song.musicTitle) || textOf(item.title) : textOf(item.title);
 const pageTitle = computed(() =>
   playlist.value
     ? textOf(playlist.value.titleText)
@@ -75,13 +89,14 @@ const audioTrack = (item: ResolvedPlaylistTrack): AudioTrack | null => {
     queueId: queueId(item),
     origin: item.origin,
     id: item.song.musicId,
-    title: item.title,
+    title: trackTitle(item),
     band: item.artist,
     bandId: item.song.bandId,
     bandIcon: item.bandVisuals[0]?.image,
     bandVisuals: item.bandVisuals,
     cover: item.song.jacketUrl || item.song.jacketThumbUrl || "",
     source: item.song.musicUrl,
+    musicTitle: item.song.musicTitle,
   };
 };
 const playableQueue = computed(() =>
@@ -155,7 +170,8 @@ const sortedTracks = computed(() =>
     const direction = order.value === "asc" ? 1 : -1;
     const fallback = direction * (left.position - right.position);
     if (sort.value === "id") return fallback;
-    if (sort.value === "title") return direction * compareText(textOf(left.title), textOf(right.title)) || fallback;
+    if (sort.value === "title")
+      return direction * compareText(trackTitleString(left), trackTitleString(right)) || fallback;
     if (sort.value === "musicType")
       return direction * (displaySong(left).musicType - displaySong(right).musicType) || fallback;
     if (sort.value === "band") return direction * compareText(textOf(left.artist), textOf(right.artist)) || fallback;
@@ -265,7 +281,7 @@ useHead(() => ({
             <SongRow
               :style="style"
               :song="displaySong(item)"
-              :title="item.title"
+              :title="trackTitle(item)"
               :band="item.artist"
               :display-id="item.position"
               :source-label="sourceLabel(item)"

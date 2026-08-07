@@ -261,7 +261,6 @@ const rewardReferences = computed<ResourceReferenceItem[]>(() => {
 const selectedFacts = computed(() =>
   selected.value
     ? [
-        { label: t("id"), value: selected.value.itemId || selected.value.itemKey },
         { label: t("type"), value: typeLabelOf(selected.value) },
         { label: t("size"), value: selected.value.max },
         { label: t("release"), value: selected.value.startAt?.[0] ? formatDate(selected.value.startAt[0]) : "" },

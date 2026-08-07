@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { assetRootForRelease } from "~/composables/useReleaseServer";
 import { stripUnityMarkup } from "~/composables/useArchiveText";
+import type { CostLevelRow, CostMaterial } from "~/components/detail/DetailLevelCostList.vue";
 import type { ArchiveEntityItem } from "~/components/catalog/ArchiveEntityList.vue";
 import {
   isToolRecord,
@@ -14,7 +15,7 @@ import {
   type ToolRecord,
 } from "~/components/catalog/ToolCatalogData";
 import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
-import type { Band, Character } from "~/types/archive";
+import type { Band } from "~/types/archive";
 import { langOf, replaceDisplayText, textOf, type DisplayText } from "~/types/displayText";
 
 interface BandItemDocument {
@@ -25,6 +26,14 @@ interface BandItemLevelView {
   level: number;
   description: DisplayText;
   effects: ToolRecord[];
+}
+
+interface SkillLevelResource {
+  group: number;
+  level: number;
+  itemId: number;
+  count: number;
+  item?: { itemId?: number; name?: DisplayText; image?: string };
 }
 
 const bandItemSortKeys = ["id", "order", "title", "levels"] as const;
@@ -88,15 +97,7 @@ const { data: detailBandRecord } = useLazyCatalogCollection<Band>(
   () => Boolean(selectedId.value),
   detailOrigin,
 );
-const { data: detailCharacterRecord } = useLazyCatalogCollection<Character>(
-  "characters",
-  () => Boolean(selectedId.value),
-  detailOrigin,
-);
 const detailBandMap = computed(() => new Map(recordValues(detailBandRecord.value).map((band) => [band.bandId, band])));
-const detailCharacterMap = computed(
-  () => new Map(recordValues(detailCharacterRecord.value).map((character) => [character.characterId, character])),
-);
 const selected = computed(() => selectedItem.value || selectedSummary.value);
 const selectedBand = computed(() => detailBandMap.value.get(bandIdOf(selected.value || {})));
 
@@ -175,10 +176,6 @@ const summaryDescriptionOf = (item: ToolRecord): DisplayText => {
     ? formattedDescription(item, level)
     : replaceDisplayText(rawDescriptionOf(item), stripUnityMarkup(textOf(rawDescriptionOf(item))));
 };
-const effectPercent = (effect: ToolRecord) => {
-  const value = toolNumber(toolField(effect, "effectValue", "_effectValue")) / 100;
-  return `${value > 0 ? "+" : ""}${toolFormatNumber(value)}%`;
-};
 const selectedLevels = computed<BandItemLevelView[]>(() => {
   const item = selected.value;
   if (!item) return [];
@@ -195,35 +192,48 @@ const selectedLevelValues = computed(() => selectedLevels.value.map((row) => row
 const selectedLevel = useRouteQueryInteger("level", 0, { min: 0 });
 const selectedLevelRow = computed(() => selectedLevels.value.find((row) => row.level === selectedLevel.value));
 
-const characterName = (id: number): DisplayText => {
-  const character = detailCharacterMap.value.get(id);
-  return character
-    ? resolveLocalized(character.characterName, {
-        candidates: [character.englishName],
-        sourceHint: "ja",
-      }) || copy.value.unknownTarget
-    : copy.value.unknownTarget;
-};
-const targetBandId = (target: ToolRecord) => toolNumber(toolField(target, "bandId", "_bandID"));
-const targetCharacterId = (target: ToolRecord) => toolNumber(toolField(target, "characterId", "_characterID"));
-const targetId = (target: ToolRecord) => toolNumber(toolField(target, "targetId", "_id"));
-const effectTargets = (effect: ToolRecord) => toolArray(effect, "targets").filter(isToolRecord);
-const targetLabel = (target: ToolRecord) => {
-  const bandId = targetBandId(target);
-  if (bandId)
-    return (
-      resolveLocalized(detailBandMap.value.get(bandId)?.bandName, { sourceHint: "ja" }) || copy.value.unknownTarget
-    );
-  const characterId = targetCharacterId(target);
-  if (characterId) return characterName(characterId);
-  return copy.value.unknownTarget;
-};
-const targetImage = (target: ToolRecord) => {
-  const bandId = targetBandId(target);
-  if (bandId) return detailBandMap.value.get(bandId)?.icon;
-  const character = detailCharacterMap.value.get(targetCharacterId(target));
-  return character?.thumbnailImage || character?.profileImage;
-};
+// 所需 (required) cost — `skill-level-resources` joined on the band-item's
+// resource group. Same view the member-card skill blocks consume.
+const selectedResourceGroup = computed(() =>
+  toolNumber(toolField(selected.value || {}, "resourceGroupId", "_resourceGroupId")),
+);
+const { data: skillLevelResources } = useLazyCatalogView<SkillLevelResource[]>(
+  "progression",
+  "skill-level-resources",
+  () => Boolean(selected.value) && selectedResourceGroup.value > 0,
+  undefined,
+  detailOrigin,
+);
+const itemCostRows = computed<CostLevelRow[]>(() => {
+  const group = selectedResourceGroup.value;
+  const entries = group > 0 ? skillLevelResources.value : undefined;
+  if (!entries) return [];
+  const target = selectedLevel.value || Math.max(0, ...selectedLevelValues.value);
+  const byLevel = new Map<number, CostMaterial[]>();
+  for (const entry of entries) {
+    if (entry.group !== group || entry.level <= 0 || entry.level > target) continue;
+    const material: CostMaterial = { label: entry.item?.name, image: entry.item?.image, amount: entry.count };
+    const list = byLevel.get(entry.level);
+    if (list) list.push(material);
+    else byLevel.set(entry.level, [material]);
+  }
+  return [...byLevel.entries()]
+    .map(([level, materials]) => ({ level, materials }))
+    .sort((left, right) => left.level - right.level);
+});
+const itemCostTotal = computed<CostMaterial[]>(() => {
+  const totals = new Map<string, CostMaterial>();
+  for (const row of itemCostRows.value) {
+    for (const material of row.materials) {
+      const key =
+        material.image || (Array.isArray(material.label) ? material.label.join("/") : String(material.label ?? ""));
+      const existing = totals.get(key);
+      if (existing) existing.amount += material.amount;
+      else totals.set(key, { ...material });
+    }
+  }
+  return [...totals.values()];
+});
 
 const selectedEntities = computed<ArchiveEntityItem[]>(() =>
   selectedBand.value
@@ -421,30 +431,21 @@ useSeoMeta({ title: () => `${copy.value.title} · haneoka` });
               />
             </template>
 
-            <div v-if="selectedLevelRow" class="band-item-level">
-              <div class="band-item-level__body">
-                <p><DisplayText :value="selectedLevelRow.description" /></p>
-                <div
-                  v-for="effect in selectedLevelRow.effects"
-                  :key="String(toolField(effect, 'effectId', '_id'))"
-                  class="band-item-effect"
-                >
-                  <span class="band-item-effect__value display-number">{{ effectPercent(effect) }}</span>
-                  <span class="band-item-effect__targets" :aria-label="copy.targets">
-                    <span
-                      v-for="(target, index) in effectTargets(effect)"
-                      :key="`${targetId(target)}:${index}`"
-                      class="band-item-target"
-                      :title="textOf(targetLabel(target))"
-                      :lang="langOf(targetLabel(target))"
-                    >
-                      <img v-if="targetImage(target)" :src="targetImage(target)" alt="" />
-                      <span><DisplayText :value="targetLabel(target)" /></span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
+            <SkillBlock
+              v-if="selectedLevelRow"
+              class="band-item-effect-block"
+              :icon="selectedBand?.logo || selectedBand?.icon"
+              :label="textOf(resolveLocalized(selectedBand?.bandName, { sourceHint: 'ja' })) || copy.levelEffects"
+              :description="selectedLevelRow.description"
+            >
+              <DetailLevelCostList
+                v-if="itemCostRows.length"
+                :rows="itemCostRows"
+                :total="itemCostTotal"
+                :label="t('required')"
+                :level-tag="t('lv')"
+              />
+            </SkillBlock>
           </DetailSection>
         </ResourceDetailSurface>
       </section>
@@ -603,90 +604,6 @@ useSeoMeta({ title: () => `${copy.value.title} · haneoka` });
 .band-item-list {
   min-width: 0;
   min-height: 0;
-}
-
-.band-item-level {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: stretch;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-left: 3px solid var(--band-item-accent);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.band-item-level__body {
-  display: grid;
-  min-width: 0;
-  align-content: center;
-  gap: var(--md-sys-spacing-2);
-  padding: var(--md-sys-spacing-3);
-}
-
-.band-item-level__body p {
-  margin: 0;
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-body-medium-font);
-  font-size: var(--md-sys-typescale-body-medium-size);
-  font-weight: var(--md-sys-typescale-body-medium-weight);
-  line-height: var(--md-sys-typescale-body-medium-line-height);
-  letter-spacing: 0;
-}
-
-.band-item-effect {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px 8px;
-}
-
-.band-item-effect__value {
-  color: var(--md-sys-color-primary);
-  font-family: var(--md-sys-typescale-label-large-font);
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: var(--md-sys-typescale-label-large-weight);
-  line-height: var(--md-sys-typescale-label-large-line-height);
-}
-
-.band-item-effect__targets {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: var(--md-sys-spacing-1);
-}
-
-.band-item-target {
-  display: inline-flex;
-  max-width: 150px;
-  align-items: center;
-  gap: var(--md-sys-spacing-1);
-  padding: var(--md-sys-spacing-1) var(--md-sys-spacing-2) var(--md-sys-spacing-1) var(--md-sys-spacing-1);
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-surface-container);
-  color: var(--md-sys-color-on-surface-variant);
-  font-family: var(--md-sys-typescale-label-small-font);
-  font-size: var(--md-sys-typescale-label-small-size);
-  font-weight: var(--md-sys-typescale-label-small-weight);
-  line-height: var(--md-sys-typescale-label-small-line-height);
-  letter-spacing: 0;
-}
-
-.band-item-target img {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  object-fit: contain;
-}
-
-.band-item-target span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (max-width: 760px) {

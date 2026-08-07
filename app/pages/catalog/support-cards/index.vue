@@ -269,7 +269,6 @@ const tableColumns = computed(() => [
   { key: "performance", label: t("performance"), sortable: true, align: "center" as const },
   { key: "technique", label: t("technique"), sortable: true, align: "center" as const },
   { key: "visual", label: t("visual"), sortable: true, align: "center" as const },
-  { key: "total", label: t("total"), sortable: true, align: "center" as const },
   { key: "supportSkill", label: t("supportSkill"), sortable: true, align: "start" as const },
   { key: "gekisouSkill", label: t("gekisouSkill"), sortable: true, align: "start" as const },
   { key: "type", label: t("type"), sortable: true },
@@ -377,7 +376,8 @@ const setTableSort = (value: string) => {
             :performance="statOf(card, 'performance')"
             :technique="statOf(card, 'technique')"
             :visual="statOf(card, 'visual')"
-            :total="totalOf(card)"
+            stat-format="percent"
+            :show-stat-total="false"
             :skills="skillsOf(card)"
             :type="card.type"
             :release="releaseOf(card) ? formatDate(releaseOf(card)) : ''"

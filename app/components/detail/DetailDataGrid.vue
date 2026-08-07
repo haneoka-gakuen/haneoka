@@ -1,5 +1,12 @@
 <script setup lang="ts">
+import type { OurNotesReleaseOrigin } from "~/features/catalog/contentSource";
 import { textOf, type DisplayText } from "~/types/displayText";
+
+/** A value cell rendered as a mark component (rarity badge / attribute icon)
+ *  instead of text — reuses the sprite-aware marks, so no URL duplication. */
+export type DetailDataGridMark =
+  | { kind: "rarity"; rarity: number | string; runtimeRelease?: OurNotesReleaseOrigin }
+  | { kind: "attribute"; attribute: string | number; runtimeRelease?: OurNotesReleaseOrigin };
 
 interface DetailDataGridItem {
   key: string;
@@ -12,6 +19,7 @@ interface DetailDataGridItem {
   image?: string;
   imageAlt?: DisplayText;
   imageKind?: "avatar" | "logo" | "attribute";
+  mark?: DetailDataGridMark;
 }
 
 const props = withDefaults(
@@ -40,17 +48,30 @@ const columns = computed(() => Math.max(1, props.items.length));
         :class="{
           'display-number': item.numeric,
           'has-image': item.image,
+          'has-mark': Boolean(item.mark),
         }"
         :title="typeof item.value === 'number' ? String(item.value) : textOf(item.value)"
       >
-        <img
-          v-if="item.image"
-          :class="item.imageKind ? `is-${item.imageKind}` : undefined"
-          :src="item.image"
-          :alt="textOf(item.imageAlt)"
+        <RarityMark
+          v-if="item.mark?.kind === 'rarity'"
+          :rarity="item.mark.rarity"
+          :runtime-release="item.mark.runtimeRelease"
         />
-        <DisplayText v-if="typeof item.value !== 'number'" :value="item.value" />
-        <template v-else>{{ item.value }}</template>
+        <AttributeMark
+          v-else-if="item.mark?.kind === 'attribute'"
+          :attribute="item.mark.attribute"
+          :runtime-release="item.mark.runtimeRelease"
+        />
+        <template v-else>
+          <img
+            v-if="item.image"
+            :class="item.imageKind ? `is-${item.imageKind}` : undefined"
+            :src="item.image"
+            :alt="textOf(item.imageAlt)"
+          />
+          <DisplayText v-if="typeof item.value !== 'number'" :value="item.value" />
+          <template v-else>{{ item.value }}</template>
+        </template>
       </dd>
     </div>
   </dl>
@@ -118,12 +139,17 @@ const columns = computed(() => Math.max(1, props.items.length));
   white-space: nowrap;
 }
 
-.detail-data-grid dd.has-image {
+.detail-data-grid dd.has-image,
+.detail-data-grid dd.has-mark {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: center;
   gap: var(--md-sys-spacing-2);
+}
+
+.detail-data-grid dd.has-mark :deep(.rarity-mark) {
+  width: clamp(24px, 18%, 34px);
 }
 
 .detail-data-grid dd img {

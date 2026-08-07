@@ -1,4 +1,4 @@
-import type { Song } from "~/types/archive";
+import type { LocalizedValue, Song } from "~/types/archive";
 import type { CompositeEntityVisual } from "~/types/compositeVisual";
 import {
   bestdoriOrigin,
@@ -28,6 +28,9 @@ export interface AudioTrack {
   bandVisuals?: CompositeEntityVisual[];
   cover: string;
   source: string;
+  /** Raw song title so display surfaces (the queue) can re-resolve with the
+   *  active song-title locale setting without re-fetching the catalog. */
+  musicTitle?: LocalizedValue;
 }
 
 export type AudioRepeatMode = "off" | "all" | "one";
@@ -154,6 +157,7 @@ const normalizeTrack = (value: unknown): AudioTrack | null => {
     ...(bandVisuals.length ? { bandVisuals } : {}),
     cover: String((value as AudioTrack).cover || ""),
     source,
+    musicTitle: (value as AudioTrack).musicTitle,
   };
 };
 
@@ -198,6 +202,7 @@ export const audioTrackFromSong = (
     ...(normalizedVisuals.length ? { bandVisuals: normalizedVisuals } : {}),
     cover: song.jacketUrl || song.jacketThumbUrl || "",
     source: song.musicUrl,
+    musicTitle: song.musicTitle,
   };
 };
 

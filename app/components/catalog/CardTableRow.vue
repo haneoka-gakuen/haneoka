@@ -18,6 +18,10 @@ const props = withDefaults(
     technique?: number;
     visual?: number;
     total?: number;
+    /** Flat integer stats (member cards) or `value/100` percentages (support cards). */
+    statFormat?: "flat" | "percent";
+    /** Support-card percentages don't sum to anything meaningful. */
+    showStatTotal?: boolean;
     skills?: Array<{
       id: string;
       name: DisplayText;
@@ -38,6 +42,8 @@ const props = withDefaults(
     technique: undefined,
     visual: undefined,
     total: undefined,
+    statFormat: "flat",
+    showStatTotal: true,
     skills: () => [],
     release: "",
     rowIndex: undefined,
@@ -48,6 +54,10 @@ const emit = defineEmits<{
   select: [];
 }>();
 const formatNumber = (value?: number) => (typeof value === "number" ? value.toLocaleString() : "—");
+const formatStat = (value?: number) => {
+  if (typeof value !== "number") return "—";
+  return props.statFormat === "percent" ? `${(value / 100).toFixed(2)}%` : value.toLocaleString();
+};
 const bandVisuals = computed<CompositeEntityVisual[]>(() =>
   props.bands.flatMap((band) => (band.image ? [{ image: band.image, fit: "contain" as const }] : [])),
 );
@@ -92,11 +102,15 @@ const bandLabel = computed(() =>
     <span class="card-table-row__rarity" role="gridcell">
       <RarityMark :rarity="rarity" />
     </span>
-    <span class="card-table-row__number display-number" role="gridcell">{{ formatNumber(performance) }}</span>
-    <span class="card-table-row__number display-number" role="gridcell">{{ formatNumber(technique) }}</span>
-    <span class="card-table-row__number display-number" role="gridcell">{{ formatNumber(visual) }}</span>
-    <strong class="card-table-row__number card-table-row__total display-number" role="gridcell">
-      {{ formatNumber(total) }}
+    <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(performance) }}</span>
+    <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(technique) }}</span>
+    <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(visual) }}</span>
+    <strong
+      v-if="showStatTotal"
+      class="card-table-row__number card-table-row__total display-number"
+      role="gridcell"
+    >
+      {{ formatStat(total) }}
     </strong>
     <span v-for="skill in skills" :key="skill.id" class="card-table-row__skill" role="gridcell">
       <img v-if="skill.icon" :src="skill.icon" alt="" loading="lazy" decoding="async" aria-hidden="true" />
