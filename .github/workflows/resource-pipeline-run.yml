@@ -143,6 +143,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check out locked external repositories
+        run: node scripts/external-repositories.mjs checkout
+      - name: Install pnpm
+        run: corepack enable
+      - name: Install workspace dependencies
+        # build-api bundles the Sonolus chart converter
+        # (packages/sonolus/src/convert/index.ts) through esbuild at build
+        # time, so the release job needs the workspace dependency tree
+        # (esbuild + the converter), the same way sonolus.yml sets it up.
+        run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/setup-resource-pipeline
       - name: Install FFmpeg
         run: |
