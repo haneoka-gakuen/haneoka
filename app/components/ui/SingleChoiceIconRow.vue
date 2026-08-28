@@ -27,12 +27,13 @@ defineEmits<{ "update:modelValue": [value: string] }>();
       @click="$emit('update:modelValue', option.value)"
     >
       <slot name="leading" :option="option">
-        <img
+        <LoadingImage
           v-if="option.image"
           :src="option.image"
           :alt="option.imageAlt || ''"
           class="icon-row__image"
-          :loading="'lazy'"
+          loading="lazy"
+          fit="cover"
         />
         <MaterialIcon v-else-if="option.icon" :name="option.icon" :size="24" class="icon-row__symbol" />
       </slot>
@@ -92,6 +93,11 @@ defineEmits<{ "update:modelValue": [value: string] }>();
   width: 40px;
   height: 40px;
   border-radius: 50%;
+}
+
+.icon-row__image :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

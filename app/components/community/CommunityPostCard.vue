@@ -132,7 +132,7 @@ const markNotInterested = async () => {
     </NuxtLink>
 
     <NuxtLink v-if="cover" class="community-post-card__media" :to="`/community/posts/${post.id}`" tabindex="-1">
-      <img :src="cover.contentUrl" alt="" loading="lazy" decoding="async" />
+      <LoadingImage class="community-post-card__image" :src="cover.contentUrl" alt="" loading="lazy" decoding="async" />
     </NuxtLink>
 
     <nav v-if="post.tags.length" class="community-post-card__tags" :aria-label="t('communityPage.tags')">
@@ -280,7 +280,20 @@ const markNotInterested = async () => {
   background: var(--md-sys-color-surface-container-high);
 }
 
-.community-post-card__media img {
+.community-post-card__image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Attachment dimensions are not available in the summary payload. Reserve a
+ * conventional media surface only while loading, then retain the source's
+ * natural height once it is known. */
+.community-post-card__image.is-loading {
+  aspect-ratio: 16 / 9;
+}
+
+.community-post-card__image :deep(.loading-image__image) {
   display: block;
   width: 100%;
   max-height: 520px;

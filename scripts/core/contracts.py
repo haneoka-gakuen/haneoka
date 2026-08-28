@@ -13,6 +13,8 @@ CATALOG_PROVENANCE_SCHEMA = "haneoka-catalog-provenance-v1"
 CATALOG_STORAGE_SCHEMA = "haneoka-catalog-storage-v2"
 CATALOG_SUMMARY_SCHEMA = "haneoka-catalog-summary-v1"
 STORY_ASSETS_SCHEMA = "haneoka-story-assets-v2"
+ANON_TOKYO_SCHEMA = "haneoka-anon-tokyo-v1"
+SPINE_CATALOG_SCHEMA = "haneoka-spine-catalog-v1"
 SOURCE_INDEX_STORAGE_SCHEMA = "haneoka-source-index-storage-v2"
 CATALOG_PARTITION_ALGORITHM = "fnv1a32-mod-256"
 CATALOG_PARTITION_SHARDS = 256
@@ -31,7 +33,9 @@ CATALOG_RESOURCES = (
     "stories",
     "story-runtime",
     "story-assets",
+    "anon-tokyo",
     "live2d",
+    "spine",
     "voices",
     "audio",
     "items",
@@ -54,9 +58,10 @@ CATALOG_RESOURCES = (
     "feature-status",
 )
 
-# Storage manifests created before the story editor shipped do not contain the
-# additive story-assets read model.  Consumers may keep reading those releases;
-# every newly compiled catalog still uses the complete CATALOG_RESOURCES tuple.
+# Storage manifests created before additive feature read models shipped do not
+# contain them. Consumers may keep reading those releases; every newly
+# compiled catalog still uses the complete CATALOG_RESOURCES tuple.
+CATALOG_OPTIONAL_RESOURCES = ("story-assets", "anon-tokyo", "spine")
 CATALOG_REQUIRED_RESOURCES = tuple(
-    resource for resource in CATALOG_RESOURCES if resource != "story-assets"
+    resource for resource in CATALOG_RESOURCES if resource not in CATALOG_OPTIONAL_RESOURCES
 )

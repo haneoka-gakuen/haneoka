@@ -10,8 +10,10 @@ from build.catalog_storage import RESOURCE_SPECS, ViewSpec, valid_catalog_route_
 from build.game_client import verify_game_client_release
 from build.media import ACTIVE_CONTENT_SUFFIXES, media_type
 from core.contracts import (
+    ANON_TOKYO_SCHEMA,
     CATALOG_PARTITION_ALGORITHM,
     CATALOG_PARTITION_SHARDS,
+    CATALOG_OPTIONAL_RESOURCES,
     CATALOG_PROVENANCE_SCHEMA,
     CATALOG_REQUIRED_RESOURCES,
     CATALOG_RESOURCES,
@@ -21,6 +23,7 @@ from core.contracts import (
     RELEASE_SCHEMA,
     RELEASE_TREES,
     SOURCE_INDEX_STORAGE_SCHEMA,
+    SPINE_CATALOG_SCHEMA,
     STORY_ASSETS_SCHEMA,
 )
 from core.hashes import sha256_bytes, sha256_file
@@ -405,6 +408,225 @@ def _story_assets_index_errors(
     return errors
 
 
+def _anon_tokyo_index_errors(
+    document: Any,
+    server: str,
+    source_id: str,
+) -> list[str]:
+    """Validate the stable availability and localization shell for Anon Tokyo."""
+
+    errors: list[str] = []
+    if not isinstance(document, dict):
+        return ["anon-tokyo index must be an object"]
+    if (
+        document.get("schema") != ANON_TOKYO_SCHEMA
+        or document.get("server") != server
+        or document.get("sourceId") != source_id
+    ):
+        errors.append("anon-tokyo identity does not match the release")
+    if not isinstance(document.get("available"), bool) or not isinstance(
+        document.get("reason"), str
+    ):
+        errors.append("anon-tokyo availability contract is invalid")
+    localization = document.get("localization")
+    slots = localization.get("localeSlots") if isinstance(localization, dict) else None
+    if (
+        not isinstance(slots, list)
+        or len(slots) != 5
+        or [slot.get("index") for slot in slots if isinstance(slot, dict)]
+        != list(range(5))
+        or any(
+            not isinstance(slot, dict)
+            or not isinstance(slot.get("locale"), str)
+            or not isinstance(slot.get("masterField"), str)
+            for slot in slots
+        )
+        or not isinstance(localization, dict)
+        or localization.get("textFallback") != "none"
+        or localization.get("imageFallback") != "none"
+    ):
+        errors.append("anon-tokyo localization contract is invalid")
+    source_table_counts = document.get("sourceTableCounts")
+    source_tables = document.get("sourceTables")
+    if not isinstance(source_table_counts, dict):
+        errors.append("anon-tokyo source table counts are invalid")
+    if not isinstance(source_tables, dict) or (
+        isinstance(source_table_counts, dict)
+        and set(source_tables) != set(source_table_counts)
+    ):
+        errors.append("anon-tokyo raw source table contract is invalid")
+    elif isinstance(source_table_counts, dict):
+        for table, count in source_table_counts.items():
+            source_table = source_tables.get(table)
+            rows = source_table.get("rows") if isinstance(source_table, dict) else None
+            fields = source_table.get("fields") if isinstance(source_table, dict) else None
+            if (
+                not isinstance(table, str)
+                or not table.startswith("MasterAT")
+                or not isinstance(count, int)
+                or count < 0
+                or not isinstance(source_table, dict)
+                or source_table.get("count") != count
+                or not isinstance(rows, list)
+                or len(rows) != count
+                or not isinstance(fields, list)
+                or any(not isinstance(field, str) for field in fields)
+            ):
+                errors.append(f"anon-tokyo raw source table is invalid: {table}")
+    spine = document.get("spine")
+    if (
+        not isinstance(spine, dict)
+        or not isinstance(spine.get("available"), bool)
+        or spine.get("status") not in {"available", "unavailable"}
+        or not isinstance(spine.get("reason"), str)
+        or not isinstance(spine.get("models"), dict)
+        or not isinstance(spine.get("unavailableModels"), dict)
+        or not isinstance(spine.get("renderRecipes"), dict)
+        or not isinstance(spine.get("unavailableRenderRecipes"), dict)
+    ):
+        errors.append("anon-tokyo spine availability contract is invalid")
+    if not document.get("available"):
+        return errors
+    required_sections = {
+        "characters",
+        "avatars",
+        "goods",
+        "shop",
+        "themes",
+        "stages",
+        "tasks",
+        "progression",
+        "staffing",
+        "dialogue",
+        "guides",
+        "map",
+        "counts",
+        "sourceTables",
+    }
+    missing = sorted(name for name in required_sections if name not in document)
+    if missing:
+        errors.append(f"anon-tokyo available document is missing sections: {missing}")
+
+    def records(value: Any, prefix: str, label: str) -> None:
+        if not isinstance(value, dict):
+            errors.append(f"anon-tokyo {label} records are invalid")
+            return
+        for identity, entity in value.items():
+            if (
+                not isinstance(identity, str)
+                or not identity.startswith(prefix)
+                or not isinstance(entity, dict)
+                or entity.get("id") != identity
+                or "rawId" not in entity
+            ):
+                errors.append(f"anon-tokyo {label} identity is invalid: {identity}")
+
+    records(document.get("characters"), "at-character-", "characters")
+    goods = document.get("goods")
+    if not isinstance(goods, dict):
+        errors.append("anon-tokyo goods section is invalid")
+    else:
+        records(goods.get("items"), "at-good-", "goods")
+        records(goods.get("reloading"), "at-reloading-", "reloading")
+    shop = document.get("shop")
+    if not isinstance(shop, dict):
+        errors.append("anon-tokyo shop section is invalid")
+    else:
+        records(shop.get("decorations"), "at-decoration-", "decorations")
+    maps = document.get("map")
+    if not isinstance(maps, dict):
+        errors.append("anon-tokyo map section is invalid")
+    else:
+        records(maps.get("configs"), "at-map-", "map configs")
+    return errors
+
+
+def _spine_index_errors(
+    document: Any,
+    server: str,
+    source_id: str,
+) -> list[str]:
+    """Validate the partitioned Spine collection's small browse index."""
+
+    errors: list[str] = []
+    if not isinstance(document, dict):
+        return ["spine index must be an object"]
+    if (
+        document.get("schema") != SPINE_CATALOG_SCHEMA
+        or document.get("server") != server
+        or document.get("sourceId") != source_id
+    ):
+        errors.append("spine index identity does not match the release")
+    if (
+        not isinstance(document.get("available"), bool)
+        or document.get("status") not in {"available", "unavailable"}
+        or not isinstance(document.get("reason"), str)
+        or not isinstance(document.get("runtime"), dict)
+    ):
+        errors.append("spine availability contract is invalid")
+    models = document.get("models")
+    order = document.get("modelOrder")
+    unavailable = document.get("unavailableModels")
+    unavailable_order = document.get("unavailableModelOrder")
+    if not isinstance(models, dict):
+        errors.append("spine models index is invalid")
+        models = {}
+    if (
+        not isinstance(order, list)
+        or any(not isinstance(identity, str) for identity in order)
+        or order != list(dict.fromkeys(order))
+        or set(order) != set(models)
+    ):
+        errors.append("spine model order is invalid")
+    if not isinstance(unavailable, dict) or not set(unavailable) <= set(models):
+        errors.append("spine unavailable model index is invalid")
+        unavailable = {}
+    if (
+        not isinstance(unavailable_order, list)
+        or any(not isinstance(identity, str) for identity in unavailable_order)
+        or unavailable_order != list(dict.fromkeys(unavailable_order))
+        or set(unavailable_order) != set(unavailable)
+    ):
+        errors.append("spine unavailable model order is invalid")
+    allowed_summary_fields = set(
+        RESOURCE_SPECS["spine"].projection.include or ()
+    )
+    for identity, model in models.items():
+        if (
+            not isinstance(identity, str)
+            or not valid_catalog_route_key(identity)
+            or not isinstance(model, dict)
+            or model.get("id") != identity
+            or model.get("status") not in {"available", "unavailable"}
+            or not isinstance(model.get("animationCount"), int)
+            or not isinstance(model.get("skinCount"), int)
+            or not isinstance(model.get("runtimeSummary"), dict)
+            or not set(model) <= allowed_summary_fields
+        ):
+            errors.append(f"spine model summary is invalid: {identity}")
+    counts = document.get("counts")
+    if not isinstance(counts, dict) or any(
+        not isinstance(counts.get(key), int) or counts[key] < 0
+        for key in (
+            "models",
+            "playableModels",
+            "unavailableModels",
+            "renderedPreviews",
+            "unavailablePreviews",
+        )
+    ):
+        errors.append("spine counts are invalid")
+    elif (
+        counts["models"] != len(models)
+        or counts["unavailableModels"] != len(unavailable)
+        or counts["playableModels"] != len(models) - len(unavailable)
+        or counts["renderedPreviews"] + counts["unavailablePreviews"] != len(models)
+        or document.get("available") != (counts["playableModels"] > 0)
+    ):
+        errors.append("spine counts do not match the browse index")
+    return errors
+
+
 def _catalog_storage_errors(
     root: Path,
     server: str,
@@ -435,13 +657,13 @@ def _catalog_storage_errors(
     ):
         errors.append("catalog storage manifest identity or partition contract is invalid")
     resources = manifest.get("resources")
-    compatible_resource_sets = {
-        frozenset(CATALOG_REQUIRED_RESOURCES),
-        frozenset(CATALOG_RESOURCES),
-    }
+    required_resource_set = frozenset(CATALOG_REQUIRED_RESOURCES)
+    optional_resource_set = frozenset(CATALOG_OPTIONAL_RESOURCES)
+    resource_set = frozenset(resources) if isinstance(resources, dict) else frozenset()
     if (
         not isinstance(resources, dict)
-        or frozenset(resources) not in compatible_resource_sets
+        or not required_resource_set <= resource_set
+        or not resource_set <= required_resource_set | optional_resource_set
     ):
         errors.append("catalog storage resources do not match the canonical registry")
         resources = {}
@@ -480,6 +702,22 @@ def _catalog_storage_errors(
                 errors.extend(
                     _story_assets_index_errors(story_assets_index, server, source_id)
                 )
+        if resource == "anon-tokyo" and index_path in declared:
+            try:
+                anon_tokyo_index = read_json(root / index_path)
+            except Exception as error:
+                errors.append(f"invalid anon-tokyo index: {error}")
+            else:
+                errors.extend(
+                    _anon_tokyo_index_errors(anon_tokyo_index, server, source_id)
+                )
+        if resource == "spine" and index_path in declared:
+            try:
+                spine_index = read_json(root / index_path)
+            except Exception as error:
+                errors.append(f"invalid spine index: {error}")
+            else:
+                errors.extend(_spine_index_errors(spine_index, server, source_id))
         if resource == "provenance" and index_path in declared:
             try:
                 provenance = read_json(root / index_path)

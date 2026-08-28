@@ -15,6 +15,7 @@ from build.home_spots import build_home_spots, home_spot_source_bundle_paths
 from build.ktx2 import build_ktx2
 from build.live2d import build_live2d
 from build.release import assemble_release
+from build.spine import build_spine
 from core.config import ServerConfig, load_server_config
 from core.contracts import SOURCE_SCHEMA
 from core.fingerprints import build_fingerprint
@@ -98,6 +99,39 @@ def _source_package(server: str, source_id: str) -> Path:
     layout = source_layout(server, source_id)
     value = json.loads(layout.manifest.read_text("utf-8"))
     return layout.root / value["package"]["file"]
+
+
+def _require_local_offline_source(config: ServerConfig, source_id: str) -> dict:
+    """Return a complete local source snapshot without consulting any remote.
+
+    ``run --offline`` deliberately never calls ingest: all source artifacts must
+    already be present under ``data/servers/<server>/sources/<source-id>``.  A
+    source can be restored from R2 beforehand with ``fetch-source``; that
+    restore is a separate, explicit network operation.
+    """
+
+    layout = source_layout(config.id, source_id)
+    restore_hint = (
+        "Restore it from R2 first with:\n"
+        f"  python scripts/pipeline.py --server {config.id} fetch-source "
+        f"--source {source_id}"
+    )
+    if not layout.manifest.is_file():
+        raise FileNotFoundError(
+            "offline build requires a complete local source; "
+            f"source manifest is missing: {layout.manifest}\n{restore_hint}"
+        )
+    try:
+        # A source restored from R2 must be byte-for-byte identical to the
+        # manifest before the build starts.  This also turns same-size local
+        # corruption into an early failure rather than a subtly wrong release.
+        return verify_source(config.id, source_id, check_hashes=True)
+    except (FileNotFoundError, ValueError) as error:
+        raise ValueError(
+            f"offline build requires a complete local source: {source_id}\n"
+            f"{restore_hint}\n"
+            f"Local verification failed: {error}"
+        ) from error
 
 
 def command_ingest(args: argparse.Namespace) -> None:
@@ -218,6 +252,27 @@ def command_build_live2d(args: argparse.Namespace) -> None:
     )
 
 
+def command_build_spine(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    identity = args.build or build_id(config, args.source)
+    result = build_spine(config, args.source, identity)
+    _print(
+        _fields(
+            result,
+            "schema",
+            "server",
+            "sourceId",
+            "modelCount",
+            "playableModelCount",
+            "unavailableModelCount",
+            "previewRenderedCount",
+            "renderRecipePreviewRenderedCount",
+            "renderRecipeCount",
+            "unavailableRenderRecipeCount",
+        )
+    )
+
+
 def command_build_home_spots(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
@@ -256,6 +311,7 @@ def _run_build(config: ServerConfig, source_id: str, identity: str, include_ktx2
     stages = [
         lambda: extract_cri(config, source_id, identity),
         lambda: build_live2d(config, source_id, identity),
+        lambda: build_spine(config, source_id, identity),
         lambda: build_home_spots(config, source_id, identity),
     ]
     if include_ktx2:
@@ -273,9 +329,25 @@ def _run_build(config: ServerConfig, source_id: str, identity: str, include_ktx2
 
 def command_run(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
-    source = ingest_package(
-        Path(args.input), config, Path(args.cache) if args.cache else None, args.concurrency
-    )
+    if args.offline:
+        if args.input:
+            raise ValueError("--offline cannot be combined with --input; use --source instead")
+        if not args.source:
+            raise ValueError("--offline requires --source")
+        if args.cache:
+            raise ValueError("--cache is only valid when ingesting --input")
+        if args.publish:
+            raise ValueError("--offline does not publish; publish a verified release separately")
+        source = _require_local_offline_source(config, args.source)
+    else:
+        if args.source:
+            raise ValueError("--source requires --offline")
+        if not args.input:
+            raise ValueError("run requires --input, or --offline --source")
+        source = ingest_package(
+            Path(args.input), config, Path(args.cache) if args.cache else None, args.concurrency
+        )
+
     store = R2Store(config, args.concurrency) if args.publish else None
     if store:
         publish_source(store, config, source["sourceId"])
@@ -519,6 +591,14 @@ def parser() -> argparse.ArgumentParser:
     live2d.add_argument("--build")
     live2d.set_defaults(run=command_build_live2d)
 
+    spine = commands.add_parser(
+        "build-spine",
+        help="build generic Spine metadata and static setup-pose previews",
+    )
+    spine.add_argument("--source", required=True)
+    spine.add_argument("--build")
+    spine.set_defaults(run=command_build_spine)
+
     home_spots = commands.add_parser(
         "build-home-spots", help="build strict Home Spot background GLB derivatives"
     )
@@ -541,8 +621,18 @@ def parser() -> argparse.ArgumentParser:
     release.add_argument("--build")
     release.set_defaults(run=command_build_release)
 
-    run = commands.add_parser("run", help="run the complete local pipeline from one APK/APKS input")
-    run.add_argument("--input", required=True)
+    run = commands.add_parser(
+        "run",
+        help="run the complete local pipeline from an input package or a verified local source",
+    )
+    run_input = run.add_mutually_exclusive_group()
+    run_input.add_argument("--input", help="APK, APKS/XAPK, or split-APK directory to ingest")
+    run_input.add_argument("--source", help="existing local immutable source id (requires --offline)")
+    run.add_argument(
+        "--offline",
+        action="store_true",
+        help="build only --source already stored locally; never contacts the game CDN or R2",
+    )
     run.add_argument("--cache", help="flat cache of exact original download filenames")
     run.add_argument("--ktx2", action="store_true")
     run.add_argument("--publish", action="store_true", help="publish the source and verified release to R2")

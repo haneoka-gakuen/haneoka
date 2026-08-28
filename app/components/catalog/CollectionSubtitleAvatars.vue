@@ -25,13 +25,13 @@ const markImageFailed = (avatar: CollectionSubtitleAvatar & { image: string }) =
 <template>
   <span class="collection-subtitle-avatars">
     <span v-if="visibleAvatars.length" class="collection-subtitle-avatars__stack" aria-hidden="true">
-      <img
+      <LoadingImage
         v-for="(avatar, index) in visibleAvatars"
         :key="`${imageKey(avatar)}\u0000${index}`"
         :src="avatar.image"
         alt=""
         loading="lazy"
-        decoding="async"
+        fit="cover"
         @error="markImageFailed(avatar)"
       />
     </span>
@@ -55,7 +55,7 @@ const markImageFailed = (avatar: CollectionSubtitleAvatar & { image: string }) =
   align-items: center;
 }
 
-.collection-subtitle-avatars__stack img {
+.collection-subtitle-avatars__stack > :deep(.loading-image) {
   display: block;
   width: 18px;
   height: 18px;
@@ -63,10 +63,9 @@ const markImageFailed = (avatar: CollectionSubtitleAvatar & { image: string }) =
   border: 1px solid var(--md-sys-color-surface-container-lowest);
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-highest);
-  object-fit: cover;
 }
 
-.collection-subtitle-avatars__stack img + img {
+.collection-subtitle-avatars__stack > :deep(.loading-image:not(:first-child)) {
   margin-left: -5px;
 }
 

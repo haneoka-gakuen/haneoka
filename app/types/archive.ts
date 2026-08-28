@@ -417,6 +417,25 @@ export interface Live2DModel {
   bandId?: number;
   faceImage?: string;
   thumbnailImage?: string;
+  /** A build-time Cubism canvas render, never a substituted character avatar. */
+  preview?: {
+    status?: "rendered" | "unavailable" | string;
+    /** Versioned static-preview policy emitted by the catalog API. */
+    schema?: string;
+    runtime?: string;
+    /** Content fingerprint used to separate browser caches across releases. */
+    sha256?: string;
+    width?: number;
+    height?: number;
+    /** The unanimated model state captured by the build preview renderer. */
+    state?: "initial" | string;
+    animation?: string | null;
+    expression?: string | null;
+    /** Must be zero for a static catalog preview. */
+    elapsedMilliseconds?: number;
+    renderer?: string;
+    reason?: string;
+  };
   sourcePath?: string;
   mocSourcePath?: string;
   subCharacter?: boolean;

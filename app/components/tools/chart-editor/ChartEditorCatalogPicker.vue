@@ -206,11 +206,14 @@ watch(query, () => {
               class="chart-catalog-song"
               role="listitem"
             >
-              <img
+              <LoadingImage
                 v-if="song.jacketThumbUrl || song.jacketUrl"
+                class="chart-catalog-song__image"
                 :src="song.jacketThumbUrl || song.jacketUrl"
                 alt=""
                 loading="lazy"
+                decoding="async"
+                fit="cover"
               />
               <span v-else class="chart-catalog-song__cover"><MaterialIcon name="music_note" :size="18" /></span>
               <div class="chart-catalog-song__main">
@@ -341,7 +344,7 @@ watch(query, () => {
   background: var(--md-sys-color-surface-container-low);
 }
 
-.chart-catalog-song > img,
+.chart-catalog-song__image,
 .chart-catalog-song__cover {
   width: 58px;
   height: 58px;
@@ -349,7 +352,7 @@ watch(query, () => {
   background: var(--md-sys-color-surface-container-high);
 }
 
-.chart-catalog-song > img {
+.chart-catalog-song__image :deep(.loading-image__image) {
   object-fit: cover;
 }
 

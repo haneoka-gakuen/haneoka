@@ -41,11 +41,11 @@ const imageAlt = computed(() => textOf(props.title));
     :lang="langOf(title)"
   >
     <span v-if="normalSrc" class="bestdori-card-artwork__panel">
-      <img :src="normalSrc" alt="" loading="lazy" decoding="async" @error="onNormalError" />
+      <LoadingImage :src="normalSrc" alt="" loading="lazy" fit="contain" @error="onNormalError" />
     </span>
 
     <span v-if="trainedSrc" class="bestdori-card-artwork__panel">
-      <img :src="trainedSrc" alt="" loading="lazy" decoding="async" @error="onTrainedError" />
+      <LoadingImage :src="trainedSrc" alt="" loading="lazy" fit="contain" @error="onTrainedError" />
     </span>
 
     <TextMediaFallback
@@ -107,11 +107,10 @@ const imageAlt = computed(() => textOf(props.title));
   background: color-mix(in srgb, var(--md-sys-color-surface) 68%, transparent);
 }
 
-.bestdori-card-artwork__panel img {
+.bestdori-card-artwork__panel > :deep(.loading-image) {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 .bestdori-card-artwork__unsupported {

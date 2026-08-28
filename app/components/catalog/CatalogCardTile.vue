@@ -34,14 +34,14 @@ watch(
     @select="emit('select')"
   >
     <template #media>
-      <img
+      <LoadingImage
         v-if="image && !imageFailed"
         class="catalog-card-tile__art"
         :src="image"
         :alt="textOf(title)"
         :lang="langOf(title)"
         loading="lazy"
-        decoding="async"
+        :placeholder-aspect-ratio="fallbackAspectRatio || '1 / 1'"
         @error="imageFailed = true"
       />
       <TextMediaFallback

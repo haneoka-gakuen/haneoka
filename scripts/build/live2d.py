@@ -17,6 +17,7 @@ from core.config import ServerConfig
 from core.manifests import atomic_write, read_json, write_json
 from core.paths import build_layout
 from core.unity_objects import UnityObjectStore
+from build.live2d_preview import PREVIEW_SCHEMA, build_live2d_previews
 
 
 LIVE2D_ROOT = re.compile(
@@ -662,11 +663,18 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
         if normal_motion_sync is not None:
             runtime["motionSync"] = copy.deepcopy(normal_motion_sync)
 
+    previews = build_live2d_previews(layout, config.id, source_id, models)
+    for key, model in models.items():
+        model["preview"] = previews[key]
+
     result = {
         "schema": "haneoka-live2d-build-v1",
         "server": config.id,
         "sourceId": source_id,
         "modelCount": len(models),
+        "previewSchema": PREVIEW_SCHEMA,
+        "previewRenderedCount": sum(1 for preview in previews.values() if preview.get("status") == "rendered"),
+        "previewUnavailableCount": sum(1 for preview in previews.values() if preview.get("status") != "rendered"),
         "skippedModelCount": len(skipped_models),
         "models": models,
         "skippedModels": skipped_models,

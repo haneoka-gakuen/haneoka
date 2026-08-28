@@ -331,7 +331,14 @@ onBeforeUnmount(() => {
   <Transition name="dock">
     <UiRuntimeSurface v-if="track && !collapsed" as="section" variant="dock" class="audio-dock" :label="t('music')">
       <NuxtLink class="audio-dock__track" :to="trackDetailPath" :aria-label="trackDetailLabel" aria-live="polite">
-        <img v-if="track.cover" :src="track.cover" alt="" />
+        <LoadingImage
+          v-if="track.cover"
+          class="audio-dock__cover"
+          :src="track.cover"
+          alt=""
+          loading="eager"
+          fit="cover"
+        />
         <span v-else class="audio-dock__cover-placeholder"><MaterialIcon name="queue_music" :size="17" /></span>
         <div class="audio-dock__titles">
           <strong><DisplayText :value="localizedTrackTitle" /></strong>
@@ -597,16 +604,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.audio-dock__track > img,
+.audio-dock__cover,
 .audio-dock__cover-placeholder {
   width: 56px;
   height: 56px;
   border: 1px solid var(--md-comp-runtime-outline);
   border-radius: var(--md-sys-shape-corner-medium);
-}
-
-.audio-dock__track > img {
-  object-fit: cover;
 }
 
 .audio-dock__cover-placeholder {
@@ -860,7 +863,7 @@ onBeforeUnmount(() => {
     padding: var(--md-sys-spacing-1) var(--md-sys-spacing-2) var(--md-sys-spacing-1) var(--md-sys-spacing-1);
   }
 
-  .audio-dock__track > img,
+  .audio-dock__cover,
   .audio-dock__cover-placeholder {
     width: 40px;
     height: 40px;

@@ -49,7 +49,15 @@ const { t } = useLocale();
         <UiListItem v-for="line in group.lines" :key="line.key" type="text" :class="{ 'is-selected': line.playing }">
           <template #start>
             <span class="voice-lines__avatar">
-              <img v-if="line.characterImage" :src="line.characterImage" alt="" loading="lazy" decoding="async" />
+              <LoadingImage
+                v-if="line.characterImage"
+                class="voice-lines__avatar-image"
+                :src="line.characterImage"
+                alt=""
+                loading="lazy"
+                decoding="async"
+                fit="cover"
+              />
               <span v-else-if="line.characterId" class="display-number">{{ line.characterId }}</span>
             </span>
           </template>
@@ -130,10 +138,9 @@ const { t } = useLocale();
     var(--md-sys-typescale-label-small-line-height) var(--md-sys-typescale-label-small-font);
 }
 
-.voice-lines__avatar img {
+.voice-lines__avatar-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 .voice-lines small,

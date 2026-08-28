@@ -105,15 +105,20 @@ const bandLabel = computed(() =>
     <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(performance) }}</span>
     <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(technique) }}</span>
     <span class="card-table-row__number display-number" role="gridcell">{{ formatStat(visual) }}</span>
-    <strong
-      v-if="showStatTotal"
-      class="card-table-row__number card-table-row__total display-number"
-      role="gridcell"
-    >
+    <strong v-if="showStatTotal" class="card-table-row__number card-table-row__total display-number" role="gridcell">
       {{ formatStat(total) }}
     </strong>
     <span v-for="skill in skills" :key="skill.id" class="card-table-row__skill" role="gridcell">
-      <img v-if="skill.icon" :src="skill.icon" alt="" loading="lazy" decoding="async" aria-hidden="true" />
+      <LoadingImage
+        v-if="skill.icon"
+        class="card-table-row__skill-icon"
+        :src="skill.icon"
+        alt=""
+        loading="lazy"
+        decoding="async"
+        fit="contain"
+        aria-hidden="true"
+      />
       <span :title="textOf(skill.name)" :lang="langOf(skill.name)"><DisplayText :value="skill.name || '—'" /></span>
     </span>
     <span class="card-table-row__type" role="gridcell">{{ type || "—" }}</span>
@@ -213,11 +218,10 @@ const bandLabel = computed(() =>
   text-align: left;
 }
 
-.card-table-row__skill img {
+.card-table-row__skill-icon {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;
-  object-fit: contain;
 }
 
 .card-table-row__skill span {

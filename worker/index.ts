@@ -566,6 +566,9 @@ const cacheControlFor = (contentType: string): string =>
     ? "public, max-age=86400, stale-while-revalidate=604800"
     : "public, max-age=604800, stale-while-revalidate=2592000";
 
+const isModelPreviewMedia = (tree: string, relative: string): boolean =>
+  tree === "runtime" && /^(?:previews\/live2d\/|spine-previews\/)/u.test(relative);
+
 async function serveR2Object(
   env: Env,
   request: Request,
@@ -1781,11 +1784,25 @@ async function handleReleaseMedia(
     return new Response("not found", { status: 404, headers: CORS });
   const release = await currentRelease(env, server);
   if (!release) return new Response("not found", { status: 404, headers: CORS });
+  const previewCacheControl = isModelPreviewMedia(tree, relative) ? "no-cache, must-revalidate" : undefined;
   const cacheRequest = releaseCacheRequest(request, release.releaseId);
-  return edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, async () => {
-    const response = await serveReleaseObject(env, request, release, `${tree}/${relative}`);
-    return response || new Response("not found", { status: 404, headers: CORS });
-  });
+  return edgeCached(
+    cacheRequest,
+    ctx,
+    MEDIA_CACHE_TTL,
+    async () => {
+      const response = await serveReleaseObject(
+        env,
+        request,
+        release,
+        `${tree}/${relative}`,
+        undefined,
+        previewCacheControl ? { cacheControl: previewCacheControl } : {},
+      );
+      return response || new Response("not found", { status: 404, headers: CORS });
+    },
+    previewCacheControl,
+  );
 }
 
 async function handleArtifact(

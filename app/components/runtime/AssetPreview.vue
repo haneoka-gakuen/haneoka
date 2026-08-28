@@ -60,7 +60,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="asset-preview__stage" :class="`asset-preview__stage--${kind}`">
-      <img v-if="kind === 'image'" :src="src" :alt="name" />
+      <LoadingImage v-if="kind === 'image'" class="asset-preview__image" :src="src" :alt="name" fit="contain" />
       <audio v-else-if="kind === 'audio'" :src="src" controls preload="metadata" />
       <video v-else-if="kind === 'video'" :src="src" controls preload="metadata" />
       <ModelPreview v-else-if="kind === 'model'" :src="src" />
@@ -154,10 +154,20 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.asset-preview__stage img {
+.asset-preview__image {
   display: block;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.asset-preview__image :deep(.loading-image__image) {
+  display: block;
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   max-width: 100%;

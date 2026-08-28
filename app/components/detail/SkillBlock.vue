@@ -20,7 +20,7 @@ defineProps<{
   <section class="skill-block">
     <header v-if="icon || label || name" class="skill-block__header">
       <span v-if="icon" class="skill-block__icon" aria-hidden="true">
-        <img :src="icon" alt="" loading="lazy" decoding="async" />
+        <LoadingImage :src="icon" alt="" loading="lazy" decoding="async" fit="contain" />
       </span>
       <span class="skill-block__heading">
         <span v-if="label" class="skill-block__label meta-label">{{ label }}</span>
@@ -65,10 +65,9 @@ defineProps<{
   background: var(--md-sys-color-surface-container-high);
 }
 
-.skill-block__icon img {
+.skill-block__icon :deep(.loading-image) {
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 .skill-block__heading {

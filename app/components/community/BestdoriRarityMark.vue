@@ -14,12 +14,13 @@ watch(icon, () => {
 
 <template>
   <span v-if="normalizedRarity !== null" class="bestdori-rarity-mark" role="img" :aria-label="`${normalizedRarity} ★`">
-    <img
+    <LoadingImage
       v-if="icon && !imageFailed"
       :src="icon"
       alt=""
       aria-hidden="true"
       decoding="async"
+      fit="contain"
       @error="imageFailed = true"
     />
     <span v-else class="bestdori-rarity-mark__fallback" aria-hidden="true">{{ normalizedRarity }}★</span>
@@ -34,7 +35,7 @@ watch(icon, () => {
   place-items: center;
 }
 
-.bestdori-rarity-mark img {
+.bestdori-rarity-mark :deep(.loading-image__image) {
   display: block;
   width: 100%;
   height: 100%;

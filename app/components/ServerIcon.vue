@@ -12,7 +12,7 @@ const props = withDefaults(
 
 <template>
   <span class="server-icon" :style="{ '--server-icon-size': `${props.size}px` }">
-    <img :src="serverIconUrl(props.server)" alt="" aria-hidden="true" />
+    <LoadingImage :src="serverIconUrl(props.server)" alt="" aria-hidden="true" fit="cover" />
     <span v-if="serverUsesBetaBadge(props.server)" class="server-icon-beta" aria-hidden="true">β</span>
   </span>
 </template>
@@ -26,11 +26,16 @@ const props = withDefaults(
   flex: 0 0 var(--server-icon-size);
 }
 
-.server-icon img {
+.server-icon :deep(.loading-image) {
   display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
+}
+
+.server-icon :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

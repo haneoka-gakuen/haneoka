@@ -58,14 +58,14 @@ const onImageError = () => {
 
 <template>
   <span class="text-fallback-media" :class="{ 'is-fallback': !showImage }" aria-hidden="true">
-    <img
+    <LoadingImage
       v-if="showImage"
       :src="currentSrc"
       alt=""
-      :class="`is-${fit}`"
       :loading="eager ? 'eager' : 'lazy'"
-      decoding="async"
       :fetchpriority="eager ? 'high' : 'low'"
+      :fit="fit"
+      :placeholder-aspect-ratio="fallbackAspectRatio"
       @error="onImageError"
     />
     <TextMediaFallback
@@ -87,14 +87,10 @@ const onImageError = () => {
   overflow: hidden;
 }
 
-.text-fallback-media > img {
+.text-fallback-media > :deep(.loading-image) {
   display: block;
   width: 100%;
   height: auto;
-}
-
-.text-fallback-media > img.is-cover {
-  object-fit: cover;
 }
 
 .text-fallback-media.is-fallback {

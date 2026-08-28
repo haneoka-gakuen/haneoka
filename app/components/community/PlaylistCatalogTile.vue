@@ -32,12 +32,13 @@ watch(
   >
     <template #media>
       <span class="playlist-catalog-tile__media">
-        <img
+        <LoadingImage
           v-if="image && !imageFailed"
           :src="image"
           alt=""
           loading="lazy"
           decoding="async"
+          :fit="imageFit || 'cover'"
           @error="imageFailed = true"
         />
         <span v-else class="playlist-catalog-tile__fallback">
@@ -52,23 +53,15 @@ watch(
 
 <style scoped>
 .playlist-catalog-tile__media,
-.playlist-catalog-tile__media > img,
+.playlist-catalog-tile__media > :deep(.loading-image),
 .playlist-catalog-tile__fallback {
   display: grid;
   width: 100%;
   height: 100%;
 }
 
-.playlist-catalog-tile__media > img {
-  object-fit: cover;
-}
-
 .is-contained .playlist-catalog-tile__media {
   padding: var(--md-sys-spacing-3);
-}
-
-.is-contained .playlist-catalog-tile__media > img {
-  object-fit: contain;
 }
 
 .playlist-catalog-tile__fallback {

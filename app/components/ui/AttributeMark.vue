@@ -31,7 +31,7 @@ const icon = computed(() => {
 
 <template>
   <span class="attribute-mark" :aria-label="iconOnly ? label || String(attribute ?? '') : undefined">
-    <img v-if="icon" :src="icon" alt="" aria-hidden="true" />
+    <LoadingImage v-if="icon" class="attribute-mark__image" :src="icon" alt="" aria-hidden="true" fit="contain" />
     <MaterialIcon v-else-if="iconOnly" name="help" :size="20" aria-hidden="true" />
     <span v-else-if="!filename" class="attribute-mark__fallback display-number">{{ attribute ?? "—" }}</span>
     <span v-if="label && !iconOnly" class="attribute-mark__label">{{ label }}</span>
@@ -48,10 +48,15 @@ const icon = computed(() => {
   font-size: 0.7rem;
 }
 
-.attribute-mark img {
+.attribute-mark__image {
   width: 22px;
   height: 22px;
   flex: 0 0 auto;
+}
+
+.attribute-mark__image :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 

@@ -12,6 +12,13 @@ const props = withDefaults(
     mediaColor?: string;
     mediaShape?: "circle" | "rounded";
     imageFit?: "contain" | "cover";
+    /** Vertical focal point for a cover crop. Horizontal crops remain centered. */
+    imagePosition?: "center" | "top";
+    /**
+     * Override the default locale-fallback chain for providers whose asset
+     * URLs already encode their own locale semantics.
+     */
+    imageExpander?: (url: string | null | undefined) => readonly string[];
   }>(),
   {
     subtitle: "",
@@ -21,6 +28,8 @@ const props = withDefaults(
     mediaColor: undefined,
     mediaShape: "rounded",
     imageFit: "contain",
+    imagePosition: "center",
+    imageExpander: undefined,
   },
 );
 
@@ -28,8 +37,11 @@ const props = withDefaults(
 // first, then the ja base; language-neutral paths collapse to one candidate),
 // mirroring TextFallbackMedia / MediaFrame. When every candidate errors we fall
 // back to the `<EntityAvatar>` initials, identical to the no-image case.
-const expand = useLocalizedAssetSources();
-const sources = computed<readonly string[]>(() => (props.image ? expand(props.image) : []));
+const defaultExpand = useLocalizedAssetSources();
+const sources = computed<readonly string[]>(() => {
+  if (!props.image) return [];
+  return props.imageExpander ? props.imageExpander(props.image) : defaultExpand(props.image);
+});
 const candidateIndex = ref(0);
 watch(sources, () => {
   candidateIndex.value = 0;
@@ -49,14 +61,14 @@ const fallbackText = computed(() => entityAvatarText(textOf(props.mediaText) ? p
       :class="{ 'is-fallback': !image || imageFailed, 'is-circle': mediaShape === 'circle' }"
       aria-hidden="true"
     >
-      <img
+      <LoadingImage
         v-if="currentSrc"
         :src="currentSrc"
         :alt="textOf(title)"
         :lang="langOf(title)"
         loading="lazy"
-        decoding="async"
-        :class="{ 'is-cover': imageFit === 'cover' }"
+        :fit="imageFit"
+        :position="imagePosition === 'top' ? 'center top' : 'center'"
         @error="onImageError"
       />
       <EntityAvatar
@@ -91,7 +103,7 @@ const fallbackText = computed(() => entityAvatarText(textOf(props.mediaText) ? p
 
 .collection-primary-cell__media {
   display: grid;
-  width: max-content;
+  width: 44px;
   height: 44px;
   flex: 0 0 auto;
   place-items: center;
@@ -117,18 +129,10 @@ const fallbackText = computed(() => entityAvatarText(textOf(props.mediaText) ? p
   --entity-avatar-font-size: 12px;
 }
 
-.collection-primary-cell__media img {
+.collection-primary-cell__media > :deep(.loading-image) {
   display: block;
-  width: auto;
-  max-width: none;
-  height: 44px;
-  max-height: 44px;
-  object-fit: contain;
-}
-
-.collection-primary-cell__media img.is-cover {
   width: 44px;
-  object-fit: cover;
+  height: 44px;
 }
 
 .collection-primary-cell__copy {

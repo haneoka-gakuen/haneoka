@@ -51,6 +51,11 @@ const availablePort = async (preferred: number, reserved: ReadonlySet<number>): 
 };
 
 const preferredWebPort = Number(process.env.DEV_PORT || 3000);
+// Bind address for every local server. Use `DEV_HOST=0.0.0.0` to serve the
+// stack to other devices on the network; `DEV_PUBLIC_HOST` is the host name
+// those devices use in the browser and is what auth validates origins against.
+const devHost = process.env.DEV_HOST?.trim() || "127.0.0.1";
+const devPublicHost = process.env.DEV_PUBLIC_HOST?.trim() || devHost;
 const reserved = new Set<number>();
 const webPort = await availablePort(preferredWebPort, reserved);
 reserved.add(webPort);
@@ -147,7 +152,7 @@ function prepareLocalWorkerEnv(publicOrigin: string, bestdoriUpstreamBase?: stri
       "AUTH_EMAIL_FROM=noreply@haneoka.local",
       "LOCAL_MODERATION_MODE=deterministic",
       "TURNSTILE_ENABLED=false",
-      "TURNSTILE_ALLOWED_HOSTNAMES=localhost,127.0.0.1",
+      `TURNSTILE_ALLOWED_HOSTNAMES=localhost,127.0.0.1,${devPublicHost}`,
       "",
     ].join("\n"),
     { mode: 0o600 },
@@ -155,7 +160,7 @@ function prepareLocalWorkerEnv(publicOrigin: string, bestdoriUpstreamBase?: stri
 }
 
 prepareLocalDatabase();
-prepareLocalWorkerEnv(`http://127.0.0.1:${webPort}`, localBestdoriUpstreamBase);
+prepareLocalWorkerEnv(`http://${devPublicHost}:${webPort}`, localBestdoriUpstreamBase);
 
 const children = new Set<ChildProcess>();
 let stopping = false;
@@ -211,7 +216,7 @@ if (resolvedBestdoriRawMirrorRoot) console.log(`[dev] bestdori  ${resolvedBestdo
 else if (localNetworkMode === "offline") console.log("[dev] bestdori  unavailable (offline mode, no local mirror)");
 
 run("release gateway", "node", ["server/preview.ts"], {
-  HOST: "127.0.0.1",
+  HOST: devHost,
   PORT: String(releasePort),
   // The release gateway may serve raw Bestdori mirror files to the local
   // Worker, but transformed `/api/v1/garupa/bestdori/*` and Bestdori Sonolus
@@ -234,7 +239,7 @@ run(
     "--local-upstream",
     "localhost",
     "--ip",
-    "127.0.0.1",
+    devHost,
     "--port",
     String(workerPort),
     "--log-level",
@@ -246,7 +251,7 @@ run(
   ],
   { WRANGLER_SEND_METRICS: "false" },
 );
-run("Nuxt", "pnpm", ["exec", "nuxt", "dev", "--host", "127.0.0.1", "--port", String(webPort)], {
+run("Nuxt", "pnpm", ["exec", "nuxt", "dev", "--host", devHost, "--port", String(webPort)], {
   LOCAL_BESTDORI_PROVIDER_ORIGIN: `http://127.0.0.1:${workerPort}`,
   LOCAL_RELEASE_ORIGIN: `http://127.0.0.1:${releasePort}`,
   LOCAL_WORKER_ORIGIN: `http://127.0.0.1:${workerPort}`,

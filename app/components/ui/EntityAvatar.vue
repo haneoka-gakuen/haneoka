@@ -49,15 +49,7 @@ watch([() => props.image, () => props.imageCandidates], () => {
     :style="{ '--entity-avatar-accent': color }"
     aria-hidden="true"
   >
-    <img
-      v-if="imageSource"
-      :src="imageSource"
-      alt=""
-      loading="lazy"
-      decoding="async"
-      :class="{ 'is-cover': fit === 'cover' }"
-      @error="onImageError"
-    />
+    <LoadingImage v-if="imageSource" :src="imageSource" alt="" loading="lazy" :fit="fit" @error="onImageError" />
     <span v-else-if="text" class="entity-avatar__text localized-text display-number" :lang="lang || undefined">
       {{ text }}
     </span>
@@ -86,15 +78,10 @@ watch([() => props.image, () => props.imageCandidates], () => {
   background: color-mix(in srgb, var(--entity-avatar-accent) 16%, var(--md-sys-color-surface-container-lowest));
 }
 
-.entity-avatar img {
+.entity-avatar > :deep(.loading-image) {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-}
-
-.entity-avatar img.is-cover {
-  object-fit: cover;
 }
 
 .entity-avatar__text {

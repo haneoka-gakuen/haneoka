@@ -1,13 +1,17 @@
 <script setup lang="ts">
+import { MaterialIcon } from "@haneoka/ui";
+
 import type { Band, Character, Live2DDetail, Live2DModel } from "~/types/archive";
 import type { DetailHeaderIconItem } from "~/components/detail/types";
 import type { FacetOption } from "~/components/ui/FacetGroup.vue";
 import { ourNotesReleaseOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { langOf, textOf, type DisplayText } from "~/types/displayText";
 import { entityAvatarText } from "~/utils/entityAvatar";
+import { versionedPreviewImageUrl } from "~/utils/previewImageUrl";
 
 const live2dSortKeys = ["id", "title", "type", "character", "band"] as const;
 type Live2DSort = (typeof live2dSortKeys)[number];
+const LIVE2D_PREVIEW_SCHEMA = "haneoka-live2d-preview-v3";
 
 const { resolveLocalized, t, compareText } = useLocale();
 const { releaseServer } = useReleaseServer();
@@ -105,15 +109,27 @@ const characterShortNameOf = (model: Live2DModel): DisplayText => {
 };
 const characterColorOf = (model: Live2DModel) =>
   characterMap.value.get(model.characterId || 0)?.colorCode || "var(--md-sys-color-primary)";
-const characterFallbackLabelOf = (model: Live2DModel): DisplayText => {
-  const shortName = characterShortNameOf(model);
-  return textOf(shortName) ? shortName : titleOf(model);
+const failedPreviewImages = ref<Set<string>>(new Set());
+/** A rendered Cubism preview is distinct from character identity artwork. */
+const previewImageOf = (model: Live2DModel) => {
+  const preview = model.preview;
+  return preview?.status === "rendered" &&
+    preview.schema === LIVE2D_PREVIEW_SCHEMA &&
+    preview.runtime &&
+    preview.state === "initial" &&
+    preview.animation === "none" &&
+    preview.expression === "none" &&
+    preview.elapsedMilliseconds === 0
+    ? versionedPreviewImageUrl(
+        preview.runtime,
+        preview.sha256 || `${preview.schema}:${preview.width}x${preview.height}`,
+      )
+    : undefined;
 };
-const failedCharacterImages = ref<Set<string>>(new Set());
-const characterMediaImageOf = (model: Live2DModel) =>
-  failedCharacterImages.value.has(model.live2dKey) ? undefined : characterImageOf(model);
-const markCharacterImageFailed = (model: Live2DModel) => {
-  failedCharacterImages.value = new Set(failedCharacterImages.value).add(model.live2dKey);
+const modelPreviewImageOf = (model: Live2DModel) =>
+  failedPreviewImages.value.has(model.live2dKey) ? undefined : previewImageOf(model);
+const markPreviewImageFailed = (model: Live2DModel) => {
+  failedPreviewImages.value = new Set(failedPreviewImages.value).add(model.live2dKey);
 };
 const bandImageOf = (model: Live2DModel) => {
   const band = bandMap.value.get(model.bandId || 0);
@@ -400,28 +416,25 @@ useHead(() => ({
             :label="titleOf(model)"
             :secondary-label="characterOf(model)"
             aspect-ratio="1 / 1"
+            media-fit="cover"
+            media-position="top"
             :to="modelRoute(model)"
             :selected="model.live2dKey === selectedKey"
             :lang="langOf(titleOf(model))"
           >
             <template #media>
-              <img
-                v-if="characterMediaImageOf(model)"
-                :src="characterMediaImageOf(model)"
+              <LoadingImage
+                v-if="modelPreviewImageOf(model)"
+                :src="modelPreviewImageOf(model)"
                 :alt="textOf(titleOf(model))"
                 :lang="langOf(titleOf(model))"
                 loading="lazy"
-                decoding="async"
-                @error="markCharacterImageFailed(model)"
+                fit="cover"
+                position="center top"
+                @error="markPreviewImageFailed(model)"
               />
-              <span v-else class="live2d-character-fallback">
-                <EntityAvatar
-                  class="live2d-character-fallback__avatar"
-                  :text="entityAvatarText(characterFallbackLabelOf(model))"
-                  :lang="langOf(characterFallbackLabelOf(model))"
-                  :color="characterColorOf(model)"
-                  icon="person"
-                />
+              <span v-else class="live2d-model-fallback">
+                <MaterialIcon name="animation" :size="28" aria-hidden="true" />
               </span>
             </template>
             <CollectionTileIdentity :title="titleOf(model)" :subtitle="characterOf(model)">
@@ -455,11 +468,11 @@ useHead(() => ({
             :row-index="index"
             :identifier="model.live2dKey"
             :title="titleOf(model)"
-            :image="characterImageOf(model)"
+            :image="modelPreviewImageOf(model)"
             image-fit="cover"
-            :media-text="characterShortNameOf(model)"
-            :media-color="characterColorOf(model)"
-            media-shape="circle"
+            image-position="top"
+            media-icon="animation"
+            media-shape="rounded"
             :fields="rowFieldsOf(model)"
             :selected="model.live2dKey === selectedKey"
             @select="modelLayer.open(model.live2dKey)"
@@ -489,18 +502,12 @@ useHead(() => ({
   background: #0a0e1d;
 }
 
-.live2d-character-fallback {
+.live2d-model-fallback {
   display: grid;
   width: 100%;
   height: 100%;
   place-items: center;
+  color: var(--md-sys-color-on-surface-variant);
   background: var(--md-sys-color-surface-container-low);
-}
-
-.live2d-character-fallback__avatar {
-  width: min(68%, 92px);
-  height: min(68%, 92px);
-  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 72%, transparent);
-  --entity-avatar-font-size: clamp(12px, 11cqi, 22px);
 }
 </style>

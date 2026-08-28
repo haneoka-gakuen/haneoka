@@ -56,7 +56,15 @@ const formatAmount = (value: number) => value.toLocaleString();
         </span>
         <span class="level-cost-list__materials">
           <span v-for="(material, index) in row.materials" :key="index" class="level-cost-list__material">
-            <img v-if="material.image" :src="material.image" alt="" loading="lazy" decoding="async" />
+            <LoadingImage
+              v-if="material.image"
+              class="level-cost-list__material-image"
+              :src="material.image"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              fit="contain"
+            />
             <DisplayText v-if="material.label" class="level-cost-list__material-label" :value="material.label" />
             <strong class="display-number">{{ formatAmount(material.amount) }}</strong>
           </span>
@@ -67,7 +75,15 @@ const formatAmount = (value: number) => value.toLocaleString();
         <span class="level-cost-list__level">{{ t("total") }}</span>
         <span class="level-cost-list__materials">
           <span v-for="(material, index) in total" :key="index" class="level-cost-list__material">
-            <img v-if="material.image" :src="material.image" alt="" loading="lazy" decoding="async" />
+            <LoadingImage
+              v-if="material.image"
+              class="level-cost-list__material-image"
+              :src="material.image"
+              alt=""
+              loading="lazy"
+              decoding="async"
+              fit="contain"
+            />
             <DisplayText v-if="material.label" class="level-cost-list__material-label" :value="material.label" />
             <strong class="display-number">{{ formatAmount(material.amount) }}</strong>
           </span>
@@ -143,7 +159,11 @@ const formatAmount = (value: number) => value.toLocaleString();
   color: var(--md-comp-detail-accent, var(--md-sys-color-primary));
   border-top: 1px solid var(--md-sys-color-outline-variant);
   margin-top: 2px;
-  background: color-mix(in srgb, var(--md-comp-detail-accent, var(--md-sys-color-primary)) 8%, var(--md-sys-color-surface-container-lowest));
+  background: color-mix(
+    in srgb,
+    var(--md-comp-detail-accent, var(--md-sys-color-primary)) 8%,
+    var(--md-sys-color-surface-container-lowest)
+  );
   font-weight: var(--md-sys-typescale-label-medium-weight);
 }
 
@@ -176,11 +196,10 @@ const formatAmount = (value: number) => value.toLocaleString();
   gap: 4px;
 }
 
-.level-cost-list__material img {
+.level-cost-list__material-image {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
-  object-fit: contain;
 }
 
 .level-cost-list__material-label {

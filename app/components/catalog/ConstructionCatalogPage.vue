@@ -30,7 +30,14 @@ useSeoMeta({ title: () => `${props.title} · haneoka` });
       :data-status="toolText(toolField(feature, 'status'), 'construction')"
       :data-source-tables="Array.isArray(sourceTables) ? sourceTables.join(',') : undefined"
     >
-      <img src="/images/maintenance-characters.png" :alt="copy.alt" />
+      <LoadingImage
+        class="construction-state__art"
+        src="/images/maintenance-characters.png"
+        :alt="copy.alt"
+        loading="eager"
+        fit="contain"
+        placeholder-aspect-ratio="617 / 507"
+      />
       <div class="construction-state__copy">
         <span class="construction-state__icon" aria-hidden="true">
           <MaterialIcon name="construction" :size="24" />
@@ -55,10 +62,10 @@ useSeoMeta({ title: () => `${props.title} · haneoka` });
   text-align: center;
 }
 
-img {
+.construction-state__art {
+  display: block;
   width: min(360px, 78vw);
   max-height: min(46dvh, 320px);
-  object-fit: contain;
 }
 
 .construction-state__copy {

@@ -34,6 +34,37 @@ The selected release pointer is written to
 derivatives. `--publish` writes to remote R2 and should only be used for an
 intended publication.
 
+## Rebuild without the game CDN
+
+An immutable source snapshot contains the original package, Addressables
+catalogs, Unity bundles, and CRI payloads needed by the resource build. Once a
+source exists locally, rebuild it without querying the game's CDN or R2:
+
+```sh
+PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt run \
+  --offline --source <source-id>
+```
+
+Offline mode verifies that every manifest-listed local input is present and
+matches its SHA-256 before any build stage starts. It does not fall back to
+ingestion, a cached package, the game CDN, R2, or publication; a missing or
+corrupt source fails with a restore command rather than silently downloading
+anything.
+
+To restore a source from R2 first, use a separate explicit read operation, then
+run the offline build:
+
+```sh
+PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt fetch-source \
+  --source <source-id>
+PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt run \
+  --offline --source <source-id>
+```
+
+`fetch-source` without `--role`, `--shard-index`, or `--shard-count` restores
+the complete source snapshot. Use `verify-source --fast` for a quick local
+presence/size inventory; `run --offline` always performs the full hash check.
+
 Run command-specific help for all options:
 
 ```sh
@@ -43,26 +74,26 @@ PYTHONPATH=scripts python scripts/pipeline.py --server jp-cbt <command> --help
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `ingest` | Normalize an APK, APKS/XAPK, or split-APK directory |
-| `verify-source` | Verify source sizes, hashes, and identity |
-| `index-source` | Build Unity CAB dependency metadata |
-| `extract-master` | Decode Master data |
-| `extract-unity` / `merge-unity` | Process and merge Unity shards |
-| `extract-cri` | Decode CRI media |
-| `build-live2d` | Build Live2D indexes and runtime derivatives |
-| `build-home-spots` | Build Home Spot models and previews |
-| `build-api` | Build catalog documents |
-| `build-ktx2` | Build optional GPU texture derivatives |
-| `build-sonolus` | Build Sonolus resources |
-| `build-release` | Assemble and select a local release |
-| `run` | Run the complete local pipeline |
-| `verify-release` / `verify-remote` | Verify local or published releases |
-| `publish-source` / `publish-release` | Publish verified data to R2 |
-| `fetch-package` / `fetch-source` / `fetch-home-spots` | Restore stored inputs |
-| `prune-sources` / `prune-releases` / `prune-uploads` | Apply retention policies |
-| `gc-r2` | Remove unreferenced R2 objects |
+| Command                                               | Purpose                                                                                                     |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `ingest`                                              | Normalize an APK, APKS/XAPK, or split-APK directory                                                         |
+| `verify-source`                                       | Verify source sizes, hashes, and identity                                                                   |
+| `index-source`                                        | Build Unity CAB dependency metadata                                                                         |
+| `extract-master`                                      | Decode Master data                                                                                          |
+| `extract-unity` / `merge-unity`                       | Process and merge Unity shards                                                                              |
+| `extract-cri`                                         | Decode CRI media                                                                                            |
+| `build-live2d`                                        | Build Live2D indexes and runtime derivatives                                                                |
+| `build-home-spots`                                    | Build Home Spot models and previews                                                                         |
+| `build-api`                                           | Build catalog documents                                                                                     |
+| `build-ktx2`                                          | Build optional GPU texture derivatives                                                                      |
+| `build-sonolus`                                       | Build Sonolus resources                                                                                     |
+| `build-release`                                       | Assemble and select a local release                                                                         |
+| `run`                                                 | Run the complete local pipeline; `--offline --source` rebuilds a verified local source without the game CDN |
+| `verify-release` / `verify-remote`                    | Verify local or published releases                                                                          |
+| `publish-source` / `publish-release`                  | Publish verified data to R2                                                                                 |
+| `fetch-package` / `fetch-source` / `fetch-home-spots` | Restore stored inputs                                                                                       |
+| `prune-sources` / `prune-releases` / `prune-uploads`  | Apply retention policies                                                                                    |
+| `gc-r2`                                               | Remove unreferenced R2 objects                                                                              |
 
 ## Configuration and output
 

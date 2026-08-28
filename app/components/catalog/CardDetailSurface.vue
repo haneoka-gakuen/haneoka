@@ -3,10 +3,7 @@ import { MaterialIcon } from "@haneoka/ui";
 
 import type { DetailHeaderIconItem, DetailMediaItem } from "~/components/detail/types";
 import type { CostLevelRow, CostMaterial } from "~/components/detail/DetailLevelCostList.vue";
-import {
-  runtimeReleaseForCatalogOrigin,
-  type CatalogContentOrigin,
-} from "~/features/catalog/contentSource";
+import { runtimeReleaseForCatalogOrigin, type CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { assetRootForRelease } from "~/composables/useReleaseServer";
 import type { CardStatLevel, Character, MemberCard, SupportCard } from "~/types/archive";
 import { textOf, type DisplayText } from "~/types/displayText";
@@ -230,7 +227,10 @@ const statRows = computed<CardStatLevel[]>(() => {
   const awake = awakeningParamRates.value;
   return cardLevelRates.value.map((entry) => ({
     level: entry.level,
-    performance: statAtRate(props.card?.stat?.performance, entry.performanceRate + train.performance + awake.performance),
+    performance: statAtRate(
+      props.card?.stat?.performance,
+      entry.performanceRate + train.performance + awake.performance,
+    ),
     technique: statAtRate(props.card?.stat?.technique, entry.technicRate + train.technique + awake.technique),
     visual: statAtRate(props.card?.stat?.visual, entry.visualRate + train.visual + awake.visual),
   }));
@@ -270,9 +270,7 @@ const awakeRows = computed(() => {
     .filter((raw): raw is AwakeRaw => Boolean(raw && raw._group === group))
     .sort((left, right) => (left._awakeCount ?? 0) - (right._awakeCount ?? 0));
 });
-const trainingLevels = computed(() =>
-  awakeRows.value.map((row) => row._awakeCount ?? 0).filter((count) => count > 0),
-);
+const trainingLevels = computed(() => awakeRows.value.map((row) => row._awakeCount ?? 0).filter((count) => count > 0));
 
 const selectedStatLevel = useRouteQueryInteger("level", 0, { min: 0 });
 const selectedTraining = useRouteQueryInteger("training", 0, { min: 0 });
@@ -386,7 +384,9 @@ const awakeningCostRows = computed<CostLevelRow[]>(() => {
     .filter((row) => (row._rank ?? 0) > 1 && (row._rank ?? 0) <= target)
     .map((row) => ({
       level: row._rank ?? 0,
-      materials: [{ label: t("memberPiece"), image, amount: row._requiredRankUpItemCount ?? 0 }] satisfies CostMaterial[],
+      materials: [
+        { label: t("memberPiece"), image, amount: row._requiredRankUpItemCount ?? 0 },
+      ] satisfies CostMaterial[],
     }));
 });
 const awakeningCostTotal = computed<CostMaterial[]>(() => aggregateMaterials(awakeningCostRows.value));
@@ -444,7 +444,7 @@ watch(
     const cardChanged = observedCardKey !== cardKey.value;
     observedCardKey = cardKey.value;
     if (!props.card || props.pending) return;
-    const latest = <T>(values: T[]) => (values.length ? values[values.length - 1] : 0);
+    const latest = <T,>(values: T[]) => (values.length ? values[values.length - 1] : 0);
     // Default training/awakening first: the level cap depends on the training
     // stage, so the level must be chosen after training settles (otherwise it
     // pins to the stage-1 cap and never reaches the full-training max).
@@ -479,7 +479,8 @@ function aggregateMaterials(rows: CostLevelRow[]): CostMaterial[] {
   const totals = new Map<string, CostMaterial>();
   for (const row of rows) {
     for (const material of row.materials) {
-      const key = material.image || (Array.isArray(material.label) ? material.label.join("/") : String(material.label ?? ""));
+      const key =
+        material.image || (Array.isArray(material.label) ? material.label.join("/") : String(material.label ?? ""));
       const existing = totals.get(key);
       if (existing) existing.amount += material.amount;
       else totals.set(key, { ...material });
@@ -528,12 +529,14 @@ function aggregateMaterials(rows: CostLevelRow[]): CostMaterial[] {
             :key="character.characterId"
             :to="layerLink(`/catalog/characters?character=${character.characterId}`, 'character')"
           >
-            <img
+            <LoadingImage
               v-if="character.faceImage || character.thumbnailImage || character.profileImage"
+              class="card-detail-surface__relation-avatar"
               :src="character.faceImage || character.thumbnailImage || character.profileImage"
               alt=""
               loading="lazy"
               decoding="async"
+              fit="cover"
             />
             <DisplayText
               :value="
@@ -735,12 +738,11 @@ function aggregateMaterials(rows: CostLevelRow[]): CostMaterial[] {
   background: var(--md-sys-color-secondary-container);
 }
 
-.card-detail-surface__relation-list img {
+.card-detail-surface__relation-avatar {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
   border-radius: 50%;
-  object-fit: cover;
 }
 
 .card-detail-surface__board {

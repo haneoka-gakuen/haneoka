@@ -92,7 +92,9 @@ const canonicalAbsoluteResourceUrl = (url: string, releaseServer: unknown): bool
     url.startsWith(`/assets/${encodedServer}/Assets/`) ||
     url.startsWith(`/assets/${encodedServer}/Packages/`) ||
     (url.startsWith(runtimePrefix) &&
-      /^(?:cri|live2d|note-se|sonolus|unity|unity-json)\//.test(url.slice(runtimePrefix.length)))
+      /^(?:cri|live2d|note-se|previews|sonolus|spine-previews|unity|unity-json)\//.test(
+        url.slice(runtimePrefix.length),
+      ))
   );
 };
 

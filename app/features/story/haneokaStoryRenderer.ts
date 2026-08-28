@@ -20,15 +20,11 @@ import { createHaneokaThemeHostPlugin, vegaHaneokaTheme, type HaneokaThemeHost }
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 import { effectiveHaneokaStoryProjectPlugins, HANEOKA_AUTHORING_PLUGIN_IDS } from "~/features/story/pluginSelection";
 import { storyProjectPluginTargetsAltairAuthoring } from "~/features/story/altairAuthoring";
-import { createCubismWebRuntimeAdapter } from "~/features/story/cubismRuntimeProvision";
+import { CUBISM_WEB_RUNTIME_URLS, createCubismWebRuntimeAdapter } from "~/features/story/cubismRuntimeProvision";
 
 const haneokaCubismRuntime = createCubismWebRuntimeAdapter({
   id: "haneoka.web-cubism-runtime",
-  runtime: {
-    cubismCoreUrl: "/Core/live2dcubismcore.js",
-    cubism2CoreUrl: "/Core/live2d.min.js",
-    motionSyncCoreUrl: "/Core/CRI/live2dcubismmotionsynccore.min.js",
-  },
+  runtime: CUBISM_WEB_RUNTIME_URLS,
 });
 
 const throwIfAborted = (signal?: AbortSignal): void => {

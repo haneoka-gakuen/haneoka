@@ -272,7 +272,14 @@ onBeforeUnmount(() => {
           >
             <MaterialIcon name="drag_indicator" :size="17" />
           </UiIconButton>
-          <img v-if="item.cover" :src="item.cover" alt="" loading="lazy" />
+          <LoadingImage
+            v-if="item.cover"
+            class="audio-queue-panel__cover"
+            :src="item.cover"
+            alt=""
+            loading="lazy"
+            fit="cover"
+          />
           <span v-else class="audio-queue-panel__placeholder"><MaterialIcon name="queue_music" :size="15" /></span>
         </template>
         <template #headline>
@@ -468,16 +475,12 @@ onBeforeUnmount(() => {
   gap: var(--md-sys-spacing-2);
 }
 
-.audio-queue-panel__track :deep([slot="start"] > img),
+.audio-queue-panel__track :deep([slot="start"] > .audio-queue-panel__cover),
 .audio-queue-panel__placeholder {
   width: 40px;
   height: 40px;
   border: 1px solid var(--md-comp-runtime-outline);
   border-radius: var(--md-sys-shape-corner-extra-small);
-}
-
-.audio-queue-panel__track :deep([slot="start"] > img) {
-  object-fit: cover;
 }
 
 .audio-queue-panel__drag {

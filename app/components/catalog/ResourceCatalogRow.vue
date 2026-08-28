@@ -18,6 +18,7 @@ withDefaults(
     subtitle?: DisplayText;
     image?: string;
     imageFit?: "contain" | "cover";
+    imagePosition?: "center" | "top";
     mediaText?: DisplayText;
     mediaColor?: string;
     mediaShape?: "circle" | "rounded";
@@ -29,11 +30,14 @@ withDefaults(
     actionCell?: boolean;
     rowIndex?: number;
     to?: RouteLocationRaw;
+    /** Override the default locale-fallback chain, for providers with their own asset locale rules. */
+    imageExpander?: (url: string | null | undefined) => readonly string[];
   }>(),
   {
     subtitle: "",
     image: "",
     imageFit: "contain",
+    imagePosition: "center",
     mediaText: "",
     mediaColor: undefined,
     mediaShape: "rounded",
@@ -45,6 +49,7 @@ withDefaults(
     actionCell: true,
     rowIndex: undefined,
     to: undefined,
+    imageExpander: undefined,
   },
 );
 
@@ -74,10 +79,12 @@ const hasFieldValue = (value: ResourceRowField["value"]) =>
       :subtitle="subtitle"
       :image="image"
       :image-fit="imageFit"
+      :image-position="imagePosition"
       :media-icon="mediaIcon"
       :media-text="mediaText"
       :media-color="mediaColor"
       :media-shape="mediaShape"
+      :image-expander="imageExpander"
     />
 
     <span

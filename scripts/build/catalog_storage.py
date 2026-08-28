@@ -227,6 +227,31 @@ STORY_ASSET_VIEWS = (
     ),
 )
 
+SPINE_MODEL_PROJECTION = ProjectionSpec(
+    include=(
+        "animationCount",
+        "animations",
+        "bounds",
+        "family",
+        "id",
+        # Exact raw Unity SkeletonDataAsset.m_Name from which the shorter
+        # route ID is derived. This is a game resource key, never a display
+        # label or source path.
+        "resourceKey",
+        "preview",
+        "reason",
+        "runtimeSummary",
+        "scale",
+        "skinCount",
+        "skins",
+        "sourceKey",
+        "sourcePath",
+        "sourcePathKey",
+        "spineVersion",
+        "status",
+    )
+)
+
 PROGRESSION_VIEWS = (
     ViewSpec(
         "character-rank-rewards",
@@ -434,6 +459,11 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
         dependencies=("story-runtime",),
         views=STORY_ASSET_VIEWS,
     ),
+    # Anon Tokyo is a release-scoped document. Its subpages share joined
+    # MasterAT records, locale-aware imagery, map data, and future Spine
+    # metadata, so splitting one arbitrary collection would make the public
+    # contract less useful than an immutable feature document.
+    "anon-tokyo": ResourceSpec(),
     "live2d": ResourceSpec(
         (),
         projection=ProjectionSpec(
@@ -441,6 +471,15 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
         ),
         relations=(RelationSpec("character", (("characterId",),)),),
         dependencies=("bands", "characters"),
+    ),
+    # Individual models are route-addressable and complete entities carry the
+    # skeleton/atlas/page graph.  The index intentionally contains only the
+    # metadata needed to browse them, preventing a catalog landing page from
+    # eagerly loading every Spine JSON and texture declaration.
+    "spine": ResourceSpec(
+        ("models",),
+        (("id",),),
+        projection=SPINE_MODEL_PROJECTION,
     ),
     "voices": ResourceSpec(
         ("entries",),

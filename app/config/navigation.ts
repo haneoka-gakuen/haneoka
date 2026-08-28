@@ -21,6 +21,7 @@ export const shellNavigationIcons = {
 } as const satisfies Readonly<Record<ShellNavigationDestinationId, string>>;
 
 type DrawerCapabilityId =
+  | "anon-tokyo"
   | "asset-explorer"
   | "band-items"
   | "challenge"
@@ -46,6 +47,7 @@ type DrawerCapabilityId =
   | "login-campaigns"
   | "member-cards"
   | "shop"
+  | "spine"
   | "songs"
   | "stamps"
   | "stories"
@@ -58,9 +60,11 @@ export const capabilityNavigationIcons = {
   "support-cards": "collections",
   characters: "group",
   stories: "auto_stories",
+  "anon-tokyo": "storefront",
   comics: "menu_book",
   stamps: "emoji_emotions",
   live2d: "animation",
+  spine: "accessibility_new",
   "asset-explorer": "folder_open",
   items: "inventory_2",
   "band-items": "piano",
@@ -121,6 +125,68 @@ export const nestedNavigationLeaves: Readonly<Record<string, readonly Navigation
       icon: "school",
       messageKey: "storyNavigation.tutorial",
       route: "/catalog/stories/tutorial",
+    },
+  ],
+  "anon-tokyo": [
+    {
+      id: "anon-tokyo-characters",
+      icon: "group",
+      messageKey: "anonTokyoPage.characters",
+      route: "/catalog/anon-tokyo/characters",
+    },
+    {
+      id: "anon-tokyo-fashion",
+      icon: "checkroom",
+      messageKey: "anonTokyoPage.dressingRoom",
+      route: "/catalog/anon-tokyo/outfits",
+    },
+    {
+      id: "anon-tokyo-shop",
+      icon: "chair",
+      messageKey: "anonTokyoPage.shop",
+      route: "/catalog/anon-tokyo/shop",
+    },
+    {
+      id: "anon-tokyo-staff",
+      icon: "badge",
+      messageKey: "anonTokyoPage.staffSection",
+      route: "/catalog/anon-tokyo/staff",
+    },
+    {
+      id: "anon-tokyo-customers",
+      icon: "group",
+      messageKey: "anonTokyoPage.customersPage",
+      route: "/catalog/anon-tokyo/customers",
+    },
+    {
+      id: "anon-tokyo-goods",
+      icon: "sell",
+      messageKey: "anonTokyoPage.goodsEconomy",
+      route: "/catalog/anon-tokyo/goods",
+    },
+    {
+      id: "anon-tokyo-decorations",
+      icon: "chair",
+      messageKey: "anonTokyoPage.decorations",
+      route: "/catalog/anon-tokyo/decorations",
+    },
+    {
+      id: "anon-tokyo-tasks",
+      icon: "fact_check",
+      messageKey: "anonTokyoPage.tasks",
+      route: "/catalog/anon-tokyo/tasks",
+    },
+    {
+      id: "anon-tokyo-guide",
+      icon: "menu_book",
+      messageKey: "anonTokyoPage.guide",
+      route: "/catalog/anon-tokyo/guide",
+    },
+    {
+      id: "anon-tokyo-fever",
+      icon: "music_note",
+      messageKey: "anonTokyoPage.fever",
+      route: "/catalog/anon-tokyo/fever",
     },
   ],
   "community-stories": [

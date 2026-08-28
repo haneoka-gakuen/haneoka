@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { MaterialIcon, UiButton, UiIconButton, UiList, UiListItem, UiRange, UiTextField } from "@haneoka/ui";
+import { MaterialIcon, UiButton, UiIconButton, UiList, UiListItem, UiRange, UiSelect, UiTextField } from "@haneoka/ui";
 
 import { type AdvHarmonicMotionData } from "@haneoka/vega-plugin-cubism";
 import { resolveHaneokaLive2DCatalogSource } from "@haneoka/vega-plugin-haneoka";
 import {
-  loadCubismRuntimeProvision,
+  prepareCubismModelViewerRuntime,
   type CubismModelViewer as CubismModelViewerInstance,
 } from "~/features/story/cubismRuntimeProvision";
 import type { Live2DDetail } from "~/types/archive";
@@ -12,9 +12,10 @@ import type { CatalogContentOrigin } from "~/features/catalog/contentSource";
 import { assetRootForRelease, releaseResourceUrl, runtimeRootForRelease } from "~/composables/useReleaseServer";
 
 type InspectorMode = "motion" | "expression" | "transform" | "parameters";
-type BackgroundMode = "common" | "mygo" | "mujica" | "none";
 type ParameterMode = "none" | "capture" | "pose";
 type CubismParameterValue = ReturnType<CubismModelViewerInstance["parameters"]>[number];
+type ViewerFieldValue = number | string;
+type ViewerSelectOption = { readonly label: string; readonly value: ViewerFieldValue };
 
 const props = defineProps<{
   entry: Live2DDetail;
@@ -39,8 +40,6 @@ const offsetX = ref(0);
 const offsetY = ref(0);
 const selectedMotion = ref("");
 const selectedExpression = ref("");
-const inspector = ref<InspectorMode>("motion");
-const background = ref<BackgroundMode>("common");
 const parameters = ref<CubismParameterValue[]>([]);
 const parameterMode = ref<ParameterMode>("none");
 const draftValues = ref<Record<string, number>>({});
@@ -68,9 +67,9 @@ const expressions = computed(() => catalogSource.value.expressions);
 const defaultMotionName = computed(() => catalogSource.value.defaultMotionName || "");
 const headAnchor = computed(() => catalogSource.value.headAnchor || null);
 const modelUrl = computed(() => catalogSource.value.modelUrl);
-const backgroundAsset = (value: Exclude<BackgroundMode, "none">) => catalogSource.value.backgrounds[value];
-const backgroundUrl = computed(() => (background.value === "none" ? "" : backgroundAsset(background.value)));
+const motionOptions = computed<ViewerSelectOption[]>(() => motions.value.map((value) => ({ value, label: value })));
 
+const expressionOptions = computed<ViewerSelectOption[]>(() => expressions.value.map((value) => ({ value, label: value })));
 const inspectorOptions = computed(() => [
   { value: "motion" as const, label: t("motion"), icon: "play_arrow" },
   ...(expressions.value.length
@@ -78,12 +77,6 @@ const inspectorOptions = computed(() => [
     : []),
   { value: "transform" as const, label: t("transform"), icon: "open_with" },
   { value: "parameters" as const, label: t("parameters"), icon: "tune" },
-]);
-const backgroundOptions = computed(() => [
-  { value: "common" as const, label: t("stage"), image: backgroundAsset("common"), imageFit: "cover" as const },
-  { value: "mygo" as const, label: "MyGO!!!!!", image: backgroundAsset("mygo"), imageFit: "cover" as const },
-  { value: "mujica" as const, label: "Ave Mujica", image: backgroundAsset("mujica"), imageFit: "cover" as const },
-  { value: "none" as const, label: t("none"), icon: "block" },
 ]);
 const parameterModeOptions = computed(() => [
   { value: "none" as const, label: t("none") },
@@ -179,7 +172,7 @@ const load = async () => {
   pauseGlobalAudio();
   try {
     viewer.value?.destroy();
-    const { CubismModelViewer } = await loadCubismRuntimeProvision();
+    const { CubismModelViewer } = await prepareCubismModelViewerRuntime();
     const current = markRaw(
       new CubismModelViewer({
         canvas: canvas.value,
@@ -222,6 +215,19 @@ const playMotion = (name: string) => {
   viewer.value?.playMotion(name);
   viewer.value?.setLoopMotion(loop.value ? name : null);
   applyParameterMode();
+};
+
+const updateMotion = (value: ViewerFieldValue) => {
+  const next = String(value || "");
+  if (next) playMotion(next);
+};
+
+const replay = () => {
+  if (selectedMotion.value) playMotion(selectedMotion.value);
+};
+
+const togglePaused = () => {
+  if (parameterMode.value !== "pose") paused.value = !paused.value;
 };
 
 const playExpression = (name: string) => {
@@ -324,191 +330,92 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="live2d-workbench">
-    <section class="live2d-stage">
-      <div
-        ref="container"
-        class="live2d-stage__viewport"
-        :style="backgroundUrl ? { backgroundImage: `url(${backgroundUrl})` } : undefined"
+  <RuntimeViewerSurface :label="title" :busy="loading" :show-controls="!loading && !error && ready">
+    <div ref="container" class="live2d-stage__viewport">
+      <canvas ref="canvas" />
+      <LoadingState v-if="loading" class="live2d-stage__state" />
+      <ErrorState v-else-if="error || !ready" class="live2d-stage__state" @retry="load" />
+    </div>
+
+
+
+    <template #controls>
+      <UiSelect
+        v-if="motionOptions.length > 1"
+        :model-value="selectedMotion"
+        :options="motionOptions"
+        :label="t('motion')"
+        @update:model-value="updateMotion"
+      />
+      <UiIconButton
+        :disabled="parameterMode === 'pose'"
+        :label="paused || parameterMode === 'pose' ? t('play') : t('pause')"
+        tone="runtime"
+        touch-target
+        @click="togglePaused"
       >
-        <canvas ref="canvas" />
-        <LoadingState v-if="loading" class="live2d-stage__state" />
-        <ErrorState v-else-if="error || !ready" class="live2d-stage__state" @retry="load" />
-      </div>
-
-      <div class="live2d-stage__transport" role="toolbar" aria-label="Live2D">
-        <UiIconButton
-          :disabled="parameterMode === 'pose'"
-          :label="paused || parameterMode === 'pose' ? t('play') : t('pause')"
-          @click="paused = !paused"
+        <MaterialIcon :name="paused || parameterMode === 'pose' ? 'play_arrow' : 'pause'" :size="20" />
+      </UiIconButton>
+      <UiSelect
+        v-if="expressionOptions.length"
+        :model-value="selectedExpression"
+        :options="expressionOptions"
+        :label="t('expression')"
+        @update:model-value="(value) => playExpression(String(value))"
+      />
+      <UiIconButton :label="t('loop')" :pressed="loop" tone="runtime" touch-target @click="loop = !loop">
+        <MaterialIcon name="all_inclusive" :size="20" />
+      </UiIconButton>
+      <UiIconButton :label="t('breath')" :pressed="breath" tone="runtime" touch-target @click="breath = !breath">
+        <MaterialIcon name="air" :size="20" />
+      </UiIconButton>
+      <UiIconButton :label="t('blink')" :pressed="blink" tone="runtime" touch-target @click="blink = !blink">
+        <MaterialIcon :name="blink ? 'visibility' : 'visibility_off'" :size="20" />
+      </UiIconButton>
+      <UiIconButton
+        :label="t('lookAtPointer')"
+        :pressed="lookAtPointer"
+        tone="runtime"
+        touch-target
+        @click="lookAtPointer = !lookAtPointer"
+      >
+        <MaterialIcon name="arrow_selector_tool" :size="20" />
+      </UiIconButton>
+      <div class="live2d-stage__sliders">
+        <UiRange v-model="scale" :label="t('size')" :min="0.3" :max="3" :step="0.01" :value-label="scale.toFixed(2)">
+          <template #icon><MaterialIcon name="zoom_in" :size="18" /></template>
+        </UiRange>
+        <UiRange v-model="offsetX" label="X" :min="-2" :max="2" :step="0.01" :value-label="offsetX.toFixed(2)">
+          <template #icon><MaterialIcon name="swap_horiz" :size="18" /></template>
+        </UiRange>
+        <UiRange v-model="offsetY" label="Y" :min="-2" :max="2" :step="0.01" :value-label="offsetY.toFixed(2)">
+          <template #icon><MaterialIcon name="swap_vert" :size="18" /></template>
+        </UiRange>
+        <UiButton
+          @click="
+            scale = 1;
+            offsetX = 0;
+            offsetY = 0;
+          "
         >
-          <MaterialIcon name="play_arrow" v-if="paused || parameterMode === 'pose'" :size="17" />
-          <MaterialIcon name="pause" v-else :size="17" />
-        </UiIconButton>
-        <UiIconButton :label="t('loop')" :pressed="loop" @click="loop = !loop">
-          <MaterialIcon name="refresh" :size="17" />
-        </UiIconButton>
-        <UiIconButton :label="t('breath')" :pressed="breath" @click="breath = !breath">
-          <MaterialIcon name="air" :size="17" />
-        </UiIconButton>
-        <UiIconButton :label="t('blink')" :pressed="blink" @click="blink = !blink">
-          <MaterialIcon name="visibility" v-if="blink" :size="17" />
-          <MaterialIcon name="visibility_off" v-else :size="17" />
-        </UiIconButton>
-        <UiIconButton :label="t('lookAtPointer')" :pressed="lookAtPointer" @click="lookAtPointer = !lookAtPointer">
-          <MaterialIcon name="arrow_selector_tool" :size="17" />
-        </UiIconButton>
+          <MaterialIcon name="recenter" :size="18" />
+        </UiButton>
       </div>
-    </section>
-
-    <aside class="live2d-inspector" :aria-label="t('settings')">
-      <header class="live2d-inspector__header">
-        <strong>{{ t("settings") }}</strong>
-      </header>
-      <div class="live2d-inspector__scroll">
-        <div class="live2d-inspector__modes">
-          <SegmentedControl v-model="inspector" :options="inspectorOptions" :label="t('details')" icon-only />
-          <SegmentedControl v-model="background" :options="backgroundOptions" :label="t('stage')" icon-only />
-        </div>
-
-        <UiList v-if="inspector === 'motion'" class="live2d-inspector__list" :aria-label="t('motion')">
-          <UiListItem
-            v-for="motion in motions"
-            :key="motion"
-            type="button"
-            :class="{ 'is-selected': motion === selectedMotion }"
-            :aria-pressed="motion === selectedMotion"
-            @click="playMotion(motion)"
-          >
-            <template #headline>{{ motion }}</template>
-            <template #end><MaterialIcon name="play_arrow" :size="18" /></template>
-          </UiListItem>
-        </UiList>
-
-        <UiList v-else-if="inspector === 'expression'" class="live2d-inspector__list" :aria-label="t('expression')">
-          <UiListItem
-            v-for="expression in expressions"
-            :key="expression"
-            type="button"
-            :class="{ 'is-selected': expression === selectedExpression }"
-            :aria-pressed="expression === selectedExpression"
-            @click="playExpression(expression)"
-          >
-            <template #headline>{{ expression }}</template>
-            <template #end><MaterialIcon name="sentiment_satisfied" :size="18" /></template>
-          </UiListItem>
-        </UiList>
-
-        <div v-else-if="inspector === 'transform'" class="live2d-inspector__sliders">
-          <UiRange v-model="scale" :label="t('size')" :min="0.3" :max="3" :step="0.01" :value-label="scale.toFixed(2)">
-            <template #icon><MaterialIcon name="zoom_in" :size="18" /></template>
-          </UiRange>
-          <UiRange v-model="offsetX" label="X" :min="-2" :max="2" :step="0.01" :value-label="offsetX.toFixed(2)">
-            <template #icon><MaterialIcon name="swap_horiz" :size="18" /></template>
-          </UiRange>
-          <UiRange v-model="offsetY" label="Y" :min="-2" :max="2" :step="0.01" :value-label="offsetY.toFixed(2)">
-            <template #icon><MaterialIcon name="swap_vert" :size="18" /></template>
-          </UiRange>
-          <UiButton
-            @click="
-              scale = 1;
-              offsetX = 0;
-              offsetY = 0;
-            "
-          >
-            <template #icon><MaterialIcon name="rotate_left" :size="15" /></template>
-            <span>{{ t("reset") }}</span>
-          </UiButton>
-        </div>
-
-        <div v-else class="live2d-inspector__parameters">
-          <SegmentedControl v-model="parameterMode" :options="parameterModeOptions" :label="t('parameters')" />
-          <div v-for="parameter in parameters" :key="parameter.id" class="live2d-inspector__parameter">
-            <strong>{{ parameter.id }}</strong>
-            <UiRange
-              class="live2d-inspector__parameter-range"
-              :label="parameter.id"
-              :min="parameter.minimum"
-              :max="parameter.maximum"
-              :step="0.001"
-              :disabled="parameterMode === 'capture'"
-              :model-value="draftValues[parameter.id] ?? parameter.defaultValue"
-              :value-label="(draftValues[parameter.id] ?? parameter.defaultValue).toFixed(2)"
-              @update:model-value="setParameter(parameter, $event)"
-            />
-          </div>
-          <UiTextField
-            v-model="importValue"
-            class="live2d-inspector__parameter-json"
-            type="textarea"
-            :label="t('parameters')"
-            :disabled="parameterMode === 'capture'"
-            rows="4"
-            spellcheck="false"
-          />
-          <div class="live2d-inspector__parameter-actions">
-            <UiButton :disabled="parameterMode === 'capture'" @click="importParameters">
-              {{ t("import") }}
-            </UiButton>
-            <UiIconButton label="Copy parameter JSON" @click="copyParameters">
-              <MaterialIcon name="content_copy" :size="17" />
-            </UiIconButton>
-            <UiButton :disabled="parameterMode === 'capture'" @click="resetParameters">
-              {{ t("reset") }}
-            </UiButton>
-          </div>
-        </div>
-      </div>
-    </aside>
-  </div>
+    </template>
+  </RuntimeViewerSurface>
 </template>
 
 <style scoped>
-.live2d-workbench {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  grid-template-columns: minmax(0, 1fr) clamp(216px, 30%, 360px);
-  overflow: hidden;
-}
-
-.live2d-stage,
-.live2d-inspector {
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-small);
-}
-
-.live2d-stage {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
-  border-radius: 0;
-}
-
 .live2d-stage__viewport {
-  position: relative;
+  position: absolute;
+  inset: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   background-color: var(--md-sys-color-surface-container-low);
-  background-position: center;
-  background-size: cover;
 }
 
-.live2d-stage__viewport::after {
-  position: absolute;
-  inset: 0;
-  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 52%, transparent);
-  content: "";
-  pointer-events: none;
-}
-
-.live2d-stage canvas {
+.live2d-stage__viewport canvas {
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -523,63 +430,27 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--md-sys-color-surface) 72%, transparent);
 }
 
-.live2d-stage__transport {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--md-sys-spacing-1);
-  padding: var(--md-sys-spacing-2);
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.live2d-stage__transport .md3-icon-button:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-
-.live2d-inspector {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  border-left: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 0;
-  background: var(--md-sys-color-surface-container-low);
-}
-
-.live2d-inspector__header {
-  display: flex;
-  min-height: var(--md-comp-control-height-touch);
-  flex: 0 0 auto;
-  align-items: center;
-  padding: 0 var(--md-sys-spacing-3);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-surface);
-  font-family: var(--md-sys-typescale-title-small-font);
-  font-size: var(--md-sys-typescale-title-small-size);
-  font-weight: var(--md-sys-typescale-title-small-weight);
-  line-height: var(--md-sys-typescale-title-small-line-height);
-}
-
 .live2d-inspector__scroll {
   display: flex;
+  height: 100%;
   min-height: 0;
-  flex: 1;
   flex-direction: column;
   gap: var(--md-sys-spacing-2);
-  padding: var(--md-sys-spacing-2);
+  padding: 0;
   overflow: hidden;
+}
+
+.live2d-inspector__toggles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--md-sys-spacing-1);
 }
 
 .live2d-inspector__modes {
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
-  flex-direction: column;
-  gap: var(--md-sys-spacing-2);
+  gap: var(--md-sys-spacing-1);
 }
 
 .live2d-inspector__modes > :deep(.md3-segments:not(.is-icon-only)) {
@@ -666,6 +537,26 @@ onBeforeUnmount(() => {
   --md-outlined-segmented-button-container-height: var(--md-comp-control-height);
 }
 
+/* Keep the parameter editor's selected state in the runtime surface palette.
+ * The Material default uses the page's secondary container, which can look
+ * disconnected from this primary-accented viewer panel. */
+.live2d-inspector__parameter-mode :deep(.md3-segments__option) {
+  --md-outlined-segmented-button-outline-color: var(--md-comp-runtime-outline);
+  --md-outlined-segmented-button-selected-container-color: var(--md-comp-runtime-primary-container);
+  --md-outlined-segmented-button-selected-label-text-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-selected-hover-label-text-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-selected-focus-label-text-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-selected-pressed-label-text-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-selected-hover-state-layer-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-selected-pressed-state-layer-color: var(--md-sys-color-on-primary-container);
+  --md-outlined-segmented-button-unselected-label-text-color: var(--md-comp-runtime-on-surface-variant);
+  --md-outlined-segmented-button-unselected-hover-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-segmented-button-unselected-focus-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-segmented-button-unselected-pressed-label-text-color: var(--md-comp-runtime-on-surface);
+  --md-outlined-segmented-button-unselected-hover-state-layer-color: var(--md-comp-runtime-primary);
+  --md-outlined-segmented-button-unselected-pressed-state-layer-color: var(--md-comp-runtime-primary);
+}
+
 .live2d-inspector__parameter-range {
   flex: 0 0 auto;
 }
@@ -682,32 +573,11 @@ onBeforeUnmount(() => {
   gap: var(--md-sys-spacing-2);
   padding-top: var(--md-sys-spacing-2);
 }
-
-@media (max-width: 650px) {
-  .live2d-workbench {
-    grid-template-columns: minmax(0, 1fr) minmax(176px, 44%);
-  }
-
-  .live2d-stage {
-    min-height: 0;
-  }
-
-  .live2d-stage__transport {
-    gap: var(--md-sys-spacing-1);
-    padding: var(--md-sys-spacing-2);
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-
-  .live2d-inspector__header {
-    min-height: var(--md-comp-control-height-touch);
-    padding-inline: var(--md-sys-spacing-2);
-  }
-
-  .live2d-inspector__scroll {
-    gap: var(--md-sys-spacing-2);
-    padding: var(--md-sys-spacing-2);
-  }
+.live2d-stage__sliders {
+  display: flex;
+  min-width: 220px;
+  flex: 1;
+  align-items: center;
+  gap: var(--md-sys-spacing-2);
 }
 </style>

@@ -67,12 +67,12 @@ watch(
     :aria-label="alt || undefined"
     :aria-hidden="alt ? undefined : true"
   >
-    <img
+    <LoadingImage
       v-if="imageSource"
       :src="imageSource"
       alt=""
       :loading="loading"
-      decoding="async"
+      fit="cover"
       referrerpolicy="no-referrer"
       @error="markImageFailed"
     />
@@ -103,9 +103,8 @@ watch(
   isolation: isolate;
 }
 
-.user-avatar img {
+.user-avatar > :deep(.loading-image) {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 </style>

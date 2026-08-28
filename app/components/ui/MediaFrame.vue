@@ -25,14 +25,7 @@ const onImageError = () => {
 
 <template>
   <figure class="media-frame" :class="[`media-frame--${ratio}`, `media-frame--${fit}`]">
-    <img
-      v-if="currentSrc"
-      :src="currentSrc"
-      :alt="alt"
-      :loading="loading"
-      decoding="async"
-      @error="onImageError"
-    />
+    <LoadingImage v-if="currentSrc" :src="currentSrc" :alt="alt" :loading="loading" :fit="fit" @error="onImageError" />
     <div v-else class="media-frame__empty" />
     <slot />
   </figure>
@@ -73,19 +66,11 @@ const onImageError = () => {
   aspect-ratio: 5 / 4;
 }
 
-img,
+.media-frame > :deep(.loading-image),
 .media-frame__empty {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.media-frame--cover img {
-  object-fit: cover;
-}
-
-.media-frame--contain img {
-  object-fit: contain;
 }
 
 .media-frame__empty {

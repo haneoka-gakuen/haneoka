@@ -38,13 +38,15 @@ watch(
     :class="{ 'has-friendship-level': friendshipLevel !== undefined, 'is-standalone': standalone }"
     aria-hidden="true"
   >
-    <img
+    <LoadingImage
       v-if="logo && !logoFailed"
       class="story-thumbnail-decorations__logo"
       :src="logo"
       alt=""
       loading="lazy"
       decoding="async"
+      fit="contain"
+      position="left center"
       @error="logoFailed = true"
     />
 
@@ -89,9 +91,12 @@ watch(
   width: min(46%, 78px);
   height: min(32%, 34px);
   min-height: 18px;
-  object-fit: contain;
-  object-position: left center;
   filter: drop-shadow(0 2px 4px rgb(7 12 31 / 0.24));
+}
+
+.story-thumbnail-decorations__logo :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
 }
 
 .story-thumbnail-decorations__avatars {

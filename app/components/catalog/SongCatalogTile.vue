@@ -23,25 +23,29 @@ const { locale } = useLocale();
 const { releaseServer } = useReleaseServer();
 const runtimeRelease = computed(() => runtimeReleaseForCatalogOrigin(props.creditOrigin, releaseServer.value));
 
+const imageFailed = ref(false);
+const usingThumbnailFallback = ref(false);
 const imageSource = computed(() => props.thumbnailImage || props.image || "");
 const imageSourceSet = computed(() => {
+  if (usingThumbnailFallback.value) return undefined;
   const thumbnail = props.thumbnailImage?.trim();
   const full = props.image?.trim();
   return thumbnail && full && thumbnail !== full ? `${thumbnail} 1x, ${full} 2x` : undefined;
 });
-const imageFailed = ref(false);
-watch([imageSource, imageSourceSet], () => {
+const imageCandidates = computed(() => [props.thumbnailImage?.trim() || "", props.image?.trim() || ""]);
+watch(imageCandidates, () => {
   imageFailed.value = false;
+  usingThumbnailFallback.value = false;
 });
 
-const fallbackToThumbnail = (event: Event) => {
-  const element = event.currentTarget;
+const fallbackToThumbnail = () => {
   const thumbnail = props.thumbnailImage?.trim();
-  if (!(element instanceof HTMLImageElement)) return;
-  const thumbnailUrl = thumbnail ? new URL(thumbnail, location.href).href : "";
-  if (thumbnail && (element.srcset || element.src !== thumbnailUrl)) {
-    element.removeAttribute("srcset");
-    element.src = thumbnail;
+  const full = props.image?.trim();
+  // A 2x full jacket can fail independently of the thumbnail selected for
+  // `src`. Switch declaratively so LoadingImage resets its state and Vue owns
+  // the retry rather than mutating a native element behind the renderer.
+  if (!usingThumbnailFallback.value && thumbnail && full && thumbnail !== full) {
+    usingThumbnailFallback.value = true;
     return;
   }
   imageFailed.value = true;
@@ -59,14 +63,14 @@ const fallbackToThumbnail = (event: Event) => {
   >
     <template #media>
       <span class="song-catalog-tile__media">
-        <img
+        <LoadingImage
           v-if="imageSource && !imageFailed"
           :src="imageSource"
           :srcset="imageSourceSet"
           alt=""
           :loading="selected ? 'eager' : 'lazy'"
-          decoding="async"
           :fetchpriority="selected ? 'high' : 'low'"
+          placeholder-aspect-ratio="1 / 1"
           @error="fallbackToThumbnail"
         />
         <TextMediaFallback v-else :label="title" :secondary-label="band" icon="music_note" />
@@ -105,7 +109,7 @@ const fallbackToThumbnail = (event: Event) => {
   overflow: hidden;
 }
 
-.song-catalog-tile__media > img {
+.song-catalog-tile__media > :deep(.loading-image) {
   display: block;
   width: 100%;
   height: auto;

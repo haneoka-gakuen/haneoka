@@ -232,7 +232,14 @@ useHead(() => ({
     <PageContentSurface v-else-if="playlist" as="div" max-width="1040px" spacing="compact">
       <section class="playlist-summary" :aria-labelledby="`playlist-title-${playlist.sourceId}`">
         <div class="playlist-summary__cover" :class="{ 'is-logo': playlist.source === 'band' }">
-          <img v-if="playlist.thumbnail" :src="playlist.thumbnail" alt="" />
+          <LoadingImage
+            v-if="playlist.thumbnail"
+            class="playlist-summary__thumbnail"
+            :src="playlist.thumbnail"
+            alt=""
+            loading="eager"
+            :fit="playlist.source === 'band' ? 'contain' : 'cover'"
+          />
           <MaterialIcon v-else :name="playlist.source === 'band' ? 'groups' : 'emoji_events'" :size="32" />
         </div>
         <div class="playlist-summary__copy">
@@ -326,18 +333,13 @@ useHead(() => ({
   background: var(--md-sys-color-secondary-container);
 }
 
-.playlist-summary__cover img {
+.playlist-summary__thumbnail {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 .playlist-summary__cover.is-logo {
   padding: var(--md-sys-spacing-3);
-}
-
-.playlist-summary__cover.is-logo img {
-  object-fit: contain;
 }
 
 .playlist-summary__copy {

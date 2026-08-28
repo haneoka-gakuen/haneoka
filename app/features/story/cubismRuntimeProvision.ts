@@ -60,7 +60,16 @@ export interface HaneokaCubismRuntimeProvision {
 }
 
 const CUBISM_RUNTIME_PROVISION_URL = "/cubism-runtime/vega-cubism-web-runtime.mjs";
+
+/** Local, separately licensed Cubism Core assets provisioned with the site. */
+export const CUBISM_WEB_RUNTIME_URLS = Object.freeze({
+  cubismCoreUrl: "/Core/live2dcubismcore.js",
+  cubism2CoreUrl: "/Core/live2d.min.js",
+  motionSyncCoreUrl: "/Core/CRI/live2dcubismmotionsynccore.min.js",
+});
+
 let provisionPromise: Promise<HaneokaCubismRuntimeProvision> | undefined;
+let modelViewerProvisionPromise: Promise<HaneokaCubismRuntimeProvision> | undefined;
 
 export const loadCubismRuntimeProvision = (): Promise<HaneokaCubismRuntimeProvision> => {
   provisionPromise ??= import(/* @vite-ignore */ CUBISM_RUNTIME_PROVISION_URL)
@@ -73,6 +82,31 @@ export const loadCubismRuntimeProvision = (): Promise<HaneokaCubismRuntimeProvis
       );
     });
   return provisionPromise;
+};
+
+/**
+ * Configures and warms the Cubism 3 Core used by the standalone Live2D viewer.
+ *
+ * The provisioned module keeps its Core URL configuration in a browser-global
+ * singleton.  Story rendering configured that singleton incidentally, so a
+ * viewer opened directly could otherwise have no Core source at all.  Resetting
+ * this promise on failure deliberately keeps the viewer's Retry action useful.
+ */
+export const prepareCubismModelViewerRuntime = (): Promise<HaneokaCubismRuntimeProvision> => {
+  modelViewerProvisionPromise ??= loadCubismRuntimeProvision()
+    .then(async (provision) => {
+      const adapter = provision.createCubismWebRuntimeAdapter({
+        id: "haneoka.live2d-model-viewer-runtime",
+        runtime: CUBISM_WEB_RUNTIME_URLS,
+      });
+      await adapter.prepare?.(3, new AbortController().signal);
+      return provision;
+    })
+    .catch((cause: unknown) => {
+      modelViewerProvisionPromise = undefined;
+      throw new Error("Live2D Cubism Core could not be initialized", { cause });
+    });
+  return modelViewerProvisionPromise;
 };
 
 export const createCubismWebRuntimeAdapter = (

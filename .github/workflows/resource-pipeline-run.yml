@@ -263,6 +263,9 @@ jobs:
           run_stage live2d python scripts/pipeline.py --server "$RESOURCE_SERVER" build-live2d --source "$SOURCE_ID" --build "$BUILD_ID" &
           names+=(live2d)
           pids+=("$!")
+          run_stage spine python scripts/pipeline.py --server "$RESOURCE_SERVER" build-spine --source "$SOURCE_ID" --build "$BUILD_ID" &
+          names+=(spine)
+          pids+=("$!")
           run_stage home-spots python scripts/pipeline.py --server "$RESOURCE_SERVER" build-home-spots --source "$SOURCE_ID" --build "$BUILD_ID" &
           names+=(home-spots)
           pids+=("$!")

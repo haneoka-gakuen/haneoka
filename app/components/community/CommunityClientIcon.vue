@@ -41,7 +41,7 @@ const sizeStyle = computed(() => ({ height: `${props.size}px`, width: `${props.s
 
 <template>
   <span class="community-client-icon" :style="sizeStyle" aria-hidden="true">
-    <img v-if="source" :src="source" alt="" :width="size" :height="size" draggable="false" />
+    <LoadingImage v-if="source" :src="source" alt="" :style="sizeStyle" :draggable="false" fit="contain" />
     <MaterialIcon v-else :name="fallback" :size="size" />
   </span>
 </template>
@@ -56,7 +56,7 @@ const sizeStyle = computed(() => ({ height: `${props.size}px`, width: `${props.s
   vertical-align: -0.14em;
 }
 
-.community-client-icon img,
+.community-client-icon :deep(.loading-image__image),
 .community-client-icon :deep(md-icon) {
   display: block;
   width: 100%;

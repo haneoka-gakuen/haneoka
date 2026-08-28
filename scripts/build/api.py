@@ -26,6 +26,9 @@ from core.hashes import sha256_file
 from core.manifests import read_json, write_json
 from core.paths import build_layout
 from core.unity_objects import iter_unity_object_archive
+from build.anon_tokyo import build_anon_tokyo_catalog
+from build.live2d_preview import PREVIEW_SCHEMA as LIVE2D_PREVIEW_SCHEMA
+from build.spine_catalog import build_spine_catalog
 from build.unity_effect import serialize_unity_effect
 
 
@@ -4693,6 +4696,65 @@ def _story_assets_catalog(
     }
 
 
+def _initial_live2d_preview(preview: Any) -> bool:
+    """Accept only a provenance-marked, time-zero Cubism preview.
+
+    The preview thumbnail is deliberately stricter than the model runtime:
+    an older build can still supply a playable Live2D model, but its idle
+    screenshot must never be silently republished as an initial-state image.
+    """
+
+    return bool(
+        isinstance(preview, dict)
+        and preview.get("status") == "rendered"
+        and isinstance(preview.get("runtime"), str)
+        and preview.get("state") == "initial"
+        and preview.get("animation") == "none"
+        and preview.get("expression") == "none"
+        and preview.get("elapsedMilliseconds") == 0
+    )
+
+
+def _live2d_models(data: BuildData, source_id: str) -> dict[str, dict[str, Any]]:
+    """Read matching Live2D build metadata without reviving legacy idle PNGs."""
+
+    file = data.root / "metadata" / "live2d.json"
+    if not file.is_file():
+        return {}
+    try:
+        document = read_json(file)
+    except Exception:
+        return {}
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != "haneoka-live2d-build-v1"
+        or document.get("server") != data.server
+        or document.get("sourceId") != source_id
+    ):
+        return {}
+    raw_models = document.get("models")
+    if not isinstance(raw_models, dict):
+        return {}
+    previews_are_static = document.get("previewSchema") == LIVE2D_PREVIEW_SCHEMA
+    models: dict[str, dict[str, Any]] = {}
+    for key, value in raw_models.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        model = dict(value)
+        preview = model.get("preview")
+        if not previews_are_static or not _initial_live2d_preview(preview):
+            model.pop("preview", None)
+        else:
+            # The build-level schema is intentionally copied into every public
+            # preview record.  Live2D is a plain collection rather than a
+            # wrapper document, so this lets a newly deployed client reject a
+            # previously published v2 API response without making the model
+            # itself unavailable.
+            model["preview"] = {**preview, "schema": LIVE2D_PREVIEW_SCHEMA}
+        models[key] = model
+    return models
+
+
 def _enrich_live2d(data: BuildData, models: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
     characters = _characters(data)
     costumes = {}
@@ -5934,11 +5996,16 @@ def _feature_status(data: BuildData) -> dict[str, Any]:
             "MasterChallengeMusic", "MasterChallengeMusicBoostBonus",
             "MasterChallengeMusicRankingReward",
         ),
+        "anon-tokyo": (
+            "MasterATCharacter", "MasterATGoods", "MasterATDecoration",
+            "MasterATTaskMain", "MasterATStage",
+        ),
     }
     primary_tables = {
         "events": "MasterEvent", "gacha": "MasterGacha", "login": "MasterLoginBonus",
         "missions": "MasterMission", "shop": "MasterShop", "exchange": "MasterExchange",
         "circle": "MasterCircleRank", "challenge": "MasterChallengeMusic",
+        "anon-tokyo": "MasterATCharacter",
     }
     output = {}
     for feature, tables in features.items():
@@ -5974,6 +6041,11 @@ def _resource_count(name: str, document: Any) -> int:
     if name == "story-assets" and isinstance(document, dict):
         backgrounds = document.get("backgrounds", {})
         return len(backgrounds) if isinstance(backgrounds, dict) else 0
+    if name == "anon-tokyo":
+        return 1 if isinstance(document, dict) else 0
+    if name == "spine" and isinstance(document, dict):
+        models = document.get("models")
+        return len(models) if isinstance(models, dict) else 0
     collection_key = {
         "voices": "entries",
         "audio": "entries",
@@ -6001,8 +6073,7 @@ def _resource_count(name: str, document: Any) -> int:
 def build_api(config: ServerConfig, source_id: str, build_id: str) -> dict[str, Any]:
     layout = build_layout(config.id, build_id)
     data = BuildData(config.id, layout.root)
-    live2d_file = layout.metadata / "live2d.json"
-    live2d_raw = read_json(live2d_file).get("models", {}) if live2d_file.is_file() else {}
+    live2d_raw = _live2d_models(data, source_id)
     live2d = _enrich_live2d(data, live2d_raw)
     songs, song_metadata = _songs(data)
     videos = _videos(data)
@@ -6059,6 +6130,8 @@ def build_api(config: ServerConfig, source_id: str, build_id: str) -> dict[str, 
     stories = _stories(data, live2d)
     story_runtime = _story_runtime(data, stories)
     story_assets = _story_assets_catalog(data, stories, source_id)
+    spine = build_spine_catalog(data, source_id)
+    anon_tokyo = build_anon_tokyo_catalog(data, source_id, spine)
     documents = {
         "bands": _bands(data),
         "characters": _characters(data),
@@ -6071,7 +6144,9 @@ def build_api(config: ServerConfig, source_id: str, build_id: str) -> dict[str, 
         "stories": stories,
         "story-runtime": story_runtime,
         "story-assets": story_assets,
+        "anon-tokyo": anon_tokyo,
         "live2d": live2d,
+        "spine": spine,
         "voices": _voices(data),
         "audio": _audio(data),
         "items": _items(data),

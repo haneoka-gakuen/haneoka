@@ -35,13 +35,14 @@ const select = (value: string) => {
       <md-ripple />
       <span class="single-choice-list__leading" aria-hidden="true">
         <slot name="leading" :option="option">
-          <img
+          <LoadingImage
             v-if="option.image"
             :src="option.image"
             :alt="option.imageAlt || ''"
-            :aria-hidden="option.imageAlt ? undefined : 'true'"
+            class="single-choice-list__image"
             loading="lazy"
             decoding="async"
+            fit="cover"
           />
           <MaterialIcon v-else-if="option.icon" :name="option.icon" :size="24" />
         </slot>
@@ -104,8 +105,8 @@ const select = (value: string) => {
   border-radius: var(--md-sys-shape-corner-full);
 }
 
-.single-choice-list__leading :deep(img),
-.single-choice-list__leading > img {
+.single-choice-list__image,
+.single-choice-list__image :deep(.loading-image__image) {
   width: 40px;
   height: 40px;
   object-fit: cover;

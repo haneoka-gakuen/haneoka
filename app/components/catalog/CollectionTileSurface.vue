@@ -7,12 +7,24 @@ const props = withDefaults(
     label: DisplayText;
     secondaryLabel?: DisplayText;
     aspectRatio?: string;
+    /** Preserve the source dimensions by default; model previews may opt into a framed square. */
+    mediaFit?: "natural" | "contain" | "cover";
+    /** Vertical focal point for a cover crop. Horizontal crops remain centered. */
+    mediaPosition?: "center" | "top";
     orientation?: "vertical" | "horizontal";
     density?: "comfortable" | "compact";
     selected?: boolean;
     to?: RouteLocationRaw;
   }>(),
-  { secondaryLabel: "", orientation: "vertical", density: "comfortable", selected: false, to: undefined },
+  {
+    secondaryLabel: "",
+    mediaFit: "natural",
+    mediaPosition: "center",
+    orientation: "vertical",
+    density: "comfortable",
+    selected: false,
+    to: undefined,
+  },
 );
 
 const emit = defineEmits<{ select: [] }>();
@@ -50,7 +62,16 @@ const rootAttributes = computed(() =>
           <DisplayText :value="secondaryLabel" />
         </template>
       </span>
-      <span class="collection-tile-surface__media"><slot name="media" /></span>
+      <span
+        class="collection-tile-surface__media"
+        :class="{
+          'is-contained': mediaFit === 'contain',
+          'is-cover': mediaFit === 'cover',
+          'is-top-aligned': mediaPosition === 'top',
+        }"
+      >
+        <slot name="media" />
+      </span>
       <span class="collection-tile-surface__metadata">
         <slot>
           <CollectionTileIdentity :title="label" :subtitle="secondaryLabel" />
@@ -111,10 +132,47 @@ const rootAttributes = computed(() =>
  * surface. It lets artwork, stamps, and other one-image catalog entries use
  * the same native card without introducing a page-specific tile wrapper.
  */
-.collection-tile-surface__media > :slotted(img) {
+.collection-tile-surface__media > :slotted(img),
+.collection-tile-surface__media > :slotted(.loading-image) {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/*
+ * Setup-pose captures such as Spine models need their entire renderable area
+ * visible. Keep the tile's square frame, but letterbox inside it rather than
+ * cropping the model at an arbitrary edge.
+ */
+.collection-tile-surface__media.is-contained > :slotted(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.collection-tile-surface__media.is-contained > :slotted(.loading-image) {
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Catalog model captures are intentionally framed in a square. `cover` makes
+ * the image's short side fill it; `top` keeps a portrait model's head in view
+ * while the default horizontal focal point still crops landscapes symmetrically.
+ */
+.collection-tile-surface__media.is-cover > :slotted(img) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.collection-tile-surface__media.is-cover > :slotted(.loading-image) {
+  width: 100%;
+  height: 100%;
+}
+
+.collection-tile-surface__media.is-top-aligned > :slotted(img) {
+  object-position: center top;
 }
 
 .collection-tile-surface__metadata > :slotted(strong) {
@@ -168,7 +226,8 @@ const rootAttributes = computed(() =>
   border-radius: var(--md-sys-shape-corner-medium);
 }
 
-.collection-tile-surface.is-horizontal .collection-tile-surface__media > :slotted(img) {
+.collection-tile-surface.is-horizontal .collection-tile-surface__media > :slotted(img),
+.collection-tile-surface.is-horizontal .collection-tile-surface__media > :slotted(.loading-image) {
   display: block;
   max-width: 100%;
   max-height: 100%;

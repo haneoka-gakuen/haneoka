@@ -27,7 +27,14 @@ const style = computed(
 </script>
 
 <template>
-  <img class="oauth-provider-icon" :src="sources[provider]" alt="" aria-hidden="true" :style="style" />
+  <LoadingImage
+    class="oauth-provider-icon"
+    :src="sources[provider]"
+    alt=""
+    aria-hidden="true"
+    :style="style"
+    fit="contain"
+  />
 </template>
 
 <style scoped>
@@ -35,6 +42,11 @@ const style = computed(
   display: block;
   width: var(--oauth-provider-icon-size);
   height: var(--oauth-provider-icon-size);
+}
+
+.oauth-provider-icon :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 </style>

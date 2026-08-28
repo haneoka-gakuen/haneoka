@@ -767,8 +767,9 @@ useHead(() => ({ title: `${result.value?.post.title || t("community")} · haneok
                 target="_blank"
                 rel="noopener"
               >
-                <img
+                <LoadingImage
                   v-if="attachment.mediaType.startsWith('image/')"
+                  class="post-attachment__image"
                   :src="attachment.contentUrl"
                   :alt="attachment.fileName"
                   loading="lazy"
@@ -1311,14 +1312,27 @@ time {
   background: var(--md-sys-color-surface-container-high);
 }
 
-.post-attachment img {
+.post-attachment__image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Attachment dimensions are not included in the post payload. Keep a stable
+ * media surface while it loads, then preserve the uploaded file's natural
+ * height instead of cropping it. */
+.post-attachment__image.is-loading {
+  aspect-ratio: 16 / 9;
+}
+
+.post-attachment__image :deep(.loading-image__image) {
   display: block;
   width: 100%;
   max-height: 520px;
   object-fit: cover;
 }
 
-.post-attachment span {
+.post-attachment:not(.is-image) > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

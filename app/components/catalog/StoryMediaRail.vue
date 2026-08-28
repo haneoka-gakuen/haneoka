@@ -303,12 +303,13 @@ const onCoverError = (item: StoryMediaRailItem): void => {
           ]"
           aria-hidden="true"
         >
-          <img
+          <LoadingImage
             v-if="hasCover(entry.item)"
             :src="coverSrc(entry.item)"
             alt=""
             loading="lazy"
             decoding="async"
+            :fit="entry.item.imageFit || 'cover'"
             @error="onCoverError(entry.item)"
           />
           <EntityAvatar
@@ -410,7 +411,12 @@ const onCoverError = (item: StoryMediaRailItem): void => {
   background: var(--md-sys-color-surface-container-highest);
 }
 
-.story-media-rail__cover img {
+.story-media-rail__cover > :deep(.loading-image) {
+  width: 100%;
+  height: 100%;
+}
+
+.story-media-rail__cover :deep(.loading-image__image) {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -420,8 +426,18 @@ const onCoverError = (item: StoryMediaRailItem): void => {
   aspect-ratio: auto;
 }
 
-.story-media-rail__cover.is-natural img,
-.story-media-rail__cover.is-natural.is-contain img {
+.story-media-rail__cover.is-natural > :deep(.loading-image) {
+  height: auto;
+}
+
+/* Natural-source rails deliberately settle to the cover's own ratio. Show a
+ * stable provisional surface while its intrinsic dimensions are unavailable. */
+.story-media-rail__cover.is-natural > :deep(.loading-image.is-loading) {
+  aspect-ratio: 2.55 / 1;
+}
+
+.story-media-rail__cover.is-natural :deep(.loading-image__image),
+.story-media-rail__cover.is-natural.is-contain :deep(.loading-image__image) {
   display: block;
   width: 100%;
   height: auto;
@@ -429,7 +445,7 @@ const onCoverError = (item: StoryMediaRailItem): void => {
   object-fit: contain;
 }
 
-.story-media-rail__cover.is-contain img {
+.story-media-rail__cover.is-contain :deep(.loading-image__image) {
   padding: 7px;
   object-fit: contain;
 }
@@ -508,13 +524,13 @@ const onCoverError = (item: StoryMediaRailItem): void => {
   background: var(--md-sys-color-surface-container-highest);
 }
 
-.story-media-rail.is-identity .story-media-rail__cover.is-circle img,
-.story-media-rail.is-identity .story-media-rail__cover.is-circle.is-contain img {
+.story-media-rail.is-identity .story-media-rail__cover.is-circle :deep(.loading-image__image),
+.story-media-rail.is-identity .story-media-rail__cover.is-circle.is-contain :deep(.loading-image__image) {
   object-fit: cover;
 }
 
-.story-media-rail.is-identity .story-media-rail__cover img,
-.story-media-rail.is-identity .story-media-rail__cover.is-contain img {
+.story-media-rail.is-identity .story-media-rail__cover :deep(.loading-image__image),
+.story-media-rail.is-identity .story-media-rail__cover.is-contain :deep(.loading-image__image) {
   padding: 0;
   object-fit: contain;
 }
@@ -566,8 +582,8 @@ const onCoverError = (item: StoryMediaRailItem): void => {
   background: var(--md-sys-color-surface-container-highest);
 }
 
-.story-media-rail.is-icon .story-media-rail__cover img,
-.story-media-rail.is-icon .story-media-rail__cover.is-contain img {
+.story-media-rail.is-icon .story-media-rail__cover :deep(.loading-image__image),
+.story-media-rail.is-icon .story-media-rail__cover.is-contain :deep(.loading-image__image) {
   padding: 0;
   object-fit: cover;
 }

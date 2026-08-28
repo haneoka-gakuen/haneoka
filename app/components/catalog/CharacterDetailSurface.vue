@@ -272,9 +272,7 @@ const voiceGroups = computed<CharacterVoiceGroup[]>(() =>
     const sources = entry.lines?.length
       ? entry.lines
       : [{ characterId: entry.characterIds?.[0], text: entry.text, sound: entry.sound }];
-    const cues = sources
-      .map((line) => line.sound?.cueName)
-      .filter((cue): cue is string => Boolean(cue));
+    const cues = sources.map((line) => line.sound?.cueName).filter((cue): cue is string => Boolean(cue));
     const category = cues.length ? cues.join(" / ") : entry.voiceKey || "";
     return {
       key: entry.voiceKey || "",
@@ -392,7 +390,9 @@ watch(characterId, () => {
 const selectedFriendship = computed(() =>
   friendships.value.find((entry) => {
     const ids = (entry.characterIds || []).map(Number);
-    return Boolean(selectedPartnerId.value) && ids.includes(characterId.value) && ids.includes(selectedPartnerId.value!);
+    return (
+      Boolean(selectedPartnerId.value) && ids.includes(characterId.value) && ids.includes(selectedPartnerId.value!)
+    );
   }),
 );
 const friendshipRewards = computed<ResourceReferenceItem[]>(() => {
@@ -710,20 +710,24 @@ onBeforeUnmount(() => stopVoicePreview(true));
       :style="{ '--md-comp-detail-accent': character.colorCode || 'var(--md-sys-color-primary)' }"
     >
       <section class="character-detail__visual" :aria-label="t('visual')">
-        <img
+        <LoadingImage
           v-if="character.spriteImage"
           class="character-detail__figure"
           :src="character.spriteImage"
           :alt="textOf(title)"
           :lang="langOf(title)"
+          loading="eager"
           decoding="async"
         />
-        <img
+        <LoadingImage
           v-if="band?.logo"
           class="character-detail__logo"
           :src="band.logo"
           :alt="textOf(bandName)"
           :lang="langOf(bandName)"
+          loading="eager"
+          fit="contain"
+          position="left center"
         />
       </section>
 
@@ -764,13 +768,16 @@ onBeforeUnmount(() => stopVoicePreview(true));
               <div v-for="fact in profileFacts" :key="fact.label" class="character-detail__fact">
                 <dt>{{ fact.label }}</dt>
                 <dd>
-                  <img
+                  <LoadingImage
                     v-if="fact.image"
+                    class="character-detail__fact-image"
                     :src="fact.image"
                     :alt="textOf(fact.imageAlt)"
                     :lang="langOf(fact.imageAlt)"
                     loading="lazy"
                     decoding="async"
+                    fit="contain"
+                    position="left center"
                   />
                   <DisplayText :value="fact.value" />
                 </dd>
@@ -932,12 +939,14 @@ onBeforeUnmount(() => stopVoicePreview(true));
                 />
               </div>
               <div v-if="selectedPartnerId" class="character-detail__friendship-detail">
-                <DetailSection
-                  v-if="friendshipStories.length"
-                  :title="t('story')"
-                  :count="friendshipStories.length"
-                >
-                  <StoryCatalogList :items="friendshipStories" media="thumbnail" layout="grid" :show-cast="false" flow />
+                <DetailSection v-if="friendshipStories.length" :title="t('story')" :count="friendshipStories.length">
+                  <StoryCatalogList
+                    :items="friendshipStories"
+                    media="thumbnail"
+                    layout="grid"
+                    :show-cast="false"
+                    flow
+                  />
                 </DetailSection>
                 <DetailSection v-if="friendshipRewards.length" :title="t('rewards')" :count="friendshipRewards.length">
                   <ResourceReferenceList :items="friendshipRewards" />
@@ -1081,14 +1090,21 @@ onBeforeUnmount(() => stopVoicePreview(true));
 
 .character-detail__figure {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 16px 18px rgb(20 35 68 / 0.15));
+  animation: character-figure-in var(--md-sys-motion-duration-medium1) var(--md-sys-motion-easing-emphasized-decelerate);
+}
+
+.character-detail__figure :deep(.loading-image__image) {
+  position: absolute;
   inset-block: 0;
   left: 50%;
   width: auto;
   max-width: none;
   height: 100%;
   transform: translateX(-50%);
-  filter: drop-shadow(0 16px 18px rgb(20 35 68 / 0.15));
-  animation: character-figure-in var(--md-sys-motion-duration-medium1) var(--md-sys-motion-easing-emphasized-decelerate);
 }
 
 .character-detail__logo {
@@ -1098,8 +1114,6 @@ onBeforeUnmount(() => stopVoicePreview(true));
   left: 12px;
   width: min(38%, 120px);
   max-height: 42px;
-  object-fit: contain;
-  object-position: left center;
   filter: drop-shadow(0 2px 7px rgb(255 255 255 / 0.8));
 }
 
@@ -1231,13 +1245,10 @@ onBeforeUnmount(() => stopVoicePreview(true));
   line-height: var(--md-sys-typescale-body-large-line-height);
 }
 
-.character-detail__fact dd img {
-  width: auto;
-  max-width: 88px;
+.character-detail__fact-image {
+  width: 88px;
   height: 24px;
   flex: 0 0 auto;
-  object-fit: contain;
-  object-position: left center;
 }
 
 .character-detail__friendships {

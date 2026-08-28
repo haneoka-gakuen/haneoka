@@ -418,7 +418,16 @@ useHead(() => ({
             <div v-else class="profile-post-grid">
               <article v-for="post in response.posts" :key="post.id" class="profile-post-card">
                 <NuxtLink :to="`/community/posts/${post.id}`">
-                  <img v-if="post.coverUrl" :src="post.coverUrl" :alt="post.title" loading="lazy" decoding="async" />
+                  <LoadingImage
+                    v-if="post.coverUrl"
+                    class="profile-post-card__image"
+                    :src="post.coverUrl"
+                    :alt="post.title"
+                    loading="lazy"
+                    decoding="async"
+                    fit="cover"
+                    placeholder-aspect-ratio="16 / 8.4"
+                  />
                   <span class="profile-post-card__body">
                     <strong>{{ post.title }}</strong>
                     <span>{{ post.excerpt }}</span>
@@ -462,7 +471,14 @@ useHead(() => ({
             <div v-else class="work-grid">
               <article v-for="work in response.works" :key="work.id" class="work-card">
                 <div v-if="work.coverUrl" class="work-card__cover">
-                  <img :src="work.coverUrl" :alt="work.title" loading="lazy" decoding="async" />
+                  <LoadingImage
+                    class="work-card__image"
+                    :src="work.coverUrl"
+                    :alt="work.title"
+                    loading="lazy"
+                    decoding="async"
+                    fit="cover"
+                  />
                 </div>
                 <div v-else class="work-card__cover is-empty" aria-hidden="true">
                   <MaterialIcon name="audio_file" v-if="work.kind === 'chart'" :size="30" />
@@ -774,11 +790,16 @@ useHead(() => ({
   text-decoration: none;
 }
 
-.profile-post-card img {
+.profile-post-card__image {
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 8.4;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.profile-post-card__image :deep(.loading-image__image) {
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
@@ -869,7 +890,12 @@ useHead(() => ({
   background: var(--md-sys-color-surface-container);
 }
 
-.work-card__cover img {
+.work-card__image {
+  width: 100%;
+  height: 100%;
+}
+
+.work-card__image :deep(.loading-image__image) {
   width: 100%;
   height: 100%;
   object-fit: cover;

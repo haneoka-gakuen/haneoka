@@ -61,6 +61,7 @@ const BESTDORI_SONOLUS_PLAYLIST_PREFIX = "/sonolus/playlists/bestdori-playlist-"
 // Our Notes release URL, including when a future Our Notes server is named jp.
 const BESTDORI_RAW_MIRROR_PREFIX = "/_internal/providers/garupa/bestdori/raw";
 const bestdoriRawPathPattern = /^\/(?:api(?:\/|$)|assets\/(?:jp|en|tw|cn|kr)(?:\/|$)|res(?:\/|$))/u;
+const previewRuntimePathPattern = /^(?:previews\/live2d\/|spine-previews\/)/u;
 const proxyExcludedHeaders = new Set([
   "connection",
   "content-encoding",
@@ -76,8 +77,10 @@ const proxyExcludedHeaders = new Set([
 const mime: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".webp": "image/webp",
@@ -828,7 +831,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
 
-    const file = globalSonolusAssetFile(url.pathname) ?? localSonolusAssetFile(canonicalRelease.workspace, url.pathname);
+    const file =
+      globalSonolusAssetFile(url.pathname) ?? localSonolusAssetFile(canonicalRelease.workspace, url.pathname);
     if (!file) {
       sonolusJson(req, res, 404, { message: "Not found" }, "no-store");
       return;
@@ -910,7 +914,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const workspace = selectedWorkspace(server);
     const file = workspace ? localReleaseFile(workspace, url.pathname) : null;
     if (file && fs.existsSync(file)) {
-      sendFile(req, res, file, "public, max-age=604800");
+      // Preview paths are stable across release-pointer updates. Make a local
+      // browser revalidate them instead of retaining an older render for a week.
+      const mediaPath = media[3] ?? "";
+      const cache =
+        media[1] === "runtime" && previewRuntimePathPattern.test(mediaPath) ? "no-cache" : "public, max-age=604800";
+      sendFile(req, res, file, cache);
     } else {
       json(res, 404, { error: { code: "not_found", message: "Object not found" } });
     }

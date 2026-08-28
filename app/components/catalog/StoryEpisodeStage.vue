@@ -49,6 +49,11 @@ const { src: chapterMarkSrc, onError: onChapterMarkError } = useFallbackImage(
 const fallbackAspectRatio = computed(() =>
   props.imageMode === "stretch-16x9" ? "16 / 9" : "var(--md-comp-story-media-aspect-ratio)",
 );
+const episodeImageFit = computed<"natural" | "cover" | "fill">(() => {
+  if (props.imageMode === "cover") return "cover";
+  if (props.imageMode === "stretch-4x3" || props.imageMode === "stretch-16x9") return "fill";
+  return "natural";
+});
 </script>
 
 <template>
@@ -58,12 +63,15 @@ const fallbackAspectRatio = computed(() =>
     :style="{ '--story-accent': band?.color || 'var(--md-sys-color-primary)' }"
   >
     <header class="story-stage__chapter">
-      <img
+      <LoadingImage
         v-if="chapterMarkSrc"
+        class="story-stage__chapter-mark"
         :src="chapterMarkSrc"
         alt=""
         loading="lazy"
         decoding="async"
+        fit="contain"
+        position="left center"
         @error="onChapterMarkError"
       />
       <span>
@@ -73,13 +81,15 @@ const fallbackAspectRatio = computed(() =>
     </header>
 
     <div class="story-stage__media">
-      <img
+      <LoadingImage
         v-if="episodeSrc"
+        class="story-stage__image"
         :src="episodeSrc"
         :alt="textOf(episodeTitle)"
         :lang="langOf(episodeTitle)"
         loading="lazy"
         decoding="async"
+        :fit="episodeImageFit"
         @error="onEpisodeError"
       />
       <TextMediaFallback
@@ -151,14 +161,10 @@ const fallbackAspectRatio = computed(() =>
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.story-stage__chapter > img {
-  width: auto;
-  height: auto;
-  max-width: min(148px, 28%);
-  max-height: 48px;
+.story-stage__chapter-mark {
+  width: min(148px, 28%);
+  height: 48px;
   flex: 0 0 auto;
-  object-fit: contain;
-  object-position: left center;
 }
 
 .story-stage__chapter > span {
@@ -198,11 +204,10 @@ const fallbackAspectRatio = computed(() =>
   box-shadow: var(--md-sys-elevation-level1);
 }
 
-.story-stage__media > img {
+.story-stage__image {
   display: block;
   width: 100%;
   height: auto;
-  object-fit: contain;
 }
 
 .story-stage.is-cover .story-stage__media,
@@ -215,19 +220,10 @@ const fallbackAspectRatio = computed(() =>
   aspect-ratio: 16 / 9;
 }
 
-.story-stage.is-cover .story-stage__media > img,
-.story-stage.is-stretch-4x3 .story-stage__media > img,
-.story-stage.is-stretch-16x9 .story-stage__media > img {
+.story-stage.is-cover .story-stage__image,
+.story-stage.is-stretch-4x3 .story-stage__image,
+.story-stage.is-stretch-16x9 .story-stage__image {
   height: 100%;
-}
-
-.story-stage.is-cover .story-stage__media > img {
-  object-fit: cover;
-}
-
-.story-stage.is-stretch-4x3 .story-stage__media > img,
-.story-stage.is-stretch-16x9 .story-stage__media > img {
-  object-fit: fill;
 }
 
 .story-stage.is-stretch-16x9 .story-stage__blank {
@@ -352,10 +348,9 @@ const fallbackAspectRatio = computed(() =>
     grid-column: 1;
   }
 
-  .story-stage__chapter > img {
-    width: auto;
-    max-width: min(112px, 34%);
-    max-height: 38px;
+  .story-stage__chapter-mark {
+    width: min(112px, 34%);
+    height: 38px;
   }
 
   .story-stage__media {

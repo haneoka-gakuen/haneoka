@@ -29,13 +29,13 @@ withDefaults(
       <UiListItem v-for="item in items" :key="item.key" type="text">
         <template #start>
           <span class="resource-references__visual">
-            <img
+            <LoadingImage
               v-if="item.image"
               :src="item.image"
               :alt="textOf(item.title)"
               :lang="langOf(item.title)"
               loading="lazy"
-              decoding="async"
+              fit="contain"
             />
           </span>
         </template>
@@ -87,10 +87,9 @@ withDefaults(
   place-items: center;
 }
 
-.resource-references__visual img {
+.resource-references__visual > :deep(.loading-image) {
   width: 100%;
   height: 100%;
-  object-fit: contain;
 }
 
 .resource-references strong,

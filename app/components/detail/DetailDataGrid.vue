@@ -41,7 +41,14 @@ const columns = computed(() => Math.max(1, props.items.length));
   <dl class="detail-data-grid" :class="{ 'is-compact': compact }" :style="{ '--detail-data-columns': columns }">
     <div v-for="item in items" :key="item.key" class="detail-data-grid__item" :class="{ 'is-accent': item.accent }">
       <dt :title="item.label">
-        <img v-if="item.labelImage" :src="item.labelImage" :alt="textOf(item.labelImageAlt || item.label)" />
+        <LoadingImage
+          v-if="item.labelImage"
+          class="detail-data-grid__label-image"
+          :src="item.labelImage"
+          :alt="textOf(item.labelImageAlt || item.label)"
+          loading="eager"
+          fit="contain"
+        />
         <template v-else>{{ item.label }}</template>
       </dt>
       <dd
@@ -63,11 +70,14 @@ const columns = computed(() => Math.max(1, props.items.length));
           :runtime-release="item.mark.runtimeRelease"
         />
         <template v-else>
-          <img
+          <LoadingImage
             v-if="item.image"
+            class="detail-data-grid__value-image"
             :class="item.imageKind ? `is-${item.imageKind}` : undefined"
             :src="item.image"
             :alt="textOf(item.imageAlt)"
+            loading="eager"
+            fit="contain"
           />
           <DisplayText v-if="typeof item.value !== 'number'" :value="item.value" />
           <template v-else>{{ item.value }}</template>
@@ -121,10 +131,9 @@ const columns = computed(() => Math.max(1, props.items.length));
   letter-spacing: 0;
 }
 
-.detail-data-grid dt img {
+.detail-data-grid__label-image {
   width: 48px;
   height: 30px;
-  object-fit: contain;
 }
 
 .detail-data-grid dd {
@@ -152,19 +161,18 @@ const columns = computed(() => Math.max(1, props.items.length));
   width: clamp(24px, 18%, 34px);
 }
 
-.detail-data-grid dd img {
+.detail-data-grid__value-image {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
-  object-fit: contain;
 }
 
-.detail-data-grid dd img.is-avatar,
-.detail-data-grid dd img.is-attribute {
+.detail-data-grid__value-image.is-avatar,
+.detail-data-grid__value-image.is-attribute {
   border-radius: var(--md-sys-shape-corner-full);
 }
 
-.detail-data-grid dd img.is-logo {
+.detail-data-grid__value-image.is-logo {
   width: 48px;
   height: 24px;
 }

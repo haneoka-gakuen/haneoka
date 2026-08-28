@@ -41,7 +41,7 @@ watch([() => props.items, () => props.song, () => props.origin, () => props.vari
     :aria-hidden="label ? undefined : 'true'"
   >
     <template v-for="(item, index) in visibleItems" :key="`${item.image || item.text || item.icon}:${index}`">
-      <img
+      <LoadingImage
         v-if="item.image"
         class="song-credit-visual__item"
         :class="item.fit === 'cover' ? 'is-character' : 'is-band'"
@@ -49,6 +49,7 @@ watch([() => props.items, () => props.song, () => props.origin, () => props.vari
         alt=""
         loading="lazy"
         decoding="async"
+        :fit="item.fit === 'cover' ? 'cover' : 'contain'"
         @error="failedImages.add(item.image)"
       />
       <EntityAvatar
@@ -81,13 +82,11 @@ watch([() => props.items, () => props.song, () => props.origin, () => props.vari
 .song-credit-visual__item.is-band {
   width: var(--song-credit-logo-width, 34px);
   height: var(--song-credit-logo-height, 24px);
-  object-fit: contain;
 }
 
 .song-credit-visual__item.is-character {
   width: var(--song-credit-avatar-size, var(--song-credit-logo-height, 24px));
   height: var(--song-credit-avatar-size, var(--song-credit-logo-height, 24px));
-  object-fit: cover;
   border-radius: var(--md-sys-shape-corner-full);
 }
 

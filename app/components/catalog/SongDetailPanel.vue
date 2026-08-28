@@ -439,11 +439,14 @@ watch(
             </div>
             <div class="song-detail-mv__viewport">
               <div v-if="activeVideo" class="song-detail-mv__stage">
-                <img
+                <LoadingImage
                   v-if="activeVideo.poster"
                   class="song-detail-mv__poster"
                   :src="activeVideo.poster"
                   alt=""
+                  loading="eager"
+                  fit="cover"
+                  position="center"
                   aria-hidden="true"
                 />
                 <video
@@ -605,8 +608,6 @@ watch(
 
 .song-detail-mv__poster {
   z-index: 0;
-  object-fit: cover;
-  object-position: center;
 }
 
 .song-detail-mv__video {

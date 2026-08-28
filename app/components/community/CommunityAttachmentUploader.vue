@@ -541,7 +541,13 @@ onBeforeUnmount(() => {
     <ul v-if="items.length" class="attachment-list">
       <li v-for="item in items" :key="item.key" class="attachment-item" :class="`is-${item.phase}`">
         <span class="attachment-item__preview">
-          <img v-if="item.previewUrl" :src="item.previewUrl" :alt="item.file.name" />
+          <LoadingImage
+            v-if="item.previewUrl"
+            :src="item.previewUrl"
+            :alt="item.file.name"
+            loading="eager"
+            fit="cover"
+          />
           <MaterialIcon name="description" v-else-if="item.file.type === 'text/plain'" :size="18" />
           <MaterialIcon name="image" v-else :size="18" />
         </span>
@@ -675,12 +681,6 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-primary);
   border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface-container-high);
-}
-
-.attachment-item__preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .attachment-item__copy {

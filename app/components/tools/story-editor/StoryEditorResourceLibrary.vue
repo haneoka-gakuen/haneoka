@@ -523,13 +523,15 @@ onBeforeUnmount(() => {
             @keydown.space.self.prevent="activateEntry(entry)"
           >
             <div class="story-resource-file__icon">
-              <img
+              <LoadingImage
                 v-if="entry.node.type === 'file' && entry.node.previewUrl"
                 class="is-preview"
                 :src="entry.node.previewUrl"
                 alt=""
                 loading="lazy"
-                draggable="false"
+                decoding="async"
+                :draggable="false"
+                fit="contain"
               />
               <MaterialIcon
                 v-else
@@ -737,10 +739,9 @@ onBeforeUnmount(() => {
   flex: 0 0 22px;
 }
 
-.story-resource-file__icon img.is-preview {
+.story-resource-file__icon :deep(.loading-image.is-preview) {
   width: 100%;
   height: 100%;
-  object-fit: contain;
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent) 25%, transparent 25%),
     linear-gradient(-45deg, color-mix(in srgb, var(--md-sys-color-on-surface) 10%, transparent) 25%, transparent 25%),
@@ -762,7 +763,7 @@ onBeforeUnmount(() => {
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.is-list .story-resource-file__icon img.is-preview {
+.is-list .story-resource-file__icon :deep(.loading-image.is-preview) {
   width: 22px;
   height: 22px;
 }

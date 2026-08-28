@@ -43,12 +43,12 @@ watch(
         :icon="item.icon || 'person'"
         @image-error="item.image && failedImages.add(item.image)"
       />
-      <img
+      <LoadingImage
         v-else-if="item.image"
         :src="item.image"
         alt=""
         aria-hidden="true"
-        decoding="async"
+        :fit="item.shape === 'logo' ? 'contain' : 'cover'"
         @error="failedImages.add(item.image)"
       />
       <MaterialIcon v-else-if="item.icon" :name="item.icon" :size="20" aria-hidden="true" />
@@ -91,13 +91,8 @@ watch(
   flex-basis: 36px;
 }
 
-.detail-header-icons__item img {
+.detail-header-icons__item > :deep(.loading-image) {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-}
-
-.detail-header-icons__item.is-logo img {
-  object-fit: contain;
 }
 </style>

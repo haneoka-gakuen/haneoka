@@ -44,7 +44,7 @@ const icon = computed(() =>
 
 <template>
   <span v-if="rarityName" class="rarity-mark" :aria-label="rarityName">
-    <img v-if="icon" :src="icon" alt="" aria-hidden="true" />
+    <LoadingImage v-if="icon" :src="icon" alt="" aria-hidden="true" fit="contain" />
   </span>
 </template>
 
@@ -57,7 +57,7 @@ const icon = computed(() =>
   justify-content: center;
 }
 
-.rarity-mark img {
+.rarity-mark :deep(.loading-image__image) {
   width: 100%;
   height: 100%;
   object-fit: contain;

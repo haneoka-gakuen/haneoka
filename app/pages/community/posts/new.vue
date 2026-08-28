@@ -263,11 +263,15 @@ useHead(() => ({ title: `${t("communityPage.newPost")} · ${t("community")} · h
         </header>
         <article class="composer-preview__card">
           <div v-if="previewImages.length" class="composer-preview__media">
-            <img
+            <LoadingImage
               v-for="attachment in previewImages.slice(0, 3)"
               :key="attachment.id"
+              class="composer-preview__image"
               :src="attachment.downloadUrl || ''"
               :alt="attachment.fileName"
+              loading="lazy"
+              decoding="async"
+              fit="cover"
             />
           </div>
           <div class="composer-preview__body">
@@ -417,10 +421,15 @@ useHead(() => ({ title: `${t("communityPage.newPost")} · ${t("community")} · h
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.composer-preview__media img {
+.composer-preview__image {
   width: 100%;
   height: 100%;
   min-height: 180px;
+}
+
+.composer-preview__image :deep(.loading-image__image) {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 

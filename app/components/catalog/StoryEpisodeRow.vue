@@ -49,7 +49,21 @@ const fallbackAspectRatio = computed(() =>
   >
     <template #media>
       <span class="episode-row__media">
-        <img v-if="src" :src="src" alt="" loading="lazy" decoding="async" @error="onError" />
+        <LoadingImage
+          v-if="src"
+          :src="src"
+          alt=""
+          loading="lazy"
+          :fit="
+            imageMode === 'cover'
+              ? 'cover'
+              : imageMode === 'stretch-4x3' || imageMode === 'stretch-16x9'
+                ? 'fill'
+                : 'natural'
+          "
+          :placeholder-aspect-ratio="imageMode === 'natural' ? undefined : fallbackAspectRatio"
+          @error="onError"
+        />
         <TextMediaFallback
           v-else
           :label="title"
@@ -97,10 +111,17 @@ const fallbackAspectRatio = computed(() =>
   background: var(--md-sys-color-surface-container-high);
 }
 
-.episode-row__media img {
+.episode-row__media > :deep(.loading-image) {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* Natural story artwork deliberately keeps its authored ratio. There is no
+   universal ratio to reserve here, so retain that behavior while still giving
+   the browser a visible, modest skeleton before metadata arrives. */
+.episode-row__media > :deep(.loading-image.is-loading) {
+  min-height: 72px;
 }
 
 .episode-row.is-cover .episode-row__media,
@@ -113,19 +134,10 @@ const fallbackAspectRatio = computed(() =>
   aspect-ratio: 16 / 9;
 }
 
-.episode-row.is-cover .episode-row__media img,
-.episode-row.is-stretch-4x3 .episode-row__media img,
-.episode-row.is-stretch-16x9 .episode-row__media img {
+.episode-row.is-cover .episode-row__media > :deep(.loading-image),
+.episode-row.is-stretch-4x3 .episode-row__media > :deep(.loading-image),
+.episode-row.is-stretch-16x9 .episode-row__media > :deep(.loading-image) {
   height: 100%;
-}
-
-.episode-row.is-cover .episode-row__media img {
-  object-fit: cover;
-}
-
-.episode-row.is-stretch-4x3 .episode-row__media img,
-.episode-row.is-stretch-16x9 .episode-row__media img {
-  object-fit: fill;
 }
 
 .episode-row__number {
