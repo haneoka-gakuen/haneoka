@@ -240,7 +240,7 @@ export const capabilities = [
     id: "anon-tokyo",
     domain: "catalog",
     label: "ANON TOKYO",
-    route: "/catalog/anon-tokyo",
+    route: "/catalog/anon-tokyo/characters",
     routes: {
       detail: "/catalog/anon-tokyo/characters?character=:id",
       search: "/catalog/anon-tokyo/characters?q=:query",
