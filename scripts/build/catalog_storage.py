@@ -120,6 +120,38 @@ AUDIO_MASTER_SOUND_VIEWS = (
     _audio_master_sounds_view("master-voices", "Voice"),
 )
 
+# ANON TOKYO's canonical document remains useful as an archival snapshot, but
+# interactive pages should not download the multi-megabyte joined document.
+# These projections are independently cacheable read models for each screen.
+ANON_TOKYO_VIEWS = (
+    ViewSpec("characters", ("characters",), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("reloading", ("goods", "reloading"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("render-recipes", ("spine", "renderRecipes"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("spine-parts", ("spine", "parts"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("shop", ("shop", "stores"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("player-levels", ("progression", "playerLevels"), (("id",), ("level",)), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("goods", ("goods", "items"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("goods-categories", ("goods", "categories"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("currencies", ("progression", "currencies"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("decorations", ("shop", "decorations"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("staff", ("staffing", "clerks"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("staff-helpers", ("staffing", "helpers"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("staff-deliveries", ("staffing", "deliveries"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("staff-deliverymen", ("staffing", "deliverymen"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("customers", ("staffing", "customers"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("tasks", ("tasks", "main"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("task-tabs", ("tasks", "tabs"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("task-types", ("tasks", "types"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("task-daily", ("tasks", "daily"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("task-achievements", ("tasks", "achievements"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("task-chapter", ("tasks", "chapter"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("guide", ("guides", "steps"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("guide-images", ("guides", "imagePages"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("fever", ("stages", "music"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("fever-stages", ("stages", "stages"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    ViewSpec("fever-bgm", ("stages", "bgm"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+)
+
 STORY_ASSET_BACKGROUND_PROJECTION = ProjectionSpec(
     include=(
         "assetId",
@@ -459,11 +491,11 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
         dependencies=("story-runtime",),
         views=STORY_ASSET_VIEWS,
     ),
-    # Anon Tokyo is a release-scoped document. Its subpages share joined
-    # MasterAT records, locale-aware imagery, map data, and future Spine
-    # metadata, so splitting one arbitrary collection would make the public
-    # contract less useful than an immutable feature document.
-    "anon-tokyo": ResourceSpec(),
+    # Keep the complete release document while also publishing screen-sized
+    # projections. The root remains the archival contract; browser pages use
+    # the views so one wardrobe visit never transfers unrelated maps, dialogue,
+    # progression, staffing and raw evidence.
+    "anon-tokyo": ResourceSpec(views=ANON_TOKYO_VIEWS),
     "live2d": ResourceSpec(
         (),
         projection=ProjectionSpec(

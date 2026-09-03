@@ -1,9 +1,19 @@
+# The sprite keeps a stable URL, so always revalidate it while the service
+# worker serves the previous response immediately on repeat visits.
+/icons.svg
+  Cache-Control: public, max-age=0, must-revalidate, stale-while-revalidate=604800
+
 /images/*
   Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
 
-# _nuxt assets are content-hashed → immutable. Pin them at the edge so they
-# never revalidate against the origin (eliminates the deploy-window / origin
-# 503s on the prefetch burst). The HTML entry keeps its default short cache so
-# new deploys are still picked up.
-/_nuxt/*
+# Astro assets are content-hashed and immutable.
+/_astro/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Fontsource's unicode-range shards keep a page from downloading an entire
+# CJK family. The paths are stable within the locked dependency release.
+/fonts/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate

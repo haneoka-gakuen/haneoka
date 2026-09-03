@@ -1,0 +1,13 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import { t } from "../i18n/messages";
+import type { Locale } from "../i18n/locales";
+import "../lit/live2d-workspace";
+import "../styles/catalog.css";
+import "../styles/viewer.css";
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "live2d", "Live2D");
+---
+<Base locale={locale} route="/catalog/live2d" title={title} titleKey="live2d"><AppShell locale={locale} route="/catalog/live2d" title={title} titleKey="live2d"><live2d-workspace locale={locale}></live2d-workspace></AppShell></Base>
+<script>import "../lit/live2d-workspace";</script>

@@ -20,8 +20,6 @@
     "noEmit": true
   },
   "include": [
-    "eslint.config.ts",
-    "scripts/dev.ts",
     "scripts/build/**/*.ts",
     "scripts/database/**/*.ts",
     "scripts/verify/**/*.ts",

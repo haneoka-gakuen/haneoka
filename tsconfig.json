@@ -1,6 +1,9 @@
 {
-  "extends": "./.nuxt/tsconfig.json",
+  "extends": "astro/tsconfigs/strict",
+  "include": [".astro/types.d.ts", "src/**/*"],
+  "exclude": [".output", "worker", "server", "packages", "scripts"],
   "compilerOptions": {
-    "types": ["node", "howler"]
+    "types": ["node"],
+    "noUncheckedIndexedAccess": false
   }
 }

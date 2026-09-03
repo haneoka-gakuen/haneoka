@@ -1,0 +1,7 @@
+---
+import type { Locale } from "../../i18n/locales";
+const { locale, labels } = Astro.props as { locale: Locale; labels: string };
+---
+<home-dashboard locale={locale} labels={labels}></home-dashboard>
+<script>import "../../lit/home-dashboard";</script>
+<style is:global>@import "../../styles/home.css";</style>

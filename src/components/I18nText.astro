@@ -1,0 +1,16 @@
+---
+import { LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+
+interface Props {
+  keyName: string;
+  fallback?: string;
+  locale?: Locale;
+  as?: keyof HTMLElementTagNameMap;
+}
+
+const { keyName, fallback = keyName, locale = "ja", as: Tag = "span" } = Astro.props as Props;
+const values = Object.fromEntries(LOCALES.map((target) => [target, t(target, keyName, fallback)]));
+---
+
+<Tag data-i18n-values={JSON.stringify(values)}>{values[locale]}</Tag>

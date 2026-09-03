@@ -1,0 +1,9 @@
+---
+import { group } from "../../i18n/messages";
+import type { Locale } from "../../i18n/locales";
+import I18nText from "../I18nText.astro";
+const { locale, page } = Astro.props as { locale: Locale; page: string };
+const copy = group<Record<string, unknown>>(locale, page);
+const sections = Array.isArray(copy.sections) ? copy.sections as Array<Record<string, unknown>> : [];
+---
+<section class="page page--compact"><article class="surface surface--outlined prose"><p><I18nText keyName={`${page}.summary`} fallback={String(copy.summary ?? copy.description ?? "")} locale={locale} /></p>{sections.map((section,index) => <section><h2><I18nText keyName={`${page}.sections.${index}.title`} fallback={String(section.title ?? "")} locale={locale} /></h2><p><I18nText keyName={`${page}.sections.${index}.body`} fallback={String(section.body ?? "")} locale={locale} /></p></section>)}</article></section>

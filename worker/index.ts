@@ -285,6 +285,21 @@ const isJsonValue = (value: unknown): value is JsonValue => {
 const isJsonObject = (value: JsonValue | undefined): value is JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+const UI_MARK_SOURCE = "metadata/sources/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2.json";
+const UI_MARK_NAMES =
+  /^(?:RarityIconCenter_(?:R|SR|SSR|EX|BD)|CardType-(?:Red|Blue|Green|Yellow|Purple)|sp_icon_live_music_type_(?:1|2|3|4|5|99))\.png$/u;
+function projectUiMarks(value: JsonValue | null): JsonObject {
+  if (!isJsonObject(value) || !Array.isArray(value.outputs)) return {};
+  const result: Record<string, JsonValue> = {};
+  for (const output of value.outputs) {
+    if (!isJsonObject(output) || output.type !== "Sprite" || typeof output.path !== "string") continue;
+    const filename = output.path.split("/").pop() || "";
+    const logical = filename.replace(/--Sprite-?-?\d+\.png$/u, ".png");
+    if (UI_MARK_NAMES.test(logical)) result[logical] = output.path;
+  }
+  return result;
+}
+
 const parseJson = (text: string): JsonValue => {
   const value: unknown = JSON.parse(text);
   if (!isJsonValue(value)) throw new Error("JSON contains a value that cannot be represented safely");
@@ -775,6 +790,19 @@ async function serveReleaseObject(
         expectedBytes: entry.bytes,
       })
     : null;
+}
+
+function localizedReleasePaths(releasePath: string): readonly string[] {
+  const match = /\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^./]+$)/u.exec(releasePath);
+  if (!match?.[1]) return [releasePath];
+  const base = releasePath.replace(match[0], "");
+  const alternate =
+    match[1] === "zh-Hans"
+      ? base.replace(/(?=\.[^./]+$)/u, "(zh-Hant)")
+      : match[1] === "zh-Hant"
+        ? base.replace(/(?=\.[^./]+$)/u, "(zh-Hans)")
+        : "";
+  return alternate ? [releasePath, alternate, base] : [releasePath, base];
 }
 
 function boundedPromiseCache<T>(cache: Map<string, Promise<T>>, key: string, value: Promise<T>, limit: number): void {
@@ -1707,6 +1735,19 @@ async function handleCatalogApi(
   if (!release) return errorResponse(request, 503, "release_unavailable", "No release is published");
   const tail = cleanRelativePath(rawTail);
   if (!tail) return errorResponse(request, 404, "route_not_found", "API route not found");
+  if (tail === "ui-marks") {
+    const cacheRequest = releaseCacheRequest(request, release.releaseId);
+    return releaseResponseHeaders(
+      await edgeCached(
+        cacheRequest,
+        ctx,
+        API_CACHE_TTL,
+        async () => jsonResponse(request, projectUiMarks(await readReleaseJson(env, release, UI_MARK_SOURCE))),
+        CATALOG_API_CACHE_CONTROL,
+      ),
+      release,
+    );
+  }
   if (tail === "release") {
     const response = await serveR2Object(env, request, release.manifestKey, "application/json; charset=utf-8");
     return releaseResponseHeaders(
@@ -1784,21 +1825,27 @@ async function handleReleaseMedia(
     return new Response("not found", { status: 404, headers: CORS });
   const release = await currentRelease(env, server);
   if (!release) return new Response("not found", { status: 404, headers: CORS });
-  const previewCacheControl = isModelPreviewMedia(tree, relative) ? "no-cache, must-revalidate" : undefined;
+  const previewCacheControl = isModelPreviewMedia(tree, relative)
+    ? "public, max-age=3600, stale-while-revalidate=604800"
+    : undefined;
   const cacheRequest = releaseCacheRequest(request, release.releaseId);
   return edgeCached(
     cacheRequest,
     ctx,
     MEDIA_CACHE_TTL,
     async () => {
-      const response = await serveReleaseObject(
-        env,
-        request,
-        release,
-        `${tree}/${relative}`,
-        undefined,
-        previewCacheControl ? { cacheControl: previewCacheControl } : {},
-      );
+      let response: Response | null = null;
+      for (const candidate of localizedReleasePaths(`${tree}/${relative}`)) {
+        response = await serveReleaseObject(
+          env,
+          request,
+          release,
+          candidate,
+          undefined,
+          previewCacheControl ? { cacheControl: previewCacheControl } : {},
+        );
+        if (response) break;
+      }
       return response || new Response("not found", { status: 404, headers: CORS });
     },
     previewCacheControl,
@@ -2154,56 +2201,30 @@ function redirectToCanonical(url: URL): Response {
   });
 }
 
-function shouldServeSpaEntry(request: Request, url: URL): boolean {
-  if (request.method !== "GET" && request.method !== "HEAD") return false;
-  if (url.pathname.startsWith("/_nuxt/")) return false;
-
-  const lastSegment = url.pathname.split("/").filter(Boolean).at(-1) || "";
-  let decodedLastSegment: string;
-  try {
-    decodedLastSegment = decodeURIComponent(lastSegment);
-  } catch {
-    return false;
-  }
-  if (/\.[^./]+$/u.test(decodedLastSegment)) return false;
-
-  const navigation = request.headers.get("Sec-Fetch-Mode")?.toLocaleLowerCase("und") === "navigate";
-  const acceptsHtml = request.headers.get("Accept")?.toLocaleLowerCase("und").includes("text/html") ?? false;
-  return navigation || acceptsHtml;
-}
-
-async function serveStaticAsset(request: Request, env: Env, url: URL): Promise<Response> {
+async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
   if (!env.ASSETS) return new Response("not found", { status: 404 });
-
-  const assetResponse = await env.ASSETS.fetch(request);
-  if (assetResponse.status !== 404 || !shouldServeSpaEntry(request, url)) return assetResponse;
-
-  await assetResponse.body?.cancel();
-  // For HTML navigations to a route with no matching static asset, fall back to
-  // the generic SPA shell. Prefer 200.html (the Nuxt SPA fallback) so the route
-  // hydrates from the browser URL; fall back to index.html only if 200.html is
-  // absent, so a direct refresh never hydrates a content page as the home route.
-  for (const fallbackPath of ["/200.html", "/index.html"]) {
-    const fallbackResponse = await env.ASSETS.fetch(
-      new Request(new URL(fallbackPath, request.url), { headers: request.headers, method: request.method }),
-    );
-    if (fallbackResponse.status === 404) {
-      await fallbackResponse.body?.cancel();
-      continue;
-    }
-    if (request.method !== "HEAD" || !fallbackResponse.body) return fallbackResponse;
-    await fallbackResponse.body.cancel();
-    return new Response(null, {
-      headers: fallbackResponse.headers,
-      status: fallbackResponse.status,
-      statusText: fallbackResponse.statusText,
-    });
+  const response = await env.ASSETS.fetch(request);
+  if (response.status !== 404) return response;
+  const url = new URL(request.url);
+  if (url.pathname.startsWith("/catalog/assets/")) {
+    const fallback = new URL("/catalog/assets/index.html", url);
+    return env.ASSETS.fetch(new Request(fallback, request));
   }
-  return new Response("not found", { status: 404 });
+  if (url.pathname.startsWith("/community/")) {
+    const fallback = new URL("/community/index.html", url);
+    return env.ASSETS.fetch(new Request(fallback, request));
+  }
+  return response;
 }
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
+  const legacyLocale = /^\/(?:ja|en|zh-TW|zh-CN|ko)(\/.*)?$/u.exec(url.pathname);
+  if (legacyLocale) {
+    const target = new URL(url);
+    target.pathname = legacyLocale[1] || "/";
+    return Response.redirect(target.toString(), 308);
+  }
   if (url.hostname === CANONICAL_HOST && url.protocol !== "https:") return redirectToCanonical(url);
   const dynamicHost =
     url.hostname === CANONICAL_HOST ||
@@ -2254,7 +2275,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const artifact = await handleArtifact(env, ctx, request, url.pathname);
   if (artifact) return artifact;
   if (url.pathname.startsWith("/api/")) return errorResponse(request, 404, "route_not_found", "API route not found");
-  return serveStaticAsset(request, env, url);
+  return serveStaticAsset(request, env);
 }
 
 function errorDetails(error: unknown): { message: string; name: string } {

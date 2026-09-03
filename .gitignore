@@ -5,8 +5,11 @@ node_modules/
 
 # Framework and build outputs
 dist
-.nuxt/
+.astro/
+.generated-public/
+.playwright-cli/
 .output/
+output/playwright/
 # Sonolus engine compile workspaces (full-build staging + single-facet matrix output)
 .build-parallel/
 .build-matrix/
@@ -40,7 +43,6 @@ __pycache__/
 # Generated game data and source packages
 /data/
 /tmp/
-/app/data/garupa/
 game-resource-downloads/
 *.apk
 *.apks

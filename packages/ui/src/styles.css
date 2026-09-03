@@ -14,25 +14,10 @@
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
-  font-family: var(--md-icon-font);
-  font-size: var(--md-comp-icon-size);
-  font-style: normal;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0;
-  text-rendering: optimizeLegibility;
-  text-align: center;
+  /* Icon bodies come from the symbol sprite and inherit the text color. */
+  fill: currentColor;
   vertical-align: middle;
-  white-space: nowrap;
-  word-wrap: normal;
-  direction: ltr;
   pointer-events: none;
-  font-feature-settings: "liga";
-  font-variation-settings:
-    "FILL" var(--md-comp-icon-fill),
-    "wght" var(--md-comp-icon-weight),
-    "GRAD" var(--md-comp-icon-grade),
-    "opsz" var(--md-comp-icon-optical-size);
 }
 
 .md3-button {

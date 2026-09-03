@@ -1,0 +1,5 @@
+---
+import Base from "../layouts/Base.astro"; import AppShell from "./AppShell.astro"; import type { Locale } from "../i18n/locales"; import { t } from "../i18n/messages"; import "../lit/anon-tokyo-workspace"; import "../styles/catalog.css"; import "../styles/anon-tokyo.css";
+const { locale, mode = "characters" } = Astro.props as { locale: Locale; mode?: string }; const route = `/catalog/anon-tokyo/${mode}`; const key = mode === "outfits" ? "anonTokyoPage.dressingRoom" : `anonTokyoPage.${mode}`; const title = t(locale, key, mode);
+---
+<Base locale={locale} route={route} title={title} titleKey={key}><AppShell locale={locale} route={route} title={title} titleKey={key}><anon-tokyo-workspace locale={locale} mode={mode}></anon-tokyo-workspace></AppShell></Base><script>import "../lit/anon-tokyo-workspace";</script>

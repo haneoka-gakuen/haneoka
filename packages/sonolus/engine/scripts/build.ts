@@ -28,11 +28,7 @@ function sonolusCli(): string {
   return existsSync(candidate) ? candidate : "sonolus-cli";
 }
 
-function run(
-  bin: string,
-  args: readonly string[],
-  env: NodeJS.ProcessEnv,
-): Promise<void> {
+function run(bin: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(bin, args, { cwd: engineRoot, env: { ...process.env, ...env }, stdio: "inherit" });
     child.on("error", reject);
@@ -45,11 +41,10 @@ function run(
 
 /** Compile one facet into an isolated `dev`/`dist` workspace. */
 function buildFacet(name: string, dev: string, dist: string): Promise<void> {
-  return run(
-    sonolusCli(),
-    ["--build", `./${name}/sonolus-cli.config.ts`],
-    { SONOLUS_ENGINE_DEV: dev, SONOLUS_ENGINE_DIST: dist },
-  );
+  return run(sonolusCli(), ["--build", `./${name}/sonolus-cli.config.ts`], {
+    SONOLUS_ENGINE_DEV: dev,
+    SONOLUS_ENGINE_DIST: dist,
+  });
 }
 
 /**
@@ -61,9 +56,7 @@ function buildFacet(name: string, dev: string, dist: string): Promise<void> {
 async function buildSingleFacet(name: string): Promise<void> {
   const facet = FACETS.find((value) => value.name === name);
   if (!facet) {
-    throw new Error(
-      `Unknown facet ${JSON.stringify(name)}. Expected one of: ${FACETS.map((f) => f.name).join(", ")}`,
-    );
+    throw new Error(`Unknown facet ${JSON.stringify(name)}. Expected one of: ${FACETS.map((f) => f.name).join(", ")}`);
   }
   const facetRoot = resolve(matrixRoot, facet.name);
   rmSync(facetRoot, { recursive: true, force: true });
@@ -81,9 +74,7 @@ async function buildAll(): Promise<void> {
   // workspace so their compiler outfiles (`<dev>/index.mjs`) and artifacts
   // cannot clobber each other.
   await Promise.all(
-    FACETS.map(({ name }) =>
-      buildFacet(name, resolve(stagingRoot, name, "dev"), resolve(stagingRoot, name, "dist")),
-    ),
+    FACETS.map(({ name }) => buildFacet(name, resolve(stagingRoot, name, "dev"), resolve(stagingRoot, name, "dist"))),
   );
 
   // Merge the per-facet artifacts into the real dist/. EngineConfiguration is
@@ -92,7 +83,10 @@ async function buildAll(): Promise<void> {
   mkdirSync(distRoot, { recursive: true });
   const first = FACETS[0];
   if (!first) throw new Error("No engine facets are configured");
-  copyFileSync(resolve(stagingRoot, first.name, "dist", "EngineConfiguration"), resolve(distRoot, "EngineConfiguration"));
+  copyFileSync(
+    resolve(stagingRoot, first.name, "dist", "EngineConfiguration"),
+    resolve(distRoot, "EngineConfiguration"),
+  );
   for (const { name, artifact } of FACETS) {
     copyFileSync(resolve(stagingRoot, name, "dist", artifact), resolve(distRoot, artifact));
   }

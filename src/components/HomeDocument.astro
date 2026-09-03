@@ -1,0 +1,11 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import HomePage from "./pages/HomePage.astro";
+import { group, t } from "../i18n/messages";
+import { LOCALES, type Locale } from "../i18n/locales";
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "homePage.overview", "haneoka");
+const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "homePage")])));
+---
+<Base locale={locale} route="/" title={title} titleKey="homePage.overview"><AppShell locale={locale} route="/" title={title} titleKey="homePage.overview"><HomePage locale={locale} labels={labels} /></AppShell></Base>

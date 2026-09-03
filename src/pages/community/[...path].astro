@@ -1,0 +1,6 @@
+---
+import CommunityDocument from "../../components/CommunityDocument.astro";
+export function getStaticPaths() { return [undefined, "feeds", "mine", "bookmarks", "notifications", "activity", "tags", "playlists", "songs-bestdori", "stories-bestdori"].map((path) => ({ params: { path }, props: { path } })); }
+const { path } = Astro.props as { path?: string };
+---
+<CommunityDocument locale="ja" path={path} />

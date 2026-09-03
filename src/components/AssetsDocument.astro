@@ -1,0 +1,4 @@
+---
+import Base from "../layouts/Base.astro";import AppShell from "./AppShell.astro";import type{Locale}from"../i18n/locales";import{t}from"../i18n/messages";import"../lit/asset-explorer";import "../styles/catalog.css";import "../styles/tools.css";const{locale}=Astro.props as{locale:Locale};const title=t(locale,"assets","Assets");
+---
+<Base locale={locale} route="/catalog/assets" title={title} titleKey="assets"><AppShell locale={locale} route="/catalog/assets" title={title} titleKey="assets"><asset-explorer></asset-explorer></AppShell></Base><script>import "../lit/asset-explorer";</script>

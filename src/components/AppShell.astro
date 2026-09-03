@@ -1,0 +1,93 @@
+---
+import Icon from "./Icon.astro";
+import I18nText from "./I18nText.astro";
+import { NAV_GROUPS } from "../config/navigation";
+import { localePath, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+interface Props { locale: Locale; route: string; title: string; titleKey?: string }
+const { locale, route, title, titleKey } = Astro.props;
+const active = (target: string) => target === "/" ? route === "/" : route === target || route.startsWith(`${target}/`);
+---
+<div class="app-shell" data-shell>
+  <a class="skip-link" href="#main-content"><I18nText keyName="content" fallback="Content" locale={locale} /></a>
+  <button class="drawer-scrim" type="button" data-drawer-close aria-label={t(locale, "close", "Close")}></button>
+  <aside class="navigation-drawer" id="global-navigation-panel" aria-label={t(locale, "primaryNavigation", "Primary navigation")}>
+    <header class="navigation-drawer__header">
+      <a class="brand" href={localePath("/", locale)} aria-label="haneoka"><img src="/favicon.svg" width="32" height="32" alt="" /><strong>haneoka</strong></a>
+      <button class="icon-button drawer-collapse" type="button" data-drawer-collapse aria-label={t(locale, "collapse", "Collapse")}><Icon name="left_panel_close" /></button>
+      <button class="icon-button drawer-close" type="button" data-drawer-close aria-label={t(locale, "close", "Close")}><Icon name="close" /></button>
+    </header>
+    <nav class="navigation-drawer__content">
+      <a class:list={["nav-destination", { selected: active("/") }]} href={localePath("/", locale)}><Icon name="home" filled={active("/")} /><I18nText keyName="home" fallback="Home" locale={locale} /></a>
+      {NAV_GROUPS.map((group) => (
+        <details class="nav-group" open={active(`/${group.id}`)}>
+          <summary class:list={["nav-destination", { selected: active(`/${group.id}`) }]}><Icon name={group.icon} filled={active(`/${group.id}`)} /><I18nText keyName={group.label} fallback={group.id} locale={locale} /><Icon name="expand_more" size={20} /></summary>
+          <div class="nav-group__items">
+            {group.items.map((item) => { const itemIsActive=active(item.route)||Boolean(item.children?.some((child)=>active(child.route))); return <div class="nav-leaf"><a class:list={["nav-destination nav-destination--child", { selected: itemIsActive }]} href={localePath(item.route, locale)} aria-current={route === item.route ? "page" : undefined}><Icon name={item.icon} filled={itemIsActive} /><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a>{item.children?.length && itemIsActive ? <div class="nav-nested">{item.children.map((child)=><a class:list={["nav-nested__link",{selected:route===child.route}]} href={localePath(child.route,locale)}><Icon name={child.icon} size={18} filled={route===child.route}/><I18nText keyName={child.label} fallback={child.label} locale={locale} /></a>)}</div>:null}</div>; })}
+          </div>
+        </details>
+      ))}
+    </nav>
+    <nav class="navigation-drawer__utility">
+      <a class:list={["nav-destination", { selected: active("/account") }]} href={localePath("/account", locale)}><Icon name="account_circle" filled={active("/account")} /><I18nText keyName="account" fallback="Account" locale={locale} /></a>
+      <a class:list={["nav-destination", { selected: active("/settings") }]} href={localePath("/settings", locale)}><Icon name="settings" filled={active("/settings")} /><I18nText keyName="settings" fallback="Settings" locale={locale} /></a>
+      <a class:list={["nav-destination", { selected: active("/about") }]} href={localePath("/about", locale)}><Icon name="info" filled={active("/about")} /><I18nText keyName="about" fallback="About" locale={locale} /></a>
+    </nav>
+  </aside>
+  <main class="app-shell__main" id="main-content">
+    <header class="top-app-bar">
+      <button class="icon-button top-app-bar__menu" type="button" data-drawer-open aria-controls="global-navigation-panel" aria-label={t(locale, "menu", "Menu")}><Icon name="menu" /></button>
+      <h1>{titleKey ? <I18nText keyName={titleKey} fallback={title} locale={locale} /> : title}</h1>
+      <div class="top-app-bar__actions" data-top-app-bar-actions></div>
+    </header>
+    <div class="page-stage"><slot /></div>
+  </main>
+</div>
+<script>
+  const navigationScrollKey = "haneoka.navigation.scroll.v1";
+  const initializeShell = () => {
+    const shell = document.querySelector<HTMLElement>("[data-shell]");
+    if (!shell || shell.dataset.initialized === "true") return;
+    shell.dataset.initialized = "true";
+    const navigation = shell.querySelector<HTMLElement>(".navigation-drawer__content");
+    const saveNavigationScroll = () => {
+      if (!navigation) return;
+      try { sessionStorage.setItem(navigationScrollKey, String(navigation.scrollTop)); } catch {}
+    };
+    if (navigation) {
+      try { navigation.scrollTop = Number(sessionStorage.getItem(navigationScrollKey) || 0); } catch {}
+      navigation.addEventListener("scroll", saveNavigationScroll, { passive: true });
+      navigation.addEventListener("click", saveNavigationScroll, { capture: true });
+    }
+    const setOpen = (open: boolean) => shell.classList.toggle("drawer-open", open);
+    shell.querySelectorAll("[data-drawer-open]").forEach((node) => node.addEventListener("click", () => setOpen(true)));
+    shell.querySelectorAll("[data-drawer-close]").forEach((node) => node.addEventListener("click", () => setOpen(false)));
+    shell.querySelector("[data-drawer-collapse]")?.addEventListener("click", () => {
+      const collapsed = shell.classList.toggle("navigation-collapsed");
+      try { localStorage.setItem("haneoka.navigation.collapsed", String(collapsed)); } catch {}
+    });
+    try { shell.classList.toggle("navigation-collapsed", localStorage.getItem("haneoka.navigation.collapsed") === "true"); } catch {}
+    shell.querySelectorAll<HTMLDetailsElement>(".nav-group").forEach((group) => {
+      group.querySelector("summary")?.addEventListener("click", (event) => {
+        if (!shell.classList.contains("navigation-collapsed")) return;
+        event.preventDefault();
+        shell.classList.remove("navigation-collapsed");
+        group.open = true;
+        try { localStorage.setItem("haneoka.navigation.collapsed", "false"); } catch {}
+      });
+    });
+  };
+  initializeShell();
+  document.addEventListener("astro:page-load", initializeShell);
+  if (document.documentElement.dataset.shellKeyboard !== "true") {
+    document.documentElement.dataset.shellKeyboard = "true";
+    addEventListener("keydown", (event) => {
+      if (event.key === "Escape") document.querySelector<HTMLElement>("[data-shell]")?.classList.remove("drawer-open");
+    });
+    addEventListener("pagehide", () => {
+      const navigation = document.querySelector<HTMLElement>(".navigation-drawer__content");
+      if (!navigation) return;
+      try { sessionStorage.setItem(navigationScrollKey, String(navigation.scrollTop)); } catch {}
+    });
+  }
+</script>

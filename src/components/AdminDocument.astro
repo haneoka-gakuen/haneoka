@@ -1,0 +1,17 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import { LOCALES, type Locale } from "../i18n/locales";
+import { group, t } from "../i18n/messages";
+import "../lit/admin-workspace";
+import "../styles/admin.css";
+const { locale, section = "overview" } = Astro.props as { locale: Locale; section?: string };
+const title = t(locale, "adminPage.title", "Admin");
+const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "adminPage")])));
+---
+<Base locale={locale} route={`/admin/${section}`} title={title} titleKey="adminPage.title">
+  <AppShell locale={locale} route={`/admin/${section}`} title={title} titleKey="adminPage.title">
+    <admin-workspace section={section} labels={labels}></admin-workspace>
+  </AppShell>
+</Base>
+<script>import "../lit/admin-workspace";</script>

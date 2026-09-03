@@ -7,7 +7,6 @@ import "@material/web/checkbox/checkbox.js";
 import "@material/web/chips/filter-chip.js";
 import "@material/web/dialog/dialog.js";
 import "@material/web/focus/md-focus-ring.js";
-import "@material/web/icon/icon.js";
 import "@material/web/iconbutton/filled-tonal-icon-button.js";
 import "@material/web/iconbutton/icon-button.js";
 import "@material/web/list/list-item.js";
@@ -725,11 +724,15 @@ export const MaterialIcon = defineComponent({
   setup(props, { attrs }) {
     return () => {
       const size = typeof props.size === "number" ? `${props.size}px` : props.size;
+      // Icons resolve against the committed symbol sprite (public/icons.svg,
+      // built by scripts/build/icon_sprite.py from Google's Material Symbols).
+      // SVG paints with the document and never waits on a font download.
       return h(
-        "md-icon",
+        "svg",
         {
           ...attrs,
           "aria-hidden": attrs["aria-label"] ? undefined : "true",
+          focusable: "false",
           class: ["md3-material-icon", attrs.class],
           style: [
             {
@@ -742,7 +745,7 @@ export const MaterialIcon = defineComponent({
             attrs.style,
           ],
         },
-        props.name,
+        h("use", { href: `/icons.svg#${props.name}` }),
       );
     };
   },

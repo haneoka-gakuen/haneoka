@@ -6,7 +6,7 @@
  * is a source for a different game, and its `jp`/`en`/… values are Garupa
  * regions rather than Our Notes release-server slugs. The worker fetches
  * bestdori.com on demand, transforms responses into our `Song`/`Band`/
- * `SongMetaByDifficulty` shapes (see app/types/archive.ts), converts charts to
+ * browser-neutral song, band, card, story and difficulty shapes, converts charts to
  * our SS text, and proxies media bytes (jacket /
  * audio / MV with Range passthrough). Cache lifetimes are deliberately bounded
  * by the shared Bestdori policy, and concurrent work is single-flighted to

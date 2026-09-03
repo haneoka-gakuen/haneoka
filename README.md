@@ -10,10 +10,15 @@
 
 Unofficial resource archive and browser viewer for _BanG Dream! Our Notes_.
 
+The production UI is a root-level Astro application with small, route-scoped
+Lit workspaces. Shared shell and document components live in `src/components`,
+interactive workspaces in `src/lit`, and the Material Design 3 styles in
+`src/styles`.
+
 - [Catalog](https://haneoka.org/catalog)
 - Searchable multilingual game data
 - Audio, video, comic, Live2D, story, and asset viewers
-- Interactive chart player and chart editor
+- Interactive chart and story players
 - ADV story playback and authoring
 - Sonolus-compatible play, watch, preview, and tutorial engines
 - Accounts and community features
@@ -40,6 +45,7 @@ Run the application and Worker locally:
 cp .dev.vars.example .dev.vars
 pnpm db:schema:bootstrap:local
 pnpm dev:worker
+pnpm dev
 ```
 
 For a static build with the local catalog preview server:
@@ -55,11 +61,11 @@ existing release directory. Cubism playback also requires an authorized
 runtime at the path printed by `pnpm runtime:cubism:source-path`, or through
 `HANEOKA_CUBISM_RUNTIME_DIR`.
 
-Use `pnpm dev:offline` to prevent network requests. For Bestdori content,
-provide a local mirror containing `api/`, `assets/`, and `res/`:
+For Bestdori content, provide a local mirror containing `api/`, `assets/`, and
+`res/` to the Worker:
 
 ```sh
-BESTDORI_RAW_MIRROR_ROOT=/absolute/path/to/bestdori-mirror pnpm dev:offline:full
+BESTDORI_RAW_MIRROR_ROOT=/absolute/path/to/bestdori-mirror pnpm dev:worker
 ```
 
 ## Data and deployment

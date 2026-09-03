@@ -1,0 +1,9 @@
+---
+import Icon from "../Icon.astro";
+import I18nText from "../I18nText.astro";
+import { NAV_GROUPS } from "../../config/navigation";
+import { localePath, type Locale } from "../../i18n/locales";
+const { locale } = Astro.props as { locale: Locale };
+const items = NAV_GROUPS.find((group) => group.id === "catalog")?.items ?? [];
+---
+<section class="page"><div class="workspace-index">{items.map((item) => <a class="workspace-card" href={localePath(item.route, locale)}><span class="workspace-card__icon"><Icon name={item.icon} /></span><strong><I18nText keyName={item.label} fallback={item.label} locale={locale} /></strong></a>)}</div></section>

@@ -1,0 +1,8 @@
+---
+import StoryDocument from "../../../components/StoryDocument.astro";
+export function getStaticPaths() {
+  return ["band", "link", "home", "afterlive", "tutorial"].map((mode) => ({ params: { mode }, props: { mode } }));
+}
+const { mode } = Astro.props as { mode: "band" | "link" | "home" | "afterlive" | "tutorial" };
+---
+<StoryDocument locale="ja" mode={mode} />

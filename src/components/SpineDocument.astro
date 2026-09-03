@@ -1,0 +1,5 @@
+---
+import Base from "../layouts/Base.astro"; import AppShell from "./AppShell.astro"; import type { Locale } from "../i18n/locales"; import { t } from "../i18n/messages"; import "../lit/spine-workspace"; import "../styles/catalog.css"; import "../styles/viewer.css";
+const { locale } = Astro.props as { locale: Locale }; const title = t(locale, "spine", "Spine");
+---
+<Base locale={locale} route="/catalog/spine" title={title} titleKey="spine"><AppShell locale={locale} route="/catalog/spine" title={title} titleKey="spine"><spine-workspace locale={locale}></spine-workspace></AppShell></Base><script>import "../lit/spine-workspace";</script>

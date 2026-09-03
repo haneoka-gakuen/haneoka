@@ -1,0 +1,36 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import { LOCALES, type Locale } from "../i18n/locales";
+import { group, t } from "../i18n/messages";
+import "../lit/account-workspace";
+import "../styles/account-settings.css";
+
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "account", "Account");
+const labels = JSON.stringify(
+  Object.fromEntries(
+    LOCALES.map((target) => [
+      target,
+      {
+        ...group<Record<string, string>>(target, "accountPage"),
+        appeal: t(target, "communityPage.appeal", "Appeal"),
+        appealStatement: t(target, "communityPage.appealStatement", "Appeal statement"),
+        submitAppeal: t(target, "communityPage.submitAppeal", "Submit appeal"),
+        appealSubmitted: t(target, "communityPage.appealSubmitted", "Appeal submitted"),
+        appealFailed: t(target, "communityPage.appealFailed", "The appeal could not be submitted."),
+        close: t(target, "close", "Close"),
+        save: t(target, "save", "Save"),
+        privacy: t(target, "homePage.privacy", "Privacy Policy"),
+        terms: t(target, "homePage.terms", "Terms of Use"),
+      },
+    ]),
+  ),
+);
+---
+<Base locale={locale} route="/account" title={title} titleKey="account">
+  <AppShell locale={locale} route="/account" title={title} titleKey="account">
+    <account-workspace labels={labels}></account-workspace>
+  </AppShell>
+</Base>
+<script>import "../lit/account-workspace";</script>

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import https from "node:https";
 import os, { type NetworkInterfaceInfo } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -35,6 +36,8 @@ if (BESTDORI_RAW_MIRROR_ROOT && !fs.statSync(BESTDORI_RAW_MIRROR_ROOT, { throwIf
   throw new Error(`BESTDORI_RAW_MIRROR_ROOT is not a directory: ${BESTDORI_RAW_MIRROR_ROOT}`);
 }
 const BESTDORI_PROVIDER_ORIGIN = configuredHttpOrigin("BESTDORI_PROVIDER_ORIGIN");
+const APPLICATION_WORKER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_ORIGIN");
+const APPLICATION_WORKER_BROWSER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_BROWSER_ORIGIN");
 const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "jp-cbt,gl-cbt")
   .split(",")
   .map((value) => value.trim())
@@ -213,6 +216,108 @@ function forwardedProviderHeaders(req: IncomingMessage): Record<string, string> 
   return headers;
 }
 
+function isApplicationWorkerRequest(pathname: string): boolean {
+  return [
+    "/api/auth",
+    "/api/v1/account",
+    "/api/v1/admin",
+    "/api/v1/community",
+    "/api/v1/garupa",
+    "/api/v1/home",
+    "/api/v1/releases",
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function forwardedApplicationHeaders(req: IncomingMessage): Headers {
+  const headers = new Headers();
+  for (const name of [
+    "accept",
+    "accept-language",
+    "authorization",
+    "cache-control",
+    "content-type",
+    "cookie",
+    "if-match",
+    "if-none-match",
+    "if-unmodified-since",
+    "idempotency-key",
+    "origin",
+    "referer",
+    "user-agent",
+    "x-captcha-response",
+    "x-file-name",
+    "x-reason-code",
+  ] as const) {
+    const value = req.headers[name];
+    if (typeof value === "string") headers.set(name, value);
+  }
+  if (APPLICATION_WORKER_BROWSER_ORIGIN) {
+    const browserOrigin = new URL(APPLICATION_WORKER_BROWSER_ORIGIN);
+    headers.set("host", browserOrigin.host);
+    headers.set("x-forwarded-host", browserOrigin.host);
+    headers.set("x-forwarded-proto", browserOrigin.protocol.slice(0, -1));
+    if (headers.has("origin")) headers.set("origin", APPLICATION_WORKER_BROWSER_ORIGIN);
+    const referer = headers.get("referer");
+    if (referer) {
+      const source = new URL(referer);
+      headers.set(
+        "referer",
+        new URL(`${source.pathname}${source.search}${source.hash}`, APPLICATION_WORKER_BROWSER_ORIGIN).toString(),
+      );
+    }
+  }
+  return headers;
+}
+
+async function requestBody(req: IncomingMessage): Promise<Buffer | undefined> {
+  if (req.method === "GET" || req.method === "HEAD") return undefined;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+async function proxyApplicationWorker(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!APPLICATION_WORKER_ORIGIN) {
+    json(res, 503, {
+      error: {
+        code: "application_worker_unavailable",
+        message: "Application Worker is not configured; set APPLICATION_WORKER_ORIGIN",
+      },
+    });
+    return;
+  }
+  const target = new URL(`${url.pathname}${url.search}`, APPLICATION_WORKER_ORIGIN);
+  const body = await requestBody(req);
+  const headers = Object.fromEntries(forwardedApplicationHeaders(req));
+  if (body !== undefined) headers["content-length"] = String(body.byteLength);
+  await new Promise<void>((resolve) => {
+    const transport = target.protocol === "https:" ? https : http;
+    const upstream = transport.request(target, { method: req.method ?? "GET", headers }, (response) => {
+      const responseHeaders: Record<string, string | string[]> = {};
+      for (const [name, value] of Object.entries(response.headers)) {
+        if (value !== undefined && !proxyExcludedHeaders.has(name.toLowerCase())) responseHeaders[name] = value;
+      }
+      res.writeHead(response.statusCode ?? 502, responseHeaders);
+      response.once("error", (error) => res.destroy(error));
+      response.once("end", resolve);
+      response.pipe(res);
+    });
+    upstream.once("error", (error) => {
+      if (!res.headersSent)
+        json(res, 502, {
+          error: {
+            code: "application_worker_unreachable",
+            message: `Application Worker is unavailable: ${errorMessage(error)}`,
+          },
+        });
+      else res.destroy(error);
+      resolve();
+    });
+    if (body) upstream.write(body);
+    upstream.end();
+  });
+}
+
 function proxiedResponseHeaders(response: Response): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const [name, value] of response.headers) {
@@ -312,6 +417,7 @@ function sendFile(
   file: string,
   cache = "public, max-age=300",
   extraHeaders: Readonly<Record<string, string>> = {},
+  status = 200,
 ): void {
   const stat = fs.statSync(file);
   const range = (req.headers.range ?? "").match(/^bytes=(\d*)-(\d*)$/);
@@ -342,7 +448,7 @@ function sendFile(
     return;
   }
 
-  res.writeHead(200, {
+  res.writeHead(status, {
     "Content-Type": mime[path.extname(file).toLowerCase()] ?? "application/octet-stream",
     "Content-Length": stat.size,
     "Accept-Ranges": "bytes",
@@ -594,6 +700,19 @@ function localReleaseBytes(workspace: Readonly<ReleaseWorkspace>, releasePath: s
   return file ? new Uint8Array(fs.readFileSync(file)) : null;
 }
 
+function localizedReleasePaths(releasePath: string): readonly string[] {
+  const match = /\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^./]+$)/u.exec(releasePath);
+  if (!match?.[1]) return [releasePath];
+  const base = releasePath.replace(match[0], "");
+  const alternate =
+    match[1] === "zh-Hans"
+      ? base.replace(/(?=\.[^./]+$)/u, "(zh-Hant)")
+      : match[1] === "zh-Hant"
+        ? base.replace(/(?=\.[^./]+$)/u, "(zh-Hans)")
+        : "";
+  return alternate ? [releasePath, alternate, base] : [releasePath, base];
+}
+
 interface LocalSonolusRelease {
   readonly server: string;
   readonly workspace: Readonly<ReleaseWorkspace>;
@@ -740,8 +859,20 @@ function localReleaseRegistry(): JsonObject {
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://preview.invalid");
+  if (isApplicationWorkerRequest(url.pathname) && APPLICATION_WORKER_ORIGIN) {
+    await proxyApplicationWorker(req, res, url);
+    return;
+  }
   if (!allowedMethods.has(req.method ?? "GET")) {
     json(res, 405, { error: { code: "method_not_allowed", message: "Method not allowed" } });
+    return;
+  }
+  const legacyLocale = /^\/(?:ja|en|zh-TW|zh-CN|ko)(\/.*)?$/u.exec(url.pathname);
+  if (legacyLocale) {
+    const target = new URL(url);
+    target.pathname = legacyLocale[1] || "/";
+    res.writeHead(308, { Location: `${target.pathname}${target.search}${target.hash}` });
+    res.end();
     return;
   }
 
@@ -877,6 +1008,27 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       sendFile(req, res, path.join(workspace.releaseRoot, "release.json"));
       return;
     }
+    if (tail.length === 1 && tail[0] === "ui-marks") {
+      const file = path.join(
+        workspace.metadataRoot,
+        "sources/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2.json",
+      );
+      const descriptor = JSON.parse(fs.readFileSync(file, "utf8")) as JsonObject;
+      const projected: Record<string, JsonValue> = {};
+      for (const value of Array.isArray(descriptor.outputs) ? descriptor.outputs : []) {
+        if (!isJsonObject(value) || value.type !== "Sprite" || typeof value.path !== "string") continue;
+        const filename = value.path.split("/").pop() || "";
+        const logical = filename.replace(/--Sprite-?-?\d+\.png$/u, ".png");
+        if (
+          /^(?:RarityIconCenter_(?:R|SR|SSR|EX|BD)|CardType-(?:Red|Blue|Green|Yellow|Purple)|sp_icon_live_music_type_(?:1|2|3|4|5|99))\.png$/u.test(
+            logical,
+          )
+        )
+          projected[logical] = value.path;
+      }
+      json(res, 200, projected, "public, max-age=86400, stale-while-revalidate=604800");
+      return;
+    }
     if (tail[0] === "sources" && tail[1] === "tree" && tail.length === 2) {
       const sourceTreeFile = path.join(workspace.metadataRoot, "source-index", "tree.json");
       if (!fs.existsSync(sourceTreeFile)) throw new Error(`Source tree is missing: ${sourceTreeFile}`);
@@ -912,7 +1064,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
     const workspace = selectedWorkspace(server);
-    const file = workspace ? localReleaseFile(workspace, url.pathname) : null;
+    const file = workspace
+      ? localizedReleasePaths(url.pathname)
+          .map((candidate) => localReleaseFile(workspace, candidate))
+          .find((candidate): candidate is string => Boolean(candidate && fs.existsSync(candidate))) || null
+      : null;
     if (file && fs.existsSync(file)) {
       // Preview paths are stable across release-pointer updates. Make a local
       // browser revalidate them instead of retaining an older render for a week.
@@ -936,7 +1092,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   const relativePath = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
-  // Resolve prerendered pages whether Nuxt emitted them as ${path}/index.html
+  // Resolve prerendered pages emitted as either ${path}.html or ${path}/index.html.
   // (directory style) or ${path}.html, then fall back to the generic SPA shell.
   const candidates = [relativePath];
   if (url.pathname !== "/") {
@@ -949,11 +1105,23 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
   }
-  // Unknown route → generic SPA shell. Prefer 200.html (Nuxt SPA fallback) so
-  // the route hydrates from the browser URL; index.html is a last resort.
-  const applicationEntry = safeFile(DIST, "200.html") ?? safeFile(DIST, "index.html");
-  if (applicationEntry) {
-    sendFile(req, res, applicationEntry, "no-cache");
+  if (url.pathname.startsWith("/catalog/assets/")) {
+    const assetsEntry = safeFile(DIST, "catalog/assets/index.html");
+    if (assetsEntry) {
+      sendFile(req, res, assetsEntry, "no-cache");
+      return;
+    }
+  }
+  if (url.pathname.startsWith("/community/")) {
+    const communityEntry = safeFile(DIST, "community/index.html");
+    if (communityEntry) {
+      sendFile(req, res, communityEntry, "no-cache");
+      return;
+    }
+  }
+  const notFound = safeFile(DIST, "404.html");
+  if (notFound) {
+    sendFile(req, res, notFound, "no-cache", {}, 404);
   } else {
     json(res, 404, { error: { code: "not_found", message: "Build the web app first" } });
   }
@@ -979,4 +1147,7 @@ http
     console.log(`Preview listening on ${HOST}:${PORT} (${RELEASE_SERVERS.join(", ")})`);
     for (const host of hosts) console.log(`  http://${host}:${PORT}`);
     if (BESTDORI_PROVIDER_ORIGIN) console.log(`  Bestdori provider: ${BESTDORI_PROVIDER_ORIGIN}`);
+    if (APPLICATION_WORKER_ORIGIN) console.log(`  Application Worker: ${APPLICATION_WORKER_ORIGIN}`);
+    if (APPLICATION_WORKER_BROWSER_ORIGIN)
+      console.log(`  Application browser origin: ${APPLICATION_WORKER_BROWSER_ORIGIN}`);
   });

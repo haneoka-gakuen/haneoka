@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "haneoka",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-02-14",
+  "compatibility_date": "2026-09-05",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
@@ -13,7 +13,7 @@
 
   "build": {
     "command": "pnpm run build",
-    "watch_dir": ["app", "worker", "public", "nuxt.config.ts"],
+    "watch_dir": ["src", "worker", "public", "astro.config.mjs"],
   },
 
   // Resource dispatch currently reads a fine-grained Actions:write token from
@@ -30,9 +30,9 @@
     "directory": "./.output/public",
     "binding": "ASSETS",
     "not_found_handling": "none",
-    // Only dynamic routes need the Worker. Static browsing (the SPA shell at
-    // "/", prerendered Nuxt pages, _nuxt assets) and every dead path are served
-    // directly by the static-asset layer without invoking the Worker.
+    // Only dynamic routes need the Worker. Prerendered Astro pages and hashed
+    // _astro assets are served directly by the static-asset layer, so public
+    // browsing never pays for a Worker invocation.
     // Verified dead paths removed 2026-07-25: "/", "/levels/*", "/playlists/*",
     // "/backgrounds/*", "/effects/*", "/engines/*", "/particles/*", "/rooms/*",
     // "/skins/*", "/repository/*", "/asset/*", "/Android/*", "/master/*",
@@ -42,6 +42,8 @@
       "/api/*",
       "/artifacts/*",
       "/assets/*",
+      "/catalog/assets/*",
+      "/community/*",
       "/game-client/*",
       "/objects/*",
       "/runtime/*",

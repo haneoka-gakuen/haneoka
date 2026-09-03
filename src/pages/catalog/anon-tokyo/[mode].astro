@@ -1,0 +1,5 @@
+---
+import AnonTokyoDocument from "../../../components/AnonTokyoDocument.astro";
+export function getStaticPaths(){return ["characters","outfits","shop","goods","decorations","staff","customers","tasks","guide","fever"].map((mode)=>({params:{mode},props:{mode}}));} const {mode}=Astro.props as {mode:string};
+---
+<AnonTokyoDocument locale="ja" mode={mode} />

@@ -1,0 +1,19 @@
+---
+import Icon from "../Icon.astro";
+import type { Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+const { locale, title, route } = Astro.props as { locale: Locale; title: string; route: string };
+const isAccount = route.startsWith("/account");
+const isCommunity = route.startsWith("/community");
+const icon = isAccount ? "account_circle" : isCommunity ? "forum" : "construction";
+const message = isAccount ? t(locale, "accountPage.signInDescription", "Sign in to access your account.") : isCommunity ? t(locale, "communityPage.description", "Community data is loaded on demand.") : t(locale, "construction", "This catalog is ready for its next data release.");
+---
+<section class="page page--compact">
+  <div class:list={["notice", { "notice--construction": !isAccount && !isCommunity }]}>
+    {!isAccount && !isCommunity && <div class="notice__art media-loading"><img src="/images/maintenance-characters.png" alt="" decoding="async" onload="this.classList.add('is-loaded')" /></div>}
+    <span class="notice__icon"><Icon name={icon} size={36} /></span>
+    <h2>{title}</h2>
+    <p>{message}</p>
+    {isAccount && <a class="button" href="/api/auth/sign-in/social?provider=discord">{t(locale, "signIn", "Sign in")}</a>}
+  </div>
+</section>

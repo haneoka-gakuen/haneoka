@@ -1,0 +1,4 @@
+---
+import Base from "../layouts/Base.astro";import AppShell from "./AppShell.astro";import type{Locale}from"../i18n/locales";import{t}from"../i18n/messages";import"../lit/story-workspace";import "../styles/catalog.css";import "../styles/story.css";const{locale,mode="band"}=Astro.props as{locale:Locale;mode?:"band"|"link"|"home"|"afterlive"|"tutorial"};const route=mode==="band"?"/catalog/stories/band":`/catalog/stories/${mode}`;const title=t(locale,`storyNavigation.${mode}`,mode);
+---
+<Base locale={locale} route={route} title={title} titleKey={`storyNavigation.${mode}`}><AppShell locale={locale} route={route} title={title} titleKey={`storyNavigation.${mode}`}><story-workspace locale={locale} mode={mode}></story-workspace></AppShell></Base><script>import "../lit/story-workspace";</script>

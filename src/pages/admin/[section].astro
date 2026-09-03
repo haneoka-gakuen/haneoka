@@ -1,0 +1,11 @@
+---
+import AdminDocument from "../../components/AdminDocument.astro";
+export function getStaticPaths() {
+  return ["users", "posts", "reports", "appeals", "operations"].map((section) => ({
+    params: { section },
+    props: { section },
+  }));
+}
+const { section } = Astro.props as { section: string };
+---
+<AdminDocument locale="ja" section={section} />

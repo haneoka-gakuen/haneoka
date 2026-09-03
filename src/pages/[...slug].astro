@@ -1,0 +1,69 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "../components/AppShell.astro";
+import LegalPage from "../components/pages/LegalPage.astro";
+import CatalogIndexPage from "../components/pages/CatalogIndexPage.astro";
+import NoticePage from "../components/pages/NoticePage.astro";
+import { ROUTES, titleOf, type RouteDefinition } from "../config/routes";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+import "../lit/catalog-screen";
+import "../styles/catalog.css";
+
+export function getStaticPaths() {
+  const locale = DEFAULT_LOCALE;
+  return ROUTES.filter((entry) => !["/", "/account", "/account/reset-password", "/settings", "/catalog/assets", "/catalog/help", "/catalog/live2d", "/catalog/spine"].includes(entry.route) && !entry.route.startsWith("/community") && !entry.route.startsWith("/catalog/anon-tokyo") && !entry.route.startsWith("/catalog/stories")).map((entry) => {
+    const routeSlug = entry.route.replace(/^\/+/, "");
+    const slug = routeSlug || undefined;
+    return { params: { slug }, props: { locale, entry, title: titleOf(entry, locale) } };
+  });
+}
+
+const { locale, entry, title } = Astro.props as { locale: Locale; entry: RouteDefinition; title: string };
+const labelEntries = [
+  ["filter", "filter"], ["reset", "reset"], ["search", "search"], ["sort", "sort"], ["id", "id"],
+  ["title", "title"], ["release", "release"], ["order", "order"], ["ascending", "ascending"],
+  ["descending", "descending"], ["view", "view"], ["grid", "grid"], ["list", "list"],
+  ["loading", "loading"], ["unavailable", "unavailable"], ["retry", "retry"], ["empty", "empty"], ["close", "close"],
+  ["character", "character"], ["band", "band"], ["rarity", "rarity"], ["type", "type"],
+  ["attribute", "attribute"], ["genre", "genre"], ["subtitle", "subtitle"],
+  ["category", "category"], ["initial", "initial"], ["rankUpItem", "rankUpItem"], ["notes", "notes"], ["battle", "battle"],
+  ["performance", "performance"], ["technique", "technique"], ["visual", "visual"],
+  ["composer", "composer"], ["lyricist", "lyricist"], ["arranger", "arranger"],
+  ["birthday", "birthday"], ["height", "height"], ["voiceActor", "voiceActor"],
+  ["school", "school"], ["hobby", "hobby"], ["value", "value"],
+  ["red", "liveMusicTypes.red"], ["blue", "liveMusicTypes.blue"], ["green", "liveMusicTypes.green"],
+  ["yellow", "liveMusicTypes.yellow"], ["purple", "liveMusicTypes.purple"],
+  ["original", "songTypes.original"], ["virtual", "songTypes.virtual"], ["jpop", "songTypes.jpop"],
+  ["anime", "songTypes.anime"], ["game", "songTypes.game"],
+  ["skills", "skills"], ["stats", "stats"], ["details", "details"], ["difficulty", "difficulty"],
+  ["diary", "diary"], ["rewards", "rewards"], ["content", "content"], ["level", "level"],
+  ["training", "training"], ["awakening", "awakening"], ["liveSkill", "liveSkill"],
+  ["gekisouSkill", "gekisouSkill"], ["leaderSkill", "leaderSkill"], ["supportSkill", "supportSkill"],
+  ["rank", "rank"], ["required", "required"],
+  ["memberPiece", "memberPiece"], ["total", "total"], ["exp", "exp"], ["stage", "stage"],
+  ["memberCards", "memberCards"], ["supportCards", "supportCards"], ["songs", "songs"], ["characters", "characters"],
+  ["lyrics", "lyrics"], ["arrangement", "arrangement"], ["size", "size"],
+  ["musicType", "musicType"], ["time", "time"], ["score", "score"], ["eff", "eff"],
+  ["bpm", "bpm"], ["n", "n"], ["nps", "nps"], ["sr", "sr"],
+  ["play", "play"], ["pause", "pause"], ["chart", "chart"], ["media", "media"],
+  ["mv", "mv"], ["playAll", "playAll"], ["previous", "previous"], ["next", "next"], ["friendship", "friendship"], ["effectsByLevel", "effectsByLevel"],
+  ["profile", "profile"], ["cards", "cards"], ["stamps", "stamps"], ["voices", "voices"], ["story", "story"], ["characterBonds", "characterBonds"],
+  ["bandStories", "storyNavigation.band"], ["linkStories", "storyNavigation.link"], ["homeStories", "storyNavigation.home"],
+  ["afterliveStories", "storyNavigation.afterlive"], ["tutorialStories", "storyNavigation.tutorial"],
+  ["schoolClass", "schoolClass"], ["constellation", "constellation"], ["favoriteFood", "favoriteFood"], ["hatedFood", "hatedFood"],
+  ["missions", "missions"], ["visual", "visual"],
+  ["simple", "simple"], ["watch", "watch"],
+];
+const labelsByLocale = Object.fromEntries(LOCALES.map((target) => [target, Object.fromEntries(labelEntries.map(([key, message]) => [key, t(target, message, key)]))]));
+const catalogConfig = entry.kind === "catalog" ? JSON.stringify({ resource: entry.resource, locale, labels: labelsByLocale[locale], labelsByLocale, aspectRatio: entry.resource === "cards" ? "224 / 294" : "1" }) : "";
+---
+<Base locale={locale} route={entry.route} title={title} titleKey={entry.titleKey} description={title}>
+  <AppShell locale={locale} route={entry.route} title={title} titleKey={entry.titleKey}>
+    {entry.kind === "index" && <CatalogIndexPage locale={locale} />}
+    {entry.kind === "legal" && entry.page && <LegalPage locale={locale} page={entry.page} />}
+    {entry.kind === "notice" && <NoticePage locale={locale} title={title} route={entry.route} />}
+    {entry.kind === "catalog" && <catalog-screen config={catalogConfig}></catalog-screen>}
+  </AppShell>
+</Base>
+<script>import "../lit/catalog-screen";</script>
