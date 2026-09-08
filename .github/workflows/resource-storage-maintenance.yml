@@ -13,6 +13,10 @@ on:
         required: true
         default: false
         type: boolean
+      pipeline_stage_run_id:
+        description: Exact workflow run id whose private R2 staging objects should be removed
+        required: false
+        type: string
   schedule:
     - cron: "16 8 * * 0"
 
@@ -37,9 +41,22 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_EC2_METADATA_DISABLED: "true"
       PYTHONPATH: scripts
+      PIPELINE_STAGE_RUN_ID: ${{ inputs.pipeline_stage_run_id }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
+      - name: Remove selected resource-pipeline staging objects
+        if: env.PIPELINE_STAGE_RUN_ID != ''
+        run: |
+          if [[ ! "$PIPELINE_STAGE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "pipeline_stage_run_id must contain only decimal digits" >&2
+            exit 1
+          fi
+          aws s3 rm \
+            "s3://hotdori-assets/private/resource-pipeline-stage/$PIPELINE_STAGE_RUN_ID/$RESOURCE_SERVER/" \
+            --recursive \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto
       - name: Prune unreferenced manifests
         if: env.APPLY_CHANGES == 'true'
         run: |

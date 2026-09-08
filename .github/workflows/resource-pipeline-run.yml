@@ -343,4 +343,3 @@ jobs:
           --recursive
           --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
           --region auto
-          --no-progress
