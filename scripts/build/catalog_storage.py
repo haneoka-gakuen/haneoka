@@ -48,6 +48,7 @@ class ViewSpec:
     projection: ProjectionSpec
     filter_equals: tuple[tuple[tuple[str, ...], Any], ...] = ()
     replace_collection_in_index: bool = True
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -123,33 +124,52 @@ AUDIO_MASTER_SOUND_VIEWS = (
 # ANON TOKYO's canonical document remains useful as an archival snapshot, but
 # interactive pages should not download the multi-megabyte joined document.
 # These projections are independently cacheable read models for each screen.
+def _optional_anon_view(
+    name: str,
+    collection: tuple[str, ...],
+    id_fields: tuple[tuple[str, ...], ...] = (("id",),),
+) -> ViewSpec:
+    return ViewSpec(
+        name,
+        collection,
+        id_fields,
+        ProjectionSpec(),
+        replace_collection_in_index=False,
+        optional=True,
+    )
+
+
 ANON_TOKYO_VIEWS = (
-    ViewSpec("characters", ("characters",), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("reloading", ("goods", "reloading"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("render-recipes", ("spine", "renderRecipes"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("spine-parts", ("spine", "parts"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("shop", ("shop", "stores"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("player-levels", ("progression", "playerLevels"), (("id",), ("level",)), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("goods", ("goods", "items"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("goods-categories", ("goods", "categories"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("currencies", ("progression", "currencies"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("decorations", ("shop", "decorations"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("staff", ("staffing", "clerks"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("staff-helpers", ("staffing", "helpers"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("staff-deliveries", ("staffing", "deliveries"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("staff-deliverymen", ("staffing", "deliverymen"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("customers", ("staffing", "customers"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("tasks", ("tasks", "main"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("task-tabs", ("tasks", "tabs"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("task-types", ("tasks", "types"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("task-daily", ("tasks", "daily"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("task-achievements", ("tasks", "achievements"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("task-chapter", ("tasks", "chapter"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("guide", ("guides", "steps"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("guide-images", ("guides", "imagePages"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("fever", ("stages", "music"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("fever-stages", ("stages", "stages"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
-    ViewSpec("fever-bgm", ("stages", "bgm"), (("id",),), ProjectionSpec(), replace_collection_in_index=False),
+    _optional_anon_view("characters", ("characters",)),
+    _optional_anon_view("reloading", ("goods", "reloading")),
+    _optional_anon_view("render-recipes", ("spine", "renderRecipes")),
+    _optional_anon_view("spine-parts", ("spine", "parts")),
+    _optional_anon_view("shop", ("shop", "stores")),
+    _optional_anon_view(
+        "player-levels",
+        ("progression", "playerLevels"),
+        (("id",), ("level",)),
+    ),
+    _optional_anon_view("goods", ("goods", "items")),
+    _optional_anon_view("goods-categories", ("goods", "categories")),
+    _optional_anon_view("currencies", ("progression", "currencies")),
+    _optional_anon_view("decorations", ("shop", "decorations")),
+    _optional_anon_view("staff", ("staffing", "clerks")),
+    _optional_anon_view("staff-helpers", ("staffing", "helpers")),
+    _optional_anon_view("staff-deliveries", ("staffing", "deliveries")),
+    _optional_anon_view("staff-deliverymen", ("staffing", "deliverymen")),
+    _optional_anon_view("customers", ("staffing", "customers")),
+    _optional_anon_view("tasks", ("tasks", "main")),
+    _optional_anon_view("task-tabs", ("tasks", "tabs")),
+    _optional_anon_view("task-types", ("tasks", "types")),
+    _optional_anon_view("task-daily", ("tasks", "daily")),
+    _optional_anon_view("task-achievements", ("tasks", "achievements")),
+    _optional_anon_view("task-chapter", ("tasks", "chapter")),
+    _optional_anon_view("guide", ("guides", "steps")),
+    _optional_anon_view("guide-images", ("guides", "imagePages")),
+    _optional_anon_view("fever", ("stages", "music")),
+    _optional_anon_view("fever-stages", ("stages", "stages")),
+    _optional_anon_view("fever-bgm", ("stages", "bgm")),
 )
 
 STORY_ASSET_BACKGROUND_PROJECTION = ProjectionSpec(
@@ -795,6 +815,8 @@ def _compile_resource(
         )
     views: dict[str, Any] = {}
     for view in spec.views:
+        if view.optional and _nested(document, view.collection) is None:
+            continue
         view_entities, view_was_array, view_source_keys = _entities(
             document,
             view.collection,
