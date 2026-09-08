@@ -1,0 +1,58 @@
+name: Set up Cubism runtime
+description: Fetch the licensed Cubism Web runtime from private R2 and provision its validated public files.
+
+inputs:
+  bucket:
+    description: Private R2 bucket containing the runtime archive.
+    required: false
+    default: hotdori-assets
+  key:
+    description: Object key of the validated runtime archive.
+    required: false
+    default: private/cubism-runtime/haneoka-cubism-web-runtime-v1.tar.gz
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch licensed runtime
+      shell: bash
+      env:
+        CUBISM_RUNTIME_BUCKET: ${{ inputs.bucket }}
+        CUBISM_RUNTIME_KEY: ${{ inputs.key }}
+      run: |
+        set -euo pipefail
+        : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
+        : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
+        : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
+
+        runtime_archive="$RUNNER_TEMP/haneoka-cubism-runtime.tar.gz"
+        runtime_directory="$RUNNER_TEMP/haneoka-cubism-runtime"
+        aws s3 cp \
+          "s3://$CUBISM_RUNTIME_BUCKET/$CUBISM_RUNTIME_KEY" \
+          "$runtime_archive" \
+          --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+          --region auto \
+          --no-progress
+
+        extract_runtime_file() {
+          local relative_path="$1"
+          local destination="$runtime_directory/$relative_path"
+          mkdir -p "$(dirname "$destination")"
+          tar --extract --gzip --to-stdout \
+            --file "$runtime_archive" \
+            "$relative_path" > "$destination"
+        }
+
+        extract_runtime_file "Framework/vega-cubism-web-runtime.mjs"
+        extract_runtime_file "Framework/LICENSE.md"
+        extract_runtime_file "Core/live2dcubismcore.js"
+        extract_runtime_file "Core/live2d.min.js"
+        extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.min.js"
+        extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.d.ts"
+        extract_runtime_file "Core/CRI/LICENSE.md"
+        extract_runtime_file "Core/CRI/RedistributableFiles.txt"
+        echo "HANEOKA_CUBISM_RUNTIME_DIR=$runtime_directory" >> "$GITHUB_ENV"
+
+    - name: Provision validated runtime files
+      shell: bash
+      run: pnpm runtime:cubism:provision

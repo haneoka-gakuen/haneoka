@@ -141,6 +141,8 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: read
+    env:
+      HANEOKA_MODEL_PREVIEW_POLICY: required
     steps:
       - uses: actions/checkout@v7
       - name: Set up Node.js
@@ -158,6 +160,8 @@ jobs:
         # (esbuild + the converter), the same way sonolus.yml sets it up.
         run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/setup-resource-pipeline
+      - name: Provision licensed Cubism runtime
+        uses: ./.github/actions/setup-cubism-runtime
       - name: Install FFmpeg
         run: |
           sudo apt-get update

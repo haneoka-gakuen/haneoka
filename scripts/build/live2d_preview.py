@@ -658,4 +658,13 @@ def build_live2d_previews(
             for future in as_completed(futures):
                 key, preview = future.result()
                 result[key] = preview
-    return {key: result.get(key, unavailable[key]) for key in models}
+    ordered = {key: result.get(key, unavailable[key]) for key in models}
+    if policy == "required":
+        failed = {key: preview for key, preview in ordered.items() if preview.get("status") != "rendered"}
+        if failed:
+            summary = ", ".join(
+                f"{key} ({preview.get('reason', 'unknown')})" for key, preview in list(failed.items())[:10]
+            )
+            suffix = f" and {len(failed) - 10} more" if len(failed) > 10 else ""
+            raise RuntimeError(f"Live2D preview rendering failed for {summary}{suffix}")
+    return ordered
