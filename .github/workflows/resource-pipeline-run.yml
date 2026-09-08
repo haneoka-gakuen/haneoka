@@ -33,6 +33,8 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key }}
   AWS_EC2_METADATA_DISABLED: "true"
+  PIPELINE_STAGE_BUCKET: hotdori-assets
+  PIPELINE_STAGE_PREFIX: private/resource-pipeline-stage/${{ github.run_id }}/${{ inputs.server }}
   PYTHONPATH: scripts
 
 jobs:
@@ -52,11 +54,8 @@ jobs:
     env:
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
       SOURCE_ID_INPUT: ${{ inputs.source_id }}
-      RESOURCE_CDN_AUTHORIZATION: ${{ vars.RESOURCE_CDN_AUTHORIZATION }}
+      RESOURCE_CDN_AUTHORIZATION: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
     steps:
-      - name: Mask server authorization variable
-        if: env.RESOURCE_CDN_AUTHORIZATION != ''
-        run: echo "::add-mask::$RESOURCE_CDN_AUTHORIZATION"
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
       - name: Materialize source input
@@ -91,13 +90,16 @@ jobs:
           python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-master
           --source "${{ steps.identity.outputs.source_id }}"
           --build "${{ steps.identity.outputs.build_id }}"
-      - name: Preserve Master build stage
-        uses: actions/upload-artifact@v7
-        with:
-          name: resource-master
-          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ steps.identity.outputs.build_id }}/master
-          if-no-files-found: error
-          retention-days: 1
+      - name: Preserve Master build stage in private R2
+        run: |
+          build_root="data/servers/$RESOURCE_SERVER/builds/${{ steps.identity.outputs.build_id }}"
+          archive="$RUNNER_TEMP/resource-master.tar.gz"
+          tar --create --gzip --file "$archive" --directory "$build_root" master
+          aws s3 cp "$archive" \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/resource-master.tar.gz" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto \
+            --no-progress
 
   unity:
     name: Unity shard ${{ matrix.shard }}
@@ -126,13 +128,16 @@ jobs:
           --build "${{ needs.prepare.outputs.build_id }}"
           --shard-index "${{ matrix.shard }}"
           --shard-count "${{ needs.prepare.outputs.shard_count }}"
-      - name: Upload deterministic shard
-        uses: actions/upload-artifact@v7
-        with:
-          name: unity-shard-${{ matrix.shard }}
-          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/shards
-          if-no-files-found: error
-          retention-days: 1
+      - name: Preserve deterministic shard in private R2
+        run: |
+          build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"
+          archive="$RUNNER_TEMP/unity-shard-${{ matrix.shard }}.tar.gz"
+          tar --create --gzip --file "$archive" --directory "$build_root" shards
+          aws s3 cp "$archive" \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-shard-${{ matrix.shard }}.tar.gz" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto \
+            --no-progress
 
   release:
     name: Assemble and publish release
@@ -222,17 +227,41 @@ jobs:
           sudo install
           "${{ runner.temp }}/haneoka-tools/basisu/1aab02ba2df16ad873229030ea191ea8c10e3fc9/basisu"
           /usr/local/bin/basisu
-      - name: Restore Master stage
-        uses: actions/download-artifact@v8
-        with:
-          name: resource-master
-          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/master
-      - name: Restore all Unity shards
-        uses: actions/download-artifact@v8
-        with:
-          pattern: unity-shard-*
-          path: data/servers/${{ env.RESOURCE_SERVER }}/builds/${{ needs.prepare.outputs.build_id }}/shards
-          merge-multiple: true
+      - name: Restore Master stage from private R2
+        run: |
+          build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"
+          archive="$RUNNER_TEMP/resource-master.tar.gz"
+          mkdir -p "$build_root"
+          aws s3 cp \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/resource-master.tar.gz" \
+            "$archive" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto \
+            --no-progress
+          tar --extract --gzip --file "$archive" --directory "$build_root"
+      - name: Restore all Unity shards from private R2
+        run: |
+          build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"
+          archive_root="$RUNNER_TEMP/unity-shards"
+          mkdir -p "$archive_root" "$build_root"
+          aws s3 cp \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/" \
+            "$archive_root/" \
+            --recursive \
+            --exclude "*" \
+            --include "unity-shard-*.tar.gz" \
+            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --region auto \
+            --no-progress
+          mapfile -t archives < <(find "$archive_root" -maxdepth 1 -type f -name 'unity-shard-*.tar.gz' -print | sort)
+          expected="${{ needs.prepare.outputs.shard_count }}"
+          if [[ "${#archives[@]}" -ne "$expected" ]]; then
+            echo "Expected $expected Unity shard archives, found ${#archives[@]}" >&2
+            exit 1
+          fi
+          for archive in "${archives[@]}"; do
+            tar --extract --gzip --file "$archive" --directory "$build_root"
+          done
       - name: Fetch original CRI payloads
         run: >-
           python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source
@@ -297,3 +326,21 @@ jobs:
           RELEASE_ID="$(jq -r .releaseId "$RUNNER_TEMP/release.json")"
           python scripts/pipeline.py --server "$RESOURCE_SERVER" publish-release \
             --release "$RELEASE_ID" --fast --concurrency 64
+
+  cleanup:
+    name: Remove private R2 build stages
+    needs: [prepare, unity, release]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Remove this run's temporary objects
+        run: >-
+          aws s3 rm
+          "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/"
+          --recursive
+          --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          --region auto
+          --no-progress
