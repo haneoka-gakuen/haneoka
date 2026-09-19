@@ -84,19 +84,6 @@ catalogs:
     wrangler:
       specifier: 4.111.0
       version: 4.111.0
-  sonolus-engine:
-    '@sonolus/core':
-      specifier: 7.15.3
-      version: 7.15.3
-    '@sonolus/sonolus.js':
-      specifier: 9.7.3
-      version: 9.7.3
-    '@types/node':
-      specifier: 22.20.1
-      version: 22.20.1
-    typescript:
-      specifier: 5.8.3
-      version: 5.8.3
 
 importers:
 
@@ -126,9 +113,21 @@ importers:
       '@haneoka/bestdori':
         specifier: workspace:*
         version: link:packages/bestdori
-      '@haneoka/chart':
+      '@haneoka/cassiopeia':
         specifier: workspace:*
-        version: link:packages/chart
+        version: link:.dependencies/cassiopeia
+      '@haneoka/cassiopeia-host-web':
+        specifier: workspace:*
+        version: link:.dependencies/cassiopeia-host-web
+      '@haneoka/cassiopeia-plugin-our-notes':
+        specifier: workspace:*
+        version: link:.dependencies/cassiopeia-plugin-our-notes
+      '@haneoka/cassiopeia-renderer-three':
+        specifier: workspace:*
+        version: link:.dependencies/cassiopeia-renderer-three
+      '@haneoka/cassiopeia-ui-vue':
+        specifier: workspace:*
+        version: link:.dependencies/cassiopeia-ui-vue
       '@haneoka/chart-editor':
         specifier: workspace:*
         version: link:packages/chart-editor
@@ -204,7 +203,7 @@ importers:
         version: 7.15.3
       '@sonolus/express':
         specifier: 'catalog:'
-        version: 7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.10)
+        version: 7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.19)
       '@sonolus/free-pack':
         specifier: 'catalog:'
         version: 1.2.0
@@ -608,6 +607,174 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  .dependencies/cassiopeia:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+      wasm-pack:
+        specifier: 0.15.0
+        version: 0.15.0
+
+  .dependencies/cassiopeia-host-web:
+    dependencies:
+      '@haneoka/cassiopeia':
+        specifier: ^0.1.0
+        version: link:../cassiopeia
+      '@haneoka/cassiopeia-plugin-our-notes':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-plugin-our-notes
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
+  .dependencies/cassiopeia-plugin-our-notes:
+    dependencies:
+      '@haneoka/cassiopeia':
+        specifier: ^0.1.0
+        version: link:../cassiopeia
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
+  .dependencies/cassiopeia-plugin-sonolus:
+    dependencies:
+      '@haneoka/cassiopeia':
+        specifier: ^0.1.0
+        version: link:../cassiopeia
+      '@haneoka/cassiopeia-plugin-our-notes':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-plugin-our-notes
+      '@sonolus/core':
+        specifier: 7.15.3
+        version: 7.15.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      three:
+        specifier: 0.184.0
+        version: 0.184.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
+  .dependencies/cassiopeia-plugin-sonolus/engine:
+    dependencies:
+      '@sonolus/core':
+        specifier: 7.15.3
+        version: 7.15.3
+    devDependencies:
+      '@sonolus/express':
+        specifier: 7.5.3
+        version: 7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.7)
+      '@sonolus/free-pack':
+        specifier: 1.2.0
+        version: 1.2.0
+      '@sonolus/sonolus.js':
+        specifier: 9.7.3
+        version: 9.7.3(@sonolus/core@7.15.3)(@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.7))(@sonolus/free-pack@1.2.0)(@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.7))
+      '@sonolus/sonolus.js-compiler':
+        specifier: 1.8.3
+        version: 1.8.3(@sonolus/core@7.15.3)(typebox@1.3.7)
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      multer:
+        specifier: 2.2.0
+        version: 2.2.0
+      typebox:
+        specifier: 1.3.7
+        version: 1.3.7
+      typescript:
+        specifier: 5.8.3
+        version: 5.8.3
+
+  .dependencies/cassiopeia-renderer-three:
+    dependencies:
+      '@haneoka/cassiopeia':
+        specifier: ^0.1.0
+        version: link:../cassiopeia
+      '@haneoka/cassiopeia-plugin-our-notes':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-plugin-our-notes
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      '@types/three':
+        specifier: ^0.184.1
+        version: 0.184.1
+      three:
+        specifier: 0.184.0
+        version: 0.184.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+
+  .dependencies/cassiopeia-ui-vue:
+    dependencies:
+      '@haneoka/cassiopeia':
+        specifier: ^0.1.0
+        version: link:../cassiopeia
+      '@haneoka/cassiopeia-host-web':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-host-web
+      '@haneoka/cassiopeia-plugin-our-notes':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-plugin-our-notes
+      '@haneoka/cassiopeia-renderer-three':
+        specifier: ^0.1.0
+        version: link:../cassiopeia-renderer-three
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.0
+        version: 26.1.0
+      '@vitejs/plugin-vue':
+        specifier: ^6.0.7
+        version: 6.0.7(vite@7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3))
+      '@vue/compiler-sfc':
+        specifier: ^3.5.39
+        version: 3.5.39
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
+      vue:
+        specifier: 3.5.39
+        version: 3.5.39(typescript@6.0.3)
+      vue-tsc:
+        specifier: ^3.3.6
+        version: 3.3.6(typescript@6.0.3)
 
   .dependencies/vega:
     dependencies:
@@ -1025,36 +1192,6 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/chart:
-    devDependencies:
-      '@types/node':
-        specifier: ^26.1.0
-        version: 26.1.0
-      '@types/three':
-        specifier: ^0.184.1
-        version: 0.184.1
-      '@vitejs/plugin-vue':
-        specifier: ^6.0.7
-        version: 6.0.7(vite@7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0))(vue@3.5.39(typescript@6.0.3))
-      '@vue/compiler-sfc':
-        specifier: ^3.5.39
-        version: 3.5.39
-      three:
-        specifier: 0.184.0
-        version: 0.184.0
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vite:
-        specifier: ^7.3.6
-        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
-      vue:
-        specifier: 3.5.39
-        version: 3.5.39(typescript@6.0.3)
-      vue-tsc:
-        specifier: ^3.3.6
-        version: 3.3.6(typescript@6.0.3)
-
   packages/chart-editor:
     devDependencies:
       '@types/node':
@@ -1081,6 +1218,9 @@ importers:
 
   packages/sonolus:
     dependencies:
+      '@haneoka/cassiopeia-plugin-sonolus':
+        specifier: workspace:*
+        version: link:../../.dependencies/cassiopeia-plugin-sonolus
       '@haneoka/sonolus-core':
         specifier: ^0.1.0
         version: link:../sonolus-core
@@ -1088,6 +1228,9 @@ importers:
         specifier: ^7.15.3
         version: 7.15.3
     devDependencies:
+      '@haneoka/cassiopeia-sonolus-engine':
+        specifier: workspace:*
+        version: link:../../.dependencies/cassiopeia-plugin-sonolus/engine
       '@types/node':
         specifier: ^26.1.0
         version: 26.1.0
@@ -1103,22 +1246,6 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
-
-  packages/sonolus/engine:
-    dependencies:
-      '@sonolus/core':
-        specifier: catalog:sonolus-engine
-        version: 7.15.3
-    devDependencies:
-      '@sonolus/sonolus.js':
-        specifier: catalog:sonolus-engine
-        version: 9.7.3(@sonolus/core@7.15.3)(@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.10))(@sonolus/free-pack@1.2.0)(@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.10))
-      '@types/node':
-        specifier: catalog:sonolus-engine
-        version: 22.20.1
-      typescript:
-        specifier: catalog:sonolus-engine
-        version: 5.8.3
 
   packages/ui:
     dependencies:
@@ -2279,6 +2406,10 @@ packages:
   '@ioredis/commands@1.10.0':
     resolution: {integrity: sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==}
 
+  '@isaacs/fs-minipass@4.0.1':
+    resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
+    engines: {node: '>=18.0.0'}
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -3159,11 +3290,6 @@ packages:
     peerDependencies:
       acorn: ^6.0.0 || ^7.0.0 || ^8.0.0
 
-  acorn@8.17.0:
-    resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
-    engines: {node: '>=0.4.0'}
-    hasBin: true
-
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
@@ -3407,6 +3533,10 @@ packages:
   chokidar@5.0.0:
     resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
     engines: {node: '>= 20.19.0'}
+
+  chownr@3.0.0:
+    resolution: {integrity: sha512-+IxzY9BZOQd/XuYPRmrvEVjF/nqj5kgT4kEq7VofrDoM1MxoRjEWkrCC3EtLi59TVawxTAn+orJwFQcrqEN1+g==}
+    engines: {node: '>=18'}
 
   ci-info@4.4.0:
     resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
@@ -3852,8 +3982,8 @@ packages:
     resolution: {integrity: sha512-zJ2mQYM18rEFOudeV4GShTGIQ7RbzA7ozbU9I/XBpm7kqgMywgmylMwXHxZJmkVoYkna9d2pVXVXPdYTP9ej8Q==}
     engines: {node: '>= 0.6'}
 
-  fs-extra@11.3.6:
-    resolution: {integrity: sha512-w8ZNZr2mKIc7qeNaQ9AVPT1+iFaI+Avd4xudVOvdDJ8VytREi1Ft5Ih7hd9jjehod8vAM5GMsfQ/TpPf4EyoEA==}
+  fs-extra@11.4.0:
+    resolution: {integrity: sha512-EQsFzMUJkCKGr1ePqlYADkIUmHW1s3ZXr5Yqy6wbGrfUCphpl2maM/kyOIRA2HpP3AaFQTZXD4ldjek+nccddA==}
     engines: {node: '>=14.14'}
 
   fsevents@2.3.3:
@@ -4415,6 +4545,14 @@ packages:
     resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
     engines: {node: 18 || 20 || >=22}
 
+  minipass@7.1.3:
+    resolution: {integrity: sha512-tEBHqDnIoM/1rXME1zgka9g6Q2lcoCkxHLuc7ODJ5BxbP5d4c2Z5cGgtXAku59200Cx7diuHTOYfSBD8n6mm8A==}
+    engines: {node: '>=16 || 14 >=14.17'}
+
+  minizlib@3.1.0:
+    resolution: {integrity: sha512-KZxYo1BUkWD2TVFLr0MQoM8vUUigWD3LlD83a/75BqC+4qE0Hb1Vo5v1FgcfaNXvfXzr+5EhQ6ing/CaBijTlw==}
+    engines: {node: '>= 18'}
+
   monaco-editor@0.56.0:
     resolution: {integrity: sha512-sXboRm3BeBeLm938eaiyLMe0OxzfXIlZvbv4ir/jVgQy1zDhWjgmny0WoN45fuDKhCCQsYMbBJrv/A6jd8aCUg==}
 
@@ -4885,6 +5023,10 @@ packages:
     engines: {node: '>=16'}
     hasBin: true
 
+  tar@7.5.22:
+    resolution: {integrity: sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA==}
+    engines: {node: '>=18'}
+
   terser@5.49.0:
     resolution: {integrity: sha512-SNiDnXyHSrxVcIOtVbULzcTmniUiwcV7Nwdyj1twVubeTmbjoa8p69KKDpfkdoOavuM4/GRm1+ykI8qqnavHoA==}
     engines: {node: '>=10'}
@@ -4953,8 +5095,11 @@ packages:
     resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
     engines: {node: '>= 0.6'}
 
-  typebox@1.3.10:
-    resolution: {integrity: sha512-L0MT00X96q0P30f1NrGULgaSbmu8hfTjWbLULeVoM+j5u0jR5wyefoDquX2NmRa39f0KiNIBo1wWSaVvHJTZlA==}
+  typebox@1.3.19:
+    resolution: {integrity: sha512-OGhGi3JkTMol9QW8Bc6tgSD4ghV8v5WubAi1XeYnlxdocHvgS7TQJ8FcFZrQhVhigQU0z7bRFAEsZ+wpkRdCfg==}
+
+  typebox@1.3.7:
+    resolution: {integrity: sha512-meKuifc33Pccx0O6PdIzYMq3Og8zvP4TIi/a+Bw3AEMZMxOD0+RHGQvpglEe6Zdy3wZ8nqn/j95h8LUZLk/6Hg==}
 
   typedarray@0.0.6:
     resolution: {integrity: sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==}
@@ -5389,6 +5534,11 @@ packages:
       typescript:
         optional: true
 
+  wasm-pack@0.15.0:
+    resolution: {integrity: sha512-DdqtGWc3+iFx+7lL7QU5LBWs7qMnwQSWxF0htSfE15sNa3roVwHjAkTm2JXgueU2GGfSwNqbq2EzyC2b/biKDA==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   web-namespaces@2.0.1:
     resolution: {integrity: sha512-bKr1DkiNa2krS7qxNtdrtHAmzuYGFQLiQ13TsorsdT6ULTkPLKuu5+GsFpDlg6JFjUTwX2DyhMPG2be8uPrqsQ==}
 
@@ -5458,6 +5608,10 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
+
+  yallist@5.0.0:
+    resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
+    engines: {node: '>=18'}
 
   yaml-language-server@1.23.0:
     resolution: {integrity: sha512-3qVyCOexLCWw06PQa5kRPwvMWMZ/eZeCRWUvgD6a0OkqL/4iCnxy2WumbWifa937Uo5xhyWJ0uxlU39ljhNh7A==}
@@ -6340,6 +6494,10 @@ snapshots:
   '@ioredis/commands@1.10.0':
     optional: true
 
+  '@isaacs/fs-minipass@4.0.1':
+    dependencies:
+      minipass: 7.1.3
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -6793,30 +6951,37 @@ snapshots:
 
   '@sonolus/core@7.15.3': {}
 
-  '@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.10)':
+  '@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.19)':
     dependencies:
       '@sonolus/core': 7.15.3
       express: 4.22.2
       multer: 2.2.0
-      typebox: 1.3.10
+      typebox: 1.3.19
+
+  '@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.7)':
+    dependencies:
+      '@sonolus/core': 7.15.3
+      express: 4.22.2
+      multer: 2.2.0
+      typebox: 1.3.7
 
   '@sonolus/free-pack@1.2.0': {}
 
-  '@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.10)':
+  '@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.7)':
     dependencies:
       '@sonolus/core': 7.15.3
       acorn: 8.18.0
-      typebox: 1.3.10
+      typebox: 1.3.7
 
-  '@sonolus/sonolus.js@9.7.3(@sonolus/core@7.15.3)(@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.10))(@sonolus/free-pack@1.2.0)(@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.10))':
+  '@sonolus/sonolus.js@9.7.3(@sonolus/core@7.15.3)(@sonolus/express@7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.7))(@sonolus/free-pack@1.2.0)(@sonolus/sonolus.js-compiler@1.8.3(@sonolus/core@7.15.3)(typebox@1.3.7))':
     dependencies:
       '@sonolus/core': 7.15.3
-      '@sonolus/express': 7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.10)
+      '@sonolus/express': 7.5.3(@sonolus/core@7.15.3)(express@4.22.2)(multer@2.2.0)(typebox@1.3.7)
       '@sonolus/free-pack': 1.2.0
-      '@sonolus/sonolus.js-compiler': 1.8.3(@sonolus/core@7.15.3)(typebox@1.3.10)
+      '@sonolus/sonolus.js-compiler': 1.8.3(@sonolus/core@7.15.3)(typebox@1.3.7)
       esbuild: 0.28.1
       express: 4.22.2
-      fs-extra: 11.3.6
+      fs-extra: 11.4.0
     transitivePeerDependencies:
       - supports-color
 
@@ -7270,11 +7435,9 @@ snapshots:
       mime-types: 2.1.35
       negotiator: 0.6.3
 
-  acorn-jsx@5.3.2(acorn@8.17.0):
+  acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:
-      acorn: 8.17.0
-
-  acorn@8.17.0: {}
+      acorn: 8.18.0
 
   acorn@8.18.0: {}
 
@@ -7577,6 +7740,8 @@ snapshots:
   chokidar@5.0.0:
     dependencies:
       readdirp: 5.0.0
+
+  chownr@3.0.0: {}
 
   ci-info@4.4.0: {}
 
@@ -7956,8 +8121,8 @@ snapshots:
 
   espree@11.2.0:
     dependencies:
-      acorn: 8.17.0
-      acorn-jsx: 5.3.2(acorn@8.17.0)
+      acorn: 8.18.0
+      acorn-jsx: 5.3.2(acorn@8.18.0)
       eslint-visitor-keys: 5.0.1
 
   esquery@1.7.0:
@@ -8083,7 +8248,7 @@ snapshots:
 
   fresh@0.5.2: {}
 
-  fs-extra@11.3.6:
+  fs-extra@11.4.0:
     dependencies:
       graceful-fs: 4.2.11
       jsonfile: 6.2.1
@@ -8849,6 +9014,12 @@ snapshots:
     dependencies:
       brace-expansion: 5.0.7
 
+  minipass@7.1.3: {}
+
+  minizlib@3.1.0:
+    dependencies:
+      minipass: 7.1.3
+
   monaco-editor@0.56.0:
     dependencies:
       dompurify: 3.4.8
@@ -9447,6 +9618,14 @@ snapshots:
       picocolors: 1.1.1
       sax: 1.6.0
 
+  tar@7.5.22:
+    dependencies:
+      '@isaacs/fs-minipass': 4.0.1
+      chownr: 3.0.0
+      minipass: 7.1.3
+      minizlib: 3.1.0
+      yallist: 5.0.0
+
   terser@5.49.0:
     dependencies:
       '@jridgewell/source-map': 0.3.11
@@ -9499,7 +9678,9 @@ snapshots:
       media-typer: 0.3.0
       mime-types: 2.1.35
 
-  typebox@1.3.10: {}
+  typebox@1.3.19: {}
+
+  typebox@1.3.7: {}
 
   typedarray@0.0.6: {}
 
@@ -9842,6 +10023,10 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.3
 
+  wasm-pack@0.15.0:
+    dependencies:
+      tar: 7.5.22
+
   web-namespaces@2.0.1: {}
 
   whatwg-mimetype@3.0.0:
@@ -9902,6 +10087,8 @@ snapshots:
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
+
+  yallist@5.0.0: {}
 
   yaml-language-server@1.23.0:
     dependencies:

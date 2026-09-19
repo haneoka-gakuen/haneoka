@@ -28,16 +28,19 @@ export default defineConfig({
       },
     },
     resolve: { dedupe: ["lit"] },
-    server: proxyTarget
-      ? {
-          proxy: {
-            "/api": { target: proxyTarget, changeOrigin: true },
-            "/assets": { target: proxyTarget, changeOrigin: true },
-            "/objects": { target: proxyTarget, changeOrigin: true },
-            "/runtime": { target: proxyTarget, changeOrigin: true },
-            "/sonolus": { target: proxyTarget, changeOrigin: true },
-          },
-        }
-      : undefined,
+    server: {
+      watch: { ignored: ["**/data/**", "**/tmp/**", "**/.dependencies/**/target/**"] },
+      ...(proxyTarget
+        ? {
+            proxy: {
+              "/api": { target: proxyTarget, changeOrigin: true },
+              "/assets": { target: proxyTarget, changeOrigin: true },
+              "/objects": { target: proxyTarget, changeOrigin: true },
+              "/runtime": { target: proxyTarget, changeOrigin: true },
+              "/sonolus": { target: proxyTarget, changeOrigin: true },
+            },
+          }
+        : {}),
+    },
   },
 });

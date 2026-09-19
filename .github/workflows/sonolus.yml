@@ -14,7 +14,7 @@ on:
   push:
     branches: [main]
     paths:
-      - packages/sonolus/engine/**
+      - config/external-repositories.lock.json
       - packages/sonolus/src/**
       - packages/sonolus/scripts/**
       - packages/sonolus/assets/**
@@ -64,20 +64,20 @@ jobs:
         id: engine-cache
         uses: actions/cache/restore@v6
         with:
-          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          path: .dependencies/cassiopeia-plugin-sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
           # Exact-key match only (no restore-keys): a stale output must never ship.
-          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('packages/sonolus/engine/{0}/**', matrix.facet), 'packages/sonolus/engine/shared/**', 'packages/sonolus/engine/esbuild.config.ts', 'packages/sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
 
       - name: Compile ${{ matrix.facet }} facet
         if: steps.engine-cache.outputs.cache-hit != 'true'
-        run: node packages/sonolus/engine/scripts/build.ts ${{ matrix.facet }}
+        run: node .dependencies/cassiopeia-plugin-sonolus/engine/scripts/build.ts ${{ matrix.facet }}
 
       - name: Save compiled ${{ matrix.facet }} facet
         if: steps.engine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
-          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
-          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('packages/sonolus/engine/{0}/**', matrix.facet), 'packages/sonolus/engine/shared/**', 'packages/sonolus/engine/esbuild.config.ts', 'packages/sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+          path: .dependencies/cassiopeia-plugin-sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
 
       - name: Upload ${{ matrix.facet }} facet artifact
         # Always uploaded, even on a cache hit (re-uploaded from the restored
@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: engine-facet-${{ matrix.facet }}
-          path: packages/sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
+          path: .dependencies/cassiopeia-plugin-sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
           if-no-files-found: error
           retention-days: 1
 
@@ -138,7 +138,7 @@ jobs:
 
       - name: Typecheck engine tooling
         # Runs once here (was bundled into the per-machine build before).
-        run: pnpm --dir packages/sonolus/engine run typecheck:tools
+        run: pnpm --dir .dependencies/cassiopeia-plugin-sonolus/engine run typecheck:tools
 
       - name: Download compiled facets
         # Each artifact contributes EngineConfiguration (byte-identical across
@@ -146,11 +146,11 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: engine-facet-*
-          path: packages/sonolus/engine/dist
+          path: .dependencies/cassiopeia-plugin-sonolus/engine/dist
           merge-multiple: true
 
       - name: Stamp engine distribution with licenses
-        run: node packages/sonolus/engine/scripts/copy-upstream-license.ts
+        run: node .dependencies/cassiopeia-plugin-sonolus/engine/scripts/copy-upstream-license.ts
 
       - name: Fetch release presentation assets
         # Materialize only the runtime slices the build reads (note-se audio,

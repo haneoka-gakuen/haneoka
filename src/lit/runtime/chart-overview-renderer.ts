@@ -5,11 +5,13 @@ import {
   NoteOperateType,
   type ChartDocument,
   type ChartNote,
+} from "@haneoka/cassiopeia";
+import type { OurNotesAssetManifest } from "@haneoka/cassiopeia-plugin-our-notes";
+import {
+  OUR_NOTES_LIVE_GEOMETRY,
   type RenderDirection,
   type RenderNoteKind,
-} from "@haneoka/chart";
-import type { OurNotesAssetManifest } from "@haneoka/chart/assets";
-import { OUR_NOTES_LIVE_GEOMETRY } from "../../../packages/chart/src/assets/manifest";
+} from "@haneoka/cassiopeia-plugin-our-notes";
 import {
   createChartCanvasRibbonStyle,
   drawChartCanvasLanePlane,
@@ -17,8 +19,8 @@ import {
   loadChartCanvasSkin,
   type ChartCanvasRibbonSample,
   type ChartCanvasSkin,
-} from "../../../packages/chart/src/vue/chartCanvasSkin";
-import { chartCanvasOverviewPresentation } from "../../../packages/chart/src/vue/overviewModel";
+} from "@haneoka/cassiopeia-ui-vue/overview";
+import { chartCanvasOverviewPresentation } from "@haneoka/cassiopeia-ui-vue/overview";
 
 export const loadDetailedOverviewSkin = (assets: OurNotesAssetManifest) => loadChartCanvasSkin(assets);
 

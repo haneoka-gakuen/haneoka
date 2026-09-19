@@ -40,15 +40,18 @@ jobs:
       - name: Advance repository pins
         run: pnpm dependencies:update
 
+      - name: Install updated locked workspace
+        run: pnpm install --frozen-lockfile
+
       - name: Verify updated workspace
         env:
           HANEOKA_CUBISM_RUNTIME_POLICY: optional
         run: |
           pnpm dependencies:verify
           pnpm format:check
-          pnpm lint
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
           pnpm typecheck
+          pnpm lint
           pnpm build
 
       - name: Open update pull request

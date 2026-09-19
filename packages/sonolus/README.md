@@ -1,33 +1,15 @@
-# `@haneoka/sonolus`
+# Haneoka Sonolus service adapter
 
-Our Notes chart conversion, catalog adapters, and Sonolus play, watch, preview,
-and tutorial engines.
+The website keeps release-backed catalog, level-template and runtime chart-data
+providers here. Chart conversion is re-exported from
+`@haneoka/cassiopeia-plugin-sonolus`; the four engine targets live in that
+independent plugin repository. No engine or chart-normalization copy is retained
+in this website package.
 
-The package exports chart conversion plus release-backed catalog, level
-template, and runtime chart-data providers. Hosts supply JSON, byte, and
-template readers and compose them with `@haneoka/sonolus-core`.
+Use `pnpm sonolus:build` to build the locked plugin engine and assemble the
+host's assets. Production HTTP routes and release storage remain website-owned.
+For unpublished local commits, first materialize the external repository lock
+with `HANEOKA_DEPENDENCY_SOURCE_ROOT=/path/to/local/repositories pnpm dependencies:checkout`.
 
-## Build
-
-```sh
-pnpm --filter @haneoka/sonolus typecheck
-pnpm --filter @haneoka/sonolus build
-pnpm --filter @haneoka/sonolus build:assets
-```
-
-Built engine and repository assets are written to `dist/`. For a local server:
-
-```sh
-RESOURCE_RELEASE_ROOT=/absolute/path/to/release \
-  pnpm --filter @haneoka/sonolus dev:server
-```
-
-Production routes are available under `/sonolus/*` through the Haneoka Worker.
-Release-backed level identities include the server and immutable release ID.
-
-## License
-
-Haneoka-authored files are licensed under [MPL-2.0](LICENSE). The engine
-contains work derived from `sonolus-pjsekai-engine`; preserve
-[`engine/LICENSE.pjsekai.txt`](engine/LICENSE.pjsekai.txt) when redistributing
-the engine or its builds. Game assets retain their own terms.
+The plugin preserves the upstream Project SEKAI engine's MIT notice; generated
+resources include that notice alongside Haneoka's MPL-2.0 license.

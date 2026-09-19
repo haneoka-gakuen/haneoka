@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -17,9 +18,11 @@ import type {
   SkinItem,
   Srl,
 } from "@sonolus/core";
-import { chartToLevelData, convertChart } from "../convert";
+import { chartToLevelData, convertChart } from "@haneoka/cassiopeia-plugin-sonolus";
 import { SONOLUS_ITEM_VERSIONS, type SonolusItemType } from "./itemVersions";
 import { resolveLocalReleaseFile, resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
+
+const engineRoot = dirname(fileURLToPath(import.meta.resolve("@haneoka/cassiopeia-sonolus-engine/package.json")));
 
 const root = resolve(process.env.OUR_NOTES_ROOT || process.cwd());
 const pkg = resolve(root, "packages/sonolus");
@@ -481,7 +484,7 @@ async function main() {
   mkdirSync(repoRoot, { recursive: true });
 
   const resourceDir = resolve(pkg, "dist/our-notes");
-  const engineDir = resolve(pkg, "engine/dist");
+  const engineDir = resolve(engineRoot, "dist");
   const banner = addFile(requireFile(resolve(pkg, "assets/server-banner.png")));
 
   const skin: SkinItem = {
@@ -656,7 +659,7 @@ async function main() {
     ? `https://github.com/haneoka-gakuen/haneoka/tree/${sourceRevision}`
     : "https://github.com/haneoka-gakuen/haneoka";
   writeFile("sonolus/licenses/haneoka-source.txt", `Corresponding Haneoka Source Code Form:\n${sourceUrl}\n`);
-  writeFile("sonolus/licenses/sonolus-pjsekai-engine.txt", readFileSync(resolve(pkg, "engine/LICENSE.pjsekai.txt")));
+  writeFile("sonolus/licenses/sonolus-pjsekai-engine.txt", readFileSync(resolve(engineRoot, "LICENSE.pjsekai.txt")));
 
   const serverInfo = {
     title: "haneoka",
