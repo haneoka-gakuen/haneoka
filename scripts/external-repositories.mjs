@@ -9,6 +9,13 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const materializedRoot = resolve(repositoryRoot, ".dependencies");
 const lockPath = join(repositoryRoot, "config", "external-repositories.lock.json");
 const expectedNames = [
+  "cassiopeia",
+  "cassiopeia-plugin-our-notes",
+  "cassiopeia-renderer-three",
+  "cassiopeia-host-web",
+  "cassiopeia-ui-vue",
+  "cassiopeia-plugin-sonolus",
+
   "vega",
   "altair",
   "deneb",
@@ -93,7 +100,7 @@ function readLock() {
       !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(repository.version) ||
       !/^https:\/\/github\.com\/haneoka-gakuen\/[a-z0-9-]+\.git$/.test(repository.url) ||
       !["node", "rust"].includes(repository.kind) ||
-      repository.branch !== "main"
+      !/^(?:main|codex\/[a-z0-9][a-z0-9/_-]*)$/u.test(repository.branch)
     ) {
       throw new Error(`Invalid lock entry for ${repository.name}`);
     }

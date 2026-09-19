@@ -36,6 +36,7 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   gap: 10px;
   padding: 4px;
   color: inherit;
+  background: transparent;
   border-radius: var(--md-sys-shape-corner-large);
 }
 .audio-dock__identity:hover,
@@ -172,6 +173,8 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   align-items: center;
   gap: 9px;
   padding: 0;
+  color: inherit;
+  background: transparent;
   text-align: left;
   cursor: pointer;
 }
@@ -226,6 +229,18 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   gap: 12px;
   padding: 6px 12px;
   border-radius: var(--md-sys-shape-corner-medium);
+}
+.audio-dock__mobile-controls > button {
+  color: inherit;
+  background: transparent;
+}
+.audio-queue-panel__select:focus-visible,
+.audio-dock__mobile-controls > button:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+.audio-dock__mobile-controls > button:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 }
 .audio-dock__mobile-controls md-slider {
   width: 170px;

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // Standalone Sonolus server for "BanG Dream! Our Notes" (Live section).
 //
 // Programmatic @sonolus/express server: loads free-pack defaults (skin/effect/
@@ -14,7 +15,7 @@
 
 import express from "express";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { Srl } from "@sonolus/core";
 import {
@@ -28,12 +29,14 @@ import {
   type SkinItemModel,
 } from "@sonolus/express";
 import { packPath } from "@sonolus/free-pack";
-import { chartToLevelData, convertChart } from "../convert";
+import { chartToLevelData, convertChart } from "@haneoka/cassiopeia-plugin-sonolus";
 import { SONOLUS_ITEM_VERSIONS } from "./itemVersions";
 import { buildLevelMetas, type BandRow, type LevelMeta, type MusicRow, type ScoreRow, type TextRow } from "./levelMeta";
 import { resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
 
 // Repo root: the server is run from the repo root (cwd), or set OUR_NOTES_ROOT.
+const engineRoot = dirname(fileURLToPath(import.meta.resolve("@haneoka/cassiopeia-sonolus-engine/package.json")));
+
 const ROOT = process.env.OUR_NOTES_ROOT ?? process.cwd();
 const PORT = Number(process.env.PORT ?? 3000);
 const ADDRESS = process.env.SONOLUS_ADDRESS ?? `http://localhost:${PORT}`;
@@ -326,7 +329,7 @@ function main() {
   // --- engine item — play/watch/preview/tutorial data. Settings come from the
   // built EngineConfiguration (speed, mirror, note-speed,
   // effects, connector alpha, preview/tutorial toggles, ...). ---
-  const distDir = resolve(ROOT, "packages/sonolus/engine/dist");
+  const distDir = resolve(engineRoot, "dist");
   const playFile = resolve(distDir, "EnginePlayData");
   const watchFile = resolve(distDir, "EngineWatchData");
   const configFile = resolve(distDir, "EngineConfiguration");

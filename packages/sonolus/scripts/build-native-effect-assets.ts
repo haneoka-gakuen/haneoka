@@ -11,7 +11,7 @@ import { gzipSync } from "node:zlib";
 import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
 
 const root = resolve(process.env.OUR_NOTES_ROOT || process.cwd());
-const releaseServer = process.env.RELEASE_SERVER || "jp-cbt";
+const releaseServer = process.env.RELEASE_SERVER || "gl-cbt";
 const workspace = resolveSonolusReleaseWorkspace(releaseServer, root);
 const source = resolve(workspace.runtimeRoot, "note-se");
 const output = resolve(process.env.SONOLUS_ORIGINAL_ASSETS_DIR || resolve(root, "packages/sonolus/assets/original"));

@@ -1,20 +1,28 @@
 import { LitElement, html, nothing } from "lit";
+import { type ChartDocument } from "@haneoka/cassiopeia";
 import {
-  ChartSession,
-  MediaClock,
-  NoteSoundPlayer,
-  OurNotesInput,
-  OurNotesRenderer,
-  RenderFrameBuilder,
-  type ChartDocument,
-  type RenderSettings,
-} from "@haneoka/chart";
+  CassiopeiaRuntime,
+  CASSIOPEIA_SESSION,
+  createKernelPlugin,
+  type CassiopeiaSessionPort,
+} from "@haneoka/cassiopeia/plugin";
 import {
   OUR_NOTES_RUNTIME_SOURCES,
-  ourNotesAssetManifestForRelease,
+  OUR_NOTES_RULES,
+  createOurNotesPlugin,
+  type RenderFrameBuilder,
+  type RenderSettings,
   type OurNotesAssetManifest,
   type OurNotesRuntimeMediaManifest,
-} from "@haneoka/chart/assets";
+} from "@haneoka/cassiopeia-plugin-our-notes";
+import { THREE_RENDERER, createThreeRendererPlugin, type OurNotesRenderer } from "@haneoka/cassiopeia-renderer-three";
+import {
+  WEB_HOST,
+  createWebHostPlugin,
+  type MediaClock,
+  type NoteSoundPlayer,
+  type OurNotesInput,
+} from "@haneoka/cassiopeia-host-web";
 import { drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
 
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
@@ -56,10 +64,19 @@ export class ChartSimulator extends LitElement {
   declare duration: number;
   declare loop: boolean;
   declare fullscreen: boolean;
+  private pluginRuntime?: CassiopeiaRuntime;
+  private runtime() {
+    return (this.pluginRuntime ??= new CassiopeiaRuntime([
+      createKernelPlugin(),
+      createOurNotesPlugin(),
+      createThreeRendererPlugin(),
+      createWebHostPlugin(),
+    ]));
+  }
   private chart?: ChartDocument;
   private assets?: OurNotesAssetManifest;
   private renderer?: OurNotesRenderer;
-  private session?: ChartSession;
+  private session?: CassiopeiaSessionPort;
   private frames?: RenderFrameBuilder;
   private clock?: MediaClock;
   private noteSounds?: NoteSoundPlayer;
@@ -174,7 +191,13 @@ export class ChartSimulator extends LitElement {
         whiteSpriteUrl: sprite(live, "live_game_white.png"),
       },
     };
-    return ourNotesAssetManifestForRelease(this.server, media);
+    return this.runtime()
+      .require(OUR_NOTES_RULES)
+      .createAssets(media, {
+        asset: (path) => `${root}/${path.split("/").map(encodeURIComponent).join("/")}`,
+        runtime: (path) =>
+          `/runtime/${encodeURIComponent(this.server)}/${path.split("/").map(encodeURIComponent).join("/")}`,
+      });
   }
 
   private async load() {
@@ -184,13 +207,14 @@ export class ChartSimulator extends LitElement {
     this.phase = "loading";
     await this.updateComplete;
     try {
-      const [response, parser, assets] = await Promise.all([
+      const [response, assets] = await Promise.all([
         fetch(this.source, { headers: { accept: "text/plain" } }),
-        import("@haneoka/chart/parser"),
         this.runtimeAssets(),
       ]);
       if (!response.ok) throw new Error(`Chart ${response.status}`);
-      this.chart = parser.buildChart(parser.parseScore(await response.text()));
+      this.chart = this.runtime()
+        .require(OUR_NOTES_RULES)
+        .parse(await response.text());
       this.assets = assets;
       this.phase = "ready";
       await this.updateComplete;
@@ -220,32 +244,45 @@ export class ChartSimulator extends LitElement {
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-runtime__canvas");
     const hud = this.querySelector<HTMLCanvasElement>(".chart-runtime__hud");
     if (!root || !canvas || !hud || !this.chart || !this.assets) return;
-    this.renderer = new OurNotesRenderer({ canvas, hudCanvas: hud, alpha: true, antialias: true, assets: this.assets });
+    this.renderer = this.runtime()
+      .require(THREE_RENDERER)
+      .create({ canvas, hudCanvas: hud, alpha: true, antialias: true, assets: this.assets });
     [this.overviewSkin] = await Promise.all([loadDetailedOverviewSkin(this.assets), this.renderer.load()]);
     await this.renderer.setBackgroundTexture(
       `/assets/${encodeURIComponent(this.server)}/Assets/AddressableResources/Band/1/live_stage/lightweight_background.png`,
     );
-    this.clock = new MediaClock(this.audioUrl, { volume: 0.8, playbackRate: 1, loop: false });
+    this.clock = this.runtime()
+      .require(WEB_HOST)
+      .createClock(this.audioUrl, { volume: 0.8, playbackRate: 1, loop: false });
     this.clock.audio.loop = this.loop;
-    this.noteSounds = new NoteSoundPlayer(this.assets.noteSounds);
+    const clock = this.clock;
+    const updateDuration = () => {
+      if (this.clock !== clock || !this.chart) return;
+      this.duration = Math.max(clock.durationMs, this.chart.durationMs) / 1000;
+    };
+    clock.audio.addEventListener("loadedmetadata", updateDuration);
+    clock.audio.addEventListener("durationchange", updateDuration);
+    this.noteSounds = this.runtime().require(WEB_HOST).createNoteSounds(this.assets.noteSounds);
     void this.noteSounds.load();
     this.attachSession();
-    this.input = new OurNotesInput(
-      root,
-      {
-        tap: () => undefined,
-        move: () => undefined,
-        release: (point) => this.session?.release(point.lane, point.timeMs, point.pointerId),
-        flick: () => undefined,
-        cancel: (pointerId) => this.session?.cancel(pointerId),
-      },
-      {
-        now: () => this.clock?.timeMs || 0,
-        laneAtClientPoint: (x, y) => this.renderer?.clientPointToLane(x, y) ?? 12,
-        screenDpi: 96,
-        flickDistanceCm: 0.1,
-      },
-    );
+    this.input = this.runtime()
+      .require(WEB_HOST)
+      .createInput(
+        root,
+        {
+          tap: () => undefined,
+          move: () => undefined,
+          release: (point) => this.session?.release(point.lane, point.timeMs, point.pointerId),
+          flick: () => undefined,
+          cancel: (pointerId) => this.session?.cancel(pointerId),
+        },
+        {
+          now: () => this.clock?.timeMs || 0,
+          laneAtClientPoint: (x, y) => this.renderer?.clientPointToLane(x, y) ?? 12,
+          screenDpi: 96,
+          flickDistanceCm: 0.1,
+        },
+      );
     this.clock.audio.addEventListener("play", () => {
       this.playing = true;
       this.animateFrames();
@@ -260,8 +297,8 @@ export class ChartSimulator extends LitElement {
   }
   private attachSession() {
     if (!this.chart) return;
-    this.session = new ChartSession(this.chart, { mode: "watch" });
-    this.frames = new RenderFrameBuilder(this.chart);
+    this.session = this.runtime().require(CASSIOPEIA_SESSION).create(this.chart, { mode: "watch" });
+    this.frames = this.runtime().require(OUR_NOTES_RULES).createFrameBuilder(this.chart);
     this.session.on("judgement", (event) => {
       this.frames?.addJudgement(event, this.clock?.timeMs || 0);
       this.noteSounds?.queue(event);
@@ -337,6 +374,8 @@ export class ChartSimulator extends LitElement {
     else await this.requestFullscreen();
   }
   private dispose() {
+    this.pluginRuntime?.dispose();
+    this.pluginRuntime = undefined;
     cancelAnimationFrame(this.animationFrame);
     this.resizeObserver?.disconnect();
     this.input?.destroy();

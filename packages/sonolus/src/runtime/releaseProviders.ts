@@ -12,8 +12,8 @@ import {
   type PreparedChartData,
   type SonolusLevelItem,
 } from "@haneoka/sonolus-core";
-import { chartToLevelData } from "../convert/chartToLevelData.js";
-import { convertChartAsync } from "../convert/index.js";
+import { chartToLevelData } from "@haneoka/cassiopeia-plugin-sonolus";
+import { convertChartAsync } from "@haneoka/cassiopeia-plugin-sonolus";
 
 const DEFAULT_MAX_CACHE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_CHART_BYTES = 4 * 1024 * 1024;

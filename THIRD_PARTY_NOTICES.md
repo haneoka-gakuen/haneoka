@@ -25,7 +25,7 @@ The current Haneoka source tree does not track the Cubism Web Framework bundle, 
 
 ### Sonolus engine
 
-The play, watch, preview, and tutorial engine began from NonSpicyBurrito's [`sonolus-pjsekai-engine`](https://github.com/NonSpicyBurrito/sonolus-pjsekai-engine), licensed under MIT. The original import did not record an exact upstream revision, so this repository does not claim that the current upstream head is the import source. Haneoka's later adaptations do not remove the upstream notice. It is retained at [`packages/sonolus/engine/LICENSE.pjsekai.txt`](packages/sonolus/engine/LICENSE.pjsekai.txt), and engine build artifacts include both that notice and Haneoka's package `LICENSE`.
+The play, watch, preview, and tutorial engine began from NonSpicyBurrito's [`sonolus-pjsekai-engine`](https://github.com/NonSpicyBurrito/sonolus-pjsekai-engine), licensed under MIT. The original import did not record an exact upstream revision, so this repository does not claim that the current upstream head is the import source. Haneoka's later adaptations do not remove the upstream notice. It is retained at [`.dependencies/cassiopeia-plugin-sonolus/engine/LICENSE.pjsekai.txt`](.dependencies/cassiopeia-plugin-sonolus/engine/LICENSE.pjsekai.txt), and engine build artifacts include both that notice and Haneoka's package `LICENSE`.
 
 ### Next-SEKAI
 
