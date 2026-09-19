@@ -874,8 +874,7 @@ community-workspace {
   padding-top: 12px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
-.bestdori-rewards h2,
-.bestdori-rewards h3 {
+.bestdori-rewards h3:not(.detail-section-title) {
   margin: 0;
   font-size: var(--md-sys-typescale-title-medium-size);
   text-transform: capitalize;

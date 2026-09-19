@@ -35,7 +35,6 @@ jobs:
   engine:
     name: Compile ${{ matrix.facet }} facet
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     strategy:
       fail-fast: true
       matrix:
@@ -93,7 +92,6 @@ jobs:
     name: Assemble and publish the global payload
     needs: engine
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

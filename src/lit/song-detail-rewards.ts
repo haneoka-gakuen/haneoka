@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 
 type Item = Record<string, unknown>;
 
@@ -65,12 +66,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
   );
   return html`
     <section class="detail-section song-detail-section song-detail-summary">
-      <h3 class="detail-section-title">
-        <span>
-          <svg class="material-icon" width="18" height="18"><use href="/icons.svg#info"></use></svg>
-        </span>
-        ${label("details", "Details")}
-      </h3>
+      ${renderDetailSectionHeading(label("details", "Details"), "details")}
       ${
         difficulty.length
           ? html`
@@ -143,12 +139,9 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
   const comboPercentages = [25, 50, 75, 100];
   return html`
     <section class="detail-section song-detail-section song-rewards-section">
-      <h3 class="detail-section-title">
-        <span>
-          <svg class="material-icon" width="18" height="18"><use href="/icons.svg#emoji_events"></use></svg>
-        </span>
-        ${label("rewards", "Rewards")}
-      </h3>
+      ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", {
+        count: ranks.length + scoreRewards.length + combo.length,
+      })}
       <div class="song-detail-section__body">
         <dl class="song-data-grid song-score-grid" aria-label=${label("scoreRanks", "Score ranks")}>
           ${ranks.map((rank) => {

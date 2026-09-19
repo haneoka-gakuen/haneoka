@@ -1,13 +1,3 @@
-character-detail-archive .detail-section-title > small {
-  min-width: 24px;
-  padding: 3px 7px;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-secondary-container);
-  font-size: var(--md-sys-typescale-label-small-size);
-  line-height: var(--md-sys-typescale-label-small-line-height);
-  text-align: center;
-}
 .character-detail-facts dd {
   display: flex;
   align-items: center;

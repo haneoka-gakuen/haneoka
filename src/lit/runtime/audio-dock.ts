@@ -12,6 +12,10 @@ export interface AudioTrack {
 }
 
 type PlaybackMode = "sequential" | "repeat-all" | "repeat-one" | "shuffle";
+interface DockPosition {
+  x: number;
+  y: number;
+}
 interface Snapshot {
   queue: AudioTrack[];
   index: number;
@@ -19,6 +23,7 @@ interface Snapshot {
   volume: number;
   mode: PlaybackMode;
   collapsed: boolean;
+  collapsedPosition?: DockPosition;
 }
 
 const STORAGE_KEY = "haneoka:audio:v2";
@@ -72,6 +77,16 @@ export class AudioDock extends LitElement {
   private inertTargets = new Set<HTMLElement>();
   private dockObserver?: ResizeObserver;
   private observedDock?: HTMLElement;
+  private collapsedPosition?: DockPosition;
+  private collapsedDrag?: {
+    pointerId: number;
+    offsetX: number;
+    offsetY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  };
+  private suppressCollapsedClick = false;
 
   constructor() {
     super();
@@ -216,6 +231,12 @@ export class AudioDock extends LitElement {
       this.volume = clamp(Number.isFinite(Number(parsed.volume)) ? Number(parsed.volume) : 0.82, 0, 1);
       this.mode = MODES.includes(parsed.mode as PlaybackMode) ? (parsed.mode as PlaybackMode) : "repeat-all";
       this.collapsed = Boolean(parsed.collapsed);
+      const position = parsed.collapsedPosition;
+      if (position && Number.isFinite(Number(position.x)) && Number.isFinite(Number(position.y)))
+        this.collapsedPosition = {
+          x: clamp(Number(position.x), 0, 1),
+          y: clamp(Number(position.y), 0, 1),
+        };
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -233,6 +254,7 @@ export class AudioDock extends LitElement {
           volume: this.volume,
           mode: this.mode,
           collapsed: this.collapsed,
+          ...(this.collapsedPosition ? { collapsedPosition: this.collapsedPosition } : {}),
         } satisfies Snapshot),
       );
     } catch {
@@ -482,6 +504,47 @@ export class AudioDock extends LitElement {
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   }
 
+  private updateCollapsedPosition(event: PointerEvent) {
+    const drag = this.collapsedDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+    drag.moved = true;
+    event.preventDefault();
+    const element = event.currentTarget as HTMLElement;
+    const x = clamp((event.clientX - drag.offsetX) / Math.max(1, innerWidth), 0, 1);
+    const y = clamp((event.clientY - drag.offsetY) / Math.max(1, innerHeight), 0, 1);
+    this.collapsedPosition = { x, y };
+    element.style.setProperty("--audio-collapsed-x", `${x * 100}vw`);
+    element.style.setProperty("--audio-collapsed-y", `${y * 100}dvh`);
+  }
+
+  private startCollapsedDrag(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const element = event.currentTarget as HTMLElement;
+    const bounds = element.getBoundingClientRect();
+    this.collapsedDrag = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - (bounds.left + bounds.width / 2),
+      offsetY: event.clientY - (bounds.top + bounds.height / 2),
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+    element.setPointerCapture(event.pointerId);
+  }
+
+  private finishCollapsedDrag(event: PointerEvent, cancelled = false) {
+    const drag = this.collapsedDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const element = event.currentTarget as HTMLElement;
+    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+    this.collapsedDrag = undefined;
+    if (!cancelled && drag.moved) {
+      this.suppressCollapsedClick = true;
+      this.persist();
+    }
+  }
+
   private renderQueue() {
     if (!this.queueOpen) return nothing;
     return html`
@@ -584,8 +647,21 @@ export class AudioDock extends LitElement {
       return html`
         <button
           class="audio-dock-collapsed"
+          style=${
+            this.collapsedPosition
+              ? `--audio-collapsed-x:${this.collapsedPosition.x * 100}vw;--audio-collapsed-y:${this.collapsedPosition.y * 100}dvh`
+              : ""
+          }
           aria-label="Expand player"
+          @pointerdown=${this.startCollapsedDrag}
+          @pointermove=${this.updateCollapsedPosition}
+          @pointerup=${(event: PointerEvent) => this.finishCollapsedDrag(event)}
+          @pointercancel=${(event: PointerEvent) => this.finishCollapsedDrag(event, true)}
           @click=${() => {
+            if (this.suppressCollapsedClick) {
+              this.suppressCollapsedClick = false;
+              return;
+            }
             this.collapsed = false;
             this.persist();
           }}

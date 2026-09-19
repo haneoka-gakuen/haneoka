@@ -1,5 +1,13 @@
 import { LitElement, html, nothing } from "lit";
-import { catalogUrl, currentReleaseServer, localizedText, preferredLocale, readPath } from "./shared/catalog";
+import {
+  catalogUrl,
+  currentReleaseServer,
+  formatList as formatLocalizedList,
+  localizedText,
+  preferredLocale,
+  readPath,
+} from "./shared/catalog";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { renderGridIdentity, type GridIdentityAdornment } from "./shared/grid-identity";
 
 type Item = Record<string, unknown>;
@@ -402,19 +410,21 @@ export class CatalogScreen extends LitElement {
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return cleanMarkup(localizedText(value, this.settings.locale));
   }
+  private formatList(values: unknown[], type: Intl.ListFormatOptions["type"] = "conjunction") {
+    return formatLocalizedList(values, this.settings.locale, type);
+  }
   private displayValue(value: unknown): string {
     const localized = this.localized(value);
     if (localized) return localized;
     if (Array.isArray(value))
-      return value
-        .map((entry) => this.displayValue(entry))
-        .filter(Boolean)
-        .join("、");
+      return this.formatList(value.map((entry) => this.displayValue(entry)).filter(Boolean), "unit");
     if (value && typeof value === "object")
-      return Object.entries(value as Item)
-        .filter(([, entry]) => ["string", "number", "boolean"].includes(typeof entry))
-        .map(([key, entry]) => `${key}: ${String(entry)}`)
-        .join("、");
+      return this.formatList(
+        Object.entries(value as Item)
+          .filter(([, entry]) => ["string", "number", "boolean"].includes(typeof entry))
+          .map(([key, entry]) => `${key}: ${String(entry)}`),
+        "unit",
+      );
     return value === 0 ? "0" : typeof value === "string" || typeof value === "number" ? String(value) : "";
   }
   private first(item: Item, paths: string[]): unknown {
@@ -644,17 +654,20 @@ export class CatalogScreen extends LitElement {
     );
   }
   private itemCharacterIds(item: Item) {
-    return (
-      Array.isArray(item.characterIds)
-        ? item.characterIds
-        : Array.isArray(item.characters)
-          ? item.characters
-          : item.characterId
-            ? [item.characterId]
-            : []
-    )
-      .map(Number)
-      .filter(Boolean);
+    return [
+      ...new Set(
+        (Array.isArray(item.characterIds)
+          ? item.characterIds
+          : Array.isArray(item.characters)
+            ? item.characters
+            : item.characterId
+              ? [item.characterId]
+              : []
+        )
+          .map(Number)
+          .filter(Boolean),
+      ),
+    ];
   }
   private itemBandIds(item: Item) {
     const direct = Array.isArray(item.bandIds) ? item.bandIds.map(Number) : item.bandId ? [Number(item.bandId)] : [];
@@ -857,10 +870,7 @@ export class CatalogScreen extends LitElement {
     const raw = readPath(item, key);
     if (key === "characterId") return this.characterName(Number(raw || 0));
     if (key === "characterIds" || key === "characters" || key === "vocalCharacterIds")
-      return (Array.isArray(raw) ? raw : [])
-        .map(Number)
-        .map((id) => this.characterName(id))
-        .join("、");
+      return this.formatList((Array.isArray(raw) ? raw : []).map(Number).map((id) => this.characterName(id)));
     if (key === "bandId") return this.bandName(Number(raw || 0));
     if (key === "rankUpItemId") {
       const gameItem = this.gameItems.find((entry) => Number(entry.itemId) === Number(raw || 0));
@@ -868,11 +878,13 @@ export class CatalogScreen extends LitElement {
     }
     if (key === "musicCategories") {
       const names = ["", "original", "virtual", "jpop", "anime", "game"];
-      return (Array.isArray(raw) ? raw : [])
-        .map(Number)
-        .map((id) => this.label(names[id] || "", names[id] || ""))
-        .filter(Boolean)
-        .join("、");
+      return this.formatList(
+        (Array.isArray(raw) ? raw : [])
+          .map(Number)
+          .map((id) => this.label(names[id] || "", names[id] || ""))
+          .filter(Boolean),
+        "unit",
+      );
     }
     if (key === "rarity")
       return ({ 2: "R", 3: "SR", 4: "SSR", 10: "EX", 20: "BD" } as Record<number, string>)[Number(raw || 0)] || "";
@@ -898,9 +910,10 @@ export class CatalogScreen extends LitElement {
     return ["performance", "technique", "visual"].reduce((sum, key) => sum + this.stat(item, key), 0);
   }
   private characterAvatars(ids: number[]) {
+    const visible = [...new Set(ids)].slice(0, 5);
     return html`
       <span class="catalog-identities">
-        ${ids.slice(0, 5).map((id) => {
+        ${visible.map((id) => {
           const character = this.character(id);
           const source = String(character?.faceImage || character?.thumbnailImage || "");
           return source
@@ -914,19 +927,18 @@ export class CatalogScreen extends LitElement {
   }
   private secondary(item: Item) {
     const kind = this.profile.presentation;
-    if (["member", "support"].includes(kind)) return this.characterName(Number(item.characterId || 0));
+    if (["member", "support"].includes(kind))
+      return this.formatList(this.itemCharacterIds(item).map((id) => this.characterName(id)));
     if (kind === "character") return this.bandName(Number(item.bandId || 0));
     if (kind === "song" || kind === "band-item") return this.bandName(Number(item.bandId || 0));
     if (kind === "comic")
-      return (Array.isArray(item.characters) ? item.characters : [])
-        .map(Number)
-        .map((id) => this.characterName(id))
-        .join("、");
+      return this.formatList(
+        (Array.isArray(item.characters) ? item.characters : []).map(Number).map((id) => this.characterName(id)),
+      );
     if (kind === "stamp")
-      return (Array.isArray(item.characterIds) ? item.characterIds : [])
-        .map(Number)
-        .map((id) => this.characterName(id))
-        .join("、");
+      return this.formatList(
+        (Array.isArray(item.characterIds) ? item.characterIds : []).map(Number).map((id) => this.characterName(id)),
+      );
     if (kind === "item") return String(item.itemTypeName || "");
     return "";
   }
@@ -951,10 +963,7 @@ export class CatalogScreen extends LitElement {
       return html`
         <img src=${this.bandLogo(Number(item.bandId || 0))} alt="" />
       `;
-    if ((kind === "member" || kind === "support") && this.character(Number(item.characterId || 0))?.faceImage)
-      return html`
-        <img src=${String(this.character(Number(item.characterId || 0))?.faceImage)} alt="" />
-      `;
+    if ((kind === "member" || kind === "support") && ids.length) return this.characterAvatars(ids);
     return nothing;
   }
   private open(item: Item) {
@@ -1556,17 +1565,7 @@ export class CatalogScreen extends LitElement {
     const image = this.image(item);
     const kind = this.profile.presentation;
     if (kind === "character") return this.renderCharacterTile(item, image);
-    const ids = (
-      Array.isArray(item.characterIds)
-        ? item.characterIds
-        : Array.isArray(item.characters)
-          ? item.characters
-          : item.characterId
-            ? [item.characterId]
-            : []
-    )
-      .map(Number)
-      .filter(Boolean);
+    const ids = this.itemCharacterIds(item);
     return html`
       <article
         class=${`catalog-card content-grid-tile catalog-card--${kind}`}
@@ -1737,9 +1736,11 @@ export class CatalogScreen extends LitElement {
     });
   }
   private renderDetailLeading(item: Item) {
-    const character = this.character(Number(item.characterId || 0));
+    const characterIds = this.itemCharacterIds(item);
+    const character = this.character(characterIds[0] || Number(item.characterId || 0));
     const band = this.band(Number(item.bandId || character?.bandId || 0));
-    const rarity = ["member", "support"].includes(this.profile.presentation) ? this.rarityMark(item.rarity) : "";
+    const card = ["member", "support"].includes(this.profile.presentation);
+    const rarity = card ? this.rarityMark(item.rarity) : "";
     const attribute = ["member", "support", "song"].includes(this.profile.presentation)
       ? this.attributeMark(
           this.profile.presentation === "song" ? item.musicType : item.cardType,
@@ -1747,18 +1748,20 @@ export class CatalogScreen extends LitElement {
         )
       : "";
     const entity = String(
-      character?.faceImage ||
+      (card ? "" : character?.faceImage) ||
         (this.profile.presentation === "song" ? this.bandLogo(Number(item.bandId || 0)) : band?.logo || band?.icon) ||
         "",
     );
     return html`
       <span class="detail-header-leading">
         ${
-          entity
-            ? html`
-                <img class="detail-header-entity" src=${entity} alt=${this.secondary(item)} />
-              `
-            : nothing
+          card && characterIds.length
+            ? this.characterAvatars(characterIds)
+            : entity
+              ? html`
+                  <img class="detail-header-entity" src=${entity} alt=${this.secondary(item)} />
+                `
+              : nothing
         }${
           rarity
             ? html`
@@ -1932,10 +1935,10 @@ export class CatalogScreen extends LitElement {
     const trainingRows = asItems(this.detailAux["member-card-awake-resources"]).filter(
       (row) =>
         Number(row.group) === Number(item.memberCardAwakeResourceGroup) &&
-        Number(row.awakeCount) <= this.detailTraining,
+        Number(row.awakeCount) === this.detailTraining,
     );
     const ranks = data.rankRows.filter(
-      (row: Item) => Number(row._rank) > 1 && Number(row._rank) <= this.detailAwakening,
+      (row: Item) => Number(row._rank) > 1 && Number(row._rank) === this.detailAwakening,
     );
     const piece = this.gameItems.find((entry) => Number(entry.itemId) === Number(item.rankUpItemId));
     return html`
@@ -1951,7 +1954,16 @@ export class CatalogScreen extends LitElement {
     `;
   }
   private renderCostList(label: string, rows: Item[]) {
-    return rows.length
+    const levels = [
+      ...rows.reduce((groups, row) => {
+        const level = Number(row.level);
+        const entries = groups.get(level) || [];
+        entries.push(row);
+        groups.set(level, entries);
+        return groups;
+      }, new Map<number, Item[]>()),
+    ].sort(([left], [right]) => left - right);
+    return levels.length
       ? html`
           <details class="level-cost-list">
             <summary>
@@ -1960,21 +1972,28 @@ export class CatalogScreen extends LitElement {
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#expand_more"></use></svg>
             </summary>
             <div>
-              ${rows.map((row) => {
-                const item = (row.item as Item | undefined) || {};
+              ${levels.map(([level, entries]) => {
                 return html`
-                  <div>
-                    <small>${label} ${row.level}</small>
-                    <span>
-                      ${
-                        item.image
-                          ? html`
-                              <img src=${String(item.image)} alt="" />
-                            `
-                          : nothing
-                      }${this.localized(item.name)}
-                    </span>
-                    <b>×${Number(row.count || 0).toLocaleString()}</b>
+                  <div class="level-cost-list__row">
+                    <small aria-label=${`${label} ${level}`}>${level}</small>
+                    <div class="level-cost-list__resources">
+                      ${entries.map((row) => {
+                        const item = (row.item as Item | undefined) || {};
+                        return html`
+                          <span class="level-cost-list__resource">
+                            ${
+                              item.image
+                                ? html`
+                                    <img src=${String(item.image)} alt="" />
+                                  `
+                                : nothing
+                            }
+                            <span>${this.localized(item.name)}</span>
+                            <b>×${Number(row.count || 0).toLocaleString()}</b>
+                          </span>
+                        `;
+                      })}
+                    </div>
                   </div>
                 `;
               })}
@@ -2019,19 +2038,9 @@ export class CatalogScreen extends LitElement {
     if (!resourceGroup) return nothing;
     const level = this.skillLevel(group, item);
     const rows = asItems(this.detailAux["skill-level-resources"])
-      .filter((row) => Number(row.group) === resourceGroup && Number(row.level) <= level)
+      .filter((row) => Number(row.group) === resourceGroup && Number(row.level) === level)
       .map((row) => ({ level: row.level, count: row.count, item: row.item }));
     return this.renderCostList(this.label("required", "Required"), rows);
-  }
-  private detailSectionTitle(label: string, icon: string) {
-    return html`
-      <h3 class="detail-section-title">
-        <span>
-          <svg class="material-icon" width="18" height="18"><use href=${`/icons.svg#${icon}`}></use></svg>
-        </span>
-        ${label}
-      </h3>
-    `;
   }
   private setCharacterSection(section: string) {
     this.characterSection = section;
@@ -2078,10 +2087,11 @@ export class CatalogScreen extends LitElement {
     const fields = this.profile.detail.flatMap((key) => {
       if (["member", "support"].includes(this.profile.presentation) && key.startsWith("stat.")) return [];
       if (key === "characterIds") {
-        const names = this.itemCharacterIds(item)
-          .map((id) => this.characterName(id))
-          .filter(Boolean)
-          .join("、");
+        const names = this.formatList(
+          this.itemCharacterIds(item)
+            .map((id) => this.characterName(id))
+            .filter(Boolean),
+        );
         return names ? [{ key: "characters", value: names }] : [];
       }
       const value = this.fieldValue(item, key);
@@ -2147,7 +2157,7 @@ export class CatalogScreen extends LitElement {
                 ? nothing
                 : html`
                     <section class="detail-section detail-section--facts">
-                      ${this.detailSectionTitle(this.label("details", "Details"), "info")}
+                      ${renderDetailSectionHeading(this.label("details", "Details"), "details")}
                       <dl class="detail-list">
                         ${fields.map(
                           ({ key, value }) => html`
@@ -2203,7 +2213,7 @@ export class CatalogScreen extends LitElement {
               this.profile.presentation === "item" && this.localized(item.description)
                 ? html`
                     <section class="detail-section">
-                      ${this.detailSectionTitle(this.label("content", "Content"), "description")}
+                      ${renderDetailSectionHeading(this.label("content", "Content"), "content")}
                       <p class="detail-description">${this.localized(item.description)}</p>
                     </section>
                   `
@@ -2213,7 +2223,7 @@ export class CatalogScreen extends LitElement {
               skills.length
                 ? html`
                     <section class="detail-section">
-                      ${this.detailSectionTitle(this.label("skills", "Skills"), "bolt")}
+                      ${renderDetailSectionHeading(this.label("skills", "Skills"), "skills")}
                       ${skills.flatMap(([group, value]) =>
                         (Array.isArray(value) ? value : [value]).filter(Boolean).map(
                           (skill) => html`
@@ -2247,7 +2257,7 @@ export class CatalogScreen extends LitElement {
               this.profile.presentation === "band-item" && bandLevelValues.length
                 ? html`
                     <section class="detail-section band-item-level-detail">
-                      ${this.detailSectionTitle(this.label("effectsByLevel", "Effects by level"), "trending_up")}
+                      ${renderDetailSectionHeading(this.label("effectsByLevel", "Effects by level"), "effects")}
                       <div class="band-item-level-table">
                         ${bandLevelValues.map((level) => {
                           const effect = bandEffects.find((row) => Number(row.level) === level) || {};
@@ -2306,7 +2316,7 @@ export class CatalogScreen extends LitElement {
               difficulty.length && this.profile.presentation !== "song"
                 ? html`
                     <section class="detail-section">
-                      <h3>${this.label("difficulty", "Difficulty")}</h3>
+                      ${renderDetailSectionHeading(this.label("difficulty", "Difficulty"), "difficulty")}
                       <div class="difficulty-segments">
                         ${difficulty.map(
                           (row, index) => html`
@@ -2335,17 +2345,7 @@ export class CatalogScreen extends LitElement {
               videos.length
                 ? html`
                     <section class="detail-section song-detail-section detail-media-controls song-detail-mv-section">
-                      <div class="song-detail-section__heading">
-                        <h3 class="detail-section-title">
-                          <span>
-                            <svg class="material-icon" width="18" height="18">
-                              <use href="/icons.svg#videocam"></use>
-                            </svg>
-                          </span>
-                          ${this.label("mv", "MV")}
-                        </h3>
-                        <span class="song-detail-section__count">${videos.length}</span>
-                      </div>
+                      ${renderDetailSectionHeading(this.label("mv", "MV"), "media", { count: videos.length })}
                       ${
                         videos.length > 1
                           ? html`
@@ -2407,7 +2407,7 @@ export class CatalogScreen extends LitElement {
               this.profile.presentation === "support" && this.localized(item.diary)
                 ? html`
                     <section class="detail-section">
-                      <h3>${this.label("diary", "Diary")}</h3>
+                      ${renderDetailSectionHeading(this.label("diary", "Diary"), "diary")}
                       <p class="detail-long-copy">${this.localized(item.diary)}</p>
                     </section>
                   `
@@ -2440,6 +2440,7 @@ export class CatalogScreen extends LitElement {
                 <chart-simulator
                   source=${String(chart.file)}
                   audio-url=${String(item.musicUrl || "")}
+                  band-id=${Number(item.bandId || 1)}
                   label=${this.itemTitle(item)}
                   locale=${this.settings.locale}
                   server=${currentReleaseServer()}
@@ -2479,7 +2480,9 @@ export class CatalogScreen extends LitElement {
       return rewards.length
         ? html`
             <section class="detail-section">
-              <h3>${this.label("rewards", "Rewards")}</h3>
+              ${renderDetailSectionHeading(this.label("rewards", "Rewards"), "rewards", {
+                count: rewards.length,
+              })}
               <div class="reference-list">
                 ${rewards.map(
                   ({ source, reward }) => html`

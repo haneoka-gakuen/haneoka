@@ -120,6 +120,20 @@ export function uiText(locale: string, key: string): string {
   return values?.[index] || values?.[1] || key;
 }
 
+export function formatList(
+  values: unknown[],
+  locale: string,
+  type: Intl.ListFormatOptions["type"] = "conjunction",
+): string {
+  const items = values.map((value) => String(value || "").trim()).filter(Boolean);
+  if (items.length < 2) return items[0] || "";
+  try {
+    return new Intl.ListFormat(locale, { style: "long", type }).format(items);
+  } catch {
+    return items.join(", ");
+  }
+}
+
 export function readPath(value: unknown, path: string): unknown {
   return path
     .split(".")

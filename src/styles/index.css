@@ -179,6 +179,50 @@ video {
 .content-grid-tile:hover {
   background: var(--md-sys-color-surface-container);
 }
+
+/* Shared semantic heading used by every entity-detail surface. */
+.detail-section-title {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--md-sys-typescale-title-medium-font);
+  font-size: var(--md-sys-typescale-title-medium-size);
+  font-weight: var(--md-sys-typescale-title-medium-weight);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+}
+.detail-section-title--h2 {
+  font-family: var(--md-sys-typescale-title-large-font);
+  font-size: var(--md-sys-typescale-title-large-size);
+  font-weight: var(--md-sys-typescale-title-large-weight);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+}
+.detail-section-title__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+}
+.detail-section-title__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.detail-section-title__count {
+  min-width: 24px;
+  padding: 3px 7px;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+  font-size: var(--md-sys-typescale-label-small-size);
+  line-height: var(--md-sys-typescale-label-small-line-height);
+  text-align: center;
+}
 .content-grid-tile[aria-selected="true"],
 .content-grid-tile.selected {
   color: var(--md-sys-color-on-secondary-container);

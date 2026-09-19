@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { localizedText } from "./shared/catalog";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 type Value = Record<string, unknown>;
 export interface BestdoriDetailState {
   locale: string;
@@ -62,7 +63,10 @@ export function renderBestdoriDetail(
               `,
             )}
           </div>
-          <h2>${label("storiesBestDori", "Stories")}</h2>
+          ${renderDetailSectionHeading(label("storiesBestDori", "Stories"), "stories", {
+            count: episodes.length,
+            level: 2,
+          })}
           ${episodes.map((episode, index) => {
             const storyId = `card.${episode.resourceSetName || card.resourceSetName}.${episode.scenarioId}`;
             return html`
@@ -160,7 +164,7 @@ export function renderBestdoriDetail(
             )}
           </div>
           <section class="bestdori-rewards">
-            <h2>${label("rewards", "Rewards")}</h2>
+            ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", { level: 2 })}
             <div>${(Array.isArray(detail.scoreRewards) ? (detail.scoreRewards as Value[]) : []).map(reward)}</div>
             ${comboGroups.map(
               ([difficulty, items]) => html`

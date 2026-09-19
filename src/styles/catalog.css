@@ -515,15 +515,35 @@ catalog-screen {
 .catalog-identities {
   display: flex;
   min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
 }
 .catalog-identities img {
   width: 26px;
   height: 26px;
-  margin-right: -5px;
+  flex: 0 0 26px;
   object-fit: contain;
   border: 2px solid var(--md-sys-color-surface-container-low);
   border-radius: 50%;
   background: var(--md-sys-color-surface-container);
+}
+.catalog-identities img:not(:last-child) {
+  margin-right: -5px;
+}
+.grid-tile-identity__description .catalog-identities img {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+  border-width: 1px;
+}
+.grid-tile-identity__description .catalog-identities img:not(:last-child) {
+  margin-right: -4px;
+}
+.catalog-table__entity .catalog-identities img {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+  border-width: 1px;
 }
 
 /* The collection shell is shared; authored media proportions and metadata are not. */
@@ -1135,6 +1155,14 @@ catalog-screen {
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container);
 }
+.detail-header-leading .catalog-identities img {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+}
+.detail-header-leading .catalog-identities img:not(:last-child) {
+  margin-right: -7px;
+}
 .detail-sheet--song .detail-header-entity {
   width: 36px;
   height: 24px;
@@ -1260,24 +1288,6 @@ catalog-screen {
   grid-auto-flow: initial;
   grid-auto-columns: initial;
 }
-.song-detail-section__heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.song-detail-section__heading .detail-section-title {
-  flex: 0 0 auto;
-}
-.song-detail-section__count {
-  min-width: 24px;
-  padding: 4px 8px;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-secondary-container);
-  font-size: var(--md-sys-typescale-label-small-size);
-  line-height: var(--md-sys-typescale-label-small-line-height);
-  text-align: center;
-}
 .detail-sheet--character .detail-sheet__content {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -1395,23 +1405,6 @@ catalog-screen {
   display: grid;
   gap: 8px;
   margin-top: 0;
-}
-.detail-section-title {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.detail-section-title > span {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-secondary-container);
 }
 .character-detail-tabs {
   position: sticky;
@@ -1933,14 +1926,142 @@ chart-simulator,
   z-index: 2;
 }
 .chart-runtime__controls {
+  position: relative;
+  z-index: 10;
   display: grid;
   min-height: 68px;
-  grid-template-columns: auto auto minmax(80px, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   color: var(--md-sys-color-on-surface);
   background: var(--md-sys-color-surface-container-lowest);
+}
+.chart-runtime__timeline {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(56px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.chart-runtime__timeline small {
+  min-width: 34px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.chart-runtime__actions {
+  display: flex;
+  align-items: center;
+}
+.chart-runtime__actions .icon-button[aria-pressed="true"] {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+.chart-runtime__settings {
+  position: absolute;
+  z-index: 20;
+  right: 12px;
+  bottom: 76px;
+  display: grid;
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100% - 92px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-level3);
+}
+.chart-runtime__settings > header,
+.chart-runtime__settings > header > span {
+  display: flex;
+  align-items: center;
+}
+.chart-runtime__settings > header {
+  min-height: 52px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 4px 16px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.chart-runtime__settings > header > span {
+  gap: 2px;
+}
+.chart-runtime__settings > header .icon-button {
+  width: 40px;
+  height: 40px;
+}
+.chart-runtime__settings-content {
+  display: grid;
+  gap: 16px;
+  padding: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.chart-runtime__settings-content > section {
+  display: grid;
+  gap: 10px;
+}
+.chart-runtime__settings-content h4 {
+  margin: 0;
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-label-large-size);
+}
+.chart-runtime__setting {
+  min-width: 0;
+}
+.chart-runtime__setting--slider {
+  display: grid;
+  gap: 2px;
+}
+.chart-runtime__setting--slider > span,
+.chart-runtime__setting--select,
+.chart-runtime__setting--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.chart-runtime__setting output {
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.chart-runtime__setting md-slider {
+  width: 100%;
+}
+.chart-runtime__setting select {
+  min-width: 136px;
+  max-width: 52%;
+  height: 40px;
+  padding: 0 10px;
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-lowest);
+}
+.chart-runtime__setting--toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--md-sys-color-primary);
+}
+@media (max-width: 420px) {
+  .chart-runtime__controls {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+  .chart-runtime__timeline {
+    gap: 4px;
+  }
+  .chart-runtime__timeline small {
+    display: none;
+  }
+  .chart-runtime__settings {
+    right: 6px;
+    bottom: 74px;
+    width: calc(100% - 12px);
+  }
 }
 @media (max-width: 959px) {
   .detail-sheet,

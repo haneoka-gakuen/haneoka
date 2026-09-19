@@ -94,7 +94,8 @@ export class CatalogTable extends LitElement {
   private cell(item: Item, key: string) {
     const c = this.controller;
     const image = c.image(item);
-    const characterId = Number(item.characterId || 0);
+    const characterIds: number[] = c.itemCharacterIds(item);
+    const characterId = characterIds[0] || Number(item.characterId || 0);
     const character = c.character(characterId);
     const bandId = Number(item.bandId || character?.bandId || 0);
     const band = c.band(bandId);
@@ -118,14 +119,8 @@ export class CatalogTable extends LitElement {
     if (key === "character")
       return wrap(
         html`
-          ${
-            character?.faceImage
-              ? html`
-                  <img src=${String(character.faceImage)} alt="" loading="lazy" decoding="async" />
-                `
-              : nothing
-          }
-          <span>${c.characterName(characterId)}</span>
+          ${c.characterAvatars(characterIds)}
+          <span>${c.formatList(characterIds.map((id) => c.characterName(id))) || "—"}</span>
         `,
         "catalog-table__entity",
       );
@@ -134,7 +129,7 @@ export class CatalogTable extends LitElement {
       return wrap(
         html`
           ${c.characterAvatars(ids)}
-          <span>${ids.map((id) => c.characterName(id)).join("、") || "—"}</span>
+          <span>${c.formatList(ids.map((id) => c.characterName(id))) || "—"}</span>
         `,
         "catalog-table__entity",
       );

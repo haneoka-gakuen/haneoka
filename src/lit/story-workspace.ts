@@ -3,12 +3,14 @@ import {
   catalogUrl,
   currentReleaseServer,
   fetchJson,
+  formatList,
   localizedText,
   preferredLocale,
   recordValues,
   type JsonRecord,
   uiText,
 } from "./shared/catalog";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { HomeSpotStage } from "./runtime/home-spot-stage";
 import { renderGridIdentity } from "./shared/grid-identity";
 
@@ -827,9 +829,10 @@ export class StoryWorkspace extends LitElement {
     const id = String(episode.storyId),
       image = imageOverride || this.episodeImage(episode),
       characterIds = (Array.isArray(episode.characterIds) ? episode.characterIds : []).map(Number);
-    const characterNames = characterIds
-      .map((characterId) => this.characterName(this.character(characterId) || {}))
-      .join("、");
+    const characterNames = formatList(
+      characterIds.map((characterId) => this.characterName(this.character(characterId) || {})),
+      this.locale,
+    );
     const gridDescription =
       this.mode === "link" && episode.unlockCharacterFriendshipLevel
         ? `${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}`
@@ -1081,16 +1084,18 @@ export class StoryWorkspace extends LitElement {
                     commands.length
                       ? html`
                           <section class="story-detail-section">
-                            <h2>
-                              ${uiText(this.locale, "storyText")}
-                              <span>${commands.length}</span>
-                            </h2>
+                            ${renderDetailSectionHeading(uiText(this.locale, "storyText"), "storyText", {
+                              count: commands.length,
+                              level: 2,
+                            })}
                             <div class="story-transcript">
                               ${commands.map(({ command, visual }) => {
-                                const names = (Array.isArray(command.targetTextNames) ? command.targetTextNames : [])
-                                  .map((name) => this.text(name))
-                                  .filter(Boolean)
-                                  .join("、");
+                                const names = formatList(
+                                  (Array.isArray(command.targetTextNames) ? command.targetTextNames : [])
+                                    .map((name) => this.text(name))
+                                    .filter(Boolean),
+                                  this.locale,
+                                );
                                 const voiceRef = String(
                                   (Array.isArray(command.voiceRefs) ? command.voiceRefs[0] : "") || "",
                                 );

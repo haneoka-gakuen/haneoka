@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { renderGridIdentity } from "./shared/grid-identity";
 type Value = Record<string, unknown>;
 type UploadEntry = {
@@ -1343,7 +1344,10 @@ export class CommunityWorkspace extends LitElement {
         </article>
         <section class="community-comments">
           <header>
-            <h2>${this.label("comments", "Comments")} ${comments.length}</h2>
+            ${renderDetailSectionHeading(this.label("comments", "Comments"), "comments", {
+              count: comments.length,
+              level: 2,
+            })}
             <div class="segmented">
               <button
                 aria-pressed=${this.commentSort === "hot"}
@@ -1640,7 +1644,10 @@ ${String(comment.body || "")}</textarea>
           works.length
             ? html`
                 <section class="community-profile-section">
-                  <h2>${this.label("customCharts", "Works")}</h2>
+                  ${renderDetailSectionHeading(this.label("customCharts", "Works"), "works", {
+                    count: works.length,
+                    level: 2,
+                  })}
                   <div class="tag-grid">
                     ${works.map(
                       (work) => html`
@@ -1659,7 +1666,10 @@ ${String(comment.body || "")}</textarea>
           gameAccounts.length
             ? html`
                 <section class="community-profile-section">
-                  <h2>${this.label("gameAccounts", "Game accounts")}</h2>
+                  ${renderDetailSectionHeading(this.label("gameAccounts", "Game accounts"), "accounts", {
+                    count: gameAccounts.length,
+                    level: 2,
+                  })}
                   <div class="community-list">
                     ${gameAccounts.map(
                       (account) => html`

@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import { renderDetailSectionHeading, type DetailSectionKind } from "./shared/detail-section-heading";
 import { renderGridIdentity, type GridIdentityAdornment } from "./shared/grid-identity";
 import "../styles/character-detail.css";
 
@@ -21,6 +22,7 @@ interface Controller {
   relatedId(item: Item, route: string): string;
   relatedParam(route: string): string;
   characterAvatars(ids: number[]): GridIdentityAdornment;
+  formatList(values: unknown[], type?: Intl.ListFormatOptions["type"]): string;
   attributeMark(value: unknown, live?: boolean): string;
   rarityMark(value: unknown): string;
 }
@@ -239,11 +241,13 @@ export class CharacterDetailArchive extends LitElement {
   }
   private songCategory(entry: Item) {
     const names = ["", "original", "virtual", "jpop", "anime", "game"];
-    return (Array.isArray(entry.musicCategories) ? entry.musicCategories : [])
-      .map(Number)
-      .map((id) => this.controller.label(names[id] || "", names[id] || ""))
-      .filter(Boolean)
-      .join("、");
+    return this.controller.formatList(
+      (Array.isArray(entry.musicCategories) ? entry.musicCategories : [])
+        .map(Number)
+        .map((id) => this.controller.label(names[id] || "", names[id] || ""))
+        .filter(Boolean),
+      "unit",
+    );
   }
   private relatedTile(entry: Item, route: string, characterId: number) {
     const c = this.controller;
@@ -262,9 +266,10 @@ export class CharacterDetailArchive extends LitElement {
     const storyVisual = route === "stories" ? this.storyVisual(entry) : undefined;
     const imageCandidates = storyVisual?.image ? [storyVisual.image] : c.relatedImageCandidates(entry, route);
     const source = imageCandidates[0] || "";
+    const ids = c.itemCharacterIds(entry);
     const description =
       route === "member-cards" || route === "support-cards"
-        ? c.characterName(characterId)
+        ? c.formatList(ids.map((id) => c.characterName(id)))
         : route === "songs"
           ? c.bandName(Number(entry.bandId || 0))
           : route === "live2d"
@@ -275,18 +280,12 @@ export class CharacterDetailArchive extends LitElement {
                 : storyVisual?.category === "afterlive" && entry.unlockCharacterFriendshipLevel
                   ? `${c.label("friendship", "Friendship")} ${entry.unlockCharacterFriendshipLevel}`
                   : ""
-              : c
-                  .itemCharacterIds(entry)
-                  .map((id) => c.characterName(id))
-                  .join("、") || c.localized(entry.chapterName);
-    const ids = c.itemCharacterIds(entry);
+              : c.formatList(ids.map((id) => c.characterName(id))) || c.localized(entry.chapterName);
     const adornment =
       route === "stamps" && ids.length
         ? c.characterAvatars(ids)
-        : (route === "member-cards" || route === "support-cards") && c.character(characterId)?.faceImage
-          ? html`
-              <img src=${String(c.character(characterId)?.faceImage)} alt="" />
-            `
+        : (route === "member-cards" || route === "support-cards") && ids.length
+          ? c.characterAvatars(ids)
           : route === "songs" && c.band(Number(entry.bandId || 0))?.logo
             ? html`
                 <img src=${String(c.band(Number(entry.bandId || 0))?.logo)} alt="" />
@@ -383,22 +382,11 @@ export class CharacterDetailArchive extends LitElement {
       </a>
     `;
   }
-  private grid(title: string, icon: string | null, route: string, entries: Item[], characterId: number) {
+  private grid(title: string, kind: DetailSectionKind, route: string, entries: Item[], characterId: number) {
     const c = this.controller;
     return html`
       <section class="detail-section character-detail-panel-group">
-        <h3 class="detail-section-title">
-          ${
-            icon
-              ? html`
-                  <span>
-                    <svg class="material-icon" width="18" height="18"><use href=${`/icons.svg#${icon}`}></use></svg>
-                  </span>
-                `
-              : nothing
-          }
-          ${title} ${entries.length}
-        </h3>
+        ${renderDetailSectionHeading(title, kind, { count: entries.length })}
         ${
           entries.length
             ? html`
@@ -413,21 +401,8 @@ export class CharacterDetailArchive extends LitElement {
       </section>
     `;
   }
-  private sectionHeading(title: string, iconName: string, count?: number) {
-    return html`
-      <h3 class="detail-section-title">
-        <span>
-          <svg class="material-icon" width="18" height="18"><use href=${`/icons.svg#${iconName}`}></use></svg>
-        </span>
-        ${title}${
-          count === undefined
-            ? nothing
-            : html`
-                <small>${count}</small>
-              `
-        }
-      </h3>
-    `;
+  private sectionHeading(title: string, kind: DetailSectionKind, count?: number) {
+    return renderDetailSectionHeading(title, kind, { count });
   }
   render() {
     const c = this.controller;
@@ -450,7 +425,9 @@ export class CharacterDetailArchive extends LitElement {
       if (active === "profile")
         return html`
           <section class="character-detail-intro">
-            <small>${[String(item.bandPart || ""), c.localized(item.englishName)].filter(Boolean).join("、")}</small>
+            <small>
+              ${c.formatList([String(item.bandPart || ""), c.localized(item.englishName)].filter(Boolean), "unit")}
+            </small>
             <h2>${c.itemTitle(item)}</h2>
             ${
               item.voiceActor
@@ -500,29 +477,28 @@ export class CharacterDetailArchive extends LitElement {
       if (active === "cards")
         return html`
           <section class="detail-section character-detail-deferred-section">
-            ${this.sectionHeading(c.label("cards", "Cards"), "photo_library", data.cards.length + data.supports.length)}
+            ${this.sectionHeading(c.label("cards", "Cards"), "cards", data.cards.length + data.supports.length)}
             <div class="character-detail-groups">
-              ${this.grid(c.label("memberCards", "Member cards"), null, "member-cards", data.cards, id)}${this.grid(c.label("supportCards", "Support cards"), null, "support-cards", data.supports, id)}
+              ${this.grid(c.label("memberCards", "Member cards"), "memberCards", "member-cards", data.cards, id)}${this.grid(c.label("supportCards", "Support cards"), "supportCards", "support-cards", data.supports, id)}
             </div>
           </section>
         `;
-      if (active === "stamps")
-        return this.grid(c.label("stamps", "Stamps"), "sticky_note_2", "stamps", data.stamps, id);
+      if (active === "stamps") return this.grid(c.label("stamps", "Stamps"), "stamps", "stamps", data.stamps, id);
       if (active === "story")
         return html`
           <section class="detail-section character-detail-deferred-section">
-            ${this.sectionHeading(c.label("story", "Story"), "chat", data.stories.length)}
+            ${this.sectionHeading(c.label("story", "Story"), "stories", data.stories.length)}
             <div class="character-detail-groups">
-              ${this.storyGroups(data.stories).map((group) => this.grid(group.label, null, "stories", group.items, id))}
+              ${this.storyGroups(data.stories).map((group) => this.grid(group.label, "stories", "stories", group.items, id))}
             </div>
           </section>
         `;
-      if (active === "live2d") return this.grid("Live2D", "accessibility_new", "live2d", data.live2d, id);
-      if (active === "songs") return this.grid(c.label("songs", "Songs"), "music_note", "songs", data.songs, id);
+      if (active === "live2d") return this.grid("Live2D", "live2d", "live2d", data.live2d, id);
+      if (active === "songs") return this.grid(c.label("songs", "Songs"), "songs", "songs", data.songs, id);
       if (active === "voices")
         return html`
           <section class="detail-section character-detail-deferred-section">
-            ${this.sectionHeading(c.label("voices", "Voices"), "mic", data.voices.length)}
+            ${this.sectionHeading(c.label("voices", "Voices"), "voices", data.voices.length)}
             <div class="character-voice-list">
               ${data.voices.map((entry) => {
                 const playable = this.voiceLines(entry).length > 0;
@@ -566,7 +542,7 @@ export class CharacterDetailArchive extends LitElement {
         const rewards = friendship && Array.isArray(friendship.rewards) ? (friendship.rewards as Item[]) : [];
         return html`
           <section class="detail-section character-detail-deferred-section">
-            ${this.sectionHeading(c.label("characterBonds", "Character Bonds"), "handshake", data.friendships.length)}
+            ${this.sectionHeading(c.label("characterBonds", "Character Bonds"), "friendships", data.friendships.length)}
             <div class="character-friendship-workspace">
               <div class="character-friendship-selector">
                 <div class="character-friendship-anchor">
@@ -626,11 +602,13 @@ export class CharacterDetailArchive extends LitElement {
                       </a>
                     `
                   : nothing
-              }${stories.length ? this.grid(c.label("story", "Story"), null, "stories", stories, id) : nothing}${
+              }${stories.length ? this.grid(c.label("story", "Story"), "stories", "stories", stories, id) : nothing}${
                 rewards.length
                   ? html`
                       <section class="detail-section">
-                        <h3 class="detail-section-title">${c.label("rewards", "Rewards")}</h3>
+                        ${renderDetailSectionHeading(c.label("rewards", "Rewards"), "rewards", {
+                          count: rewards.length,
+                        })}
                         <div class="reference-list">
                           ${rewards.map((row) => {
                             const reward = (row.reward as Item | undefined) || row;
@@ -686,7 +664,7 @@ export class CharacterDetailArchive extends LitElement {
       const missions = missionGroups.find(([type]) => type === missionType)?.[1] || [];
       return html`
         <section class="detail-section character-detail-deferred-section">
-          ${this.sectionHeading(c.label("missions", "Missions"), "checklist", data.missions.length)}
+          ${this.sectionHeading(c.label("missions", "Missions"), "missions", data.missions.length)}
           <div class="character-mission-workspace">
             <header>
               <md-outlined-select

@@ -1081,18 +1081,6 @@ vega-story-stage {
   gap: 12px;
   padding-top: 8px;
 }
-.story-detail-section > h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--md-sys-typescale-title-large-size);
-  font-weight: 500;
-}
-.story-detail-section > h2 span {
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
 .story-asset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));

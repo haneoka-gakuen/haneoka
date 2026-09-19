@@ -1,5 +1,13 @@
 import { LitElement, html, nothing } from "lit";
-import { catalogUrl, localizedText, preferredLocale, readPath, recordValues, uiText } from "./shared/catalog";
+import {
+  catalogUrl,
+  formatList,
+  localizedText,
+  preferredLocale,
+  readPath,
+  recordValues,
+  uiText,
+} from "./shared/catalog";
 import { renderGridIdentity } from "./shared/grid-identity";
 import { OutfitStage } from "./runtime/outfit-stage";
 type Value = Record<string, unknown>;
@@ -369,14 +377,15 @@ export class AnonTokyoWorkspace extends LitElement {
   }
   private rewardText(value: unknown) {
     const source = value && typeof value === "object" ? String((value as Value).raw || "") : String(value || "");
-    return source
-      .split(";")
-      .flatMap((entry) => {
+    return formatList(
+      source.split(";").flatMap((entry) => {
         const [type, id, count] = entry.split(",").map(Number);
         if (!count) return [];
         return [`${type === 1 ? this.currencyName(id || 0) : uiText(this.locale, "reward")} ×${count}`];
-      })
-      .join("、");
+      }),
+      this.locale,
+      "unit",
+    );
   }
   private taskParameter(kind: string, value: unknown) {
     const id = Number(value || 0);

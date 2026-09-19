@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import "../styles/card-detail.css";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 
 type Item = Record<string, unknown>;
 type Controller = Record<string, any>;
@@ -123,7 +124,7 @@ export function renderCardStats(c: Controller, item: Item) {
   const stats = [value("performance"), value("technique"), value("visual")];
   return html`
     <section class="detail-section card-stat-section">
-      ${c.detailSectionTitle(c.label("stats", "Stats"), "monitoring")}
+      ${renderDetailSectionHeading(c.label("stats", "Stats"), "stats")}
       <div class="card-detail-controls">
         ${renderLevelSwitch(c, c.label("level", "Level"), data.levels, c.detailLevel, (value) => {
           c.detailLevel = value;
@@ -201,7 +202,7 @@ export function renderCardRelations(c: Controller, item: Item) {
   return ids.length
     ? html`
         <section class="detail-section">
-          ${c.detailSectionTitle(c.label("characters", "Characters"), "group")}
+          ${renderDetailSectionHeading(c.label("characters", "Characters"), "characters", { count: ids.length })}
           <div class="card-relation-list">
             ${ids.map((id: number) => {
               const character = c.character(id);

@@ -17,8 +17,15 @@
   box-shadow: none;
 }
 body:has(audio-dock .audio-dock) .page-stage {
-  padding-bottom: var(--audio-dock-height, 80px);
-  scroll-padding-bottom: calc(var(--audio-dock-height, 80px) + 16px);
+  height: calc(100dvh - var(--top-bar-height) - var(--audio-dock-height, 80px));
+  padding-bottom: 0;
+  scroll-padding-bottom: 16px;
+}
+body:has(audio-dock .audio-dock) .catalog__content {
+  height: calc(100dvh - var(--top-bar-height) - var(--audio-dock-height, 80px));
+}
+body:has(audio-dock .audio-dock) .catalog__filters {
+  max-height: calc(100dvh - var(--top-bar-height) - var(--audio-dock-height, 80px) - 20px);
 }
 body:has(audio-dock .audio-dock)
   :is(.detail-sheet, .chart-detail-layer, .story-detail, .viewer-detail, .bestdori-detail) {
@@ -122,7 +129,7 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   position: absolute;
   z-index: 62;
   right: 0;
-  bottom: 80px;
+  bottom: var(--audio-dock-height, 80px);
   display: grid;
   width: min(420px, 92vw);
   max-height: min(72vh, 600px);
@@ -248,8 +255,8 @@ body:has(audio-dock .audio-dock) .composer-workspace {
 .audio-dock-collapsed {
   position: fixed;
   z-index: 60;
-  right: 12px;
-  bottom: 12px;
+  top: clamp(28px, var(--audio-collapsed-y, calc(100dvh - 36px)), calc(100dvh - 28px));
+  left: clamp(56px, var(--audio-collapsed-x, calc(100vw - 56px)), calc(100vw - 56px));
   display: flex;
   align-items: center;
   gap: 6px;
@@ -258,6 +265,13 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-high);
   box-shadow: var(--md-sys-elevation-level2);
+  cursor: grab;
+  touch-action: none;
+  transform: translate(-50%, -50%);
+  user-select: none;
+}
+.audio-dock-collapsed:active {
+  cursor: grabbing;
 }
 .audio-dock-collapsed img {
   width: 40px;
@@ -267,8 +281,12 @@ body:has(audio-dock .audio-dock) .composer-workspace {
 }
 @media (max-width: 959px) {
   body:has(audio-dock .audio-dock) .page-stage {
-    padding-bottom: var(--audio-dock-height, 72px);
-    scroll-padding-bottom: calc(var(--audio-dock-height, 72px) + 16px);
+    height: calc(100dvh - var(--top-bar-height) - var(--audio-dock-height, 72px));
+    padding-bottom: 0;
+    scroll-padding-bottom: 16px;
+  }
+  body:has(audio-dock .audio-dock) .catalog__content {
+    height: calc(100dvh - var(--top-bar-height) - var(--audio-dock-height, 72px));
   }
   body:has(audio-dock .audio-dock)
     :is(.detail-sheet, .chart-detail-layer, .story-detail, .viewer-detail, .bestdori-detail) {
@@ -298,7 +316,7 @@ body:has(audio-dock .audio-dock) .composer-workspace {
   }
   .audio-queue-panel {
     right: 8px;
-    bottom: 72px;
+    bottom: var(--audio-dock-height, 72px);
     width: calc(100vw - 16px);
     border-radius: var(--md-sys-shape-corner-large);
   }
