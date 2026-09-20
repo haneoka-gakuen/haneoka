@@ -15,12 +15,14 @@ on:
     branches: [main]
     paths:
       - config/external-repositories.lock.json
-      - packages/sonolus/src/**
-      - packages/sonolus/scripts/**
-      - packages/sonolus/assets/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - packages/sonolus/**
       - scripts/pipeline.py
       - scripts/publish/sonolus.py
       - scripts/publish/r2.py
+      - scripts/requirements.in
       - .github/workflows/sonolus.yml
   workflow_dispatch: {}
 
@@ -65,7 +67,7 @@ jobs:
         with:
           path: .dependencies/cassiopeia-plugin-sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
           # Exact-key match only (no restore-keys): a stale output must never ship.
-          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+          key: sonolus-engine-${{ matrix.facet }}-v2-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/scripts/build.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', '.dependencies/cassiopeia-plugin-sonolus/engine/package.json', 'pnpm-lock.yaml') }}
 
       - name: Compile ${{ matrix.facet }} facet
         if: steps.engine-cache.outputs.cache-hit != 'true'
@@ -76,7 +78,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .dependencies/cassiopeia-plugin-sonolus/engine/.build-matrix/${{ matrix.facet }}/dist
-          key: sonolus-engine-${{ matrix.facet }}-v1-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', 'pnpm-lock.yaml') }}
+          key: sonolus-engine-${{ matrix.facet }}-v2-${{ runner.os }}-node24-${{ hashFiles(format('.dependencies/cassiopeia-plugin-sonolus/engine/{0}/**', matrix.facet), '.dependencies/cassiopeia-plugin-sonolus/engine/shared/**', '.dependencies/cassiopeia-plugin-sonolus/engine/scripts/build.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/esbuild.config.ts', '.dependencies/cassiopeia-plugin-sonolus/engine/tsconfig.base.json', '.dependencies/cassiopeia-plugin-sonolus/engine/package.json', 'pnpm-lock.yaml') }}
 
       - name: Upload ${{ matrix.facet }} facet artifact
         # Always uploaded, even on a cache hit (re-uploaded from the restored
