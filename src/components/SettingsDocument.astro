@@ -43,7 +43,7 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="dns" /></span><h2><I18nText keyName="releaseServer" fallback="Release server" locale={locale} /></h2></header>
-        <div class="icon-row" data-release-choices role="radiogroup">{releases.map(([value,image]) => <button class="icon-row__item" type="button" role="radio" data-value={value} aria-label={releaseNames[value]}><span class="server-icon"><img src={image} alt="" /><i>β</i></span></button>)}</div>
+        <div class="icon-row" data-release-choices role="radiogroup">{releases.map(([value,image]) => <button class="icon-row__item" type="button" role="radio" data-value={value} aria-label={releaseNames[value]}><span class="server-icon"><img src={image} alt="" />{value.endsWith("-cbt") && <i>β</i>}</span></button>)}</div>
       </section>
     </div></section>
   </AppShell>
