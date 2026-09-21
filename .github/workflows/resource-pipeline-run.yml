@@ -68,7 +68,7 @@ jobs:
             if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
               unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
                 > "$RUNNER_TEMP/embedded-catalog.bin"
-              echo "HANEOKA_SOURCE_CATALOG=$RUNNER_TEMP/embedded-catalog.bin" >> "$GITHUB_ENV"
+              export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
             fi
             python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
               --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
