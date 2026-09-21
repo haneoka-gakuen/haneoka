@@ -717,14 +717,17 @@ def home_spot_source_bundle_paths(
     artifacts_by_sha, _ = _bundle_artifacts(manifest)
     paths: set[str] = set()
     identities: set[int] = set()
-    skipped_spots: list[dict[str, str]] = []
     for row in sorted(rows, key=lambda value: int(value.get("_id") or 0)):
         identity = int(row.get("_id") or 0)
         if not identity or identity in identities:
             raise ValueError(f"MasterHomeSpot has an empty or repeated id: {identity}")
         identities.add(identity)
-        source_path = _source_path(row, "_backgroundAssetPath", identity)
-        descriptor = store.descriptor(source_path)
+        try:
+            source_path = _source_path(row, "_backgroundAssetPath", identity)
+            descriptor = store.descriptor(source_path)
+        except (KeyError, ValueError) as error:
+            sys.stderr.write(f"warning: skipping home spot {identity}; unavailable content: {error}\n")
+            continue
         digest = str(descriptor.get("selectedBundle") or "")
         artifact = artifacts_by_sha.get(digest)
         if artifact is None:
@@ -924,6 +927,7 @@ def build_home_spots(config: ServerConfig, source_id: str, build_id: str) -> dic
 
     metadata_file = layout.metadata / "home-spots.json"
     previous = read_json(metadata_file) if metadata_file.is_file() else None
+    skipped_spots: list[dict[str, str]] = []
     for row in sorted(rows, key=lambda value: int(value.get("_id") or 0)):
         identity = int(row.get("_id") or 0)
         if not identity or identity in identities:
