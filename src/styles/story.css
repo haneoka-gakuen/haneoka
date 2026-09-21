@@ -388,6 +388,22 @@ story-workspace {
 .story-afterlive:has(.story-detail) {
   grid-template-columns: minmax(360px, 1fr) minmax(300px, 380px);
 }
+/* Reserved same-size media box so every story grid tile shows a
+   placeholder while its image loads. */
+.story-card__media {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  background: var(--md-sys-color-surface-container-high);
+}
+.story-card__media > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .afterlive-browser .story-card__media {
   display: none;
 }
