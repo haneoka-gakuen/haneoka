@@ -73,6 +73,15 @@ const bundle = buildSync({
   format: "cjs",
   write: false,
   logLevel: "silent",
+  // The converter composes locked workspace packages; map them to their
+  // materialized checkouts so bundling works without a linked node_modules.
+  alias: {
+    "@haneoka/cassiopeia": path.join(repositoryRoot, ".dependencies/cassiopeia"),
+    "@haneoka/cassiopeia-plugin-our-notes": path.join(
+      repositoryRoot,
+      ".dependencies/cassiopeia-plugin-our-notes",
+    ),
+  },
 });
 const source = bundle.outputFiles?.[0]?.text;
 if (!source) throw new Error("canonical chart converter bundle is empty");
