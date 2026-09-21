@@ -717,6 +717,7 @@ def home_spot_source_bundle_paths(
     artifacts_by_sha, _ = _bundle_artifacts(manifest)
     paths: set[str] = set()
     identities: set[int] = set()
+    skipped_spots: list[dict[str, str]] = []
     for row in sorted(rows, key=lambda value: int(value.get("_id") or 0)):
         identity = int(row.get("_id") or 0)
         if not identity or identity in identities:
@@ -937,126 +938,133 @@ def build_home_spots(config: ServerConfig, source_id: str, build_id: str) -> dic
                 f"{background_source} / {situation_source}\n"
             )
             continue
-        situation_name, background_transform, camera = _situation_document(
-            store, situation_source
-        )
-        mapping = (background_source, situation_name)
-        if mapping in mappings:
-            raise ValueError(f"Home Spot background/situation mapping repeats: {mapping}")
-        mappings.add(mapping)
+        try:
+            situation_name, background_transform, camera = _situation_document(
+                store, situation_source
+            )
+            mapping = (background_source, situation_name)
+            if mapping in mappings:
+                raise ValueError(f"Home Spot background/situation mapping repeats: {mapping}")
+            mappings.add(mapping)
 
-        descriptor = store.descriptor(background_source)
-        environment, artifact = _load_environment(
-            source, descriptor, artifacts_by_sha, artifacts_by_path
-        )
-        root = _background_root(environment, descriptor, background_source)
-        root_id = str(int(root.object_reader.path_id))
-        hidden = _hidden_objects(root, situation_name, background_source)
-        builder = _GlbBuilder(background_source, situation_name, root_id)
-        builder.add_scene(root, hidden)
-        payload = builder.finish()
-        relative = _output_relative(
-            background_source,
-            situation_name,
-            root_id,
-            OUTPUT_TYPE,
-            "glb",
-        )
-        if relative in outputs:
-            raise ValueError(f"Home Spot GLB output path repeats: {relative}")
-        outputs.add(relative)
-        output_file = layout.root / Path(*PurePosixPath(relative).parts)
-        atomic_write(output_file, payload)
-        output = {
-            "path": relative,
-            "runtime": f"/runtime/{config.id}/{relative.removeprefix('runtime/')}",
-            "role": "derivative",
-            "type": OUTPUT_TYPE,
-            "objectId": root_id,
-            "situationName": situation_name,
-            "coordinateSpace": "background-root-local",
-            "bytes": output_file.stat().st_size,
-            "sha256": sha256_file(output_file),
-        }
-        # The default camera placement first puts the camera at
-        # defaultPositionOffset, looks at originalOffset, then moves it back
-        # along that forward vector by orbitRatio. Reflect the authored Unity
-        # vectors into the same Three/glTF coordinate space as the scene before
-        # applying those operations.
-        camera_base = np.asarray(
-            [camera["position"][0], camera["position"][1], -camera["position"][2]],
-            dtype=np.float64,
-        )
-        camera_target = np.asarray(
-            [camera["target"][0], camera["target"][1], -camera["target"][2]],
-            dtype=np.float64,
-        )
-        camera_forward = camera_target - camera_base
-        camera_forward_length = float(np.linalg.norm(camera_forward))
-        if not math.isfinite(camera_forward_length) or camera_forward_length <= 1e-9:
-            raise ValueError(f"Home Spot preview camera direction is invalid: {identity}")
-        camera_position = camera_base - (
-            camera_forward / camera_forward_length * float(camera["orbitRatio"])
-        )
-        preview_payload, preview_statistics = render_home_spot_preview(
-            payload,
-            background_transform["matrix"],
-            camera_position.tolist(),
-            camera_target.tolist(),
-            float(camera["fieldOfView"]),
-            float(camera["aspect"]),
-        )
-        preview_relative = _output_relative(
-            background_source,
-            situation_name,
-            root_id,
-            "SpotBackgroundPreviewPNG",
-            "png",
-        )
-        if preview_relative in outputs:
-            raise ValueError(f"Home Spot PNG preview output path repeats: {preview_relative}")
-        outputs.add(preview_relative)
-        preview_file = layout.root / Path(*PurePosixPath(preview_relative).parts)
-        atomic_write(preview_file, preview_payload)
-        preview = {
-            "path": preview_relative,
-            "runtime": f"/runtime/{config.id}/{preview_relative.removeprefix('runtime/')}",
-            "role": "derivative",
-            "type": "SpotBackgroundPreviewPNG",
-            "objectId": root_id,
-            "situationName": situation_name,
-            "coordinateSpace": "camera-render",
-            "bytes": preview_file.stat().st_size,
-            "sha256": sha256_file(preview_file),
-            "width": preview_statistics["width"],
-            "height": preview_statistics["height"],
-            "renderTriangleCount": preview_statistics["triangleCount"],
-            "visiblePixelCount": preview_statistics["visiblePixelCount"],
-        }
-        scenes.append(
-            {
-                "spotId": identity,
-                "sourcePath": background_source,
-                "situationSourcePath": situation_source,
+            descriptor = store.descriptor(background_source)
+            environment, artifact = _load_environment(
+                source, descriptor, artifacts_by_sha, artifacts_by_path
+            )
+            root = _background_root(environment, descriptor, background_source)
+            root_id = str(int(root.object_reader.path_id))
+            hidden = _hidden_objects(root, situation_name, background_source)
+            builder = _GlbBuilder(background_source, situation_name, root_id)
+            builder.add_scene(root, hidden)
+            payload = builder.finish()
+            relative = _output_relative(
+                background_source,
+                situation_name,
+                root_id,
+                OUTPUT_TYPE,
+                "glb",
+            )
+            if relative in outputs:
+                raise ValueError(f"Home Spot GLB output path repeats: {relative}")
+            outputs.add(relative)
+            output_file = layout.root / Path(*PurePosixPath(relative).parts)
+            atomic_write(output_file, payload)
+            output = {
+                "path": relative,
+                "runtime": f"/runtime/{config.id}/{relative.removeprefix('runtime/')}",
+                "role": "derivative",
+                "type": OUTPUT_TYPE,
+                "objectId": root_id,
                 "situationName": situation_name,
-                "selectedBundle": str(descriptor.get("selectedBundle") or ""),
-                "bundleFilename": str(artifact.get("originalFilename") or ""),
-                "sourceRootTransform": _transform_document(_only_component(root, "Transform")),
-                "backgroundTransform": background_transform,
-                "camera": camera,
-                "hiddenObjectCount": len(hidden),
-                "output": output,
-                "preview": preview,
-                **builder.statistics(),
+                "coordinateSpace": "background-root-local",
+                "bytes": output_file.stat().st_size,
+                "sha256": sha256_file(output_file),
             }
-        )
+            # The default camera placement first puts the camera at
+            # defaultPositionOffset, looks at originalOffset, then moves it back
+            # along that forward vector by orbitRatio. Reflect the authored Unity
+            # vectors into the same Three/glTF coordinate space as the scene before
+            # applying those operations.
+            camera_base = np.asarray(
+                [camera["position"][0], camera["position"][1], -camera["position"][2]],
+                dtype=np.float64,
+            )
+            camera_target = np.asarray(
+                [camera["target"][0], camera["target"][1], -camera["target"][2]],
+                dtype=np.float64,
+            )
+            camera_forward = camera_target - camera_base
+            camera_forward_length = float(np.linalg.norm(camera_forward))
+            if not math.isfinite(camera_forward_length) or camera_forward_length <= 1e-9:
+                raise ValueError(f"Home Spot preview camera direction is invalid: {identity}")
+            camera_position = camera_base - (
+                camera_forward / camera_forward_length * float(camera["orbitRatio"])
+            )
+            preview_payload, preview_statistics = render_home_spot_preview(
+                payload,
+                background_transform["matrix"],
+                camera_position.tolist(),
+                camera_target.tolist(),
+                float(camera["fieldOfView"]),
+                float(camera["aspect"]),
+            )
+            preview_relative = _output_relative(
+                background_source,
+                situation_name,
+                root_id,
+                "SpotBackgroundPreviewPNG",
+                "png",
+            )
+            if preview_relative in outputs:
+                raise ValueError(f"Home Spot PNG preview output path repeats: {preview_relative}")
+            outputs.add(preview_relative)
+            preview_file = layout.root / Path(*PurePosixPath(preview_relative).parts)
+            atomic_write(preview_file, preview_payload)
+            preview = {
+                "path": preview_relative,
+                "runtime": f"/runtime/{config.id}/{preview_relative.removeprefix('runtime/')}",
+                "role": "derivative",
+                "type": "SpotBackgroundPreviewPNG",
+                "objectId": root_id,
+                "situationName": situation_name,
+                "coordinateSpace": "camera-render",
+                "bytes": preview_file.stat().st_size,
+                "sha256": sha256_file(preview_file),
+                "width": preview_statistics["width"],
+                "height": preview_statistics["height"],
+                "renderTriangleCount": preview_statistics["triangleCount"],
+                "visiblePixelCount": preview_statistics["visiblePixelCount"],
+            }
+            scenes.append(
+                {
+                    "spotId": identity,
+                    "sourcePath": background_source,
+                    "situationSourcePath": situation_source,
+                    "situationName": situation_name,
+                    "selectedBundle": str(descriptor.get("selectedBundle") or ""),
+                    "bundleFilename": str(artifact.get("originalFilename") or ""),
+                    "sourceRootTransform": _transform_document(_only_component(root, "Transform")),
+                    "backgroundTransform": background_transform,
+                    "camera": camera,
+                    "hiddenObjectCount": len(hidden),
+                    "output": output,
+                    "preview": preview,
+                    **builder.statistics(),
+                }
+            )
 
+        except (KeyError, ValueError) as error:
+            sys.stderr.write(f"warning: skipping home spot {identity}; unavailable content: {error}\n")
+            skipped_spots.append({"spotId": str(identity), "reason": str(error)})
+            continue
     _remove_stale_outputs(layout, previous, outputs)
     result = {
         "schema": SCHEMA,
         "server": config.id,
         "sourceId": source_id,
         "sceneCount": len(scenes),
+        "skippedSceneCount": len(skipped_spots),
+        "skippedSpots": skipped_spots,
         "scenes": scenes,
     }
     write_json(metadata_file, result, pretty=True)
