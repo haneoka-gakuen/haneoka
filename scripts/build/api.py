@@ -1387,7 +1387,7 @@ def _canonical_score_charts(files: dict[str, Path]) -> dict[str, dict[str, Any]]
     return charts
 
 
-def _score_model(data: BuildData) -> dict[str, Any]:
+def _score_model(data: BuildData) -> dict[str, Any] | None:
     note_score_percents = {
         int(row.get("_noteOperateType") or 0): float(row.get("_scorePercent") or 0)
         for row in data.rows("MasterLiveNoteParameter")
@@ -1412,11 +1412,15 @@ def _score_model(data: BuildData) -> dict[str, Any]:
     }
     missing_settings = sorted(numeric_setting_keys - set(settings))
     if not note_score_percents or not combo_bonuses or missing_settings or 5 not in judgement_percents:
-        raise ValueError(
-            "native score Master inputs are incomplete: "
-            f"noteParameters={len(note_score_percents)}, comboBonuses={len(combo_bonuses)}, "
-            f"missingSettings={missing_settings}, perfectJudgement={5 in judgement_percents}"
+        # Pre-launch packages embed a partial master set; the complete scoring
+        # parameters arrive from MasterdataService after release.
+        sys.stderr.write(
+            "warning: native score Master inputs are incomplete "
+            f"(noteParameters={len(note_score_percents)}, comboBonuses={len(combo_bonuses)}, "
+            f"missingSettings={missing_settings}, perfectJudgement={5 in judgement_percents}); "
+            "canonical chart metrics are disabled for this build\n"
         )
+        return None
     return {
         "noteScorePercents": note_score_percents,
         "comboBonuses": combo_bonuses,
@@ -1431,7 +1435,7 @@ def _score_metrics(
     play_level: int,
     display_level: float,
     note_count: int,
-    model: dict[str, Any],
+    model: dict[str, Any] | None,
 ) -> dict[str, Any]:
     metrics: dict[str, Any] = {
         "r": math.trunc(display_level),
@@ -1446,6 +1450,9 @@ def _score_metrics(
     }
     if not chart:
         metrics.update(metaStatus="unavailable", metaReason="canonical-score-file-missing")
+        return metrics
+    if model is None:
+        metrics.update(metaStatus="unavailable", metaReason="native-score-master-inputs-incomplete")
         return metrics
 
     bpm_events = [
