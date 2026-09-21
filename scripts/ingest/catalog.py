@@ -39,7 +39,7 @@ def _remote_url(parts: list[str], remote_root: str = "") -> str:
     # Unity Addressables stores remote bundle paths as
     # "<bundle>/{UnityEngine.AddressableAssets.Addressables.RuntimePath}/Android";
     # the {RuntimePath} token resolves to the CDN RemoteLoadPath at runtime. With no
-    # remote catalog (e.g. gl-cbt, which ships only an embedded catalog), substitute
+    # remote catalog (e.g. intl-cbt, which ships only an embedded catalog), substitute
     # the token with remote_root and reverse the parts to get "<root>/Android/<bundle>".
     if remote_root:
         root = remote_root.rstrip("/")

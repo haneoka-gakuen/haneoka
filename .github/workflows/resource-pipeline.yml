@@ -6,7 +6,7 @@ on:
       server:
         description: Server configuration id
         required: true
-        default: jp-cbt
+        default: intl
         type: string
       package_r2_key:
         description: Private R2 CAS key of one APK, APKS, or XAPK file

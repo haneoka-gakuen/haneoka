@@ -66,6 +66,13 @@ jobs:
           else
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-package \
               --key "$PACKAGE_R2_KEY" --output "$RUNNER_TEMP/package-input"
+            # 1.0.x packages embed the launch catalog at assets/aa/catalog.bin;
+            # use it while the remote catalog_main is not yet published.
+            if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
+              unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
+                > "$RUNNER_TEMP/embedded-catalog.bin"
+              echo "HANEOKA_SOURCE_CATALOG=$RUNNER_TEMP/embedded-catalog.bin" >> "$GITHUB_ENV"
+            fi
             python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
               --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
           fi

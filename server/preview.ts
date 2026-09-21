@@ -38,7 +38,7 @@ if (BESTDORI_RAW_MIRROR_ROOT && !fs.statSync(BESTDORI_RAW_MIRROR_ROOT, { throwIf
 const BESTDORI_PROVIDER_ORIGIN = configuredHttpOrigin("BESTDORI_PROVIDER_ORIGIN");
 const APPLICATION_WORKER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_ORIGIN");
 const APPLICATION_WORKER_BROWSER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_BROWSER_ORIGIN");
-const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "jp-cbt,gl-cbt")
+const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "intl,jp-cbt,intl-cbt")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
@@ -838,8 +838,9 @@ function localizeSonolusDocument(value: JsonValue, localOrigin: string): JsonVal
 // for known CBT servers (matching the Worker's resource_server seed rows) instead
 // of showing the bare slug. Unknown servers fall back to the slug-derived form.
 const LOCAL_RELEASE_LABELS: Readonly<Record<string, { displayName: string; region: string }>> = {
+  "intl": { displayName: "Our Notes", region: "global" },
   "jp-cbt": { displayName: "Japan CBT", region: "jp" },
-  "gl-cbt": { displayName: "Global CBT", region: "global" },
+  "intl-cbt": { displayName: "Global CBT", region: "global" },
 };
 
 function localReleaseRegistry(): JsonObject {

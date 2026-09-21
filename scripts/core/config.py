@@ -84,7 +84,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     remote_root_value = value.get("remoteRoot")
     if isinstance(remote_root_value, str) and remote_root_value:
         # Validate whenever a remoteRoot is supplied — for online builds and for offline
-        # builds that still download non-embedded bundles from the CDN (gl-cbt model).
+        # builds that still download non-embedded bundles from the CDN (intl-cbt model).
         remote_root = urlsplit(remote_root_value)
         remote_hostname = (remote_root.hostname or "").lower().rstrip(".")
         try:

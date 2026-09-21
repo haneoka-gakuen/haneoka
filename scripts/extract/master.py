@@ -129,9 +129,10 @@ def extract_master(input_file: Path, output: Path, config: ServerConfig) -> dict
                 for member in members
                 if Path(member.filename).name == VERSION_FILE
             ]
-            if len(version_entries) != 1:
-                raise ValueError(f"{VERSION_FILE} is missing")
-            version_entry = version_entries[0]
+            # 1.0.x builds ship no MasterDataSystemVersion.txt alongside the tables.
+            if len(version_entries) > 1:
+                raise ValueError(f"duplicate {VERSION_FILE} entries")
+            version_entry = version_entries[0] if version_entries else None
             output.mkdir(parents=True, exist_ok=True)
             encrypted_output = output / ENCRYPTED_DIRECTORY
             encrypted_output.mkdir(parents=True, exist_ok=True)
@@ -159,14 +160,16 @@ def extract_master(input_file: Path, output: Path, config: ServerConfig) -> dict
                         "sourceSha256": sha256_bytes(raw),
                     }
                 )
-            version_bytes = archive.read(version_entry)
-            try:
-                version = version_bytes.decode("utf-8").strip()
-            except UnicodeDecodeError as error:
-                raise ValueError(f"{VERSION_FILE} is not UTF-8") from error
-            if not version:
-                raise ValueError(f"{VERSION_FILE} is empty")
-            atomic_write(encrypted_output / VERSION_FILE, version_bytes)
+            version_bytes = archive.read(version_entry) if version_entry is not None else b""
+            version = ""
+            if version_entry is not None:
+                try:
+                    version = version_bytes.decode("utf-8").strip()
+                except UnicodeDecodeError as error:
+                    raise ValueError(f"{VERSION_FILE} is not UTF-8") from error
+                if not version:
+                    raise ValueError(f"{VERSION_FILE} is empty")
+                atomic_write(encrypted_output / VERSION_FILE, version_bytes)
     manifest = {
         "schema": "haneoka-master-v2",
         "systemVersion": version,

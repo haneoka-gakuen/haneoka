@@ -140,7 +140,7 @@ export class ChartSimulator extends LitElement {
     this.audioUrl = "";
     this.bandId = 1;
     this.label = "Chart";
-    this.server = "gl-cbt";
+    this.server = "intl";
     this.locale = "ja";
     this.phase = "loading";
     this.playing = false;

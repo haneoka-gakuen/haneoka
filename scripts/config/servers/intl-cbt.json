@@ -1,6 +1,6 @@
 {
   "$schema": "../server.schema.json",
-  "id": "gl-cbt",
+  "id": "intl-cbt",
   "packageName": "com.bilibili.sirius",
   "platform": "Android",
   "unityVersion": "6000.3.12f1",

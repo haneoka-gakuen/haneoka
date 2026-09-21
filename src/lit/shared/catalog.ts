@@ -169,9 +169,9 @@ export function localizedText(value: unknown, locale: string): string {
 
 export function currentReleaseServer(): string {
   try {
-    return localStorage.getItem("haneoka.release-server") || "gl-cbt";
+    return localStorage.getItem("haneoka.release-server") || "intl";
   } catch {
-    return "gl-cbt";
+    return "intl";
   }
 }
 

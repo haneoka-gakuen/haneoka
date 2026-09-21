@@ -2,7 +2,7 @@
 """Reconstruct a fully-plaintext ``libil2cpp.so`` from a partially-XOR-encrypted one.
 
 Targeted at the protection used by the "Our Notes" / *Sirius* builds
-(``com.bushiroad.siriusstaging`` jp-cbt and ``com.bilibili.sirius`` gl-cbt, and
+(``com.bushiroad.siriusstaging`` jp-cbt and ``com.bilibili.sirius`` intl-cbt, and
 expected to apply to future versions of the same family):
 
 * The ELF is otherwise normal — section headers, ``.dynsym`` (``il2cpp_*``
@@ -10,7 +10,7 @@ expected to apply to future versions of the same family):
 * Roughly a quarter of the **executable** sections (``.text`` plus the custom
   ``il2cpp`` section that holds the compiled method bodies) is encrypted in
   **contiguous, per-method spans** with a **single-byte XOR key**.
-* The key **differs per build** (jp-cbt = ``0x39``, gl-cbt = ``0xcc``). The rest
+* The key **differs per build** (jp-cbt = ``0x39``, intl-cbt = ``0xcc``). The rest
   of the code section is plaintext, so naively XORing the whole region
   (the old ``fullydecrypted`` / ``xor39-*`` variants) corrupts the plaintext
   spans — which is why those variants are unusable.

@@ -41,7 +41,7 @@ catalogs, Unity bundles, and CRI payloads needed by the resource build. Once a
 source exists locally, rebuild it without querying the game's CDN or R2:
 
 ```sh
-PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt run \
+PYTHONPATH=scripts python scripts/pipeline.py --server intl run \
   --offline --source <source-id>
 ```
 
@@ -55,9 +55,9 @@ To restore a source from R2 first, use a separate explicit read operation, then
 run the offline build:
 
 ```sh
-PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt fetch-source \
+PYTHONPATH=scripts python scripts/pipeline.py --server intl fetch-source \
   --source <source-id>
-PYTHONPATH=scripts python scripts/pipeline.py --server gl-cbt run \
+PYTHONPATH=scripts python scripts/pipeline.py --server intl run \
   --offline --source <source-id>
 ```
 

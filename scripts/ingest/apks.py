@@ -276,7 +276,7 @@ def _asset_pack(package: Path, scratch: Path) -> Path:
 def _embedded_catalog(asset_pack: Path, scratch: Path) -> tuple[Path, Path, str, str, Path, str]:
     """Offline Addressables catalog source: read it from the install-time asset-pack APK.
 
-    Servers without a reachable CDN (e.g. gl-cbt) ship the authoritative
+    Servers without a reachable CDN (e.g. intl-cbt) ship the authoritative
     ``catalog_main.hash`` / ``catalog_main.bin`` inside ``split_UnityDataAssetPack.apk``.
     This returns the same tuple shape the remote-fetch path produces so the rest of
     ``ingest_package`` is unchanged: (hash_file, catalog_file, catalog_hash, catalog_sha,
@@ -502,7 +502,7 @@ def _resolve_catalog_version(
 ) -> str:
     """Resolve the newest catalog version published at or above ``floor``.
 
-    Versioned-catalog CDNs (e.g. gl-cbt) publish ``catalog_{version}.hash`` with
+    Versioned-catalog CDNs (e.g. intl-cbt) publish ``catalog_{version}.hash`` with
     no version pointer, so the live version has to be discovered by probing.
 
     The build (4th) component is a contiguous hotfix counter within a line and is
@@ -708,7 +708,7 @@ def ingest_package(
                 catalog_encoding,
             ) = _embedded_catalog(asset_pack, scratch)
         elif config.catalog_version:
-            # Versioned, per-locale Addressables catalogs (e.g. gl-cbt). Unlike the
+            # Versioned, per-locale Addressables catalogs (e.g. intl-cbt). Unlike the
             # standard Addressables layout, this CDN publishes
             # catalog_{version}[_{locale}].{hash,bin} and exposes no version pointer
             # (catalog_main.hash is absent), so the resource version comes from
@@ -818,6 +818,9 @@ def ingest_package(
             catalog_entries = [
                 member for member in members if member.filename.endswith("assets/aa/Android/catalog_main.bin")
             ]
+            # 1.0.x builds renamed the embedded catalog to assets/aa/catalog.bin.
+            if not catalog_entries:
+                catalog_entries = [member for member in members if member.filename == "assets/aa/catalog.bin"]
             if len(catalog_entries) != 1:
                 raise ValueError(f"expected one embedded Android catalog, found {len(catalog_entries)}")
             _copy_archive_entry(

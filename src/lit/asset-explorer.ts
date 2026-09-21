@@ -120,9 +120,9 @@ export class AssetExplorer extends LitElement {
   }
   private server() {
     try {
-      return localStorage.getItem("haneoka.release-server") || "gl-cbt";
+      return localStorage.getItem("haneoka.release-server") || "intl";
     } catch {
-      return "gl-cbt";
+      return "intl";
     }
   }
   private kind(file: string) {

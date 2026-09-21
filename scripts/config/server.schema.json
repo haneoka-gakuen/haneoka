@@ -46,7 +46,7 @@
     "catalog": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Versioned, per-locale Addressables catalog scheme (e.g. gl-cbt). The CDN publishes catalog_{version}[_{locale}].{hash,bin} with no discoverable version pointer, so the resource version is supplied here.",
+      "description": "Versioned, per-locale Addressables catalog scheme (e.g. intl-cbt). The CDN publishes catalog_{version}[_{locale}].{hash,bin} with no discoverable version pointer, so the resource version is supplied here.",
       "required": ["version"],
       "properties": {
         "version": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },

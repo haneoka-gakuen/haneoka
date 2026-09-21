@@ -148,7 +148,7 @@ export class VegaStoryStage extends LitElement {
   constructor() {
     super();
     this.story = {};
-    this.server = "gl-cbt";
+    this.server = "intl";
     this.locale = "ja";
     this.providerBase = "";
     this.phase = "loading";

@@ -60,7 +60,7 @@ function isReleaseManifestIdentity(
   );
 }
 
-export function normalizeServerId(value = "gl-cbt"): string {
+export function normalizeServerId(value = "intl"): string {
   const server = value.trim().toLowerCase();
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(server)) {
     throw new Error(`Invalid server id: ${value}`);
@@ -69,7 +69,7 @@ export function normalizeServerId(value = "gl-cbt"): string {
 }
 
 export function releaseWorkspace(
-  server = "gl-cbt",
+  server = "intl",
   root = PROJECT_ROOT,
   env: Readonly<NodeJS.ProcessEnv> = process.env,
 ): Readonly<ReleaseWorkspace> {
