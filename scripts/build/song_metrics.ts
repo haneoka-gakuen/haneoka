@@ -53,7 +53,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const converterEntry = [
   path.join(repositoryRoot, "packages/sonolus/src/convert/index.ts"),
   path.join(repositoryRoot, ".dependencies/cassiopeia-plugin-sonolus/src/convert/index.ts"),
-].find((candidate) => existsSync(candidate));
+].find((candidate) => fs.existsSync(candidate));
 if (!converterEntry) {
   throw new Error("sonolus convert entry is missing: run the external repository checkout");
 }
