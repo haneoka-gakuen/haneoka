@@ -1973,7 +1973,12 @@ def _stage_volume_profiles(
         by_object_id[identity] = profile
         by_name[profile["name"]] = profile
     if not by_object_id:
-        raise ValueError("No ADV stage VolumeProfiles were loaded")
+        # Pre-launch packages embed no ADV stage content; the profiles arrive
+        # with the CDN-served story bundles after release.
+        sys.stderr.write(
+            "warning: no ADV stage VolumeProfiles in this source; "
+            "stage post effects are disabled for this build\n"
+        )
     data._stage_profile_index = by_object_id
     data._stage_profile_name_index = by_name
     return by_object_id, by_name
@@ -3937,6 +3942,16 @@ def _prefab_sprite_pointer_identities(
 
 
 def _story_ui_sprites(data: BuildData) -> dict[str, str]:
+    if (
+        FIX_UI_SPRITE_ATLAS_SOURCE not in data.source_path_set
+        or DEFAULT_TALK_WINDOW_SOURCE not in data.source_path_set
+    ):
+        # Pre-launch packages ship no story UI atlas; uiSprites arrive with the
+        # CDN-served story bundles after release.
+        sys.stderr.write(
+            "warning: story UI sprite sources are absent; uiSprites are disabled for this build\n"
+        )
+        return {}
     fix_ui = data.source_descriptor(FIX_UI_SPRITE_ATLAS_SOURCE)
     default_talk_window = data.source_descriptor(DEFAULT_TALK_WINDOW_SOURCE)
 
@@ -4062,7 +4077,12 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
         source in data.source_path_set
         for source in (template_prefab, template_sprite, template_data_root + "/ADVChatIconLine_Plus.png")
     ):
-        raise ValueError("ADV chat template assets are incomplete")
+        # Pre-launch packages ship no ADV chat template; chatAssets arrive with
+        # the CDN-served story bundles after release.
+        sys.stderr.write(
+            "warning: ADV chat template assets are absent; chatAssets are disabled for this build\n"
+        )
+        return {}
 
     masters: dict[str, dict[str, Any]] = {}
     presets_by_ref: dict[str, dict[str, Any]] = {}

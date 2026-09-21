@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
@@ -105,8 +106,6 @@ def assemble_game_client(
         raise ValueError(
             "the Master build does not contain the encrypted-client v2 contract"
         )
-    if not isinstance(master.get("systemVersion"), str) or not master["systemVersion"]:
-        raise ValueError("the Master system version is missing")
     tables = master.get("tables")
     if (
         not isinstance(tables, list)
@@ -118,16 +117,28 @@ def assemble_game_client(
     encrypted_root = master_root / ENCRYPTED_DIRECTORY
     master_output = output / "master"
     version_source = encrypted_root / VERSION_FILE
-    if not version_source.is_file():
-        raise FileNotFoundError(
-            f"encrypted Master version file is missing: {version_source}"
-        )
-    if version_source.read_text("utf-8").strip() != master["systemVersion"]:
-        raise ValueError("encrypted Master version file does not match master.json")
-    if version_source.stat().st_size != master.get("versionBytes") or sha256_file(
-        version_source
-    ) != master.get("versionSha256"):
-        raise ValueError("encrypted Master version file integrity mismatch")
+    system_version = master.get("systemVersion")
+    if not isinstance(system_version, str) or not system_version:
+        # 1.0.x packages ship no MasterDataSystemVersion.txt; derive a stable
+        # version from the encrypted table set so the client contract holds.
+        table_digest = hashlib.sha256()
+        for table in sorted(tables, key=lambda value: value["name"]):
+            table_digest.update(table["name"].encode("utf-8"))
+            table_digest.update(str(table.get("sourceSha256") or "").encode("utf-8"))
+        system_version = table_digest.hexdigest()
+        version_source.parent.mkdir(parents=True, exist_ok=True)
+        version_source.write_text(system_version, encoding="utf-8")
+    else:
+        if not version_source.is_file():
+            raise FileNotFoundError(
+                f"encrypted Master version file is missing: {version_source}"
+            )
+        if version_source.read_text("utf-8").strip() != system_version:
+            raise ValueError("encrypted Master version file does not match master.json")
+        if version_source.stat().st_size != master.get("versionBytes") or sha256_file(
+            version_source
+        ) != master.get("versionSha256"):
+            raise ValueError("encrypted Master version file integrity mismatch")
     hardlink_or_copy(version_source, master_output / VERSION_FILE)
 
     client_tables: list[dict[str, Any]] = []
