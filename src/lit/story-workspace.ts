@@ -591,7 +591,12 @@ export class StoryWorkspace extends LitElement {
       const chapter =
         this.relevantChapters().find((item) => String(item.chapterId) === this.selectedRail) ||
         this.relevantChapters()[0];
-      const staged = selected || episodes[0];
+      const mainEpisodes = episodes.filter(
+        (episode) =>
+          !String(episode.storyId || "").startsWith("anotherstory") &&
+          !String(episode.storyId || "").includes("_exstory_"),
+      );
+      const staged = selected || mainEpisodes[0] || episodes[0];
       const stagedImage = staged
         ? String(staged.image || chapter?.image || staged.banner || chapter?.banner || "")
         : "";
@@ -613,6 +618,9 @@ export class StoryWorkspace extends LitElement {
                       <span>
                         <small>${uiText(this.locale, "chapters")}</small>
                         <strong>${this.text(chapter?.chapterName) || String(chapter?.chapterKey || "")}</strong>
+                        <small class="chapter-story-stage__subtitle">
+                          ${this.text(chapter?.description)}
+                        </small>
                       </span>
                     </header>
                     <div class="chapter-story-stage__main">
@@ -687,30 +695,33 @@ export class StoryWorkspace extends LitElement {
           }
           ${
             (() => {
-              const main = episodes.filter((episode) => !String(episode.storyId || "").startsWith("anotherstory"));
-              const another = episodes.filter((episode) => String(episode.storyId || "").startsWith("anotherstory"));
+              const sid = (episode: JsonRecord) => String(episode.storyId || "");
+              const main = episodes.filter((episode) => !sid(episode).startsWith("anotherstory") && !sid(episode).includes("_exstory_"));
+              const ex = episodes.filter((episode) => sid(episode).includes("_exstory_"));
+              const another = episodes.filter((episode) => sid(episode).startsWith("anotherstory"));
+              const section = (label: string, list: JsonRecord[]) =>
+                list.length
+                  ? html`
+                      <section class="chapter-story-another">
+                        <header>
+                          <h3>${label}</h3>
+                        </header>
+                        <nav class="story-list grid" aria-label=${label}>
+                          ${list.map((episode) =>
+                            this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
+                          )}
+                        </nav>
+                      </section>
+                    `
+                  : nothing;
               return html`
                 <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
                   ${main.map((episode) =>
                     this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
                   )}
                 </nav>
-                ${
-                  another.length
-                    ? html`
-                        <section class="chapter-story-another">
-                          <header>
-                            <h3>${uiText(this.locale, "anotherStory")}</h3>
-                          </header>
-                          <nav class="story-list grid" aria-label=${uiText(this.locale, "anotherStory")}>
-                            ${another.map((episode) =>
-                              this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
-                            )}
-                          </nav>
-                        </section>
-                      `
-                    : nothing
-                }
+                ${section(uiText(this.locale, "exStory"), ex)}
+                ${section(uiText(this.locale, "anotherStory"), another)}
               `;
             })()
           }
@@ -884,10 +895,10 @@ export class StoryWorkspace extends LitElement {
       : nothing;
     return html`
       <button class=${`story-card content-grid-tile ${id === active ? "selected" : ""}`} @click=${() => choose(id)}>
-        ${
-          image
-            ? html`
-                <span class="story-card__media media-loading">
+        <span class=${`story-card__media ${image ? "media-loading" : ""}`}>
+          ${
+            image
+              ? html`
                   <img
                     src=${image}
                     alt=""
@@ -895,34 +906,38 @@ export class StoryWorkspace extends LitElement {
                     decoding="async"
                     @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
                   />
-                  ${
-                    overlayImage
-                      ? html`
-                          <img class="story-card__logo" src=${overlayImage} alt="" loading="lazy" />
-                        `
-                      : nothing
-                  }
-                  ${
-                    characterIds.length
-                      ? html`
-                          <span class="story-card__media-avatars">
-                            ${characterIds.slice(0, 5).map((characterId) => {
-                              const character = this.character(characterId);
-                              const source = String(character?.faceImage || character?.thumbnailImage || "");
-                              return source
-                                ? html`
-                                    <img src=${source} alt="" loading="lazy" />
-                                  `
-                                : nothing;
-                            })}
-                          </span>
-                        `
-                      : nothing
-                  }
-                </span>
-              `
-            : nothing
-        }
+                `
+              : html`
+                  <svg class="material-icon" width="36" height="36">
+                    <use href="/icons.svg#auto_stories"></use>
+                  </svg>
+                `
+          }
+          ${
+            overlayImage
+              ? html`
+                  <img class="story-card__logo" src=${overlayImage} alt="" loading="lazy" />
+                `
+              : nothing
+          }
+          ${
+            characterIds.length
+              ? html`
+                  <span class="story-card__media-avatars">
+                    ${characterIds.slice(0, 5).map((characterId) => {
+                      const character = this.character(characterId);
+                      const source = String(character?.faceImage || character?.thumbnailImage || "");
+                      return source
+                        ? html`
+                            <img src=${source} alt="" loading="lazy" />
+                          `
+                        : nothing;
+                    })}
+                  </span>
+                `
+              : nothing
+          }
+        </span>
         <span class="story-card__body">
           ${
             this.view === "grid"

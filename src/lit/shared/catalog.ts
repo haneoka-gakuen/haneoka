@@ -33,6 +33,7 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   chapter: ["チャプター", "Chapter", "章節", "章节", "챕터"],
   chapters: ["チャプター", "Chapters", "章節", "章节", "챕터"],
   anotherStory: ["アナザーストーリー", "Another Story", "番外故事", "番外故事", "어나더 스토리"],
+  exStory: ["EXストーリー", "EX Story", "EX 剧情", "EX 剧情", "EX 스토리"],
   selectModel: [
     "ライブラリからモデルを選択",
     "Select a model from the library",
