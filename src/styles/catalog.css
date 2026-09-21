@@ -831,23 +831,24 @@ catalog-screen {
   --catalog-min: 220px;
 }
 .catalog-card--comic .catalog-card__media {
-  aspect-ratio: auto;
+  aspect-ratio: 3 / 4;
 }
 .catalog-card--comic .catalog-card__media img {
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 .catalog--stamp {
   --catalog-min: 138px;
 }
 .catalog-card--stamp .catalog-card__media {
-  aspect-ratio: auto;
+  aspect-ratio: 1;
   padding: 0;
   background: var(--md-sys-color-surface-container-low);
 }
 .catalog-card--stamp .catalog-card__media img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
   filter: none;
 }
 
@@ -1032,7 +1033,7 @@ catalog-screen {
 }
 .catalog-card--band-item .catalog-card__media {
   display: block;
-  aspect-ratio: auto;
+  aspect-ratio: 1;
   overflow: hidden;
   background: color-mix(in srgb, var(--band-item-accent) 12%, var(--md-sys-color-surface-container-high));
 }

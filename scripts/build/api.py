@@ -1635,6 +1635,7 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
         )
         for row in data.rows("MasterLiveMusicLightColor")
     }
+    band_rows = {int(row.get("_id") or 0): row for row in data.rows("MasterBand")}
     output = {}
     metadata = {}
     for row in data.rows("MasterLiveMusic"):
@@ -1705,6 +1706,15 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
                     )
         sound = data.music_sound(int(row.get("_musicSoundID") or 0))
         music = sound.get("playableUrl") if sound else None
+        band_ids = [int(value) for value in row.get("_bandIDs", [])]
+        primary_band = band_ids[0] if band_ids else 0
+        # Cover songs (e.g. 春日影/Crychic) ship an empty _bandIDs; fall back to
+        # the band name text so the artist still resolves.
+        band_name = (
+            data.text(band_rows.get(primary_band, {}).get("_nameTextID"))
+            if primary_band in band_rows
+            else None
+        ) or (data.text(row.get("_bandNameTextID")) or None)
         jacket = str(row.get("_jacketAssetName") or "")
         output[str(identity)] = _present(
             musicId=identity,
@@ -1714,8 +1724,9 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
                 if row.get("_bandNameTextID")
                 else None
             ),
-            bandId=int((row.get("_bandIDs") or [0])[0] or 0),
-            bandIds=[int(value) for value in row.get("_bandIDs", [])],
+            bandId=primary_band,
+            bandIds=band_ids,
+            bandName=band_name,
             publishedAt=_timestamp(row.get("_startAt")),
             jacketUrl=data.asset(f"Assets/AddressableResources/Image/Jacket/{jacket}.png"),
             jacketThumbUrl=data.asset(f"Assets/AddressableResources/Image/Jacket/small/{jacket}.png"),
@@ -3756,6 +3767,12 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
             ),
         }
 
+    home_spot_titles = {
+        int(row.get("_advId") or 0): data.text(row.get("_nameTextId"))
+        for row in data.rows("MasterHomeSpot")
+        if row.get("_advId")
+    }
+
     episodes = {}
     for adv_id, adv in sorted(advs.items()):
         asset_name = str(adv.get("_advEpisodeAsset") or "")
@@ -3778,7 +3795,7 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
             chapterKey=str(chapter.get("chapterKey") or chapter_id),
             chapterName=chapter.get("chapterName", ["", "", "", "", ""]),
             storySort=int(metadata.get("episodeNumber") or adv_id),
-            title=data.text(adv.get("_titleTextId"), story_id),
+            title=home_spot_titles.get(adv_id) or data.text(adv.get("_titleTextId"), story_id),
             description=metadata.get("description", ["", "", "", "", ""]),
             bandId=chapter.get("bandId", 0),
             characterIds=[value for value in metadata.get("characterIds", []) if value],
