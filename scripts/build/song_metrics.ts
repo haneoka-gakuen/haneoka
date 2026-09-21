@@ -47,7 +47,16 @@ interface ConverterExports {
 
 const require = createRequire(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const converterEntry = path.join(repositoryRoot, "packages/sonolus/src/convert/index.ts");
+// The converter lives in the locked cassiopeia-plugin-sonolus workspace, which
+// materializes packages/sonolus/src/convert on full installs; fall back to the
+// locked checkout when only the external repositories are materialized.
+const converterEntry = [
+  path.join(repositoryRoot, "packages/sonolus/src/convert/index.ts"),
+  path.join(repositoryRoot, ".dependencies/cassiopeia-plugin-sonolus/src/convert/index.ts"),
+].find((candidate) => existsSync(candidate));
+if (!converterEntry) {
+  throw new Error("sonolus convert entry is missing: run the external repository checkout");
+}
 
 // API generation and the chart player must consume the same native-backed
 // conversion model. Bundle that TypeScript entry in memory instead of keeping
