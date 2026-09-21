@@ -3,9 +3,6 @@ name: Resource pipeline implementation
 on:
   workflow_call:
     inputs:
-      github_environment:
-        required: true
-        type: string
       server:
         required: true
         type: string
@@ -26,6 +23,8 @@ on:
         required: true
       r2_secret_access_key:
         required: true
+      resource_cdn_authorization:
+        required: false
 
 env:
   RESOURCE_SERVER: ${{ inputs.server }}
@@ -42,8 +41,6 @@ jobs:
     name: Normalize and publish source
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    environment:
-      name: ${{ inputs.github_environment }}
     permissions:
       contents: read
     outputs:
@@ -54,7 +51,7 @@ jobs:
     env:
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
       SOURCE_ID_INPUT: ${{ inputs.source_id }}
-      RESOURCE_CDN_AUTHORIZATION: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+      RESOURCE_CDN_AUTHORIZATION: ${{ secrets.resource_cdn_authorization }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
