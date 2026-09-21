@@ -32,6 +32,7 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   swap: ["入れ替え", "Swap", "交換", "交换", "교체"],
   chapter: ["チャプター", "Chapter", "章節", "章节", "챕터"],
   chapters: ["チャプター", "Chapters", "章節", "章节", "챕터"],
+  anotherStory: ["アナザーストーリー", "Another Story", "番外故事", "番外故事", "어나더 스토리"],
   selectModel: [
     "ライブラリからモデルを選択",
     "Select a model from the library",

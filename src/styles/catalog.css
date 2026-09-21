@@ -831,7 +831,7 @@ catalog-screen {
   --catalog-min: 220px;
 }
 .catalog-card--comic .catalog-card__media {
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 4 / 3;
 }
 .catalog-card--comic .catalog-card__media img {
   width: 100%;

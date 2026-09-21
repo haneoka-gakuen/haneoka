@@ -685,11 +685,35 @@ export class StoryWorkspace extends LitElement {
                 `
               : nothing
           }
-          <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
-            ${episodes.map((episode) =>
-              this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
-            )}
-          </nav>
+          ${
+            (() => {
+              const main = episodes.filter((episode) => !String(episode.storyId || "").startsWith("anotherstory"));
+              const another = episodes.filter((episode) => String(episode.storyId || "").startsWith("anotherstory"));
+              return html`
+                <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
+                  ${main.map((episode) =>
+                    this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
+                  )}
+                </nav>
+                ${
+                  another.length
+                    ? html`
+                        <section class="chapter-story-another">
+                          <header>
+                            <h3>${uiText(this.locale, "anotherStory")}</h3>
+                          </header>
+                          <nav class="story-list grid" aria-label=${uiText(this.locale, "anotherStory")}>
+                            ${another.map((episode) =>
+                              this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
+                            )}
+                          </nav>
+                        </section>
+                      `
+                    : nothing
+                }
+              `;
+            })()
+          }
         </main>
         ${detail ? this.renderDetail(detail) : nothing}
       `;
@@ -833,10 +857,16 @@ export class StoryWorkspace extends LitElement {
       characterIds.map((characterId) => this.characterName(this.character(characterId) || {})),
       this.locale,
     );
+    const episodeChapter = this.chapters.find(
+      (item) => String(item.chapterId) === String(episode.chapterId),
+    );
     const gridDescription =
       this.mode === "link" && episode.unlockCharacterFriendshipLevel
         ? `${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}`
-        : characterNames || this.text(episode.chapterName) || this.duration(episode);
+        : this.text(episode.description) ||
+          characterNames ||
+          this.text(episodeChapter?.chapterName) ||
+          this.duration(episode);
     const avatarAdornment = characterIds.length
       ? html`
           <span class="story-card__avatars" aria-hidden="true">
