@@ -3843,7 +3843,7 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
             spotId=identity,
             bandId=band_id,
             bandName=data.text(bands.get(band_id, {}).get("_nameTextID"), ""),
-            name=data.text(row.get("_advNameTextId"), str(identity)),
+            name=data.text(row.get("_nameTextId"), str(identity)),
             assetName=background_path.split("/")[1] if "/" in background_path else background_path,
             characterIds=[int(value) for value in row.get("_characterIds", [])],
             talks=talks,
