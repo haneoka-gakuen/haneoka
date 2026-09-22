@@ -7,10 +7,6 @@ community-workspace {
   width: min(100%, 960px);
   margin-inline: auto;
 }
-/* Positioning only; the strip itself is .tabs--pills. */
-.community-tabs {
-  margin-inline: auto;
-}
 .community-toolbar {
   position: sticky;
   z-index: 3;
@@ -33,27 +29,45 @@ community-workspace {
   margin-inline: auto;
   gap: 16px;
 }
+/* A feed post is a Material outlined card: author row, optional media, body,
+   then a footer of stats and tags. Geometry comes from .card. */
 .community-post {
-  padding: 24px;
+  overflow: hidden;
   border-radius: var(--md-sys-shape-corner-large);
-  transition:
-    border-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard),
-    background-color var(--md-sys-motion-duration-short2) var(--md-sys-motion-easing-standard);
+  transition: border-color var(--md-sys-motion-duration-short2) var(--ease-standard);
 }
-.community-post:hover {
-  border-color: var(--md-sys-color-outline);
-  background: var(--md-sys-color-surface-container-lowest);
+@media (hover: hover) {
+  .community-post:hover {
+    border-color: var(--md-sys-color-outline);
+  }
 }
-.community-post > header {
+.community-post__author {
+  min-height: 56px;
+  padding-block: 8px;
+}
+/* The card's clickable region: title + excerpt. */
+.community-post__link {
+  color: inherit;
+  gap: 6px;
+  padding-block: 4px 12px;
+}
+.community-post__footer {
   display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  padding: 0 16px 12px;
+  color: var(--md-sys-color-on-surface-variant);
 }
-.community-post > header > div:last-child {
-  display: grid;
+.community-post__stat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
 }
-.community-post header small,
-.community-post footer,
 .community-tag small {
   color: var(--md-sys-color-on-surface-variant);
 }
@@ -86,11 +100,9 @@ community-workspace {
   position: relative;
   display: grid;
   width: 100%;
-  max-height: 520px;
-  margin-top: 16px;
+  max-height: 420px;
   place-items: center;
   overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-high);
 }
 .community-post__media img {
@@ -158,6 +170,65 @@ community-workspace {
   display: grid;
   align-content: start;
   gap: 16px;
+}
+/* Playlist hero: artwork, identity, one filled action — Material's card
+   anatomy, at the size a page header wants. */
+.playlist-hero {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.playlist-hero__art {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  overflow: hidden;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-secondary-container);
+}
+.playlist-hero__art > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.playlist-hero__copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.playlist-hero__copy > h2 {
+  min-width: 0;
+  margin: 0;
+  font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
+    var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.playlist-hero__copy > p {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+@media (max-width: 599px) {
+  .playlist-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 12px;
+  }
+  .playlist-hero__art {
+    width: 72px;
+    height: 72px;
+  }
+  .playlist-hero > .button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
 }
 .community-editor {
   width: min(100%, 760px);
@@ -634,15 +705,23 @@ community-workspace {
   border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-low);
 }
+/* A five-track fixed grid could not fit below ~700px, so the selects and the
+   view switch collided. It wraps instead: the search bar takes the row it
+   needs and the controls flow after it. */
 .playlist-toolbar {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.45fr) minmax(140px, 0.45fr) 48px auto;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-block: 12px;
 }
-.playlist-toolbar md-outlined-select {
-  width: 100%;
+.playlist-toolbar > .search-bar {
+  min-width: min(100%, 240px);
+  flex: 1 1 240px;
+}
+.playlist-toolbar > md-outlined-select {
+  flex: 0 1 180px;
 }
 .playlist-group {
   display: grid;
@@ -863,16 +942,6 @@ community-workspace {
   .playlist-detail,
   .bestdori-community-catalog {
     padding: 12px;
-  }
-  .community-tabs {
-    width: 100%;
-    border-radius: var(--md-sys-shape-corner-medium);
-    scroll-snap-type: x proximity;
-  }
-  .community-tabs .tab {
-    flex: 1 0 auto;
-    padding-inline: 12px;
-    scroll-snap-align: start;
   }
   .community-toolbar {
     position: static;

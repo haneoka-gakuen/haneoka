@@ -280,6 +280,9 @@ home-dashboard {
   grid-column: 1 / -1;
 }
 .home-card {
+  /* Query container for the lists inside it: a card in a three-column board
+     is narrow enough that the list has to trade its text floor away. */
+  container-type: inline-size;
   display: grid;
   height: 100%;
   min-width: 0;
@@ -354,8 +357,12 @@ home-dashboard {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   }
 }
+.birthday-list .list-item__leading {
+  /* 32dp avatar, so the row's floor becomes 56dp rather than 64dp. */
+  --avatar-size: 32px;
+}
 .member-chip__avatar,
-.birthday-list__avatar {
+.birthday-list .list-item__leading {
   position: relative;
   display: grid;
   width: 32px;
@@ -369,7 +376,7 @@ home-dashboard {
   font: 500 0.875rem/1 var(--app-font);
 }
 .member-chip__avatar img,
-.birthday-list__avatar img {
+.birthday-list .list-item__leading img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -400,28 +407,11 @@ home-dashboard {
   padding: 0;
   list-style: none;
 }
+/* Only the card's own inset differs from the component's 16dp keyline. */
 .birthday-list .list-item,
 .community-hot-list .list-item,
 .news-list .list-item {
-  min-height: 56px;
-  padding: 8px 20px 8px 24px;
-}
-.birthday-list__copy,
-.community-hot-list__copy {
-  display: grid;
-  min-width: 0;
-}
-.birthday-list__copy .list-item__supporting,
-.community-hot-list__copy .list-item__supporting {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.birthday-list__days {
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-  white-space: nowrap;
+  padding-inline: 24px 20px;
 }
 .birthday-list__days.is-today {
   padding: 4px 10px;
@@ -429,17 +419,7 @@ home-dashboard {
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-tertiary-container);
 }
-.community-hot-list__rank {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-surface-container-highest);
-  font: 500 var(--md-sys-typescale-label-large-size) / 1 var(--app-font);
-}
-.community-hot-list li:first-child .community-hot-list__rank {
+.community-hot-list li:first-child .list-item__marker {
   color: var(--md-sys-color-on-primary);
   background: var(--md-sys-color-primary);
 }
@@ -455,16 +435,8 @@ home-dashboard {
   width: 40px;
   height: 40px;
   place-items: center;
-  color: var(--md-sys-color-on-surface-variant);
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-highest);
-}
-.news-list .list-item > span:nth-child(2) {
-  display: grid;
-  min-width: 0;
-}
-.news-list .list-item > .material-icon {
-  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* Footer */

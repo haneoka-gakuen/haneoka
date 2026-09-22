@@ -4,6 +4,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { renderGridIdentity } from "./shared/grid-identity";
+import { iconButton, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
 type UploadEntry = {
@@ -47,6 +48,10 @@ export class CommunityWorkspace extends LitElement {
     locale: { type: String },
     labels: { type: String },
     mode: { type: String },
+    /** Bestdori story section, supplied by the route rather than parsed. */
+    section: { type: String },
+    /** Serialised storyNavigation labels for the section tabs. */
+    sectionLabels: { attribute: "section-labels", type: String },
     phase: { state: true },
     items: { state: true },
     query: { state: true },
@@ -78,6 +83,8 @@ export class CommunityWorkspace extends LitElement {
     bestdoriLimit: { state: true },
   };
   declare locale: string;
+  declare section: string;
+  declare sectionLabels: string;
   declare labels: string;
   declare mode: string;
   declare phase: "loading" | "ready" | "error";
@@ -122,6 +129,8 @@ export class CommunityWorkspace extends LitElement {
     this.locale = "ja";
     this.labels = "{}";
     this.mode = "feeds";
+    this.section = "";
+    this.sectionLabels = "{}";
     this.phase = "loading";
     this.items = [];
     this.query = "";
@@ -193,13 +202,11 @@ export class CommunityWorkspace extends LitElement {
         this.routeKind = "playlist-detail";
         this.mode = "playlists";
       } else if (parts[1] === "stories-bestdori") {
-        this.entityId = parts[2] || "band";
+        // The route supplies the section; the path is only a fallback for
+        // the catch-all shell.
+        this.entityId = this.section || parts[2] || "band";
         this.routeKind = "bestdori-stories";
         this.mode = "stories-bestdori";
-        if (!parts[2]) history.replaceState(history.state, "", "/community/stories-bestdori/band");
-      } else if (parts[1] === "songs-bestdori") {
-        this.routeKind = "bestdori-songs";
-        this.mode = "songs-bestdori";
       }
       const query = new URLSearchParams(location.search);
       this.query = query.get("q") || "";
@@ -677,33 +684,18 @@ export class CommunityWorkspace extends LitElement {
       this.items = this.items.filter((entry) => entry !== post);
     });
   }
-  private communityNavigation() {
-    const destinations = [
-      ["feeds", "/community/feeds", "dynamic_feed", this.label("feed", "Feed")],
-      ["tags", "/community/tags", "sell", this.label("tagsPage.title", "Tags")],
-      ["playlists", "/community/playlists", "queue_music", this.label("playlistPage.title", "Playlists")],
-      ["songs-bestdori", "/community/songs-bestdori", "library_music", this.label("songsBestDori", "Songs")],
-      [
-        "stories-bestdori",
-        "/community/stories-bestdori/band",
-        "auto_stories",
-        this.label("storiesBestDori", "Stories"),
-      ],
-    ];
-    return html`
-      <nav class="tabs tabs--pills community-tabs" aria-label="Community">
-        ${destinations.map(
-          ([mode, route, icon, label]) => html`
-            <a class="tab" href=${route} aria-current=${this.mode === mode ? "page" : nothing}>
-              <svg class="material-icon" width="18" height="18" aria-hidden="true">
-                <use href=${`/icons.svg#${icon}`}></use>
-              </svg>
-              <span>${label}</span>
-            </a>
-          `,
-        )}
-      </nav>
-    `;
+  /**
+   * A Bestdori story section's name. These keys live in the shared
+   * storyNavigation group rather than the communityPage group this workspace
+   * is handed, so the route serialises them into `sectionLabels`.
+   */
+  private storySectionLabel(key: string, fallback: string) {
+    try {
+      const labels = JSON.parse(this.sectionLabels || "{}") as Record<string, string>;
+      return labels[key] || fallback;
+    } catch {
+      return fallback;
+    }
   }
   private draftKey() {
     return `haneoka:community-post-draft:v1:${location.pathname}`;
@@ -1767,9 +1759,20 @@ ${String(comment.body || "")}</textarea>
         );
       });
   }
-  private async playPlaylist(playlist: Value) {
-    const tracks = this.playlistTracks(playlist).filter((track) => track.musicUrl || track.url);
+  /** A track's supporting line: its artist, or the band it belongs to. */
+  private trackArtist(track: Value) {
+    return localizedText(track.artist || track.bandName, this.locale);
+  }
+  /**
+   * Plays a playlist, optionally starting at one of its rows. `startIndex`
+   * counts rows as shown, which may include tracks without audio, so it is
+   * resolved against the playable subset rather than used as an offset.
+   */
+  private async playPlaylist(playlist: Value, startIndex = -1) {
+    const rows = this.playlistTracks(playlist);
+    const tracks = rows.filter((track) => track.musicUrl || track.url);
     if (!tracks.length) return;
+    const requested = startIndex >= 0 ? rows[startIndex] : undefined;
     const { AudioDock } = await import("./runtime/audio-dock");
     let dock = document.querySelector("audio-dock") as InstanceType<typeof AudioDock> | null;
     if (!dock) {
@@ -1785,7 +1788,9 @@ ${String(comment.body || "")}</textarea>
       url: String(track.musicUrl || track.url || ""),
       detailPath: String(track.detailPath || ""),
     }));
-    await dock.playTrack(queue[0]!, queue);
+    const startId = requested ? String(requested.musicId || requested.id || "") : "";
+    const first = (startId && queue.find((entry) => entry.id === startId)) || queue[0]!;
+    await dock.playTrack(first, queue);
   }
   private renderPlaylists() {
     const playlist = this.document;
@@ -1793,12 +1798,19 @@ ${String(comment.body || "")}</textarea>
       const tracks = this.playlistTracks(playlist);
       return html`
         <section class="page page--compact playlist-detail">
-          ${this.communityNavigation()}
-          <header class="surface surface--tonal">
-            <img src=${String(playlist.thumbnail || "")} alt="" />
-            <span>
+          <header class="playlist-hero">
+            <span class="playlist-hero__art">
+              ${
+                playlist.thumbnail
+                  ? html`
+                      <img src=${String(playlist.thumbnail)} alt="" loading="lazy" />
+                    `
+                  : icon("queue_music", 32)
+              }
+            </span>
+            <span class="playlist-hero__copy">
               <h2>${String(playlist.title || playlist.titleText || this.entityId)}</h2>
-              <p>${tracks.length} songs</p>
+              <p>${this.label("songs", "Songs")} · ${tracks.length}</p>
             </span>
             ${
               tracks.some((track) => track.musicUrl || track.url)
@@ -1810,19 +1822,53 @@ ${String(comment.body || "")}</textarea>
                 : nothing
             }
           </header>
-          <div class="community-list">
+          <ul class="list list--divided" role="list">
             ${tracks.map(
               (track, index) => html`
-                <a
-                  class="community-row"
-                  href=${String(track.detailPath || `/catalog/songs?song=${track.musicId || track.id}`)}
-                >
-                  <strong>${index + 1}</strong>
-                  <span>${localizedText(track.title || track.musicTitle, this.locale) || String(track.id || "")}</span>
-                </a>
+                <li>
+                  <a
+                    class="list-item list-item--interactive"
+                    href=${String(track.detailPath || `/catalog/songs?song=${track.musicId || track.id}`)}
+                  >
+                    <span class="list-item__leading">
+                      <span class="list-item__marker">${index + 1}</span>
+                    </span>
+                    <span class="list-item__body">
+                      <span class="list-item__headline">
+                        ${localizedText(track.title || track.musicTitle, this.locale) || String(track.id || "")}
+                      </span>
+                      ${
+                        this.trackArtist(track)
+                          ? html`
+                              <span class="list-item__supporting">${this.trackArtist(track)}</span>
+                            `
+                          : nothing
+                      }
+                    </span>
+                    ${
+                      track.musicUrl || track.url
+                        ? html`
+                            <span class="list-item__trailing">
+                              <button
+                                class="icon-button"
+                                type="button"
+                                aria-label=${this.label("play", "Play")}
+                                @click=${(event: Event) => {
+                                  event.preventDefault();
+                                  void this.playPlaylist(playlist, index);
+                                }}
+                              >
+                                ${icon("play_arrow", 20)}
+                              </button>
+                            </span>
+                          `
+                        : nothing
+                    }
+                  </a>
+                </li>
               `,
             )}
-          </div>
+          </ul>
         </section>
       `;
     }
@@ -1840,14 +1886,14 @@ ${String(comment.body || "")}</textarea>
     ] as const;
     return html`
       <section class="page">
-        ${this.communityNavigation()}
         <header class="playlist-toolbar">
-          <label class="field">
-            ${icon("search", 18)}
+          <label class="search-bar">
+            ${icon("search", 20)}
             <input
               type="search"
               .value=${this.query}
               placeholder=${this.label("playlistPage.search", "Search playlists")}
+              aria-label=${this.label("playlistPage.search", "Search playlists")}
               @input=${(event: Event) => {
                 this.query = (event.target as HTMLInputElement).value;
                 this.syncPlaylist();
@@ -1893,35 +1939,28 @@ ${String(comment.body || "")}</textarea>
               `,
             )}
           </md-outlined-select>
-          <button
-            class="icon-button"
-            @click=${() => {
+          ${iconButton({
+            label: this.label(this.playlistOrder === "asc" ? "ascending" : "descending", this.playlistOrder),
+            icon: this.playlistOrder === "asc" ? "arrow_upward" : "arrow_downward",
+            variant: "outlined",
+            onClick: () => {
               this.playlistOrder = this.playlistOrder === "asc" ? "desc" : "asc";
               this.syncPlaylist();
-            }}
-          >
-            ${icon(this.playlistOrder === "asc" ? "arrow_upward" : "arrow_downward", 20)}
-          </button>
-          <div class="segmented">
-            <button
-              aria-pressed=${this.playlistView === "grid"}
-              @click=${() => {
-                this.playlistView = "grid";
-                this.syncPlaylist();
-              }}
-            >
-              ${icon("grid_view", 20)}
-            </button>
-            <button
-              aria-pressed=${this.playlistView === "list"}
-              @click=${() => {
-                this.playlistView = "list";
-                this.syncPlaylist();
-              }}
-            >
-              ${icon("view_list", 20)}
-            </button>
-          </div>
+            },
+          })}
+          ${segmented({
+            label: this.label("view", "View"),
+            value: this.playlistView,
+            options: [
+              { value: "grid" as const, label: this.label("grid", "Grid"), icon: "grid_view" },
+              { value: "list" as const, label: this.label("list", "List"), icon: "view_list" },
+            ],
+            onSelect: (view) => {
+              this.playlistView = view;
+              this.syncPlaylist();
+            },
+            iconOnly: true,
+          })}
         </header>
         ${groups
           .filter(([, entries]) => entries.length)
@@ -1936,7 +1975,11 @@ ${String(comment.body || "")}</textarea>
                   ${entries.map(
                     (playlist) => html`
                       <a
-                        class=${this.playlistView === "grid" ? "surface surface--outlined tile tile--interactive community-tag" : "community-row"}
+                        class=${
+                          this.playlistView === "grid"
+                            ? "card card--outlined tile tile--interactive community-tag"
+                            : "list-item list-item--interactive"
+                        }
                         href=${`/community/playlists/${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
                       >
                         ${
@@ -1979,18 +2022,29 @@ ${String(comment.body || "")}</textarea>
     });
     return html`
       <section class="page bestdori-community-catalog">
-        ${this.communityNavigation()}
         ${
           stories
             ? html`
-                <nav class="tabs tabs--pills bestdori-story-tabs">
-                  ${["event", "band", "main", "afterlive", "card"].map(
-                    (section) => html`
+                <!-- Sections within this page, not sidebar destinations: the
+                     rail carries one Bestdori stories entry, and these pick
+                     which collection it shows. -->
+                <nav class="tabs tabs--pills bestdori-story-tabs" aria-label=${this.label("storiesBestDori", "Stories")}>
+                  ${(
+                    [
+                      ["event", "bestdoriEvent"],
+                      ["band", "bestdoriBand"],
+                      ["main", "bestdoriMain"],
+                      ["afterlive", "bestdoriAfterlive"],
+                      ["card", "bestdoriCard"],
+                    ] as const
+                  ).map(
+                    ([section, key]) => html`
                       <a
+                        class="tab"
                         aria-current=${this.entityId === section ? "page" : nothing}
                         href=${`/community/stories-bestdori/${section}`}
                       >
-                        ${section}
+                        ${this.storySectionLabel(key, section)}
                       </a>
                     `,
                   )}
@@ -2177,28 +2231,26 @@ ${String(comment.body || "")}</textarea>
       return this.renderBestdoriCatalog();
     return html`
       <section class="community-page page">
-        ${this.communityNavigation()}
         ${
           this.mode === "feeds"
             ? html`
-                <nav class="segmented community-feed-scope" aria-label=${this.label("feed", "Feed")}>
-                  ${(["recommended", "latest", "following"] as const).map(
-                    (scope) => html`
-                      <button
-                        aria-pressed=${this.feedScope === scope}
-                        @click=${() => {
-                          this.feedScope = scope;
-                          const params = new URLSearchParams(location.search);
-                          params.set("scope", scope);
-                          history.replaceState(history.state, "", `${location.pathname}?${params}`);
-                          void this.load(false);
-                        }}
-                      >
-                        ${this.label(scope, scope)}
-                      </button>
-                    `,
-                  )}
-                </nav>
+                <div class="community-feed-scope">
+                  ${segmented({
+                    label: this.label("feed", "Feed"),
+                    value: this.feedScope,
+                    options: (["recommended", "latest", "following"] as const).map((scope) => ({
+                      value: scope,
+                      label: this.label(scope, scope),
+                    })),
+                    onSelect: (scope) => {
+                      this.feedScope = scope;
+                      const params = new URLSearchParams(location.search);
+                      params.set("scope", scope);
+                      history.replaceState(history.state, "", `${location.pathname}?${params}`);
+                      void this.load(false);
+                    },
+                  })}
+                </div>
               `
             : nothing
         }
@@ -2381,32 +2433,33 @@ ${String(comment.body || "")}</textarea>
       <div class="community-feed">
         ${this.items.map(
           (post) => html`
-            <article class="community-post surface surface--outlined">
-              <header>
-                <div class="community-avatar">
-                  ${
-                    post.authorImage
-                      ? html`
-                          <img src=${String(post.authorImage)} alt="" loading="lazy" />
-                        `
-                      : html`
-                          ${String(post.authorName || "?").slice(0, 1)}
-                        `
-                  }
-                </div>
-                <div>
-                  <strong>${post.authorName || this.label("member", "Member")}</strong>
-                  <small>${this.date(post.createdAt)}</small>
-                </div>
-              </header>
-              <a href=${this.path(`/community/posts/${post.id}`)}>
-                <h2>${post.title || this.label("emptyTitle", "Untitled")}</h2>
-                <p>${post.excerpt || post.body || ""}</p>
-              </a>
+            <article class="card card--outlined community-post">
+              <!-- The author line is a Material list item: 40dp avatar,
+                   headline, supporting text. The same anatomy as every other
+                   row on the site rather than a bespoke header. -->
+              <div class="list-item community-post__author">
+                <span class="list-item__leading">
+                  <span class="list-item__avatar">
+                    ${
+                      post.authorImage
+                        ? html`
+                            <img src=${String(post.authorImage)} alt="" loading="lazy" />
+                          `
+                        : html`
+                            ${String(post.authorName || "?").slice(0, 1)}
+                          `
+                    }
+                  </span>
+                </span>
+                <span class="list-item__body">
+                  <span class="list-item__headline">${post.authorName || this.label("member", "Member")}</span>
+                  <span class="list-item__supporting">${this.date(post.createdAt)}</span>
+                </span>
+              </div>
               ${
                 Array.isArray(post.attachments) && post.attachments[0]
                   ? html`
-                      <span class="community-post__media media-loading">
+                      <a class="community-post__media media-loading" href=${this.path(`/community/posts/${post.id}`)}>
                         <img
                           src=${String((post.attachments[0] as Value).contentUrl || "")}
                           alt=""
@@ -2417,25 +2470,34 @@ ${String(comment.body || "")}</textarea>
                           @error=${(event: Event) =>
                             (event.currentTarget as HTMLImageElement).classList.add("is-error")}
                         />
-                      </span>
+                      </a>
                     `
                   : nothing
               }
-              <footer>
-                <span>
-                  <svg class="material-icon" width="18" height="18"><use href="/icons.svg#favorite_border"></use></svg>
-                  ${post.likeCount || 0}
+              <a class="card__body community-post__link" href=${this.path(`/community/posts/${post.id}`)}>
+                <span class="card__headline">${post.title || this.label("emptyTitle", "Untitled")}</span>
+                <span class="card__supporting clamp-3">${post.excerpt || post.body || ""}</span>
+              </a>
+              <footer class="community-post__footer">
+                <span class="community-post__stat">
+                  ${icon("favorite_border", 18)}
+                  <span class="tabular">${post.likeCount || 0}</span>
                 </span>
-                <span>
-                  <svg class="material-icon" width="18" height="18"><use href="/icons.svg#comment"></use></svg>
-                  ${post.commentCount || 0}
+                <span class="community-post__stat">
+                  ${icon("comment", 18)}
+                  <span class="tabular">${post.commentCount || 0}</span>
                 </span>
+                <span class="row__spacer"></span>
                 ${
                   Array.isArray(post.tags)
                     ? post.tags.slice(0, 3).map(
                         (tag) => html`
-                          <a href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}>
-                            #${tag}
+                          <a
+                            class="chip chip--assist"
+                            style="--chip-height:28px"
+                            href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}
+                          >
+                            <span class="chip__label">#${tag}</span>
                           </a>
                         `,
                       )
@@ -2445,7 +2507,8 @@ ${String(comment.body || "")}</textarea>
                   (post.viewer as Value | undefined)?.canGiveFeedback && this.feedScope === "recommended"
                     ? html`
                         <button
-                          class="icon-button"
+                          class="icon-button icon-button--small"
+                          type="button"
                           aria-label=${this.label("notInterested", "Not interested")}
                           @click=${() => this.recommendationFeedback(post)}
                         >

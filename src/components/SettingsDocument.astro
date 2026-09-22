@@ -23,6 +23,8 @@ const bilibili = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://ww
 const themeOptions = [["light", "light_mode", "themeLight"], ["system", "brightness_auto", "themeSystem"], ["dark", "dark_mode", "themeDark"]] as const;
 const seeds = [["haneoka", "tuneDefault", "Original key"], ...[1, 2, 3, 4, 5].map((id) => [`band-${id}`, `band.${id}`, `Band ${id}`])] as const;
 const releases = [["intl", intlIcon], ["jp-cbt", bushimo], ["intl-cbt", bilibili]] as const;
+// Objects, not tuples: the icon sprite builder detects `icon: "name"` literals, so a positional entry would leave the glyph out of the sprite.
+const densities = [{ value: "comfortable", icon: "density_medium", key: "comfortable", fallback: "Comfortable" }, { value: "compact", icon: "density_small", key: "compact", fallback: "Compact" }] as const;
 const labelValues = (key: string, fallback: string) => JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
 const languageNames = { ja: "日本語", en: "English", "zh-TW": "繁體中文", "zh-CN": "简体中文", ko: "한국어" } as const;
 const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "Global CBT" } as const;
@@ -39,6 +41,11 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
         <header class="page-section__header"><span class="page-section__icon"><Icon name="format_paint" /></span><h2 id="theme-color-title"><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></h2></header>
         <p class="page-section__supporting"><I18nText keyName="themeColorHint" fallback="Seeds the whole Material 3 color scheme from a band colour." locale={locale} /></p>
         <div class="seed-row" data-seed-choices role="radiogroup" aria-labelledby="theme-color-title">{seeds.map(([value, key, fallback]) => <button class="seed-swatch" type="button" role="radio" data-value={value} style={value === "haneoka" ? undefined : `--swatch: var(--md-ref-${value}); --swatch-container: var(--md-ref-${value}-container); --swatch-on: var(--md-ref-${value}-on-container)`} aria-label={t(locale, key, fallback)} data-i18n-aria-label-values={labelValues(key, fallback)} title={t(locale, key, fallback)}><span class="seed-swatch__disc" aria-hidden="true"><i></i><i></i><i></i></span><svg class="material-icon seed-swatch__check" width="20" height="20" aria-hidden="true"><use href="/icons.svg#check"></use></svg></button>)}</div>
+      </section>
+      <section class="page-section is-divided">
+        <header class="page-section__header"><span class="page-section__icon"><Icon name="density_medium" /></span><h2 id="density-title"><I18nText keyName="density" fallback="Spacing" locale={locale} /></h2></header>
+        <p class="page-section__supporting"><I18nText keyName="densityHint" fallback="Switches row height and spacing — read the score packed, or read it loose." locale={locale} /></p>
+        <div class="icon-row" data-density-choices role="radiogroup" aria-labelledby="density-title">{densities.map((option) => <button class="icon-row__item" type="button" role="radio" data-value={option.value} data-icon={option.icon} aria-label={t(locale, option.key, option.fallback)} data-i18n-aria-label-values={labelValues(option.key, option.fallback)} title={t(locale, option.key, option.fallback)}><Icon name={option.icon} /></button>)}</div>
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="language" /></span><h2><I18nText keyName="language" fallback="Language" locale={locale} /></h2></header>
@@ -58,6 +65,7 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
 <script>
   import "@material/web/switch/switch.js";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
+  import { applyDensity, currentDensity, isDensity } from "../lib/density";
   type LocaleWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   const select = (root: Element | null, value: string) => root?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => {
     const selected = node.dataset.value === value;
@@ -97,6 +105,14 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
     next?.click();
     next?.focus();
   });
+  const densities = settings.querySelector("[data-density-choices]");
+  select(densities, currentDensity());
+  densities?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
+    const value = node.dataset.value;
+    if (!isDensity(value)) return;
+    applyDensity(value);
+    select(densities, value);
+  }));
   const locales = settings.querySelector("[data-locale-choices]"); select(locales, document.documentElement.dataset.locale || "ja");
   locales?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => { const value = node.dataset.value || "ja"; (window as LocaleWindow).__haneokaApplyLocale?.(value); select(locales, value); }));
   const release = settings.querySelector("[data-release-choices]"); let releaseValue = "intl";

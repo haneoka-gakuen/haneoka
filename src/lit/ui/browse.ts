@@ -10,8 +10,7 @@ import { iconButton } from "./controls";
  *     any page-specific actions, and the filter toggle with a count badge;
  *   · a row of removable chips for every applied filter;
  *   · the results;
- *   · the filter panel — a modal side sheet below 1200px, a docked
- *     supporting pane at and above it.
+ *   · the filter panel — a modal side sheet at every size.
  *
  * The count is a live region, so changing a filter is announced instead of
  * silently rearranging several thousand rows.
@@ -33,8 +32,6 @@ export interface BrowseFilters {
 export interface BrowseOptions {
   /** Presentation key, used for the `.browse--{kind}` hook. */
   kind?: string;
-  /** True when the window is expanded and the filter panel is docked. */
-  docked: boolean;
   /** Inline custom properties for the results area (tile ratio, accents). */
   style?: string;
   count: { value: number | null; label: string };
@@ -47,14 +44,8 @@ export interface BrowseOptions {
 
 export function renderBrowse(options: BrowseOptions): TemplateResult {
   const { filters } = options;
-  const modal = Boolean(filters?.open) && !options.docked;
-  const classes = [
-    "browse",
-    options.kind ? `browse--${options.kind}` : "",
-    filters && options.docked ? "browse--dockable" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const open = Boolean(filters?.open);
+  const classes = ["browse", options.kind ? `browse--${options.kind}` : ""].filter(Boolean).join(" ");
   return html`
     <section class=${classes} style=${options.style || nothing}>
       <div class="browse__main">
@@ -93,10 +84,10 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
           ? html`
               <aside
                 class=${`browse__filters sheet sheet--side ${filters.open ? "is-open" : ""}`}
-                role=${options.docked ? "region" : "dialog"}
-                aria-modal=${options.docked ? nothing : String(modal)}
+                role="dialog"
+                aria-modal="true"
                 aria-label=${filters.label}
-                ?inert=${!options.docked && !filters.open}
+                ?inert=${!filters.open}
                 tabindex="-1"
               >
                 <header class="sheet__header">
@@ -127,7 +118,7 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
       }
     </section>
     ${
-      modal
+      open
         ? html`
             <button
               class="scrim sheet-scrim"

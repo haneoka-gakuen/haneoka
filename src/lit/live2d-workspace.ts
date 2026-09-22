@@ -486,7 +486,6 @@ export class Live2DWorkspace extends LitElement {
     return html`
       ${renderBrowse({
         kind: "model",
-        docked: this.docked,
         count: { value: models.length, label: "" },
         controls: segmented({
           label: uiText(this.locale, "view"),
@@ -703,33 +702,33 @@ export class Live2DWorkspace extends LitElement {
             <span>${uiText(this.locale, "band")}</span>
           </header>
           ${models.map((model) => {
-          const character = this.character(Number(model.characterId || 0));
-          return html`
-            <button class="model-list__row" @click=${() => this.select(this.key(model))}>
-              <span class="model-list__primary">
-                ${
+            const character = this.character(Number(model.characterId || 0));
+            return html`
+              <button class="model-list__row" @click=${() => this.select(this.key(model))}>
+                <span class="model-list__primary">
+                  ${
                   this.preview(model)
                     ? html`
                         <img src=${this.preview(model)} alt="" loading="lazy" />
                       `
                     : nothing
                 }
-                <strong>${this.modelTitle(model)}</strong>
-              </span>
-              <span>${this.modelType(model)}</span>
-              <span class="model-list__entity">
-                ${
+                  <strong>${this.modelTitle(model)}</strong>
+                </span>
+                <span>${this.modelType(model)}</span>
+                <span class="model-list__entity">
+                  ${
                   character?.faceImage
                     ? html`
                         <img src=${String(character.faceImage)} alt="" />
                       `
                     : nothing
                 }${this.characterName(model)}
-              </span>
-              <span>${this.bandName(model) || "—"}</span>
-            </button>
-          `;
-        })}
+                </span>
+                <span>${this.bandName(model) || "—"}</span>
+              </button>
+            `;
+          })}
         </div>
       </div>
     `;

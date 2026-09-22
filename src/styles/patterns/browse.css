@@ -4,11 +4,9 @@
    posts, models, assets — is the same screen: a filtered, sorted collection
    with an optional detail pane. It is built once, here.
 
-   Layout by window size class (Material 3 canonical layouts):
-     compact / medium   single pane; filters open as a modal side sheet
-     expanded (1200+)   list + supporting pane; the filters dock permanently,
-                        because at that width hiding them behind a button is
-                        just wasted room.
+   One pane at every size: the results are the page. Filters are a modal
+   side sheet and a detail view is a full-screen surface, so the collection
+   never has to share its width with either.
 
    The bar is sticky, not fixed. The previous implementation positioned it
    `fixed; top: 0` so it would sit inside the top app bar, which meant it
@@ -16,6 +14,11 @@
    it floated over unrelated pages during view transitions. Sticky inside the
    scroll region cannot collide with the shell by construction.
    ========================================================================== */
+/* One column at every size. The filter panel is a modal side sheet — it is
+   never docked. Material treats a docked side sheet as a persistent part of
+   the layout, which is wrong for filters: they are a transient task, the
+   results are the page, and a permanent 320dp column taxes every reader for
+   a panel most of them open once. */
 .browse {
   display: grid;
   min-width: 0;
@@ -110,8 +113,7 @@
 }
 
 /* ---------- Filters ----------
-   Below expanded: a modal side sheet (geometry from components/overlay.css).
-   At expanded: a docked supporting pane. Same markup either way. */
+   A modal side sheet at every size; geometry from components/overlay.css. */
 .browse__filters {
   display: grid;
   min-width: 0;
@@ -155,51 +157,6 @@ fieldset.browse__filter-group {
 }
 .browse__filter-group > legend {
   margin-bottom: 10px;
-}
-
-@media (min-width: 1200px) {
-  /* Docked supporting pane. The pane scrolls independently and sticks to the
-   * top of the content area, so a long facet list never drags the results
-   * out of view. */
-  .browse--dockable {
-    grid-template-columns: minmax(0, 1fr) var(--filter-pane-width, 320px);
-    column-gap: 16px;
-  }
-  /* Everything the side sheet declared for the modal case has to be undone
-   * explicitly here: it is the same element, promoted from an overlay to a
-   * column of the layout. `inset: auto` and `width: auto` matter — the sheet
-   * sets both, and leaving them would size the panel to 32px less than its
-   * own grid column. */
-  .browse--dockable .browse__filters {
-    position: sticky;
-    top: 0;
-    inset-inline: auto;
-    width: auto;
-    max-height: var(--shell-stage-block);
-    grid-row: 1;
-    grid-column: 2;
-    padding-block: 8px;
-    visibility: visible;
-    border-left: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    transform: none;
-  }
-  .browse--dockable .browse__filters .sheet__header {
-    background: transparent;
-  }
-  .browse--dockable .browse__filters .browse__filters-close {
-    display: none;
-  }
-  /* A badged icon button is wrapped in .badge-anchor, so both go. */
-  .browse--dockable .browse__filter-toggle,
-  .browse--dockable .badge-anchor:has(> .browse__filter-toggle) {
-    display: none;
-  }
-  .browse--dockable + .sheet-scrim {
-    display: none;
-  }
 }
 
 @media (max-width: 599px) {

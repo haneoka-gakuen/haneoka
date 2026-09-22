@@ -1,155 +1,330 @@
-/* Loaded only when the persistent audio player is instantiated. */
-.audio-dock {
+/* ==========================================================================
+   Music player
+   Loaded only when the persistent player is instantiated.
+
+   Rebuilt from an eight-column fixed grid — identity, transport, mode,
+   timeline, volume, queue, more, collapse — whose tracks summed past any
+   narrow window, so the controls collided and the timeline vanished. It is
+   now three regions with one flexible middle, plus a seek bar that owns the
+   surface's top edge rather than a grid cell.
+
+   Material has no "persistent audio player" component, so this composes the
+   ones it does define: a surface-container-high bar (like a bottom app bar),
+   one filled primary button for the highest-emphasis action, standard icon
+   buttons around it, a side sheet for the queue, and the Expressive wavy
+   linear progress indicator for position.
+   ========================================================================== */
+.player {
   position: fixed;
-  z-index: 60;
+  z-index: var(--md-sys-z-index-shell-player);
   right: 0;
   bottom: var(--shell-bottom-inset, 0px);
   left: var(--shell-width);
   display: grid;
-  min-height: 80px;
-  grid-template-columns: minmax(190px, 0.9fr) auto auto minmax(180px, 1.4fr) minmax(112px, 0.42fr) auto auto auto;
-  align-items: center;
-  gap: clamp(6px, 1vw, 14px);
-  padding: 8px var(--md-comp-page-inline-space, 16px);
-  color: var(--md-comp-runtime-on-surface, var(--md-sys-color-on-surface));
-  border-top: 1px solid var(--md-comp-runtime-outline, var(--md-sys-color-outline-variant));
-  background: var(--md-comp-runtime-surface-high, var(--md-sys-color-surface-container-high));
-  box-shadow: none;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-high);
 }
-body:has(audio-dock .audio-dock) .page-stage {
-  height: calc(var(--shell-stage-block) - var(--audio-dock-height, 80px));
+
+/* ---------- Seek ----------
+   The wavy indicator paints the position; a transparent range input over it
+   is the control. Native input keeps arrow keys, Home/End and page keys for
+   free, while the visual is the Expressive wave no native control can draw. */
+.player__seek {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  padding-inline: 12px;
+}
+.player__seek > .wavy-progress {
+  pointer-events: none;
+}
+.player__scrub {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.player__scrub:focus-visible {
+  outline: 3px solid var(--md-sys-color-secondary);
+  outline-offset: -3px;
+  border-radius: var(--md-sys-shape-corner-small);
+}
+/* Material's slider handle, revealed on interaction so it never hides the
+   wave while the reader is only watching playback. */
+.player__scrub::-webkit-slider-thumb {
+  width: 12px;
+  height: 20px;
+  appearance: none;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+  opacity: 0;
+  transition: opacity var(--md-sys-motion-duration-short3) linear;
+}
+.player__scrub::-moz-range-thumb {
+  width: 12px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+  opacity: 0;
+  transition: opacity var(--md-sys-motion-duration-short3) linear;
+}
+.player__seek:hover .player__scrub::-webkit-slider-thumb,
+.player__scrub:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+.player__seek:hover .player__scrub::-moz-range-thumb,
+.player__scrub:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}
+
+/* ---------- Body ----------
+   identity (shrinks) · transport (intrinsic, centred) · actions (intrinsic).
+   Only the identity gives up width, so the transport never collides. */
+.player__body {
+  display: grid;
+  min-width: 0;
+  min-height: 64px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+}
+.player__identity {
+  display: grid;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px 6px 6px;
+  color: inherit;
+  border-radius: var(--md-sys-shape-corner-full);
+  justify-self: start;
+}
+.player__cover {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-secondary-container);
+}
+.player__cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.player__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.player__copy > strong {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player__copy > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player__transport {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  justify-self: center;
+}
+/* The single filled control on the surface, per Material's guidance that one
+   surface carries one highest-emphasis action. */
+.player__play {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--md-sys-color-on-primary);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-primary);
+  cursor: pointer;
+  transition: border-radius var(--md-sys-motion-duration-short4) var(--ease-standard);
+}
+.player__play:active {
+  border-radius: var(--md-sys-shape-corner-full);
+}
+.player__time {
+  flex: 0 0 auto;
+  padding-inline: 8px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.player__actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  justify-self: end;
+}
+.player__volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.player__volume > input {
+  width: 96px;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+/* ---------- Layout reservations ----------
+   The player is fixed, so every scroll owner stops above it. */
+body:has(audio-dock .player) .page-stage {
+  height: calc(var(--shell-stage-block) - var(--audio-dock-height, 84px));
   padding-bottom: 0;
   scroll-padding-bottom: 16px;
 }
-/* Anything that occupies the content pane sits above the dock, not behind
- * it. One selector list, expressed in the shared vocabulary. */
-body:has(audio-dock .audio-dock) :is(.sheet--side, .sheet--full, .pane-layer) {
-  bottom: var(--audio-dock-height, 80px);
+body:has(audio-dock .player) :is(.sheet--side, .sheet--full, .sheet--detail, .pane-layer) {
+  bottom: var(--audio-dock-height, 84px);
 }
-body:has(audio-dock .audio-dock) .browse--dockable .browse__filters {
-  max-height: calc(var(--shell-stage-block) - var(--audio-dock-height, 80px) - 20px);
-}
-body:has(audio-dock .audio-dock) .composer-workspace {
-  height: calc(var(--shell-stage-block) - var(--audio-dock-height, 80px) - 24px);
+body:has(audio-dock .player) .composer-workspace {
+  height: calc(var(--shell-stage-block) - var(--audio-dock-height, 84px) - 24px);
   min-height: 0;
 }
-.audio-dock__identity {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 4px;
-  color: inherit;
-  background: transparent;
-  border-radius: var(--md-sys-shape-corner-large);
-}
-.audio-dock__identity:hover,
-.audio-dock__identity:focus-visible {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-}
-.audio-dock__cover {
+
+/* ---------- Collapsed puck ----------
+   Material has no floating mini player, so this borrows the FAB: 56dp, 16dp
+   corner, level-3 elevation. Progress becomes a ring around the artwork —
+   the same information as the wave, in the space a FAB has. */
+.player-puck {
+  position: fixed;
+  z-index: var(--md-sys-z-index-shell-player);
+  top: var(--puck-y, auto);
+  right: 16px;
+  bottom: calc(16px + var(--shell-bottom-inset, 0px));
+  left: var(--puck-x, auto);
   display: grid;
   width: 56px;
   height: 56px;
   place-items: center;
-  object-fit: contain;
-  border: 1px solid var(--md-comp-runtime-outline, var(--md-sys-color-outline-variant));
-  border-radius: var(--md-sys-shape-corner-small);
-}
-.audio-dock__track {
-  display: grid;
-  min-width: 0;
-}
-.audio-dock__track strong,
-.audio-dock__track small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.audio-dock__track small,
-.audio-dock small {
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-small-size);
-}
-.audio-dock__transport,
-.audio-dock__timeline,
-.audio-dock__volume,
-.audio-dock__queue-button {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-}
-.audio-dock__play {
-  color: var(--md-sys-color-on-primary);
-  background: var(--md-sys-color-primary);
-}
-.audio-dock__timeline small {
-  min-width: 34px;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-small-size);
-  text-align: center;
-}
-.audio-dock__progress {
-  width: 100%;
-  min-width: 0;
-  accent-color: var(--md-sys-color-primary);
-}
-.audio-dock__volume md-slider {
-  width: 100%;
-}
-.audio-dock__queue-button {
-  position: relative;
-}
-.audio-dock__queue-button small {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  display: grid;
-  min-width: 16px;
-  height: 16px;
-  place-items: center;
-  padding-inline: 3px;
-  border-radius: 9px;
-  color: var(--md-sys-color-on-primary-container);
+  padding: 4px;
+  border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-primary-container);
-  font-size: 10px;
+  box-shadow: var(--md-sys-elevation-level3);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
-.audio-dock__backdrop {
-  position: fixed;
-  z-index: 61;
-  inset: 0;
-  border: 0;
-  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+/* Once dragged it is positioned by its own coordinates. */
+.player-puck[style*="--puck-x"] {
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
 }
-.audio-queue-panel {
+.player-puck:active {
+  cursor: grabbing;
+}
+.player-puck::before {
   position: absolute;
-  z-index: 62;
-  right: 0;
-  bottom: var(--audio-dock-height, 80px);
+  inset: -3px;
+  padding: 3px;
+  content: "";
+  border-radius: inherit;
+  background: conic-gradient(
+    var(--md-sys-color-primary) var(--puck-progress, 0%),
+    color-mix(in srgb, var(--md-sys-color-primary) 22%, transparent) 0
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+.player-puck__art {
   display: grid;
-  width: min(420px, 92vw);
-  max-height: min(72vh, 600px);
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+  color: var(--md-sys-color-on-primary-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-high);
+}
+.player-puck__art > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.player-puck__state {
+  position: absolute;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--md-sys-color-on-primary);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 88%, transparent);
+}
+
+/* ---------- Queue ----------
+   A Material side sheet; its rows are list items. */
+.audio-queue-panel {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-sheet);
+  right: 0;
+  bottom: var(--audio-dock-height, 84px);
+  display: grid;
+  width: min(400px, 100vw);
+  max-height: min(72dvh, 600px);
   grid-template-rows: 56px minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
   border-radius: var(--md-sys-shape-corner-large) 0 0 0;
-  color: var(--md-comp-runtime-on-surface, var(--md-sys-color-on-surface));
-  background: var(--md-comp-runtime-surface-high, var(--md-sys-color-surface-container-high));
-  box-shadow: var(--md-comp-runtime-elevation, var(--md-sys-elevation-level2));
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-level2);
 }
 .audio-queue-panel > header,
 .audio-queue-panel > header > span {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 .audio-queue-panel > header {
   justify-content: space-between;
-  padding: 6px 8px 6px 14px;
+  padding: 4px 8px 4px 16px;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.audio-queue-panel > header strong {
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
 }
 .audio-queue-panel__list {
   min-height: 0;
@@ -158,12 +333,15 @@ body:has(audio-dock .audio-dock) .composer-workspace {
 }
 .audio-queue-panel__row {
   display: grid;
-  min-height: 56px;
-  grid-template-columns: 36px minmax(0, 1fr) 28px 40px;
+  min-height: 64px;
+  /* drag · identity (the only flexible track) · index · remove */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 4px;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding: 4px 8px 4px 4px;
+}
+.audio-queue-panel__row + .audio-queue-panel__row {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 .audio-queue-panel__row.selected {
   background: var(--md-sys-color-secondary-container);
@@ -174,144 +352,97 @@ body:has(audio-dock .audio-dock) .composer-workspace {
 .audio-queue-panel__select {
   display: grid;
   min-width: 0;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
+  gap: 12px;
   padding: 0;
   color: inherit;
   background: transparent;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
+}
+.audio-queue-panel__select:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
 }
 .audio-queue-panel__select img,
 .audio-queue-panel__placeholder {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   place-items: center;
-  object-fit: contain;
-  border-radius: var(--md-sys-shape-corner-extra-small);
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface-container);
+  object-fit: cover;
 }
 .audio-queue-panel__select > span {
   display: grid;
   min-width: 0;
+  gap: 1px;
 }
 .audio-queue-panel__select strong,
 .audio-queue-panel__select small {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.audio-queue-panel__select strong {
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+}
 .audio-queue-panel__select small,
 .audio-queue-panel__row > small {
   color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-small-size);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.audio-queue-panel__row > small {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .audio-queue-panel__drag {
   cursor: grab;
   touch-action: none;
 }
-.audio-dock__mobile-controls {
-  position: absolute;
-  right: 8px;
-  bottom: calc(100% + 8px);
-  display: grid;
-  width: min(320px, calc(100vw - 16px));
-  gap: 4px;
-  padding: 8px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level2);
-}
-.audio-dock__mobile-controls > button,
-.audio-dock__mobile-controls > label {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.audio-dock__mobile-controls > button {
-  color: inherit;
-  background: transparent;
-}
-.audio-queue-panel__select:focus-visible,
-.audio-dock__mobile-controls > button:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -2px;
-}
-.audio-dock__mobile-controls > button:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-}
-.audio-dock__mobile-controls md-slider {
-  width: 170px;
-}
-.audio-dock-collapsed {
-  position: fixed;
-  z-index: 60;
-  top: clamp(28px, var(--audio-collapsed-y, calc(100dvh - 36px)), calc(100dvh - 28px));
-  left: clamp(56px, var(--audio-collapsed-x, calc(100vw - 56px)), calc(100vw - 56px));
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px 4px 4px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level2);
-  cursor: grab;
-  touch-action: none;
-  transform: translate(-50%, -50%);
-  user-select: none;
-}
-.audio-dock-collapsed:active {
-  cursor: grabbing;
-}
-.audio-dock-collapsed img {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
-  border-radius: 50%;
-}
-@media (max-width: 959px) {
-  body:has(audio-dock .audio-dock) .page-stage {
-    height: calc(var(--shell-stage-block) - var(--audio-dock-height, 72px));
-    padding-bottom: 0;
-    scroll-padding-bottom: 16px;
-  }
-  body:has(audio-dock .audio-dock) :is(.sheet--side, .sheet--full, .pane-layer) {
-    bottom: var(--audio-dock-height, 72px);
-  }
-  .audio-dock {
-    right: 0;
-    bottom: var(--shell-bottom-inset, 0px);
+
+/* ---------- Compact ----------
+   Below 600px the surface keeps artwork, title, play and queue. The skip
+   arrows, the clock and the volume slider go: a phone has hardware volume,
+   and nine controls cannot share this width — which is exactly how the
+   previous fixed grid broke. */
+@media (max-width: 599px) {
+  .player {
     left: 0;
-    min-height: 72px;
-    border-radius: 0;
+  }
+  .player__body {
+    min-height: 60px;
     grid-template-columns: minmax(0, 1fr) auto auto;
+    padding-bottom: 6px;
   }
-  .audio-dock__identity {
-    grid-template-columns: 42px minmax(0, 1fr);
+  .player__transport {
+    grid-column: 2;
+    justify-self: end;
   }
-  .audio-dock__cover {
-    width: 42px;
-    height: 42px;
-  }
-  .audio-dock__mode,
-  .audio-dock__timeline,
-  .audio-dock__volume,
-  .audio-dock__queue-button,
-  .audio-dock__collapse {
+  .player__transport > .icon-button,
+  .player__transport > .player__time {
     display: none;
   }
+  .player__actions {
+    grid-column: 3;
+  }
+  .player__actions > .player__volume,
+  .player__actions > .icon-button {
+    display: none;
+  }
+  /* The queue stays: it is how a reader gets back to the collection. */
+  .player__actions > .badge-anchor {
+    display: inline-grid;
+  }
   .audio-queue-panel {
-    right: 8px;
-    bottom: var(--audio-dock-height, 72px);
-    width: calc(100vw - 16px);
-    border-radius: var(--md-sys-shape-corner-large);
+    width: 100vw;
+    max-height: 78dvh;
+    border-radius: var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0 0;
   }
 }

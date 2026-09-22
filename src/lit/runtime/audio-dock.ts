@@ -1,5 +1,8 @@
 import { LitElement, html, nothing } from "lit";
 import "../../styles/audio.css";
+import { iconButton } from "../ui/controls";
+import { icon } from "../ui/icon";
+import { wavyProgress } from "../ui/wavy-progress";
 
 export interface AudioTrack {
   id: string;
@@ -53,7 +56,6 @@ export class AudioDock extends LitElement {
     duration: { state: true },
     volume: { state: true },
     queueOpen: { state: true },
-    controlsOpen: { state: true },
     collapsed: { state: true },
     mode: { state: true },
     draggedIndex: { state: true },
@@ -66,7 +68,6 @@ export class AudioDock extends LitElement {
   declare duration: number;
   declare volume: number;
   declare queueOpen: boolean;
-  declare controlsOpen: boolean;
   declare collapsed: boolean;
   declare mode: PlaybackMode;
   declare draggedIndex: number;
@@ -97,7 +98,6 @@ export class AudioDock extends LitElement {
     this.duration = 0;
     this.volume = 0.82;
     this.queueOpen = false;
-    this.controlsOpen = false;
     this.collapsed = false;
     this.mode = "repeat-all";
     this.draggedIndex = -1;
@@ -171,7 +171,7 @@ export class AudioDock extends LitElement {
   }
 
   updated() {
-    const dock = this.querySelector<HTMLElement>(".audio-dock");
+    const dock = this.querySelector<HTMLElement>(".player");
     if (dock === this.observedDock) return;
     this.dockObserver?.disconnect();
     this.observedDock = dock || undefined;
@@ -344,15 +344,6 @@ export class AudioDock extends LitElement {
     this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length] || "repeat-all";
     this.persist();
   }
-  private modeIcon() {
-    return this.mode === "shuffle"
-      ? "/icons.svg#shuffle"
-      : this.mode === "repeat-one"
-        ? "/icons.svg#repeat_one"
-        : this.mode === "sequential"
-          ? "/icons.svg#arrow_right_alt"
-          : "/icons.svg#repeat";
-  }
   private seek(seconds: number) {
     const value = clamp(Number(seconds) || 0, 0, this.duration || Number(seconds) || 0);
     this.audio.currentTime = value;
@@ -407,7 +398,6 @@ export class AudioDock extends LitElement {
     this.currentTime = 0;
     this.duration = 0;
     this.queueOpen = false;
-    this.controlsOpen = false;
     this.setOverlayIsolation(false);
     if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
     this.persist();
@@ -433,15 +423,13 @@ export class AudioDock extends LitElement {
     );
   }
   private onGlobalKeydown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && (this.queueOpen || this.controlsOpen)) {
+    if (event.key === "Escape" && this.queueOpen) {
       event.preventDefault();
       this.closeOverlay();
       return;
     }
-    if (event.key !== "Tab" || (!this.queueOpen && !this.controlsOpen)) return;
-    const panel = this.querySelector<HTMLElement>(
-      this.queueOpen ? ".audio-queue-panel" : ".audio-dock__mobile-controls",
-    );
+    if (event.key !== "Tab" || !this.queueOpen) return;
+    const panel = this.querySelector<HTMLElement>(".audio-queue-panel");
     const focusable = panel
       ? [
           ...panel.querySelectorAll<HTMLElement>(
@@ -466,7 +454,6 @@ export class AudioDock extends LitElement {
   private onPopState = () => {
     const overlay = history.state?.__haneoka_audio_overlay;
     this.queueOpen = overlay === "queue";
-    this.controlsOpen = overlay === "controls";
     this.setOverlayIsolation(Boolean(overlay));
   };
   private setOverlayIsolation(open: boolean) {
@@ -475,27 +462,21 @@ export class AudioDock extends LitElement {
       this.inertTargets.clear();
       return;
     }
-    document.querySelectorAll<HTMLElement>(".app-shell__body, .nav, .nav-bar, .audio-dock").forEach((target) => {
+    document.querySelectorAll<HTMLElement>(".app-shell__body, .nav, .nav-bar, .player").forEach((target) => {
       if (target.hasAttribute("inert")) return;
       target.setAttribute("inert", "");
       this.inertTargets.add(target);
     });
   }
-  private openOverlay(kind: "queue" | "controls") {
+  private openOverlay(kind: "queue") {
     if (history.state?.__haneoka_audio_overlay !== kind)
       history.pushState({ ...history.state, __haneoka_audio_overlay: kind }, "", location.href);
-    this.queueOpen = kind === "queue";
-    this.controlsOpen = kind === "controls";
+    this.queueOpen = true;
     this.setOverlayIsolation(true);
-    void this.updateComplete.then(() =>
-      this.querySelector<HTMLElement>(
-        kind === "queue" ? ".audio-queue-panel button" : ".audio-dock__mobile-controls button",
-      )?.focus(),
-    );
+    void this.updateComplete.then(() => this.querySelector<HTMLElement>(".audio-queue-panel button")?.focus());
   }
   private closeOverlay() {
     this.queueOpen = false;
-    this.controlsOpen = false;
     this.setOverlayIsolation(false);
     if (history.state?.__haneoka_audio_overlay) history.back();
   }
@@ -548,7 +529,7 @@ export class AudioDock extends LitElement {
   private renderQueue() {
     if (!this.queueOpen) return nothing;
     return html`
-      <button class="audio-dock__backdrop" aria-label="Close" @click=${this.closeOverlay}></button>
+      <button class="scrim" type="button" aria-label="Close" @click=${this.closeOverlay}></button>
       <section class="audio-queue-panel" role="dialog" aria-modal="true" aria-label="Queue">
         <header>
           <span>
@@ -643,164 +624,185 @@ export class AudioDock extends LitElement {
   render() {
     const track = this.track;
     if (!track) return nothing;
-    if (this.collapsed)
-      return html`
-        <button
-          class="audio-dock-collapsed"
-          style=${
-            this.collapsedPosition
-              ? `--audio-collapsed-x:${this.collapsedPosition.x * 100}vw;--audio-collapsed-y:${this.collapsedPosition.y * 100}dvh`
-              : ""
+    if (this.collapsed) return this.renderCollapsed(track);
+    const progress = this.duration > 0 ? this.currentTime / this.duration : 0;
+    return html`
+      <aside class="player" aria-label="Music player">
+        <!-- The seek bar spans the player's full width and sits on its top
+             edge: it belongs to the whole surface, not to one column. -->
+        <div class="player__seek">
+          ${wavyProgress({
+            value: progress,
+            thickness: 4,
+            amplitude: 5,
+            wavelength: 40,
+            still: !this.playing,
+          })}
+          <input
+            class="player__scrub"
+            type="range"
+            min="0"
+            max=${this.duration || 1}
+            step="0.01"
+            .value=${String(this.currentTime)}
+            aria-label="Playback position"
+            aria-valuetext=${`${this.format(this.currentTime)} of ${this.format(this.duration)}`}
+            @input=${(event: Event) => this.seek(Number((event.target as HTMLInputElement).value))}
+          />
+        </div>
+
+        <div class="player__body">
+          <a
+            class="player__identity state-layer"
+            href=${track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`}
+          >
+            <span class="player__cover">
+              ${
+                track.cover
+                  ? html`
+                      <img src=${track.cover} alt="" loading="lazy" />
+                    `
+                  : icon("queue_music", 20)
+              }
+            </span>
+            <span class="player__copy">
+              <strong>${track.title}</strong>
+              <small>${track.artist || "\u00a0"}</small>
+            </span>
+          </a>
+
+          <div class="player__transport">
+            ${iconButton({ label: "Previous", icon: "skip_previous", onClick: () => void this.previous() })}
+            <!-- The play control is the one filled button on the surface. -->
+            <button
+              class="player__play"
+              type="button"
+              aria-label=${this.playing ? "Pause" : "Play"}
+              @click=${() => (this.playing ? this.audio.pause() : void this.audio.play())}
+            >
+              ${this.playing ? icon("pause", 26) : icon("play_arrow", 26)}
+            </button>
+            ${iconButton({ label: "Next", icon: "skip_next", onClick: () => void this.next() })}
+            <span class="player__time tabular">
+              ${this.format(this.currentTime)}
+              <span aria-hidden="true">/</span>
+              ${this.format(this.duration)}
+            </span>
+          </div>
+
+          <div class="player__actions">
+            ${iconButton({
+              label: this.modeLabel(),
+              icon: this.modeIconName(),
+              onClick: this.cycleMode,
+              pressed: this.mode !== "sequential",
+              toggle: true,
+            })}
+            <label class="player__volume">
+              <button
+                class="icon-button"
+                type="button"
+                aria-label=${this.volume ? "Mute" : "Unmute"}
+                @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
+              >
+                ${this.volume ? icon("volume_up", 20) : icon("volume_off", 20)}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                .value=${String(this.volume)}
+                aria-label="Volume"
+                @input=${(event: Event) => this.setVolume(Number((event.target as HTMLInputElement).value))}
+              />
+            </label>
+            ${iconButton({
+              label: "Queue",
+              icon: "queue_music",
+              onClick: () => (this.queueOpen ? this.closeOverlay() : this.openOverlay("queue")),
+              pressed: this.queueOpen,
+              toggle: true,
+              badge: this.queue.length,
+            })}
+            ${iconButton({
+              label: "Collapse",
+              icon: "expand_more",
+              onClick: () => {
+                this.collapsed = true;
+                if (this.queueOpen) this.closeOverlay();
+                this.persist();
+              },
+            })}
+          </div>
+        </div>
+      </aside>
+      ${this.renderQueue()}
+    `;
+  }
+
+  /**
+   * Collapsed: a draggable FAB-sized puck. Material has no component for a
+   * floating mini player, so it borrows the FAB's geometry (56dp, 16dp
+   * corner, level-3 elevation) and shows progress as a ring around the
+   * artwork.
+   */
+  private renderCollapsed(track: AudioTrack) {
+    const progress = this.duration > 0 ? this.currentTime / this.duration : 0;
+    return html`
+      <button
+        class="player-puck"
+        type="button"
+        style=${
+          (this.collapsedPosition
+            ? `--puck-x:${this.collapsedPosition.x * 100}vw;--puck-y:${this.collapsedPosition.y * 100}dvh;`
+            : "") + `--puck-progress:${(progress * 100).toFixed(2)}%`
+        }
+        aria-label=${`Expand player — ${track.title}`}
+        @pointerdown=${this.startCollapsedDrag}
+        @pointermove=${this.updateCollapsedPosition}
+        @pointerup=${(event: PointerEvent) => this.finishCollapsedDrag(event)}
+        @pointercancel=${(event: PointerEvent) => this.finishCollapsedDrag(event, true)}
+        @click=${() => {
+          if (this.suppressCollapsedClick) {
+            this.suppressCollapsedClick = false;
+            return;
           }
-          aria-label="Expand player"
-          @pointerdown=${this.startCollapsedDrag}
-          @pointermove=${this.updateCollapsedPosition}
-          @pointerup=${(event: PointerEvent) => this.finishCollapsedDrag(event)}
-          @pointercancel=${(event: PointerEvent) => this.finishCollapsedDrag(event, true)}
-          @click=${() => {
-            if (this.suppressCollapsedClick) {
-              this.suppressCollapsedClick = false;
-              return;
-            }
-            this.collapsed = false;
-            this.persist();
-          }}
-        >
+          this.collapsed = false;
+          this.persist();
+        }}
+      >
+        <span class="player-puck__art">
           ${
             track.cover
               ? html`
                   <img src=${track.cover} alt="" />
                 `
-              : nothing
+              : icon("queue_music", 20)
           }
-          <svg class="material-icon" width="20" height="20"><use href="/icons.svg#expand_less"></use></svg>
-        </button>
-      `;
-    return html`
-      <aside class="audio-dock" aria-label="Music player">
-        <a
-          class="audio-dock__identity"
-          href=${track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`}
-        >
-          ${
-            track.cover
-              ? html`
-                  <img class="audio-dock__cover" src=${track.cover} alt="" />
-                `
-              : html`
-                  <span class="audio-dock__cover audio-dock__placeholder">
-                    <svg class="material-icon" width="18" height="18"><use href="/icons.svg#queue_music"></use></svg>
-                  </span>
-                `
-          }
-          <span class="audio-dock__track">
-            <strong>${track.title}</strong>
-            <small>${track.artist}</small>
-          </span>
-        </a>
-        <div class="audio-dock__transport">
-          <button class="icon-button" @click=${this.previous} aria-label="Previous">
-            <svg class="material-icon" width="21" height="21"><use href="/icons.svg#skip_previous"></use></svg>
-          </button>
-          <button
-            class="icon-button audio-dock__play"
-            @click=${() => (this.playing ? this.audio.pause() : void this.audio.play())}
-            aria-label=${this.playing ? "Pause" : "Play"}
-          >
-            <svg class="material-icon" width="24" height="24">
-              <use href=${this.playing ? "/icons.svg#pause" : "/icons.svg#play_arrow"}></use>
-            </svg>
-          </button>
-          <button class="icon-button" @click=${() => this.next()} aria-label="Next">
-            <svg class="material-icon" width="21" height="21"><use href="/icons.svg#skip_next"></use></svg>
-          </button>
-        </div>
-        <button class="icon-button audio-dock__mode" @click=${this.cycleMode} aria-label=${this.mode}>
-          <svg class="material-icon" width="20" height="20"><use href=${this.modeIcon()}></use></svg>
-        </button>
-        <div class="audio-dock__timeline">
-          <small>${this.format(this.currentTime)}</small>
-          <md-slider
-            class="audio-dock__progress md3-slider md3-slider--compact"
-            min="0"
-            max=${this.duration || 1}
-            step="0.01"
-            .value=${String(this.currentTime)}
-            @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value?: number }).value))}
-            aria-label="Playback position"
-          ></md-slider>
-          <small>${this.format(this.duration)}</small>
-        </div>
-        <label class="audio-dock__volume">
-          <svg class="material-icon" width="18" height="18">
-            <use href=${this.volume ? "/icons.svg#volume_up" : "/icons.svg#volume_off"}></use>
-          </svg>
-          <md-slider
-            min="0"
-            max="1"
-            step="0.01"
-            .value=${String(this.volume)}
-            @input=${(event: Event) => this.setVolume(Number((event.target as HTMLElement & { value?: number }).value))}
-            aria-label="Volume"
-          ></md-slider>
-        </label>
-        <button
-          class="icon-button audio-dock__queue-button"
-          @click=${() => (this.queueOpen ? this.closeOverlay() : this.openOverlay("queue"))}
-          aria-label="Queue"
-          aria-expanded=${this.queueOpen}
-        >
-          <svg class="material-icon" width="21" height="21"><use href="/icons.svg#queue_music"></use></svg>
-          <small>${this.queue.length}</small>
-        </button>
-        <button
-          class="icon-button audio-dock__more"
-          @click=${() => (this.controlsOpen ? this.closeOverlay() : this.openOverlay("controls"))}
-          aria-label="More playback controls"
-        >
-          <svg class="material-icon" width="21" height="21"><use href="/icons.svg#more_vert"></use></svg>
-        </button>
-        <button
-          class="icon-button audio-dock__collapse"
-          @click=${() => {
-            this.collapsed = true;
-            if (this.queueOpen || this.controlsOpen) this.closeOverlay();
-            this.persist();
-          }}
-          aria-label="Collapse"
-        >
-          <svg class="material-icon" width="21" height="21"><use href="/icons.svg#expand_more"></use></svg>
-        </button>
-        ${
-          this.controlsOpen
-            ? html`
-                <section class="audio-dock__mobile-controls">
-                  <button
-                    @click=${() => {
-                      this.openOverlay("queue");
-                    }}
-                  >
-                    Queue
-                    <span>${this.queue.length}</span>
-                  </button>
-                  <button @click=${this.cycleMode}>${this.mode}</button>
-                  <label>
-                    Volume
-                    <md-slider
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      .value=${String(this.volume)}
-                      @input=${(event: Event) => this.setVolume(Number((event.target as HTMLElement & { value?: number }).value))}
-                    ></md-slider>
-                  </label>
-                </section>
-              `
-            : nothing
-        }
-      </aside>
-      ${this.renderQueue()}
+        </span>
+        <span class="player-puck__state" aria-hidden="true">
+          ${this.playing ? icon("pause", 18) : icon("play_arrow", 18)}
+        </span>
+      </button>
     `;
+  }
+
+  private modeLabel() {
+    return {
+      sequential: "Play in order",
+      "repeat-all": "Repeat queue",
+      "repeat-one": "Repeat track",
+      shuffle: "Shuffle",
+    }[this.mode];
+  }
+
+  /** Written as literals so the icon sprite builder detects every glyph. */
+  private modeIconName() {
+    if (this.mode === "repeat-one") return "repeat_one";
+    if (this.mode === "shuffle") return "shuffle";
+    if (this.mode === "sequential") return "playlist_play";
+    return "repeat";
   }
 }
 

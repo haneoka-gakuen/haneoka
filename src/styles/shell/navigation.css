@@ -119,6 +119,46 @@
   outline-offset: 2px;
 }
 
+/* ---------- Expanded rail (what Material calls the expanded navigation rail;
+   it replaces the navigation drawer) ----------
+
+   Hierarchy, top to bottom:
+     brand · tuning · spacing   the shell's own controls
+     PRIMARY destinations       the same five as the collapsed rail
+     ── divider ──
+     section headlines + items  secondary, scrollable
+     account / settings / about pinned to the bottom
+
+   The collapsed and expanded forms share those five destinations, their
+   order and their icons, so one turns into the other instead of being
+   swapped for an unrelated list. Per spec the expanded active indicator is a
+   56dp-tall pill that hugs its label, against 56×32dp when collapsed. */
+.nav__primary {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.nav-item--primary {
+  min-height: 56px;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+/* Expressive moves the active label to secondary and drops the bold. */
+.nav-item--primary[aria-current="page"] {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+/* The secondary list is separated from the primary destinations, not just
+   spaced from them: the divider is what says "different level". */
+.nav__primary + .nav-section,
+.nav__primary + .nav-item {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
 /* ---------- Drawer ---------- */
 .nav__drawer {
   display: none;
@@ -172,14 +212,23 @@
 }
 .nav-section__headline {
   display: flex;
-  min-height: 48px;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   margin: 0;
   padding: 0 16px;
-  color: var(--md-sys-color-on-surface-variant);
+  color: var(--md-sys-color-primary);
   font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
     var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  letter-spacing: 0.02em;
+}
+/* Secondary destinations are inset from the primary ones and lighter: two
+   visual levels rather than one flat list. */
+.nav-section .nav-item {
+  min-height: 44px;
+  padding-left: 28px;
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
 }
 summary.nav-section__headline {
   position: relative;

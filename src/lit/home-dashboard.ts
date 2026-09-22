@@ -716,7 +716,7 @@ export class HomeDashboard extends LitElement {
                           rel=${item.external ? "noopener noreferrer" : nothing}
                           style=${`--accent:${item.color}`}
                         >
-                          <span class="birthday-list__avatar" aria-hidden="true">
+                          <span class="list-item__leading" aria-hidden="true">
                             ${
                               item.image
                                 ? html`
@@ -726,13 +726,13 @@ export class HomeDashboard extends LitElement {
                             }
                             <span>${Array.from(item.name)[0] ?? "?"}</span>
                           </span>
-                          <span class="birthday-list__copy">
+                          <span class="list-item__body">
                             <span class="list-item__headline">${item.name}</span>
                             <span class="list-item__supporting">
                               ${this.text(item.kind, item.kind)} · ${this.formatDate(item.nextAt, true)}
                             </span>
                           </span>
-                          <span class=${`birthday-list__days tabular${days === 0 ? " is-today" : ""}`}>
+                          <span class=${`list-item__meta birthday-list__days tabular${days === 0 ? " is-today" : ""}`}>
                             ${days === 0 ? this.text("today", "Today") : this.text("daysAway", "{count} days").replace("{count}", String(days))}
                           </span>
                         </a>
@@ -769,14 +769,14 @@ export class HomeDashboard extends LitElement {
                     (post, index) => html`
                       <li>
                         <a class="list-item list-item--interactive" href=${`/community/posts/${post.id}`}>
-                          <span class="community-hot-list__rank tabular" aria-hidden="true">${index + 1}</span>
-                          <span class="community-hot-list__copy">
+                          <span class="list-item__marker tabular" aria-hidden="true">${index + 1}</span>
+                          <span class="list-item__body">
                             <span class="list-item__headline">${String(post.title || post.excerpt || "—")}</span>
                             <span class="list-item__supporting">
                               ${String(post.authorName || "")}${post.createdAt ? ` · ${this.formatDate(String(post.lastEditedAt || post.createdAt))}` : ""}
                             </span>
                           </span>
-                          <span class="community-hot-list__score tabular">
+                          <span class="list-item__meta community-hot-list__score tabular">
                             ${icon("favorite", 16)}${Number(post.likeCount || 0)}
                             ${icon("chat_bubble", 16)}${Number(post.commentCount || 0)}
                           </span>
@@ -818,26 +818,25 @@ export class HomeDashboard extends LitElement {
             ([name, host, href]) => html`
               <li>
                 <a class="list-item list-item--interactive" href=${href} target="_blank" rel="noopener noreferrer">
-                  <span class="news-list__mark" aria-hidden="true">${icon("public", 20)}</span>
-                  <span>
+                  <span class="list-item__leading news-list__mark" aria-hidden="true">${icon("public", 20)}</span>
+                  <span class="list-item__body">
                     <span class="list-item__headline">${name}</span>
                     <span class="list-item__supporting">${host}</span>
                   </span>
-                  ${icon("open_in_new", 18)}
+                  <span class="list-item__trailing">${icon("open_in_new", 18)}</span>
                 </a>
               </li>
             `,
           )}
           <li>
             <div class="list-item">
-              <span class="news-list__mark" aria-hidden="true">${icon("calendar_month", 20)}</span>
-              <span>
+              <span class="list-item__leading news-list__mark" aria-hidden="true">${icon("calendar_month", 20)}</span>
+              <span class="list-item__body">
                 <span class="list-item__headline">${this.text("scheduleTitle", "Event schedule")}</span>
                 <span class="list-item__supporting">
                   ${this.text("scheduleEmpty", "There is no event schedule available for this server yet.")}
                 </span>
               </span>
-              <span></span>
             </div>
           </li>
         </ul>

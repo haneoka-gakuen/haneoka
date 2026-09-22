@@ -247,7 +247,6 @@ export class SpineWorkspace extends LitElement {
     return html`
       ${renderBrowse({
         kind: "model",
-        docked: this.docked,
         count: { value: models.length, label: "" },
         controls: segmented({
           label: uiText(this.locale, "view"),
@@ -422,26 +421,26 @@ export class SpineWorkspace extends LitElement {
             <span>${uiText(this.locale, "animations")}</span>
           </header>
           ${models.map(
-          (model) => html`
-            <button class="model-list__row" @click=${() => this.select(String(model.id))}>
-              <span class="model-list__primary">
-                ${
+            (model) => html`
+              <button class="model-list__row" @click=${() => this.select(String(model.id))}>
+                <span class="model-list__primary">
+                  ${
                   this.preview(model)
                     ? html`
                         <img src=${this.preview(model)} alt="" loading="lazy" />
                       `
                     : nothing
                 }
-                <strong>${this.modelTitle(model)}</strong>
-              </span>
-              <span>${this.familyName(model.family)}</span>
-              <span>${String(model.spineVersion || "—")}</span>
-              <span>
-                ${Number(model.animationCount || (Array.isArray(model.animations) ? model.animations.length : 0))}
-              </span>
-            </button>
-          `,
-        )}
+                  <strong>${this.modelTitle(model)}</strong>
+                </span>
+                <span>${this.familyName(model.family)}</span>
+                <span>${String(model.spineVersion || "—")}</span>
+                <span>
+                  ${Number(model.animationCount || (Array.isArray(model.animations) ? model.animations.length : 0))}
+                </span>
+              </button>
+            `,
+          )}
         </div>
       </div>
     `;

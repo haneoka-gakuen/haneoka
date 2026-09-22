@@ -5,11 +5,10 @@ import { iconButton } from "./controls";
 /**
  * Detail pane.
  *
- * Material's list-detail layout: on medium and expanded windows the detail is
- * a side sheet docked to the trailing edge of the content pane; on compact it
- * is a full-screen dialog. Both are modal, both are labelled by their own
- * heading, both trap focus and close on Escape — enforced here rather than
- * re-implemented per resource.
+ * A full-screen surface at every size (Material's full-screen dialog): its
+ * own top app bar with a back action, focus contained, Escape closes. The
+ * detail is a destination rather than a preview beside the list, so it never
+ * competes with the collection for width.
  */
 
 export interface PaneOptions {
@@ -19,7 +18,6 @@ export interface PaneOptions {
   /** Presentation hook: `.sheet--detail-{kind}`. */
   kind?: string;
   open: boolean;
-  compact: boolean;
   backLabel: string;
   onClose: () => void;
   /** Leading emblem (rarity, attribute, band). */
@@ -37,7 +35,7 @@ export function renderPane(options: PaneOptions): TemplateResult {
   const headingId = `${options.id || "detail"}-title`;
   const classes = [
     "sheet",
-    options.compact ? "sheet--full" : "sheet--side sheet--detail",
+    "sheet--detail",
     options.kind ? `sheet--detail-${options.kind}` : "",
     options.open ? "is-open" : "",
   ]
@@ -57,7 +55,7 @@ export function renderPane(options: PaneOptions): TemplateResult {
       <header class="sheet__header">
         ${iconButton({
           label: options.backLabel,
-          icon: options.compact ? "arrow_back" : "close",
+          icon: "arrow_back",
           onClick: options.onClose,
         })}
         <span class="sheet__title" id=${headingId}>
@@ -81,18 +79,6 @@ export function renderPane(options: PaneOptions): TemplateResult {
           : nothing
       }
     </aside>
-    ${
-      options.open && !options.compact
-        ? html`
-            <button
-              class="scrim sheet-scrim"
-              type="button"
-              aria-label=${options.backLabel}
-              @click=${options.onClose}
-            ></button>
-          `
-        : nothing
-    }
   `;
 }
 

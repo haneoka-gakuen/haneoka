@@ -13,6 +13,7 @@ const supplemental: Record<string, readonly [string, string, string, string, str
   "band.4": ["millsage", "millsage", "millsage", "millsage", "millsage"],
   "band.5": ["一家Dumb Rock!", "Ikka Dumb Rock!", "一家Dumb Rock!", "一家Dumb Rock!", "일가 Dumb Rock!"],
   gameSystems: ["ゲームシステム", "Game systems", "遊戲系統", "游戏系统", "게임 시스템"],
+  mirrors: ["外部アーカイブ", "Mirrors", "外部檔案", "外部档案", "외부 아카이브"],
   themeColor: ["テーマカラー", "Theme color", "主題色", "主题色", "테마 색상"],
   themeColorHint: [
     "バンドの色を種にして、Material 3 の配色全体を組み直します。",

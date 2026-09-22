@@ -42,6 +42,7 @@
 @import "./components/overlay.css";
 @import "./components/input.css";
 @import "./components/feedback.css";
+@import "./components/wavy-progress.css";
 
 /* 5 — shell */
 @import "./shell/shell.css";

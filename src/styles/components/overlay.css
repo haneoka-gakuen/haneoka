@@ -67,15 +67,48 @@
   transform: translateX(calc(100% + 32px));
 }
 
-/* Detail sheet: a list-detail pane. On expanded windows it is wider, because
- * the data it shows is a two-column specification. */
+/* ---------- Detail surface ----------
+   A full-screen sheet at every size — Material's full-screen dialog.
+
+   Material's list-detail layout puts a detail beside its list, but that is
+   for a *supporting* detail: a preview. Here the detail IS the destination —
+   a card's full artwork and stat table, a song's chart data, a character's
+   whole archive. At half the pane those spec tables wrapped every value and
+   the artwork shrank to a thumbnail, while the list behind it sat under a
+   scrim and was unusable anyway. So it takes the whole viewport, carries its
+   own top app bar with a back action, and needs no scrim because there is
+   nothing left showing behind it. */
 .sheet--detail {
-  --sheet-width: min(560px, 46vw);
+  inset: 0;
+  width: 100%;
+  border-radius: 0;
+  background: var(--md-sys-color-surface);
+  /* Material's full-screen dialog enters by rising and fading in. */
+  transform: translateY(16px);
+  opacity: 0;
+  transition:
+    transform var(--md-sys-motion-duration-medium4) var(--ease-emphasized),
+    opacity var(--md-sys-motion-duration-medium2) linear,
+    visibility var(--md-sys-motion-duration-medium4) step-end;
 }
-@media (min-width: 1200px) {
-  .sheet--detail {
-    --sheet-width: min(720px, 52vw);
-  }
+.sheet--detail.is-open {
+  opacity: 1;
+}
+/* The pane is now a reading surface, so its content takes a measure instead
+   of stretching specification rows across the full window. */
+.sheet--detail > .sheet__body > * {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+/* Its header is the page's app bar while it is open. */
+.sheet--detail > .sheet__header {
+  position: sticky;
+  z-index: var(--md-sys-z-index-local-sticky);
+  top: 0;
+  padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+  background: var(--md-sys-color-surface);
+  box-shadow: 0 1px 0 var(--md-sys-color-outline-variant);
 }
 
 /* Bottom sheet: compact windows, or anything that is a list of choices. */

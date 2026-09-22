@@ -1,10 +1,24 @@
 /* ==========================================================================
    List
-   Material 3 list item: 56dp one line, 72dp two lines, 88dp three lines;
-   16dp inline padding; leading 24dp icon / 40dp avatar / 56dp image;
-   supporting text body-medium on-surface-variant; trailing metadata
-   label-small. Row height comes from --row-height so the density control
-   moves lists and tables together.
+   Material 3 list item.
+
+   The height numbers everyone quotes — 56dp one line, 72dp two lines, 88dp
+   three lines — are *text-row* contracts, not container heights. M3 derives
+   the container from its content: 8dp vertical padding (12dp for three-line)
+   around whichever is taller, the text block or the leading element. A 40dp
+   avatar therefore makes a one-line item 64dp (40 + 12 + 12), and a 56dp
+   image makes a two-line item 80dp. Pinning the container to 56dp regardless
+   — which this file used to do — crushes the text against the avatar.
+
+   Horizontal keylines: 16dp leading and trailing padding, 16dp between
+   slots.
+
+   Track sizing is the other half of the fix. With the text track at
+   `minmax(0, 1fr)` and the trailing slot at `auto`, grid gives the trailing
+   slot all the max-content width it asks for and collapses the text to
+   nothing — so a long date in the trailing slot squeezed the headline into a
+   couple of characters. The text track now carries a real floor and the
+   trailing slot is allowed to shrink and truncate past it.
    ========================================================================== */
 .list {
   display: grid;
@@ -13,15 +27,14 @@
   padding: 0;
   list-style: none;
 }
-/* Three tracks: leading (auto) · text (flexible) · trailing (auto). The
- * middle track is the only one that flexes, which is what keeps a long
- * headline from pushing the trailing metadata out of the row — and every
- * child gets min-width: 0 so it can actually shrink to that track. */
+
 .list-item {
   display: grid;
   min-width: 0;
+  /* A floor, not a fixed height: content taller than the text row wins. */
   min-height: var(--row-height);
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* leading (intrinsic) · text (flexes, with a floor) · trailing (yields) */
+  grid-template-columns: auto minmax(var(--list-text-floor, min(100%, 12ch)), 1fr) minmax(0, auto);
   align-items: center;
   gap: 0 16px;
   padding: 8px 16px;
@@ -36,12 +49,23 @@
 .list-item > :only-child {
   grid-column: 1 / -1;
 }
+/* Pages name their own children (.birthday-list__copy, .community-row__meta
+ * …) rather than using the slot classes, so the slots are positional: the
+ * second child is the text block wherever there are three, and the last is
+ * the trailing slot. Both accept the named classes too. */
+.list-item > :last-child:not(:first-child, :nth-child(2)),
+.list-item__trailing {
+  justify-self: end;
+  text-align: end;
+}
 .list-item--two-line {
   min-height: var(--row-height-two-line);
 }
+/* Three-line items top-align and take 12dp of vertical padding (spec). */
 .list-item--three-line {
   min-height: var(--row-height-three-line);
   align-items: start;
+  padding-block: 12px;
 }
 .list-item--interactive {
   cursor: pointer;
@@ -51,10 +75,13 @@
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
 }
+
+/* ---------- Slots ---------- */
 .list-item__leading,
 .list-item__trailing {
   display: flex;
   min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   color: var(--md-sys-color-on-surface-variant);
@@ -66,26 +93,48 @@
 }
 .list-item__headline {
   min-width: 0;
+  overflow: hidden;
   font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
     var(--md-sys-typescale-body-large-line-height) var(--app-font);
+  text-overflow: ellipsis;
   overflow-wrap: break-word;
 }
 .list-item__supporting {
   min-width: 0;
+  overflow: hidden;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
     var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  text-overflow: ellipsis;
   overflow-wrap: break-word;
 }
+/* One line each by default — a list is a scannable index, so a wrapping
+ * headline is opt-in via .list-item--three-line. */
+.list-item:not(.list-item--three-line) :where(.list-item__headline, .list-item__supporting) {
+  white-space: nowrap;
+}
+/* Trailing metadata: label-medium, tabular, and it truncates rather than
+ * holding the row open at its max-content width. */
 .list-item__meta {
-  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--md-sys-color-on-surface-variant);
   font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
     var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Avatar / thumbnail in the leading slot. */
+
+/* ---------- Leading elements ----------
+   24dp icon · 40dp avatar · 56dp image. Each sets --list-lead so the row's
+   floor can account for it (leading + 2 × 8dp padding). */
+.list-item:has(.list-item__avatar) {
+  min-height: max(var(--row-height), calc(var(--avatar-size, 40px) + 24px));
+}
+.list-item:has(.list-item__thumb) {
+  min-height: max(var(--row-height), 80px);
+}
 .list-item__avatar {
   display: grid;
   width: var(--avatar-size, 40px);
@@ -133,6 +182,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Variants ---------- */
 /* Divided list: 1dp separators instead of gaps. Reads denser and gives the
  * "staff line" feel the rest of the site uses. */
 .list--divided > * + * {
@@ -143,4 +193,13 @@
 }
 .list--inset .list-item {
   padding-inline: var(--pane-gutter);
+}
+/* Narrow contexts (a card in a three-column board) cannot honour a 12ch
+ * floor and a max-content trailing slot at once. The floor shrinks first,
+ * because a truncated headline still identifies the row. */
+@container (max-width: 380px) {
+  .list-item {
+    --list-text-floor: min(100%, 8ch);
+    gap: 0 12px;
+  }
 }

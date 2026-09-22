@@ -86,12 +86,22 @@ const i18nValues = (key: string, fallback: string) =>
     </ul>
 
     <div class="nav__drawer">
-      <a class="nav-item" href={localePath("/", locale)} aria-current={route === "/" ? "page" : undefined}>
-        <Icon name="home" filled={route === "/"} /><I18nText keyName="home" fallback="Home" locale={locale} />
-      </a>
-      <a class="nav-item" href={localePath("/catalog", locale)} aria-current={route === "/catalog" ? "page" : undefined}>
-        <Icon name="category" filled={route === "/catalog"} /><I18nText keyName="catalog" fallback="Catalog" locale={locale} />
-      </a>
+      <!-- The expanded rail's primary destinations: the same five entries as
+           the collapsed rail, in the same order, so the two forms read as one
+           component that grew rather than two lists that swapped. -->
+      <ul class="nav__primary" role="list">
+        {PRIMARY_DESTINATIONS.map((destination) => {
+          const current = isDestinationActive(destination, route);
+          return (
+            <li>
+              <a class="nav-item nav-item--primary" href={localePath(destination.route, locale)} aria-current={current ? "page" : undefined}>
+                <Icon name={destination.icon} filled={current} />
+                <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
+              </a>
+            </li>
+          );
+        })}
+      </ul>
       {NAV_SECTIONS.map((section) => {
         const items = section.items.map((item) => (
           <li>

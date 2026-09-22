@@ -1,0 +1,57 @@
+---
+/**
+ * Bestdori stories, one route per section.
+ *
+ * The worker exposes `stories/{event,band,main,afterlive}` and `cards`
+ * (worker/bestdori.ts), and the pre-Astro site had a page per section. The
+ * Astro rewrite collapsed them into a single catch-all that generated only
+ * /community/stories-bestdori, so every section URL fell through to the SPA
+ * shell and the section was decided by a path segment the router had never
+ * produced. These are real routes again, so each one prerenders, carries its
+ * own title, and can be linked and bookmarked.
+ */
+import Base from "../../../layouts/Base.astro";
+import AppShell from "../../../components/AppShell.astro";
+import { LOCALES, DEFAULT_LOCALE, type Locale } from "../../../i18n/locales";
+import { group, t } from "../../../i18n/messages";
+import "../../../lit/community-workspace";
+import "../../../styles/catalog.css";
+import "../../../styles/community.css";
+
+/** The sections the Bestdori worker can serve. */
+export const BESTDORI_STORY_SECTIONS = ["event", "band", "main", "afterlive", "card"] as const;
+
+export function getStaticPaths() {
+  return BESTDORI_STORY_SECTIONS.map((section) => ({ params: { section }, props: { section } }));
+}
+
+const { section } = Astro.props as { section: string };
+const locale = DEFAULT_LOCALE as Locale;
+const route = `/community/stories-bestdori/${section}`;
+const titleKey = `storyNavigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`;
+const title = t(locale, titleKey, section);
+const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "communityPage")])));
+const sectionLabels = JSON.stringify(
+  Object.fromEntries(
+    ["bestdoriEvent", "bestdoriBand", "bestdoriMain", "bestdoriAfterlive", "bestdoriCard"].map((key) => [
+      key,
+      t(locale, `storyNavigation.${key}`, key),
+    ]),
+  ),
+);
+---
+
+<Base locale={locale} route={route} title={title} titleKey={titleKey} description={title}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+    <community-workspace
+      locale={locale}
+      mode="stories-bestdori"
+      section={section}
+      labels={labels}
+      section-labels={sectionLabels}
+    ></community-workspace>
+  </AppShell>
+</Base>
+<script>
+  import "../../../lit/community-workspace";
+</script>

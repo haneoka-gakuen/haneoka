@@ -1,0 +1,158 @@
+import { LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+
+/**
+ * The label table every catalogue screen is configured with.
+ *
+ * It lived inline in pages/[...slug].astro, which meant any other route that
+ * wanted the same presentation — the community's Bestdori mirrors — had to
+ * copy a hundred keys and then drift. One table, imported where needed.
+ */
+const LABEL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
+  ["filter", "filter"],
+  ["reset", "reset"],
+  ["search", "search"],
+  ["sort", "sort"],
+  ["id", "id"],
+  ["title", "title"],
+  ["release", "release"],
+  ["order", "order"],
+  ["ascending", "ascending"],
+  ["descending", "descending"],
+  ["view", "view"],
+  ["grid", "grid"],
+  ["list", "list"],
+  ["loading", "loading"],
+  ["unavailable", "unavailable"],
+  ["retry", "retry"],
+  ["empty", "empty"],
+  ["close", "close"],
+  ["character", "character"],
+  ["band", "band"],
+  ["rarity", "rarity"],
+  ["type", "type"],
+  ["attribute", "attribute"],
+  ["genre", "genre"],
+  ["subtitle", "subtitle"],
+  ["category", "category"],
+  ["initial", "initial"],
+  ["rankUpItem", "rankUpItem"],
+  ["notes", "notes"],
+  ["battle", "battle"],
+  ["performance", "performance"],
+  ["technique", "technique"],
+  ["visual", "visual"],
+  ["composer", "composer"],
+  ["lyricist", "lyricist"],
+  ["arranger", "arranger"],
+  ["birthday", "birthday"],
+  ["height", "height"],
+  ["voiceActor", "voiceActor"],
+  ["school", "school"],
+  ["hobby", "hobby"],
+  ["value", "value"],
+  ["red", "liveMusicTypes.red"],
+  ["blue", "liveMusicTypes.blue"],
+  ["green", "liveMusicTypes.green"],
+  ["yellow", "liveMusicTypes.yellow"],
+  ["purple", "liveMusicTypes.purple"],
+  ["original", "songTypes.original"],
+  ["virtual", "songTypes.virtual"],
+  ["jpop", "songTypes.jpop"],
+  ["anime", "songTypes.anime"],
+  ["game", "songTypes.game"],
+  ["skills", "skills"],
+  ["stats", "stats"],
+  ["details", "details"],
+  ["difficulty", "difficulty"],
+  ["diary", "diary"],
+  ["rewards", "rewards"],
+  ["content", "content"],
+  ["level", "level"],
+  ["training", "training"],
+  ["awakening", "awakening"],
+  ["liveSkill", "liveSkill"],
+  ["gekisouSkill", "gekisouSkill"],
+  ["leaderSkill", "leaderSkill"],
+  ["supportSkill", "supportSkill"],
+  ["rank", "rank"],
+  ["required", "required"],
+  ["memberPiece", "memberPiece"],
+  ["total", "total"],
+  ["exp", "exp"],
+  ["stage", "stage"],
+  ["memberCards", "memberCards"],
+  ["supportCards", "supportCards"],
+  ["songs", "songs"],
+  ["characters", "characters"],
+  ["lyrics", "lyrics"],
+  ["arrangement", "arrangement"],
+  ["size", "size"],
+  ["musicType", "musicType"],
+  ["time", "time"],
+  ["score", "score"],
+  ["eff", "eff"],
+  ["bpm", "bpm"],
+  ["n", "n"],
+  ["nps", "nps"],
+  ["sr", "sr"],
+  ["play", "play"],
+  ["pause", "pause"],
+  ["chart", "chart"],
+  ["media", "media"],
+  ["mv", "mv"],
+  ["playAll", "playAll"],
+  ["previous", "previous"],
+  ["next", "next"],
+  ["friendship", "friendship"],
+  ["effectsByLevel", "effectsByLevel"],
+  ["profile", "profile"],
+  ["cards", "cards"],
+  ["stamps", "stamps"],
+  ["voices", "voices"],
+  ["story", "story"],
+  ["characterBonds", "characterBonds"],
+  ["bandStories", "storyNavigation.band"],
+  ["linkStories", "storyNavigation.link"],
+  ["homeStories", "storyNavigation.home"],
+  ["afterliveStories", "storyNavigation.afterlive"],
+  ["tutorialStories", "storyNavigation.tutorial"],
+  ["schoolClass", "schoolClass"],
+  ["constellation", "constellation"],
+  ["favoriteFood", "favoriteFood"],
+  ["hatedFood", "hatedFood"],
+  ["missions", "missions"],
+  ["simple", "simple"],
+  ["watch", "watch"],
+  ["density", "density"],
+  ["comfortable", "comfortable"],
+  ["compact", "compact"],
+  ["remove", "remove"],
+];
+
+/** Every locale's resolved labels, for the client-side locale switch. */
+export const catalogLabelsByLocale: Record<string, Record<string, string>> = Object.fromEntries(
+  LOCALES.map((target) => [
+    target,
+    Object.fromEntries(LABEL_ENTRIES.map(([key, message]) => [key, t(target, message, key)])),
+  ]),
+);
+
+export interface CatalogConfigOptions {
+  resource: string;
+  locale: Locale;
+  aspectRatio?: string;
+  origin?: "release" | "bestdori";
+}
+
+/** Serialises a catalogue screen's configuration. */
+export function catalogConfig(options: CatalogConfigOptions): string {
+  return JSON.stringify({
+    resource: options.resource,
+    locale: options.locale,
+    labels: catalogLabelsByLocale[options.locale],
+    labelsByLocale: catalogLabelsByLocale,
+    aspectRatio: options.aspectRatio ?? "1",
+    ...(options.origin ? { origin: options.origin } : {}),
+  });
+}

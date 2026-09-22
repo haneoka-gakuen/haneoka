@@ -129,6 +129,19 @@ export const NAV_SECTIONS: NavSection[] = [
       { route: "/community/notifications", icon: "notifications", label: "communityPage.notifications" },
       { route: "/community/activity", icon: "comment", label: "communityPage.activity" },
       { route: "/community/tags", icon: "sell", label: "communityPage.tags" },
+    ],
+  },
+  /**
+   * A separate source, not community posts. Playlists come from the game's
+   * own master data and the Bestdori pages mirror an external archive; none
+   * of them is user-generated, so grouping them under "community" implied a
+   * relationship that does not exist.
+   */
+  {
+    id: "mirrors",
+    label: "mirrors",
+    collapsible: true,
+    items: [
       { route: "/community/playlists", icon: "queue_music", label: "communityPage.playlistPage.title" },
       { route: "/community/songs-bestdori", icon: "library_music", label: "communityPage.songsBestDori" },
       { route: "/community/stories-bestdori", icon: "auto_stories", label: "communityPage.storiesBestDori" },

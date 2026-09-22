@@ -27,6 +27,13 @@ interface Config {
   labels: Record<string, string>;
   labelsByLocale?: Record<string, Record<string, string>>;
   aspectRatio?: string;
+  /**
+   * Where the collection comes from. "release" is the Our Notes catalogue;
+   * "bestdori" is the community mirror, whose worker projects records into
+   * the same shape — so both render through this one screen instead of a
+   * second hand-rolled list that drifts out of sync.
+   */
+  origin?: "release" | "bestdori";
 }
 interface Profile {
   id: string[];
@@ -433,6 +440,17 @@ export class CatalogScreen extends LitElement {
     }
     image.classList.add("is-error");
   }
+  /** Bestdori's region is chosen by the reading locale, as the worker expects. */
+  private bestdoriRegion() {
+    return { "zh-TW": "tw", "zh-CN": "cn", ko: "kr", en: "en" }[this.settings.locale] || "jp";
+  }
+  /** Resolves a resource against whichever origin this screen was given. */
+  private sourceUrl(resource: string, id = "") {
+    if (this.settings.origin !== "bestdori") return catalogUrl(resource, id);
+    const base = `/api/v1/garupa/bestdori/${this.bestdoriRegion()}`;
+    const path = id ? `${resource}/${encodeURIComponent(id)}` : resource;
+    return `${base}/${path}?lang=${encodeURIComponent(this.settings.locale)}`;
+  }
   private label(key: string, fallback: string) {
     return this.settings.labels[key] || fallback;
   }
@@ -526,11 +544,16 @@ export class CatalogScreen extends LitElement {
       const needsGameMarks = ["member", "support", "song", "character"].includes(this.profile.presentation);
       const needsItems = ["member", "support"].includes(this.profile.presentation);
       const [response, characters, bands, marks, gameItems] = await Promise.all([
-        fetch(catalogUrl(this.settings.resource), { headers: { accept: "application/json" } }),
-        needsRelations ? fetch(catalogUrl("characters"), { headers: { accept: "application/json" } }) : null,
-        needsRelations ? fetch(catalogUrl("bands"), { headers: { accept: "application/json" } }) : null,
-        needsGameMarks ? fetch(catalogUrl("ui-marks"), { headers: { accept: "application/json" } }) : null,
-        needsItems ? fetch(catalogUrl("items"), { headers: { accept: "application/json" } }) : null,
+        fetch(this.sourceUrl(this.settings.resource), { headers: { accept: "application/json" } }),
+        needsRelations ? fetch(this.sourceUrl("characters"), { headers: { accept: "application/json" } }) : null,
+        needsRelations ? fetch(this.sourceUrl("bands"), { headers: { accept: "application/json" } }) : null,
+        // Game-sprite marks and item tables are release-only projections.
+        needsGameMarks && this.settings.origin !== "bestdori"
+          ? fetch(catalogUrl("ui-marks"), { headers: { accept: "application/json" } })
+          : null,
+        needsItems && this.settings.origin !== "bestdori"
+          ? fetch(catalogUrl("items"), { headers: { accept: "application/json" } })
+          : null,
       ]);
       if (!response.ok) throw new Error(String(response.status));
       const document = (await response.json()) as unknown;
@@ -718,7 +741,7 @@ export class CatalogScreen extends LitElement {
       (this.view !== "list" && !["time", "score", "eff", "bpm", "n", "nps", "sr"].includes(this.sort))
     )
       return;
-    this.songMetaProvision ??= fetch(catalogUrl("song-meta"), { headers: { accept: "application/json" } }).then(
+    this.songMetaProvision ??= fetch(this.sourceUrl("song-meta"), { headers: { accept: "application/json" } }).then(
       async (response) => {
         this.songMeta = response.ok ? ((await response.json()) as Item) : {};
         this.requestUpdate();
@@ -1100,7 +1123,7 @@ export class CatalogScreen extends LitElement {
         : import("./song-detail-rewards").then((module) => {
             this.songDetailRewards = module;
           });
-      this.songMetaProvision ??= fetch(catalogUrl("song-meta"), { headers: { accept: "application/json" } }).then(
+      this.songMetaProvision ??= fetch(this.sourceUrl("song-meta"), { headers: { accept: "application/json" } }).then(
         async (response) => {
           this.songMeta = response.ok ? ((await response.json()) as Item) : {};
         },
@@ -1111,7 +1134,9 @@ export class CatalogScreen extends LitElement {
       void Promise.all([rewards, this.songMetaProvision]).then(() => this.requestUpdate());
     }
     try {
-      const response = await fetch(catalogUrl(this.settings.resource, id), { headers: { accept: "application/json" } });
+      const response = await fetch(this.sourceUrl(this.settings.resource, id), {
+        headers: { accept: "application/json" },
+      });
       if (response.ok && this.selectedId === id) this.selected = (await response.json()) as Item;
     } catch {
       // The summary remains a complete offline fallback.
@@ -1262,7 +1287,6 @@ export class CatalogScreen extends LitElement {
     return html`
       ${renderBrowse({
         kind,
-        docked: this.docked,
         style: `--tile-ratio:${this.settings.aspectRatio || "1"}`,
         // Showing "shown / total" is the cheapest way to make a filtered
         // collection legible: the number alone never said what was hidden.
@@ -2162,7 +2186,6 @@ export class CatalogScreen extends LitElement {
       ${renderPane({
         kind: this.profile.presentation,
         open: true,
-        compact: this.compact,
         // The clef bar on the pane's leading edge takes the subject's own
         // colour — the same mark the home staff uses for a band line.
         style: `--entity-accent:${this.detailAccent(item)}`,

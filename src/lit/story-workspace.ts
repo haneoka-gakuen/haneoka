@@ -12,7 +12,6 @@ import {
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { HomeSpotStage } from "./runtime/home-spot-stage";
-import { renderGridIdentity } from "./shared/grid-identity";
 import { filterChip, iconButton, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { PaneFocus } from "./ui/pane";
@@ -864,62 +863,49 @@ export class StoryWorkspace extends LitElement {
               : nothing
           }
         </span>
-        <span class="story-card__body">
+        <span class="tile__identity">
+          <strong class="tile__title">${this.text(episode.title) || uiText(this.locale, "story")}</strong>
+          <small class="tile__subtitle">
+            ${this.mode === "link" && episode.unlockCharacterFriendshipLevel ? nothing : avatarAdornment}
+            <span>${gridDescription || "\u00a0"}</span>
+          </small>
+        </span>
+        <!-- One fact row, in the collection pattern's own slot: episode
+             number, running time, unlock level, release date. In list view
+             it has room to show all four; in grid view the tile's width
+             decides how many survive, so they truncate in order. -->
+        <span class="tile__facts">
           ${
-            this.view === "grid"
-              ? renderGridIdentity(
-                  this.text(episode.title) || uiText(this.locale, "story"),
-                  gridDescription,
-                  this.mode === "link" && episode.unlockCharacterFriendshipLevel ? nothing : avatarAdornment,
-                )
-              : html`
-                  <strong>${this.text(episode.title) || uiText(this.locale, "story")}</strong>
-                  ${
-                    this.mode !== "link" && this.text(episode.chapterName)
-                      ? html`
-                          <span class="story-card__chapter">${this.text(episode.chapterName)}</span>
-                        `
-                      : nothing
-                  }
-                  <span class="story-card__characters">
-                    ${avatarAdornment}
-                    <span>${characterNames}</span>
-                  </span>
-                  <small class="story-card__meta">
-                    ${
-                      episode.episodeNumber
-                        ? html`
-                            <span>${String(episode.episodeNumber).padStart(2, "0")}</span>
-                          `
-                        : nothing
-                    }
-                    ${
-                      this.duration(episode)
-                        ? html`
-                            <span>${this.duration(episode)}</span>
-                          `
-                        : nothing
-                    }
-                    ${
-                      episode.unlockCharacterFriendshipLevel
-                        ? html`
-                            <span>${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}</span>
-                          `
-                        : nothing
-                    }
-                    ${
-                      this.releaseValue(episode)
-                        ? html`
-                            <span>
-                              ${new Intl.DateTimeFormat(this.locale, { dateStyle: "medium" }).format(
-                                new Date(this.releaseValue(episode)),
-                              )}
-                            </span>
-                          `
-                        : nothing
-                    }
-                  </small>
+            episode.episodeNumber
+              ? html`
+                  <span>#${String(episode.episodeNumber).padStart(2, "0")}</span>
                 `
+              : nothing
+          }
+          ${
+            this.duration(episode)
+              ? html`
+                  <span>${this.duration(episode)}</span>
+                `
+              : nothing
+          }
+          ${
+            episode.unlockCharacterFriendshipLevel
+              ? html`
+                  <span>${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}</span>
+                `
+              : nothing
+          }
+          ${
+            this.releaseValue(episode)
+              ? html`
+                  <span class="is-flexible">
+                    ${new Intl.DateTimeFormat(this.locale, { dateStyle: "medium" }).format(
+                      new Date(this.releaseValue(episode)),
+                    )}
+                  </span>
+                `
+              : nothing
           }
         </span>
       </button>

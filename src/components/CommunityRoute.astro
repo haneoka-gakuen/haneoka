@@ -1,0 +1,62 @@
+---
+/**
+ * One community route.
+ *
+ * Every community page used to funnel through a single catch-all that
+ * generated ten flat paths, so `/community/playlists/{id}`,
+ * `/community/posts/{id}`, `/community/posts/new` and
+ * `/community/users/{uid}` prerendered nothing: they fell through to the SPA
+ * shell, which meant no title, no description, and a route the worker had to
+ * rescue with a fallback. The pre-Astro site had a page per route. This is
+ * the shared document those per-route pages use, so each one is real again
+ * while the shell markup stays in one place.
+ */
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import { LOCALES, DEFAULT_LOCALE, type Locale } from "../i18n/locales";
+import { group, t } from "../i18n/messages";
+import "../lit/community-workspace";
+import "../styles/catalog.css";
+import "../styles/community.css";
+
+interface Props {
+  /** Workspace mode: feeds, playlists, tags … */
+  mode: string;
+  /** Path of this route, used for navigation state and the canonical link. */
+  route: string;
+  /** i18n key for the page title. */
+  titleKey: string;
+  /** Fallback title when the key is missing. */
+  fallback: string;
+  /** Bestdori story section, when the route names one. */
+  section?: string;
+}
+
+const { mode, route, titleKey, fallback, section } = Astro.props as Props;
+const locale = DEFAULT_LOCALE as Locale;
+const title = t(locale, titleKey, fallback);
+const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "communityPage")])));
+const sectionLabels = JSON.stringify(
+  Object.fromEntries(
+    ["bestdoriEvent", "bestdoriBand", "bestdoriMain", "bestdoriAfterlive", "bestdoriCard"].map((key) => [
+      key,
+      t(locale, `storyNavigation.${key}`, key),
+    ]),
+  ),
+);
+---
+
+<Base locale={locale} route={route} title={title} titleKey={titleKey} description={title}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+    <community-workspace
+      locale={locale}
+      mode={mode}
+      section={section}
+      labels={labels}
+      section-labels={sectionLabels}
+    ></community-workspace>
+  </AppShell>
+</Base>
+<script>
+  import "../lit/community-workspace";
+</script>
