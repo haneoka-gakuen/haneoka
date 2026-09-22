@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { renderDetailSectionHeading, type DetailSectionKind } from "./shared/detail-section-heading";
 import { renderGridIdentity, type GridIdentityAdornment } from "./shared/grid-identity";
+import { rovingKeydown } from "./ui/controls";
 import "../styles/character-detail.css";
 
 type Item = Record<string, unknown>;
@@ -300,10 +301,10 @@ export class CharacterDetailArchive extends LitElement {
     const hrefRoute = route === "stories" ? `stories/${storyVisual?.category || "band"}` : route;
     return html`
       <a
-        class=${`catalog-card content-grid-tile catalog-card--${kind} character-related-tile`}
+        class=${`tile tile--interactive tile--${kind} character-related-tile`}
         href=${`/catalog/${hrefRoute}?${c.relatedParam(route)}=${encodeURIComponent(c.relatedId(entry, route))}`}
       >
-        <span class=${`catalog-card__media ${source ? "media-loading" : ""}`}>
+        <span class=${`tile__media ${source ? "media-loading" : ""}`}>
           ${
             source
               ? html`
@@ -343,21 +344,27 @@ export class CharacterDetailArchive extends LitElement {
                   ${
                     attribute
                       ? html`
-                          <span class="card-attribute"><img src=${attribute} alt="" /></span>
+                          <span class="tile__mark tile__mark--start">
+                            <img src=${attribute} alt="" width="16" height="16" />
+                          </span>
                         `
                       : nothing
                   }${
                     rarity
                       ? html`
-                          <span class="card-rarity"><img src=${rarity} alt="" /></span>
+                          <span class="tile__mark tile__mark--end">
+                            <img src=${rarity} alt="" width="16" height="16" />
+                          </span>
                         `
                       : nothing
                   }
                 `
               : route === "songs" && attribute
                 ? html`
-                    <span class="song-type"><img src=${attribute} alt="" /></span>
-                    <span class="song-category">${this.songCategory(entry)}</span>
+                    <span class="tile__mark tile__mark--start">
+                      <img src=${attribute} alt="" width="16" height="16" />
+                    </span>
+                    <span class="tile__mark tile__mark--bottom-start">${this.songCategory(entry)}</span>
                   `
                 : nothing
           }
@@ -376,9 +383,7 @@ export class CharacterDetailArchive extends LitElement {
               : nothing
           }
         </span>
-        <span class="catalog-card__body">
-          ${renderGridIdentity(c.relatedTitle(entry, route), description, adornment)}
-        </span>
+        <span class="tile__identity">${renderGridIdentity(c.relatedTitle(entry, route), description, adornment)}</span>
       </a>
     `;
   }
@@ -390,12 +395,12 @@ export class CharacterDetailArchive extends LitElement {
         ${
           entries.length
             ? html`
-                <div class=${`catalog-grid character-related-grid character-related-grid--${route}`}>
+                <div class=${`collection character-related-grid character-related-grid--${route}`}>
                   ${entries.map((entry) => this.relatedTile(entry, route, characterId))}
                 </div>
               `
             : html`
-                <div class="catalog-state"><span>${c.label("empty", "No results")}</span></div>
+                <div class="state state--inline"><span>${c.label("empty", "No results")}</span></div>
               `
         }
       </section>
@@ -451,7 +456,7 @@ export class CharacterDetailArchive extends LitElement {
                 : nothing
             }
           </section>
-          <dl class="detail-list character-detail-facts">
+          <dl class="spec-list character-detail-facts">
             ${this.fields.map(
               ({ key, value }) => html`
                 <div>
@@ -641,7 +646,7 @@ export class CharacterDetailArchive extends LitElement {
               }${
                 !friendship && !stories.length && !rewards.length
                   ? html`
-                      <div class="catalog-state"><span>${c.label("empty", "No results")}</span></div>
+                      <div class="state state--inline"><span>${c.label("empty", "No results")}</span></div>
                     `
                   : nothing
               }
@@ -731,23 +736,34 @@ export class CharacterDetailArchive extends LitElement {
       `;
     })();
     return html`
-      <nav class="character-detail-tabs" role="tablist" aria-label=${c.label("details", "Details")}>
+      <nav
+        class="tabs tabs--pills tabs--sticky character-detail-tabs"
+        role="tablist"
+        aria-label=${c.label("details", "Details")}
+        @keydown=${rovingKeydown(
+          tabs.map(([section]) => String(section)),
+          active,
+          (section) => this.choose(section),
+        )}
+      >
         ${tabs.map(
           ([section, icon, label, count]) => html`
             <button
+              class="tab"
+              type="button"
               role="tab"
-              aria-selected=${active === section}
-              class=${active === section ? "selected" : ""}
+              aria-selected=${String(active === section)}
+              tabindex=${active === section ? "0" : "-1"}
               @click=${() => this.choose(section)}
             >
-              <svg class="material-icon" width="16" height="16">
+              <svg class="material-icon" width="18" height="18" aria-hidden="true">
                 <use href=${`/icons.svg#${icon}${active === section ? "-filled" : ""}`}></use>
               </svg>
               <span>${label}</span>
               ${
                 count
                   ? html`
-                      <small>${count}</small>
+                      <small class="tab__count">${count}</small>
                     `
                   : nothing
               }

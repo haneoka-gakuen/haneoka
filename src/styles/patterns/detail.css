@@ -1,0 +1,324 @@
+/* ==========================================================================
+   Detail pattern
+   What goes inside a detail pane: a media header, titled sections, and
+   specification lists. This is where "information display is wrong" was most
+   visible — facts were rendered as free-form rows whose labels and values
+   had no shared alignment, so a card's stats, a song's chart data and a
+   character's profile each looked like a different document.
+
+   A spec list is a two-column <dl>: label column sized to its content with a
+   ceiling, value column flexible and allowed to wrap. Rows are separated by
+   hairlines rather than spaced apart, which fits ~40% more facts in the same
+   pane without feeling tighter.
+   ========================================================================== */
+
+/* ---------- Section ---------- */
+.detail-section {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
+  padding: 16px var(--pane-gutter);
+}
+.detail-section + .detail-section {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.detail-section--flush {
+  padding-inline: 0;
+}
+.detail-section-title {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+}
+.detail-section-title--h2 {
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+}
+.detail-section-title__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-secondary-container);
+}
+.detail-section-title__icon .material-icon {
+  --icon-size: 20px;
+}
+.detail-section-title__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.detail-section-title__count {
+  min-width: 24px;
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-highest);
+  font: 500 var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* ---------- Spec list ---------- */
+.spec-list {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(88px, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0;
+  margin: 0;
+}
+.spec-list > dt {
+  min-width: 0;
+  padding: 8px 12px 8px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.spec-list > dd {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+/* Two accepted shapes: flat (preferred) `dl > dt + dd`, and wrapped
+ * `dl > div > dt + dd`, which several workspaces already emit. The wrapper
+ * becomes `display: contents` so the pairs land in the same two tracks, and
+ * both shapes get the same hairlines. */
+.spec-list > div {
+  display: contents;
+}
+.spec-list > dt:not(:first-of-type),
+.spec-list > dd:not(:first-of-type),
+.spec-list > div:not(:first-child) > :where(dt, dd) {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.spec-list > div > dt {
+  min-width: 0;
+  padding: 8px 12px 8px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.spec-list > div > dd {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 0;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.spec-list--numeric > dd {
+  font-variant-numeric: tabular-nums;
+}
+/* Two pairs per row once the pane is wide enough to hold them. A detail
+ * sheet at 720px can show sixteen facts without scrolling. */
+@media (min-width: 900px) {
+  .spec-list--split {
+    grid-template-columns: minmax(88px, max-content) minmax(0, 1fr) minmax(88px, max-content) minmax(0, 1fr);
+    column-gap: 24px;
+  }
+}
+.spec-list__wide {
+  grid-column: 1 / -1;
+}
+
+/* Value that is itself a small set of things (chips, links, images). */
+.spec-list > dd > .cluster {
+  --cluster-gap: 6px;
+}
+
+/* ---------- The pane's clef ----------
+   A 4dp bar in the subject's own colour at the leading edge of a detail
+   pane's header — the same mark the home staff uses for a band line. It is
+   the one place the score metaphor reaches into the component layer, and it
+   carries real information: whose colour this is. */
+.sheet__header {
+  position: relative;
+}
+:where(.sheet--detail, .sheet--full) > .sheet__header::before {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 4px;
+  content: "";
+  border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+  background: var(--entity-accent, var(--md-sys-color-primary));
+}
+
+/* ---------- Detail header slots ----------
+   The leading emblems (cast avatars, band logo, rarity, attribute) and the
+   trailing actions of a detail pane's header. Both are fixed-width so a long
+   title shrinks instead of pushing them out of the row. */
+.detail-header-leading,
+.detail-header-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.detail-header-entity {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+}
+.detail-header-mark {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+.detail-header-mark--rarity {
+  width: 22px;
+  height: 22px;
+}
+.detail-header-leading .avatar-stack img {
+  --avatar-stack-size: 28px;
+}
+.sonolus-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+}
+
+/* ---------- Detail media header ----------
+   Artwork at the top of a pane. The ratio comes from the resource; the
+   container never exceeds 44dvh so the facts below stay visible on a phone
+   in landscape. */
+.detail-media {
+  position: relative;
+  display: grid;
+  max-height: 44dvh;
+  place-items: center;
+  overflow: hidden;
+  background: var(--md-sys-color-surface-container-high);
+}
+.detail-media > img {
+  width: 100%;
+  max-height: 44dvh;
+  object-fit: contain;
+}
+.detail-media__nav {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-surface) 76%, transparent);
+  backdrop-filter: blur(4px);
+  transform: translateY(-50%);
+}
+.detail-media__nav--previous {
+  left: 8px;
+}
+.detail-media__nav--next {
+  right: 8px;
+}
+/* Switch between a card's variants (normal / trained), a comic's pages.
+   It reads as a single tonal pill: the label and the position indicator are
+   one piece of information, so they share one container. */
+.detail-media__switch {
+  position: absolute;
+  z-index: 1;
+  bottom: 8px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - 96px);
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-surface) 82%, transparent);
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+}
+.detail-media__switch > strong {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-media__switch > span {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Fact mark ----------
+   The small leading emblem in a detail header: rarity stars, attribute,
+   difficulty. */
+.detail-mark {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-secondary-container);
+}
+.detail-mark > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.detail-mark--round {
+  border-radius: var(--md-sys-shape-corner-full);
+}
+
+/* ---------- Long copy inside a pane ----------
+   Profile text, lyrics, release notes. Constrained measure, and the whole
+   block is selectable text rather than a card. */
+.detail-copy {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+  white-space: pre-line;
+}
+
+/* ---------- Related items ----------
+   A small grid of linked entities at the bottom of a detail pane. Denser
+   than a browse grid because these are references, not the subject. */
+.related-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 112px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.related-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 168px), 1fr));
+}

@@ -1,0 +1,82 @@
+/* ==========================================================================
+   Application tokens
+   Material's ref/sys tokens live in packages/design-tokens; the colour roles
+   are generated per tuning seed into schemes.css. This file adds only what
+   Material leaves to the product: the type stack per locale, the adaptive
+   shell metrics, and the density/measure knobs that patterns read instead of
+   hard-coding sizes.
+   ========================================================================== */
+:root {
+  --app-font: "Roboto Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN", sans-serif;
+  --catalog-font: var(--app-font);
+  --md-ref-typeface-brand: var(--app-font);
+  --md-ref-typeface-plain: var(--app-font);
+
+  /* ---- Adaptive shell metrics (Material 3 window size classes) ---- */
+  --top-bar-height: 64px;
+  --shell-width: 0px;
+  --shell-bottom-inset: 0px;
+  --shell-pane-gap: 0px;
+  --shell-stage-block: calc(100dvh - var(--top-bar-height) - var(--shell-bottom-inset) - var(--shell-pane-gap));
+  /* Detail layers (list-detail) occupy exactly the content pane. */
+  --shell-overlay-inset: 0 0 var(--shell-bottom-inset) 0;
+  --shell-overlay-radius: 0px;
+  --nav-rail-width: 80px;
+  --nav-drawer-width: 288px;
+  --nav-bar-height: calc(64px + var(--md-sys-safe-area-inset-bottom));
+  --content-max: 1440px;
+
+  /* ---- Measure ----
+   * One gutter token for every page and pane, so nothing is indented by a
+   * number invented locally. */
+  --pane-gutter: clamp(12px, 2.2vw, 24px);
+  --pane-gap: 16px;
+  /* Width of the docked filter pane on expanded windows. */
+  --filter-pane-width: 320px;
+
+  /* ---- Density (Material 3 density levels 0 / -1 / -2) ----
+   * Rows, table cells and controls read these. The browse toolbar lets the
+   * reader switch; lib/density.ts writes :root[data-density]. */
+  --row-height: 56px;
+  --row-height-two-line: 72px;
+  --row-height-three-line: 88px;
+  --cell-block: 12px;
+  --control-height: 40px;
+  --tile-min: 168px;
+  --tile-gap: 12px;
+  --strip-item: clamp(112px, 12vw, 148px);
+
+  /* ---- State layer + motion shorthands ---- */
+  --state-hover: var(--md-sys-state-hover-state-layer-opacity);
+  --state-press: var(--md-sys-state-pressed-state-layer-opacity);
+  --ease-standard: var(--md-sys-motion-easing-standard);
+  --ease-emphasized: var(--md-sys-motion-easing-emphasized);
+  --ease-decelerate: var(--md-sys-motion-easing-emphasized-decelerate);
+  --ease-accelerate: var(--md-sys-motion-easing-emphasized-accelerate);
+}
+
+/* Density −1: the reader asked to see more rows at once. Text keeps its
+ * typescale; only the surrounding space contracts, which is what Material's
+ * density levels change. */
+:root[data-density="compact"] {
+  --row-height: 48px;
+  --row-height-two-line: 60px;
+  --row-height-three-line: 72px;
+  --cell-block: 6px;
+  --control-height: 36px;
+  --tile-min: 136px;
+  --tile-gap: 8px;
+}
+
+:root:lang(en) {
+  --app-font: "Roboto Variable", "Noto Sans Variable", "Helvetica Neue", Arial, sans-serif;
+}
+:root:lang(zh-TW) {
+  --app-font: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+:root:lang(zh-CN) {
+  --app-font: "Roboto Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+:root:lang(ko) {
+  --app-font: "Roboto Variable", "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+}

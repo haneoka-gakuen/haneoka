@@ -55,6 +55,22 @@ const i18nValues = (key: string, fallback: string) =>
       ))}
     </div>
 
+    <button
+      class="nav__spacing"
+      type="button"
+      data-density-toggle
+      aria-pressed="false"
+      aria-label={t(locale, "density", "Density")}
+      data-i18n-aria-label-values={i18nValues("density", "Density")}
+    >
+      <Icon name="density_medium" size={20} />
+      <span class="nav__spacing-label">
+        <small><I18nText keyName="density" fallback="Density" locale={locale} /></small>
+        <span data-density-name="comfortable"><I18nText keyName="comfortable" fallback="Comfortable" locale={locale} /></span>
+        <span data-density-name="compact" hidden><I18nText keyName="compact" fallback="Compact" locale={locale} /></span>
+      </span>
+    </button>
+
     <ul class="nav__rail" role="list">
       {PRIMARY_DESTINATIONS.map((destination) => {
         const current = isDestinationActive(destination, route);
@@ -138,6 +154,7 @@ const i18nValues = (key: string, fallback: string) =>
 </div>
 <script>
   import { SEED_EVENT, applySeed, currentSeed, isSeed } from "../lib/tuning";
+  import { DENSITY_EVENT, currentDensity, toggleDensity } from "../lib/density";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
   const persistentQuery = matchMedia("(min-width: 1200px)");
   const root = document.documentElement;
@@ -234,13 +251,36 @@ const i18nValues = (key: string, fallback: string) =>
     });
   };
 
+  /* Spacing: the second dial. Colour sets the key, density sets the spacing;
+     both are reading preferences, so both live beside each other in the rail. */
+  const syncDensity = () => {
+    const density = currentDensity();
+    document
+      .querySelectorAll<HTMLElement>("[data-density-name]")
+      .forEach((node) => (node.hidden = node.dataset.densityName !== density));
+    document
+      .querySelectorAll("[data-density-toggle]")
+      .forEach((node) => node.setAttribute("aria-pressed", String(density === "compact")));
+  };
+  const initializeDensity = () => {
+    document.querySelectorAll<HTMLElement>("[data-density-toggle]").forEach((node) => {
+      if (node.dataset.initialized === "true") return;
+      node.dataset.initialized = "true";
+      node.addEventListener("click", () => toggleDensity());
+    });
+    syncDensity();
+  };
+
   initializeShell();
   initializeTune();
+  initializeDensity();
   document.addEventListener("astro:page-load", () => {
     initializeShell();
     initializeTune();
+    initializeDensity();
   });
   addEventListener(SEED_EVENT, syncTune);
+  addEventListener(DENSITY_EVENT, syncDensity);
   persistentQuery.addEventListener("change", () => setModal(false));
   if (root.dataset.shellKeyboard !== "true") {
     root.dataset.shellKeyboard = "true";

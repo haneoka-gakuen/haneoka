@@ -1,4 +1,6 @@
 import { LitElement, html, nothing } from "lit";
+import { uiText } from "../shared/catalog";
+import { loadingState } from "../ui/state";
 import { type ChartDocument } from "@haneoka/cassiopeia";
 import {
   CassiopeiaRuntime,
@@ -716,7 +718,7 @@ export class ChartSimulator extends LitElement {
         ${
           this.phase === "loading"
             ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                ${loadingState(uiText(this.locale, "loading"))}
               `
             : this.phase === "error"
               ? html`

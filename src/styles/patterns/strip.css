@@ -1,0 +1,122 @@
+/* ==========================================================================
+   Strip + hub patterns
+   A strip is a horizontally scrolling rail of tiles, used where a collection
+   is a preview of something larger (a band's songs on the home page, a
+   character's related cards). A hub link is a destination tile with a count.
+   ========================================================================== */
+.strip {
+  display: grid;
+  min-width: 0;
+  grid-auto-columns: var(--strip-item);
+  grid-auto-flow: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  list-style: none;
+  scroll-padding-inline: var(--pane-gutter);
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+.strip > * {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+.strip--inset {
+  padding-inline: var(--pane-gutter);
+}
+.strip--avatars {
+  --strip-item: auto;
+  display: flex;
+  gap: 8px;
+}
+@media (pointer: coarse) {
+  .strip {
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .strip::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- Hub link ----------
+   Destination tile: icon, label, count. The icon's shape morphs from 12dp to
+   a circle on hover — the one shape transition outside of buttons, and it
+   costs nothing because border-radius does not trigger layout. */
+.hub-link {
+  display: grid;
+  min-width: 0;
+  min-height: 64px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 12px 12px;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.hub-link__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-secondary-container);
+  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+}
+@media (hover: hover) {
+  .hub-link:hover .hub-link__icon {
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+}
+.hub-link__label {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hub-link__count {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+.hub-link--more .hub-link__icon {
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-highest);
+}
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 184px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 599px) {
+  .hub-link {
+    min-height: 0;
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    row-gap: 0;
+    padding: 12px;
+  }
+  .hub-link__icon {
+    width: 36px;
+    height: 36px;
+    grid-row: 1 / span 2;
+  }
+  .hub-link__count {
+    grid-column: 2;
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .hub-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

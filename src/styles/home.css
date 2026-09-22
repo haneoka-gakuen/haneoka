@@ -324,19 +324,6 @@ home-dashboard {
   padding: 12px 24px;
   color: var(--md-sys-color-on-surface-variant);
 }
-.home-empty--illustrated {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding-block: 24px;
-  text-align: center;
-}
-.home-empty--illustrated p {
-  margin: 0;
-}
-.home-empty--illustrated .material-icon {
-  color: var(--md-sys-color-outline);
-}
 
 /* Band panel: members + song strip */
 .member-row {
@@ -390,86 +377,20 @@ home-dashboard {
   object-fit: cover;
   background: var(--md-sys-color-surface-container-high);
 }
-.song-strip {
-  display: grid;
-  grid-auto-columns: clamp(112px, 12vw, 148px);
-  grid-auto-flow: column;
-  gap: 12px;
-  margin: 0;
-  padding: 0 24px 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  list-style: none;
-  scroll-padding-inline: 24px;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-}
-.song-strip > li {
-  scroll-snap-align: start;
-}
-.song-tile {
-  display: grid;
-  gap: 8px;
-  padding-bottom: 4px;
-  color: var(--md-sys-color-on-surface);
-  border-radius: var(--md-sys-shape-corner-large);
-}
-.song-tile__jacket {
-  position: relative;
-  display: grid;
-  aspect-ratio: 1;
-  place-items: center;
-  overflow: hidden;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-secondary-container);
-  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
-}
-.song-tile__jacket img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+/* The song rail uses the shared strip + tile; only the jacket's hover shape
+   change is specific to the home page, where the tiles are large enough for
+   it to read. */
 @media (hover: hover) {
-  .song-tile:hover .song-tile__jacket {
+  .home .tile--song:hover .tile__media {
     border-radius: var(--md-sys-shape-corner-extra-large);
   }
 }
-.song-tile__level {
-  position: absolute;
-  z-index: 1;
-  right: 6px;
-  bottom: 6px;
-  min-width: 28px;
-  padding: 2px 6px;
-  color: var(--md-sys-color-on-primary);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-extended-color-difficulty-expert, var(--md-sys-color-primary));
-  font: 500 var(--md-sys-typescale-label-small-size) / 16px var(--app-font);
-  text-align: center;
-}
-.song-tile__title {
-  display: -webkit-box;
-  min-height: 40px;
-  padding-inline: 4px;
-  overflow: hidden;
-  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
-    var(--md-sys-typescale-title-small-line-height) var(--app-font);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.home .tile--song .tile__media {
+  border-radius: var(--md-sys-shape-corner-large);
+  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
 }
 
 /* Catalog hub */
-.hub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 184px), 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 /* Lists inside cards */
 .birthday-list,
 .community-hot-list,
@@ -615,12 +536,10 @@ home-dashboard {
   }
 }
 @media (pointer: coarse) {
-  .member-row,
-  .song-strip {
+  .member-row {
     scrollbar-width: none;
   }
-  .member-row::-webkit-scrollbar,
-  .song-strip::-webkit-scrollbar {
+  .member-row::-webkit-scrollbar {
     display: none;
   }
 }
@@ -680,8 +599,7 @@ home-dashboard {
   .home-card__header {
     padding-left: 16px;
   }
-  .member-row,
-  .song-strip {
+  .member-row {
     padding-inline: 16px;
     scroll-padding-inline: 16px;
   }
@@ -689,8 +607,5 @@ home-dashboard {
   .community-hot-list .list-item,
   .news-list .list-item {
     padding-inline: 16px 12px;
-  }
-  .hub-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

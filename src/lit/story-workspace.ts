@@ -13,6 +13,10 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { HomeSpotStage } from "./runtime/home-spot-stage";
 import { renderGridIdentity } from "./shared/grid-identity";
+import { filterChip, iconButton, segmented } from "./ui/controls";
+import { icon } from "./ui/icon";
+import { PaneFocus } from "./ui/pane";
+import { errorState, loadingState } from "./ui/state";
 
 type StoryMode = "band" | "link" | "home" | "afterlive" | "tutorial";
 type ViewMode = "grid" | "list";
@@ -82,6 +86,7 @@ export class StoryWorkspace extends LitElement {
   private homeStage?: HomeSpotStage;
   private homeStageSpot = "";
   private storyAudio?: HTMLAudioElement;
+  private paneFocus = new PaneFocus();
   private onKeydown = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     if (this.detailEpisode) {
@@ -130,7 +135,6 @@ export class StoryWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
       import("@material/web/progress/circular-progress.js"),
     ]);
-    document.querySelector(".top-app-bar")?.classList.add("has-catalog-actions");
     window.addEventListener("keydown", this.onKeydown);
     window.setTimeout(() => {
       const p = new URLSearchParams(location.search);
@@ -157,13 +161,15 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
-    document.querySelector(".top-app-bar")?.classList.remove("has-catalog-actions");
     this.homeStage?.dispose();
     this.storyAudio?.pause();
+    this.paneFocus.detach();
     window.removeEventListener("keydown", this.onKeydown);
     super.disconnectedCallback();
   }
   updated() {
+    // Focus stays inside the story detail while it is open.
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => (this.detailEpisode = null));
     if (this.mode === "home" && this.phase === "ready") {
       const host = this.querySelector<HTMLElement>("[data-home-spine-stage]");
       const spot = this.spots.find((item) => String(item.spotId) === this.selectedRail) || this.spots[0];
@@ -428,57 +434,47 @@ export class StoryWorkspace extends LitElement {
     const selected = this.episodes[this.selectedStory];
     return html`
       <section class=${`story-workspace story-${this.mode}`}>
-        <div class="catalog__toolbar">
-          <span class="catalog__count">${episodes.length}</span>
+        <div class="browse__bar">
+          <p class="browse__count" role="status" aria-live="polite"><strong>${episodes.length}</strong></p>
+          <span class="row__spacer"></span>
           ${
             ["band", "tutorial", "link", "home"].includes(this.mode)
               ? nothing
-              : html`
-                  <div class="catalog__view">
-                    <button
-                      aria-pressed=${this.view === "grid"}
-                      @click=${() => {
-                        this.view = "grid";
-                        this.sync();
-                      }}
-                    >
-                      <svg class="material-icon" width="20" height="20">
-                        <use href=${`/icons.svg#grid_view${this.view === "grid" ? "-filled" : ""}`}></use>
-                      </svg>
-                    </button>
-                    <button
-                      aria-pressed=${this.view === "list"}
-                      @click=${() => {
-                        this.view = "list";
-                        this.sync();
-                      }}
-                    >
-                      <svg class="material-icon" width="20" height="20">
-                        <use href=${`/icons.svg#view_list${this.view === "list" ? "-filled" : ""}`}></use>
-                      </svg>
-                    </button>
-                  </div>
-                `
+              : segmented({
+                  label: uiText(this.locale, "view"),
+                  value: this.view,
+                  options: [
+                    { value: "grid" as const, label: uiText(this.locale, "grid"), icon: "grid_view" },
+                    { value: "list" as const, label: uiText(this.locale, "list"), icon: "view_list" },
+                  ],
+                  onSelect: (view) => {
+                    this.view = view;
+                    this.sync();
+                  },
+                  iconOnly: true,
+                })
           }
-          <button
-            class="icon-button catalog__filter-toggle"
-            @click=${() => (this.filtersOpen = !this.filtersOpen)}
-            aria-label=${uiText(this.locale, "filter")}
-          >
-            <svg class="material-icon" width="24" height="24">
-              <use href=${`/icons.svg#filter_alt${this.filtersOpen ? "-filled" : ""}`}></use>
-            </svg>
-          </button>
+          ${iconButton({
+            label: uiText(this.locale, "filter"),
+            icon: "filter_alt",
+            toggle: true,
+            pressed: this.filtersOpen,
+            badge: this.selectedBands.length + this.selectedCharacters.length + this.selectedLevels.length,
+            onClick: () => (this.filtersOpen = !this.filtersOpen),
+          })}
         </div>
         ${
           this.phase === "loading"
             ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                ${loadingState(uiText(this.locale, "loading"))}
               `
             : this.phase === "error"
-              ? html`
-                  <div class="notice"><p>${this.error}</p></div>
-                `
+              ? errorState(
+                  uiText(this.locale, "unavailable"),
+                  uiText(this.locale, "retry"),
+                  () => void this.load(),
+                  this.error,
+                )
               : this.mode === "link"
                 ? this.renderLinkWorkspace(episodes, this.detailEpisode || undefined)
                 : this.renderStandardWorkspace(episodes, selected, this.detailEpisode || undefined)
@@ -819,7 +815,12 @@ export class StoryWorkspace extends LitElement {
         `
       : nothing;
     return html`
-      <button class="story-card content-grid-tile" @click=${() => choose(id)}>
+      <button
+        class="story-card tile tile--interactive"
+        type="button"
+        aria-pressed=${String(active === id)}
+        @click=${() => choose(id)}
+      >
         <span class=${`story-card__media ${image ? "media-loading" : ""}`}>
           ${
             image
@@ -963,7 +964,14 @@ export class StoryWorkspace extends LitElement {
       return [{ command, visual }];
     });
     return html`
-      <aside class="story-detail">
+      <aside
+        class="story-detail pane-layer"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${uiText(this.locale, "story")}
+        tabindex="-1"
+        data-overlay-pane
+      >
         <header>
           <button
             class="icon-button"
@@ -1008,7 +1016,7 @@ export class StoryWorkspace extends LitElement {
             : html`
                 <div class="story-detail__content">
                   <p>${this.text(episode.description)}</p>
-                  <dl class="detail-list">
+                  <dl class="spec-list">
                     <div>
                       <dt>${uiText(this.locale, "chapter")}</dt>
                       <dd>${this.text(episode.chapterName) || "—"}</dd>
@@ -1104,7 +1112,7 @@ export class StoryWorkspace extends LitElement {
                         `
                       : this.detailLoading
                         ? html`
-                            <div class="catalog-state">
+                            <div class="state state--inline">
                               <md-circular-progress indeterminate></md-circular-progress>
                             </div>
                           `
@@ -1134,15 +1142,31 @@ export class StoryWorkspace extends LitElement {
       ...new Set(this.baseEpisodes().map((episode) => Number(episode.unlockCharacterFriendshipLevel || 0))),
     ].sort((a, b) => a - b);
     return html`
-      <button class="sheet-scrim" @click=${() => (this.filtersOpen = false)}></button>
-      <aside class="catalog__filters open">
-        <div class="catalog__filter-header">
-          <h2>${uiText(this.locale, "filter")}</h2>
-          <button class="icon-button" @click=${() => (this.filtersOpen = false)}>
-            <svg class="material-icon" width="22" height="22"><use href="/icons.svg#close"></use></svg>
-          </button>
-        </div>
-        <div class="catalog__filter-stack">
+      <button
+        class="scrim sheet-scrim"
+        type="button"
+        aria-label=${uiText(this.locale, "close")}
+        @click=${() => (this.filtersOpen = false)}
+      ></button>
+      <aside
+        class="browse__filters sheet sheet--side is-open"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${uiText(this.locale, "filter")}
+        tabindex="-1"
+      >
+        <header class="sheet__header">
+          <span class="detail-section-title__icon">${icon("filter_alt", 20)}</span>
+          <span class="sheet__title"><strong>${uiText(this.locale, "filter")}</strong></span>
+          <span class="sheet__actions">
+            ${iconButton({
+              label: uiText(this.locale, "close"),
+              icon: "close",
+              onClick: () => (this.filtersOpen = false),
+            })}
+          </span>
+        </header>
+        <div class="browse__filters-body">
           <md-outlined-text-field
             type="search"
             label=${uiText(this.locale, "searchStories")}
@@ -1156,60 +1180,38 @@ export class StoryWorkspace extends LitElement {
               <use href="/icons.svg#search"></use>
             </svg>
           </md-outlined-text-field>
-          <fieldset class="catalog__filter-group">
+          <fieldset class="browse__filter-group">
             <legend>${uiText(this.locale, "bands")}</legend>
-            <div class="story-filter-grid">
-              ${usedBands.map((id) => {
-                const band = this.bands.find((item) => Number(item.bandId) === id);
-                return html`
-                  <button
-                    class="chip chip--visual"
-                    aria-pressed=${this.selectedBands.includes(id)}
-                    @click=${() => this.toggleBand(id)}
-                  >
-                    ${
-                      band?.icon
-                        ? html`
-                            <img src=${String(band.icon)} alt="" />
-                          `
-                        : nothing
-                    }
-                    <span class="chip__label chip__label--visual">${this.bandName(id)}</span>
-                  </button>
-                `;
-              })}
+            <div class="chip-set">
+              ${usedBands.map((id) =>
+                filterChip({
+                  label: this.bandName(id),
+                  image: String(this.bands.find((item) => Number(item.bandId) === id)?.icon || ""),
+                  selected: this.selectedBands.includes(id),
+                  onToggle: () => this.toggleBand(id),
+                }),
+              )}
             </div>
           </fieldset>
-          <fieldset class="catalog__filter-group">
+          <fieldset class="browse__filter-group">
             <legend>${uiText(this.locale, "characters")}</legend>
-            <div class="story-filter-grid">
-              ${usedCharacters.map((id) => {
-                const character = this.character(id);
-                return html`
-                  <button
-                    class="chip chip--visual"
-                    aria-pressed=${this.selectedCharacters.includes(id)}
-                    @click=${() => this.toggleCharacter(id)}
-                  >
-                    ${
-                      character?.faceImage
-                        ? html`
-                            <img src=${String(character.faceImage)} alt="" />
-                          `
-                        : nothing
-                    }
-                    <span class="chip__label chip__label--visual">${this.characterName(character || {})}</span>
-                  </button>
-                `;
-              })}
+            <div class="chip-set">
+              ${usedCharacters.map((id) =>
+                filterChip({
+                  label: this.characterName(this.character(id) || {}),
+                  image: String(this.character(id)?.faceImage || ""),
+                  selected: this.selectedCharacters.includes(id),
+                  onToggle: () => this.toggleCharacter(id),
+                }),
+              )}
             </div>
           </fieldset>
           ${
             this.mode === "link" || this.mode === "afterlive"
               ? html`
-                  <fieldset class="catalog__filter-group">
+                  <fieldset class="browse__filter-group">
                     <legend>${uiText(this.locale, "friendship")}</legend>
-                    <div class="catalog__chips">
+                    <div class="chip-set">
                       ${usedLevels.map(
                         (level) => html`
                           <button
@@ -1226,7 +1228,7 @@ export class StoryWorkspace extends LitElement {
                 `
               : nothing
           }
-          <label class="catalog__filter-group">
+          <label class="browse__filter-group">
             <span>${uiText(this.locale, "sort")}</span>
             <md-outlined-select
               label=${uiText(this.locale, "sort")}

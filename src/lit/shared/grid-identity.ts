@@ -3,10 +3,16 @@ import { html, nothing, type TemplateResult } from "lit";
 export type GridIdentityAdornment = TemplateResult | typeof nothing;
 
 /**
- * The shared information contract for every content grid tile.
+ * The text half of a collection tile: a title of at most two lines, then
+ * exactly one contextual line under it.
  *
- * Media proportions remain owned by each catalogue. Text does not: a title may
- * occupy two lines and exactly one contextual description row follows it.
+ * Media proportions stay owned by each resource; text does not. Passing
+ * `null` as the description drops the second line entirely; passing `""`
+ * keeps its height, so a grid of tiles holds its baseline whether or not
+ * every entry has a subtitle.
+ *
+ * This renders the same classes as `ui/tile.ts` so there is one vocabulary
+ * (and one set of rules) for tile text across the site.
  */
 export function renderGridIdentity(
   title: unknown,
@@ -14,13 +20,13 @@ export function renderGridIdentity(
   adornment: GridIdentityAdornment = nothing,
 ): TemplateResult {
   return html`
-    <span class="grid-tile-identity">
-      <strong class="grid-tile-identity__title">${title}</strong>
+    <span class="tile__identity">
+      <strong class="tile__title">${title}</strong>
       ${
         description === null
           ? nothing
           : html`
-              <small class="grid-tile-identity__description">
+              <small class="tile__subtitle">
                 ${adornment}
                 <span>${description || "\u00a0"}</span>
               </small>

@@ -1,0 +1,108 @@
+/* ==========================================================================
+   Reset
+   Only the rules that every page depends on. Nothing decorative lives here.
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  min-width: 320px;
+  height: 100%;
+  background: var(--md-sys-color-surface-container);
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  min-width: 320px;
+  height: 100%;
+  margin: 0;
+  /* The shell owns scrolling: the document never scrolls, the content pane
+   * does. That keeps the top app bar and navigation fixed without any
+   * position: fixed overlay. */
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container);
+  font: 400 var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  font-synthesis: none;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+button,
+a,
+summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button {
+  border: 0;
+  background: none;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+img,
+svg,
+canvas,
+video {
+  display: block;
+  max-width: 100%;
+}
+/* Long unbroken identifiers (song titles, asset paths, user handles) must not
+ * be allowed to establish a minimum width wider than their container. */
+p,
+li,
+dd,
+dt,
+h1,
+h2,
+h3,
+h4,
+figcaption {
+  overflow-wrap: break-word;
+}
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+::selection {
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+}
+
+/* ---------- Accessibility ---------- */
+/* Material focus indicator: keyboard-only, secondary colour, 3dp, 2dp offset. */
+:focus-visible {
+  outline: 3px solid var(--md-sys-color-secondary);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Scroll containers are focusable for keyboard scrolling but should not paint
+ * a ring when focused programmatically after navigation. */
+#main-content:focus,
+[data-scroll-region]:focus {
+  outline: none;
+}
+
+/* ---------- Scrollbars ----------
+ * Thin, on the surface tint, so a horizontally scrolling table reads as part
+ * of the component rather than as a browser artefact. */
+@supports (scrollbar-width: thin) {
+  [data-scroll-region],
+  .scroll-x,
+  .scroll-y {
+    scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+    scrollbar-width: thin;
+  }
+}

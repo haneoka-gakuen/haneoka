@@ -1,4 +1,6 @@
 import { LitElement, html } from "lit";
+import { uiText } from "../shared/catalog";
+import { loadingState } from "../ui/state";
 import { createVega, type AdvStory, type VegaEngine, type VegaPlayerHandle } from "@haneoka/vega/engine";
 import { configureStoryRuntime, type StoryMessageKey } from "@haneoka/vega/runtime";
 import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
@@ -543,7 +545,7 @@ export class VegaStoryStage extends LitElement {
         ${
           this.phase === "loading"
             ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                ${loadingState(uiText(this.locale, "loading"))}
               `
             : ""
         }

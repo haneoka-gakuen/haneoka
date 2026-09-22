@@ -1,0 +1,172 @@
+/* ==========================================================================
+   Chips
+   Material 3: 32dp tall, 8dp corner, label-large, 1dp outline when
+   unselected, secondary-container with a 18dp leading check when selected.
+
+   Why this file exists: the previous implementation forced filter chips into
+   48dp circles and visually hid the label, so a band or character filter was
+   an unlabelled avatar with a 10px ellipsis under it. A filter whose name you
+   cannot read is not a filter. Avatars are now a 24dp leading element on a
+   normal, labelled chip — which is exactly what Material's "avatar chip"
+   variant is for — and the chip wraps rather than shrinking its text.
+   ========================================================================== */
+.chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--chip-height, 32px);
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: transparent;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  cursor: pointer;
+  transition:
+    background-color var(--md-sys-motion-duration-short3) linear,
+    border-color var(--md-sys-motion-duration-short3) linear,
+    color var(--md-sys-motion-duration-short3) linear;
+}
+.chip > .material-icon {
+  --icon-size: 18px;
+}
+/* A leading icon, avatar or check tightens the start padding to 8dp (spec). */
+.chip:has(> :first-child:not(.chip__label)) {
+  padding-inline: 8px 16px;
+}
+.chip:has(> :last-child:not(.chip__label)) {
+  padding-inline-end: 8px;
+}
+.chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 24dp leading avatar (band logo, character portrait, item icon). */
+.chip__avatar {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-highest);
+}
+.chip__avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Trailing count: how many entries this facet would leave. Density without
+ * adding a second line. */
+.chip__count {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* Selected filter chip: secondary-container, no outline, leading check. */
+.chip:is([aria-pressed="true"], [aria-checked="true"], .is-selected) {
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
+  background: var(--md-sys-color-secondary-container);
+}
+.chip:is([aria-pressed="true"], [aria-checked="true"], .is-selected) .chip__count {
+  color: inherit;
+}
+
+/* Assist / suggestion chip: elevated, no outline. */
+.chip--assist {
+  border-color: transparent;
+  background: var(--md-sys-color-surface-container-high);
+}
+/* Input chip: carries a trailing remove affordance. Used by the active-filter
+ * row, where each chip removes exactly one applied facet value. */
+.chip--input {
+  padding-inline-end: 4px;
+  color: var(--md-sys-color-on-surface);
+  border-color: transparent;
+  background: var(--md-sys-color-surface-container-high);
+}
+.chip--input .chip__remove {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--md-sys-shape-corner-full);
+}
+.chip--input .chip__remove .material-icon {
+  --icon-size: 18px;
+}
+/* Non-interactive chip used purely as a data badge (attribute, type, tag). */
+.chip--static {
+  cursor: default;
+}
+.chip--tonal {
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
+  background: var(--md-sys-color-secondary-container);
+}
+.chip--large {
+  --chip-height: var(--control-height);
+}
+
+/* A chip set wraps. It never scrolls sideways in a filter panel, because a
+ * filter you have to discover by scrolling is a filter nobody uses. */
+.chip-set {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Overflow strip variant: for read-only metadata rows inside a dense pane,
+ * where wrapping would change the row height. */
+.chip-set--strip {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.chip-set--strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---------- Switch row / checkbox row ----------
+   A labelled setting: label + supporting text on the left, control on the
+   right, whole row is the label target. */
+.control-row {
+  display: grid;
+  min-width: 0;
+  min-height: var(--row-height);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 4px;
+}
+.control-row__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.control-row__label {
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+}
+.control-row__supporting {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+}

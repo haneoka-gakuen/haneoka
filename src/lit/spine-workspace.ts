@@ -2,6 +2,11 @@ import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
 import { renderGridIdentity } from "./shared/grid-identity";
+import { filterGroup, renderBrowse } from "./ui/browse";
+import { segmented } from "./ui/controls";
+import { EXPANDED, matches, watchMedia } from "./ui/media";
+import { PaneFocus } from "./ui/pane";
+import { errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
 
 export class SpineWorkspace extends LitElement {
@@ -22,6 +27,7 @@ export class SpineWorkspace extends LitElement {
     filtersOpen: { state: true },
     familyFilter: { state: true },
     versionFilter: { state: true },
+    docked: { state: true },
   };
   declare locale: string;
   declare phase: "loading" | "ready" | "error";
@@ -37,9 +43,12 @@ export class SpineWorkspace extends LitElement {
   declare sort: "id" | "source" | "family" | "version";
   declare order: "asc" | "desc";
   declare filtersOpen: boolean;
+  declare docked: boolean;
   declare familyFilter: string;
   declare versionFilter: string;
   private stage?: SpineStage;
+  private disposeMedia?: () => void;
+  private paneFocus = new PaneFocus();
   private generation = 0;
   constructor() {
     super();
@@ -57,6 +66,7 @@ export class SpineWorkspace extends LitElement {
     this.sort = "id";
     this.order = "asc";
     this.filtersOpen = false;
+    this.docked = matches(EXPANDED);
     this.familyFilter = "";
     this.versionFilter = "";
   }
@@ -66,6 +76,7 @@ export class SpineWorkspace extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.locale = preferredLocale(this.locale);
+    this.disposeMedia = watchMedia(EXPANDED, (value) => (this.docked = value));
     void Promise.all([
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
@@ -87,6 +98,8 @@ export class SpineWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.disposeMedia?.();
+    this.paneFocus.detach();
     this.stage?.dispose();
     super.disconnectedCallback();
   }
@@ -194,6 +207,10 @@ export class SpineWorkspace extends LitElement {
         return direction * result;
       });
   }
+  updated() {
+    // The model viewer is a modal pane: focus belongs inside it.
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+  }
   private closeDetail() {
     this.stage?.dispose();
     this.stage = undefined;
@@ -228,160 +245,126 @@ export class SpineWorkspace extends LitElement {
       (a, b) => a.localeCompare(b, "en", { numeric: true }),
     );
     return html`
-      <section class="catalog model-catalog">
-        <div class="catalog__toolbar">
-          <span class="catalog__count">${models.length}</span>
-          <div class="catalog__view">
-            <button
-              aria-label=${uiText(this.locale, "grid")}
-              aria-pressed=${this.view === "grid"}
-              @click=${() => {
-                this.view = "grid";
-                this.sync();
-              }}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#grid_view${this.view === "grid" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-            <button
-              aria-label=${uiText(this.locale, "list")}
-              aria-pressed=${this.view === "list"}
-              @click=${() => {
-                this.view = "list";
-                this.sync();
-              }}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#view_list${this.view === "list" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-          </div>
-          <button
-            class="icon-button catalog__filter-toggle"
-            @click=${() => (this.filtersOpen = !this.filtersOpen)}
-            aria-label=${uiText(this.locale, "filter")}
-          >
-            <svg class="material-icon" width="24" height="24">
-              <use href=${`/icons.svg#filter_alt${this.filtersOpen ? "-filled" : ""}`}></use>
-            </svg>
-          </button>
-        </div>
-        <aside
-          class=${`catalog__filters ${this.filtersOpen ? "open" : ""}`}
-          aria-hidden=${String(!this.filtersOpen)}
-          ?inert=${!this.filtersOpen}
-        >
-          <div class="catalog__filter-header">
-            <h2>${uiText(this.locale, "filter")}</h2>
-            <button
-              class="button button--text"
-              @click=${() => {
-                this.query = "";
-                this.familyFilter = "";
-                this.versionFilter = "";
-                this.sync();
-              }}
-            >
-              ${uiText(this.locale, "reset")}
-            </button>
-          </div>
-          <div class="catalog__filter-stack">
-            <md-outlined-text-field
-              type="search"
-              label=${uiText(this.locale, "search")}
-              .value=${this.query}
-              @input=${(event: Event) => {
-                this.query = String((event.target as HTMLElement & { value?: string }).value || "");
-                this.sync();
-              }}
-            >
-              <svg slot="leading-icon" class="material-icon" width="20" height="20">
-                <use href="/icons.svg#search"></use>
-              </svg>
-            </md-outlined-text-field>
-            ${this.renderFacet(uiText(this.locale, "family"), families, this.familyFilter, (value) => (this.familyFilter = value))}${this.renderFacet(uiText(this.locale, "version"), versions, this.versionFilter, (value) => (this.versionFilter = value))}
-            <md-outlined-select
-              label=${uiText(this.locale, "sort")}
-              value=${this.sort}
-              @change=${(event: Event) => {
-                this.sort = String(
-                  (event.target as HTMLElement & { value?: string }).value || "id",
-                ) as typeof this.sort;
-                this.sync();
-              }}
-            >
-              ${(
-                [
-                  ["id", uiText(this.locale, "order")],
-                  ["source", uiText(this.locale, "model")],
-                  ["family", uiText(this.locale, "family")],
-                  ["version", uiText(this.locale, "version")],
-                ] as const
-              ).map(
-                ([value, label]) => html`
-                  <md-select-option value=${value} ?selected=${this.sort === value}>
-                    <div slot="headline">${label}</div>
-                  </md-select-option>
-                `,
-              )}
-            </md-outlined-select>
-            <div class="catalog__chips">
-              <button
-                class="chip"
-                aria-pressed=${this.order === "asc"}
-                @click=${() => {
-                  this.order = "asc";
-                  this.sync();
-                }}
-              >
-                ${uiText(this.locale, "ascending")}
-              </button>
-              <button
-                class="chip"
-                aria-pressed=${this.order === "desc"}
-                @click=${() => {
-                  this.order = "desc";
-                  this.sync();
-                }}
-              >
-                ${uiText(this.locale, "descending")}
-              </button>
-            </div>
-          </div>
-        </aside>
-        <div class="catalog__content">
-          ${
-            this.phase === "loading"
-              ? html`
-                  <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
-                `
-              : this.phase === "error"
+      ${renderBrowse({
+        kind: "model",
+        docked: this.docked,
+        count: { value: models.length, label: "" },
+        controls: segmented({
+          label: uiText(this.locale, "view"),
+          value: this.view,
+          options: [
+            { value: "grid" as const, label: uiText(this.locale, "grid"), icon: "grid_view" },
+            { value: "list" as const, label: uiText(this.locale, "list"), icon: "view_list" },
+          ],
+          onSelect: (view) => {
+            this.view = view;
+            this.sync();
+          },
+          iconOnly: true,
+        }),
+        results:
+          this.phase === "loading"
+            ? loadingState(uiText(this.locale, "loading"))
+            : this.phase === "error"
+              ? errorState(
+                  uiText(this.locale, "unavailable"),
+                  uiText(this.locale, "retry"),
+                  () => void this.loadCatalog(),
+                  this.error,
+                )
+              : this.view === "grid"
                 ? html`
-                    <div class="catalog-state">${this.error}</div>
+                    <div class="model-grid">${models.map((model) => this.renderModelCard(model))}</div>
                   `
-                : this.view === "grid"
-                  ? html`
-                      <div class="model-grid">${models.map((model) => this.renderModelCard(model))}</div>
-                    `
-                  : this.renderModelList(models)
-          }
-        </div>
-        ${
-          this.filtersOpen
-            ? html`
-                <button class="sheet-scrim" @click=${() => (this.filtersOpen = false)}></button>
-              `
-            : nothing
-        }
-      </section>
+                : this.renderModelList(models),
+        filters: {
+          label: uiText(this.locale, "filter"),
+          open: this.filtersOpen,
+          count: Number(Boolean(this.query)) + Number(Boolean(this.familyFilter)) + Number(Boolean(this.versionFilter)),
+          closeLabel: uiText(this.locale, "close"),
+          resetLabel: uiText(this.locale, "reset"),
+          onOpen: () => (this.filtersOpen = true),
+          onClose: () => (this.filtersOpen = false),
+          onReset: () => {
+            this.query = "";
+            this.familyFilter = "";
+            this.versionFilter = "";
+            this.sync();
+          },
+          body: html`
+            <div class="field-stack">
+              <md-outlined-text-field
+                class="is-search"
+                type="search"
+                label=${uiText(this.locale, "search")}
+                .value=${this.query}
+                @input=${(event: Event) => {
+                  this.query = String((event.target as HTMLElement & { value?: string }).value || "");
+                  this.sync();
+                }}
+              >
+                <svg slot="leading-icon" class="material-icon" width="20" height="20" aria-hidden="true">
+                  <use href="/icons.svg#search"></use>
+                </svg>
+              </md-outlined-text-field>
+            </div>
+            ${this.renderFacet(uiText(this.locale, "family"), families, this.familyFilter, (value) => (this.familyFilter = value))}
+            ${this.renderFacet(uiText(this.locale, "version"), versions, this.versionFilter, (value) => (this.versionFilter = value))}
+            ${filterGroup(
+              uiText(this.locale, "sort"),
+              html`
+                <div class="field-stack">
+                  <md-outlined-select
+                    label=${uiText(this.locale, "sort")}
+                    value=${this.sort}
+                    @change=${(event: Event) => {
+                      this.sort = String(
+                        (event.target as HTMLElement & { value?: string }).value || "id",
+                      ) as typeof this.sort;
+                      this.sync();
+                    }}
+                  >
+                    ${(
+                      [
+                        ["id", uiText(this.locale, "order")],
+                        ["source", uiText(this.locale, "model")],
+                        ["family", uiText(this.locale, "family")],
+                        ["version", uiText(this.locale, "version")],
+                      ] as const
+                    ).map(
+                      ([value, label]) => html`
+                        <md-select-option value=${value} ?selected=${this.sort === value}>
+                          <div slot="headline">${label}</div>
+                        </md-select-option>
+                      `,
+                    )}
+                  </md-outlined-select>
+                  ${segmented({
+                    label: uiText(this.locale, "order"),
+                    value: this.order,
+                    options: [
+                      { value: "asc" as const, label: uiText(this.locale, "ascending"), icon: "arrow_upward" },
+                      { value: "desc" as const, label: uiText(this.locale, "descending"), icon: "arrow_downward" },
+                    ],
+                    onSelect: (order) => {
+                      this.order = order;
+                      this.sync();
+                    },
+                    grow: true,
+                  })}
+                </div>
+              `,
+            )}
+          `,
+        },
+      })}
     `;
   }
   private renderFacet(label: string, values: string[], selected: string, update: (value: string) => void) {
     return html`
-      <fieldset class="catalog__filter-group">
+      <fieldset class="browse__filter-group">
         <legend>${label}</legend>
-        <div class="catalog__chips">
+        <div class="chip-set">
           ${values.map(
             (value) => html`
               <button
@@ -405,7 +388,7 @@ export class SpineWorkspace extends LitElement {
   }
   private renderModelCard(model: Value) {
     return html`
-      <button class="model-card content-grid-tile" @click=${() => this.select(String(model.id))}>
+      <button class="model-card tile tile--interactive" type="button" @click=${() => this.select(String(model.id))}>
         <span class=${`model-card__media ${this.preview(model) ? "media-loading" : ""}`}>
           ${
             this.preview(model)
@@ -430,14 +413,15 @@ export class SpineWorkspace extends LitElement {
   }
   private renderModelList(models: Value[]) {
     return html`
-      <div class="model-list spine-model-list">
-        <header>
-          <span>${uiText(this.locale, "model")}</span>
-          <span>${uiText(this.locale, "family")}</span>
-          <span>${uiText(this.locale, "version")}</span>
-          <span>${uiText(this.locale, "animations")}</span>
-        </header>
-        ${models.map(
+      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
+        <div class="model-list spine-model-list">
+          <header>
+            <span>${uiText(this.locale, "model")}</span>
+            <span>${uiText(this.locale, "family")}</span>
+            <span>${uiText(this.locale, "version")}</span>
+            <span>${uiText(this.locale, "animations")}</span>
+          </header>
+          ${models.map(
           (model) => html`
             <button class="model-list__row" @click=${() => this.select(String(model.id))}>
               <span class="model-list__primary">
@@ -458,6 +442,7 @@ export class SpineWorkspace extends LitElement {
             </button>
           `,
         )}
+        </div>
       </div>
     `;
   }
@@ -469,7 +454,14 @@ export class SpineWorkspace extends LitElement {
     const models = this.filteredModels();
     const modelIndex = models.findIndex((model) => String(model.id) === this.selected);
     return html`
-      <aside class="viewer-detail">
+      <aside
+        class="viewer-detail pane-layer"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${uiText(this.locale, "model")}
+        tabindex="-1"
+        data-overlay-pane
+      >
         <header>
           <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "close")}>
             <svg class="material-icon" width="24" height="24"><use href="/icons.svg#arrow_back"></use></svg>
@@ -554,7 +546,7 @@ export class SpineWorkspace extends LitElement {
           </div>
           <aside class="viewer-detail__info">
             <h2>${detail ? this.modelTitle(detail) : "Spine"}</h2>
-            <dl class="detail-list">
+            <dl class="spec-list">
               <div>
                 <dt>${uiText(this.locale, "family")}</dt>
                 <dd>${this.familyName(detail?.family)}</dd>

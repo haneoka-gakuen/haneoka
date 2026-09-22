@@ -2,26 +2,29 @@
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
-.asset-workspace > .catalog-state,
+.asset-workspace > .state,
 .asset-workspace > .notice {
   grid-row: 1/-1;
 }
+/* The breadcrumb bar is the browse bar of this page: sticky at the top of the
+ * pane, never positioned over the shell's app bar (which it used to overlap
+ * as soon as the page title needed the same pixels). */
 .asset-toolbar {
-  position: fixed;
-  z-index: 14;
+  position: sticky;
+  z-index: var(--md-sys-z-index-local-sticky);
   top: 0;
-  right: max(var(--md-comp-page-inline-space), env(safe-area-inset-right));
   display: flex;
-  width: min(64vw, 760px);
-  height: var(--top-bar-height);
+  min-width: 0;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  padding: 8px var(--pane-gutter);
   border: 0;
-  background: transparent;
+  background: var(--md-sys-color-surface);
+  box-shadow: 0 1px 0 var(--md-sys-color-outline-variant);
 }
 .asset-toolbar nav {
   display: flex;

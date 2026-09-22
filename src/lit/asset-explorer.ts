@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import { errorState, loadingState } from "./ui/state";
 import { catalogUrl, fetchJson } from "./shared/catalog";
 interface Branch {
   [key: string]: AssetNode;
@@ -164,12 +165,10 @@ export class AssetExplorer extends LitElement {
         ${
           this.phase === "loading"
             ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                ${loadingState("Loading")}
               `
             : this.phase === "error"
-              ? html`
-                  <div class="notice"><p>${this.error}</p></div>
-                `
+              ? errorState("Unavailable", "Retry", () => void this.loadTree(), this.error)
               : html`
                   <header class="asset-toolbar">
                     <nav>
@@ -181,7 +180,9 @@ export class AssetExplorer extends LitElement {
                         `,
                       )}
                     </nav>
-                    <span class="catalog__count">${this.files.length || this.entries(this.path).length}</span>
+                    <p class="browse__count" role="status" aria-live="polite">
+                      <strong>${this.files.length || this.entries(this.path).length}</strong>
+                    </p>
                   </header>
                   <div class="asset-columns">
                     ${columns.map(

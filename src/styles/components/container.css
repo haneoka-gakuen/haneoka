@@ -1,0 +1,118 @@
+/* ==========================================================================
+   Containers — surface, card, divider, banner
+   Material 3 expresses elevation with surface tone first and shadow second.
+   A filled card on surface-container-highest reads as raised without a
+   shadow, which keeps a dense grid quiet.
+   ========================================================================== */
+
+/* ---------- Surface ----------
+   A plain tonal panel. The default block for "a group of related content". */
+.surface {
+  min-width: 0;
+  padding: var(--surface-padding, clamp(16px, 3vw, 24px));
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.surface--outlined {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+}
+.surface--tonal {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+.surface--flush {
+  --surface-padding: 0px;
+  overflow: hidden;
+}
+
+/* ---------- Card ----------
+   12dp corner. Three variants, same geometry. A card is only used when the
+   whole block is one target or one entity; a titled group of rows is a
+   .surface, not a card. */
+.card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-highest);
+}
+.card--elevated {
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: var(--md-sys-elevation-level1);
+}
+.card--outlined {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+}
+.card--interactive {
+  cursor: pointer;
+}
+.card__body {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 16px 16px;
+}
+.card__headline {
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+}
+.card__supporting {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+
+/* ---------- Divider ----------
+   1dp outline-variant. Full-width by default, inset when it separates rows
+   that have a leading element. */
+.divider {
+  height: 1px;
+  flex: 0 0 auto;
+  border: 0;
+  margin: 0;
+  background: var(--md-sys-color-outline-variant);
+}
+.divider--inset {
+  margin-inline-start: 56px;
+}
+.divider--vertical {
+  width: 1px;
+  height: auto;
+  align-self: stretch;
+}
+
+/* ---------- Banner ----------
+   An in-flow message at the top of a pane: icon, text, optional actions.
+   Used for "this release is a preview", errors, and consent notices. */
+.banner {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-high);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.banner > .material-icon {
+  color: var(--md-sys-color-primary);
+}
+.banner--error {
+  color: var(--md-sys-color-on-error-container);
+  background: var(--md-sys-color-error-container);
+}
+.banner--error > .material-icon {
+  color: currentColor;
+}
+.banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 2;
+}

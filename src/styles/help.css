@@ -11,30 +11,6 @@ help-workspace {
   grid-template-rows: minmax(0, 1fr);
   background: var(--md-sys-color-surface);
 }
-.help-top-actions {
-  position: fixed;
-  z-index: 14;
-  top: 0;
-  right: max(16px, env(safe-area-inset-right));
-  display: flex;
-  height: var(--top-bar-height);
-  align-items: center;
-}
-.top-app-bar.has-help-actions h1 {
-  padding-right: 104px;
-}
-.help-search {
-  display: flex;
-  grid-column: 1/-1;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-}
-.help-search md-outlined-text-field {
-  width: min(100%, 560px);
-}
 .help-categories {
   min-height: 0;
   padding: 8px;

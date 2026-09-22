@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Inputs
+   Material Web supplies the text field, select, switch and slider; this file
+   only themes those hosts with the generated colour roles and adds the two
+   native controls Material Web has no element for (a search bar and a
+   labelled native select used inside canvas runtimes, where the custom
+   element's shadow DOM would be a needless cost).
+   ========================================================================== */
+
+/* ---------- Material Web hosts ---------- */
+md-outlined-select,
+md-outlined-text-field {
+  --md-outlined-field-container-shape: var(--md-sys-shape-corner-extra-small);
+  --md-outlined-field-outline-color: var(--md-sys-color-outline);
+  --md-outlined-field-focus-outline-color: var(--md-sys-color-primary);
+  --md-outlined-field-label-text-color: var(--md-sys-color-on-surface-variant);
+  --md-outlined-field-focus-label-text-color: var(--md-sys-color-primary);
+  --md-outlined-field-input-text-color: var(--md-sys-color-on-surface);
+  --md-outlined-field-container-color: transparent;
+}
+md-outlined-select {
+  --md-outlined-select-text-field-container-shape: var(--md-sys-shape-corner-extra-small);
+  --md-menu-container-color: var(--md-sys-color-surface-container);
+  --md-menu-container-shape: var(--md-sys-shape-corner-large);
+}
+md-switch {
+  --md-switch-selected-track-color: var(--md-sys-color-primary);
+  --md-switch-selected-handle-color: var(--md-sys-color-on-primary);
+}
+md-circular-progress {
+  width: 40px;
+  height: 40px;
+  --md-circular-progress-active-indicator-color: var(--md-sys-color-primary);
+  --md-circular-progress-size: 40px;
+}
+.md3-slider {
+  width: 100%;
+  min-width: 48px;
+  height: 32px;
+  --md-slider-active-track-color: var(--md-sys-color-primary);
+  --md-slider-inactive-track-color: var(--md-sys-color-secondary-container);
+  --md-slider-handle-color: var(--md-sys-color-primary);
+  --md-slider-focus-handle-color: var(--md-sys-color-primary);
+  --md-slider-hover-handle-color: var(--md-sys-color-primary);
+  --md-slider-pressed-handle-color: var(--md-sys-color-primary);
+  --md-slider-hover-state-layer-color: var(--md-sys-color-primary);
+  --md-slider-pressed-state-layer-color: var(--md-sys-color-primary);
+  --md-slider-handle-height: 20px;
+  --md-slider-handle-width: 4px;
+  --md-slider-state-layer-size: 32px;
+  --md-slider-active-track-height: 6px;
+  --md-slider-inactive-track-height: 6px;
+  --md-slider-active-track-shape: var(--md-sys-shape-corner-full);
+  --md-slider-inactive-track-shape: var(--md-sys-shape-corner-full);
+  --md-slider-handle-shape: var(--md-sys-shape-corner-full);
+}
+.md3-slider--runtime {
+  --md-slider-active-track-color: var(--md-comp-runtime-primary, var(--md-sys-color-primary));
+  --md-slider-inactive-track-color: var(--md-comp-runtime-outline, var(--md-sys-color-outline));
+  --md-slider-handle-color: var(--md-comp-runtime-primary, var(--md-sys-color-primary));
+}
+.md3-slider--compact {
+  height: 20px;
+  --md-slider-active-track-height: 4px;
+  --md-slider-inactive-track-height: 4px;
+  --md-slider-handle-height: 14px;
+  --md-slider-state-layer-size: 20px;
+}
+
+/* ---------- Field stack ----------
+   The vertical arrangement of form controls inside a filter panel, a dialog
+   or a settings section. Hosts are stretched here rather than at each call
+   site, which is why every filter panel used to drift out of alignment. */
+.field-stack {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+}
+.field-stack > md-outlined-select,
+.field-stack > md-outlined-text-field,
+.field-stack > .field {
+  width: 100%;
+  min-width: 0;
+}
+/* Material Web derives the outline notch from the container radius, so a
+ * search field gets an explicit 28dp pill rather than corner-full (which
+ * resolves to 9999px and blows the notch geometry apart). */
+.field-stack > md-outlined-text-field[type="search"],
+md-outlined-text-field.is-search {
+  --md-outlined-text-field-container-shape: 28px;
+}
+
+/* ---------- Search bar ----------
+   Material 3 search bar: 56dp tall pill on surface-container-high, leading
+   search icon, trailing clear action. Native input, no shadow DOM. */
+.search-bar {
+  display: grid;
+  min-width: 0;
+  height: var(--search-height, 48px);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-high);
+  transition: box-shadow var(--md-sys-motion-duration-short3) linear;
+}
+.search-bar:focus-within {
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+.search-bar > input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  color: var(--md-sys-color-on-surface);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+}
+.search-bar > input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.search-bar > input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* ---------- Native field ----------
+   Used where a Material Web host would be overkill: runtime overlays,
+   inline edit rows, the community composer. Matches the filled text field's
+   geometry so it does not read as a different system. */
+.field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-extra-small) 0 0;
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: inset 0 -1px 0 var(--md-sys-color-on-surface-variant);
+  transition: box-shadow var(--md-sys-motion-duration-short3) linear;
+}
+.field:focus-within {
+  box-shadow: inset 0 -2px 0 var(--md-sys-color-primary);
+}
+.field :where(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+}
+.field textarea {
+  min-height: 96px;
+  padding-block: 12px;
+  resize: vertical;
+}
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.field--pill {
+  border-radius: var(--md-sys-shape-corner-full);
+  box-shadow: none;
+}
+.field--pill:focus-within {
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+.field--error {
+  box-shadow: inset 0 -2px 0 var(--md-sys-color-error);
+}
+.field__label {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+.select-field {
+  padding-right: 8px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+}
+.select-field select,
+.runtime-select select {
+  appearance: none;
+  cursor: pointer;
+}
+.select-field__icon {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+/* Supporting / error text under a field. */
+.field-note {
+  padding-inline: 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+}
+.field-note--error {
+  color: var(--md-sys-color-error);
+}

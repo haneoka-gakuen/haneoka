@@ -620,13 +620,16 @@ export class HomeDashboard extends LitElement {
         ${
           songs.length
             ? html`
-                <ol class="song-strip" role="list">
+                <ol class="strip strip--inset" role="list">
                   ${songs.map(({ song, level }) => {
                     const image = String(song.jacketThumbUrl || song.jacketUrl || "");
                     return html`
                       <li>
-                        <a class="song-tile" href=${`/catalog/songs?song=${song.musicId || song.id}`}>
-                          <span class="song-tile__jacket">
+                        <a
+                          class="tile tile--interactive tile--plain tile--song"
+                          href=${`/catalog/songs?song=${song.musicId || song.id}`}
+                        >
+                          <span class="tile__media">
                             ${icon("music_note", 28)}
                             ${
                               image
@@ -638,12 +641,16 @@ export class HomeDashboard extends LitElement {
                             ${
                               level
                                 ? html`
-                                    <span class="song-tile__level tabular">${level}</span>
+                                    <span class="tile__mark tile__mark--bottom-end tile__mark--accent tabular">
+                                      ${level}
+                                    </span>
                                   `
                                 : nothing
                             }
                           </span>
-                          <span class="song-tile__title">${this.songTitle(song)}</span>
+                          <span class="tile__identity">
+                            <strong class="tile__title">${this.songTitle(song)}</strong>
+                          </span>
                         </a>
                       </li>
                     `;
@@ -651,7 +658,7 @@ export class HomeDashboard extends LitElement {
                 </ol>
               `
             : html`
-                <p class="home-empty">
+                <p class="home-empty" role="status">
                   ${this.phase === "loading" ? this.text("loading", "Loading…") : this.text("sourceUnavailable", "Unavailable")}
                 </p>
               `
@@ -735,7 +742,7 @@ export class HomeDashboard extends LitElement {
                 </ul>
               `
             : html`
-                <p class="home-empty">${this.text("loading", "Loading…")}</p>
+                <p class="home-empty" role="status">${this.text("loading", "Loading…")}</p>
               `
         }
       </section>
@@ -780,9 +787,9 @@ export class HomeDashboard extends LitElement {
                 </ol>
               `
             : html`
-                <div class="home-empty home-empty--illustrated">
-                  ${icon("forum", 32)}
-                  <p>
+                <div class="state state--inline" role="status">
+                  <span class="state__icon">${icon("forum", 28)}</span>
+                  <p class="state__body">
                     ${this.phase === "loading" ? this.text("loading", "Loading…") : this.text("communityEmpty", "There are no public community posts yet.")}
                   </p>
                 </div>

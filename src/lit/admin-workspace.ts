@@ -1,4 +1,6 @@
 import { LitElement, html, nothing } from "lit";
+import { PaneFocus } from "./ui/pane";
+import { loadingState } from "./ui/state";
 import { preferredLocale } from "./shared/catalog";
 
 type Value = Record<string, unknown>;
@@ -59,8 +61,20 @@ export class AdminWorkspace extends LitElement {
     this.packageProgress = 0;
   }
 
+  private paneFocus = new PaneFocus();
   createRenderRoot() {
     return this;
+  }
+  updated() {
+    // The dialog is modal: focus stays inside it and Escape closes it.
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => {
+      this.history = null;
+      this.commentHistory = null;
+    });
+  }
+  disconnectedCallback() {
+    this.paneFocus.detach();
+    super.disconnectedCallback();
   }
   connectedCallback() {
     super.connectedCallback();
@@ -677,7 +691,8 @@ export class AdminWorkspace extends LitElement {
     const comments = Array.isArray(history.comments) ? (history.comments as Value[]) : [];
     return html`
       <div
-        class="admin-dialog-scrim"
+        class="dialog-host admin-dialog-scrim"
+        role="presentation"
         @click=${() => {
           this.history = null;
           this.commentHistory = null;
@@ -687,6 +702,9 @@ export class AdminWorkspace extends LitElement {
           class="admin-history-dialog surface"
           role="dialog"
           aria-modal="true"
+          aria-label=${this.label("history.open", "History")}
+          tabindex="-1"
+          data-overlay-pane
           @click=${(event: Event) => event.stopPropagation()}
         >
           <header>
@@ -986,7 +1004,7 @@ export class AdminWorkspace extends LitElement {
             ${
               this.phase === "loading"
                 ? html`
-                    <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                    ${loadingState(this.label("loading", "Loading"))}
                   `
                 : this.phase === "error"
                   ? html`

@@ -6,7 +6,15 @@ story-workspace {
   display: grid;
   height: 100%;
   min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-columns: 240px minmax(0, 1fr);
+  background: var(--md-sys-color-surface);
+}
+/* The browse bar spans the rail and the results. It is a row of this grid
+   rather than a floating overlay, so it can never cover the app bar. */
+.story-workspace > .browse__bar {
+  position: static;
+  grid-column: 1 / -1;
   background: var(--md-sys-color-surface);
 }
 .story-band,
@@ -388,25 +396,6 @@ story-workspace {
 .story-afterlive:has(.story-detail) {
   grid-template-columns: minmax(360px, 1fr) minmax(300px, 380px);
 }
-/* Reserved same-size media box so every story grid tile shows a
-   placeholder while its image loads. */
-.story-card__media {
-  position: relative;
-  display: grid;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  place-items: center;
-  overflow: hidden;
-  background: var(--md-sys-color-surface-container-high);
-}
-.story-card__media > img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.afterlive-browser .story-card__media {
-  aspect-ratio: 16 / 9;
-}
 .afterlive-browser .story-list.grid {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
 }
@@ -577,36 +566,37 @@ story-workspace {
   gap: 0;
   padding: 12px;
 }
+/* A story card is a .tile whose artwork runs to the edges (the scene is the
+   card) and which can be long enough to skip while off-screen. */
 .story-card {
-  display: grid;
-  min-width: 0;
   padding: 0;
+  gap: 0;
   overflow: hidden;
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
-  border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-lowest);
-  text-align: left;
-  cursor: pointer;
 }
-.story-card:hover {
-  background: var(--md-sys-color-surface-container);
-}
-.story-card.selected {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: -2px;
+.story-card[aria-pressed="true"] {
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
 }
+/* Story artwork is a 16:9 scene capture. It is letterboxed rather than
+   cropped: the framing is the author's, and cropping it cuts people out of
+   the shot. The box is reserved at full size so a grid of cards does not
+   reflow as images decode. */
 .story-card__media {
   position: relative;
   display: grid;
   width: 100%;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16 / 9;
   place-items: center;
+  overflow: hidden;
+  border-radius: 0;
   background: var(--md-sys-color-surface-container-high);
 }
-.story-card__media img {
+.story-card__media > img {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -618,16 +608,17 @@ story-workspace {
   min-width: 0;
   gap: 8px;
   padding: 12px;
+  text-align: start;
 }
 .story-list.grid .story-card__body {
   gap: 2px;
   padding: 8px;
 }
-.story-list.grid .grid-tile-identity__description .story-card__avatars {
+.story-list.grid .tile__subtitle .story-card__avatars {
   height: 18px;
   flex: 0 0 auto;
 }
-.story-list.grid .grid-tile-identity__description .story-card__avatars img {
+.story-list.grid .tile__subtitle .story-card__avatars img {
   width: 18px;
   height: 18px;
   border-width: 1px;
@@ -707,70 +698,6 @@ story-workspace {
   overflow: auto;
   container-type: inline-size;
 }
-.chapter-story-browser--tutorial {
-  display: grid;
-  height: 100%;
-  grid-template-rows: minmax(0, 1fr) 176px;
-  overflow: hidden;
-}
-.chapter-story-browser--tutorial .chapter-story-stage {
-  padding: 20px 24px;
-  overflow: auto;
-}
-.chapter-story-browser--tutorial .chapter-story-stage > header {
-  min-height: 48px;
-}
-.chapter-story-browser--tutorial .chapter-story-stage__main {
-  grid-template-columns: minmax(260px, 313px) minmax(0, 1fr);
-  justify-content: start;
-  gap: 24px;
-}
-.chapter-story-browser--tutorial .chapter-story-stage__media,
-.chapter-story-browser--tutorial .chapter-story-stage__fallback {
-  width: 100%;
-  min-height: 234px;
-  aspect-ratio: 4 / 3;
-}
-.chapter-story-browser--tutorial .chapter-story-stage__media img {
-  max-height: 234px;
-}
-.chapter-story-browser--tutorial > .story-list {
-  display: grid;
-  grid-template-columns: none;
-  grid-auto-flow: column;
-  grid-auto-columns: 118px;
-  align-items: center;
-  align-content: center;
-  padding: 12px 16px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-}
-.chapter-story-browser--tutorial > .story-list .story-card {
-  position: relative;
-  height: 154px;
-  min-height: 154px;
-  content-visibility: visible;
-  isolation: isolate;
-}
-.chapter-story-browser--tutorial > .story-list .story-card__media {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  height: 100%;
-  aspect-ratio: auto;
-}
-.chapter-story-browser--tutorial > .story-list .story-card__body {
-  align-content: end;
-  height: 100%;
-  padding: 44px 10px 10px;
-  background: linear-gradient(
-    180deg,
-    transparent 24%,
-    color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 92%, transparent) 70%
-  );
-}
 .chapter-story-stage {
   min-width: 0;
   min-height: 0;
@@ -804,80 +731,6 @@ story-workspace {
   font-size: var(--md-sys-typescale-title-medium-size);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.chapter-story-stage__main {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 24px;
-  padding-top: 18px;
-}
-@container (max-width: 650px) {
-  .chapter-story-stage__main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .chapter-story-stage__media img {
-    max-height: 38vh;
-  }
-}
-.chapter-story-stage__media {
-  display: grid;
-  min-width: 0;
-  min-height: 200px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level1);
-}
-.chapter-story-stage__media img {
-  width: 100%;
-  height: 100%;
-  max-height: 52vh;
-  object-fit: contain;
-}
-.chapter-story-stage__fallback {
-  position: relative;
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-height: 200px;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  background:
-    radial-gradient(circle at 108% -8%, var(--md-sys-color-surface-container-highest) 0 31%, transparent 31.5%),
-    var(--md-sys-color-surface-container-low);
-}
-.chapter-story-stage__fallback::after {
-  position: absolute;
-  width: 62%;
-  aspect-ratio: 1;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 50%;
-  content: "";
-}
-.chapter-story-stage__fallback > * {
-  z-index: 1;
-}
-.chapter-story-stage__main article {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  flex-direction: column;
-}
-.chapter-story-stage__number {
-  min-width: 34px;
-  height: 24px;
-  padding-inline: 8px;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: 999px;
-  background: var(--md-sys-color-secondary-container);
-  font-size: var(--md-sys-typescale-label-medium-size);
-  line-height: 24px;
-  text-align: center;
 }
 .chapter-story-stage h2 {
   margin: 14px 0 0;
@@ -913,26 +766,9 @@ story-workspace {
 .story-workspace:has(.story-detail) {
   grid-template-columns: 220px minmax(360px, 1fr) minmax(300px, 380px);
 }
+/* Geometry comes from .pane-layer (components/overlay.css). */
 .story-detail {
-  position: fixed;
-  z-index: 30;
-  inset: var(--shell-overlay-inset);
-  border-radius: var(--shell-overlay-radius);
-  overflow: hidden;
-  display: grid;
-  width: auto;
-  min-width: 0;
-  min-height: 0;
   grid-template-rows: 56px minmax(0, 1fr);
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface);
-}
-.story-detail > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 .story-detail__title {
   display: grid;
@@ -962,14 +798,6 @@ vega-story-stage,
   height: 100%;
   min-width: 0;
   min-height: 0;
-}
-.vega-story-runtime .vega-player,
-.vega-story-runtime [data-vega-ui-slot] {
-  font-family: var(--app-font);
-}
-.vega-story-runtime .haneoka-story-ui,
-.vega-story-runtime .haneoka-story-ui * {
-  font-family: var(--app-font) !important;
 }
 vega-story-stage {
   grid-row: 2 / -1;
@@ -1048,20 +876,6 @@ vega-story-stage {
 .vega-story-runtime__settings label > md-slider {
   width: 160px;
 }
-.story-detail__media {
-  position: relative;
-  display: grid;
-  max-height: 42vh;
-  place-items: center;
-  background: var(--md-sys-color-surface-container-high);
-}
-.story-detail__media img {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
 .story-detail__content {
   display: grid;
   align-content: start;
@@ -1098,35 +912,6 @@ vega-story-stage {
   display: grid;
   gap: 12px;
   padding-top: 8px;
-}
-.story-asset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
-  gap: 10px;
-}
-.story-asset-grid figure {
-  display: grid;
-  min-height: 150px;
-  place-items: center;
-  gap: 6px;
-  padding: 8px;
-  margin: 0;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-low);
-}
-.story-asset-grid img {
-  width: 100%;
-  height: auto;
-  max-height: 240px;
-  object-fit: contain;
-}
-.story-asset-grid figcaption {
-  width: 100%;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-small-size);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .story-transcript {
   overflow: hidden;
@@ -1171,19 +956,6 @@ vega-story-stage {
   margin: 0;
   line-height: 1.65;
   white-space: pre-line;
-}
-.story-filter-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.story-filter-grid .chip {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
-  padding: 8px;
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-full);
 }
 @media (max-width: 959px) {
   .story-workspace,
@@ -1279,19 +1051,6 @@ vega-story-stage {
   .story-tutorial:has(.story-detail) {
     grid-template-rows: minmax(0, 1fr);
   }
-  .chapter-story-browser--tutorial {
-    grid-template-rows: minmax(0, 1fr) 148px;
-  }
-  .chapter-story-browser--tutorial .chapter-story-stage__main {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .chapter-story-browser--tutorial > .story-list {
-    grid-auto-columns: 104px;
-  }
-  .chapter-story-browser--tutorial > .story-list .story-card {
-    height: 126px;
-    min-height: 126px;
-  }
   .story-band .story-rail,
   .story-tutorial .story-rail {
     padding: 6px 8px;
@@ -1313,16 +1072,6 @@ vega-story-stage {
   .chapter-story-stage > header img {
     width: min(108px, 32%);
     height: 40px;
-  }
-  .chapter-story-stage__main {
-    gap: 14px;
-    padding-top: 12px;
-  }
-  .chapter-story-stage__media {
-    min-height: 180px;
-  }
-  .chapter-story-stage__media img {
-    max-height: 34dvh;
   }
   .chapter-story-stage + .story-list,
   .chapter-story-browser > .story-list {
@@ -1370,13 +1119,4 @@ vega-story-stage {
   .vega-story-runtime__controls > small {
     display: none;
   }
-}
-.story-filter-grid .chip img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.story-filter-grid .chip {
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }

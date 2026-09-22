@@ -1,0 +1,264 @@
+/* ==========================================================================
+   Adaptive shell
+   Material 3 window size classes:
+     compact  <600    top app bar + navigation bar; navigation opens modally
+     medium   600+    collapsed navigation rail; content on a rounded pane
+     expanded 1200+   the rail expands in place into a sectioned drawer
+
+   The shell is a two-track grid and it is the only scroll owner besides the
+   content pane. Nothing inside a page may use position: fixed to place
+   itself in the app bar — the bar has a real actions slot for that. The old
+   catalog toolbar was fixed at top: 0 and overlapped the page title on any
+   window narrow enough for the two to meet.
+   ========================================================================== */
+.app-shell {
+  display: grid;
+  width: 100%;
+  height: 100dvh;
+  grid-template-columns: var(--shell-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--md-sys-color-surface-container);
+}
+.skip-link {
+  position: fixed;
+  z-index: var(--md-sys-z-index-a11y);
+  top: 8px;
+  left: 8px;
+  padding: 10px 16px;
+  color: var(--md-sys-color-on-primary);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / 20px var(--app-font);
+  transform: translateY(-160%);
+}
+.skip-link:focus {
+  transform: none;
+}
+
+.app-shell__body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* ---------- Top app bar ----------
+   Small top app bar: 64dp, leading navigation action, title-large headline,
+   trailing action slot. It switches to the surface-container tone once the
+   pane beneath it has scrolled ("on scroll" container colour). */
+.top-app-bar {
+  position: relative;
+  z-index: var(--md-sys-z-index-local-sticky);
+  display: grid;
+  min-width: 0;
+  height: var(--top-bar-height);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding-inline: max(4px, env(safe-area-inset-left)) max(4px, env(safe-area-inset-right));
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container);
+  transition: background-color var(--md-sys-motion-duration-medium1) linear;
+}
+.top-app-bar > h1 {
+  min-width: 0;
+  margin: 0;
+  padding-inline: 12px;
+  overflow: hidden;
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The trailing slot. Pages render their page-level actions here through
+   lib/app-bar.ts; it is a flex row that shrinks its own contents rather than
+   the title, and it is empty (and zero-width) on pages that have none. */
+.top-app-bar__actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+/* One group per owning component (lib/app-bar.ts). */
+.top-app-bar__group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.app-shell__main {
+  position: relative;
+  min-width: 0;
+  height: var(--shell-stage-block);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--md-sys-color-surface);
+  scrollbar-gutter: stable;
+}
+
+/* ---------- Navigation bar (compact) ---------- */
+.nav-bar {
+  z-index: var(--md-sys-z-index-shell-navigation);
+  display: none;
+  height: var(--nav-bar-height);
+  grid-column: 1 / -1;
+  grid-row: 2;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0 max(0px, env(safe-area-inset-right)) var(--md-sys-safe-area-inset-bottom)
+    max(0px, env(safe-area-inset-left));
+  background: var(--md-sys-color-surface-container);
+}
+.nav-bar__item {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+}
+.nav-bar__item > span:last-child {
+  max-width: 100%;
+  padding-inline: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-scrim {
+  display: none;
+}
+
+/* ---------- compact ---------- */
+@media (max-width: 599px) {
+  :root {
+    --shell-bottom-inset: var(--nav-bar-height);
+  }
+  :root:has(.app-shell[data-immersive]) {
+    --shell-bottom-inset: 0px;
+  }
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-shell__body {
+    grid-column: 1;
+  }
+  .nav-bar {
+    display: grid;
+  }
+  .app-shell[data-immersive] .nav-bar {
+    display: none;
+  }
+  .nav {
+    display: none;
+  }
+  .top-app-bar {
+    background: var(--md-sys-color-surface);
+  }
+  .top-app-bar.is-scrolled {
+    background: var(--md-sys-color-surface-container);
+  }
+  .top-app-bar > h1 {
+    padding-inline: 4px;
+  }
+}
+
+/* ---------- medium and up: rail + rounded content pane ---------- */
+@media (min-width: 600px) {
+  :root {
+    --shell-width: var(--nav-rail-width);
+    --shell-pane-gap: 16px;
+    --shell-overlay-inset: var(--top-bar-height) max(16px, env(safe-area-inset-right)) var(--shell-pane-gap)
+      var(--shell-width);
+    --shell-overlay-radius: var(--md-sys-shape-corner-extra-large);
+  }
+  .top-app-bar .top-app-bar__menu {
+    display: none;
+  }
+  .app-shell__main {
+    margin-right: max(16px, env(safe-area-inset-right));
+    border-radius: var(--md-sys-shape-corner-extra-large);
+  }
+  .app-shell__body {
+    grid-template-rows: var(--top-bar-height) minmax(0, 1fr) var(--shell-pane-gap);
+  }
+  .top-app-bar {
+    padding-inline: 4px max(16px, env(safe-area-inset-right));
+  }
+  .nav__header {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .nav__header .nav__brand {
+    display: none;
+  }
+}
+
+/* ---------- expanded: the rail can open into a persistent drawer ---------- */
+@media (min-width: 1200px) {
+  :root[data-nav="expanded"] {
+    --shell-width: var(--nav-drawer-width);
+  }
+  :root[data-nav="expanded"] .nav__rail,
+  :root[data-nav="expanded"] .rail-item--footer {
+    display: none;
+  }
+  :root[data-nav="expanded"] .nav__drawer {
+    display: flex;
+  }
+  :root[data-nav="expanded"] .nav__header {
+    justify-content: flex-start;
+    padding-inline: 16px 12px;
+  }
+  :root[data-nav="expanded"] .nav__header .nav__brand {
+    display: flex;
+  }
+}
+
+/* ---------- Page transitions ----------
+   Material "fade through" on the content pane only; the shell stays still,
+   which is what makes the navigation feel like a frame rather than part of
+   the page. Tuning (lib/tuning.ts) replaces the root transition with a
+   circular reveal from the control that was pressed. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(page) {
+  animation: md-fade-out 90ms linear both;
+}
+::view-transition-new(page) {
+  animation: md-fade-through-in 210ms var(--ease-decelerate) 90ms both;
+}
+@keyframes md-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes md-fade-through-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

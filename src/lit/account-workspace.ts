@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import { loadingState } from "./ui/state";
 import { svg as discordSvg } from "@thesvg/icons/discord";
 import { svg as githubSvg } from "@thesvg/icons/github";
 import { svg as googleSvg } from "@thesvg/icons/google";
@@ -519,7 +520,7 @@ export class AccountWorkspace extends LitElement {
   render() {
     if (this.phase === "loading")
       return html`
-        <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+        ${loadingState(this.label("loading", "Loading"))}
       `;
     return html`
       <section class="page page--compact account-page">

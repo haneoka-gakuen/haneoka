@@ -1,0 +1,146 @@
+/* ==========================================================================
+   List
+   Material 3 list item: 56dp one line, 72dp two lines, 88dp three lines;
+   16dp inline padding; leading 24dp icon / 40dp avatar / 56dp image;
+   supporting text body-medium on-surface-variant; trailing metadata
+   label-small. Row height comes from --row-height so the density control
+   moves lists and tables together.
+   ========================================================================== */
+.list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Three tracks: leading (auto) · text (flexible) · trailing (auto). The
+ * middle track is the only one that flexes, which is what keeps a long
+ * headline from pushing the trailing metadata out of the row — and every
+ * child gets min-width: 0 so it can actually shrink to that track. */
+.list-item {
+  display: grid;
+  min-width: 0;
+  min-height: var(--row-height);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 16px;
+  padding: 8px 16px;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-medium);
+  text-align: start;
+}
+.list-item > * {
+  min-width: 0;
+}
+/* A row with a single child is that child's row. */
+.list-item > :only-child {
+  grid-column: 1 / -1;
+}
+.list-item--two-line {
+  min-height: var(--row-height-two-line);
+}
+.list-item--three-line {
+  min-height: var(--row-height-three-line);
+  align-items: start;
+}
+.list-item--interactive {
+  cursor: pointer;
+}
+.list-item[aria-selected="true"],
+.list-item.is-selected {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+.list-item__leading,
+.list-item__trailing {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.list-item__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.list-item__headline {
+  min-width: 0;
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.list-item__supporting {
+  min-width: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.list-item__meta {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Avatar / thumbnail in the leading slot. */
+.list-item__avatar {
+  display: grid;
+  width: var(--avatar-size, 40px);
+  height: var(--avatar-size, 40px);
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: var(--md-sys-color-on-primary-container);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary-container);
+  font: 500 var(--md-sys-typescale-label-large-size) / 1 var(--app-font);
+}
+.list-item__avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.list-item__avatar--square {
+  border-radius: var(--md-sys-shape-corner-extra-small);
+}
+.list-item__thumb {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container-highest);
+}
+.list-item__thumb > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Rank / index marker (community leaderboards, ordered chapters). */
+.list-item__marker {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-highest);
+  font: 500 var(--md-sys-typescale-label-large-size) / 1 var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Divided list: 1dp separators instead of gaps. Reads denser and gives the
+ * "staff line" feel the rest of the site uses. */
+.list--divided > * + * {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.list--divided .list-item {
+  border-radius: 0;
+}
+.list--inset .list-item {
+  padding-inline: var(--pane-gutter);
+}

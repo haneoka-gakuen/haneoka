@@ -7,41 +7,9 @@ community-workspace {
   width: min(100%, 960px);
   margin-inline: auto;
 }
-.surface--tonal {
-  background: var(--md-sys-color-surface-container-low);
-}
+/* Positioning only; the strip itself is .tabs--pills. */
 .community-tabs {
-  display: flex;
-  width: fit-content;
-  max-width: 100%;
-  min-height: 48px;
-  align-items: stretch;
-  gap: 2px;
-  padding: 4px;
-  overflow: auto hidden;
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-low);
-  scrollbar-width: none;
-}
-.community-tabs a {
-  display: inline-flex;
-  min-width: max-content;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 14px;
-  color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: 500;
-}
-.community-tabs a:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-}
-.community-tabs a[aria-current="page"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
+  margin-inline: auto;
 }
 .community-toolbar {
   position: sticky;
@@ -148,11 +116,6 @@ community-workspace {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-.load-more {
-  display: flex;
-  justify-content: center;
-  padding: 24px;
 }
 .tag-grid {
   display: grid;
@@ -542,23 +505,10 @@ community-workspace {
   width: 100%;
   accent-color: var(--md-sys-color-primary);
 }
-.community-dialog-scrim {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: color-mix(in srgb, var(--md-sys-color-scrim) 36%, transparent);
-}
 .community-dialog {
   display: grid;
   width: min(100%, 560px);
-  max-height: min(90dvh, 720px);
   gap: 16px;
-  overflow: auto;
-  border-radius: var(--md-sys-shape-corner-extra-large);
-  box-shadow: var(--md-sys-elevation-level3);
 }
 .community-dialog > header {
   display: grid;
@@ -722,20 +672,6 @@ community-workspace {
   gap: 16px;
   overflow: auto;
 }
-.bestdori-story-tabs {
-  display: flex;
-  width: fit-content;
-  max-width: 100%;
-  overflow-x: auto;
-}
-.bestdori-story-tabs a {
-  min-width: max-content;
-  padding: 9px 16px;
-}
-.bestdori-story-tabs a[aria-current="page"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
 .bestdori-catalog-toolbar {
   display: flex;
   align-items: center;
@@ -750,35 +686,17 @@ community-workspace {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.bestdori-community-catalog .catalog-card {
+.bestdori-community-catalog .tile {
   border: 0;
 }
-.bestdori-detail {
-  position: fixed;
-  z-index: 30;
-  inset: var(--shell-overlay-inset);
-  border-radius: var(--shell-overlay-radius);
-  overflow: hidden;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
-  background: var(--md-sys-color-surface);
-}
+/* Geometry comes from .pane-layer (components/overlay.css). */
 .bestdori-detail > header {
-  display: flex;
-  align-items: center;
   gap: 10px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding-inline: 12px;
   background: var(--md-sys-color-surface-container-low);
 }
 .bestdori-detail > header > strong {
-  min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .bestdori-detail > header > .segmented {
   margin-left: auto;
@@ -951,7 +869,7 @@ community-workspace {
     border-radius: var(--md-sys-shape-corner-medium);
     scroll-snap-type: x proximity;
   }
-  .community-tabs a {
+  .community-tabs .tab {
     flex: 1 0 auto;
     padding-inline: 12px;
     scroll-snap-align: start;

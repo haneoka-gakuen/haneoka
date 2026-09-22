@@ -1,4 +1,7 @@
 import { LitElement, html, nothing } from "lit";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { segmented } from "./ui/controls";
+import { errorState, loadingState } from "./ui/state";
 import {
   catalogUrl,
   fetchJson,
@@ -43,13 +46,12 @@ export class HelpWorkspace extends LitElement {
     super.connectedCallback();
     this.locale = preferredLocale(this.locale);
     void Promise.all([import("@material/web/progress/circular-progress.js")]);
-    document.querySelector(".top-app-bar")?.classList.add("has-help-actions");
     const p = new URLSearchParams(location.search);
     this.mode = p.get("mode") === "tips" ? "tips" : "manual";
     void this.load();
   }
   disconnectedCallback() {
-    document.querySelector(".top-app-bar")?.classList.remove("has-help-actions");
+    clearAppBarActions("help");
     super.disconnectedCallback();
   }
   private text(v: unknown) {
@@ -79,45 +81,35 @@ export class HelpWorkspace extends LitElement {
   }
   render() {
     const entries = this.filteredEntries();
+    // The manual/tips switch is a page-level action, so it belongs in the top
+    // app bar rather than floating over it.
+    setAppBarActions(
+      "help",
+      segmented({
+        label: uiText(this.locale, "view"),
+        value: this.mode,
+        options: [
+          { value: "manual" as const, label: uiText(this.locale, "manual"), icon: "menu_book" },
+          { value: "tips" as const, label: uiText(this.locale, "loadingTips"), icon: "lightbulb" },
+        ],
+        onSelect: (mode) => {
+          this.mode = mode;
+          this.sync();
+        },
+      }),
+    );
     return html`
       <section class="help-workspace">
-        <div class="help-top-actions">
-          <div class="catalog__view">
-            <button
-              aria-label=${uiText(this.locale, "manual")}
-              aria-pressed=${this.mode === "manual"}
-              @click=${() => {
-                this.mode = "manual";
-                this.sync();
-              }}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#menu_book${this.mode === "manual" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-            <button
-              aria-label=${uiText(this.locale, "loadingTips")}
-              aria-pressed=${this.mode === "tips"}
-              @click=${() => {
-                this.mode = "tips";
-                this.sync();
-              }}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#lightbulb${this.mode === "tips" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-          </div>
-        </div>
         ${
           this.phase === "loading"
-            ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
-              `
+            ? loadingState(uiText(this.locale, "loading"))
             : this.phase === "error"
-              ? html`
-                  <div class="notice"><p>${this.error}</p></div>
-                `
+              ? errorState(
+                  uiText(this.locale, "unavailable"),
+                  uiText(this.locale, "retry"),
+                  () => void this.load(),
+                  this.error,
+                )
               : html`
                   ${
                     this.mode === "manual"

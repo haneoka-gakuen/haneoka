@@ -26,7 +26,7 @@ const titleValues = titleKey
     <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <ClientRouter />
     <script is:inline>(()=>{const ok=/^(ja|en|zh-TW|zh-CN|ko)$/;const match=v=>{try{const p=Intl.getCanonicalLocales(String(v||"").replaceAll("_","-"))[0]?.toLowerCase().split("-")||[];if(p[0]==="ja"||p[0]==="en"||p[0]==="ko")return p[0];if(p[0]!=="zh")return null;if(p.includes("hant")||p.some(x=>["tw","hk","mo"].includes(x)))return"zh-TW";return"zh-CN"}catch{return null}};let l="";try{const s=localStorage.getItem("haneoka.locale");l=ok.test(s||"")?s:""}catch{}if(!l)l=(navigator.languages||[navigator.language]).map(match).find(Boolean)||"ja";const d=document.documentElement,t={ja:"ja-JP",en:"en-US","zh-TW":"zh-TW","zh-CN":"zh-CN",ko:"ko-KR"};d.lang=t[l];d.dataset.locale=l;try{localStorage.setItem("haneoka.locale",l)}catch{}})()</script>
-    <script is:inline>(()=>{const d=document.documentElement;try{const p=localStorage.getItem("haneoka.ui-theme.v1")||"system",r=p==="system"?(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"):p;d.dataset.theme=r;d.dataset.themePreference=p}catch{}try{const s=localStorage.getItem("haneoka.ui-seed.v1");d.dataset.seed=/^(haneoka|band-[1-5])$/.test(s||"")?s:"haneoka";d.dataset.nav=localStorage.getItem("haneoka.navigation.expanded.v2")==="false"?"collapsed":"expanded"}catch{d.dataset.seed="haneoka";d.dataset.nav="expanded"}})()</script>
+    <script is:inline>(()=>{const d=document.documentElement;try{const p=localStorage.getItem("haneoka.ui-theme.v1")||"system",r=p==="system"?(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"):p;d.dataset.theme=r;d.dataset.themePreference=p}catch{}try{const s=localStorage.getItem("haneoka.ui-seed.v1");d.dataset.seed=/^(haneoka|band-[1-5])$/.test(s||"")?s:"haneoka";d.dataset.nav=localStorage.getItem("haneoka.navigation.expanded.v2")==="false"?"collapsed":"expanded";d.dataset.density=localStorage.getItem("haneoka.ui-density.v1")==="compact"?"compact":"comfortable"}catch{d.dataset.seed="haneoka";d.dataset.nav="expanded";d.dataset.density="comfortable"}})()</script>
     <title data-i18n-values={JSON.stringify(titleValues)}>{fullTitle}</title><meta name="description" content={description ?? title} /><meta name="theme-color" content="#f0edf1" /><meta name="color-scheme" content="light dark" />
     <link rel="canonical" href={`${origin}${localePath(route, DEFAULT_LOCALE)}`} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="manifest" href="/site.webmanifest" />
@@ -77,6 +77,7 @@ const titleValues = titleKey
       next.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
       next.documentElement.dataset.themePreference = document.documentElement.dataset.themePreference || "system";
       next.documentElement.dataset.nav = document.documentElement.dataset.nav || "expanded";
+      next.documentElement.dataset.density = document.documentElement.dataset.density || "comfortable";
       let seed = document.documentElement.dataset.seed;
       try { seed = localStorage.getItem(SEED_KEY) || seed; } catch {}
       next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";

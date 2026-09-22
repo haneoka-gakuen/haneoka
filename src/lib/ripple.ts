@@ -3,7 +3,19 @@
  * pointerdown listener positions a CSS-only ripple; nothing is allocated per
  * element and reduced-motion users get the plain state layer instead.
  */
-const RIPPLE_TARGETS = ".button, .chip, .nav-item, .list-item--interactive, .card--interactive, .segmented > button";
+const RIPPLE_TARGETS = [
+  ".button",
+  ".icon-button",
+  ".chip",
+  ".nav-item",
+  ".list-item--interactive",
+  ".card--interactive",
+  ".tile--interactive",
+  ".segmented > button",
+  ".tab",
+  ".menu-item",
+  ".hub-link",
+].join(", ");
 
 export function installRipple() {
   const root = document.documentElement;

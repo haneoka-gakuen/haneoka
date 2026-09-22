@@ -1,0 +1,155 @@
+/* ==========================================================================
+   Typography
+   Material's typescale as utility classes, plus the two prose contexts the
+   site actually has (legal/help documents and user-authored posts).
+   Every utility sets font-family from --app-font so a locale switch retunes
+   the whole scale in one place.
+   ========================================================================== */
+.md-display-large,
+.md-display-medium,
+.md-display-small,
+.md-headline-large,
+.md-headline-medium,
+.md-headline-small,
+.md-title-large,
+.md-title-medium,
+.md-title-small,
+.md-body-large,
+.md-body-medium,
+.md-body-small,
+.md-label-large,
+.md-label-medium,
+.md-label-small {
+  font-family: var(--app-font);
+}
+.md-display-large {
+  font: var(--md-sys-typescale-display-large-weight) var(--md-sys-typescale-display-large-size) /
+    var(--md-sys-typescale-display-large-line-height) var(--app-font);
+}
+.md-display-medium {
+  font: var(--md-sys-typescale-display-medium-weight) var(--md-sys-typescale-display-medium-size) /
+    var(--md-sys-typescale-display-medium-line-height) var(--app-font);
+}
+.md-display-small {
+  font: var(--md-sys-typescale-display-small-weight) var(--md-sys-typescale-display-small-size) /
+    var(--md-sys-typescale-display-small-line-height) var(--app-font);
+}
+.md-headline-large {
+  font: var(--md-sys-typescale-headline-large-weight) var(--md-sys-typescale-headline-large-size) /
+    var(--md-sys-typescale-headline-large-line-height) var(--app-font);
+}
+.md-headline-medium {
+  font: var(--md-sys-typescale-headline-medium-weight) var(--md-sys-typescale-headline-medium-size) /
+    var(--md-sys-typescale-headline-medium-line-height) var(--app-font);
+}
+.md-headline-small {
+  font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
+    var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+}
+.md-title-large {
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+}
+.md-title-medium {
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+}
+.md-title-small {
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+}
+.md-body-large {
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+}
+.md-body-medium {
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.md-body-small {
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+}
+.md-label-large {
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+.md-label-medium {
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+}
+.md-label-small {
+  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+    var(--md-sys-typescale-label-small-line-height) var(--app-font);
+}
+.md-on-surface-variant {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Section heading: the one heading treatment for "a titled block of content". */
+.section-heading {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.section-heading > :where(h2, h3) {
+  min-width: 0;
+  margin: 0;
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+
+/* Inline link inside body copy. Underlined, because colour alone is not a
+ * sufficient affordance at body-small size. */
+.text-link {
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  overflow-wrap: break-word;
+}
+.text-link:hover {
+  color: var(--md-sys-color-on-primary-container);
+}
+
+/* Reading measure for documents. 68ch keeps legal/help text at a comfortable
+ * line length regardless of window width. */
+.prose {
+  max-width: 68ch;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose :where(h2, h3) {
+  margin: 24px 0 8px;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+}
+.prose :where(p, li) {
+  margin: 0 0 8px;
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.prose a {
+  color: var(--md-sys-color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose :where(code, pre) {
+  font-family: var(--md-ref-typeface-code);
+  font-size: 0.875em;
+}
+.prose pre {
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-high);
+}

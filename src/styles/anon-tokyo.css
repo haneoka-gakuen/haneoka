@@ -9,13 +9,14 @@ anon-tokyo-workspace {
   align-items: start;
   gap: 12px;
 }
-.anon-collection__searchbar {
-  display: flex;
-  max-width: 760px;
-  margin-bottom: 16px;
+/* The card's media box is a wide banner, so the loading spinner sits at its
+   leading edge rather than dead centre. */
+.anon-card.media-loading::after {
+  left: 32px;
 }
-.anon-collection__searchbar .field {
-  width: 100%;
+.outfit-characters .media-loading::after {
+  width: 18px;
+  height: 18px;
 }
 .anon-card {
   display: grid;
@@ -66,7 +67,7 @@ anon-tokyo-workspace {
   display: grid;
   min-width: 0;
 }
-.anon-card__copy > .grid-tile-identity {
+.anon-card__copy > .tile__identity {
   align-self: center;
 }
 .anon-card__copy p {
@@ -88,6 +89,13 @@ anon-tokyo-workspace {
 .anon-card small {
   color: var(--md-sys-color-on-surface-variant);
 }
+/* The collection pages use the shared browse layout: a bar, then results. */
+.anon-collection {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+}
+
 .anon-collection--characters .anon-grid {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr));
 }
@@ -325,23 +333,6 @@ anon-tokyo-workspace {
 .outfit-stage__runtime.failed > .progress {
   display: none;
 }
-.outfit-stage__label {
-  position: absolute;
-  z-index: 2;
-  right: 16px;
-  bottom: 16px;
-  left: 16px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-high);
-}
-.outfit-stage__label small {
-  color: var(--md-sys-color-on-surface-variant);
-}
 .outfit-closet {
   display: grid;
   min-width: 0;
@@ -374,6 +365,9 @@ anon-tokyo-workspace {
   background: var(--md-sys-color-surface-container-lowest);
 }
 .outfit-item {
+  /* The selected check mark is an absolutely positioned ::after, so the item
+   * has to be the containing block. */
+  position: relative;
   display: grid;
   min-width: 0;
   gap: 6px;
@@ -404,9 +398,6 @@ anon-tokyo-workspace {
   border-radius: 50%;
   background: var(--md-sys-color-primary);
   font-size: 13px;
-}
-.outfit-item {
-  position: relative;
 }
 .outfit-item img {
   width: 100%;
@@ -482,12 +473,6 @@ anon-tokyo-workspace {
   }
   .outfit-stage__runtime {
     inset: 12px 5% 60px;
-  }
-  .outfit-stage__label {
-    right: 8px;
-    bottom: 8px;
-    left: 8px;
-    padding: 8px 12px;
   }
   .outfit-closet {
     padding: 4px 8px max(12px, env(safe-area-inset-bottom));

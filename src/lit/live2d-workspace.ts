@@ -1,6 +1,11 @@
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
 import { renderGridIdentity } from "./shared/grid-identity";
+import { filterGroup, renderBrowse } from "./ui/browse";
+import { filterChip, segmented } from "./ui/controls";
+import { EXPANDED, matches, watchMedia } from "./ui/media";
+import { PaneFocus } from "./ui/pane";
+import { errorState, loadingState } from "./ui/state";
 
 type Value = Record<string, unknown>;
 type Parameter = { id: string; value: number; minimum: number; maximum: number; defaultValue: number };
@@ -56,6 +61,7 @@ export class Live2DWorkspace extends LitElement {
     offsetY: { state: true },
     lookX: { state: true },
     lookY: { state: true },
+    docked: { state: true },
   };
   declare locale: string;
   declare phase: "loading" | "ready" | "error";
@@ -73,6 +79,7 @@ export class Live2DWorkspace extends LitElement {
   declare sort: "id" | "title" | "type" | "character" | "band";
   declare order: "asc" | "desc";
   declare filtersOpen: boolean;
+  declare docked: boolean;
   declare bandFilter: number;
   declare characterFilter: number;
   declare typeFilter: string;
@@ -109,6 +116,7 @@ export class Live2DWorkspace extends LitElement {
     this.sort = "id";
     this.order = "asc";
     this.filtersOpen = false;
+    this.docked = matches(EXPANDED);
     this.bandFilter = 0;
     this.characterFilter = 0;
     this.typeFilter = "";
@@ -127,6 +135,7 @@ export class Live2DWorkspace extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.locale = preferredLocale(this.locale);
+    this.disposeMedia = watchMedia(EXPANDED, (value) => (this.docked = value));
     void Promise.all([
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
@@ -151,11 +160,15 @@ export class Live2DWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.disposeMedia?.();
+    this.paneFocus.detach();
     this.generation += 1;
     this.resizeObserver?.disconnect();
     this.viewer?.destroy();
     super.disconnectedCallback();
   }
+  private disposeMedia?: () => void;
+  private paneFocus = new PaneFocus();
   private text(value: unknown): string {
     return localizedText(value, this.locale);
   }
@@ -433,6 +446,10 @@ export class Live2DWorkspace extends LitElement {
         return direction * result;
       });
   }
+  updated() {
+    // The model viewer is a modal pane: focus belongs inside it.
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+  }
   private closeDetail() {
     this.generation += 1;
     this.viewer?.destroy();
@@ -467,73 +484,69 @@ export class Live2DWorkspace extends LitElement {
       this.sync();
     };
     return html`
-      <section class="catalog model-catalog">
-        <div class="catalog__toolbar">
-          <span class="catalog__count">${models.length}</span>
-          <div class="catalog__view">
-            <button
-              aria-label=${uiText(this.locale, "grid")}
-              aria-pressed=${this.view === "grid"}
-              @click=${() => setView("grid")}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#grid_view${this.view === "grid" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-            <button
-              aria-label=${uiText(this.locale, "list")}
-              aria-pressed=${this.view === "list"}
-              @click=${() => setView("list")}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#view_list${this.view === "list" ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-          </div>
-          <button
-            class="icon-button catalog__filter-toggle"
-            @click=${() => (this.filtersOpen = !this.filtersOpen)}
-            aria-label=${uiText(this.locale, "filter")}
-          >
-            <svg class="material-icon" width="24" height="24">
-              <use href=${`/icons.svg#filter_alt${this.filtersOpen ? "-filled" : ""}`}></use>
-            </svg>
-          </button>
-        </div>
-        <aside
-          class=${`catalog__filters ${this.filtersOpen ? "open" : ""}`}
-          aria-hidden=${String(!this.filtersOpen)}
-          ?inert=${!this.filtersOpen}
-        >
-          <div class="catalog__filter-header">
-            <h2>${uiText(this.locale, "filter")}</h2>
-            <button
-              class="button button--text"
-              @click=${() => {
-                this.query = "";
-                this.bandFilter = 0;
-                this.characterFilter = 0;
-                this.typeFilter = "";
-                this.sync();
-              }}
-            >
-              ${uiText(this.locale, "reset")}
-            </button>
-          </div>
-          <div class="catalog__filter-stack">
-            <md-outlined-text-field
-              type="search"
-              label=${uiText(this.locale, "search")}
-              .value=${this.query}
-              @input=${(event: Event) => {
-                this.query = String((event.target as HTMLElement & { value?: string }).value || "");
-                this.sync();
-              }}
-            >
-              <svg slot="leading-icon" class="material-icon" width="20" height="20">
-                <use href="/icons.svg#search"></use>
-              </svg>
-            </md-outlined-text-field>
+      ${renderBrowse({
+        kind: "model",
+        docked: this.docked,
+        count: { value: models.length, label: "" },
+        controls: segmented({
+          label: uiText(this.locale, "view"),
+          value: this.view,
+          options: [
+            { value: "grid" as const, label: uiText(this.locale, "grid"), icon: "grid_view" },
+            { value: "list" as const, label: uiText(this.locale, "list"), icon: "view_list" },
+          ],
+          onSelect: setView,
+          iconOnly: true,
+        }),
+        results:
+          this.phase === "loading"
+            ? loadingState(uiText(this.locale, "loading"))
+            : this.phase === "error"
+              ? errorState(
+                  uiText(this.locale, "unavailable"),
+                  uiText(this.locale, "retry"),
+                  () => void this.loadCatalog(),
+                  this.error,
+                )
+              : this.view === "grid"
+                ? this.renderModelGrid(models)
+                : this.renderModelList(models),
+        filters: {
+          label: uiText(this.locale, "filter"),
+          open: this.filtersOpen,
+          count:
+            Number(Boolean(this.query)) +
+            Number(Boolean(this.bandFilter)) +
+            Number(Boolean(this.characterFilter)) +
+            Number(Boolean(this.typeFilter)),
+          closeLabel: uiText(this.locale, "close"),
+          resetLabel: uiText(this.locale, "reset"),
+          onOpen: () => (this.filtersOpen = true),
+          onClose: () => (this.filtersOpen = false),
+          onReset: () => {
+            this.query = "";
+            this.bandFilter = 0;
+            this.characterFilter = 0;
+            this.typeFilter = "";
+            this.sync();
+          },
+          body: html`
+            <div class="field-stack">
+              <md-outlined-text-field
+                class="is-search"
+                type="search"
+                label=${uiText(this.locale, "search")}
+                .value=${this.query}
+                @input=${(event: Event) => {
+                  this.query = String((event.target as HTMLElement & { value?: string }).value || "");
+                  this.sync();
+                }}
+              >
+                <svg slot="leading-icon" class="material-icon" width="20" height="20" aria-hidden="true">
+                  <use href="/icons.svg#search"></use>
+                </svg>
+              </md-outlined-text-field>
+            </div>
             ${this.renderModelFacets(
               uiText(this.locale, "band"),
               this.bands,
@@ -552,76 +565,59 @@ export class Live2DWorkspace extends LitElement {
               (item) => String(item.faceImage || ""),
               (value) => (this.characterFilter = Number(value)),
             )}
-            <fieldset class="catalog__filter-group">
-              <legend>${uiText(this.locale, "type")}</legend>
-              <div class="catalog__chips">
-                ${types.map(
-                  (type) => html`
-                    <button
-                      class="chip"
-                      aria-pressed=${this.typeFilter === type}
-                      @click=${() => {
+            ${filterGroup(
+              uiText(this.locale, "type"),
+              html`
+                <div class="chip-set" role="group" aria-label=${uiText(this.locale, "type")}>
+                  ${types.map((type) =>
+                    filterChip({
+                      label: this.modelType({ modelType: type }),
+                      selected: this.typeFilter === type,
+                      onToggle: () => {
                         this.typeFilter = this.typeFilter === type ? "" : type;
                         this.sync();
-                      }}
-                    >
-                      ${this.modelType({ modelType: type })}
-                    </button>
-                  `,
-                )}
-              </div>
-            </fieldset>
-            <md-outlined-select
-              label=${uiText(this.locale, "sort")}
-              value=${this.sort}
-              @change=${(event: Event) => {
-                this.sort = String(
-                  (event.target as HTMLElement & { value?: string }).value || "id",
-                ) as typeof this.sort;
-                this.sync();
-              }}
-            >
-              ${(
-                [
-                  ["id", uiText(this.locale, "order")],
-                  ["title", uiText(this.locale, "title")],
-                  ["type", uiText(this.locale, "type")],
-                  ["character", uiText(this.locale, "character")],
-                  ["band", uiText(this.locale, "band")],
-                ] as const
-              ).map(
-                ([value, label]) => html`
-                  <md-select-option value=${value} ?selected=${this.sort === value}>
-                    <div slot="headline">${label}</div>
-                  </md-select-option>
-                `,
-              )}
-            </md-outlined-select>
-          </div>
-        </aside>
-        <div class="catalog__content">
-          ${
-            this.phase === "loading"
-              ? html`
-                  <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
-                `
-              : this.phase === "error"
-                ? html`
-                    <div class="catalog-state">${this.error}</div>
-                  `
-                : this.view === "grid"
-                  ? this.renderModelGrid(models)
-                  : this.renderModelList(models)
-          }
-        </div>
-        ${
-          this.filtersOpen
-            ? html`
-                <button class="sheet-scrim" @click=${() => (this.filtersOpen = false)}></button>
-              `
-            : nothing
-        }
-      </section>
+                      },
+                    }),
+                  )}
+                </div>
+              `,
+            )}
+            ${filterGroup(
+              uiText(this.locale, "sort"),
+              html`
+                <div class="field-stack">
+                  <md-outlined-select
+                    label=${uiText(this.locale, "sort")}
+                    value=${this.sort}
+                    @change=${(event: Event) => {
+                      this.sort = String(
+                        (event.target as HTMLElement & { value?: string }).value || "id",
+                      ) as typeof this.sort;
+                      this.sync();
+                    }}
+                  >
+                    ${(
+                      [
+                        ["id", uiText(this.locale, "order")],
+                        ["title", uiText(this.locale, "title")],
+                        ["type", uiText(this.locale, "type")],
+                        ["character", uiText(this.locale, "character")],
+                        ["band", uiText(this.locale, "band")],
+                      ] as const
+                    ).map(
+                      ([value, label]) => html`
+                        <md-select-option value=${value} ?selected=${this.sort === value}>
+                          <div slot="headline">${label}</div>
+                        </md-select-option>
+                      `,
+                    )}
+                  </md-outlined-select>
+                </div>
+              `,
+            )}
+          `,
+        },
+      })}
     `;
   }
   private renderModelFacets(
@@ -634,28 +630,19 @@ export class Live2DWorkspace extends LitElement {
     update: (value: number) => void,
   ) {
     return html`
-      <fieldset class="catalog__filter-group">
+      <fieldset class="browse__filter-group">
         <legend>${label}</legend>
-        <div class="catalog__chips">
-          ${items.map(
-            (item) => html`
-              <button
-                class="chip"
-                aria-pressed=${selected === id(item)}
-                @click=${() => {
-                  update(selected === id(item) ? 0 : id(item));
-                  this.sync();
-                }}
-              >
-                ${
-                  image(item)
-                    ? html`
-                        <img src=${image(item)} alt="" />
-                      `
-                    : nothing
-                }${title(item)}
-              </button>
-            `,
+        <div class="chip-set">
+          ${items.map((item) =>
+            filterChip({
+              label: title(item),
+              image: image(item),
+              selected: selected === id(item),
+              onToggle: () => {
+                update(selected === id(item) ? 0 : id(item));
+                this.sync();
+              },
+            }),
           )}
         </div>
       </fieldset>
@@ -667,7 +654,11 @@ export class Live2DWorkspace extends LitElement {
         ${models.map((model) => {
           const character = this.character(Number(model.characterId || 0));
           return html`
-            <button class="model-card content-grid-tile" @click=${() => this.select(this.key(model))}>
+            <button
+              class="model-card tile tile--interactive"
+              type="button"
+              @click=${() => this.select(this.key(model))}
+            >
               <span class=${`model-card__media ${this.preview(model) ? "media-loading" : ""}`}>
                 ${
                   this.preview(model)
@@ -703,14 +694,15 @@ export class Live2DWorkspace extends LitElement {
   }
   private renderModelList(models: Value[]) {
     return html`
-      <div class="model-list">
-        <header>
-          <span>${uiText(this.locale, "model")}</span>
-          <span>${uiText(this.locale, "type")}</span>
-          <span>${uiText(this.locale, "character")}</span>
-          <span>${uiText(this.locale, "band")}</span>
-        </header>
-        ${models.map((model) => {
+      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
+        <div class="model-list">
+          <header>
+            <span>${uiText(this.locale, "model")}</span>
+            <span>${uiText(this.locale, "type")}</span>
+            <span>${uiText(this.locale, "character")}</span>
+            <span>${uiText(this.locale, "band")}</span>
+          </header>
+          ${models.map((model) => {
           const character = this.character(Number(model.characterId || 0));
           return html`
             <button class="model-list__row" @click=${() => this.select(this.key(model))}>
@@ -738,6 +730,7 @@ export class Live2DWorkspace extends LitElement {
             </button>
           `;
         })}
+        </div>
       </div>
     `;
   }
@@ -750,7 +743,14 @@ export class Live2DWorkspace extends LitElement {
     const models = this.filteredModels();
     const modelIndex = models.findIndex((model) => this.key(model) === this.selected);
     return html`
-      <aside class="viewer-detail">
+      <aside
+        class="viewer-detail pane-layer"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${uiText(this.locale, "model")}
+        tabindex="-1"
+        data-overlay-pane
+      >
         <header>
           <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "close")}>
             <svg class="material-icon" width="24" height="24"><use href="/icons.svg#arrow_back"></use></svg>
@@ -840,7 +840,7 @@ export class Live2DWorkspace extends LitElement {
           </div>
           <aside class="viewer-detail__info">
             <h2>${this.text(detail?.characterName) || this.text(character?.characterName) || "Live2D"}</h2>
-            <dl class="detail-list">
+            <dl class="spec-list">
               <div>
                 <dt>${uiText(this.locale, "motion")}</dt>
                 <dd>${motions.length}</dd>

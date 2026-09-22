@@ -48,7 +48,7 @@ export function renderBestdoriDetail(
     const images = card.cardImages as Value | undefined;
     const episodes = Array.isArray(card.episodes) ? (card.episodes as Value[]) : [];
     return html`
-      <aside class="bestdori-detail">
+      <aside class="bestdori-detail pane-layer" role="dialog" aria-modal="true" tabindex="-1" data-overlay-pane>
         <header>
           <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeCard}>
             ${icon("arrow_back")}
@@ -117,7 +117,7 @@ export function renderBestdoriDetail(
       `;
     };
     return html`
-      <aside class="bestdori-detail">
+      <aside class="bestdori-detail pane-layer" role="dialog" aria-modal="true" tabindex="-1" data-overlay-pane>
         <header>
           <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
             ${icon("arrow_back")}
@@ -180,7 +180,13 @@ export function renderBestdoriDetail(
   const lines = storyLines(detail, locale);
   const title = localizedText(detail.title || detail.chapterName, locale) || String(detail.storyId || "Story");
   return html`
-    <aside class="bestdori-detail bestdori-story-detail">
+    <aside
+      class="bestdori-detail bestdori-story-detail pane-layer"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      data-overlay-pane
+    >
       <header>
         <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
           ${icon("arrow_back")}

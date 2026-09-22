@@ -8,7 +8,16 @@ import {
   readPath,
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
-import { renderGridIdentity, type GridIdentityAdornment } from "./shared/grid-identity";
+import { type GridIdentityAdornment } from "./shared/grid-identity";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
+import { renderBrowse, filterGroup } from "./ui/browse";
+import { filterChip, iconButton, inputChip, rovingKeydown, segmented } from "./ui/controls";
+import { icon } from "./ui/icon";
+import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
+import { PaneFocus, renderPane } from "./ui/pane";
+import { emptyState, errorState, loadingState } from "./ui/state";
+import { tile } from "./ui/tile";
 
 type Item = Record<string, unknown>;
 type Presentation = "member" | "support" | "character" | "comic" | "stamp" | "song" | "band" | "band-item" | "item";
@@ -186,6 +195,9 @@ export class CatalogScreen extends LitElement {
     detailVideoPlaying: { state: true },
     characterSection: { state: true },
     chartMode: { state: true },
+    docked: { state: true },
+    compact: { state: true },
+    density: { state: true },
   };
   declare config: string;
   declare phase: "loading" | "ready" | "error";
@@ -213,6 +225,14 @@ export class CatalogScreen extends LitElement {
   declare detailVideoPlaying: boolean;
   declare characterSection: string;
   declare chartMode: "simple" | "watch";
+  /** Expanded window: the filter panel is docked instead of modal. */
+  declare docked: boolean;
+  /** Compact window: detail opens as a full-screen dialog. */
+  declare compact: boolean;
+  declare density: Density;
+  private paneFocus = new PaneFocus();
+  private filterFocus = new PaneFocus();
+  private disposeMedia: Array<() => void> = [];
   private settings: Config = { resource: "", locale: "ja", labels: {} };
   private profile = fallbackProfile;
   private characters: Item[] = [];
@@ -279,6 +299,9 @@ export class CatalogScreen extends LitElement {
     this.detailVideoPlaying = false;
     this.characterSection = "profile";
     this.chartMode = "simple";
+    this.docked = matches(EXPANDED);
+    this.compact = matches(COMPACT);
+    this.density = "comfortable";
   }
   createRenderRoot() {
     return this;
@@ -292,7 +315,12 @@ export class CatalogScreen extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
       import("@material/web/progress/circular-progress.js"),
     ]);
-    document.querySelector(".top-app-bar")?.classList.add("has-catalog-actions");
+    this.density = currentDensity();
+    this.disposeMedia = [
+      watchMedia(EXPANDED, (value) => (this.docked = value)),
+      watchMedia(COMPACT, (value) => (this.compact = value)),
+    ];
+    window.addEventListener(DENSITY_EVENT, this.onDensity);
     window.addEventListener("keydown", this.onKeydown);
     window.addEventListener("haneoka-audio-state", this.onAudioState);
     window.setTimeout(() => {
@@ -332,13 +360,29 @@ export class CatalogScreen extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
-    document.querySelector(".top-app-bar")?.classList.remove("has-catalog-actions");
+    clearAppBarActions("catalog");
+    this.paneFocus.detach();
+    this.filterFocus.detach();
+    this.disposeMedia.forEach((dispose) => dispose());
+    this.disposeMedia = [];
     this.imageObserver?.disconnect();
+    window.removeEventListener(DENSITY_EVENT, this.onDensity);
     window.removeEventListener("keydown", this.onKeydown);
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
     super.disconnectedCallback();
   }
+  private onDensity = () => (this.density = currentDensity());
   updated() {
+    // Focus containment follows whichever overlay is on top: the detail pane
+    // wins over the filter panel, and a docked filter panel is not an overlay
+    // at all, so it is never trapped.
+    this.paneFocus.sync(this.selected ? this.querySelector<HTMLElement>("[data-detail-pane]") : null, () =>
+      this.close(),
+    );
+    this.filterFocus.sync(
+      !this.selected && this.filtersOpen && !this.docked ? this.querySelector<HTMLElement>(".browse__filters") : null,
+      () => (this.filtersOpen = false),
+    );
     const images = this.querySelectorAll<HTMLImageElement>("img[data-src]");
     if (!("IntersectionObserver" in window)) {
       images.forEach((image) => this.loadImage(image));
@@ -544,8 +588,38 @@ export class CatalogScreen extends LitElement {
     }
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
   }
+  /**
+   * The rows this screen is showing, and the population they came from.
+   *
+   * Memoised on every input that affects it. Before this, each render ran the
+   * full pipeline — and the text filter JSON.stringifies every record, so on
+   * the 6,000-row card catalogue a single keystroke serialised the entire
+   * collection several times over (render, then the app-bar sync, then the
+   * play-all handler). The search field was the slowest thing on the site.
+   */
+  private resultCache?: { key: string; items: Item[]; source: number };
+  private results() {
+    const key = [
+      this.items.length,
+      this.query,
+      this.sort,
+      this.order,
+      this.activeBand,
+      this.settings.locale,
+      JSON.stringify(this.facets),
+    ].join("\u0000");
+    if (this.resultCache?.key === key && this.resultCache.items.length <= this.items.length) return this.resultCache;
+    const value = this.computeResults();
+    this.resultCache = { key, ...value };
+    return this.resultCache;
+  }
   private filtered() {
+    return this.results().items;
+  }
+  private computeResults() {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
+    // Rosters browse one band at a time, so that band is the population the
+    // result count is measured against — not the whole catalogue.
     const source =
       ["band-item", "character"].includes(this.profile.presentation) && this.activeBand
         ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
@@ -559,7 +633,7 @@ export class CatalogScreen extends LitElement {
         )
       : [...faceted];
     const direction = this.order === "asc" ? 1 : -1;
-    return items.sort((a, b) => {
+    items.sort((a, b) => {
       const left = this.sortValue(a);
       const right = this.sortValue(b);
       const leftNumber = Array.isArray(left) ? Number(left[0]) : Number(left);
@@ -574,6 +648,7 @@ export class CatalogScreen extends LitElement {
       const tie = this.itemId(a).localeCompare(this.itemId(b), "en", { numeric: true, sensitivity: "base" });
       return (comparison || tie) * direction;
     });
+    return { items, source: source.length };
   }
   private releaseTimestamp(item: Item) {
     const value = item.releasedAt ?? item.publishedAt ?? item.publicStartAt ?? item.startAt;
@@ -700,58 +775,82 @@ export class CatalogScreen extends LitElement {
       return false;
     return true;
   }
+  private facetCache?: { items: Item[]; locale: string; groups: ReturnType<CatalogScreen["computeFacetGroups"]> };
   private facetGroups() {
+    if (this.facetCache?.items === this.items && this.facetCache.locale === this.settings.locale)
+      return this.facetCache.groups;
+    const groups = this.computeFacetGroups();
+    this.facetCache = { items: this.items, locale: this.settings.locale, groups };
+    return groups;
+  }
+  private computeFacetGroups() {
     const kind = this.profile.presentation;
     const groups: Array<{
       key: string;
       label: string;
-      options: Array<{ value: string; label: string; image?: string }>;
+      options: Array<{ value: string; label: string; image?: string; count?: number }>;
     }> = [];
+    /** How many entries each facet value would leave. Shown on every chip. */
+    const tally = (values: (item: Item) => unknown[]) => {
+      const counts = new Map<string, number>();
+      for (const item of this.items)
+        for (const value of new Set(values(item).map(String))) counts.set(value, (counts.get(value) || 0) + 1);
+      return counts;
+    };
     if (["member", "support", "comic", "stamp", "song"].includes(kind)) {
-      const ids = [...new Set(this.items.flatMap((item) => this.itemBandIds(item)))].sort((a, b) => a - b);
+      const counts = tally((item) => this.itemBandIds(item));
       groups.push({
         key: "collectionBand",
         label: this.label("band", "Band"),
-        options: ids.map((id) => ({
-          value: String(id),
-          label: this.bandName(id),
-          image: String(this.band(id)?.icon || ""),
-        })),
+        options: [...counts.keys()]
+          .map(Number)
+          .sort((a, b) => a - b)
+          .map((id) => ({
+            value: String(id),
+            label: this.bandName(id),
+            image: String(this.band(id)?.icon || ""),
+            count: counts.get(String(id)),
+          })),
       });
     }
     if (["member", "support", "comic", "stamp"].includes(kind)) {
-      const ids = [...new Set(this.items.flatMap((item) => this.itemCharacterIds(item)))].sort((a, b) => a - b);
+      const counts = tally((item) => this.itemCharacterIds(item));
       groups.push({
         key: "character",
         label: this.label("character", "Character"),
-        options: ids.map((id) => ({
-          value: String(id),
-          label: this.characterName(id),
-          image: String(this.character(id)?.faceImage || ""),
-        })),
+        options: [...counts.keys()]
+          .map(Number)
+          .sort((a, b) => a - b)
+          .map((id) => ({
+            value: String(id),
+            label: this.characterName(id),
+            image: String(this.character(id)?.faceImage || ""),
+            count: counts.get(String(id)),
+          })),
       });
     }
-    if (["member", "support"].includes(kind))
+    if (["member", "support"].includes(kind)) {
+      const counts = tally((item) => (item.rarity ? [item.rarity] : []));
       groups.push({
         key: "rarity",
         label: this.label("rarity", "Rarity"),
-        options: [...new Set(this.items.map((item) => String(item.rarity || "")).filter(Boolean))].map((value) => ({
+        options: [...counts.keys()].sort().map((value) => ({
           value,
           label: this.fieldValue({ rarity: value }, "rarity"),
           image: this.rarityMark(value),
+          count: counts.get(value),
         })),
       });
-    if (["member", "support", "song", "item"].includes(kind))
+    }
+    if (["member", "support", "song", "item"].includes(kind)) {
+      const counts = tally((item) => {
+        const value = String(item.cardType ?? item.musicType ?? item.itemTypeName ?? "");
+        return value ? [value] : [];
+      });
       groups.push({
         key: "type",
         label: this.label("type", "Type"),
-        options: [
-          ...new Set(
-            this.items
-              .map((item) => String(item.cardType ?? item.musicType ?? item.itemTypeName ?? ""))
-              .filter(Boolean),
-          ),
-        ].map((value) => ({
+        options: [...counts.keys()].map((value) => ({
           value,
           label:
             kind === "item"
@@ -761,24 +860,25 @@ export class CatalogScreen extends LitElement {
                   kind === "song" ? "musicType" : "cardType",
                 ),
           image: kind === "item" ? "" : this.attributeMark(value, kind === "song"),
+          count: counts.get(value),
         })),
       });
-    if (kind === "song")
+    }
+    if (kind === "song") {
+      const counts = tally((item) => (Array.isArray(item.musicCategories) ? item.musicCategories : []));
       groups.push({
         key: "category",
         label: this.label("genre", "Genre"),
-        options: [
-          ...new Set(
-            this.items.flatMap((item) => (Array.isArray(item.musicCategories) ? item.musicCategories : [])).map(String),
-          ),
-        ]
+        options: [...counts.keys()]
           .filter(Boolean)
           .sort((a, b) => Number(a) - Number(b))
           .map((value) => ({
             value,
             label: this.fieldValue({ musicCategories: [Number(value)] }, "musicCategories"),
+            count: counts.get(value),
           })),
       });
+    }
     return groups.filter((group) => group.options.length > 1);
   }
   private toggleFacet(key: string, value: string) {
@@ -912,7 +1012,7 @@ export class CatalogScreen extends LitElement {
   private characterAvatars(ids: number[]) {
     const visible = [...new Set(ids)].slice(0, 5);
     return html`
-      <span class="catalog-identities">
+      <span class="avatar-stack">
         ${visible.map((id) => {
           const character = this.character(id);
           const source = String(character?.faceImage || character?.thumbnailImage || "");
@@ -933,9 +1033,7 @@ export class CatalogScreen extends LitElement {
     if (kind === "band-item") return this.bandName(Number(item.bandId || 0));
     if (kind === "song")
       return (
-        this.localized(item.bandName) ||
-        this.localized(item.artistName) ||
-        this.bandName(Number(item.bandId || 0))
+        this.localized(item.bandName) || this.localized(item.artistName) || this.bandName(Number(item.bandId || 0))
       );
     if (kind === "comic")
       return this.formatList(
@@ -1156,191 +1254,212 @@ export class CatalogScreen extends LitElement {
   }
 
   render() {
-    const items = this.filtered();
+    const { items, source } = this.results();
     const kind = this.profile.presentation;
-    const activeFilterCount =
-      Object.values(this.facets).reduce((sum, values) => sum + values.length, 0) +
-      Number(Boolean(this.query)) +
-      Number(this.sort !== this.profile.defaultSort || this.order !== this.profile.defaultOrder);
+    const appliedCount = Object.values(this.facets).reduce((sum, values) => sum + values.length, 0);
+    const shown = this.phase === "ready" ? items.length : null;
+    this.syncAppBar(items);
     return html`
-      <section class=${`catalog catalog--${kind}`} style=${`--catalog-ratio:${this.settings.aspectRatio || "1"}`}>
-        <aside
-          class=${`catalog__filters ${this.filtersOpen ? "open" : ""}`}
-          aria-label=${this.label("filter", "Filter")}
-          aria-hidden=${String(!this.filtersOpen)}
-          ?inert=${!this.filtersOpen}
-        >
-          <div class="catalog__filter-header">
-            <h2>${this.label("filter", "Filter")}</h2>
-            <span>
-              ${
-                activeFilterCount
-                  ? html`
-                      <button class="button button--text" @click=${() => this.reset()}>
-                        ${this.label("reset", "Reset")}
-                      </button>
-                    `
-                  : nothing
-              }
-              <button
-                class="icon-button"
-                @click=${() => (this.filtersOpen = false)}
-                aria-label=${this.label("close", "Close")}
-              >
-                <svg class="material-icon" width="20" height="20"><use href="/icons.svg#close"></use></svg>
-              </button>
-            </span>
-          </div>
-          <div class="catalog__filter-stack">
-            <md-outlined-text-field
-              type="search"
-              label=${this.label("search", "Search")}
-              .value=${this.query}
-              @input=${(event: Event) => {
-                this.query = String((event.target as HTMLElement & { value?: string }).value || "");
-                this.syncUrl();
-              }}
-            >
-              <svg slot="leading-icon" class="material-icon" width="20" height="20">
-                <use href="/icons.svg#search"></use>
-              </svg>
-            </md-outlined-text-field>
-            ${this.facetGroups().map(
-              (group) => html`
-                <fieldset class="catalog__filter-group">
-                  <legend>${group.label}</legend>
-                  <div class="catalog__chips catalog__chips--facets">
-                    ${group.options.map(
-                      (option) => html`
-                        <button
-                          class=${`chip ${group.key === "type" && kind === "item" ? "" : "chip--visual"}`}
-                          aria-pressed=${(this.facets[group.key] || []).includes(option.value)}
-                          @click=${() => this.toggleFacet(group.key, option.value)}
-                        >
-                          ${
-                            option.image
-                              ? html`
-                                  <img src=${option.image} alt="" />
-                                `
-                              : nothing
-                          }
-                          <span class=${option.image ? "chip__label chip__label--visual" : "chip__label"}>
-                            ${option.label}
-                          </span>
-                        </button>
-                      `,
-                    )}
-                  </div>
-                </fieldset>
-              `,
-            )}
-            <div class="catalog__filter-group">
-              <span>${this.label("sort", "Sort")}</span>
-              <div class="catalog__sort-row">
-                <md-outlined-select
-                  label=${this.label("sort", "Sort")}
-                  value=${this.sort}
-                  @change=${(event: Event) => {
-                    this.sort = String(
-                      (event.target as HTMLElement & { value?: string }).value || this.profile.defaultSort,
-                    );
-                    this.ensureSongMeta();
-                    this.syncUrl();
-                  }}
-                >
-                  ${this.sortOptions().map(
-                    (option) => html`
-                      <md-select-option value=${option.value} ?selected=${this.sort === option.value}>
-                        <div slot="headline">${option.label}</div>
-                      </md-select-option>
-                    `,
-                  )}
-                </md-outlined-select>
-                <button
-                  class="icon-button"
-                  @click=${() => {
-                    this.order = this.order === "asc" ? "desc" : "asc";
-                    this.syncUrl();
-                  }}
-                  aria-label=${this.label(this.order === "asc" ? "ascending" : "descending", this.order)}
-                >
-                  <svg class="material-icon" width="20" height="20">
-                    <use href=${`/icons.svg#${this.order === "asc" ? "arrow_upward" : "arrow_downward"}`}></use>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-        <div class="catalog__main">
-          <div class="catalog__toolbar">
-            <span class="catalog__count">${this.phase === "ready" ? items.length : "—"}</span>
-            ${
-              kind === "song"
-                ? html`
-                    <button
-                      class="icon-button"
-                      ?disabled=${!items.some((item) => item.musicUrl)}
-                      @click=${() => {
-                        const first = items.find((item) => item.musicUrl);
-                        if (first) void this.toggleSong(this.itemId(first), String(first.musicUrl));
-                      }}
-                      aria-label=${this.label("playAll", "Play all")}
-                    >
-                      <svg class="material-icon" width="20" height="20">
-                        <use href="/icons.svg#playlist_play"></use>
-                      </svg>
-                    </button>
-                  `
-                : nothing
-            }
-            <div class="catalog__view" aria-label=${this.label("view", "View")}>
-              ${(["grid", "list"] as const).map(
-                (view) => html`
-                  <button
-                    aria-pressed=${this.view === view}
-                    @click=${() => {
-                      this.view = view;
-                      this.ensureSongMeta();
-                      this.syncUrl();
-                    }}
-                    aria-label=${this.label(view, view)}
-                  >
-                    <svg class="material-icon" width="20" height="20">
-                      <use
-                        href=${`/icons.svg#${view === "grid" ? "grid_view" : "view_list"}${this.view === view ? "-filled" : ""}`}
-                      ></use>
-                    </svg>
-                  </button>
-                `,
-              )}
-            </div>
-            <button
-              class="icon-button catalog__filter-toggle"
-              @click=${() => (this.filtersOpen = !this.filtersOpen)}
-              aria-label=${this.label("filter", "Filter")}
-            >
-              <svg class="material-icon" width="24" height="24">
-                <use href=${`/icons.svg#filter_alt${this.filtersOpen ? "-filled" : ""}`}></use>
-              </svg>
-            </button>
-          </div>
-          <div class="catalog__content">${this.renderContent(items)}</div>
-        </div>
-      </section>
+      ${renderBrowse({
+        kind,
+        docked: this.docked,
+        style: `--tile-ratio:${this.settings.aspectRatio || "1"}`,
+        // Showing "shown / total" is the cheapest way to make a filtered
+        // collection legible: the number alone never said what was hidden.
+        count: {
+          value: shown,
+          label: shown !== null && shown !== source ? `/ ${source.toLocaleString()}` : "",
+        },
+        controls: this.renderBarControls(),
+        applied: appliedCount || this.query ? this.renderApplied() : undefined,
+        results: this.renderContent(items),
+        filters: {
+          label: this.label("filter", "Filter"),
+          open: this.filtersOpen,
+          count: appliedCount + Number(Boolean(this.query)),
+          closeLabel: this.label("close", "Close"),
+          resetLabel: this.label("reset", "Reset"),
+          onOpen: () => (this.filtersOpen = true),
+          onClose: () => (this.filtersOpen = false),
+          onReset: () => this.reset(),
+          body: this.renderFilters(),
+        },
+      })}
+      ${this.selected ? this.renderDetail(this.selected) : nothing}
+    `;
+  }
+
+  /**
+   * Page-level actions belong in the top app bar's trailing slot, which the
+   * shell owns. Nothing here is positioned over the shell by hand.
+   */
+  private syncAppBar(items: Item[]) {
+    if (this.profile.presentation !== "song") {
+      clearAppBarActions("catalog");
+      return;
+    }
+    const first = items.find((item) => item.musicUrl);
+    setAppBarActions(
+      "catalog",
+      iconButton({
+        label: this.label("playAll", "Play all"),
+        icon: "playlist_play",
+        disabled: !first,
+        onClick: () => {
+          if (first) void this.toggleSong(this.itemId(first), String(first.musicUrl));
+        },
+      }),
+    );
+  }
+
+  private renderBarControls() {
+    return html`
+      ${segmented({
+        label: this.label("view", "View"),
+        value: this.view,
+        options: [
+          { value: "grid" as const, label: this.label("grid", "Grid"), icon: "grid_view" },
+          { value: "list" as const, label: this.label("list", "List"), icon: "view_list" },
+        ],
+        onSelect: (view) => {
+          this.view = view;
+          this.ensureSongMeta();
+          this.syncUrl();
+        },
+        iconOnly: true,
+      })}
+    `;
+  }
+
+  /**
+   * Applied filters, as removable chips. The old screen computed this count
+   * and used it only to decide whether to show a Reset button: the reader
+   * could not see what was filtering the collection without opening the
+   * panel and reading the controls.
+   */
+  private renderApplied() {
+    const remove = this.label("remove", "Remove");
+    const chips = this.facetGroups().flatMap((group) =>
+      (this.facets[group.key] || []).flatMap((value) => {
+        const option = group.options.find((entry) => entry.value === value);
+        return option
+          ? [inputChip(`${group.label}: ${option.label}`, remove, () => this.toggleFacet(group.key, value))]
+          : [];
+      }),
+    );
+    const hasAny = chips.length > 0 || Boolean(this.query);
+    return html`
       ${
-        this.filtersOpen
+        this.query
+          ? inputChip(`${this.label("search", "Search")}: ${this.query}`, remove, () => {
+              this.query = "";
+              this.syncUrl();
+            })
+          : nothing
+      }
+      ${chips}
+      ${
+        hasAny
           ? html`
-              <button
-                class="sheet-scrim"
-                @click=${() => (this.filtersOpen = false)}
-                aria-label=${this.label("close", "Close")}
-              ></button>
+              <button class="button button--text" type="button" @click=${() => this.reset()}>
+                ${this.label("reset", "Reset")}
+              </button>
             `
           : nothing
       }
-      ${this.selected ? this.renderDetail(this.selected) : nothing}
     `;
+  }
+
+  private renderFilters() {
+    return html`
+      <div class="field-stack">
+        <md-outlined-text-field
+          class="is-search"
+          type="search"
+          label=${this.label("search", "Search")}
+          .value=${this.query}
+          @input=${(event: Event) => {
+            this.query = String((event.target as HTMLElement & { value?: string }).value || "");
+            this.syncUrl();
+          }}
+        >
+          <svg slot="leading-icon" class="material-icon" width="20" height="20" aria-hidden="true">
+            <use href="/icons.svg#search"></use>
+          </svg>
+        </md-outlined-text-field>
+      </div>
+      ${this.facetGroups().map((group) => {
+        const selected = this.facets[group.key] || [];
+        return filterGroup(
+          group.label,
+          html`
+            <div class="chip-set" role="group" aria-label=${group.label}>
+              ${group.options.map((option) =>
+                filterChip({
+                  label: option.label,
+                  image: option.image,
+                  count: option.count,
+                  selected: selected.includes(option.value),
+                  onToggle: () => this.toggleFacet(group.key, option.value),
+                }),
+              )}
+            </div>
+          `,
+          selected.length
+            ? html`
+                <span class="detail-section-title__count">${selected.length}</span>
+              `
+            : undefined,
+        );
+      })}
+      ${filterGroup(
+        this.label("sort", "Sort"),
+        html`
+          <div class="row">
+            <md-outlined-select
+              class="grow"
+              label=${this.label("sort", "Sort")}
+              value=${this.sort}
+              @change=${(event: Event) => {
+                this.sort = String(
+                  (event.target as HTMLElement & { value?: string }).value || this.profile.defaultSort,
+                );
+                this.ensureSongMeta();
+                this.syncUrl();
+              }}
+            >
+              ${this.sortOptions().map(
+                (option) => html`
+                  <md-select-option value=${option.value} ?selected=${this.sort === option.value}>
+                    <div slot="headline">${option.label}</div>
+                  </md-select-option>
+                `,
+              )}
+            </md-outlined-select>
+            ${iconButton({
+              label: this.label(this.order === "asc" ? "ascending" : "descending", this.order),
+              icon: this.order === "asc" ? "arrow_upward" : "arrow_downward",
+              variant: "outlined",
+              onClick: () => {
+                this.order = this.order === "asc" ? "desc" : "asc";
+                this.syncUrl();
+              },
+            })}
+          </div>
+        `,
+      )}
+    `;
+  }
+
+  /** Column headers in the table view sort through here. */
+  requestSort(value: string) {
+    if (this.sort === value) this.order = this.order === "asc" ? "desc" : "asc";
+    else {
+      this.sort = value;
+      this.order = this.profile.defaultOrder;
+    }
+    this.ensureSongMeta();
+    this.syncUrl();
   }
   private reset() {
     this.query = "";
@@ -1448,251 +1567,156 @@ export class CatalogScreen extends LitElement {
     `;
   }
   private renderContent(items: Item[]) {
-    if (this.phase === "loading")
-      return html`
-        <div class="catalog-state">
-          <md-circular-progress indeterminate></md-circular-progress>
-          <span>${this.label("loading", "Loading")}</span>
-        </div>
-      `;
+    const kind = this.profile.presentation;
+    if (this.phase === "loading") return loadingState(this.label("loading", "Loading"));
     if (this.phase === "error")
-      return html`
-        <div class="catalog-state">
-          <svg class="material-icon" width="40" height="40"><use href="/icons.svg#cloud_off"></use></svg>
-          <span>${this.label("unavailable", "Unavailable")}</span>
-          <button class="button button--tonal" @click=${() => this.load()}>${this.label("retry", "Retry")}</button>
-        </div>
-      `;
+      return errorState(this.label("unavailable", "Unavailable"), this.label("retry", "Retry"), () => void this.load());
     if (!items.length)
-      return html`
-        <div class="catalog-state">
-          <svg class="material-icon" width="40" height="40"><use href="/icons.svg#search_off"></use></svg>
-          <span>${this.label("empty", "No results")}</span>
-        </div>
-      `;
-    if (this.profile.presentation === "band-item") {
-      const availableBandIds = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
-      const availableBands = this.bands.filter((band) => availableBandIds.has(Number(band.bandId || 0)));
+      return emptyState({
+        title: this.label("empty", "No results"),
+        icon: "search_off",
+        action: this.items.length
+          ? html`
+              <button class="button button--tonal" type="button" @click=${() => this.reset()}>
+                ${this.label("reset", "Reset")}
+              </button>
+            `
+          : undefined,
+      });
+    const collection =
+      this.view === "list"
+        ? this.renderStructuredList(items)
+        : html`
+            <div class=${`collection collection--${kind}`}>${items.map((item) => this.renderTile(item))}</div>
+          `;
+    // Band items and characters are browsed one band at a time. That control
+    // selects which panel of the collection is shown, so it is a tab list —
+    // not a row of unlabelled buttons, which is what it used to be.
+    if (kind === "band-item" || kind === "character") {
+      const bands =
+        kind === "band-item"
+          ? (() => {
+              const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
+              return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
+            })()
+          : this.bands;
       const accent = String(this.band(this.activeBand)?.color || "var(--md-sys-color-primary)");
       return html`
-        <section class="band-item-browser-lite">
-          <nav class="band-item-rail" aria-label="Band">
-            ${availableBands.map((band) => {
+        <div class="roster">
+          <div
+            class="tabs tabs--avatars"
+            role="tablist"
+            aria-label=${this.label("band", "Band")}
+            @keydown=${rovingKeydown(
+              bands.map((band) => Number(band.bandId || 0)),
+              this.activeBand,
+              (id) => {
+                this.activeBand = id;
+                this.syncUrl();
+              },
+            )}
+          >
+            ${bands.map((band) => {
               const id = Number(band.bandId || 0);
+              const name = this.bandName(id);
+              const selected = id === this.activeBand;
+              const mark = String(band.icon || band.logo || "");
               return html`
                 <button
-                  class=${id === this.activeBand ? "selected" : ""}
+                  class="tab tab--avatar"
+                  type="button"
+                  role="tab"
+                  id=${`roster-tab-${id}`}
+                  aria-selected=${String(selected)}
+                  aria-controls="roster-stage"
+                  tabindex=${selected ? "0" : "-1"}
+                  title=${name}
                   @click=${() => {
                     this.activeBand = id;
                     this.syncUrl();
                   }}
-                  aria-label=${this.bandName(id)}
-                  title=${this.bandName(id)}
                 >
                   ${
-                    band.icon || band.logo
+                    mark
                       ? html`
-                          <img src=${String(band.icon || band.logo)} alt="" />
+                          <img src=${mark} alt="" loading="lazy" decoding="async" />
                         `
-                      : html`
-                          <svg class="material-icon" width="24" height="24"><use href="/icons.svg#groups"></use></svg>
-                        `
+                      : icon("groups", 24)
                   }
+                  <span class="sr-only">${name}</span>
+                  <span class="tab__indicator" aria-hidden="true"></span>
                 </button>
               `;
             })}
-          </nav>
-          <div
-            class="band-item-deck-lite"
-            style=${`--band-room:url('/assets/${currentReleaseServer()}/Assets/AddressableResources/Band/${this.activeBand}/band_room_background.png');--band-item-accent:${accent}`}
-          >
-            ${
-              this.view === "list"
-                ? this.renderStructuredList(items)
-                : html`
-                    <div class="catalog-grid">${items.map((item) => this.renderTile(item))}</div>
-                  `
-            }
           </div>
-        </section>
+          <div
+            class="roster__stage"
+            id="roster-stage"
+            role="tabpanel"
+            aria-labelledby=${`roster-tab-${this.activeBand}`}
+            tabindex="0"
+            style=${`--roster-background:url('/assets/${currentReleaseServer()}/Assets/AddressableResources/Band/${this.activeBand}/band_room_background.png');--roster-accent:${accent}`}
+          >
+            ${collection}
+          </div>
+        </div>
       `;
     }
-    if (this.profile.presentation === "character")
-      return html`
-        <section class="character-roster-lite">
-          <nav class="band-item-rail" aria-label=${this.label("band", "Band")}>
-            ${this.bands.map((band) => {
-              const id = Number(band.bandId || 0);
-              return html`
-                <button
-                  class=${id === this.activeBand ? "selected" : ""}
-                  @click=${() => {
-                    this.activeBand = id;
-                    this.syncUrl();
-                  }}
-                  aria-label=${this.bandName(id)}
-                >
-                  ${
-                    band.icon || band.logo
-                      ? html`
-                          <img src=${String(band.icon || band.logo)} alt="" />
-                        `
-                      : nothing
-                  }
-                </button>
-              `;
-            })}
-          </nav>
-          <div
-            class="character-roster-stage"
-            style=${`--roster-background:url('/assets/${currentReleaseServer()}/Assets/AddressableResources/Band/${this.activeBand}/band_room_background.png')`}
-          >
-            ${
-              this.view === "list"
-                ? this.renderStructuredList(items)
-                : html`
-                    <div class="catalog-grid character-roster-deck">${items.map((item) => this.renderTile(item))}</div>
-                  `
-            }
-          </div>
-        </section>
-      `;
-    return html`
-      ${
-        this.view === "list"
-          ? this.renderStructuredList(items)
-          : html`
-              <div class="catalog-grid">${items.map((item) => this.renderTile(item))}</div>
-            `
-      }
-    `;
+    return collection;
   }
+
   private renderTile(item: Item) {
-    const image = this.image(item);
     const kind = this.profile.presentation;
-    if (kind === "character") return this.renderCharacterTile(item, image);
-    const ids = this.itemCharacterIds(item);
-    return html`
-      <article
-        class=${`catalog-card content-grid-tile catalog-card--${kind}`}
-        role="button"
-        aria-label=${this.itemTitle(item)}
-        tabindex="0"
-        @click=${() => this.open(item)}
-        @keydown=${(event: KeyboardEvent) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            this.open(item);
-          }
-        }}
-        style=${kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : ""}
-      >
-        <div class=${`catalog-card__media ${image ? "media-loading" : ""}`}>
-          ${
-            image
-              ? html`
-                  <img
-                    data-src=${image}
-                    data-fallback=${this.imageFallback(item)}
-                    alt=""
-                    decoding="async"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                    @error=${this.imageError}
-                  />
-                `
-              : html`
-                  <svg class="material-icon" width="36" height="36">
-                    <use
-                      href=${`/icons.svg#${kind === "song" ? "music_note" : kind === "band-item" ? "piano" : "image"}`}
-                    ></use>
-                  </svg>
-                `
-          }
-          ${
-            kind === "member" || kind === "support"
-              ? html`
-                  <span class="card-attribute" aria-label="attribute">
-                    ${
-                      this.attributeMark(item.cardType)
-                        ? html`
-                            <img src=${this.attributeMark(item.cardType)} alt="" />
-                          `
-                        : nothing
-                    }
-                  </span>
-                  <span class="card-rarity" aria-label=${`rarity ${Number(item.rarity || 0)}`}>
-                    ${
-                      this.rarityMark(item.rarity)
-                        ? html`
-                            <img src=${this.rarityMark(item.rarity)} alt="" />
-                          `
-                        : nothing
-                    }
-                  </span>
-                `
-              : nothing
-          }
-          ${
-            kind === "song"
-              ? html`
-                  <span class="song-type">
-                    ${
-                      this.attributeMark(item.musicType, true)
-                        ? html`
-                            <img src=${this.attributeMark(item.musicType, true)} alt="" />
-                          `
-                        : nothing
-                    }
-                  </span>
-                  <span class="song-category">${this.fieldValue(item, "musicCategories")}</span>
-                `
-              : nothing
-          }
-        </div>
-        <div class="catalog-card__body">
-          ${renderGridIdentity(this.itemTitle(item), this.tileDescription(item), this.tileAdornment(item, ids))}
-        </div>
-      </article>
-    `;
-  }
-  private renderCharacterTile(item: Item, image: string) {
-    const color = String(item.colorCode || "var(--md-sys-color-primary)");
+    const image = this.image(item);
     const title = this.itemTitle(item);
-    return html`
-      <article
-        class="catalog-card content-grid-tile catalog-card--character"
-        role="button"
-        aria-label=${title}
-        style=${`--character-color:${color}`}
-        tabindex="0"
-        @click=${() => this.open(item)}
-        @keydown=${(event: KeyboardEvent) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            this.open(item);
-          }
-        }}
-      >
-        <div class=${`catalog-card__media ${image ? "media-loading" : ""}`}>
-          ${
-            image
-              ? html`
-                  <img
-                    data-src=${image}
-                    alt=${title}
-                    decoding="async"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                    @error=${this.imageError}
-                  />
-                `
-              : html`
-                  <svg class="material-icon" width="36" height="36"><use href="/icons.svg#person"></use></svg>
-                `
-          }
-        </div>
-        <div class="catalog-card__body">${renderGridIdentity(title, null)}</div>
-      </article>
-    `;
+    if (kind === "character")
+      return tile({
+        kind: "character",
+        title,
+        subtitle: null,
+        label: title,
+        image,
+        placeholder: icon("person", 32),
+        selected: this.selected ? this.itemId(this.selected) === this.itemId(item) : undefined,
+        onOpen: () => this.open(item),
+        onImageError: this.imageError,
+        style: `--entity-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`,
+      });
+    const ids = this.itemCharacterIds(item);
+    const attribute = kind === "song" ? this.attributeMark(item.musicType, true) : this.attributeMark(item.cardType);
+    const category = kind === "song" ? this.fieldValue(item, "musicCategories") : "";
+    return tile({
+      kind,
+      title,
+      subtitle: this.tileDescription(item),
+      adornment: this.tileAdornment(item, ids),
+      label: title,
+      image,
+      imageFallback: this.imageFallback(item),
+      placeholder:
+        kind === "song" ? icon("music_note", 32) : kind === "band-item" ? icon("piano", 32) : icon("image", 32),
+      fit: ["band", "item", "band-item", "stamp"].includes(kind) ? "contain" : "cover",
+      selected: this.selected ? this.itemId(this.selected) === this.itemId(item) : undefined,
+      onOpen: () => this.open(item),
+      onImageError: this.imageError,
+      style: kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : undefined,
+      marks: [
+        attribute
+          ? {
+              at: "start" as const,
+              image: attribute,
+              label: this.fieldValue(item, kind === "song" ? "musicType" : "cardType"),
+            }
+          : null,
+        kind === "member" || kind === "support"
+          ? (() => {
+              const rarity = this.rarityMark(item.rarity);
+              return rarity ? { at: "end" as const, image: rarity, label: this.fieldValue(item, "rarity") } : null;
+            })()
+          : null,
+        category ? { at: "bottom-start" as const, text: category } : null,
+      ],
+    });
   }
   private async toggleSong(id: string, url: string) {
     const { AudioDock } = await import("./runtime/audio-dock");
@@ -1861,9 +1885,8 @@ export class CatalogScreen extends LitElement {
     };
     if (!active) return nothing;
     return html`
-      <div class="detail-sheet__media media-loading">
+      <div class="detail-media media-loading">
         <img
-          class="detail-sheet__image"
           src=${this.localizedImageCandidates(active.source)[0] || active.source}
           data-candidates=${JSON.stringify(this.localizedImageCandidates(active.source))}
           data-candidate-index="0"
@@ -1875,18 +1898,18 @@ export class CatalogScreen extends LitElement {
           media.length > 1
             ? html`
                 <button
-                  class="icon-button detail-media-arrow detail-media-arrow--previous"
+                  class="icon-button detail-media__nav detail-media__nav--previous"
                   @click=${() => move(-1)}
                   aria-label=${this.label("previous", "Previous")}
                 >
                   <svg class="material-icon" width="22" height="22"><use href="/icons.svg#chevron_left"></use></svg>
                 </button>
-                <nav class="detail-media-switch" aria-label=${this.label("media", "Media")}>
+                <nav class="detail-media__switch" aria-label=${this.label("media", "Media")}>
                   <strong>${active.label}</strong>
                   <span>${activeIndex + 1}/${media.length}</span>
                 </nav>
                 <button
-                  class="icon-button detail-media-arrow detail-media-arrow--next"
+                  class="icon-button detail-media__nav detail-media__nav--next"
                   @click=${() => move(1)}
                   aria-label=${this.label("next", "Next")}
                 >
@@ -2089,6 +2112,14 @@ export class CatalogScreen extends LitElement {
       ></character-detail-archive>
     `;
   }
+  /** The subject's identity colour: character, band, or the band it belongs to. */
+  private detailAccent(item: Item) {
+    const character = this.character(this.itemCharacterIds(item)[0] || Number(item.characterId || 0));
+    const bandId = Number(item.bandId || character?.bandId || 0);
+    return String(
+      item.colorCode || item.color || character?.colorCode || this.band(bandId)?.color || "var(--md-sys-color-primary)",
+    );
+  }
   private renderDetail(item: Item) {
     const fields = this.profile.detail.flatMap((key) => {
       if (["member", "support"].includes(this.profile.presentation) && key.startsWith("stat.")) return [];
@@ -2128,27 +2159,23 @@ export class CatalogScreen extends LitElement {
           ? [{ playableUrl: item.mvUrl, title: "MV" }]
           : [];
     return html`
-      <aside class=${`detail-sheet detail-sheet--${this.profile.presentation} open`}>
-        <header class="detail-sheet__header">
-          <button class="icon-button" @click=${() => this.close()} aria-label=${this.label("close", "Close")}>
-            <svg class="material-icon" width="24" height="24"><use href="/icons.svg#arrow_back"></use></svg>
-          </button>
-          ${this.renderDetailLeading(item)}
-          <span class="detail-header-title">
-            <strong>${this.itemTitle(item)}</strong>
-            ${
-              this.secondary(item)
-                ? html`
-                    <small>${this.secondary(item)}</small>
-                  `
-                : nothing
-            }
-          </span>
-          ${this.renderDetailActions(item)}
-        </header>
-        <div class="detail-sheet__body">
+      ${renderPane({
+        kind: this.profile.presentation,
+        open: true,
+        compact: this.compact,
+        // The clef bar on the pane's leading edge takes the subject's own
+        // colour — the same mark the home staff uses for a band line.
+        style: `--entity-accent:${this.detailAccent(item)}`,
+        id: `detail-${this.itemId(item)}`,
+        title: this.itemTitle(item),
+        subtitle: this.secondary(item),
+        backLabel: this.label("close", "Close"),
+        onClose: () => this.close(),
+        leading: this.renderDetailLeading(item),
+        actions: this.renderDetailActions(item),
+        body: html`
           ${this.profile.presentation === "character" ? this.renderCharacterVisual(item) : this.renderDetailMedia(item)}
-          <main class="detail-sheet__content">
+          <div class="pane-sections">
             ${
               this.profile.presentation === "character"
                 ? this.renderCharacterArchive(item, fields)
@@ -2164,7 +2191,7 @@ export class CatalogScreen extends LitElement {
                 : html`
                     <section class="detail-section detail-section--facts">
                       ${renderDetailSectionHeading(this.label("details", "Details"), "details")}
-                      <dl class="detail-list">
+                      <dl class="spec-list spec-list--split">
                         ${fields.map(
                           ({ key, value }) => html`
                             <div>
@@ -2419,13 +2446,19 @@ export class CatalogScreen extends LitElement {
                   `
                 : nothing
             }${this.renderExtendedDetail(item)}
-          </main>
-        </div>
-      </aside>
+          </div>
+        `,
+      })}
       ${
         this.chartOpen && chart.file
           ? html`
-              <aside class="chart-detail-layer">
+              <aside
+                class="chart-detail-layer pane-layer"
+                role="dialog"
+                aria-modal="true"
+                aria-label=${this.label("chart", "Chart")}
+                tabindex="-1"
+              >
                 <header>
                   <button class="icon-button" @click=${() => (this.chartOpen = false)}>
                     <svg class="material-icon" width="24" height="24"><use href="/icons.svg#close"></use></svg>

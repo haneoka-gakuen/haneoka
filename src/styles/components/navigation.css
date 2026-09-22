@@ -1,0 +1,228 @@
+/* ==========================================================================
+   In-page navigation — tabs, menu
+   Material 3 primary tabs: 48dp tall, title-small label, a 3dp active
+   indicator with a 3dp top radius sized to the label. Secondary tabs use a
+   full-width 2dp indicator and sit inside an already-titled region.
+   ========================================================================== */
+.tabs {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--md-sys-color-outline-variant);
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  min-height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-inline: 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  background: transparent;
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--md-sys-motion-duration-short3) linear;
+}
+.tab > .material-icon {
+  --icon-size: 20px;
+}
+.tab__indicator {
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 12px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--md-sys-color-primary);
+  transform: scaleX(0);
+  /* The indicator is the one place motion carries meaning in a tab strip:
+   * it grows from the pressed edge instead of fading in. */
+  transform-origin: center;
+  transition: transform var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+}
+.tab:is([aria-selected="true"], [aria-current="true"], .is-active) {
+  color: var(--md-sys-color-primary);
+}
+.tab:is([aria-selected="true"], [aria-current="true"], .is-active) .tab__indicator {
+  transform: scaleX(1);
+}
+/* Tabs that must share the width equally (two or three modes). */
+.tabs--fixed {
+  overflow-x: visible;
+}
+.tabs--fixed .tab {
+  flex: 1 1 0;
+}
+.tabs--fixed .tab > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* ---------- Pill tabs ----------
+   Material's "tabs in a container": a tonal strip of pills, used where the
+   tabs are a navigational scope rather than sections of one document —
+   community areas, admin sections, a character's archive.
+
+   There were five separate implementations of this shape (.community-tabs,
+   .admin-tabs, .bestdori-story-tabs, .character-detail-tabs, .outfit-tabs),
+   each with its own height, radius and selected colour. This is the one. */
+.tabs--pills {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 48px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: none;
+}
+.tabs--pills .tab {
+  min-width: max-content;
+  min-height: 40px;
+  padding-inline: 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+.tabs--pills .tab > .material-icon {
+  --icon-size: 18px;
+}
+.tabs--pills .tab:is([aria-selected="true"], [aria-current="page"], .is-active) {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+.tabs--pills .tab__indicator {
+  display: none;
+}
+/* Trailing count inside a tab: how many entries that section holds. */
+.tab__count {
+  flex: 0 0 auto;
+  padding-inline: 6px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+.tab:is([aria-selected="true"], [aria-current="page"]) .tab__count {
+  color: inherit;
+}
+/* Sticky variant: a tab strip at the top of a scrolling pane. */
+.tabs--sticky {
+  position: sticky;
+  z-index: var(--md-sys-z-index-local-sticky);
+  top: 0;
+  background: var(--md-sys-color-surface);
+}
+
+/* Avatar tabs: a band or character selector. The emblem is the label, so the
+ * real name lives in a visually hidden span and in the title attribute. */
+.tabs--avatars {
+  gap: 4px;
+  box-shadow: none;
+}
+.tab--avatar {
+  width: 56px;
+  min-height: 56px;
+  padding: 6px;
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+.tab--avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.6;
+  transition: opacity var(--md-sys-motion-duration-short3) linear;
+}
+.tab--avatar[aria-selected="true"] {
+  background: var(--md-sys-color-secondary-container);
+}
+.tab--avatar[aria-selected="true"] > img {
+  opacity: 1;
+}
+.tab--avatar .tab__indicator {
+  display: none;
+}
+
+/* Secondary tabs: inside a pane that already has a title. */
+.tabs--secondary .tab {
+  min-height: 44px;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+.tabs--secondary .tab__indicator {
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 0;
+}
+
+/* ---------- Menu ----------
+   Popover surface, 4dp corner, level-2 elevation, 48dp items. Anchored
+   menus use the native popover API; lib has no positioning engine and needs
+   none at these sizes. */
+.menu {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-popover);
+  display: grid;
+  min-width: 192px;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: min(60dvh, 420px);
+  padding: 8px 0;
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container);
+  box-shadow: var(--md-sys-elevation-level2);
+}
+.menu-item {
+  display: grid;
+  min-height: 48px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  text-align: start;
+  cursor: pointer;
+}
+.menu-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-item > .material-icon {
+  --icon-size: 20px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.menu-item[aria-checked="true"] {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+.menu-item[aria-checked="false"] > .material-icon:last-child {
+  visibility: hidden;
+}
+.menu__headline {
+  padding: 8px 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+}

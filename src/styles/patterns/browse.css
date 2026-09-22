@@ -1,0 +1,222 @@
+/* ==========================================================================
+   Browse pattern
+   Every collection on the site — 15 catalogue resources, stories, community
+   posts, models, assets — is the same screen: a filtered, sorted collection
+   with an optional detail pane. It is built once, here.
+
+   Layout by window size class (Material 3 canonical layouts):
+     compact / medium   single pane; filters open as a modal side sheet
+     expanded (1200+)   list + supporting pane; the filters dock permanently,
+                        because at that width hiding them behind a button is
+                        just wasted room.
+
+   The bar is sticky, not fixed. The previous implementation positioned it
+   `fixed; top: 0` so it would sit inside the top app bar, which meant it
+   overlapped the page title as soon as the two needed the same pixels, and
+   it floated over unrelated pages during view transitions. Sticky inside the
+   scroll region cannot collide with the shell by construction.
+   ========================================================================== */
+.browse {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.browse__main {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+/* ---------- Bar ---------- */
+.browse__bar {
+  position: sticky;
+  z-index: var(--md-sys-z-index-local-sticky);
+  top: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--pane-gutter);
+  /* The bar carries the pane's own surface so content scrolling beneath it
+   * is covered, and a hairline so it reads as a boundary once stuck. */
+  background: var(--md-sys-color-surface);
+  box-shadow: 0 1px 0 var(--md-sys-color-outline-variant);
+}
+.browse__bar > .row__spacer {
+  min-width: 8px;
+}
+/* Result count: the primary piece of information in the bar, and a live
+ * region so a filter change is announced rather than silently applied. */
+.browse__count {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.browse__count > strong {
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+.browse__count > span {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Applied filters ----------
+   Every active facet value appears as a removable input chip. Before this,
+   the only way to see what was filtering a 6000-row collection was to open
+   the panel and read the controls; the count was computed but never shown. */
+.browse__applied {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--pane-gutter) 8px;
+}
+.browse__applied:empty {
+  display: none;
+}
+
+/* ---------- Results ---------- */
+.browse__results {
+  min-width: 0;
+  padding: 4px var(--pane-gutter) calc(24px + var(--shell-bottom-inset));
+}
+.browse__results--flush {
+  padding-inline: 0;
+}
+
+/* ---------- Load more ----------
+   Manual pagination for collections too large to render at once. Centred,
+   full-width, and the same on every route that pages. */
+.load-more {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  padding: 16px 0 8px;
+}
+
+/* ---------- Filters ----------
+   Below expanded: a modal side sheet (geometry from components/overlay.css).
+   At expanded: a docked supporting pane. Same markup either way. */
+.browse__filters {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.browse__filters-body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  align-content: start;
+  gap: 20px;
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.browse__filter-group {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
+}
+/* A facet group is a set of checkboxes, so <fieldset>/<legend> is the right
+ * markup and is accepted alongside a plain heading. */
+fieldset.browse__filter-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.browse__filter-group > :where(h3, legend) {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+}
+.browse__filter-group > legend {
+  margin-bottom: 10px;
+}
+
+@media (min-width: 1200px) {
+  /* Docked supporting pane. The pane scrolls independently and sticks to the
+   * top of the content area, so a long facet list never drags the results
+   * out of view. */
+  .browse--dockable {
+    grid-template-columns: minmax(0, 1fr) var(--filter-pane-width, 320px);
+    column-gap: 16px;
+  }
+  /* Everything the side sheet declared for the modal case has to be undone
+   * explicitly here: it is the same element, promoted from an overlay to a
+   * column of the layout. `inset: auto` and `width: auto` matter — the sheet
+   * sets both, and leaving them would size the panel to 32px less than its
+   * own grid column. */
+  .browse--dockable .browse__filters {
+    position: sticky;
+    top: 0;
+    inset-inline: auto;
+    width: auto;
+    max-height: var(--shell-stage-block);
+    grid-row: 1;
+    grid-column: 2;
+    padding-block: 8px;
+    visibility: visible;
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+  }
+  .browse--dockable .browse__filters .sheet__header {
+    background: transparent;
+  }
+  .browse--dockable .browse__filters .browse__filters-close {
+    display: none;
+  }
+  /* A badged icon button is wrapped in .badge-anchor, so both go. */
+  .browse--dockable .browse__filter-toggle,
+  .browse--dockable .badge-anchor:has(> .browse__filter-toggle) {
+    display: none;
+  }
+  .browse--dockable + .sheet-scrim {
+    display: none;
+  }
+}
+
+@media (max-width: 599px) {
+  .browse__bar {
+    min-height: 52px;
+    padding-inline: 12px;
+  }
+  .browse__count {
+    /* The headline count moves into the bar's own line on compact, where the
+     * unit label would cost a wrap. */
+    flex: 0 0 auto;
+  }
+  .browse__count > span {
+    display: none;
+  }
+  .browse__applied,
+  .browse__results {
+    padding-inline: 12px;
+  }
+}

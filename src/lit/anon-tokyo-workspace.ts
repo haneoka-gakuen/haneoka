@@ -1,4 +1,8 @@
 import { LitElement, html, nothing } from "lit";
+import { filterGroup } from "./ui/browse";
+import { filterChip, iconButton } from "./ui/controls";
+import { icon } from "./ui/icon";
+import { errorState, loadingState } from "./ui/state";
 import {
   catalogUrl,
   formatList,
@@ -70,7 +74,6 @@ export class AnonTokyoWorkspace extends LitElement {
     super.connectedCallback();
     this.locale = preferredLocale(this.locale);
     void import("@material/web/progress/circular-progress.js");
-    document.querySelector(".top-app-bar")?.classList.add("has-catalog-actions");
     const params = new URLSearchParams(location.search);
     this.selectedCharacter = params.get("character") || "";
     this.selectedItem = params.get("item") || "";
@@ -78,7 +81,6 @@ export class AnonTokyoWorkspace extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
-    document.querySelector(".top-app-bar")?.classList.remove("has-catalog-actions");
     this.outfitStage?.dispose();
     super.disconnectedCallback();
   }
@@ -261,17 +263,14 @@ export class AnonTokyoWorkspace extends LitElement {
     });
   }
   render() {
-    if (this.phase === "loading")
-      return html`
-        <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
-      `;
+    if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
     if (this.phase === "error" || !this.document)
-      return html`
-        <div class="notice">
-          <p>${this.error || uiText(this.locale, "unavailable")}</p>
-          <button class="button button--tonal" @click=${this.load}>${uiText(this.locale, "retry")}</button>
-        </div>
-      `;
+      return errorState(
+        uiText(this.locale, "unavailable"),
+        uiText(this.locale, "retry"),
+        () => void this.load(),
+        this.error,
+      );
     return this.mode === "outfits" ? this.renderOutfits() : this.renderCollection();
   }
   private renderCollection() {
@@ -291,63 +290,96 @@ export class AnonTokyoWorkspace extends LitElement {
     const facets = key ? [...new Set(source.map((item) => String(item[key] ?? "")).filter(Boolean))] : [];
     const list = source.filter((item) => !this.facet || String(item[key] ?? "") === this.facet);
     return html`
-      <section class=${`page anon-collection anon-collection--${this.mode}`}>
-        <div class="catalog__toolbar">
+      <section class=${`anon-collection anon-collection--${this.mode}`}>
+        <div class="browse__bar">
+          <p class="browse__count" role="status" aria-live="polite">
+            <strong>${list.length}</strong>
+            ${
+              list.length === source.length
+                ? nothing
+                : html`
+                    <span>/ ${source.length}</span>
+                  `
+            }
+          </p>
+          <span class="row__spacer"></span>
           ${
             facets.length
+              ? iconButton({
+                  label: uiText(this.locale, "filter"),
+                  icon: "filter_alt",
+                  toggle: true,
+                  pressed: this.filtersOpen,
+                  badge: this.facet ? 1 : 0,
+                  onClick: () => (this.filtersOpen = !this.filtersOpen),
+                })
+              : nothing
+          }
+        </div>
+        <div class="browse__results">
+          <div class="anon-grid">${list.slice(0, this.visible).map((item) => this.renderCollectionItem(item))}</div>
+          ${
+            list.length > this.visible
               ? html`
-                  <button
-                    class="icon-button"
-                    aria-label=${uiText(this.locale, "filter")}
-                    @click=${() => (this.filtersOpen = !this.filtersOpen)}
-                  >
-                    <svg class="material-icon" width="24" height="24"><use href="/icons.svg#filter_list"></use></svg>
-                  </button>
+                  <div class="load-more">
+                    <button class="button button--tonal" @click=${() => (this.visible += 80)}>
+                      ${uiText(this.locale, "loadMore")}
+                    </button>
+                  </div>
                 `
               : nothing
           }
-          <span class="catalog__count">${list.length}</span>
         </div>
-        <div class="anon-grid">${list.slice(0, this.visible).map((item) => this.renderCollectionItem(item))}</div>
-        ${
-          list.length > this.visible
-            ? html`
-                <div class="load-more">
-                  <button class="button button--tonal" @click=${() => (this.visible += 80)}>
-                    ${uiText(this.locale, "loadMore")}
-                  </button>
-                </div>
-              `
-            : nothing
-        }
         ${this.filtersOpen ? this.renderFacetFilter(key, facets) : nothing}
       </section>
     `;
   }
   private renderFacetFilter(key: string, facets: string[]) {
     return html`
-      <button class="sheet-scrim" @click=${() => (this.filtersOpen = false)}></button>
-      <aside class="catalog__filters open">
-        <div class="catalog__filter-header">
-          <h2>${uiText(this.locale, "filter")}</h2>
-          <button class="icon-button" @click=${() => (this.filtersOpen = false)}>
-            <svg class="material-icon" width="22" height="22"><use href="/icons.svg#close"></use></svg>
-          </button>
-        </div>
-        <div class="catalog__filter-stack">
-          <span>${key}</span>
-          <div class="catalog__chips">
-            <button class="chip" aria-pressed=${!this.facet} @click=${() => this.setFacet("")}>
-              ${uiText(this.locale, "all")}
-            </button>
-            ${facets.map(
-              (value) => html`
-                <button class="chip" aria-pressed=${this.facet === value} @click=${() => this.setFacet(value)}>
-                  ${this.facetLabel(key, value)}
-                </button>
-              `,
-            )}
-          </div>
+      <button
+        class="scrim sheet-scrim"
+        type="button"
+        aria-label=${uiText(this.locale, "close")}
+        @click=${() => (this.filtersOpen = false)}
+      ></button>
+      <aside
+        class="browse__filters sheet sheet--side is-open"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${uiText(this.locale, "filter")}
+        tabindex="-1"
+      >
+        <header class="sheet__header">
+          <span class="detail-section-title__icon">${icon("filter_alt", 20)}</span>
+          <span class="sheet__title"><strong>${uiText(this.locale, "filter")}</strong></span>
+          <span class="sheet__actions">
+            ${iconButton({
+              label: uiText(this.locale, "close"),
+              icon: "close",
+              onClick: () => (this.filtersOpen = false),
+            })}
+          </span>
+        </header>
+        <div class="browse__filters-body">
+          ${filterGroup(
+            this.facetTitle(key),
+            html`
+              <div class="chip-set" role="group" aria-label=${this.facetTitle(key)}>
+                ${filterChip({
+                  label: uiText(this.locale, "all"),
+                  selected: !this.facet,
+                  onToggle: () => this.setFacet(""),
+                })}
+                ${facets.map((value) =>
+                  filterChip({
+                    label: this.facetLabel(key, value),
+                    selected: this.facet === value,
+                    onToggle: () => this.setFacet(value),
+                  }),
+                )}
+              </div>
+            `,
+          )}
         </div>
       </aside>
     `;
@@ -364,6 +396,18 @@ export class AnonTokyoWorkspace extends LitElement {
   }
   private anonBandName(id: number) {
     return this.text(this.bands.find((band) => Number(band.bandId) === id)?.bandName) || "";
+  }
+  /** A human title for the facet a collection is grouped by. */
+  private facetTitle(key: string) {
+    const titles: Record<string, string> = {
+      levelLimit: uiText(this.locale, "playerLevels"),
+      categoryId: uiText(this.locale, "category"),
+      type: uiText(this.locale, "type"),
+      point: uiText(this.locale, "weight"),
+      customerKind: uiText(this.locale, "customers"),
+      bandId: uiText(this.locale, "band"),
+    };
+    return titles[key] || uiText(this.locale, "filter");
   }
   private facetLabel(key: string, value: string) {
     if (key === "categoryId") {
@@ -620,7 +664,7 @@ export class AnonTokyoWorkspace extends LitElement {
     })();
     const description = this.text(item.description) || this.text(item.text) || "";
     return html`
-      <article class="anon-card surface content-grid-tile">
+      <article class="anon-card surface tile">
         <span class=${`anon-card__media ${source ? "media-loading" : ""}`}>
           ${
             source

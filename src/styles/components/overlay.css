@@ -1,0 +1,341 @@
+/* ==========================================================================
+   Overlays — scrim, side sheet, bottom sheet, dialog
+   One implementation for every layer that covers content, because the old
+   sheets each invented their own geometry, z-index and dismissal.
+
+   Material 3:
+     · modal side sheet  256–400dp wide, 28dp corner on the leading edge,
+       enters from the trailing edge, scrim behind, level-1 elevation;
+     · bottom sheet      28dp top corners, 32×4dp drag handle, max 640dp wide;
+     · dialog            28dp corner, 280–560dp wide, 24dp padding.
+   All three trap focus and close on Escape — enforced in lib/overlay.ts, not
+   per component.
+   ========================================================================== */
+.scrim {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-backdrop);
+  inset: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+  cursor: default;
+  animation: overlay-fade var(--md-sys-motion-duration-medium2) linear;
+}
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Sheet ----------
+   .sheet is the shell: a surface that occupies the content pane's trailing
+   edge on medium+ windows and the whole pane on compact. The variant is
+   chosen by the window, not by the caller, so every detail view behaves the
+   same way at the same size. */
+.sheet {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-sheet);
+  display: grid;
+  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-low);
+  box-shadow: var(--md-sys-elevation-level1);
+  /* Sheets are always in the DOM so their content can be prepared before
+   * they open; visibility + transform keep them out of the way and out of
+   * the accessibility tree (paired with inert in the component). */
+  visibility: hidden;
+  transition:
+    transform var(--md-sys-motion-duration-medium4) var(--ease-emphasized),
+    visibility var(--md-sys-motion-duration-medium4) step-end;
+}
+.sheet.is-open {
+  visibility: visible;
+  transform: none;
+  transition:
+    transform var(--md-sys-motion-duration-long1) var(--ease-decelerate),
+    visibility 0s;
+}
+
+/* Side sheet: docks against the trailing edge of the content pane. */
+.sheet--side {
+  inset: var(--shell-overlay-inset);
+  inset-inline-start: auto;
+  width: min(var(--sheet-width, 400px), calc(100% - 32px));
+  border-radius: var(--shell-overlay-radius);
+  transform: translateX(calc(100% + 32px));
+}
+
+/* Detail sheet: a list-detail pane. On expanded windows it is wider, because
+ * the data it shows is a two-column specification. */
+.sheet--detail {
+  --sheet-width: min(560px, 46vw);
+}
+@media (min-width: 1200px) {
+  .sheet--detail {
+    --sheet-width: min(720px, 52vw);
+  }
+}
+
+/* Bottom sheet: compact windows, or anything that is a list of choices. */
+.sheet--bottom {
+  inset: auto 0 0;
+  width: min(640px, 100%);
+  max-height: min(88dvh, 720px);
+  margin-inline: auto;
+  padding-bottom: var(--md-sys-safe-area-inset-bottom);
+  border-radius: var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large) 0 0;
+  transform: translateY(100%);
+}
+.sheet__handle {
+  display: grid;
+  height: 22px;
+  place-items: center;
+}
+.sheet__handle::before {
+  width: 32px;
+  height: 4px;
+  content: "";
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-outline-variant);
+}
+
+/* Full-screen sheet: the compact-window form of a detail view. Material's
+ * full-screen dialog — no corner radius, its own top app bar. */
+.sheet--full {
+  inset: 0;
+  width: 100%;
+  border-radius: 0;
+  background: var(--md-sys-color-surface);
+  transform: translateY(16px);
+  opacity: 0;
+  transition:
+    transform var(--md-sys-motion-duration-medium4) var(--ease-emphasized),
+    opacity var(--md-sys-motion-duration-medium2) linear,
+    visibility var(--md-sys-motion-duration-medium4) step-end;
+}
+.sheet--full.is-open {
+  opacity: 1;
+}
+
+/* ---------- Sheet chrome ----------
+   The header is a top app bar in the sheet's own coordinate space: leading
+   close/back action, title (+ optional subtitle), trailing actions. It is
+   the labelled heading the dialog role points at. */
+.sheet__header {
+  display: grid;
+  min-width: 0;
+  min-height: var(--top-bar-height);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--md-sys-color-surface-container-low);
+}
+.sheet__title {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding-inline: 4px;
+}
+.sheet__title > strong {
+  min-width: 0;
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  overflow-wrap: anywhere;
+}
+.sheet__title > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+.sheet__body {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.sheet__footer {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px calc(12px + var(--md-sys-safe-area-inset-bottom));
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.sheet__footer:empty {
+  display: none;
+}
+/* The sheet's own scrim sits just under it and above the content pane. */
+.sheet-scrim {
+  z-index: var(--md-sys-z-index-overlay-backdrop);
+}
+
+/* ---------- Dialog host ----------
+   A centred modal surface built from ordinary elements rather than <dialog>,
+   for the cases that need to stay in the component's own render tree (the
+   community composer's confirmations, the admin history viewer). The scrim
+   and the centring belong to the host; the surface is a .card.
+
+   Two implementations of this existed, differing only in scrim opacity. */
+.dialog-host {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-dialog);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--md-sys-color-scrim) 36%, transparent);
+  animation: overlay-fade var(--md-sys-motion-duration-medium2) linear;
+}
+.dialog-host > * {
+  max-height: min(90dvh, 720px);
+  overflow: auto;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-level3);
+}
+
+/* ---------- Pane layer ----------
+   A full-pane overlay: it covers exactly the content pane, keeps the pane's
+   rounded corner on medium+ windows, and carries its own app bar. The
+   detail views for stories, models, charts and imported posts are all this
+   shape; before, each page declared the same six properties itself, with a
+   different z-index each time. */
+.pane-layer {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-sheet);
+  inset: var(--shell-overlay-inset);
+  display: grid;
+  min-width: 0;
+  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: var(--shell-overlay-radius);
+  background: var(--md-sys-color-surface);
+}
+.pane-layer > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 8px 16px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.pane-layer > header > strong {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pane-layer:focus-visible {
+  outline-offset: -3px;
+}
+
+/* ---------- Dialog (native <dialog>) ---------- */
+.dialog {
+  z-index: var(--md-sys-z-index-overlay-dialog);
+  width: min(560px, calc(100vw - 48px));
+  max-width: none;
+  max-height: min(86dvh, 640px);
+  padding: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface);
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: var(--md-sys-color-surface-container-high);
+  box-shadow: var(--md-sys-elevation-level3);
+}
+.dialog[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.dialog::backdrop {
+  background: color-mix(in srgb, #000 32%, transparent);
+}
+/* Dialogs whose markup wraps the three regions in one element. */
+.dialog__surface {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.dialog__header {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 24px 24px 0;
+}
+.dialog__header > h2 {
+  margin: 0;
+  font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
+    var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+}
+.dialog__body {
+  min-height: 0;
+  padding: 16px 24px;
+  overflow-y: auto;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 24px 24px;
+}
+
+/* ---------- Tooltip ----------
+   Plain Material tooltip: inverse-surface, 4dp corner, body-small. */
+.tooltip {
+  position: absolute;
+  z-index: var(--md-sys-z-index-overlay-popover);
+  max-width: 240px;
+  padding: 4px 8px;
+  color: var(--md-sys-color-inverse-on-surface);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-inverse-surface);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  pointer-events: none;
+}
+
+/* ---------- Snackbar ---------- */
+.snackbar {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-toast);
+  bottom: calc(16px + var(--shell-bottom-inset));
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: var(--md-sys-color-inverse-on-surface);
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-inverse-surface);
+  box-shadow: var(--md-sys-elevation-level3);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  transform: translateX(-50%);
+}
+.snackbar .button--text {
+  color: var(--md-sys-color-inverse-primary);
+}

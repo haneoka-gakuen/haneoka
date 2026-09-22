@@ -7,12 +7,8 @@ spine-workspace {
   display: block;
   height: 100%;
 }
-.viewer-workspace {
-  display: grid;
-  height: 100%;
-  min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 288px;
-  background: var(--md-sys-color-surface);
+.viewer-model.media-loading::after {
+  left: 32px;
 }
 .viewer-stage {
   position: relative;
@@ -78,139 +74,10 @@ spine-workspace {
   background: color-mix(in srgb, #202428 82%, transparent);
   backdrop-filter: blur(16px);
 }
-.runtime-select {
-  display: flex;
-  height: 40px;
-  max-width: 200px;
-  align-items: center;
-  padding: 0 12px;
-  color: #f5f3ef;
-  border: 1px solid #899399;
-  border-radius: var(--md-sys-shape-corner-small);
-  background: color-mix(in srgb, #202428 82%, transparent);
-  backdrop-filter: blur(16px);
-}
-.runtime-select select {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-}
-.runtime-select option {
-  color: var(--md-sys-color-on-surface);
-  background: var(--md-sys-color-surface-container);
-}
 .runtime-chip[aria-pressed="true"] {
   color: #173f46;
   border-color: transparent;
   background: #d9eff2;
-}
-.viewer-library {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: 56px minmax(0, 1fr);
-  border-left: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-}
-.viewer-library.has-search {
-  grid-template-rows: 56px 48px minmax(0, 1fr);
-}
-.viewer-library > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.viewer-library > header strong {
-  font-size: var(--md-sys-typescale-title-medium-size);
-  font-weight: 500;
-}
-.viewer-library > header span {
-  display: inline-grid;
-  min-width: 28px;
-  height: 28px;
-  place-items: center;
-  padding-inline: 8px;
-  color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-secondary-container);
-}
-.viewer-library__grid {
-  min-height: 0;
-  padding: 8px;
-  overflow: auto;
-  scrollbar-width: thin;
-}
-.viewer-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 8px;
-  padding: 0 12px;
-  color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-surface-container);
-}
-.viewer-search input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-}
-.viewer-model {
-  display: grid;
-  width: 100%;
-  min-height: 64px;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-.viewer-model:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-}
-.viewer-model.selected {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-.viewer-model img,
-.viewer-model__fallback {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  object-fit: contain;
-  background: transparent;
-}
-.viewer-model > span:last-child {
-  display: grid;
-  min-width: 0;
-}
-.viewer-model strong,
-.viewer-model small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.model-catalog {
-  min-height: 100%;
-}
-live2d-workspace .catalog__content,
-spine-workspace .catalog__content {
-  scrollbar-width: none;
-}
-live2d-workspace .catalog__content::-webkit-scrollbar,
-spine-workspace .catalog__content::-webkit-scrollbar {
-  display: none;
 }
 .model-grid {
   display: grid;
@@ -293,11 +160,18 @@ spine-workspace .model-grid {
   border: 1px solid var(--md-sys-color-surface-container-lowest);
   border-radius: 50%;
 }
+/* The rows declare the minimum; .table-scroll (components/table.css) owns the
+ * overflow. Putting `min-width` and `overflow: auto` on the same element — as
+ * this did — makes the element outgrow its parent while its own scrollbar
+ * never engages, so the right-hand columns simply leave the pane. */
 .model-list {
   min-width: 720px;
-  overflow: auto;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-medium);
+}
+.table-scroll > .model-list {
+  border: 0;
+  border-radius: 0;
 }
 .model-list > header,
 .model-list__row {
@@ -348,22 +222,8 @@ spine-workspace .model-grid {
   border-radius: var(--md-sys-shape-corner-small);
 }
 .viewer-detail {
-  position: fixed;
-  z-index: 30;
-  inset: var(--shell-overlay-inset);
-  border-radius: var(--shell-overlay-radius);
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
-  background: var(--md-sys-color-surface);
-}
-.viewer-detail > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--top-bar-height);
-  padding: 0 8px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  /* Geometry comes from .pane-layer (components/overlay.css). */
+  min-height: 0;
 }
 .viewer-detail > header > span {
   display: grid;
@@ -517,17 +377,6 @@ spine-workspace .model-grid {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.viewer-info-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.viewer-info-chips .chip {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .viewer-controls md-outlined-select {
   width: min(210px, 32vw);
   --md-outlined-field-container-shape: var(--md-sys-shape-corner-small);
@@ -569,12 +418,4 @@ spine-workspace .model-grid {
     grid-template-columns: minmax(92px, 1fr) minmax(96px, 1.35fr) 44px 36px;
     gap: 4px;
   }
-}
-.viewer-model strong {
-  font-size: var(--md-sys-typescale-label-large-size);
-  font-weight: 500;
-}
-.viewer-model small {
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-body-small-size);
 }

@@ -39,7 +39,7 @@
   right: 7px;
   bottom: 7px;
 }
-.character-related-story-avatars .catalog-identities img {
+.character-related-story-avatars .avatar-stack img {
   width: 26px;
   height: 26px;
   border: 2px solid white;
@@ -50,7 +50,7 @@
   height: 100%;
   place-items: center;
 }
-.character-story-avatar-media .catalog-identities img {
+.character-story-avatar-media .avatar-stack img {
   width: 48px;
   height: 48px;
   margin-right: -9px;

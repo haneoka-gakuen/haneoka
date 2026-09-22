@@ -166,27 +166,22 @@
   font-size: var(--md-sys-typescale-title-medium-size);
   font-variant-numeric: tabular-nums;
 }
-.detail-sheet--member .detail-section,
-.detail-sheet--support .detail-section {
-  padding-block: 16px;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-}
-.detail-sheet--member .detail-section:first-child,
-.detail-sheet--support .detail-section:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-.detail-sheet--member .detail-section--facts .detail-list,
-.detail-sheet--support .detail-section--facts .detail-list {
+/* A card's headline facts (rarity, attribute, type, release) read as a
+   four-across strip rather than a label/value list: they are four short,
+   comparable values, and a strip lets the eye take all four at once. */
+.sheet--detail-member .detail-section--facts .spec-list,
+.sheet--detail-support .detail-section--facts .spec-list {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 96px), 1fr));
   gap: 0;
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-medium);
 }
-.detail-sheet--member .detail-section--facts .detail-list > div,
-.detail-sheet--support .detail-section--facts .detail-list > div {
+.sheet--detail-member .detail-section--facts .spec-list > div,
+.sheet--detail-support .detail-section--facts .spec-list > div {
+  /* Overrides the spec list's `display: contents` so each pair becomes a
+     cell of the strip instead of two cells of a two-column grid. */
   display: grid;
   box-sizing: border-box;
   min-height: 70px;
@@ -196,15 +191,19 @@
   gap: 4px;
   padding: 8px;
   border-right: 1px solid var(--md-sys-color-outline-variant);
-  border-bottom: 0;
   text-align: center;
 }
-.detail-sheet--member .detail-section--facts .detail-list > div:last-child,
-.detail-sheet--support .detail-section--facts .detail-list > div:last-child {
+.sheet--detail-member .detail-section--facts .spec-list > div:last-child,
+.sheet--detail-support .detail-section--facts .spec-list > div:last-child {
   border-right: 0;
 }
-.detail-sheet--member .detail-section--facts .detail-list dt,
-.detail-sheet--support .detail-section--facts .detail-list dt {
+.sheet--detail-member .detail-section--facts .spec-list :where(dt, dd),
+.sheet--detail-support .detail-section--facts .spec-list :where(dt, dd) {
+  padding: 0;
+  border-top: 0;
+}
+.sheet--detail-member .detail-section--facts .spec-list dt,
+.sheet--detail-support .detail-section--facts .spec-list dt {
   font-size: var(--md-sys-typescale-label-small-size);
 }
 .detail-fact-mark {

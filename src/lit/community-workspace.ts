@@ -1,8 +1,10 @@
 import { LitElement, html, nothing } from "lit";
+import { PaneFocus } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { renderGridIdentity } from "./shared/grid-identity";
+import { emptyState, errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
 type UploadEntry = {
   key: string;
@@ -150,10 +152,19 @@ export class CommunityWorkspace extends LitElement {
     this.bestdoriView = "text";
     this.bestdoriLimit = 80;
   }
+  private paneFocus = new PaneFocus();
   createRenderRoot() {
     return this;
   }
+  updated() {
+    // The dialog is modal: focus stays inside it and Escape closes it.
+    this.paneFocus.sync(
+      this.dialog ? this.querySelector<HTMLElement>("[data-overlay-pane]") : null,
+      () => (this.dialog = null),
+    );
+  }
   disconnectedCallback() {
+    this.paneFocus.detach();
     if (this.routeKind === "post-new" && !this.published && this.uploads.length) void this.discardUploads();
     super.disconnectedCallback();
   }
@@ -680,11 +691,13 @@ export class CommunityWorkspace extends LitElement {
       ],
     ];
     return html`
-      <nav class="community-tabs" aria-label="Community">
+      <nav class="tabs tabs--pills community-tabs" aria-label="Community">
         ${destinations.map(
           ([mode, route, icon, label]) => html`
-            <a href=${route} aria-current=${this.mode === mode ? "page" : nothing}>
-              <svg class="material-icon" width="19" height="19"><use href=${`/icons.svg#${icon}`}></use></svg>
+            <a class="tab" href=${route} aria-current=${this.mode === mode ? "page" : nothing}>
+              <svg class="material-icon" width="18" height="18" aria-hidden="true">
+                <use href=${`/icons.svg#${icon}`}></use>
+              </svg>
               <span>${label}</span>
             </a>
           `,
@@ -1486,7 +1499,7 @@ ${String(comment.body || "")}</textarea>
     ];
     return html`
       <div
-        class="community-dialog-scrim"
+        class="dialog-host community-dialog-scrim"
         role="presentation"
         @click=${() => {
           if (!this.busy) this.dialog = null;
@@ -1494,6 +1507,7 @@ ${String(comment.body || "")}</textarea>
       >
         <section
           class="community-dialog surface"
+          data-overlay-pane
           role="dialog"
           aria-modal="true"
           aria-label=${dialog.kind === "report" ? this.label("reportDialog.title", "Report") : this.label("appeal", "Appeal")}
@@ -1922,7 +1936,7 @@ ${String(comment.body || "")}</textarea>
                   ${entries.map(
                     (playlist) => html`
                       <a
-                        class=${this.playlistView === "grid" ? "surface surface--outlined content-grid-tile community-tag" : "community-row"}
+                        class=${this.playlistView === "grid" ? "surface surface--outlined tile tile--interactive community-tag" : "community-row"}
                         href=${`/community/playlists/${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
                       >
                         ${
@@ -1969,7 +1983,7 @@ ${String(comment.body || "")}</textarea>
         ${
           stories
             ? html`
-                <nav class="segmented bestdori-story-tabs">
+                <nav class="tabs tabs--pills bestdori-story-tabs">
                   ${["event", "band", "main", "afterlive", "card"].map(
                     (section) => html`
                       <a
@@ -1998,7 +2012,7 @@ ${String(comment.body || "")}</textarea>
           </md-outlined-text-field>
           <span>${sourceItems.length.toLocaleString(this.locale)}</span>
         </div>
-        <div class="catalog-grid">
+        <div class="collection">
           ${sourceItems.slice(0, this.bestdoriLimit).map((item) => {
             const title =
               localizedText(item.titleText || item.title || item.prefix || item.musicTitle, this.locale) ||
@@ -2014,12 +2028,8 @@ ${String(comment.body || "")}</textarea>
                 "",
             );
             return html`
-              <button
-                class="catalog-card content-grid-tile"
-                @click=${() => this.openBestdoriItem(item)}
-                aria-label=${title}
-              >
-                <span class=${`catalog-card__media ${image ? "media-loading" : ""}`}>
+              <button class="tile tile--interactive" @click=${() => this.openBestdoriItem(item)} aria-label=${title}>
+                <span class=${`tile__media ${image ? "media-loading" : ""}`}>
                   ${
                     image
                       ? html`
@@ -2040,7 +2050,7 @@ ${String(comment.body || "")}</textarea>
                       : nothing
                   }
                 </span>
-                <span class="catalog-card__body">
+                <span class="tile__identity">
                   ${renderGridIdentity(title, localizedText(item.chapterName || item.bandName, this.locale) || String(item.sourceServer || item.cardType || "Bestdori"))}
                 </span>
               </button>
@@ -2193,14 +2203,36 @@ ${String(comment.body || "")}</textarea>
             : nothing
         }
         <header class="community-toolbar">
-          <form class="field community-search" role="search" @submit=${this.submit}>
-            <svg class="material-icon" width="20" height="20"><use href="/icons.svg#search"></use></svg>
+          <form class="search-bar community-search" role="search" @submit=${this.submit}>
+            <svg class="material-icon" width="20" height="20" aria-hidden="true">
+              <use href="/icons.svg#search"></use>
+            </svg>
             <input
               type="search"
               .value=${this.query}
               @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
               placeholder=${this.label("search", "Search community")}
+              aria-label=${this.label("search", "Search community")}
             />
+            ${
+              this.query
+                ? html`
+                    <button
+                      class="icon-button icon-button--small"
+                      type="button"
+                      aria-label=${this.label("clear", "Clear")}
+                      @click=${() => {
+                        this.query = "";
+                        void this.load(false);
+                      }}
+                    >
+                      <svg class="material-icon" width="20" height="20" aria-hidden="true">
+                        <use href="/icons.svg#close"></use>
+                      </svg>
+                    </button>
+                  `
+                : nothing
+            }
           </form>
           <button class="icon-button" @click=${() => this.load(false)} aria-label=${this.label("refresh", "Refresh")}>
             <svg class="material-icon" width="22" height="22"><use href="/icons.svg#refresh"></use></svg>
@@ -2213,20 +2245,15 @@ ${String(comment.body || "")}</textarea>
         ${
           this.phase === "loading"
             ? html`
-                <div class="catalog-state"><md-circular-progress indeterminate></md-circular-progress></div>
+                ${loadingState(this.label("loading", "Loading"))}
               `
             : this.phase === "error"
-              ? html`
-                  <div class="notice">
-                    <span class="notice__icon">
-                      <svg class="material-icon" width="32" height="32"><use href="/icons.svg#forum"></use></svg>
-                    </span>
-                    <p>${this.error}</p>
-                    <button class="button button--tonal" @click=${() => this.load(false)}>
-                      ${this.label("retry", "Retry")}
-                    </button>
-                  </div>
-                `
+              ? errorState(
+                  this.label("unavailable", "Unavailable"),
+                  this.label("retry", "Retry"),
+                  () => void this.load(false),
+                  this.error,
+                )
               : this.renderItems()
         }
       </section>
@@ -2234,14 +2261,10 @@ ${String(comment.body || "")}</textarea>
   }
   private renderItems() {
     if (!this.items.length)
-      return html`
-        <div class="notice">
-          <span class="notice__icon">
-            <svg class="material-icon" width="32" height="32"><use href="/icons.svg#forum"></use></svg>
-          </span>
-          <p>${this.label("emptyTitle", "No community content yet.")}</p>
-        </div>
-      `;
+      return emptyState({
+        title: this.label("emptyTitle", "No community content yet."),
+        icon: "forum",
+      });
     if (this.mode === "activity")
       return html`
         <div class="community-list">
@@ -2292,7 +2315,7 @@ ${String(comment.body || "")}</textarea>
         <div class="tag-grid">
           ${this.items.map(
             (tag) => html`
-              <article class="surface surface--outlined community-tag content-grid-tile">
+              <article class="surface surface--outlined community-tag tile">
                 <a
                   href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag.normalizedName || ""))}`}
                 >

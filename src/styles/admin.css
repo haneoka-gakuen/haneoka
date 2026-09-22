@@ -195,10 +195,6 @@ admin-workspace {
 .admin-active-restriction > span {
   display: grid;
 }
-.button--danger {
-  color: var(--md-sys-color-on-error-container);
-  background: var(--md-sys-color-error-container);
-}
 .admin-empty {
   padding: 32px;
   color: var(--md-sys-color-on-surface-variant);
@@ -215,22 +211,10 @@ admin-workspace {
   padding: 32px;
   text-align: center;
 }
-.admin-dialog-scrim {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: color-mix(in srgb, var(--md-sys-color-scrim) 38%, transparent);
-}
 .admin-history-dialog {
   display: grid;
   width: min(100%, 1080px);
-  max-height: calc(100dvh - 32px);
   gap: 16px;
-  overflow: auto;
-  border-radius: var(--md-sys-shape-corner-extra-large);
 }
 .admin-history-dialog > header,
 .admin-comment-history > header,
@@ -354,22 +338,6 @@ admin-workspace {
   width: 100%;
   accent-color: var(--md-sys-color-primary);
 }
-.admin-tabs {
-  display: flex;
-  max-width: 100%;
-  gap: 4px;
-  overflow-x: auto;
-}
-.admin-tabs a {
-  min-width: max-content;
-  padding: 10px 16px;
-  border-radius: var(--md-sys-shape-corner-full);
-  text-transform: capitalize;
-}
-.admin-tabs a.selected {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
 .admin-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -378,11 +346,6 @@ admin-workspace {
 .admin-stat-grid article {
   display: grid;
   gap: 6px;
-}
-.admin-stat-grid small,
-.admin-record-list small,
-.admin-count {
-  color: var(--md-sys-color-on-surface-variant);
 }
 .admin-stat-grid strong {
   font-size: var(--md-sys-typescale-headline-medium-size);
@@ -420,13 +383,6 @@ admin-workspace {
   .admin-page {
     gap: 12px;
     padding: 12px;
-  }
-  .admin-tabs {
-    scroll-snap-type: x proximity;
-  }
-  .admin-tabs a {
-    padding-inline: 12px;
-    scroll-snap-align: start;
   }
   .admin-stat-grid {
     grid-template-columns: minmax(0, 1fr);

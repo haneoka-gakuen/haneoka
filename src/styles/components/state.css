@@ -1,0 +1,137 @@
+/* ==========================================================================
+   Interaction states
+   Material expresses interaction with a state layer — the component's own
+   content colour at a fixed opacity — never with movement. There is exactly
+   one implementation, and every interactive primitive opts in by name.
+
+   Deliberately absent: hover lift, hover scale, press scale. In a dense grid
+   those make the whole collection twitch as the pointer crosses it, and they
+   are not in the spec. Feedback here is opacity + the ripple's origin.
+   ========================================================================== */
+:where(
+  .button,
+  .icon-button,
+  .fab,
+  .chip,
+  .nav-item,
+  .rail-item__indicator,
+  .nav-bar__indicator,
+  .list-item--interactive,
+  .card--interactive,
+  .segmented > button,
+  .tab,
+  .menu-item,
+  .tile--interactive,
+  .state-layer
+) {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+:where(
+  .button,
+  .icon-button,
+  .fab,
+  .chip,
+  .nav-item,
+  .rail-item__indicator,
+  .nav-bar__indicator,
+  .list-item--interactive,
+  .card--interactive,
+  .segmented > button,
+  .tab,
+  .menu-item,
+  .tile--interactive,
+  .state-layer
+)::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-sys-motion-duration-short3) linear;
+}
+@media (hover: hover) {
+  :where(
+      .button,
+      .icon-button,
+      .fab,
+      .chip,
+      .nav-item,
+      .list-item--interactive,
+      .card--interactive,
+      .segmented > button,
+      .tab,
+      .menu-item,
+      .tile--interactive,
+      .state-layer
+    ):hover::before,
+  .rail-item:hover .rail-item__indicator::before,
+  .nav-bar__item:hover .nav-bar__indicator::before {
+    opacity: var(--state-hover);
+  }
+}
+:where(
+    .button,
+    .icon-button,
+    .fab,
+    .chip,
+    .nav-item,
+    .list-item--interactive,
+    .card--interactive,
+    .segmented > button,
+    .tab,
+    .menu-item,
+    .tile--interactive,
+    .state-layer
+  ):is(:focus-visible, :active)::before,
+.rail-item:is(:focus-visible, :active) .rail-item__indicator::before,
+.nav-bar__item:is(:focus-visible, :active) .nav-bar__indicator::before {
+  opacity: var(--state-press);
+}
+
+/* Disabled: Material's 38% on-surface, and no state layer at all. */
+:where(.button, .icon-button, .chip, .tab, .fab):is(:disabled, [aria-disabled="true"]) {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  pointer-events: none;
+}
+:where(.button, .icon-button, .chip, .tab, .fab):is(:disabled, [aria-disabled="true"])::before {
+  opacity: 0;
+}
+
+/* Pointer ripple — origin comes from lib/ripple.ts, which is a single
+ * delegated pointerdown listener for the whole document and is skipped
+ * entirely under prefers-reduced-motion. */
+.has-ripple::after {
+  position: absolute;
+  z-index: -1;
+  top: var(--ripple-y, 50%);
+  left: var(--ripple-x, 50%);
+  width: var(--ripple-size, 100%);
+  aspect-ratio: 1;
+  content: "";
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+}
+.has-ripple.is-rippling::after {
+  animation: md-ripple 450ms var(--ease-standard) forwards;
+}
+@keyframes md-ripple {
+  0% {
+    opacity: 0.14;
+    transform: translate(-50%, -50%) scale(0.2);
+  }
+  60% {
+    opacity: 0.1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
