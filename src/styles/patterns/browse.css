@@ -4,15 +4,10 @@
    posts, models, assets — is the same screen: a filtered, sorted collection
    with an optional detail pane. It is built once, here.
 
-   One pane at every size: the results are the page. Filters are a modal
-   side sheet and a detail view is a full-screen surface, so the collection
-   never has to share its width with either.
-
-   The bar is sticky, not fixed. The previous implementation positioned it
-   `fixed; top: 0` so it would sit inside the top app bar, which meant it
-   overlapped the page title as soon as the two needed the same pixels, and
-   it floated over unrelated pages during view transitions. Sticky inside the
-   scroll region cannot collide with the shell by construction.
+   The results are the page. Filters are a modal side sheet, a detail view is
+   a full-pane surface, and the collection's own controls are up in the shell's
+   top app bar — so nothing between the app bar and the first result competes
+   with it for vertical space.
    ========================================================================== */
 /* The filter panel is a modal side sheet — it is never docked. Material
    treats a docked side sheet as a persistent part of the layout, which is
@@ -30,7 +25,10 @@
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
+/* A railed collection fills the pane: the rail is a column of the layout, so
+   it has to be as tall as the layout or its trailing edge stops in mid-air. */
 .browse--railed {
+  min-height: var(--shell-stage-block);
   grid-template-columns: var(--rail-width, 208px) minmax(0, 1fr);
 }
 .browse__main {
@@ -40,14 +38,16 @@
 }
 
 /* ---------- Pane rail ----------
-   Its own scroll region, pinned beside the results so a fifty-chapter
-   section can be traversed without losing the collection. */
+   Full height, its own scroll region, and pinned so a fifty-chapter section
+   can be traversed without losing the collection beside it. `height` rather
+   than `max-height`, because a sticky box only holds its position for as far
+   as it actually extends. */
 .browse__rail {
   position: sticky;
   z-index: var(--md-sys-z-index-local-sticky);
   top: 0;
   min-width: 0;
-  max-height: var(--shell-stage-block);
+  height: var(--shell-stage-block);
   align-self: start;
   padding: 8px;
   overflow: auto;
@@ -57,8 +57,8 @@
   scrollbar-width: thin;
 }
 /* One column, so the rail's tiles are the same card as the results' — same
-   corner, same full-bleed media, same two-line text block. Only the width
-   differs, and that comes from the column. */
+   corner, same two-line text block. Only the width differs, and that comes
+   from the column. */
 .collection--rail {
   --tile-min: 100%;
   --tile-gap: 4px;
@@ -67,6 +67,21 @@
 .tile--rail {
   border-radius: var(--md-sys-shape-corner-medium);
   background: transparent;
+}
+/* The rail's artwork is never cropped: a chapter banner is a composed image
+   with a title in it, and cropping one to a uniform box is what made the old
+   rail unreadable. It is fitted inside a fixed height instead, so the rail
+   still has one rhythm while every banner stays whole. */
+.tile--rail .tile__media {
+  height: var(--rail-media-height, 76px);
+  aspect-ratio: auto;
+  padding: 0;
+  background: transparent;
+}
+.tile--rail .tile__media > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .tile--rail > .tile__identity {
   gap: 2px;
@@ -125,33 +140,20 @@
     var(--md-sys-typescale-body-medium-line-height) var(--app-font);
 }
 
-/* ---------- Bar ---------- */
-.browse__bar {
-  position: sticky;
-  z-index: var(--md-sys-z-index-local-sticky);
-  top: 0;
-  display: flex;
-  min-width: 0;
-  min-height: 56px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px var(--pane-gutter);
-  /* The bar carries the pane's own surface so content scrolling beneath it
-   * is covered, and a hairline so it reads as a boundary once stuck. */
-  background: var(--md-sys-color-surface);
-  box-shadow: 0 1px 0 var(--md-sys-color-outline-variant);
-}
-.browse__bar > .row__spacer {
-  min-width: 8px;
-}
-/* Result count: the primary piece of information in the bar, and a live
- * region so a filter change is announced rather than silently applied. */
+/* ---------- Bar ----------
+   There is no bar. The collection's count, view switch and filter toggle are
+   rendered into the top app bar's trailing section (lib/app-bar.ts), because
+   a sticky bar of its own directly beneath the app bar was two bars stacked,
+   and the second one spent 56dp of every page before a single result.
+
+   What remains here is how those controls look once they are up there. */
 .browse__count {
   display: flex;
   min-width: 0;
   align-items: baseline;
   gap: 6px;
   margin: 0;
+  padding-inline: 8px;
   color: var(--md-sys-color-on-surface-variant);
 }
 .browse__count > strong {
@@ -167,6 +169,9 @@
     var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.browse__count > span:empty {
+  display: none;
 }
 
 /* ---------- Applied filters ----------
@@ -188,7 +193,12 @@
 /* ---------- Results ---------- */
 .browse__results {
   min-width: 0;
-  padding: 4px var(--pane-gutter) calc(24px + var(--shell-bottom-inset));
+  padding: 16px var(--pane-gutter) calc(24px + var(--shell-bottom-inset));
+}
+/* A heading already opens the pane, so the results follow it closely. */
+.browse__heading + .browse__results,
+.browse__applied + .browse__results {
+  padding-top: 8px;
 }
 .browse__results--flush {
   padding-inline: 0;
@@ -258,9 +268,14 @@ fieldset.browse__filter-group {
   .browse--railed {
     grid-template-columns: minmax(0, 1fr);
   }
+  .browse--railed {
+    min-height: 0;
+  }
   .browse__rail {
     position: static;
-    max-height: none;
+    /* Back to content height: the column rule's full-stage height would make
+     * a horizontal strip as tall as the pane. */
+    height: auto;
     padding: 8px 12px;
     overflow: auto hidden;
     border-right: 0;
@@ -279,10 +294,6 @@ fieldset.browse__filter-group {
 }
 
 @media (max-width: 599px) {
-  .browse__bar {
-    min-height: 52px;
-    padding-inline: 12px;
-  }
   .browse__heading {
     gap: 10px;
     padding: 12px 12px 4px;
@@ -292,10 +303,11 @@ fieldset.browse__filter-group {
       var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .browse__count {
-    /* The headline count moves into the bar's own line on compact, where the
-     * unit label would cost a wrap. */
     flex: 0 0 auto;
+    padding-inline: 4px;
   }
+  /* The app bar is 56dp of shared space on compact: the number survives, its
+   * unit label does not. */
   .browse__count > span {
     display: none;
   }

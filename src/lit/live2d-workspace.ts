@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
-import { filterGroup, renderBrowse } from "./ui/browse";
+import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
 import { filterChip, segmented } from "./ui/controls";
@@ -162,6 +162,7 @@ export class Live2DWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    clearBrowseBar();
     this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();

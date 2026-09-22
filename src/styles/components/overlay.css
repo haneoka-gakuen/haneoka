@@ -86,6 +86,16 @@
 .sheet--detail {
   inset: var(--shell-overlay-inset);
   border-radius: var(--shell-overlay-radius);
+  /* The corner has to clip, or the surface only *appears* rounded: its own
+   * sticky header paints an opaque rectangle into the top two corners, and a
+   * square-cornered plane sitting on a rounded pane reads as floating above
+   * the layout rather than filling it.
+   *
+   * No elevation either, for the same reason. This surface is not a card on
+   * the pane — while it is open it *is* the pane, so a shadow around its edge
+   * would be a shadow cast onto nothing. */
+  overflow: hidden;
+  box-shadow: none;
   background: var(--md-sys-color-surface);
   /* Material's full-screen dialog enters by rising and fading in. */
   transform: translateY(16px);
@@ -143,6 +153,8 @@
 .sheet--full {
   inset: var(--shell-overlay-inset);
   border-radius: var(--shell-overlay-radius);
+  overflow: hidden;
+  box-shadow: none;
   background: var(--md-sys-color-surface);
   transform: translateY(16px);
   opacity: 0;

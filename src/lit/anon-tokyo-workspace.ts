@@ -1,5 +1,5 @@
 import { LitElement, html, nothing } from "lit";
-import { filterGroup, renderBrowse } from "./ui/browse";
+import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
 import { filterChip, inputChip } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { errorState, loadingState } from "./ui/state";
@@ -80,6 +80,7 @@ export class AnonTokyoWorkspace extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    clearBrowseBar();
     this.outfitStage?.dispose();
     super.disconnectedCallback();
   }

@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { clearAppBarActions, setAppBarActions } from "../../lib/app-bar";
 import { icon } from "./icon";
 import { iconButton, rovingKeydown } from "./controls";
 import { tile } from "./tile";
@@ -45,10 +46,6 @@ export interface BrowseRail {
   value: string;
   items: ReadonlyArray<BrowseRailItem>;
   onSelect: (value: string) => void;
-  /** Artwork proportions for the rail's tiles (chapter banners are 16:9). */
-  ratio?: string;
-  /** `contain` for logos and emblems that must not be cropped. */
-  fit?: "cover" | "contain";
 }
 
 /**
@@ -64,6 +61,13 @@ export interface BrowseHeading {
 
 /** The results region, which the rail's tabs control. */
 const RESULTS_ID = "browse-results";
+/** app-bar.ts owner id for the collection's controls. */
+const BROWSE_OWNER = "browse";
+
+/** Every screen that renders a browse must drop its controls on teardown. */
+export function clearBrowseBar() {
+  clearAppBarActions(BROWSE_OWNER);
+}
 
 export interface BrowseFilters {
   label: string;
@@ -107,7 +111,7 @@ function renderRail(rail: BrowseRail): TemplateResult {
         rail.onSelect,
       )}
     >
-      <div class="collection collection--rail" style=${`--tile-ratio:${rail.ratio || "16 / 9"}`}>
+      <div class="collection collection--rail">
         ${rail.items.map((item) => {
           const selected = item.value === rail.value;
           return tile({
@@ -117,7 +121,6 @@ function renderRail(rail: BrowseRail): TemplateResult {
             label: item.label,
             image: item.image || "",
             placeholder: icon("image", 24),
-            fit: rail.fit,
             selected,
             role: "tab",
             controls: RESULTS_ID,
@@ -130,9 +133,46 @@ function renderRail(rail: BrowseRail): TemplateResult {
   `;
 }
 
+/**
+ * The collection's own controls, for the top app bar's trailing section.
+ *
+ * These used to sit in a sticky bar of their own at the top of the pane,
+ * directly under the app bar — two bars, one on top of the other, and the
+ * second one costing 56dp of every page before a single result. Material puts
+ * a screen's controls in the top app bar, so that is where they go: the count
+ * first (a live region, so filtering is announced rather than silently
+ * rearranging several thousand rows), then the view switch and any page
+ * actions, then the filter toggle with its badge.
+ */
+export function browseBar(options: BrowseOptions): TemplateResult {
+  const { filters } = options;
+  return html`
+    <p class="browse__count" role="status" aria-live="polite">
+      <strong>${options.count.value === null ? "—" : options.count.value.toLocaleString()}</strong>
+      <span>${options.count.label}</span>
+    </p>
+    ${options.controls}
+    ${
+      filters
+        ? iconButton({
+            label: filters.label,
+            icon: "filter_alt",
+            onClick: () => (filters.open ? filters.onClose() : filters.onOpen()),
+            pressed: filters.open,
+            toggle: true,
+            badge: filters.count,
+            className: "browse__filter-toggle",
+          })
+        : nothing
+    }
+  `;
+}
+
 export function renderBrowse(options: BrowseOptions): TemplateResult {
   const { filters, rail, heading } = options;
   const open = Boolean(filters?.open);
+  // The bar lives in the shell's app bar, not in the pane.
+  setAppBarActions(BROWSE_OWNER, browseBar(options));
   // A rail of one is not a choice, so it is not drawn.
   const railed = Boolean(rail && rail.items.length > 1);
   const classes = ["browse", options.kind ? `browse--${options.kind}` : "", railed ? "browse--railed" : ""]
@@ -142,27 +182,6 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
     <section class=${classes} style=${options.style || nothing}>
       ${railed && rail ? renderRail(rail) : nothing}
       <div class="browse__main">
-        <div class="browse__bar">
-          <p class="browse__count" role="status" aria-live="polite">
-            <strong>${options.count.value === null ? "—" : options.count.value.toLocaleString()}</strong>
-            <span>${options.count.label}</span>
-          </p>
-          <span class="row__spacer"></span>
-          ${options.controls}
-          ${
-            filters
-              ? iconButton({
-                  label: filters.label,
-                  icon: "filter_alt",
-                  onClick: () => (filters.open ? filters.onClose() : filters.onOpen()),
-                  pressed: filters.open,
-                  toggle: true,
-                  badge: filters.count,
-                  className: "browse__filter-toggle",
-                })
-              : nothing
-          }
-        </div>
         ${
           heading
             ? html`

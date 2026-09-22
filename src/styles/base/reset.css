@@ -42,7 +42,14 @@ summary {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
+/* Buttons carry a user-agent padding (Chrome 1px/6px, more in Safari) that is
+ * never what a design system wants: spacing belongs to the component. It was
+ * invisible for as long as every button style happened to declare its own
+ * padding, and it surfaced the moment one deliberately did not — a card whose
+ * artwork is meant to bleed to all four edges came out flush at the top and
+ * inset by 6px at the sides, which reads exactly like a mistake. */
 button {
+  padding: 0;
   border: 0;
   background: none;
 }

@@ -53,8 +53,21 @@
   outline-offset: 2px;
 }
 
+/* Every column is exactly as wide as its own content needs.
+ *
+ * `width: 100%` was doing the opposite: it made the table fill the pane, so
+ * the auto layout had to divide a fixed width between however many columns
+ * there were — nineteen, for a song — and every one of them came out
+ * narrower than its data. Numbers wrapped, titles broke mid-word, and the
+ * whole table read as squeezed however much room the window had.
+ *
+ * `max-content` sizes each column to its content and `min-width: 100%` keeps
+ * the table filling the region when the data is narrower than the pane, so
+ * short tables still look like tables. .table-scroll owns the overflow for
+ * when the sum is wider. */
 .data-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   color: var(--md-sys-color-on-surface);

@@ -9,9 +9,8 @@ import {
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
-import { renderBrowse, filterGroup } from "./ui/browse";
+import { clearBrowseBar, renderBrowse, filterGroup } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
 import { filterChip, iconButton, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -374,7 +373,7 @@ export class CatalogScreen extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
-    clearAppBarActions("catalog");
+    clearBrowseBar();
     this.paneFocus.detach();
     this.filterFocus.detach();
     this.disposeMedia.forEach((dispose) => dispose());
@@ -1256,7 +1255,6 @@ export class CatalogScreen extends LitElement {
     const kind = this.profile.presentation;
     const appliedCount = Object.values(this.facets).reduce((sum, values) => sum + values.length, 0);
     const shown = this.phase === "ready" ? items.length : null;
-    this.syncAppBar(items);
     return html`
       ${renderBrowse({
         kind,
@@ -1283,12 +1281,10 @@ export class CatalogScreen extends LitElement {
                 this.activeBand = Number(value);
                 this.syncUrl();
               },
-              ratio: "3 / 1",
-              fit: "contain" as const,
             }
           : undefined,
         heading: this.hasBandRail() && this.activeBand ? { title: this.bandName(this.activeBand) } : undefined,
-        controls: this.renderBarControls(),
+        controls: this.renderBarControls(items),
         applied: appliedCount || this.query ? this.renderApplied() : undefined,
         results: this.renderContent(items),
         filters: {
@@ -1307,29 +1303,6 @@ export class CatalogScreen extends LitElement {
     `;
   }
 
-  /**
-   * Page-level actions belong in the top app bar's trailing slot, which the
-   * shell owns. Nothing here is positioned over the shell by hand.
-   */
-  private syncAppBar(items: Item[]) {
-    if (this.profile.presentation !== "song") {
-      clearAppBarActions("catalog");
-      return;
-    }
-    const first = items.find((item) => item.musicUrl);
-    setAppBarActions(
-      "catalog",
-      iconButton({
-        label: this.label("playAll", "Play all"),
-        icon: "playlist_play",
-        disabled: !first,
-        onClick: () => {
-          if (first) void this.toggleSong(this.itemId(first), String(first.musicUrl));
-        },
-      }),
-    );
-  }
-
   /** Characters and instruments are browsed one band at a time. */
   private hasBandRail() {
     return ["band-item", "character"].includes(this.profile.presentation);
@@ -1340,7 +1313,14 @@ export class CatalogScreen extends LitElement {
     const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
     return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
   }
-  private renderBarControls() {
+  /**
+   * Page actions sit between the view switch and the filter toggle in the
+   * browse bar, which the app bar renders. They used to be a second app-bar
+   * owner of their own, which meant their order relative to the collection's
+   * own controls depended on which component rendered first.
+   */
+  private renderBarControls(items: Item[]) {
+    const first = this.profile.presentation === "song" ? items.find((item) => item.musicUrl) : undefined;
     return html`
       ${segmented({
         label: this.label("view", "View"),
@@ -1356,6 +1336,18 @@ export class CatalogScreen extends LitElement {
         },
         iconOnly: true,
       })}
+      ${
+        this.profile.presentation === "song"
+          ? iconButton({
+              label: this.label("playAll", "Play all"),
+              icon: "playlist_play",
+              disabled: !first,
+              onClick: () => {
+                if (first) void this.toggleSong(this.itemId(first), String(first.musicUrl));
+              },
+            })
+          : nothing
+      }
     `;
   }
 

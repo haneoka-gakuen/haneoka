@@ -70,6 +70,9 @@
   display: grid;
   min-width: 0;
   align-content: start;
+  /* Explicit, not inherited: a tile is a <button>, and the artwork has to
+   * reach all four edges. */
+  padding: 0;
   color: var(--md-sys-color-on-surface);
   /* The container's radius is the only radius. overflow:hidden is what makes
    * the media's top corners follow it and its bottom edge stay square. */

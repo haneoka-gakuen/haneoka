@@ -13,6 +13,7 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { HomeSpotStage } from "./runtime/home-spot-stage";
 import {
+  clearBrowseBar,
   filterGroup,
   renderBrowse,
   type BrowseHeading,
@@ -214,6 +215,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    clearBrowseBar();
     this.lazyImages.disconnect();
     this.homeStage?.dispose();
     this.storyAudio?.pause();
@@ -358,8 +360,14 @@ export class StoryWorkspace extends LitElement {
       );
     return this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId));
   }
+  /**
+   * A chapter's authored name, or nothing. It used to fall back to
+   * `chapterKey`, so the friendship and home sections — which ship that field
+   * empty — printed the raw asset key ("asset_linkstory") wherever a chapter
+   * name was shown.
+   */
   private chapterName(chapter: JsonRecord | undefined) {
-    return chapter ? this.text(chapter.chapterName) || String(chapter.chapterKey || chapter.chapterId || "") : "";
+    return chapter ? this.text(chapter.chapterName) : "";
   }
   /** Every episode in the section, across every chapter. */
   private allEpisodes(): JsonRecord[] {
@@ -548,17 +556,13 @@ export class StoryWorkspace extends LitElement {
       }));
     return this.relevantChapters().map((chapter) => ({
       value: String(chapter.chapterId),
-      label: this.chapterName(chapter),
+      label: this.chapterName(chapter) || String(chapter.chapterId || ""),
       image: String(chapter.banner || chapter.image || chapter.icon || ""),
       meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "episodes")}`,
     }));
   }
   private railValue() {
     return (this.facets[this.railAxis()] || [])[0] || "";
-  }
-  /** Portraits are square; chapter banners and scenes are wide. */
-  private railRatio() {
-    return this.mode === "link" ? "1" : "16 / 9";
   }
   private railLabel() {
     if (this.origin === "release" && this.mode === "home") return uiText(this.locale, "scenes");
@@ -605,9 +609,12 @@ export class StoryWorkspace extends LitElement {
       };
     }
     const chapter = this.relevantChapters().find((item) => String(item.chapterId) === value);
-    if (!chapter) return undefined;
+    const title = this.chapterName(chapter);
+    // Sections whose single chapter is unnamed (friendship, home, tutorial)
+    // have nothing to head: the page title already says where you are.
+    if (!chapter || !title) return undefined;
     return {
-      title: this.chapterName(chapter),
+      title,
       supporting: this.text(chapter.description) || this.text(chapter.caption) || "",
       image: String(chapter.icon || ""),
     };
@@ -757,7 +764,6 @@ export class StoryWorkspace extends LitElement {
           value: this.railValue(),
           items: this.railItems(),
           onSelect: (value) => this.selectRail(value),
-          ratio: this.railRatio(),
         },
         heading: this.heading(),
         controls: this.allowsList()
@@ -843,11 +849,7 @@ export class StoryWorkspace extends LitElement {
       ${stage}
       ${
         this.view === "list"
-          ? html`
-              <ul class="list list--divided" role="list">
-                ${shown.map((episode) => this.renderRow(episode))}
-              </ul>
-            `
+          ? this.renderTable(shown)
           : html`
               <div class="collection collection--story">${shown.map((episode) => this.renderTile(episode))}</div>
             `
@@ -865,23 +867,30 @@ export class StoryWorkspace extends LitElement {
       }
     `;
   }
-  /**
-   * The subhead names the one thing a reader needs to tell two episodes
-   * apart, and which thing that is depends on the section: inside one chapter
-   * it is the cast, across chapters it is the chapter. Nothing else goes on a
-   * tile — the episode number, running time, unlock level and release date
-   * are all in the list and table views.
-   */
-  private tileSubtitle(episode: JsonRecord) {
-    const chapter = this.chapterName(this.chapterOf(episode));
-    if (chapter && !(this.facets.chapter || []).length) return chapter;
-    if (this.mode === "link" && episode.unlockCharacterFriendshipLevel)
-      return `${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}`;
-    const cast = formatList(
+  private cast(episode: JsonRecord) {
+    return formatList(
       this.characterIds(episode).map((id) => this.characterName(this.character(id) || {})),
       this.locale,
     );
-    return cast || chapter || this.text(episode.caption) || "";
+  }
+  private tileSubtitle(episode: JsonRecord) {
+    if (this.origin === "release") {
+      // The level that unlocks it — the one thing that orders a pair's
+      // stories. Their names are already the rail's selection and the page's
+      // heading, so repeating them here says nothing.
+      if (this.mode === "link") {
+        const level = Number(episode.unlockCharacterFriendshipLevel || 0);
+        return level ? `${uiText(this.locale, "friendship")} Lv.${level}` : "";
+      }
+      // Home talks are the same scene over and over; who is in it is the
+      // only thing that differs.
+      if (this.mode === "home") return this.cast(episode);
+      // Band and tutorial episodes carry their own opening line, which is
+      // the synopsis the game itself shows. Never the cast: five identical
+      // member lists down a chapter distinguish nothing.
+      return this.text(episode.description) || this.text(episode.caption) || "";
+    }
+    return this.text(episode.description) || this.text(episode.caption) || this.cast(episode);
   }
   private renderTile(episode: JsonRecord) {
     const id = this.episodeId(episode);
@@ -913,50 +922,95 @@ export class StoryWorkspace extends LitElement {
       ],
     });
   }
-  private renderRow(episode: JsonRecord) {
-    const id = this.episodeId(episode);
-    const image = this.episodeImage(episode);
-    const level = Number(episode.unlockCharacterFriendshipLevel || 0);
+  /**
+   * The list view is the site's data table, the same one every catalogue
+   * resource uses. Each column is as wide as its own content and the region
+   * scrolls when the sum exceeds the pane — which is the point of a list
+   * view: it is for reading the facts a card deliberately leaves out.
+   *
+   * It replaced a list of rows that joined every fact into one no-wrap
+   * string in the trailing slot. That string's max-content width was the
+   * widest track in the row, so it took the space first and left the episode
+   * title clamped to its 12ch floor: the title, which is the only thing a
+   * reader is scanning for, was the narrowest column on screen.
+   */
+  private renderTable(episodes: JsonRecord[]) {
+    const columns: Array<{ label: string; numeric?: boolean; sticky?: boolean }> = [
+      { label: "#", numeric: true },
+      { label: uiText(this.locale, "title"), sticky: true },
+      { label: uiText(this.locale, "chapter") },
+      { label: uiText(this.locale, "characters") },
+      { label: uiText(this.locale, "duration"), numeric: true },
+      { label: uiText(this.locale, "friendship"), numeric: true },
+      { label: uiText(this.locale, "release"), numeric: true },
+    ];
     return html`
-      <li>
-        <button
-          class="list-item list-item--two-line list-item--interactive"
-          type="button"
-          @click=${() => void this.openStory(id, episode)}
-        >
-          <span class=${`list-item__thumb ${image ? "media-loading" : ""}`}>
-            ${
-              image
-                ? html`
-                    <img
-                      src=${image}
-                      data-fallback=${String(this.chapterOf(episode)?.banner || "")}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                      @error=${this.imageError}
-                    />
-                  `
-                : icon("auto_stories", 24)
-            }
-          </span>
-          <span class="list-item__body">
-            <span class="list-item__headline">${this.episodeTitle(episode)}</span>
-            <span class="list-item__supporting">${this.tileSubtitle(episode)}</span>
-          </span>
-          <span class="list-item__trailing list-item__meta">
-            ${[
-              episode.episodeNumber ? `#${String(episode.episodeNumber).padStart(2, "0")}` : "",
-              this.duration(episode),
-              level ? `Lv.${level}` : "",
-              this.releaseDate(episode),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </button>
-      </li>
+      <div
+        class="table-scroll"
+        role="region"
+        tabindex="0"
+        aria-label=${uiText(this.locale, "list")}
+        data-scroll-region
+      >
+        <table class="data-table">
+          <thead>
+            <tr>
+              ${columns.map(
+                (column) => html`
+                  <th
+                    scope="col"
+                    class=${[column.numeric ? "is-numeric" : "", column.sticky ? "is-sticky" : ""]
+                      .filter(Boolean)
+                      .join(" ") || nothing}
+                  >
+                    ${column.label}
+                  </th>
+                `,
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            ${episodes.map((episode) => {
+              const level = Number(episode.unlockCharacterFriendshipLevel || 0);
+              return html`
+                <tr>
+                  <td class="is-numeric">
+                    ${episode.episodeNumber ? String(episode.episodeNumber).padStart(2, "0") : "—"}
+                  </td>
+                  <!-- The identity cell holds the row's one real control, and
+                       stays put while the rest of the table scrolls sideways:
+                       the same contract as every catalogue table. -->
+                  <th scope="row" class="is-sticky">
+                    <button
+                      class="table-entity state-layer"
+                      type="button"
+                      @click=${() => void this.openStory(this.episodeId(episode), episode)}
+                    >
+                      <span class="table-entity__media">
+                        <img
+                          data-src=${this.episodeImage(episode)}
+                          data-fallback=${String(this.chapterOf(episode)?.banner || "")}
+                          alt=""
+                          decoding="async"
+                          @error=${this.imageError}
+                        />
+                      </span>
+                      <span class="table-entity__copy">
+                        <span class="table-entity__name">${this.episodeTitle(episode)}</span>
+                      </span>
+                    </button>
+                  </th>
+                  <td>${this.chapterName(this.chapterOf(episode)) || "—"}</td>
+                  <td>${this.cast(episode) || "—"}</td>
+                  <td class="is-numeric">${this.duration(episode) || "—"}</td>
+                  <td class="is-numeric">${level ? `Lv.${level}` : "—"}</td>
+                  <td class="is-numeric">${this.releaseDate(episode) || "—"}</td>
+                </tr>
+              `;
+            })}
+          </tbody>
+        </table>
+      </div>
     `;
   }
   private imageError = nextImageCandidate;

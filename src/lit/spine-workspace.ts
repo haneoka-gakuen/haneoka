@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
-import { filterGroup, renderBrowse } from "./ui/browse";
+import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -101,6 +101,7 @@ export class SpineWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    clearBrowseBar();
     this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
