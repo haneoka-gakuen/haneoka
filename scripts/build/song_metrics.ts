@@ -76,10 +76,10 @@ const bundle = buildSync({
   // The converter composes locked workspace packages; map them to their
   // materialized checkouts so bundling works without a linked node_modules.
   alias: {
-    "@haneoka/cassiopeia": path.join(repositoryRoot, ".dependencies/cassiopeia"),
+    "@haneoka/cassiopeia": path.join(repositoryRoot, ".dependencies/cassiopeia/src"),
     "@haneoka/cassiopeia-plugin-our-notes": path.join(
       repositoryRoot,
-      ".dependencies/cassiopeia-plugin-our-notes",
+      ".dependencies/cassiopeia-plugin-our-notes/src",
     ),
   },
 });
