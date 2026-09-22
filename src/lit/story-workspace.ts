@@ -587,7 +587,7 @@ export class StoryWorkspace extends LitElement {
         ${detail ? this.renderDetail(detail) : nothing}
       `;
     }
-    if ((this.mode === "band" || this.mode === "tutorial") && this.view === "grid") {
+    if (this.mode === "band" && this.view === "grid") {
       const chapter =
         this.relevantChapters().find((item) => String(item.chapterId) === this.selectedRail) ||
         this.relevantChapters()[0];
@@ -643,7 +643,7 @@ export class StoryWorkspace extends LitElement {
                         </header>
                         <nav class="story-list grid" aria-label=${label}>
                           ${list.map((episode) =>
-                            this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
+                            this.renderEpisode(episode, undefined, String(staged?.storyId || "")),
                           )}
                         </nav>
                       </section>
@@ -652,7 +652,7 @@ export class StoryWorkspace extends LitElement {
               return html`
                 <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
                   ${main.map((episode) =>
-                    this.renderEpisode(episode, (id) => this.choosePreview(id), String(staged?.storyId || "")),
+                    this.renderEpisode(episode, undefined, String(staged?.storyId || "")),
                   )}
                 </nav>
                 ${section(uiText(this.locale, "exStory"), ex)}
