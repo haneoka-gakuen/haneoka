@@ -58,6 +58,14 @@ export interface TileOptions {
   style?: string;
   /** `contain` for logos and items that must not be cropped. */
   fit?: "cover" | "contain";
+  /**
+   * `tab` when the tile is one of a set that switches what an adjacent region
+   * shows — a chapter in the pane rail, a band in the roster rail. Pair it
+   * with `controls` (the region's id) and `tabIndex` for roving focus.
+   */
+  role?: "tab";
+  controls?: string;
+  tabIndex?: number;
 }
 
 const markClass = (mark: TileMark) =>
@@ -76,6 +84,9 @@ export function tile(options: TileOptions): TemplateResult {
     <button
       class=${classes}
       type="button"
+      role=${options.role ?? nothing}
+      aria-controls=${options.controls ?? nothing}
+      tabindex=${options.tabIndex ?? nothing}
       aria-label=${options.label}
       aria-selected=${options.selected === undefined ? nothing : String(options.selected)}
       style=${options.style || nothing}

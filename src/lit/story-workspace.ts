@@ -12,9 +12,15 @@ import {
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { HomeSpotStage } from "./runtime/home-spot-stage";
-import { filterGroup, renderBrowse } from "./ui/browse";
+import {
+  filterGroup,
+  renderBrowse,
+  type BrowseHeading,
+  type BrowseRailItem,
+} from "./ui/browse";
 import { filterChip, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
+import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
 import { specList } from "./ui/spec";
 import { emptyState, errorState, loadingState } from "./ui/state";
@@ -28,22 +34,20 @@ import { tile } from "./ui/tile";
  * applied, the results, and filters in a modal side sheet. A story is a
  * resource like any other, so it is browsed like one.
  *
- * Three things were wrong with what this replaced, and all three came from
- * the page inventing its own layout instead of using the shared one:
+ * What this replaced had its own layout rather than the shared one, and that
+ * cost it two things: the hand-copied browse bar went into a two-column grid
+ * whose cells were already claimed, so the count and the filter button were
+ * pushed into row two and the bar rendered *below* the stories; and the cards
+ * were hand-built `.story-card`s with a pressed state, so a story looked
+ * unlike a song, a card or a character.
  *
- *   · it hand-wrote a copy of the browse bar and dropped it into a two-column
- *     grid whose cells were already claimed, so auto-placement pushed the
- *     count and the filter button into row two — the bar rendered *below* the
- *     stories;
- *   · a chapter rail stood inside the content pane, a second left rail beside
- *     the navigation rail, with no relationship to it;
- *   · the cards were hand-built `.story-card`s with a pressed state, so a
- *     story looked unlike a song, a card or a character, and clicking one lit
- *     it up underneath the detail that had just covered it.
- *
- * The chapter axis is a filter now, not a rail: the collection shows every
- * episode in the section, each card naming its own chapter, and narrowing to
- * one chapter is a facet like narrowing to one band on the song page.
+ * The chapter rail is kept, because a story section really is authored along
+ * that axis — episodes belong to a chapter, and a flat list of five hundred
+ * of them is not a story archive. It is the browse pattern's own pane rail
+ * now (Material's supporting pane) rather than a bespoke column, so it is the
+ * same component, the same tiles and the same selected state as the band rail
+ * on the roster pages. The heading beside it names what is selected, which is
+ * what a chapter's readers actually need: "42 results" never said which 42.
  *
  * Two origins, one presentation. `origin="bestdori"` points the same screen
  * at the Bestdori mirror, whose worker projection already carries chapter,
@@ -90,6 +94,8 @@ const FRIENDSHIP_OTHER_SLOTS = [
 ] as const;
 
 const BESTDORI_REGIONS: Record<string, string> = { "zh-TW": "tw", "zh-CN": "cn", ko: "kr", en: "en" };
+/** Query keys the screen round-trips, independent of what the data offers. */
+const FACET_KEYS = ["chapter", "spot", "lead", "band", "character", "level"] as const;
 
 export class StoryWorkspace extends LitElement {
   static properties = {
@@ -142,6 +148,13 @@ export class StoryWorkspace extends LitElement {
   private homeStageSpot = "";
   private storyAudio?: HTMLAudioElement;
   private paneFocus = new PaneFocus();
+  /**
+   * Story banners exist in localized variants for the band and tutorial
+   * sections — `banner(zh-Hans).png` beside `banner.png` — so the loader is
+   * given the candidate list and falls back to Japanese artwork rather than
+   * showing an empty frame.
+   */
+  private lazyImages = new LazyImages({ candidates: (source) => this.localizedImages(source) });
   private bestdoriDetail?: typeof import("./bestdori-community-detail");
   private onKeydown = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
@@ -201,6 +214,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.lazyImages.disconnect();
     this.homeStage?.dispose();
     this.storyAudio?.pause();
     this.paneFocus.detach();
@@ -210,6 +224,8 @@ export class StoryWorkspace extends LitElement {
   updated() {
     // Focus stays inside a detail while it is open.
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+    // tile() defers its artwork as `data-src`; this is what promotes it.
+    this.lazyImages.observe(this);
     this.syncHomeStage();
   }
 
@@ -228,12 +244,17 @@ export class StoryWorkspace extends LitElement {
   private text(value: unknown) {
     return localizedText(value, this.locale);
   }
+  /** Only the band and tutorial sections have localized banner artwork. */
+  private localizedImages(source: string): string[] {
+    return ["band", "tutorial"].includes(this.mode) ? localeTaggedCandidates(source, this.locale) : [source];
+  }
   private async load(openId = "") {
     this.phase = "loading";
     this.error = "";
     try {
       if (this.isBestdori()) await this.loadBestdori();
       else await this.loadRelease();
+      this.ensureRailSelection();
       this.phase = "ready";
       if (openId) void this.openStory(openId);
     } catch (error) {
@@ -415,46 +436,28 @@ export class StoryWorkspace extends LitElement {
 
   /* ---------------------------------------------------------------- facets */
 
-  private facetKeys() {
-    return this.facetDefinitions().map((group) => group.key);
+  /**
+   * Every axis this screen understands, whether or not the loaded data
+   * happens to offer it. The URL is read before the fetch resolves, so
+   * deriving these from `facetDefinitions()` — which needs the episodes to
+   * know what values exist — silently dropped every deep link: a shared
+   * `?band=5&character=3` arrived with nothing selected.
+   */
+  private facetKeys(): string[] {
+    return [this.railAxis(), ...FACET_KEYS.filter((key) => key !== this.railAxis())];
+  }
+  /**
+   * The axis the pane rail owns. It never appears in the filter sheet as
+   * well: one choice, one control.
+   */
+  private railAxis() {
+    if (this.origin === "release" && this.mode === "home") return "spot";
+    if (this.mode === "link") return "lead";
+    return "chapter";
   }
   private facetDefinitions(): FacetDefinition[] {
     const groups: FacetDefinition[] = [];
-    if (this.origin === "release" && this.mode === "home") {
-      groups.push({
-        key: "spot",
-        label: uiText(this.locale, "scenes"),
-        single: true,
-        options: this.spots.map((spot) => ({
-          value: String(spot.spotId),
-          label: this.text(spot.name) || this.text(spot.spotName) || String(spot.assetName || ""),
-          image: String((spot.spine as JsonRecord)?.backgroundPreview || spot.backgroundPreview || ""),
-        })),
-      });
-      return groups;
-    }
-    if (this.mode === "link")
-      groups.push({
-        key: "lead",
-        label: uiText(this.locale, "characters"),
-        single: true,
-        options: this.characters.map((character) => ({
-          value: String(character.characterId),
-          label: this.characterName(character),
-          image: String(character.faceImage || character.thumbnailImage || ""),
-        })),
-      });
-    const chapters = this.relevantChapters();
-    if (chapters.length > 1)
-      groups.push({
-        key: "chapter",
-        label: uiText(this.locale, "chapters"),
-        options: chapters.map((chapter) => ({
-          value: String(chapter.chapterId),
-          label: this.chapterName(chapter),
-          image: String(chapter.icon || chapter.banner || ""),
-        })),
-      });
+    if (this.origin === "release" && this.mode === "home") return groups;
     const episodes = this.allEpisodes();
     const usedCharacters = [...new Set(episodes.flatMap((episode) => this.characterIds(episode)))].filter(Boolean);
     const usedBands = [
@@ -514,8 +517,100 @@ export class StoryWorkspace extends LitElement {
     this.limit = 120;
     this.sync();
   }
+  /** Applied filters, not counting the rail — the rail is always set. */
   private appliedCount() {
-    return Object.values(this.facets).reduce((sum, values) => sum + values.length, 0);
+    const axis = this.railAxis();
+    return Object.entries(this.facets).reduce((sum, [key, values]) => sum + (key === axis ? 0 : values.length), 0);
+  }
+
+  /* ------------------------------------------------------------------ rail */
+
+  /**
+   * The rail: chapters for a story section, characters for the friendship
+   * stories, scenes for the home talks. Each is the axis its section is
+   * authored along, which is why it gets a persistent companion pane rather
+   * than a chip in a sheet a reader has to open.
+   */
+  private railItems(): BrowseRailItem[] {
+    if (this.origin === "release" && this.mode === "home")
+      return this.spots.map((spot) => ({
+        value: String(spot.spotId),
+        label: this.text(spot.name) || this.text(spot.spotName) || String(spot.assetName || ""),
+        image: String((spot.spine as JsonRecord)?.backgroundPreview || spot.backgroundPreview || ""),
+        meta: this.text(spot.bandName) || this.bandName(Number(spot.bandId)),
+      }));
+    if (this.mode === "link")
+      return this.characters.map((character) => ({
+        value: String(character.characterId),
+        label: this.characterName(character),
+        image: String(character.faceImage || character.thumbnailImage || ""),
+        meta: this.bandName(Number(character.bandId)),
+      }));
+    return this.relevantChapters().map((chapter) => ({
+      value: String(chapter.chapterId),
+      label: this.chapterName(chapter),
+      image: String(chapter.banner || chapter.image || chapter.icon || ""),
+      meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "episodes")}`,
+    }));
+  }
+  private railValue() {
+    return (this.facets[this.railAxis()] || [])[0] || "";
+  }
+  /** Portraits are square; chapter banners and scenes are wide. */
+  private railRatio() {
+    return this.mode === "link" ? "1" : "16 / 9";
+  }
+  private railLabel() {
+    if (this.origin === "release" && this.mode === "home") return uiText(this.locale, "scenes");
+    if (this.mode === "link") return uiText(this.locale, "characters");
+    return uiText(this.locale, "chapters");
+  }
+  /**
+   * A rail is a set of destinations, so one of them is always current: a
+   * collection headed by nothing is what "42 results" with no chapter name
+   * used to be.
+   */
+  private ensureRailSelection() {
+    const axis = this.railAxis();
+    const items = this.railItems();
+    if (!items.length) return;
+    if (items.some((item) => item.value === this.railValue())) return;
+    this.facets = { ...this.facets, [axis]: [items[0].value] };
+  }
+  private selectRail(value: string) {
+    this.facets = { ...this.facets, [this.railAxis()]: [value] };
+    this.limit = 120;
+    if (this.mode === "link") this.linkPartner = "";
+    this.sync();
+  }
+  /** The heading: the rail's current destination, named. */
+  private heading(): BrowseHeading | undefined {
+    const value = this.railValue();
+    if (!value) return undefined;
+    if (this.origin === "release" && this.mode === "home") {
+      const spot = this.spots.find((item) => String(item.spotId) === value);
+      if (!spot) return undefined;
+      return {
+        title: this.text(spot.name) || this.text(spot.spotName) || String(spot.assetName || ""),
+        supporting: this.text(spot.bandName) || this.bandName(Number(spot.bandId)),
+      };
+    }
+    if (this.mode === "link") {
+      const character = this.character(Number(value));
+      if (!character) return undefined;
+      return {
+        title: this.characterName(character),
+        supporting: this.bandName(Number(character.bandId)),
+        image: String(character.faceImage || ""),
+      };
+    }
+    const chapter = this.relevantChapters().find((item) => String(item.chapterId) === value);
+    if (!chapter) return undefined;
+    return {
+      title: this.chapterName(chapter),
+      supporting: this.text(chapter.description) || this.text(chapter.caption) || "",
+      image: String(chapter.icon || ""),
+    };
   }
 
   /* ---------------------------------------------------------------- results */
@@ -657,6 +752,14 @@ export class StoryWorkspace extends LitElement {
           value: this.phase === "ready" ? episodes.length : null,
           label: episodes.length !== total ? `/ ${total.toLocaleString()}` : "",
         },
+        rail: {
+          label: this.railLabel(),
+          value: this.railValue(),
+          items: this.railItems(),
+          onSelect: (value) => this.selectRail(value),
+          ratio: this.railRatio(),
+        },
+        heading: this.heading(),
         controls: this.allowsList()
           ? segmented({
               label: uiText(this.locale, "view"),
@@ -856,12 +959,7 @@ export class StoryWorkspace extends LitElement {
       </li>
     `;
   }
-  private imageError = (event: Event) => {
-    const image = event.currentTarget as HTMLImageElement;
-    const fallback = image.dataset.fallback || "";
-    if (fallback && image.src !== new URL(fallback, location.href).href) image.src = fallback;
-    else image.classList.add("is-error");
-  };
+  private imageError = nextImageCandidate;
   private renderFilters() {
     return html`
       <div class="field-stack">
@@ -1166,7 +1264,10 @@ export class StoryWorkspace extends LitElement {
           <button class="icon-button" type="button" aria-label=${uiText(this.locale, "close")} @click=${() => this.closeDetail()}>
             <svg class="material-icon" width="22" height="22"><use href="/icons.svg#arrow_back"></use></svg>
           </button>
-          <strong>${this.episodeTitle(episode)}</strong>
+          <span class="story-detail__title">
+            <strong>${this.episodeTitle(episode)}</strong>
+            <small>${this.chapterName(this.chapterOf(episode)) || this.text(episode.chapterName)}</small>
+          </span>
           <span class="row__spacer"></span>
           ${segmented({
             label: uiText(this.locale, "playback"),

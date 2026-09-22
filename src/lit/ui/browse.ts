@@ -1,13 +1,16 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { icon } from "./icon";
-import { iconButton } from "./controls";
+import { iconButton, rovingKeydown } from "./controls";
+import { tile } from "./tile";
 
 /**
  * The browse screen.
  *
  * One layout for every filtered collection on the site. It renders:
+ *   · an optional pane rail: the collection's primary axis, as artwork;
  *   · a sticky bar carrying the result count, the view and density switches,
  *     any page-specific actions, and the filter toggle with a count badge;
+ *   · an optional heading naming what the rail has selected;
  *   · a row of removable chips for every applied filter;
  *   · the results;
  *   · the filter panel — a modal side sheet at every size.
@@ -15,6 +18,52 @@ import { iconButton } from "./controls";
  * The count is a live region, so changing a filter is announced instead of
  * silently rearranging several thousand rows.
  */
+
+/** One destination in the pane rail. */
+export interface BrowseRailItem {
+  value: string;
+  label: string;
+  image?: string;
+  /** Second line: an episode count, a band, a chapter number. */
+  meta?: string;
+}
+
+/**
+ * The pane rail: the one axis a collection is primarily organised by, shown
+ * as artwork beside the results. Chapters for a story section, bands for the
+ * character and instrument rosters.
+ *
+ * Material's canonical layouts call this a supporting pane, and that is what
+ * it is — a persistent companion to the pane it controls, not a second set of
+ * top-level destinations. It is a tablist, because choosing an item switches
+ * what the region beside it shows; the results region carries the id the tabs
+ * point at. An axis owned by the rail is *removed* from the filter sheet, so
+ * there is never a rail and a facet competing for the same choice.
+ */
+export interface BrowseRail {
+  label: string;
+  value: string;
+  items: ReadonlyArray<BrowseRailItem>;
+  onSelect: (value: string) => void;
+  /** Artwork proportions for the rail's tiles (chapter banners are 16:9). */
+  ratio?: string;
+  /** `contain` for logos and emblems that must not be cropped. */
+  fit?: "cover" | "contain";
+}
+
+/**
+ * The heading: what the rail has selected, named. A collection of episodes is
+ * unreadable without it — "42 results" says nothing about which chapter's 42.
+ */
+export interface BrowseHeading {
+  title: string;
+  /** The subject's own description, where it has one. Never UI instructions. */
+  supporting?: string;
+  image?: string;
+}
+
+/** The results region, which the rail's tabs control. */
+const RESULTS_ID = "browse-results";
 
 export interface BrowseFilters {
   label: string;
@@ -37,17 +86,61 @@ export interface BrowseOptions {
   count: { value: number | null; label: string };
   /** Segmented switches (view, density) and page actions, in bar order. */
   controls?: unknown;
+  rail?: BrowseRail;
+  heading?: BrowseHeading;
   applied?: unknown;
   results: unknown;
   filters?: BrowseFilters;
 }
 
+/** The rail, as a one-column collection of tiles in a tablist. */
+function renderRail(rail: BrowseRail): TemplateResult {
+  return html`
+    <nav
+      class="browse__rail"
+      role="tablist"
+      aria-label=${rail.label}
+      aria-orientation="vertical"
+      @keydown=${rovingKeydown(
+        rail.items.map((item) => item.value),
+        rail.value,
+        rail.onSelect,
+      )}
+    >
+      <div class="collection collection--rail" style=${`--tile-ratio:${rail.ratio || "16 / 9"}`}>
+        ${rail.items.map((item) => {
+          const selected = item.value === rail.value;
+          return tile({
+            kind: "rail",
+            title: item.label,
+            subtitle: item.meta ?? null,
+            label: item.label,
+            image: item.image || "",
+            placeholder: icon("image", 24),
+            fit: rail.fit,
+            selected,
+            role: "tab",
+            controls: RESULTS_ID,
+            tabIndex: selected ? 0 : -1,
+            onOpen: () => rail.onSelect(item.value),
+          });
+        })}
+      </div>
+    </nav>
+  `;
+}
+
 export function renderBrowse(options: BrowseOptions): TemplateResult {
-  const { filters } = options;
+  const { filters, rail, heading } = options;
   const open = Boolean(filters?.open);
-  const classes = ["browse", options.kind ? `browse--${options.kind}` : ""].filter(Boolean).join(" ");
+  // A rail of one is not a choice, so it is not drawn.
+  const railed = Boolean(rail && rail.items.length > 1);
+  const classes = ["browse", options.kind ? `browse--${options.kind}` : "", railed ? "browse--railed" : ""]
+    .filter(Boolean)
+    .join(" ");
   return html`
     <section class=${classes} style=${options.style || nothing}>
+      ${railed && rail ? renderRail(rail) : nothing}
       <div class="browse__main">
         <div class="browse__bar">
           <p class="browse__count" role="status" aria-live="polite">
@@ -71,13 +164,45 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
           }
         </div>
         ${
+          heading
+            ? html`
+                <header class="browse__heading">
+                  ${
+                    heading.image
+                      ? html`
+                          <img class="browse__heading-art" src=${heading.image} alt="" loading="lazy" />
+                        `
+                      : nothing
+                  }
+                  <div class="browse__heading-copy">
+                    <h2>${heading.title}</h2>
+                    ${
+                      heading.supporting
+                        ? html`
+                            <p>${heading.supporting}</p>
+                          `
+                        : nothing
+                    }
+                  </div>
+                </header>
+              `
+            : nothing
+        }
+        ${
           options.applied
             ? html`
                 <div class="browse__applied">${options.applied}</div>
               `
             : nothing
         }
-        <div class="browse__results" style=${options.style || nothing}>${options.results}</div>
+        <div
+          class="browse__results"
+          id=${RESULTS_ID}
+          role=${railed ? "tabpanel" : nothing}
+          style=${options.style || nothing}
+        >
+          ${options.results}
+        </div>
       </div>
       ${
         filters

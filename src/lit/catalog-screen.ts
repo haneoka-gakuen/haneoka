@@ -12,6 +12,7 @@ import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { renderBrowse, filterGroup } from "./ui/browse";
+import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
 import { filterChip, iconButton, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
@@ -185,6 +186,7 @@ export class CatalogScreen extends LitElement {
     view: { state: true },
     filtersOpen: { state: true },
     selected: { state: true },
+    activeBand: { state: true },
     facets: { state: true },
     detailAux: { state: true },
     playingSong: { state: true },
@@ -214,6 +216,13 @@ export class CatalogScreen extends LitElement {
   declare view: "grid" | "list";
   declare filtersOpen: boolean;
   declare selected: Item | null;
+  /**
+   * Which band the roster rails are showing. Characters and instruments are
+   * authored per band — a character belongs to one, an instrument set is one
+   * band's kit — so the band is the axis those two collections are organised
+   * along rather than one filter among several.
+   */
+  declare activeBand: number;
   declare facets: Record<string, string[]>;
   declare detailAux: Item;
   declare playingSong: string;
@@ -246,7 +255,7 @@ export class CatalogScreen extends LitElement {
   private gameItems: Item[] = [];
   private songMeta: Item = {};
   private songMetaProvision?: Promise<void>;
-  private imageObserver?: IntersectionObserver;
+  private lazyImages = new LazyImages({ candidates: (source) => this.localizedImageCandidates(source) });
   private selectedId = "";
   private selectionParam() {
     return (
@@ -287,6 +296,7 @@ export class CatalogScreen extends LitElement {
     this.view = "grid";
     this.filtersOpen = false;
     this.selected = null;
+    this.activeBand = 0;
     this.facets = {};
     this.detailAux = {};
     this.playingSong = "";
@@ -337,6 +347,8 @@ export class CatalogScreen extends LitElement {
       this.sort = this.normalizeSort(params.get("sort") ?? this.profile.defaultSort);
       this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
       this.view = params.get("view") === "list" ? "list" : "grid";
+      const bandRail = this.hasBandRail();
+      this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
       this.selectedId = params.get(this.selectionParam()) || "";
       this.activeMedia = params.get("media") || "full";
       this.characterSection = params.get("section") || "profile";
@@ -350,7 +362,9 @@ export class CatalogScreen extends LitElement {
         // not a facet there; treating it as both collapsed the background list
         // to the selected row whenever a detail was opened.
         character: this.profile.presentation === "character" ? [] : params.getAll("character"),
-        collectionBand: [...params.getAll("band"), ...params.getAll("collectionBand")],
+        collectionBand: bandRail
+          ? params.getAll("collectionBand")
+          : [...params.getAll("band"), ...params.getAll("collectionBand")],
         type: [...params.getAll(typeParam), ...(typeParam === "type" ? [] : params.getAll("type"))],
         rarity: params.getAll("rarity"),
         category: params.getAll("category"),
@@ -365,7 +379,7 @@ export class CatalogScreen extends LitElement {
     this.filterFocus.detach();
     this.disposeMedia.forEach((dispose) => dispose());
     this.disposeMedia = [];
-    this.imageObserver?.disconnect();
+    this.lazyImages.disconnect();
     window.removeEventListener(DENSITY_EVENT, this.onDensity);
     window.removeEventListener("keydown", this.onKeydown);
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
@@ -383,56 +397,14 @@ export class CatalogScreen extends LitElement {
       !this.selected && this.filtersOpen && !this.docked ? this.querySelector<HTMLElement>(".browse__filters") : null,
       () => (this.filtersOpen = false),
     );
-    const images = this.querySelectorAll<HTMLImageElement>("img[data-src]");
-    if (!("IntersectionObserver" in window)) {
-      images.forEach((image) => this.loadImage(image));
-      return;
-    }
-    this.imageObserver ??= new IntersectionObserver(
-      (entries) => entries.forEach((entry) => entry.isIntersecting && this.loadImage(entry.target as HTMLImageElement)),
-      { rootMargin: "240px" },
-    );
-    images.forEach((image) => this.imageObserver?.observe(image));
+    // tile() defers its artwork as `data-src`; this is what promotes it.
+    this.lazyImages.observe(this);
   }
-  private loadImage(image: HTMLImageElement) {
-    const source = image.dataset.src || "";
-    const candidates = [
-      ...this.localizedImageCandidates(source),
-      ...(image.dataset.fallback ? [image.dataset.fallback] : []),
-    ].filter((value, index, values) => value && values.indexOf(value) === index);
-    image.dataset.candidates = JSON.stringify(candidates);
-    image.dataset.candidateIndex = "0";
-    image.src = candidates[0] || source;
-    image.removeAttribute("data-src");
-    this.imageObserver?.unobserve(image);
-  }
-  private taggedImage(source: string, localeTag: string) {
-    const slash = source.lastIndexOf("/");
-    const dot = source.lastIndexOf(".");
-    return dot > slash ? `${source.slice(0, dot)}(${localeTag})${source.slice(dot)}` : `${source}(${localeTag})`;
-  }
-  private localizedImageCandidates(source: string) {
-    if (!source || this.settings.locale === "ja" || !["comic", "stamp"].includes(this.profile.presentation))
-      return [source];
-    const tags: Record<string, string[]> = {
-      en: ["en"],
-      "zh-TW": ["zh-Hant", "zh-Hans"],
-      "zh-CN": ["zh-Hans", "zh-Hant"],
-      ko: ["ko"],
-    };
-    return [...(tags[this.settings.locale] || []).map((tag) => this.taggedImage(source, tag)), source];
-  }
-  private imageError(event: Event) {
-    const image = event.currentTarget as HTMLImageElement;
-    const candidates = JSON.parse(image.dataset.candidates || "[]") as string[];
-    const next = Number(image.dataset.candidateIndex || 0) + 1;
-    if (candidates[next]) {
-      image.dataset.candidateIndex = String(next);
-      image.src = candidates[next];
-      return;
-    }
-    image.classList.add("is-error");
-  }
+  private localizedImageCandidates = (source: string) =>
+    ["comic", "stamp"].includes(this.profile.presentation)
+      ? localeTaggedCandidates(source, this.settings.locale)
+      : [source];
+  private imageError = nextImageCandidate;
   /** Bestdori's region is chosen by the reading locale, as the worker expects. */
   private bestdoriRegion() {
     return { "zh-TW": "tw", "zh-CN": "cn", ko: "kr", en: "en" }[this.settings.locale] || "jp";
@@ -560,6 +532,9 @@ export class CatalogScreen extends LitElement {
         for (const [logical, path] of Object.entries(projected))
           this.gameMarks.set(logical, `/runtime/${currentReleaseServer()}/${path.slice("runtime/".length)}`);
       }
+      // A rail always has a destination selected.
+      if (this.hasBandRail() && !this.bands.some((band) => Number(band.bandId || 0) === this.activeBand))
+        this.activeBand = Number(this.railBands()[0]?.bandId || 0);
       if (this.selectedId) {
         const selected = this.items.find((item) => this.itemId(item) === this.selectedId);
         if (selected) void this.loadEntityDetail(selected);
@@ -577,10 +552,15 @@ export class CatalogScreen extends LitElement {
     set("sort", this.sort, this.profile.defaultSort);
     set("order", this.order, this.profile.defaultOrder);
     set("view", this.view, "grid");
+    const bandRail = this.hasBandRail();
+    if (bandRail) set("band", String(this.activeBand), "0");
+    else params.delete("band");
     for (const key of ["character", "collectionBand", "type", "rarity", "category"]) {
       const publicKey =
         key === "collectionBand"
-          ? "band"
+          ? bandRail
+            ? "collectionBand"
+            : "band"
           : key === "type" && ["member", "support"].includes(this.profile.presentation)
             ? "cardType"
             : key === "type" && this.profile.presentation === "song"
@@ -613,6 +593,7 @@ export class CatalogScreen extends LitElement {
       this.query,
       this.sort,
       this.order,
+      this.activeBand,
       this.settings.locale,
       JSON.stringify(this.facets),
     ].join("\u0000");
@@ -626,7 +607,12 @@ export class CatalogScreen extends LitElement {
   }
   private computeResults() {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
-    const source = this.items;
+    // A roster shows one band at a time, so that band is the population the
+    // result count is measured against — not the whole catalogue.
+    const source =
+      this.hasBandRail() && this.activeBand
+        ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
+        : this.items;
     const faceted = source.filter((item) => this.matchesFacets(item));
     const items = needle
       ? faceted.filter((item) =>
@@ -800,12 +786,10 @@ export class CatalogScreen extends LitElement {
         for (const value of new Set(values(item).map(String))) counts.set(value, (counts.get(value) || 0) + 1);
       return counts;
     };
-    // Every collection that has a band axis filters on it the same way.
-    // Characters and band items used to get an avatar tab bar across the top
-    // of the results instead, which made those two pages the only ones where
-    // a band was a mode rather than a filter — two controls for one idea, and
-    // a page that looked unlike the rest of the archive.
-    if (["member", "support", "comic", "stamp", "song", "character", "band-item"].includes(kind)) {
+    // Collections that span every band filter on it. The two rosters do not:
+    // there the band is the pane rail's axis, so offering it here as well
+    // would be two controls for one choice.
+    if (["member", "support", "comic", "stamp", "song"].includes(kind)) {
       const counts = tally((item) => this.itemBandIds(item));
       groups.push({
         key: "collectionBand",
@@ -1283,6 +1267,27 @@ export class CatalogScreen extends LitElement {
           value: shown,
           label: shown !== null && shown !== source ? `/ ${source.toLocaleString()}` : "",
         },
+        rail: this.hasBandRail()
+          ? {
+              label: this.label("band", "Band"),
+              value: String(this.activeBand),
+              items: this.railBands().map((band) => {
+                const id = Number(band.bandId || 0);
+                return {
+                  value: String(id),
+                  label: this.bandName(id),
+                  image: String(band.logo || band.icon || ""),
+                };
+              }),
+              onSelect: (value) => {
+                this.activeBand = Number(value);
+                this.syncUrl();
+              },
+              ratio: "3 / 1",
+              fit: "contain" as const,
+            }
+          : undefined,
+        heading: this.hasBandRail() && this.activeBand ? { title: this.bandName(this.activeBand) } : undefined,
         controls: this.renderBarControls(),
         applied: appliedCount || this.query ? this.renderApplied() : undefined,
         results: this.renderContent(items),
@@ -1325,6 +1330,16 @@ export class CatalogScreen extends LitElement {
     );
   }
 
+  /** Characters and instruments are browsed one band at a time. */
+  private hasBandRail() {
+    return ["band-item", "character"].includes(this.profile.presentation);
+  }
+  /** Only bands the collection actually has entries for. */
+  private railBands(): Item[] {
+    if (this.profile.presentation === "character") return this.bands;
+    const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
+    return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
+  }
   private renderBarControls() {
     return html`
       ${segmented({
@@ -2541,14 +2556,7 @@ export class CatalogScreen extends LitElement {
     return [...localized, ...sources].filter((value, index, all) => all.indexOf(value) === index);
   }
   private localizedImageCandidatesForRoute(source: string) {
-    if (!source || this.settings.locale === "ja") return [source];
-    const tags: Record<string, string[]> = {
-      en: ["en"],
-      "zh-TW": ["zh-Hant", "zh-Hans"],
-      "zh-CN": ["zh-Hans", "zh-Hant"],
-      ko: ["ko"],
-    };
-    return [...(tags[this.settings.locale] || []).map((tag) => this.taggedImage(source, tag)), source];
+    return localeTaggedCandidates(source, this.settings.locale);
   }
 }
 customElements.define("catalog-screen", CatalogScreen);

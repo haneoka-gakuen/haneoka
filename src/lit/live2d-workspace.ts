@@ -5,6 +5,7 @@ import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
 import { filterChip, segmented } from "./ui/controls";
 import { EXPANDED, matches, watchMedia } from "./ui/media";
+import { LazyImages } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 
@@ -161,6 +162,7 @@ export class Live2DWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
     this.generation += 1;
@@ -170,6 +172,7 @@ export class Live2DWorkspace extends LitElement {
   }
   private disposeMedia?: () => void;
   private paneFocus = new PaneFocus();
+  private lazyImages = new LazyImages();
   private text(value: unknown): string {
     return localizedText(value, this.locale);
   }
@@ -450,6 +453,8 @@ export class Live2DWorkspace extends LitElement {
   updated() {
     // The model viewer is a modal pane: focus belongs inside it.
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+    // tile() defers its artwork as `data-src`; this is what promotes it.
+    this.lazyImages.observe(this);
   }
   private closeDetail() {
     this.generation += 1;

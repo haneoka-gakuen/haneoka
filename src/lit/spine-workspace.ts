@@ -6,6 +6,7 @@ import { segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
 import { EXPANDED, matches, watchMedia } from "./ui/media";
+import { LazyImages } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
@@ -50,6 +51,7 @@ export class SpineWorkspace extends LitElement {
   private stage?: SpineStage;
   private disposeMedia?: () => void;
   private paneFocus = new PaneFocus();
+  private lazyImages = new LazyImages();
   private generation = 0;
   constructor() {
     super();
@@ -99,6 +101,7 @@ export class SpineWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
     this.stage?.dispose();
@@ -211,6 +214,8 @@ export class SpineWorkspace extends LitElement {
   updated() {
     // The model viewer is a modal pane: focus belongs inside it.
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+    // tile() defers its artwork as `data-src`; this is what promotes it.
+    this.lazyImages.observe(this);
   }
   private closeDetail() {
     this.stage?.dispose();

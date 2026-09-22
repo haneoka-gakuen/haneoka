@@ -245,6 +245,34 @@ story-workspace {
 .story-detail {
   grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
 }
+/* An episode's title, over the chapter it belongs to — the same two-line
+   identity the sheet header uses, because it is the same idea. */
+.story-detail__title {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+.story-detail__title > strong {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.story-detail__title > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.story-detail__title > small:empty {
+  display: none;
+}
 .story-detail__body {
   display: grid;
   width: min(100%, var(--content-max, 1120px));

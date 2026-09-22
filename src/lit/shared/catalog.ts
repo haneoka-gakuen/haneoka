@@ -122,6 +122,7 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   previewUnavailable: ["プレビューできません", "Preview unavailable", "無法預覽", "无法预览", "미리 볼 수 없음"],
   outfitParts: ["衣装パーツ", "Outfit parts", "服裝部件", "服装部件", "의상 파츠"],
   scenes: ["シーン", "Scenes", "場景", "场景", "장면"],
+  episodes: ["エピソード", "Episodes", "篇章", "篇章", "에피소드"],
   playback: ["再生", "Playback", "播放", "播放", "재생"],
 };
 

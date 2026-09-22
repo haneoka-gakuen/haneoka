@@ -108,10 +108,17 @@
   padding: 8px 2px 0;
 }
 
-/* ---------- Tile media ---------- */
+/* ---------- Tile media ----------
+   Edge to edge on all four sides. `width: 100%` is explicit rather than left
+   to grid stretch, because an element carrying `aspect-ratio` resolves its
+   own size before stretch applies in some engines, which is how artwork ends
+   up narrower than the card that contains it. Nothing here declares padding:
+   a card's image is full bleed, and the container's overflow does the
+   rounding at the top while the junction with the text stays square. */
 .tile__media {
   position: relative;
   display: grid;
+  width: 100%;
   aspect-ratio: var(--tile-ratio, 1);
   place-items: center;
   overflow: hidden;
@@ -122,13 +129,12 @@
   height: 100%;
   object-fit: var(--tile-fit, cover);
 }
-/* A symbol, not a photograph: an item sprite, a band logo, an instrument.
- * These are authored with no bleed of their own, so the media box gives them
- * one. This is the *only* place a tile's artwork is inset — a card's image is
- * full bleed everywhere else. */
+/* A symbol rather than a photograph: an item sprite, a band logo, an
+ * instrument. It is fitted instead of cropped, and the letterboxing the fit
+ * produces is the breathing room — no padding, so the media box still meets
+ * the card's edges. */
 .tile__media--contain {
   --tile-fit: contain;
-  padding: 12px;
 }
 /* Overlay marks sit on the artwork: rarity, level, difficulty, duration.
  * They are placed at the corners so they never cover a face or a title. */

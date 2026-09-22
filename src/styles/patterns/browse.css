@@ -14,23 +14,115 @@
    it floated over unrelated pages during view transitions. Sticky inside the
    scroll region cannot collide with the shell by construction.
    ========================================================================== */
-/* One column at every size. The filter panel is a modal side sheet — it is
-   never docked. Material treats a docked side sheet as a persistent part of
-   the layout, which is wrong for filters: they are a transient task, the
-   results are the page, and a permanent 320dp column taxes every reader for
-   a panel most of them open once. */
+/* The filter panel is a modal side sheet — it is never docked. Material
+   treats a docked side sheet as a persistent part of the layout, which is
+   wrong for filters: they are a transient task, the results are the page, and
+   a permanent 320dp column taxes every reader for a panel most of them open
+   once.
+
+   The pane rail is the opposite case and does get a column. It is not a
+   filter but the axis the collection is organised by — which chapter, which
+   band — so it is persistent by nature, and Material's canonical layouts
+   provide for exactly this as a supporting pane. */
 .browse {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
+.browse--railed {
+  grid-template-columns: var(--rail-width, 208px) minmax(0, 1fr);
+}
 .browse__main {
   display: grid;
   min-width: 0;
   align-content: start;
-  grid-row: 1;
-  grid-column: 1;
+}
+
+/* ---------- Pane rail ----------
+   Its own scroll region, pinned beside the results so a fifty-chapter
+   section can be traversed without losing the collection. */
+.browse__rail {
+  position: sticky;
+  z-index: var(--md-sys-z-index-local-sticky);
+  top: 0;
+  min-width: 0;
+  max-height: var(--shell-stage-block);
+  align-self: start;
+  padding: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
+  scrollbar-width: thin;
+}
+/* One column, so the rail's tiles are the same card as the results' — same
+   corner, same full-bleed media, same two-line text block. Only the width
+   differs, and that comes from the column. */
+.collection--rail {
+  --tile-min: 100%;
+  --tile-gap: 4px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.tile--rail {
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: transparent;
+}
+.tile--rail > .tile__identity {
+  gap: 2px;
+  padding: 8px 10px 10px;
+}
+.tile--rail .tile__title {
+  min-block-size: 0;
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+}
+.tile--rail .tile__subtitle {
+  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+    var(--md-sys-typescale-label-small-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Heading ----------
+   What the rail has selected, named, with the subject's own description
+   where it has one. "42 results" says nothing about *which* chapter's 42. */
+.browse__heading {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 16px var(--pane-gutter) 4px;
+}
+.browse__heading:has(.browse__heading-art) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.browse__heading-art {
+  width: clamp(72px, 16vw, 132px);
+  height: auto;
+  max-height: 64px;
+  object-fit: contain;
+  object-position: left center;
+}
+.browse__heading-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.browse__heading-copy > h2 {
+  min-width: 0;
+  margin: 0;
+  font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
+    var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  overflow-wrap: break-word;
+}
+.browse__heading-copy > p {
+  /* A measure, not the pane's full width: this is prose. */
+  max-width: 72ch;
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
 }
 
 /* ---------- Bar ---------- */
@@ -159,10 +251,45 @@ fieldset.browse__filter-group {
   margin-bottom: 10px;
 }
 
+/* Below expanded there is no room for a column beside the results, so the
+   rail lies down: the same tiles, scrolling horizontally above the bar. It
+   keeps its position in the reading order and its tablist semantics. */
+@media (max-width: 1199px) {
+  .browse--railed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .browse__rail {
+    position: static;
+    max-height: none;
+    padding: 8px 12px;
+    overflow: auto hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    scroll-padding-inline: 12px;
+  }
+  .collection--rail {
+    grid-auto-flow: column;
+    grid-auto-columns: 148px;
+    grid-template-columns: none;
+    --tile-gap: 8px;
+  }
+  .browse__rail .tile--rail {
+    background: var(--md-sys-color-surface-container);
+  }
+}
+
 @media (max-width: 599px) {
   .browse__bar {
     min-height: 52px;
     padding-inline: 12px;
+  }
+  .browse__heading {
+    gap: 10px;
+    padding: 12px 12px 4px;
+  }
+  .browse__heading-copy > h2 {
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .browse__count {
     /* The headline count moves into the bar's own line on compact, where the
