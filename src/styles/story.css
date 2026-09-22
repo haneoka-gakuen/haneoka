@@ -405,7 +405,7 @@ story-workspace {
   object-fit: cover;
 }
 .afterlive-browser .story-card__media {
-  display: none;
+  aspect-ratio: 16 / 9;
 }
 .afterlive-browser .story-list.grid {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));

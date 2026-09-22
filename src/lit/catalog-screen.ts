@@ -930,7 +930,13 @@ export class CatalogScreen extends LitElement {
     if (["member", "support"].includes(kind))
       return this.formatList(this.itemCharacterIds(item).map((id) => this.characterName(id)));
     if (kind === "character") return this.bandName(Number(item.bandId || 0));
-    if (kind === "song" || kind === "band-item") return this.bandName(Number(item.bandId || 0));
+    if (kind === "band-item") return this.bandName(Number(item.bandId || 0));
+    if (kind === "song")
+      return (
+        this.localized(item.bandName) ||
+        this.localized(item.artistName) ||
+        this.bandName(Number(item.bandId || 0))
+      );
     if (kind === "comic")
       return this.formatList(
         (Array.isArray(item.characters) ? item.characters : []).map(Number).map((id) => this.characterName(id)),

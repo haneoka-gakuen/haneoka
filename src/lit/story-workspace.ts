@@ -623,71 +623,6 @@ export class StoryWorkspace extends LitElement {
                         </small>
                       </span>
                     </header>
-                    <div class="chapter-story-stage__main">
-                      <div class=${`chapter-story-stage__media ${stagedImage ? "media-loading" : ""}`}>
-                        ${
-                          stagedImage
-                            ? html`
-                                <img
-                                  src=${this.localizedImage(stagedImage)}
-                                  data-fallback=${stagedImage}
-                                  alt=""
-                                  @load=${(event: Event) =>
-                                    (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                                  @error=${this.imageError}
-                                />
-                              `
-                            : html`
-                                <span class="chapter-story-stage__fallback">
-                                  <svg class="material-icon" width="36" height="36">
-                                    <use href="/icons.svg#auto_stories"></use>
-                                  </svg>
-                                  <strong>${this.text(staged.title) || uiText(this.locale, "story")}</strong>
-                                </span>
-                              `
-                        }
-                      </div>
-                      <article>
-                        <span class="chapter-story-stage__number">
-                          ${String(staged.episodeNumber || staged.storySort || 0).padStart(2, "0")}
-                        </span>
-                        <h2>${this.text(staged.title) || uiText(this.locale, "story")}</h2>
-                        <p>${this.text(staged.description) || this.text(chapter?.description)}</p>
-                        <footer>
-                          ${
-                            this.releaseValue(staged)
-                              ? html`
-                                  <span>
-                                    <svg class="material-icon" width="16" height="16">
-                                      <use href="/icons.svg#calendar_month"></use>
-                                    </svg>
-                                    ${new Intl.DateTimeFormat(this.locale, { dateStyle: "medium" }).format(
-                                      new Date(this.releaseValue(staged)),
-                                    )}
-                                  </span>
-                                `
-                              : nothing
-                          }
-                          ${
-                            this.duration(staged)
-                              ? html`
-                                  <span>
-                                    <svg class="material-icon" width="16" height="16">
-                                      <use href="/icons.svg#schedule"></use>
-                                    </svg>
-                                    ${this.duration(staged)}
-                                  </span>
-                                `
-                              : nothing
-                          }
-                        </footer>
-                        <button class="button" @click=${() => this.chooseStory(String(staged.storyId))}>
-                          <svg class="material-icon" width="20" height="20">
-                            <use href="/icons.svg#play_arrow"></use>
-                          </svg>
-                          ${uiText(this.locale, "openStory")}
-                        </button>
-                      </article>
                     </div>
                   </section>
                 `
@@ -894,7 +829,7 @@ export class StoryWorkspace extends LitElement {
         `
       : nothing;
     return html`
-      <button class=${`story-card content-grid-tile ${id === active ? "selected" : ""}`} @click=${() => choose(id)}>
+      <button class="story-card content-grid-tile" @click=${() => choose(id)}>
         <span class=${`story-card__media ${image ? "media-loading" : ""}`}>
           ${
             image
