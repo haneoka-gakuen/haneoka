@@ -248,15 +248,19 @@ jobs:
           build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"
           archive_root="$RUNNER_TEMP/unity-shards"
           mkdir -p "$archive_root" "$build_root"
-          aws s3 cp \
-            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/" \
-            "$archive_root/" \
-            --recursive \
-            --exclude "*" \
-            --include "unity-shard-*.tar.gz" \
-            --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
-            --region auto \
-            --no-progress
+          for attempt in 1 2 3 4 5; do
+            aws s3 cp \
+              "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/" \
+              "$archive_root/" \
+              --recursive \
+              --exclude "*" \
+              --include "unity-shard-*.tar.gz" \
+              --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+              --region auto \
+              --no-progress && break
+            echo "restore attempt $attempt failed; retrying in 30s" >&2
+            sleep 30
+          done
           mapfile -t archives < <(find "$archive_root" -maxdepth 1 -type f -name 'unity-shard-*.tar.gz' -print | sort)
           expected="${{ needs.prepare.outputs.shard_count }}"
           if [[ "${#archives[@]}" -ne "$expected" ]]; then
