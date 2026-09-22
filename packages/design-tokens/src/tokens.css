@@ -1,42 +1,8 @@
+@import "./schemes.css";
+
 :root {
   color-scheme: light;
-
-  /* Generated with Material Color Utilities from the favicon's #31356e,
-   * #79bbc8, and #c370b7 source colors. */
-  --md-sys-color-primary: #31356e;
-  --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #e5e6f3;
-  --md-sys-color-on-primary-container: #242750;
-  --md-sys-color-secondary: #2e6974;
-  --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #d9eff2;
-  --md-sys-color-on-secondary-container: #173f46;
-  --md-sys-color-tertiary: #875080;
-  --md-sys-color-on-tertiary: #ffffff;
-  --md-sys-color-tertiary-container: #f5e4f1;
-  --md-sys-color-on-tertiary-container: #52234d;
-  --md-sys-color-error: #b6485c;
-  --md-sys-color-on-error: #ffffff;
-  --md-sys-color-error-container: #ffdad6;
-  --md-sys-color-on-error-container: #410002;
-  --md-sys-color-surface: #f6f8f9;
-  --md-sys-color-on-surface: #202428;
-  --md-sys-color-on-surface-variant: #555d63;
-  --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f1f4f5;
-  --md-sys-color-surface-container: #eceff1;
-  --md-sys-color-surface-container-high: #e6eaec;
-  --md-sys-color-surface-container-highest: #dce2e5;
-  --md-sys-color-surface-dim: #d7dde0;
-  --md-sys-color-surface-bright: #ffffff;
-  --md-sys-color-outline: #687177;
-  --md-sys-color-outline-variant: #c7ced2;
-  --md-sys-color-inverse-surface: #272a58;
-  --md-sys-color-inverse-on-surface: #f5f3ef;
-  --md-sys-color-inverse-primary: #a5d7dc;
-  --md-sys-color-surface-tint: #31356e;
-  --md-sys-color-shadow: #000000;
-  --md-sys-color-scrim: #000000;
+  /* Color roles live in schemes.css (generated, one scheme per tuning seed). */
 
   --md-extended-color-attribute-blue: #3f8efc;
   --md-extended-color-attribute-green: #55c77c;
@@ -182,22 +148,24 @@
   --md-sys-safe-area-inset-left: env(safe-area-inset-left, 0px);
 
   /* Material state-layer opacities are shared by native controls and Material
-   * Web hosts. Focus rings are intentionally disabled at the product level. */
+   * Web hosts. Focus rings only appear for keyboard focus (:focus-visible). */
   --md-sys-state-hover-state-layer-opacity: 0.08;
   --md-sys-state-focus-state-layer-opacity: 0.12;
   --md-sys-state-pressed-state-layer-opacity: 0.12;
   --md-sys-state-dragged-state-layer-opacity: 0.16;
   --md-focus-ring-color: var(--md-sys-color-secondary);
-  --md-focus-ring-width: 0px;
-  --md-focus-ring-active-width: 0px;
-  --md-focus-ring-outward-offset: 0px;
+  --md-focus-ring-width: 3px;
+  --md-focus-ring-active-width: 6px;
+  --md-focus-ring-outward-offset: 2px;
 
   --md-sys-elevation-level0: none;
-  --md-sys-elevation-level1: 0 1px 2px rgb(22 38 43 / 0.08);
-  --md-sys-elevation-level2: 0 2px 6px rgb(22 38 43 / 0.12);
-  --md-sys-elevation-level3: 0 4px 12px rgb(22 38 43 / 0.14);
+  /* Material 3 elevation: key (umbra) + ambient (penumbra) shadow pairs. */
+  --md-sys-elevation-level1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-level2: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-level3: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px rgb(0 0 0 / 0.3);
+  --md-sys-elevation-level4: 0 6px 10px 4px rgb(0 0 0 / 0.15), 0 2px 3px rgb(0 0 0 / 0.3);
+  --md-sys-elevation-level5: 0 8px 12px 6px rgb(0 0 0 / 0.15), 0 4px 4px rgb(0 0 0 / 0.3);
   --md-sys-elevation-inset: inset 0 1px 2px rgb(22 38 43 / 0.1);
-  --md-sys-state-focus-ring: none;
 
   --md-comp-control-height-compact: 32px;
   --md-comp-control-height: 40px;
@@ -263,44 +231,11 @@
   --md-sys-z-index-a11y: 500;
 }
 
+:root[data-theme="dark"],
 :root[data-ui-resolved-theme="dark"] {
-  color-scheme: dark;
-
-  --md-sys-color-primary: #c3c5ff;
-  --md-sys-color-on-primary: #252956;
-  --md-sys-color-primary-container: #3b3f70;
-  --md-sys-color-on-primary-container: #e2e3ff;
-  --md-sys-color-secondary: #91d5df;
-  --md-sys-color-on-secondary: #00363d;
-  --md-sys-color-secondary-container: #174f57;
-  --md-sys-color-on-secondary-container: #aceff9;
-  --md-sys-color-tertiary: #e8b4df;
-  --md-sys-color-on-tertiary: #44203f;
-  --md-sys-color-tertiary-container: #5e3657;
-  --md-sys-color-on-tertiary-container: #ffd7f5;
-  --md-sys-color-error: #ffb3bd;
-  --md-sys-color-on-error: #680018;
-  --md-sys-color-error-container: #8d1730;
-  --md-sys-color-on-error-container: #ffdadf;
-  --md-sys-color-surface: #101217;
-  --md-sys-color-on-surface: #e3e6eb;
-  --md-sys-color-on-surface-variant: #bac2cc;
-  --md-sys-color-surface-container-lowest: #0b0d12;
-  --md-sys-color-surface-container-low: #15181e;
-  --md-sys-color-surface-container: #1a1e25;
-  --md-sys-color-surface-container-high: #21262e;
-  --md-sys-color-surface-container-highest: #29303a;
-  --md-sys-color-surface-dim: #101217;
-  --md-sys-color-surface-bright: #353b45;
-  --md-sys-color-outline: #8b95a1;
-  --md-sys-color-outline-variant: #414a56;
-  --md-sys-color-inverse-surface: #e3e6eb;
-  --md-sys-color-inverse-on-surface: #2e3137;
-  --md-sys-color-inverse-primary: #555b91;
-  --md-sys-color-surface-tint: #c3c5ff;
-  --md-sys-elevation-level1: 0 1px 2px rgb(0 0 0 / 0.32);
-  --md-sys-elevation-level2: 0 2px 7px rgb(0 0 0 / 0.4);
-  --md-sys-elevation-level3: 0 5px 14px rgb(0 0 0 / 0.48);
+  --md-sys-elevation-level1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-level2: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --md-sys-elevation-level3: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px rgb(0 0 0 / 0.3);
   --md-sys-elevation-inset: inset 0 1px 2px rgb(0 0 0 / 0.32);
 }
 

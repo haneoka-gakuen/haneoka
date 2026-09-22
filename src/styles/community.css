@@ -209,7 +209,7 @@ community-workspace {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: min(720px, calc(100dvh - var(--top-bar-height) - 32px));
+  min-height: min(720px, calc(var(--shell-stage-block) - 32px));
   grid-template-columns: minmax(280px, 0.82fr) minmax(420px, 1.18fr);
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -756,7 +756,9 @@ community-workspace {
 .bestdori-detail {
   position: fixed;
   z-index: 30;
-  inset: 0 0 0 var(--shell-width);
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
+  overflow: hidden;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -784,7 +786,9 @@ community-workspace {
 .bestdori-detail-loading {
   position: fixed;
   z-index: 31;
-  inset: 0 0 0 var(--shell-width);
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
+  overflow: hidden;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--md-sys-color-surface) 84%, transparent);
@@ -994,7 +998,7 @@ community-workspace {
     width: 100%;
   }
   .composer-workspace {
-    min-height: calc(100dvh - var(--top-bar-height) - 92px);
+    min-height: calc(var(--shell-stage-block) - 92px);
     grid-template-columns: minmax(0, 1fr);
   }
   .composer-preview,

@@ -1,9 +1,83 @@
 ---
 import Icon from "../Icon.astro";
 import I18nText from "../I18nText.astro";
-import { NAV_GROUPS } from "../../config/navigation";
+import { CATALOG_HUB, NAV_SECTIONS } from "../../config/navigation";
 import { localePath, type Locale } from "../../i18n/locales";
 const { locale } = Astro.props as { locale: Locale };
-const items = NAV_GROUPS.find((group) => group.id === "catalog")?.items ?? [];
+const resources = new Map(CATALOG_HUB.map((item) => [item.route, item.resource]));
+// Every catalogue section except the community; the hub mirrors the drawer's grouping.
+const sections = NAV_SECTIONS.filter((section) => section.id !== "community");
 ---
-<section class="page"><div class="workspace-index">{items.map((item) => <a class="workspace-card" href={localePath(item.route, locale)}><span class="workspace-card__icon"><Icon name={item.icon} /></span><strong><I18nText keyName={item.label} fallback={item.label} locale={locale} /></strong></a>)}</div></section>
+<div class="page catalog-hub">
+  {sections.map((section) => (
+    <section class="catalog-hub__section" aria-labelledby={`catalog-hub-${section.id}`}>
+      <h2 class="catalog-hub__headline" id={`catalog-hub-${section.id}`}><I18nText keyName={section.label} fallback={section.id} locale={locale} /></h2>
+      <ul class="catalog-hub__grid" role="list">
+        {section.items.map((item) => (
+          <li>
+            <a class="hub-link state-layer" href={localePath(item.route, locale)}>
+              <span class="hub-link__icon"><Icon name={item.icon} size={22} /></span>
+              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
+              <span class="hub-link__count tabular" data-count-resource={resources.get(item.route)}></span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</div>
+<script>
+  import { catalogUrl, fetchJson, type JsonRecord } from "../../lit/shared/catalog";
+  const fillCounts = async () => {
+    const nodes = document.querySelectorAll<HTMLElement>("[data-count-resource]");
+    if (!nodes.length) return;
+    try {
+      const summary = await fetchJson<JsonRecord>(catalogUrl("catalog/summary"));
+      const resources = (summary.resources || {}) as Record<string, { count?: number }>;
+      const locale = document.documentElement.lang || "ja";
+      nodes.forEach((node) => {
+        const count = resources[node.dataset.countResource || ""]?.count;
+        if (typeof count === "number") node.textContent = count.toLocaleString(locale);
+      });
+    } catch {
+      // Counts are supplementary; the links work without them.
+    }
+  };
+  void fillCounts();
+  document.addEventListener("astro:page-load", () => void fillCounts());
+</script>
+<style is:global>
+  .catalog-hub {
+    display: grid;
+    gap: 8px;
+  }
+  .catalog-hub__section {
+    display: grid;
+    gap: 8px;
+  }
+  .catalog-hub__headline {
+    margin: 12px 0 0;
+    padding-inline: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .catalog-hub__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .catalog-hub .hub-link > span:nth-child(2) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 599px) {
+    .catalog-hub__grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>

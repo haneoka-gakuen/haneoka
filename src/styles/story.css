@@ -916,7 +916,9 @@ story-workspace {
 .story-detail {
   position: fixed;
   z-index: 30;
-  inset: 0 0 0 var(--shell-width);
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
+  overflow: hidden;
   display: grid;
   width: auto;
   min-width: 0;

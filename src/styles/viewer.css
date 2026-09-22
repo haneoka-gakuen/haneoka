@@ -350,7 +350,9 @@ spine-workspace .model-grid {
 .viewer-detail {
   position: fixed;
   z-index: 30;
-  inset: 0 0 0 var(--shell-width);
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
+  overflow: hidden;
   display: grid;
   grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
   background: var(--md-sys-color-surface);

@@ -239,6 +239,80 @@
   opacity: 0.3;
   pointer-events: none;
 }
+.page-section__supporting {
+  max-width: 64ch;
+  margin: -4px 0 12px;
+  padding-inline: var(--md-sys-spacing-2);
+  color: var(--md-sys-color-on-surface-variant);
+}
+/* Theme colour swatches (Material "wallpaper colours" picker): each disc previews a seed. */
+.seed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-inline: var(--md-sys-spacing-2);
+}
+.seed-swatch {
+  --swatch: #31356e;
+  --swatch-container: #79bbc8;
+  --swatch-on: #c370b7;
+  position: relative;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-high);
+  cursor: pointer;
+  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+}
+.seed-swatch:hover {
+  background: var(--md-sys-color-surface-container-highest);
+}
+.seed-swatch__disc {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  grid-template: 1fr 1fr / 1fr 1fr;
+  overflow: hidden;
+  border-radius: 50%;
+  transition: transform var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+}
+.seed-swatch__disc i:first-child {
+  grid-column: 1 / -1;
+  background: var(--swatch);
+}
+.seed-swatch__disc i:nth-child(2) {
+  background: var(--swatch-container);
+}
+.seed-swatch__disc i:nth-child(3) {
+  background: var(--swatch-on);
+}
+.seed-swatch__check {
+  position: absolute;
+  padding: 4px;
+  color: var(--md-sys-color-on-primary);
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity var(--md-sys-motion-duration-short3) linear,
+    transform var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+  box-sizing: content-box;
+}
+.seed-swatch[aria-checked="true"] {
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+}
+.seed-swatch[aria-checked="true"] .seed-swatch__disc {
+  transform: scale(0.86);
+}
+.seed-swatch[aria-checked="true"] .seed-swatch__check {
+  opacity: 1;
+  transform: none;
+}
 .icon-row__image,
 .server-icon {
   width: 40px;

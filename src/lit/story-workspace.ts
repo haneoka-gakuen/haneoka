@@ -597,12 +597,9 @@ export class StoryWorkspace extends LitElement {
           !String(episode.storyId || "").includes("_exstory_"),
       );
       const staged = selected || mainEpisodes[0] || episodes[0];
-      const stagedImage = staged
-        ? String(staged.image || chapter?.image || staged.banner || chapter?.banner || "")
-        : "";
       return html`
-        ${this.mode === "tutorial" ? nothing : this.renderRail()}
-        <main class=${`chapter-story-browser ${this.mode === "tutorial" ? "chapter-story-browser--tutorial" : ""}`}>
+        ${this.renderRail()}
+        <main class="chapter-story-browser">
           ${
             staged
               ? html`
@@ -628,38 +625,33 @@ export class StoryWorkspace extends LitElement {
                 `
               : nothing
           }
-          ${
-            (() => {
-              const sid = (episode: JsonRecord) => String(episode.storyId || "");
-              const main = episodes.filter((episode) => !sid(episode).startsWith("anotherstory") && !sid(episode).includes("_exstory_"));
-              const ex = episodes.filter((episode) => sid(episode).includes("_exstory_"));
-              const another = episodes.filter((episode) => sid(episode).startsWith("anotherstory"));
-              const section = (label: string, list: JsonRecord[]) =>
-                list.length
-                  ? html`
-                      <section class="chapter-story-another">
-                        <header>
-                          <h3>${label}</h3>
-                        </header>
-                        <nav class="story-list grid" aria-label=${label}>
-                          ${list.map((episode) =>
-                            this.renderEpisode(episode, undefined, String(staged?.storyId || "")),
-                          )}
-                        </nav>
-                      </section>
-                    `
-                  : nothing;
-              return html`
-                <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
-                  ${main.map((episode) =>
-                    this.renderEpisode(episode, undefined, String(staged?.storyId || "")),
-                  )}
-                </nav>
-                ${section(uiText(this.locale, "exStory"), ex)}
-                ${section(uiText(this.locale, "anotherStory"), another)}
-              `;
-            })()
-          }
+          ${(() => {
+            const sid = (episode: JsonRecord) => String(episode.storyId || "");
+            const main = episodes.filter(
+              (episode) => !sid(episode).startsWith("anotherstory") && !sid(episode).includes("_exstory_"),
+            );
+            const ex = episodes.filter((episode) => sid(episode).includes("_exstory_"));
+            const another = episodes.filter((episode) => sid(episode).startsWith("anotherstory"));
+            const section = (label: string, list: JsonRecord[]) =>
+              list.length
+                ? html`
+                    <section class="chapter-story-another">
+                      <header>
+                        <h3>${label}</h3>
+                      </header>
+                      <nav class="story-list grid" aria-label=${label}>
+                        ${list.map((episode) => this.renderEpisode(episode, undefined, String(staged?.storyId || "")))}
+                      </nav>
+                    </section>
+                  `
+                : nothing;
+            return html`
+              <nav class="story-list grid" aria-label=${uiText(this.locale, "openStory")}>
+                ${main.map((episode) => this.renderEpisode(episode, undefined, String(staged?.storyId || "")))}
+              </nav>
+              ${section(uiText(this.locale, "exStory"), ex)} ${section(uiText(this.locale, "anotherStory"), another)}
+            `;
+          })()}
         </main>
         ${detail ? this.renderDetail(detail) : nothing}
       `;
@@ -803,9 +795,7 @@ export class StoryWorkspace extends LitElement {
       characterIds.map((characterId) => this.characterName(this.character(characterId) || {})),
       this.locale,
     );
-    const episodeChapter = this.chapters.find(
-      (item) => String(item.chapterId) === String(episode.chapterId),
-    );
+    const episodeChapter = this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId));
     const gridDescription =
       this.mode === "link" && episode.unlockCharacterFriendshipLevel
         ? `${uiText(this.locale, "friendship")} ${episode.unlockCharacterFriendshipLevel}`

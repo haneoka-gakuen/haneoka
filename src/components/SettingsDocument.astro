@@ -21,6 +21,7 @@ const flags = { ja: jpFlag, en: gbFlag, "zh-TW": hkFlag, "zh-CN": cnFlag, ko: kr
 const bilibiliBody = bilibiliSvg.replace(/^<svg[^>]*>/, "").replace(/<title>.*?<\/title>/, "").replace(/<\/svg>$/, "");
 const bilibili = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="256" fill="#00a1d6"/><g fill="#fff" transform="translate(76 76) scale(15)">${bilibiliBody}</g></svg>`)}`;
 const themeOptions = [["light", "light_mode", "themeLight"], ["system", "brightness_auto", "themeSystem"], ["dark", "dark_mode", "themeDark"]] as const;
+const seeds = [["haneoka", "tuneDefault", "Original key"], ...[1, 2, 3, 4, 5].map((id) => [`band-${id}`, `band.${id}`, `Band ${id}`])] as const;
 const releases = [["intl", intlIcon], ["jp-cbt", bushimo], ["intl-cbt", bilibili]] as const;
 const labelValues = (key: string, fallback: string) => JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
 const languageNames = { ja: "日本語", en: "English", "zh-TW": "繁體中文", "zh-CN": "简体中文", ko: "한국어" } as const;
@@ -33,6 +34,11 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
       <section class="page-section">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="palette" /></span><h2><I18nText keyName="appearance" fallback="Appearance" locale={locale} /></h2></header>
         <div class="icon-row" data-theme-choices role="radiogroup">{themeOptions.map(([value, icon, key]) => <button class="icon-row__item" type="button" role="radio" data-value={value} data-icon={icon} aria-label={t(locale,key,value)} data-i18n-aria-label-values={labelValues(key,value)}><Icon name={icon} /></button>)}</div>
+      </section>
+      <section class="page-section is-divided">
+        <header class="page-section__header"><span class="page-section__icon"><Icon name="format_paint" /></span><h2 id="theme-color-title"><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></h2></header>
+        <p class="page-section__supporting"><I18nText keyName="themeColorHint" fallback="Seeds the whole Material 3 color scheme from a band colour." locale={locale} /></p>
+        <div class="seed-row" data-seed-choices role="radiogroup" aria-labelledby="theme-color-title">{seeds.map(([value, key, fallback]) => <button class="seed-swatch" type="button" role="radio" data-value={value} style={value === "haneoka" ? undefined : `--swatch: var(--md-ref-${value}); --swatch-container: var(--md-ref-${value}-container); --swatch-on: var(--md-ref-${value}-on-container)`} aria-label={t(locale, key, fallback)} data-i18n-aria-label-values={labelValues(key, fallback)} title={t(locale, key, fallback)}><span class="seed-swatch__disc" aria-hidden="true"><i></i><i></i><i></i></span><svg class="material-icon seed-swatch__check" width="20" height="20" aria-hidden="true"><use href="/icons.svg#check"></use></svg></button>)}</div>
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="language" /></span><h2><I18nText keyName="language" fallback="Language" locale={locale} /></h2></header>
@@ -51,11 +57,13 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
 
 <script>
   import "@material/web/switch/switch.js";
+  import { applySeed, currentSeed, isSeed } from "../lib/tuning";
   type LocaleWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   const select = (root: Element | null, value: string) => root?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => {
     const selected = node.dataset.value === value;
     node.classList.toggle("is-selected", selected);
     node.setAttribute("aria-checked", String(selected));
+    node.tabIndex = selected ? 0 : -1;
     const icon = node.dataset.icon, use = node.querySelector("use");
     if (icon && use) use.setAttribute("href", `/icons.svg#${icon}${selected ? "-filled" : ""}`);
   });
@@ -70,6 +78,25 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
     const value = node.dataset.value || "system"; try { localStorage.setItem("haneoka.ui-theme.v1", value); } catch {}
     (window as LocaleWindow).__haneokaApplyTheme?.(); select(theme, value);
   }));
+  const seeds = settings.querySelector("[data-seed-choices]");
+  select(seeds, currentSeed());
+  seeds?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
+    const value = node.dataset.value;
+    if (!isSeed(value)) return;
+    const rect = node.getBoundingClientRect();
+    applySeed(value, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    select(seeds, value);
+  }));
+  seeds?.addEventListener("keydown", (event) => {
+    const key = (event as KeyboardEvent).key;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return;
+    event.preventDefault();
+    const nodes = [...seeds.querySelectorAll<HTMLElement>("[data-value]")];
+    const index = nodes.findIndex((node) => node.getAttribute("aria-checked") === "true");
+    const next = nodes[(Math.max(0, index) + (key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1) + nodes.length) % nodes.length];
+    next?.click();
+    next?.focus();
+  });
   const locales = settings.querySelector("[data-locale-choices]"); select(locales, document.documentElement.dataset.locale || "ja");
   locales?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => { const value = node.dataset.value || "ja"; (window as LocaleWindow).__haneokaApplyLocale?.(value); select(locales, value); }));
   const release = settings.querySelector("[data-release-choices]"); let releaseValue = "intl";

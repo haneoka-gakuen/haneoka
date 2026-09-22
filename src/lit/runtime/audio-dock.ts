@@ -475,7 +475,7 @@ export class AudioDock extends LitElement {
       this.inertTargets.clear();
       return;
     }
-    document.querySelectorAll<HTMLElement>("main, .navigation-drawer, .audio-dock").forEach((target) => {
+    document.querySelectorAll<HTMLElement>(".app-shell__body, .nav, .nav-bar, .audio-dock").forEach((target) => {
       if (target.hasAttribute("inert")) return;
       target.setAttribute("inert", "");
       this.inertTargets.add(target);
