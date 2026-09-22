@@ -3,9 +3,8 @@
    Everything shared with other routes now lives in the system: the browse
    layout, the collection grid, the tile, the detail pane, the data table and
    the specification list are all in src/styles/{components,patterns}. What is
-   left here is what is genuinely specific to these resources — the band-room
-   stage behind the character and instrument rosters, the authored artwork
-   proportions, and the chart/song/character detail internals.
+   left here is what is genuinely specific to these resources — the authored
+   artwork proportions and the chart/song/character detail internals.
 
    This file was 2,612 lines. The reason it was that long is that it had
    grown its own toolbar, filter panel, grid, card, table, sheet and empty
@@ -15,7 +14,15 @@
 
 /* ==========================================================================
    Artwork proportions
-   The only thing a resource really needs to declare about its tile.
+   The only thing a resource declares about its tile is the shape of its
+   artwork. Everything else — the corner, the full-bleed media, the two-line
+   text block and its 16dp padding — comes from patterns/collection.css and is
+   the same for all fifteen resources.
+
+   No resource adds padding around its artwork here. A Material card's image
+   is full bleed; the only inset case is a symbol rather than a photograph (an
+   item sprite, a band logo, an instrument), and that is the shared
+   `.tile__media--contain` variant, which the component asks for by name.
    ========================================================================== */
 .tile--member .tile__media {
   aspect-ratio: 224 / 294;
@@ -30,177 +37,37 @@
   aspect-ratio: 1;
   background: var(--md-sys-color-surface-container-low);
 }
-.tile--song .tile__media {
-  aspect-ratio: 1;
-}
-.tile--item .tile__media {
-  aspect-ratio: 1;
-  padding: 16px;
-}
+.tile--song .tile__media,
+.tile--item .tile__media,
 .tile--band-item .tile__media {
   aspect-ratio: 1;
-  padding: 10px;
 }
-.tile--band {
-  border-left: 5px solid var(--entity-accent);
-}
+/* A band has no artwork of its own, only a logo, so its media box is a tinted
+   plate in the band's colour with the logo centred on it. The tint is the
+   band's identity; the plate is still the same media box as every other. */
 .tile--band .tile__media {
   aspect-ratio: 3 / 1;
-  padding: 20px;
   background: linear-gradient(
     110deg,
     color-mix(in srgb, var(--entity-accent) 22%, transparent),
     var(--md-sys-color-surface-container-high)
   );
 }
+/* Character portraits are tall full-body sprites, framed head-first. */
+.tile--character .tile__media {
+  aspect-ratio: 3 / 4;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--entity-accent) 26%, transparent),
+    var(--md-sys-color-surface-container-highest)
+  );
+}
+.tile--character .tile__media > img {
+  object-position: top center;
+}
 .tile--story .tile__media,
 .tile--live2d .tile__media {
   aspect-ratio: 16 / 9;
-}
-
-/* ==========================================================================
-   Roster — the band room
-   Characters and instruments are browsed one band at a time, standing in
-   that band's room. The background is the one decorative image in the whole
-   interface and it earns its place: it is what tells you which band you are
-   looking at before you read a single label.
-   ========================================================================== */
-.roster {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  min-width: 0;
-  height: clamp(420px, calc(var(--shell-stage-block) - 84px), 920px);
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-low);
-}
-.roster > .tabs {
-  padding: 8px 8px 0;
-}
-.roster__stage {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
-  padding: clamp(8px, 2vw, 24px);
-  overflow: hidden;
-  /* A legibility wash over the room photograph: the tiles on top of it have
-   * to stay readable, and the photograph is 1990s-JPEG busy. */
-  background-image:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--md-sys-color-surface-container-lowest) 92%, transparent),
-      color-mix(in srgb, var(--md-sys-color-surface-container-low) 42%, transparent) 50%,
-      color-mix(in srgb, var(--md-sys-color-surface) 28%, transparent)
-    ),
-    var(--roster-background, none);
-  background-position: center;
-  background-size: cover;
-}
-.roster__stage:focus-visible {
-  outline-offset: -3px;
-}
-
-/* The deck: five portraits across, staggered a few pixels so the row reads
-   as a hand of cards rather than a table of thumbnails. Scoped to .roster so
-   it refines the collection pattern rather than replacing it. */
-.roster .collection--character {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  grid-template-columns: repeat(5, minmax(104px, 1fr));
-  align-items: center;
-  gap: clamp(8px, 1.5vw, 16px);
-  overflow: auto hidden;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.roster .collection--character .tile--character {
-  position: relative;
-  display: grid;
-  width: 100%;
-  max-width: 224px;
-  aspect-ratio: 270 / 740;
-  justify-self: center;
-  padding: 0;
-  overflow: hidden;
-  color: var(--md-sys-color-inverse-on-surface);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: color-mix(in srgb, var(--entity-accent) 22%, var(--md-sys-color-surface-container));
-  text-align: start;
-  transition:
-    border-color var(--md-sys-motion-duration-short4) var(--ease-standard),
-    box-shadow var(--md-sys-motion-duration-short4) var(--ease-standard);
-}
-.roster .collection--character .tile--character:nth-child(2n) {
-  translate: 0 -4px;
-}
-.roster .collection--character .tile--character:nth-child(3n) {
-  translate: 0 4px;
-}
-/* Selection is a ring in the character's own colour. No lift: a row of five
- * portraits that jumps as the pointer crosses it is noise, not feedback. */
-.roster .collection--character .tile--character:is(:hover, :focus-visible) {
-  z-index: 2;
-  border-color: var(--entity-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--entity-accent) 52%, transparent);
-}
-.roster .collection--character .tile--character .tile__media {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
-  border-radius: 0;
-  background: transparent;
-}
-.roster .collection--character .tile--character .tile__media > img {
-  object-fit: cover;
-  object-position: top center;
-}
-.roster .collection--character .tile--character .tile__identity {
-  position: relative;
-  z-index: 1;
-  align-self: end;
-  padding: 10px;
-  background: linear-gradient(0deg, color-mix(in srgb, #000 62%, transparent), transparent);
-}
-.roster .collection--character .tile--character .tile__title {
-  color: #fff;
-  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
-}
-
-/* Instruments: the same stage, a free grid instead of five fixed columns. */
-.browse--band-item .collection {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  align-content: start;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.browse--band-item .tile--band-item {
-  background: color-mix(in srgb, var(--md-sys-color-surface-container) 82%, transparent);
-  backdrop-filter: blur(2px);
-}
-
-/* The roster owns its own scrolling, so the results area must not add page
-   padding around it. */
-.browse--character .browse__results,
-.browse--band-item .browse__results {
-  padding-block: 0 8px;
 }
 
 /* ==========================================================================
@@ -218,28 +85,6 @@
 }
 .sheet--detail-character .sheet__body {
   background: var(--md-sys-color-surface-container-low);
-}
-
-@media (max-width: 760px) {
-  .roster {
-    height: auto;
-    min-height: 0;
-  }
-  .roster__stage {
-    padding: 8px;
-  }
-  .roster .collection--character {
-    grid-template-columns: repeat(auto-fill, minmax(min(45%, 132px), 1fr));
-    height: auto;
-    overflow: visible;
-  }
-  .roster .collection--character .tile--character {
-    aspect-ratio: 3 / 5;
-    max-width: none;
-  }
-  .roster .collection--character .tile--character:nth-child(n) {
-    translate: none;
-  }
 }
 
 /* ---------- song detail (ported) ---------- */
@@ -417,12 +262,6 @@ character-detail-archive {
 }
 .character-related-grid--songs {
   --catalog-min: 126px;
-}
-.tile--story .tile__media {
-  aspect-ratio: 16 / 9;
-}
-.tile--live2d .tile__media {
-  aspect-ratio: 1;
 }
 .character-voice-list,
 .character-mission-list {

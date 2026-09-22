@@ -39,12 +39,10 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="format_paint" /></span><h2 id="theme-color-title"><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></h2></header>
-        <p class="page-section__supporting"><I18nText keyName="themeColorHint" fallback="Seeds the whole Material 3 color scheme from a band colour." locale={locale} /></p>
         <div class="seed-row" data-seed-choices role="radiogroup" aria-labelledby="theme-color-title">{seeds.map(([value, key, fallback]) => <button class="seed-swatch" type="button" role="radio" data-value={value} style={value === "haneoka" ? undefined : `--swatch: var(--md-ref-${value}); --swatch-container: var(--md-ref-${value}-container); --swatch-on: var(--md-ref-${value}-on-container)`} aria-label={t(locale, key, fallback)} data-i18n-aria-label-values={labelValues(key, fallback)} title={t(locale, key, fallback)}><span class="seed-swatch__disc" aria-hidden="true"><i></i><i></i><i></i></span><svg class="material-icon seed-swatch__check" width="20" height="20" aria-hidden="true"><use href="/icons.svg#check"></use></svg></button>)}</div>
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="density_medium" /></span><h2 id="density-title"><I18nText keyName="density" fallback="Spacing" locale={locale} /></h2></header>
-        <p class="page-section__supporting"><I18nText keyName="densityHint" fallback="Switches row height and spacing — read the score packed, or read it loose." locale={locale} /></p>
         <div class="icon-row" data-density-choices role="radiogroup" aria-labelledby="density-title">{densities.map((option) => <button class="icon-row__item" type="button" role="radio" data-value={option.value} data-icon={option.icon} aria-label={t(locale, option.key, option.fallback)} data-i18n-aria-label-values={labelValues(option.key, option.fallback)} title={t(locale, option.key, option.fallback)}><Icon name={option.icon} /></button>)}</div>
       </section>
       <section class="page-section is-divided">

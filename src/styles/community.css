@@ -68,9 +68,6 @@ community-workspace {
   font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
     var(--md-sys-typescale-label-medium-line-height) var(--app-font);
 }
-.community-tag small {
-  color: var(--md-sys-color-on-surface-variant);
-}
 .community-avatar {
   display: grid;
   width: 40px;
@@ -128,40 +125,6 @@ community-workspace {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-.tag-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
-  gap: 12px;
-}
-.community-tag {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
-  display: grid;
-  gap: 8px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-.community-tag p {
-  margin: 0;
-  color: var(--md-sys-color-on-surface-variant);
-}
-.community-list {
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-}
-.community-row {
-  display: grid;
-  min-height: 72px;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.community-row:last-child {
-  border-bottom: 0;
 }
 .community-editor-page,
 .community-detail-page,
@@ -431,7 +394,6 @@ community-workspace {
 .community-engagement,
 .community-comment > footer,
 .community-user-actions,
-.community-tag > footer,
 .community-list-actions {
   display: flex;
   align-items: center;
@@ -443,8 +405,7 @@ community-workspace {
   border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 .community-engagement > button,
-.community-comment > footer > button,
-.community-tag > footer > button {
+.community-comment > footer > button {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -455,13 +416,11 @@ community-workspace {
   cursor: pointer;
 }
 .community-engagement > button:hover,
-.community-comment > footer > button:hover,
-.community-tag > footer > button:hover {
+.community-comment > footer > button:hover {
   background: var(--md-sys-color-surface-container-high);
 }
 .community-engagement > button.selected,
-.community-comment > footer > button.selected,
-.community-tag > footer > button.selected {
+.community-comment > footer > button.selected {
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
 }
@@ -478,9 +437,42 @@ community-workspace {
 .community-comments > header h2 {
   margin: 0;
 }
-.community-comment {
-  grid-template-columns: minmax(0, 1fr);
+/* Notification rows carry a read/unread state, which is a tonal container
+   rather than a hover surface: it has to survive the pointer leaving. */
+.list-item.is-unread {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+/* Comments and activity entries are not rows: each is a block of body copy
+   with a footer of actions, so they stack in their own surface. */
+.community-stack {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+}
+.community-stack > * + * {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.community-comment,
+.community-activity-row {
+  display: grid;
   align-items: start;
+  gap: 4px;
+  padding: 12px 16px;
+}
+.community-comment strong,
+.community-activity-row strong {
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+}
+.community-comment small,
+.community-activity-row small {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.community-activity-row p {
+  margin: 4px 0 0;
+  color: var(--md-sys-color-on-surface-variant);
 }
 .community-comment > footer {
   padding-top: 8px;
@@ -652,25 +644,13 @@ community-workspace {
 .community-profile-section h2 {
   margin: 0;
 }
-.community-tag > a {
-  color: inherit;
-}
-.community-tag > footer {
-  padding: 0 8px 8px;
-}
 .community-list-actions {
   justify-content: flex-end;
   margin-bottom: 8px;
 }
-.community-row.unread {
-  background: var(--md-sys-color-secondary-container);
-}
 .community-feed-scope {
   width: fit-content;
   margin: 12px auto 0;
-}
-.community-activity-row {
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 .community-activity-row > footer {
   display: flex;
@@ -693,8 +673,7 @@ community-workspace {
   min-height: 96px;
 }
 .community-user-hero p,
-.playlist-detail p,
-.community-row p {
+.playlist-detail p {
   margin: 0;
   color: var(--md-sys-color-on-surface-variant);
 }
@@ -745,30 +724,13 @@ community-workspace {
   background: var(--md-sys-color-secondary-container);
   text-align: center;
 }
-.bestdori-community-catalog {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  overflow: auto;
-}
-.bestdori-catalog-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.bestdori-catalog-toolbar md-outlined-text-field {
-  width: min(420px, 100%);
-}
-.bestdori-catalog-toolbar > span {
-  min-width: 36px;
-  color: var(--md-sys-color-on-surface-variant);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.bestdori-community-catalog .tile {
-  border: 0;
-}
-/* Geometry comes from .pane-layer (components/overlay.css). */
+/* The Bestdori story and song collections are browsed through the shared
+   screens now (<story-workspace origin="bestdori"> and <catalog-screen>), so
+   the hand-rolled catalogue and its toolbar are gone. What remains here is
+   the Bestdori *detail* — a card's images and a scenario's transcript, which
+   have no equivalent in the archive's own data.
+
+   Geometry comes from .pane-layer (components/overlay.css). */
 .bestdori-detail > header {
   gap: 10px;
   padding-inline: 12px;
@@ -924,15 +886,6 @@ community-workspace {
   grid-row: 2;
   min-height: 0;
 }
-.community-row:hover {
-  background: var(--md-sys-color-surface-container-low);
-}
-.community-row > span:last-child {
-  display: grid;
-}
-.community-row small {
-  color: var(--md-sys-color-on-surface-variant);
-}
 
 @media (max-width: 599px) {
   .community-page,
@@ -1022,13 +975,6 @@ community-workspace {
   .playlist-toolbar > .segmented {
     grid-column: 1 / -1;
   }
-  .community-row {
-    min-height: 64px;
-    padding-inline: 12px;
-  }
-  .tag-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .community-user-actions {
     width: 100%;
     margin-left: 0;
@@ -1038,9 +984,6 @@ community-workspace {
   }
   .community-dialog {
     border-radius: var(--md-sys-shape-corner-large);
-  }
-  .community-activity-row {
-    grid-template-columns: minmax(0, 1fr);
   }
   .bestdori-detail,
   .bestdori-detail-loading {

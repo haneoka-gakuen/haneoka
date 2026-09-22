@@ -117,12 +117,6 @@
   opacity: 0.3;
   pointer-events: none;
 }
-.page-section__supporting {
-  max-width: 64ch;
-  margin: -4px 0 12px;
-  padding-inline: var(--md-sys-spacing-2);
-  color: var(--md-sys-color-on-surface-variant);
-}
 /* Theme colour swatches (Material "wallpaper colours" picker): each disc previews a seed. */
 .seed-row {
   display: flex;

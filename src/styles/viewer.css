@@ -79,79 +79,22 @@ spine-workspace {
   border-color: transparent;
   background: #d9eff2;
 }
-.model-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  align-items: start;
-  gap: 12px;
+/* The viewers' grids are the shared collection and the shared tile. They used
+   to be a `.model-card` that declared the tile's classes *and* its own
+   padding, typography and hover surface on top — so the two viewers were the
+   only pages where a card had 8dp of padding and label-sized text. Only the
+   model preview's framing is local: a Cubism or Spine preview is a full-body
+   render on transparent, anchored at the head. */
+.collection--model {
+  --tile-min: 148px;
 }
-spine-workspace .model-grid {
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-}
-.model-card {
-  display: grid;
-  min-width: 0;
-  overflow: hidden;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 220px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-lowest);
-  text-align: left;
-  cursor: pointer;
-}
-.model-card:hover {
-  background: var(--md-sys-color-surface-container);
-}
-.model-card__media {
-  display: grid;
-  width: 100%;
+.tile--model .tile__media {
   aspect-ratio: 1;
-  place-items: center;
-  overflow: hidden;
   background: var(--md-sys-color-surface-container-low);
 }
-.model-card__media img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.tile--model .tile__media > img {
   object-position: center top;
 }
-.model-card__copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-  padding: 8px;
-}
-.model-card__copy strong {
-  display: -webkit-box;
-  min-block-size: calc(
-    var(--md-sys-typescale-label-medium-line-height) + var(--md-sys-typescale-label-medium-line-height)
-  );
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-    var(--md-sys-typescale-label-medium-line-height) var(--md-sys-typescale-label-medium-font);
-  text-overflow: ellipsis;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.model-card__copy small {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
-    var(--md-sys-typescale-label-small-line-height) var(--md-sys-typescale-label-small-font);
-}
-.model-card__copy small > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.model-card__copy small img,
 .model-list__entity img {
   width: 18px;
   height: 18px;

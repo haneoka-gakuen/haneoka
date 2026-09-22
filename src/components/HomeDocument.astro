@@ -8,7 +8,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 const { locale } = Astro.props as { locale: Locale };
 const title = t(locale, "homePage.overview", "haneoka");
 const extraKeys = [
-  "tuneTitle", "tuneHint", "tuneDefault", "expertLevel", "songsCount", "members", "viewAll",
+  "tuneTitle", "tuneDefault", "expertLevel", "songsCount", "members", "viewAll",
   "latestSongs", "catalog", "archive", "cards", "memberCards",
   ...CATALOG_HUB.map((item) => item.label),
 ];

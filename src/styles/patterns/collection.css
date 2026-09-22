@@ -47,13 +47,33 @@
   --tile-min: 132px;
 }
 
+/* A tile is a Material card, and a card with media has one anatomy:
+ *
+ *   ┌───────────────┐  ← container corner (medium)
+ *   │               │
+ *   │     media     │    full bleed: no padding, no inset
+ *   │               │
+ *   ├───────────────┤  ← square junction, not a rounded box
+ *   │ headline      │    the text block carries the card's padding
+ *   │ subhead       │
+ *   └───────────────┘
+ *
+ * Material's own card layout puts the image at match_parent with no padding
+ * and pads only the sibling text container (16dp), and where the image is
+ * shaped it squares cornerSizeBottomLeft/BottomRight to 0dp so the edge that
+ * adjoins the text is straight. The previous tile did the opposite: it padded
+ * 8dp all round and gave the media its own 8dp radius on all four corners, so
+ * every tile read as a small rounded picture floating inside a larger rounded
+ * box — two competing shapes, which is what made the grid look un-Material.
+ * The container clips; the media declares no radius of its own. */
 .tile {
   display: grid;
   min-width: 0;
   align-content: start;
-  gap: 8px;
-  padding: 8px;
   color: var(--md-sys-color-on-surface);
+  /* The container's radius is the only radius. overflow:hidden is what makes
+   * the media's top corners follow it and its bottom edge stay square. */
+  overflow: hidden;
   border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface-container-low);
   text-align: start;
@@ -67,14 +87,25 @@
     background: var(--md-sys-color-surface-container-high);
   }
 }
+/* Selection belongs to a tile that *is* a control for choosing something (a
+ * band in the roster, a model in the viewer). A tile that opens a detail has
+ * no selected state: the detail is the feedback. */
 .tile[aria-selected="true"],
 .tile.is-selected {
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
 }
+/* No container surface, so the media carries the shape and the text needs no
+ * card padding — it sits directly under the artwork. Used by the home page's
+ * song rail, where the tiles are a filmstrip rather than a grid of cards. */
 .tile--plain {
-  padding: 0;
   background: transparent;
+}
+.tile--plain > .tile__media {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+.tile--plain > .tile__identity {
+  padding: 8px 2px 0;
 }
 
 /* ---------- Tile media ---------- */
@@ -84,7 +115,6 @@
   aspect-ratio: var(--tile-ratio, 1);
   place-items: center;
   overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface-container-highest);
 }
 .tile__media > img {
@@ -92,9 +122,13 @@
   height: 100%;
   object-fit: var(--tile-fit, cover);
 }
+/* A symbol, not a photograph: an item sprite, a band logo, an instrument.
+ * These are authored with no bleed of their own, so the media box gives them
+ * one. This is the *only* place a tile's artwork is inset — a card's image is
+ * full bleed everywhere else. */
 .tile__media--contain {
   --tile-fit: contain;
-  padding: 8px;
+  padding: 12px;
 }
 /* Overlay marks sit on the artwork: rarity, level, difficulty, duration.
  * They are placed at the corners so they never cover a face or a title. */
@@ -113,21 +147,22 @@
   font-variant-numeric: tabular-nums;
   backdrop-filter: blur(4px);
 }
+/* 8dp from the artwork's edge, which is Material's own card-icon margin. */
 .tile__mark--start {
-  top: 4px;
-  left: 4px;
+  top: 8px;
+  left: 8px;
 }
 .tile__mark--end {
-  top: 4px;
-  right: 4px;
+  top: 8px;
+  right: 8px;
 }
 .tile__mark--bottom-end {
-  right: 4px;
-  bottom: 4px;
+  right: 8px;
+  bottom: 8px;
 }
 .tile__mark--bottom-start {
-  bottom: 4px;
-  left: 4px;
+  bottom: 8px;
+  left: 8px;
 }
 .tile__mark--accent {
   color: var(--md-sys-color-on-primary);
@@ -139,23 +174,31 @@
 }
 
 /* ---------- Tile identity ----------
-   Two lines of text with a reserved height, so a grid of tiles keeps its
-   baseline grid whether or not an entry has a subtitle. */
+   Exactly two things: a headline and a subhead. Material's card anatomy is
+   headline · subhead · supporting text · actions, and a 160dp grid tile has
+   room for the first two — so that is the whole contract. Anything more
+   (episode numbers, running times, release dates, unlock levels) belongs in
+   the list and table views, which exist for reading data. A tile is for
+   recognising one thing and opening it.
+
+   Both lines have a reserved height so a grid of two thousand tiles keeps a
+   single baseline grid whether or not an entry carries a subhead. */
 .tile__identity {
   display: grid;
   min-width: 0;
-  gap: 2px;
-  padding-inline: 2px;
+  /* Material's card text container: 16dp padding, 8dp under the headline. */
+  gap: 8px;
+  padding: 16px;
   color: inherit;
   text-align: start;
 }
 .tile__title {
   display: -webkit-box;
   min-width: 0;
-  min-block-size: calc(var(--md-sys-typescale-title-small-line-height) * 2);
+  min-block-size: calc(var(--md-sys-typescale-title-medium-line-height) * 2);
   overflow: hidden;
-  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
-    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -163,14 +206,21 @@
 .tile__subtitle {
   display: flex;
   min-width: 0;
-  height: var(--md-sys-typescale-body-small-line-height);
+  height: var(--md-sys-typescale-body-medium-line-height);
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   overflow: hidden;
   color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
-    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   white-space: nowrap;
+}
+/* Compact windows shed 4dp of the text block, not the anatomy. */
+@media (max-width: 599px) {
+  .tile__identity {
+    gap: 4px;
+    padding: 12px;
+  }
 }
 .tile__subtitle > span:last-child {
   min-width: 0;
@@ -185,29 +235,6 @@
   border-radius: var(--md-sys-shape-corner-full);
   object-fit: contain;
 }
-/* A row of small facts under the identity (band · attribute · release). */
-.tile__facts {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-  padding-inline: 2px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
-    var(--md-sys-typescale-label-small-line-height) var(--app-font);
-  font-variant-numeric: tabular-nums;
-}
-.tile__facts > * {
-  flex: 0 0 auto;
-}
-.tile__facts > .is-flexible {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------- Media loading ----------
    Artwork fades in when it decodes, so a grid of two thousand thumbnails
    settles instead of flashing. Errored images stay hidden rather than

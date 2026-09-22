@@ -28,22 +28,12 @@ interface Props {
   titleKey: string;
   /** Fallback title when the key is missing. */
   fallback: string;
-  /** Bestdori story section, when the route names one. */
-  section?: string;
 }
 
-const { mode, route, titleKey, fallback, section } = Astro.props as Props;
+const { mode, route, titleKey, fallback } = Astro.props as Props;
 const locale = DEFAULT_LOCALE as Locale;
 const title = t(locale, titleKey, fallback);
 const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "communityPage")])));
-const sectionLabels = JSON.stringify(
-  Object.fromEntries(
-    ["bestdoriEvent", "bestdoriBand", "bestdoriMain", "bestdoriAfterlive", "bestdoriCard"].map((key) => [
-      key,
-      t(locale, `storyNavigation.${key}`, key),
-    ]),
-  ),
-);
 ---
 
 <Base locale={locale} route={route} title={title} titleKey={titleKey} description={title}>
@@ -51,9 +41,7 @@ const sectionLabels = JSON.stringify(
     <community-workspace
       locale={locale}
       mode={mode}
-      section={section}
       labels={labels}
-      section-labels={sectionLabels}
     ></community-workspace>
   </AppShell>
 </Base>

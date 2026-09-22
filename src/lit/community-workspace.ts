@@ -3,7 +3,6 @@ import { PaneFocus } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
-import { renderGridIdentity } from "./shared/grid-identity";
 import { iconButton, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
@@ -48,10 +47,6 @@ export class CommunityWorkspace extends LitElement {
     locale: { type: String },
     labels: { type: String },
     mode: { type: String },
-    /** Bestdori story section, supplied by the route rather than parsed. */
-    section: { type: String },
-    /** Serialised storyNavigation labels for the section tabs. */
-    sectionLabels: { attribute: "section-labels", type: String },
     phase: { state: true },
     items: { state: true },
     query: { state: true },
@@ -69,7 +64,6 @@ export class CommunityWorkspace extends LitElement {
     uploads: { state: true },
     playlistSort: { state: true },
     playlistOrder: { state: true },
-    playlistView: { state: true },
     playlistBand: { state: true },
     editorTitle: { state: true },
     editorBody: { state: true },
@@ -77,14 +71,8 @@ export class CommunityWorkspace extends LitElement {
     editorMode: { state: true },
     editorReady: { state: true },
     session: { state: true },
-    bestdoriCard: { state: true },
-    bestdoriDetail: { state: true },
-    bestdoriView: { state: true },
-    bestdoriLimit: { state: true },
   };
   declare locale: string;
-  declare section: string;
-  declare sectionLabels: string;
   declare labels: string;
   declare mode: string;
   declare phase: "loading" | "ready" | "error";
@@ -109,7 +97,6 @@ export class CommunityWorkspace extends LitElement {
   declare uploads: UploadEntry[];
   declare playlistSort: string;
   declare playlistOrder: "asc" | "desc";
-  declare playlistView: "grid" | "list";
   declare playlistBand: string;
   declare editorTitle: string;
   declare editorBody: string;
@@ -117,20 +104,13 @@ export class CommunityWorkspace extends LitElement {
   declare editorMode: "edit" | "preview";
   declare editorReady: boolean;
   declare session: Value | null;
-  declare bestdoriCard: Value | null;
-  declare bestdoriDetail: Value | null;
-  declare bestdoriView: "text" | "player";
-  declare bestdoriLimit: number;
   private copy: Value = {};
-  private bestdoriRenderer?: typeof import("./bestdori-community-detail");
   private published = false;
   constructor() {
     super();
     this.locale = "ja";
     this.labels = "{}";
     this.mode = "feeds";
-    this.section = "";
-    this.sectionLabels = "{}";
     this.phase = "loading";
     this.items = [];
     this.query = "";
@@ -148,7 +128,6 @@ export class CommunityWorkspace extends LitElement {
     this.uploads = [];
     this.playlistSort = "order";
     this.playlistOrder = "asc";
-    this.playlistView = "grid";
     this.playlistBand = "";
     this.editorTitle = "";
     this.editorBody = "";
@@ -156,10 +135,6 @@ export class CommunityWorkspace extends LitElement {
     this.editorMode = "edit";
     this.editorReady = false;
     this.session = null;
-    this.bestdoriCard = null;
-    this.bestdoriDetail = null;
-    this.bestdoriView = "text";
-    this.bestdoriLimit = 80;
   }
   private paneFocus = new PaneFocus();
   createRenderRoot() {
@@ -201,12 +176,6 @@ export class CommunityWorkspace extends LitElement {
         this.entityId = decodeURIComponent(parts[2]);
         this.routeKind = "playlist-detail";
         this.mode = "playlists";
-      } else if (parts[1] === "stories-bestdori") {
-        // The route supplies the section; the path is only a fallback for
-        // the catch-all shell.
-        this.entityId = this.section || parts[2] || "band";
-        this.routeKind = "bestdori-stories";
-        this.mode = "stories-bestdori";
       }
       const query = new URLSearchParams(location.search);
       this.query = query.get("q") || "";
@@ -214,7 +183,6 @@ export class CommunityWorkspace extends LitElement {
       if (scope === "latest" || scope === "following" || scope === "recommended") this.feedScope = scope;
       this.playlistSort = query.get("sort") || "order";
       this.playlistOrder = query.get("order") === "desc" ? "desc" : "asc";
-      this.playlistView = query.get("view") === "list" ? "list" : "grid";
       this.playlistBand = query.get("band") || "";
       this.setPageTitle(
         this.routeKind === "post-new"
@@ -223,11 +191,7 @@ export class CommunityWorkspace extends LitElement {
             ? this.label("editPost", "Edit post")
             : this.mode === "playlists"
               ? this.label("playlistPage.title", "Playlists")
-              : this.mode === "songs-bestdori"
-                ? this.label("songsBestDori", "Bestdori songs")
-                : this.mode === "stories-bestdori"
-                  ? this.label("storiesBestDori", "Bestdori stories")
-                  : this.label("feed", "Community"),
+              : this.label("feed", "Community"),
       );
       void this.initialize();
     }, 0);
@@ -376,31 +340,6 @@ export class CommunityWorkspace extends LitElement {
             : null;
         if (this.document) this.setPageTitle(this.playlistTitle(this.document));
         this.phase = "ready";
-        return;
-      }
-      if (this.routeKind === "bestdori-stories" || this.routeKind === "bestdori-songs") {
-        const resource =
-          this.routeKind === "bestdori-songs"
-            ? "songs"
-            : this.entityId === "card"
-              ? "cards"
-              : `stories/${this.entityId}`;
-        const response = await fetch(`${this.bestdoriBase()}/${resource}?lang=${encodeURIComponent(this.locale)}`, {
-          headers: { accept: "application/json" },
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = (await response.json()) as Value;
-        const source = (data.items || data.stories || data.songs || data) as Value | Value[];
-        this.items = Array.isArray(source)
-          ? source
-          : Object.values(source).filter((entry): entry is Value => !!entry && typeof entry === "object");
-        this.phase = "ready";
-        const selectedSong =
-          this.routeKind === "bestdori-songs" ? new URLSearchParams(location.search).get("song") : "";
-        if (selectedSong) {
-          const selected = this.items.find((item) => String(item.musicId || item.id || "") === selectedSong);
-          if (selected) await this.openBestdoriItem(selected);
-        }
         return;
       }
       const response = await fetch(this.endpoint(append), {
@@ -683,19 +622,6 @@ export class CommunityWorkspace extends LitElement {
       });
       this.items = this.items.filter((entry) => entry !== post);
     });
-  }
-  /**
-   * A Bestdori story section's name. These keys live in the shared
-   * storyNavigation group rather than the communityPage group this workspace
-   * is handed, so the route serialises them into `sectionLabels`.
-   */
-  private storySectionLabel(key: string, fallback: string) {
-    try {
-      const labels = JSON.parse(this.sectionLabels || "{}") as Record<string, string>;
-      return labels[key] || fallback;
-    } catch {
-      return fallback;
-    }
   }
   private draftKey() {
     return `haneoka:community-post-draft:v1:${location.pathname}`;
@@ -1399,7 +1325,7 @@ export class CommunityWorkspace extends LitElement {
           ${comments.map((comment) => {
             const commentViewer = ((comment.viewer as Value | undefined) || {}) as Value;
             return html`
-              <article class="community-row community-comment" id=${`comment-${comment.id}`}>
+              <article class="community-comment" id=${`comment-${comment.id}`}>
                 <span>
                   <strong>
                     ${String((comment.author as Value | undefined)?.displayName || comment.authorName || this.label("member", "Member"))}
@@ -1654,16 +1580,25 @@ ${String(comment.body || "")}</textarea>
                     count: works.length,
                     level: 2,
                   })}
-                  <div class="tag-grid">
+                  <ul class="list list--divided" role="list">
                     ${works.map(
                       (work) => html`
-                        <a class="surface surface--outlined community-tag" href=${String(work.url || "#")}>
-                          <strong>${String(work.title || "")}</strong>
-                          <small>${String(work.summary || work.kind || "")}</small>
-                        </a>
+                        <li>
+                          <a
+                            class="list-item list-item--two-line list-item--interactive"
+                            href=${String(work.url || "#")}
+                          >
+                            <span class="list-item__body">
+                              <span class="list-item__headline">${String(work.title || "")}</span>
+                              <span class="list-item__supporting">
+                                ${String(work.summary || work.kind || "")}
+                              </span>
+                            </span>
+                          </a>
+                        </li>
                       `,
                     )}
-                  </div>
+                  </ul>
                 </section>
               `
             : nothing
@@ -1676,22 +1611,26 @@ ${String(comment.body || "")}</textarea>
                     count: gameAccounts.length,
                     level: 2,
                   })}
-                  <div class="community-list">
+                  <ul class="list list--divided" role="list">
                     ${gameAccounts.map(
                       (account) => html`
-                        <article class="community-row">
-                          <span>
-                            ${icon("sports_esports", 20)}
-                            <strong>${String(account.displayName || account.playerUid || "")}</strong>
-                            <small>
-                              ${String(account.provider || "")} · ${String(account.region || "")} ·
-                              ${String(account.verificationStatus || "")}
-                            </small>
-                          </span>
-                        </article>
+                        <li>
+                          <div class="list-item list-item--two-line">
+                            <span class="list-item__avatar">${icon("sports_esports", 20)}</span>
+                            <span class="list-item__body">
+                              <span class="list-item__headline">
+                                ${String(account.displayName || account.playerUid || "")}
+                              </span>
+                              <span class="list-item__supporting">
+                                ${String(account.provider || "")} · ${String(account.region || "")} ·
+                                ${String(account.verificationStatus || "")}
+                              </span>
+                            </span>
+                          </div>
+                        </li>
                       `,
                     )}
-                  </div>
+                  </ul>
                 </section>
               `
             : nothing
@@ -1705,7 +1644,7 @@ ${String(comment.body || "")}</textarea>
     this.query ? params.set("q", this.query) : params.delete("q");
     this.playlistSort !== "order" ? params.set("sort", this.playlistSort) : params.delete("sort");
     this.playlistOrder !== "asc" ? params.set("order", this.playlistOrder) : params.delete("order");
-    this.playlistView !== "grid" ? params.set("view", this.playlistView) : params.delete("view");
+    params.delete("view");
     this.playlistBand ? params.set("band", this.playlistBand) : params.delete("band");
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
     this.requestUpdate();
@@ -1948,19 +1887,6 @@ ${String(comment.body || "")}</textarea>
               this.syncPlaylist();
             },
           })}
-          ${segmented({
-            label: this.label("view", "View"),
-            value: this.playlistView,
-            options: [
-              { value: "grid" as const, label: this.label("grid", "Grid"), icon: "grid_view" },
-              { value: "list" as const, label: this.label("list", "List"), icon: "view_list" },
-            ],
-            onSelect: (view) => {
-              this.playlistView = view;
-              this.syncPlaylist();
-            },
-            iconOnly: true,
-          })}
         </header>
         ${groups
           .filter(([, entries]) => entries.length)
@@ -1971,264 +1897,47 @@ ${String(comment.body || "")}</textarea>
                   <h2>${this.label(`playlistPage.groups.${group}`, group)}</h2>
                   <span>${entries.length}</span>
                 </header>
-                <div class=${this.playlistView === "grid" ? "tag-grid" : "community-list"}>
+                <!-- A playlist is a name and a track count. That is a list
+                     item, so it is one, in the same divided list every other
+                     collection on the site uses for its list view. It used to
+                     be a grid of text-only outlined cards behind a grid/list
+                     switch — two presentations of one row, neither of which
+                     matched anything else. -->
+                <ul class="list list--divided" role="list">
                   ${entries.map(
                     (playlist) => html`
-                      <a
-                        class=${
-                          this.playlistView === "grid"
-                            ? "card card--outlined tile tile--interactive community-tag"
-                            : "list-item list-item--interactive"
-                        }
-                        href=${`/community/playlists/${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
-                      >
-                        ${
-                          this.playlistView === "grid"
-                            ? renderGridIdentity(
-                                this.playlistTitle(playlist),
-                                `${this.playlistTracks(playlist).length} ${this.label("playlistPage.songs", "songs")}`,
-                              )
-                            : html`
-                                <span>${icon("queue_music", 20)}</span>
-                                <span>
-                                  <strong>${this.playlistTitle(playlist)}</strong>
-                                  <small>
-                                    ${String(playlist.source || playlist.type || "")} ·
-                                    ${this.playlistTracks(playlist).length} ${this.label("playlistPage.songs", "songs")}
-                                  </small>
-                                </span>
-                              `
-                        }
-                      </a>
+                      <li>
+                        <a
+                          class="list-item list-item--two-line list-item--interactive"
+                          href=${`/community/playlists/${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                        >
+                          <span class="list-item__avatar list-item__avatar--square">${icon("queue_music", 20)}</span>
+                          <span class="list-item__body">
+                            <span class="list-item__headline">${this.playlistTitle(playlist)}</span>
+                            <span class="list-item__supporting">
+                              ${String(playlist.source || playlist.type || "")}
+                            </span>
+                          </span>
+                          <span class="list-item__trailing list-item__meta">
+                            ${this.playlistTracks(playlist).length}
+                            ${this.label("playlistPage.songs", "songs")}
+                          </span>
+                        </a>
+                      </li>
                     `,
                   )}
-                </div>
+                </ul>
               </section>
             `,
           )}
       </section>
     `;
   }
-  private renderBestdoriCatalog() {
-    const stories = this.routeKind === "bestdori-stories";
-    const query = this.query.trim().normalize("NFKC").toLocaleLowerCase();
-    const sourceItems = this.items.filter((item) => {
-      if (this.entityId === "card" && item.hasStory === false) return false;
-      if (!query) return true;
-      return `${localizedText(item.title || item.prefix || item.musicTitle, this.locale)} ${item.storyId || item.musicId || item.cardId || ""}`
-        .normalize("NFKC")
-        .toLocaleLowerCase()
-        .includes(query);
-    });
-    return html`
-      <section class="page bestdori-community-catalog">
-        ${
-          stories
-            ? html`
-                <!-- Sections within this page, not sidebar destinations: the
-                     rail carries one Bestdori stories entry, and these pick
-                     which collection it shows. -->
-                <nav class="tabs tabs--pills bestdori-story-tabs" aria-label=${this.label("storiesBestDori", "Stories")}>
-                  ${(
-                    [
-                      ["event", "bestdoriEvent"],
-                      ["band", "bestdoriBand"],
-                      ["main", "bestdoriMain"],
-                      ["afterlive", "bestdoriAfterlive"],
-                      ["card", "bestdoriCard"],
-                    ] as const
-                  ).map(
-                    ([section, key]) => html`
-                      <a
-                        class="tab"
-                        aria-current=${this.entityId === section ? "page" : nothing}
-                        href=${`/community/stories-bestdori/${section}`}
-                      >
-                        ${this.storySectionLabel(key, section)}
-                      </a>
-                    `,
-                  )}
-                </nav>
-              `
-            : nothing
-        }
-        <div class="bestdori-catalog-toolbar">
-          <md-outlined-text-field
-            type="search"
-            label=${this.label("search", "Search")}
-            .value=${this.query}
-            @input=${(event: Event) => {
-              this.query = String((event.target as HTMLElement & { value?: string }).value || "");
-              this.bestdoriLimit = 80;
-            }}
-          >
-            ${icon("search", 20)}
-          </md-outlined-text-field>
-          <span>${sourceItems.length.toLocaleString(this.locale)}</span>
-        </div>
-        <div class="collection">
-          ${sourceItems.slice(0, this.bestdoriLimit).map((item) => {
-            const title =
-              localizedText(item.titleText || item.title || item.prefix || item.musicTitle, this.locale) ||
-              String(item.storyId || item.musicId || item.cardId || "—");
-            const image = String(
-              item.cardImage ||
-                (item.cardImages as Value | undefined)?.normal ||
-                item.thumbnail ||
-                item.image ||
-                item.episodeImage ||
-                item.jacketThumbUrl ||
-                item.jacketUrl ||
-                "",
-            );
-            return html`
-              <button class="tile tile--interactive" @click=${() => this.openBestdoriItem(item)} aria-label=${title}>
-                <span class=${`tile__media ${image ? "media-loading" : ""}`}>
-                  ${
-                    image
-                      ? html`
-                          <img
-                            src=${image}
-                            data-fallback=${String(item.jacketUrl || "")}
-                            alt=""
-                            loading="lazy"
-                            @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                            @error=${(event: Event) => {
-                              const image = event.currentTarget as HTMLImageElement;
-                              const fallback = image.dataset.fallback || "";
-                              if (fallback && image.src !== new URL(fallback, location.href).href) image.src = fallback;
-                              else image.classList.add("is-error");
-                            }}
-                          />
-                        `
-                      : nothing
-                  }
-                </span>
-                <span class="tile__identity">
-                  ${renderGridIdentity(title, localizedText(item.chapterName || item.bandName, this.locale) || String(item.sourceServer || item.cardType || "Bestdori"))}
-                </span>
-              </button>
-            `;
-          })}
-        </div>
-        ${
-          sourceItems.length > this.bestdoriLimit
-            ? html`
-                <div class="load-more">
-                  <button
-                    class="button button--tonal"
-                    @click=${() => {
-                      this.bestdoriLimit += 80;
-                    }}
-                  >
-                    ${this.label("loadMore", "Load more")}
-                    (${Math.min(this.bestdoriLimit, sourceItems.length).toLocaleString(this.locale)} /
-                    ${sourceItems.length.toLocaleString(this.locale)})
-                  </button>
-                </div>
-              `
-            : nothing
-        }
-        ${this.renderBestdoriDetail()}
-      </section>
-    `;
-  }
-  private async openBestdoriItem(item: Value) {
-    this.bestdoriRenderer ??= await import("./bestdori-community-detail");
-    if (this.routeKind === "bestdori-songs") {
-      this.busy = true;
-      try {
-        const response = await fetch(
-          `${this.bestdoriBase()}/songs/${encodeURIComponent(String(item.musicId || ""))}?lang=${encodeURIComponent(this.locale)}`,
-        );
-        this.bestdoriDetail = response.ok ? ((await response.json()) as Value) : item;
-      } finally {
-        this.busy = false;
-      }
-      return;
-    }
-    if (this.entityId === "card") {
-      this.busy = true;
-      try {
-        const response = await fetch(
-          `${this.bestdoriBase()}/cards/${encodeURIComponent(String(item.cardId || ""))}?lang=${encodeURIComponent(this.locale)}`,
-        );
-        this.bestdoriCard = response.ok ? ((await response.json()) as Value) : item;
-      } finally {
-        this.busy = false;
-      }
-      this.bestdoriDetail = null;
-      return;
-    }
-    await this.openBestdoriStory(String(item.storyId || ""), item.title || item.chapterName);
-  }
-  private async openBestdoriStory(storyId: string, title?: unknown) {
-    if (!storyId || this.busy) return;
-    this.busy = true;
-    this.error = "";
-    try {
-      const response = await fetch(
-        `${this.bestdoriBase()}/stories/${encodeURIComponent(storyId)}?lang=${encodeURIComponent(this.locale)}`,
-      );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.bestdoriDetail = { ...((await response.json()) as Value), title };
-      this.bestdoriView = "text";
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
-    } finally {
-      this.busy = false;
-    }
-  }
-  private async playBestdoriSong(song: Value) {
-    if (!song.musicUrl) return;
-    await this.playPlaylist({ tracks: [song] });
-  }
-  private renderBestdoriDetail() {
-    return (
-      this.bestdoriRenderer?.renderBestdoriDetail(
-        {
-          locale: this.locale,
-          routeKind: this.routeKind,
-          busy: this.busy,
-          card: this.bestdoriCard,
-          detail: this.bestdoriDetail,
-          view: this.bestdoriView,
-          providerBase: this.bestdoriBase(),
-          label: (key, fallback) => this.label(key, fallback),
-        },
-        {
-          closeCard: () => {
-            this.bestdoriCard = null;
-          },
-          closeDetail: () => {
-            this.bestdoriDetail = null;
-            this.bestdoriCard = null;
-          },
-          openStory: (id, title) => {
-            void this.openBestdoriStory(id, title);
-          },
-          playSong: (song) => {
-            void this.playBestdoriSong(song);
-          },
-          setView: (view) => {
-            this.bestdoriView = view;
-          },
-        },
-      ) ||
-      (this.busy
-        ? html`
-            <div class="bestdori-detail-loading"><md-circular-progress indeterminate></md-circular-progress></div>
-          `
-        : nothing)
-    );
-  }
   render() {
     if (this.routeKind === "post-new" || this.routeKind === "post-edit") return this.renderPostEditor();
     if (this.phase === "ready" && this.routeKind === "post-detail") return this.renderPostDetail();
     if (this.phase === "ready" && this.routeKind === "user-detail") return this.renderUserDetail();
     if (this.phase === "ready" && this.mode === "playlists") return this.renderPlaylists();
-    if (this.phase === "ready" && (this.routeKind === "bestdori-stories" || this.routeKind === "bestdori-songs"))
-      return this.renderBestdoriCatalog();
     return html`
       <section class="community-page page">
         ${
@@ -2319,10 +2028,10 @@ ${String(comment.body || "")}</textarea>
       });
     if (this.mode === "activity")
       return html`
-        <div class="community-list">
+        <div class="community-stack">
           ${this.items.map(
             (comment) => html`
-              <article class="community-row community-activity-row">
+              <article class="community-activity-row">
                 <span>
                   <strong>${String(comment.postTitle || this.label("activityPost", "Post"))}</strong>
                   <small>
@@ -2363,40 +2072,48 @@ ${String(comment.body || "")}</textarea>
         ${this.renderDialog()}
       `;
     if (this.mode === "tags")
+      // A tag is a name, a description and two toggles. That is a list item
+      // with trailing actions, in the same divided list as everything else —
+      // not a grid of outlined cards with a footer of its own.
       return html`
-        <div class="tag-grid">
+        <ul class="list list--divided" role="list">
           ${this.items.map(
             (tag) => html`
-              <article class="surface surface--outlined community-tag tile">
-                <a
-                  href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag.normalizedName || ""))}`}
-                >
-                  ${renderGridIdentity(
-                    `#${tag.displayName || tag.normalizedName}`,
-                    String(
-                      tag.description ||
-                        `${tag.postCount || 0} ${this.label("posts", "posts")} / ${tag.followerCount || 0} ${this.label("followers", "followers")}`,
-                    ),
-                  )}
-                </a>
-                <footer>
-                  <button
-                    class=${tag.preference === "follow" ? "selected" : ""}
-                    @click=${() => this.tagPreference(tag, tag.preference === "follow" ? null : "follow")}
+              <li>
+                <div class="list-item list-item--two-line">
+                  <a
+                    class="list-item__body"
+                    href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag.normalizedName || ""))}`}
                   >
-                    ${icon(tag.preference === "follow" ? "notifications_active-filled" : "notifications_active", 18)}${this.label("follow", "Follow")}
-                  </button>
-                  <button
-                    class=${tag.preference === "mute" ? "selected" : ""}
-                    @click=${() => this.tagPreference(tag, tag.preference === "mute" ? null : "mute")}
-                  >
-                    ${icon(tag.preference === "mute" ? "volume_off-filled" : "volume_off", 18)}${this.label("mute", "Mute")}
-                  </button>
-                </footer>
-              </article>
+                    <span class="list-item__headline">#${tag.displayName || tag.normalizedName}</span>
+                    <span class="list-item__supporting">
+                      ${String(
+                        tag.description ||
+                          `${tag.postCount || 0} ${this.label("posts", "posts")} · ${tag.followerCount || 0} ${this.label("followers", "followers")}`,
+                      )}
+                    </span>
+                  </a>
+                  <span class="list-item__trailing">
+                    ${iconButton({
+                      label: this.label("follow", "Follow"),
+                      icon: tag.preference === "follow" ? "notifications_active-filled" : "notifications_active",
+                      toggle: true,
+                      pressed: tag.preference === "follow",
+                      onClick: () => this.tagPreference(tag, tag.preference === "follow" ? null : "follow"),
+                    })}
+                    ${iconButton({
+                      label: this.label("mute", "Mute"),
+                      icon: tag.preference === "mute" ? "volume_off-filled" : "volume_off",
+                      toggle: true,
+                      pressed: tag.preference === "mute",
+                      onClick: () => this.tagPreference(tag, tag.preference === "mute" ? null : "mute"),
+                    })}
+                  </span>
+                </div>
+              </li>
             `,
           )}
-        </div>
+        </ul>
       `;
     if (this.mode === "notifications")
       return html`
@@ -2409,25 +2126,26 @@ ${String(comment.body || "")}</textarea>
             ${this.label("markAllRead", "Mark all read")}
           </button>
         </div>
-        <div class="community-list">
+        <ul class="list list--divided" role="list">
           ${this.items.map(
             (item) => html`
-              <a
-                class=${`community-row${item.readAt ? " read" : " unread"}`}
-                href=${item.postId ? this.path(`/community/posts/${item.postId}`) : "#"}
-                @click=${() => this.markNotification(item)}
-              >
-                <span class="workspace-card__icon">
-                  <svg class="material-icon" width="22" height="22"><use href="/icons.svg#notifications"></use></svg>
-                </span>
-                <span>
-                  <strong>${item.actorName || "haneoka"}</strong>
-                  <small>${item.kind || "notification"} · ${this.date(item.createdAt)}</small>
-                </span>
-              </a>
+              <li>
+                <a
+                  class=${`list-item list-item--two-line list-item--interactive${item.readAt ? " is-read" : " is-unread"}`}
+                  href=${item.postId ? this.path(`/community/posts/${item.postId}`) : "#"}
+                  @click=${() => this.markNotification(item)}
+                >
+                  <span class="list-item__avatar">${icon("notifications", 20)}</span>
+                  <span class="list-item__body">
+                    <span class="list-item__headline">${item.actorName || "haneoka"}</span>
+                    <span class="list-item__supporting">${item.kind || "notification"}</span>
+                  </span>
+                  <span class="list-item__trailing list-item__meta">${this.date(item.createdAt)}</span>
+                </a>
+              </li>
             `,
           )}
-        </div>
+        </ul>
       `;
     return html`
       <div class="community-feed">

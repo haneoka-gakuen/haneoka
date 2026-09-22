@@ -109,14 +109,6 @@ home-dashboard {
 .staff__title .material-icon {
   color: var(--md-sys-color-primary);
 }
-.staff__hint {
-  max-width: 64ch;
-  margin: 2px 0 8px;
-  padding-left: 8px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
-    var(--md-sys-typescale-body-small-line-height) var(--app-font);
-}
 .staff__default {
   flex: 0 0 auto;
 }
@@ -384,18 +376,10 @@ home-dashboard {
   object-fit: cover;
   background: var(--md-sys-color-surface-container-high);
 }
-/* The song rail uses the shared strip + tile; only the jacket's hover shape
-   change is specific to the home page, where the tiles are large enough for
-   it to read. */
-@media (hover: hover) {
-  .home .tile--song:hover .tile__media {
-    border-radius: var(--md-sys-shape-corner-extra-large);
-  }
-}
-.home .tile--song .tile__media {
-  border-radius: var(--md-sys-shape-corner-large);
-  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
-}
+/* The song rail uses the shared strip + tile unchanged. It used to re-corner
+   the jacket on hover, which meant the home page's cards had a different
+   shape from the catalogue's — and a media box with its own radius, which is
+   not the card anatomy. */
 
 /* Catalog hub */
 /* Lists inside cards */

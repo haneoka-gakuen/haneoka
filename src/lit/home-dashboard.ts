@@ -457,7 +457,6 @@ export class HomeDashboard extends LitElement {
           class="staff"
           role="radiogroup"
           aria-labelledby="staff-title"
-          aria-describedby="staff-hint"
           @keydown=${this.onStaffKeydown}
         >
           <div class="staff__header">
@@ -476,9 +475,6 @@ export class HomeDashboard extends LitElement {
               ${this.seed === "haneoka" ? icon("check", 18) : icon("restart_alt", 18)}${this.text("tuneDefault", "Original key")}
             </button>
           </div>
-          <p id="staff-hint" class="staff__hint">
-            ${this.text("tuneHint", "Pick a line of the staff and the whole site re-tunes to that band.")}
-          </p>
           <div class="staff__lines">
             ${bands.map((band) => {
               const checked = this.seed === band.seed;

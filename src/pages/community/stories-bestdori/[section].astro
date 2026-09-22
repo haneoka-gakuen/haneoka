@@ -2,21 +2,26 @@
 /**
  * Bestdori stories, one route per section.
  *
- * The worker exposes `stories/{event,band,main,afterlive}` and `cards`
- * (worker/bestdori.ts), and the pre-Astro site had a page per section. The
- * Astro rewrite collapsed them into a single catch-all that generated only
- * /community/stories-bestdori, so every section URL fell through to the SPA
- * shell and the section was decided by a path segment the router had never
- * produced. These are real routes again, so each one prerenders, carries its
- * own title, and can be linked and bookmarked.
+ * These render through <story-workspace>, the same component as
+ * /catalog/stories/*, with origin="bestdori". That is how the site worked
+ * before the Astro rewrite: the Bestdori event/band/main catalogues went
+ * through the archive's own shared story browser and only the data source
+ * differed. It is also the only arrangement in which the two can be
+ * guaranteed to look the same — there is one screen, so there is nothing to
+ * diverge.
+ *
+ * What this replaces: a hand-rolled list inside <community-workspace> with
+ * its own search field, its own count, its own tile markup and a pill tab bar
+ * across the top for switching sections. The sections are routes; the sidebar
+ * lists them; a page does not need a bar to navigate to itself.
  */
 import Base from "../../../layouts/Base.astro";
 import AppShell from "../../../components/AppShell.astro";
-import { LOCALES, DEFAULT_LOCALE, type Locale } from "../../../i18n/locales";
-import { group, t } from "../../../i18n/messages";
-import "../../../lit/community-workspace";
+import { DEFAULT_LOCALE, type Locale } from "../../../i18n/locales";
+import { t } from "../../../i18n/messages";
+import "../../../lit/story-workspace";
 import "../../../styles/catalog.css";
-import "../../../styles/community.css";
+import "../../../styles/story.css";
 
 /** The sections the Bestdori worker can serve. */
 export const BESTDORI_STORY_SECTIONS = ["event", "band", "main", "afterlive", "card"] as const;
@@ -30,28 +35,13 @@ const locale = DEFAULT_LOCALE as Locale;
 const route = `/community/stories-bestdori/${section}`;
 const titleKey = `storyNavigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`;
 const title = t(locale, titleKey, section);
-const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "communityPage")])));
-const sectionLabels = JSON.stringify(
-  Object.fromEntries(
-    ["bestdoriEvent", "bestdoriBand", "bestdoriMain", "bestdoriAfterlive", "bestdoriCard"].map((key) => [
-      key,
-      t(locale, `storyNavigation.${key}`, key),
-    ]),
-  ),
-);
 ---
 
 <Base locale={locale} route={route} title={title} titleKey={titleKey} description={title}>
   <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
-    <community-workspace
-      locale={locale}
-      mode="stories-bestdori"
-      section={section}
-      labels={labels}
-      section-labels={sectionLabels}
-    ></community-workspace>
+    <story-workspace locale={locale} mode={section} origin="bestdori"></story-workspace>
   </AppShell>
 </Base>
 <script>
-  import "../../../lit/community-workspace";
+  import "../../../lit/story-workspace";
 </script>

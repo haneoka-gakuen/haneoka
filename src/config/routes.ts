@@ -47,7 +47,14 @@ const appPages: Array<[string, string]> = [
   ["/community/tags", "tags"],
   ["/community/playlists", "playlists"],
   ["/community/songs-bestdori", "bestdoriSongs"],
-  ["/community/stories-bestdori", "bestdoriStories"],
+  // Bestdori stories are one route per section, rendered by <story-workspace>.
+  ...(["event", "band", "main", "afterlive", "card"] as const).map(
+    (section) =>
+      [
+        `/community/stories-bestdori/${section}`,
+        `storyNavigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`,
+      ] as [string, string],
+  ),
 ];
 
 export const ROUTES: RouteDefinition[] = [

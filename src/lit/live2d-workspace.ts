@@ -1,7 +1,8 @@
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
-import { renderGridIdentity } from "./shared/grid-identity";
 import { filterGroup, renderBrowse } from "./ui/browse";
+import { icon } from "./ui/icon";
+import { tile } from "./ui/tile";
 import { filterChip, segmented } from "./ui/controls";
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { PaneFocus } from "./ui/pane";
@@ -649,44 +650,25 @@ export class Live2DWorkspace extends LitElement {
   }
   private renderModelGrid(models: Value[]) {
     return html`
-      <div class="model-grid">
+      <div class="collection collection--model">
         ${models.map((model) => {
           const character = this.character(Number(model.characterId || 0));
-          return html`
-            <button
-              class="model-card tile tile--interactive"
-              type="button"
-              @click=${() => this.select(this.key(model))}
-            >
-              <span class=${`model-card__media ${this.preview(model) ? "media-loading" : ""}`}>
-                ${
-                  this.preview(model)
-                    ? html`
-                        <img
-                          src=${this.preview(model)}
-                          alt=""
-                          loading="lazy"
-                          @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                        />
-                      `
-                    : html`
-                        <svg class="material-icon" width="32" height="32"><use href="/icons.svg#animation"></use></svg>
-                      `
-                }
-              </span>
-              <span class="model-card__copy">
-                ${renderGridIdentity(
-                  this.modelTitle(model),
-                  this.characterName(model),
-                  character?.faceImage
-                    ? html`
-                        <img src=${String(character.faceImage)} alt="" />
-                      `
-                    : nothing,
-                )}
-              </span>
-            </button>
-          `;
+          const title = this.modelTitle(model);
+          return tile({
+            kind: "model",
+            title,
+            subtitle: this.characterName(model),
+            adornment: character?.faceImage
+              ? html`
+                  <img src=${String(character.faceImage)} alt="" width="16" height="16" loading="lazy" />
+                `
+              : undefined,
+            label: title,
+            image: this.preview(model),
+            placeholder: icon("animation", 32),
+            fit: "contain",
+            onOpen: () => this.select(this.key(model)),
+          });
         })}
       </div>
     `;

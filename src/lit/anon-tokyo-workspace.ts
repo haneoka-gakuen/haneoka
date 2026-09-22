@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from "lit";
-import { filterGroup } from "./ui/browse";
-import { filterChip, iconButton } from "./ui/controls";
+import { filterGroup, renderBrowse } from "./ui/browse";
+import { filterChip, inputChip } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { errorState, loadingState } from "./ui/state";
 import {
@@ -12,7 +12,6 @@ import {
   recordValues,
   uiText,
 } from "./shared/catalog";
-import { renderGridIdentity } from "./shared/grid-identity";
 import { OutfitStage } from "./runtime/outfit-stage";
 type Value = Record<string, unknown>;
 const read = readPath;
@@ -289,100 +288,68 @@ export class AnonTokyoWorkspace extends LitElement {
     const key = facetKey[this.mode] || "";
     const facets = key ? [...new Set(source.map((item) => String(item[key] ?? "")).filter(Boolean))] : [];
     const list = source.filter((item) => !this.facet || String(item[key] ?? "") === this.facet);
-    return html`
-      <section class=${`anon-collection anon-collection--${this.mode}`}>
-        <div class="browse__bar">
-          <p class="browse__count" role="status" aria-live="polite">
-            <strong>${list.length}</strong>
-            ${
-              list.length === source.length
-                ? nothing
-                : html`
-                    <span>/ ${source.length}</span>
-                  `
-            }
-          </p>
-          <span class="row__spacer"></span>
-          ${
-            facets.length
-              ? iconButton({
-                  label: uiText(this.locale, "filter"),
-                  icon: "filter_alt",
-                  toggle: true,
-                  pressed: this.filtersOpen,
-                  badge: this.facet ? 1 : 0,
-                  onClick: () => (this.filtersOpen = !this.filtersOpen),
-                })
-              : nothing
+    const shown = list.slice(0, this.visible);
+    return renderBrowse({
+      kind: `anon-${this.mode}`,
+      count: {
+        value: list.length,
+        label: list.length === source.length ? "" : `/ ${source.length.toLocaleString()}`,
+      },
+      applied: this.facet
+        ? inputChip(
+            `${this.facetTitle(key)}: ${this.facetLabel(key, this.facet)}`,
+            uiText(this.locale, "remove"),
+            () => this.setFacet(""),
+          )
+        : undefined,
+      results: html`
+        <ul class="list list--divided" role="list">
+          ${shown.map((item) => this.renderCollectionItem(item))}
+        </ul>
+        ${
+          list.length > shown.length
+            ? html`
+                <div class="load-more">
+                  <button class="button button--tonal" type="button" @click=${() => (this.visible += 80)}>
+                    ${uiText(this.locale, "loadMore")}
+                  </button>
+                </div>
+              `
+            : nothing
+        }
+      `,
+      filters: facets.length
+        ? {
+            label: uiText(this.locale, "filter"),
+            open: this.filtersOpen,
+            count: this.facet ? 1 : 0,
+            closeLabel: uiText(this.locale, "close"),
+            resetLabel: uiText(this.locale, "reset"),
+            onOpen: () => (this.filtersOpen = true),
+            onClose: () => (this.filtersOpen = false),
+            onReset: () => this.setFacet(""),
+            body: filterGroup(
+              this.facetTitle(key),
+              html`
+                <div class="chip-set" role="group" aria-label=${this.facetTitle(key)}>
+                  ${filterChip({
+                    label: uiText(this.locale, "all"),
+                    selected: !this.facet,
+                    onToggle: () => this.setFacet(""),
+                  })}
+                  ${facets.map((value) =>
+                    filterChip({
+                      label: this.facetLabel(key, value),
+                      selected: this.facet === value,
+                      onToggle: () => this.setFacet(value),
+                    }),
+                  )}
+                </div>
+              `,
+            ),
           }
-        </div>
-        <div class="browse__results">
-          <div class="anon-grid">${list.slice(0, this.visible).map((item) => this.renderCollectionItem(item))}</div>
-          ${
-            list.length > this.visible
-              ? html`
-                  <div class="load-more">
-                    <button class="button button--tonal" @click=${() => (this.visible += 80)}>
-                      ${uiText(this.locale, "loadMore")}
-                    </button>
-                  </div>
-                `
-              : nothing
-          }
-        </div>
-        ${this.filtersOpen ? this.renderFacetFilter(key, facets) : nothing}
-      </section>
-    `;
-  }
-  private renderFacetFilter(key: string, facets: string[]) {
-    return html`
-      <button
-        class="scrim sheet-scrim"
-        type="button"
-        aria-label=${uiText(this.locale, "close")}
-        @click=${() => (this.filtersOpen = false)}
-      ></button>
-      <aside
-        class="browse__filters sheet sheet--side is-open"
-        role="dialog"
-        aria-modal="true"
-        aria-label=${uiText(this.locale, "filter")}
-        tabindex="-1"
-      >
-        <header class="sheet__header">
-          <span class="detail-section-title__icon">${icon("filter_alt", 20)}</span>
-          <span class="sheet__title"><strong>${uiText(this.locale, "filter")}</strong></span>
-          <span class="sheet__actions">
-            ${iconButton({
-              label: uiText(this.locale, "close"),
-              icon: "close",
-              onClick: () => (this.filtersOpen = false),
-            })}
-          </span>
-        </header>
-        <div class="browse__filters-body">
-          ${filterGroup(
-            this.facetTitle(key),
-            html`
-              <div class="chip-set" role="group" aria-label=${this.facetTitle(key)}>
-                ${filterChip({
-                  label: uiText(this.locale, "all"),
-                  selected: !this.facet,
-                  onToggle: () => this.setFacet(""),
-                })}
-                ${facets.map((value) =>
-                  filterChip({
-                    label: this.facetLabel(key, value),
-                    selected: this.facet === value,
-                    onToggle: () => this.setFacet(value),
-                  }),
-                )}
-              </div>
-            `,
-          )}
-        </div>
-      </aside>
-    `;
+        : undefined,
+    });
   }
   private setFacet(value: string) {
     this.facet = value;
@@ -636,7 +603,7 @@ export class AnonTokyoWorkspace extends LitElement {
   }
   private renderCollectionItem(item: Value) {
     const source = this.media(item);
-    const icon: Record<string, string> = {
+    const iconNames: Record<string, string> = {
       characters: "person",
       shop: "storefront",
       goods: "shopping_bag",
@@ -663,55 +630,57 @@ export class AnonTokyoWorkspace extends LitElement {
       return "";
     })();
     const description = this.text(item.description) || this.text(item.text) || "";
+    const audio =
+      this.mode === "fever" && item.entityKind === "bgm" ? String(item.playableUrl || item.url || "") : "";
+    // A 56dp thumbnail, a headline and one supporting line: that is a
+    // Material list item, so it is one. It used to be an `.anon-card` that
+    // borrowed the tile's text classes while laying itself out as a row,
+    // which meant it inherited card padding it had no card to sit in.
     return html`
-      <article class="anon-card surface tile">
-        <span class=${`anon-card__media ${source ? "media-loading" : ""}`}>
+      <li>
+        <div class=${`list-item ${description ? "list-item--two-line" : ""}`}>
+          <span class=${`list-item__thumb list-item__thumb--icon ${source ? "media-loading" : ""}`}>
+            ${
+              source
+                ? html`
+                    <img
+                      src=${source}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
+                      @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
+                    />
+                  `
+                : icon(iconNames[this.mode] || "storefront", 24)
+            }
+          </span>
+          <span class="list-item__body">
+            <span class="list-item__headline">${this.entityTitle(item)}</span>
+            ${
+              description
+                ? html`
+                    <span class="list-item__supporting">${description}</span>
+                  `
+                : nothing
+            }
+            ${
+              audio
+                ? html`
+                    <audio src=${audio} controls preload="metadata"></audio>
+                  `
+                : nothing
+            }
+          </span>
           ${
-            source
+            meta
               ? html`
-                  <img
-                    src=${source}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                    @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                  />
+                  <span class="list-item__trailing list-item__meta">${meta}</span>
                 `
-              : html`
-                  <span class="workspace-card__icon">
-                    <svg class="material-icon" width="24" height="24">
-                      <use href=${`/icons.svg#${icon[this.mode] || "storefront"}`}></use>
-                    </svg>
-                  </span>
-                `
-          }
-        </span>
-        <div class="anon-card__copy">
-          ${
-            this.mode === "tasks" || this.mode === "guide"
-              ? html`
-                  <strong>${this.entityTitle(item)}</strong>
-                  ${
-                    description
-                      ? html`
-                          <p>${description}</p>
-                        `
-                      : nothing
-                  }
-                  <small>${meta}</small>
-                `
-              : renderGridIdentity(this.entityTitle(item), description || meta)
+              : nothing
           }
         </div>
-        ${
-          this.mode === "fever" && item.entityKind === "bgm" && (item.playableUrl || item.url)
-            ? html`
-                <audio src=${String(item.playableUrl || item.url)} controls preload="metadata"></audio>
-              `
-            : nothing
-        }
-      </article>
+      </li>
     `;
   }
   private renderOutfits() {

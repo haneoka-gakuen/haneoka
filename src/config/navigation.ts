@@ -32,6 +32,15 @@ const STORY_ICONS: Record<(typeof STORY_ROUTES)[number], string> = {
   afterlive: "celebration",
   tutorial: "school",
 };
+/** Bestdori's story sections, served by worker/bestdori.ts. */
+const BESTDORI_STORY_ROUTES = ["event", "band", "main", "afterlive", "card"] as const;
+const BESTDORI_STORY_ICONS: Record<(typeof BESTDORI_STORY_ROUTES)[number], string> = {
+  event: "event",
+  band: "groups",
+  main: "auto_stories",
+  afterlive: "celebration",
+  card: "style",
+};
 
 export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
   { id: "home", route: "/", icon: "home", label: "home", match: ["/"] },
@@ -144,7 +153,18 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { route: "/community/playlists", icon: "queue_music", label: "communityPage.playlistPage.title" },
       { route: "/community/songs-bestdori", icon: "library_music", label: "communityPage.songsBestDori" },
-      { route: "/community/stories-bestdori", icon: "auto_stories", label: "communityPage.storiesBestDori" },
+      /**
+       * Every Bestdori story section is listed, exactly as the archive's own
+       * story sections are listed above. The page used to carry a pill tab bar
+       * for these five, which meant one sidebar entry and a second, different
+       * navigation control inside the page for the same axis. Sections are
+       * routes; routes belong in the navigation.
+       */
+      ...BESTDORI_STORY_ROUTES.map((key) => ({
+        route: `/community/stories-bestdori/${key}`,
+        icon: BESTDORI_STORY_ICONS[key],
+        label: `storyNavigation.bestdori${key.charAt(0).toUpperCase()}${key.slice(1)}`,
+      })),
     ],
   },
 ];

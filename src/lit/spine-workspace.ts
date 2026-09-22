@@ -1,9 +1,10 @@
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
-import { renderGridIdentity } from "./shared/grid-identity";
 import { filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
+import { icon } from "./ui/icon";
+import { tile } from "./ui/tile";
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
@@ -273,7 +274,7 @@ export class SpineWorkspace extends LitElement {
                 )
               : this.view === "grid"
                 ? html`
-                    <div class="model-grid">${models.map((model) => this.renderModelCard(model))}</div>
+                    <div class="collection collection--model">${models.map((model) => this.renderModelCard(model))}</div>
                   `
                 : this.renderModelList(models),
         filters: {
@@ -386,29 +387,17 @@ export class SpineWorkspace extends LitElement {
     return String((model.preview as Value | undefined)?.url || "");
   }
   private renderModelCard(model: Value) {
-    return html`
-      <button class="model-card tile tile--interactive" type="button" @click=${() => this.select(String(model.id))}>
-        <span class=${`model-card__media ${this.preview(model) ? "media-loading" : ""}`}>
-          ${
-            this.preview(model)
-              ? html`
-                  <img
-                    src=${this.preview(model)}
-                    alt=""
-                    loading="lazy"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                  />
-                `
-              : html`
-                  <svg class="material-icon" width="32" height="32"><use href="/icons.svg#animation"></use></svg>
-                `
-          }
-        </span>
-        <span class="model-card__copy">
-          ${renderGridIdentity(this.modelTitle(model), this.familyName(model.family || model.spineVersion || "Spine"))}
-        </span>
-      </button>
-    `;
+    const title = this.modelTitle(model);
+    return tile({
+      kind: "model",
+      title,
+      subtitle: this.familyName(model.family || model.spineVersion || "Spine"),
+      label: title,
+      image: this.preview(model),
+      placeholder: icon("animation", 32),
+      fit: "contain",
+      onOpen: () => this.select(String(model.id)),
+    });
   }
   private renderModelList(models: Value[]) {
     return html`

@@ -68,20 +68,24 @@
 }
 
 /* ---------- Detail surface ----------
-   A full-screen sheet at every size — Material's full-screen dialog.
+   The detail fills the content pane — every pixel the collection had, and not
+   one more. The navigation rail and the top app bar stay where they are.
 
    Material's list-detail layout puts a detail beside its list, but that is
    for a *supporting* detail: a preview. Here the detail IS the destination —
    a card's full artwork and stat table, a song's chart data, a character's
    whole archive. At half the pane those spec tables wrapped every value and
    the artwork shrank to a thumbnail, while the list behind it sat under a
-   scrim and was unusable anyway. So it takes the whole viewport, carries its
-   own top app bar with a back action, and needs no scrim because there is
-   nothing left showing behind it. */
+   scrim and was unusable anyway. So it takes the pane whole and carries its
+   own back action, and needs no scrim because nothing shows behind it.
+
+   It is inset to the pane rather than to the viewport: covering the shell
+   would take away the navigation while a reader is deepest into the archive
+   and least sure how to get back out. --shell-overlay-inset is 0 on compact
+   windows, where the pane *is* the viewport. */
 .sheet--detail {
-  inset: 0;
-  width: 100%;
-  border-radius: 0;
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
   background: var(--md-sys-color-surface);
   /* Material's full-screen dialog enters by rising and fading in. */
   transform: translateY(16px);
@@ -101,12 +105,12 @@
   max-width: var(--content-max);
   margin-inline: auto;
 }
-/* Its header is the page's app bar while it is open. */
+/* Its header stays with the reader as the body scrolls: the back action has
+ * to be reachable from the bottom of a two-thousand-row table. */
 .sheet--detail > .sheet__header {
   position: sticky;
   z-index: var(--md-sys-z-index-local-sticky);
   top: 0;
-  padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
   background: var(--md-sys-color-surface);
   box-shadow: 0 1px 0 var(--md-sys-color-outline-variant);
 }
@@ -134,12 +138,11 @@
   background: var(--md-sys-color-outline-variant);
 }
 
-/* Full-screen sheet: the compact-window form of a detail view. Material's
- * full-screen dialog — no corner radius, its own top app bar. */
+/* Full-pane sheet: same geometry as .sheet--detail, for the overlays that
+ * are not a collection's detail (the chart viewer, the story player). */
 .sheet--full {
-  inset: 0;
-  width: 100%;
-  border-radius: 0;
+  inset: var(--shell-overlay-inset);
+  border-radius: var(--shell-overlay-radius);
   background: var(--md-sys-color-surface);
   transform: translateY(16px);
   opacity: 0;

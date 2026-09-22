@@ -2,16 +2,21 @@ import { html, nothing, type TemplateResult } from "lit";
 import { icon } from "./icon";
 
 /**
- * Collection tile.
+ * Collection tile — a Material card with media.
  *
- * Artwork plus a two-line identity, rendered as a real <button> so the
- * platform supplies activation, focus and role. The previous tiles were
- * `<article role="button" tabindex="0">` with hand-written Enter/Space
- * handlers — which is a button, minus everything a button gives you for free.
+ * Full-bleed artwork, then a headline and a subhead. That is the whole
+ * contract, and it is deliberately closed: no fact rows, no third line, no
+ * per-page slot for "one more useful number". Dense data has two homes on
+ * this site already (the list view and the table view); a tile exists so a
+ * reader can recognise one thing in a grid of thousands and open it.
  *
- * Marks (rarity, attribute, level, category) are positioned overlays on the
- * artwork rather than extra rows, which is what keeps a grid of 2,000 cards
- * scannable.
+ * Rendered as a real <button> so the platform supplies activation, focus and
+ * role. The previous tiles were `<article role="button" tabindex="0">` with
+ * hand-written Enter/Space handlers — which is a button, minus everything a
+ * button gives you for free.
+ *
+ * Marks (rarity, attribute, category) are positioned overlays on the artwork,
+ * never extra rows, which is what keeps the anatomy fixed at two lines.
  */
 
 export interface TileMark {
@@ -27,10 +32,11 @@ export interface TileMark {
 }
 
 export interface TileOptions {
+  /** Headline: title-medium, clamped to two lines. */
   title: unknown;
-  /** null hides the supporting line entirely; "" reserves its height. */
+  /** Subhead: body-medium, one line. null drops it; "" reserves its height. */
   subtitle?: unknown;
-  /** 16dp emblem before the supporting text (band logo, attribute). */
+  /** 16dp emblem before the subhead (band logo, attribute). */
   adornment?: unknown;
   label: string;
   image: string;
@@ -40,12 +46,16 @@ export interface TileOptions {
   /** Presentation hook, e.g. "song" → `.tile--song`. */
   kind?: string;
   marks?: ReadonlyArray<TileMark | null | undefined>;
+  /**
+   * Only for a tile that *is* a chooser — a band in the roster, a model in
+   * the viewer. A tile that opens a detail must leave this undefined: the
+   * detail covers the grid, so a selected tile is an invisible state nobody
+   * can act on.
+   */
   selected?: boolean;
   onOpen: () => void;
   onImageError?: (event: Event) => void;
   style?: string;
-  /** Extra content below the identity (a fact row, a play button). */
-  extra?: unknown;
   /** `contain` for logos and items that must not be cropped. */
   fit?: "cover" | "contain";
 }
@@ -116,7 +126,6 @@ export function tile(options: TileOptions): TemplateResult {
               `
         }
       </span>
-      ${options.extra ?? nothing}
     </button>
   `;
 }

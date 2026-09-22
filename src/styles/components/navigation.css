@@ -129,35 +129,6 @@
   background: var(--md-sys-color-surface);
 }
 
-/* Avatar tabs: a band or character selector. The emblem is the label, so the
- * real name lives in a visually hidden span and in the title attribute. */
-.tabs--avatars {
-  gap: 4px;
-  box-shadow: none;
-}
-.tab--avatar {
-  width: 56px;
-  min-height: 56px;
-  padding: 6px;
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.tab--avatar > img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  opacity: 0.6;
-  transition: opacity var(--md-sys-motion-duration-short3) linear;
-}
-.tab--avatar[aria-selected="true"] {
-  background: var(--md-sys-color-secondary-container);
-}
-.tab--avatar[aria-selected="true"] > img {
-  opacity: 1;
-}
-.tab--avatar .tab__indicator {
-  display: none;
-}
-
 /* Secondary tabs: inside a pane that already has a title. */
 .tabs--secondary .tab {
   min-height: 44px;

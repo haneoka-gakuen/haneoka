@@ -3,36 +3,9 @@ anon-tokyo-workspace {
   display: block;
   height: 100%;
 }
-.anon-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
-  align-items: start;
-  gap: 12px;
-}
-/* The card's media box is a wide banner, so the loading spinner sits at its
-   leading edge rather than dead centre. */
-.anon-card.media-loading::after {
-  left: 32px;
-}
 .outfit-characters .media-loading::after {
   width: 18px;
   height: 18px;
-}
-.anon-card {
-  display: grid;
-  min-height: 88px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 104px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-.anon-card > audio {
-  width: calc(100% - 16px);
-  margin: 0 8px 8px;
 }
 .anon-guide-images {
   display: grid;
@@ -46,130 +19,24 @@ anon-tokyo-workspace {
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface-container-low);
 }
-.anon-card__media {
-  display: grid;
-  width: 56px;
-  height: 56px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-surface-container-high);
-}
-.anon-card__media > img {
-  width: 56px;
-  height: 56px;
-  object-fit: contain;
-}
-.anon-card__media .material-icon {
-  color: var(--md-sys-color-primary);
-}
-.anon-card__copy {
-  display: grid;
-  min-width: 0;
-}
-.anon-card__copy > .tile__identity {
-  align-self: center;
-}
-.anon-card__copy p {
-  display: -webkit-box;
-  margin: 3px 0;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-body-small-size);
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.anon-card strong,
-.anon-card small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.anon-card small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-/* The collection pages use the shared browse layout: a bar, then results. */
+/* Every collection is one divided list of shared list items, so the ten
+   per-mode grid/card/media overrides that used to live here are gone: they
+   existed only because each mode had reinvented the row. The only local
+   decision left is that the rows read as a single surface. */
 .anon-collection {
   display: grid;
   min-width: 0;
   align-content: start;
 }
-
-.anon-collection--characters .anon-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr));
-}
-.anon-collection--characters .anon-card {
-  grid-template-columns: 1fr;
-  align-content: start;
-}
-.anon-collection--characters .anon-card__media {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1;
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.anon-collection--characters .anon-card__media > img {
-  width: 100%;
-  height: 100%;
-}
-.anon-collection--goods .anon-grid,
-.anon-collection--decorations .anon-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 178px), 1fr));
-}
-.anon-collection--goods .anon-card,
-.anon-collection--decorations .anon-card {
-  min-height: 104px;
-  grid-template-columns: 72px minmax(0, 1fr);
-}
-.anon-collection--goods .anon-card__media,
-.anon-collection--decorations .anon-card__media {
-  width: 72px;
-  height: 72px;
-}
-.anon-collection--goods .anon-card__media > img,
-.anon-collection--decorations .anon-card__media > img {
-  width: 72px;
-  height: 72px;
-}
-.anon-collection--staff .anon-card__media,
-.anon-collection--customers .anon-card__media {
-  border-radius: 50%;
-}
-.anon-collection--tasks .anon-grid,
-.anon-collection--guide .anon-grid {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
+.anon-collection .list {
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-large);
-}
-.anon-collection--tasks .anon-card,
-.anon-collection--guide .anon-card {
-  min-height: 68px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 0;
   background: var(--md-sys-color-surface);
-  box-shadow: none;
 }
-.anon-collection--tasks .anon-card:last-child,
-.anon-collection--guide .anon-card:last-child {
-  border-bottom: 0;
-}
-.anon-collection--fever .anon-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-}
-.anon-collection--fever .anon-card {
-  min-height: 132px;
-  grid-template-columns: 108px minmax(0, 1fr);
-}
-.anon-collection--fever .anon-card__media {
-  width: 108px;
-  height: 108px;
-}
-.anon-collection--fever .anon-card__media > img {
-  width: 108px;
-  height: 108px;
+.anon-collection--staff .list-item__thumb,
+.anon-collection--customers .list-item__thumb {
+  border-radius: var(--md-sys-shape-corner-full);
 }
 .anon-board,
 .anon-task-stack {
@@ -443,16 +310,6 @@ anon-tokyo-workspace {
 }
 
 @media (max-width: 599px) {
-  .anon-grid,
-  .anon-collection--goods .anon-grid,
-  .anon-collection--decorations .anon-grid,
-  .anon-collection--fever .anon-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-  .anon-collection--characters .anon-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .anon-data-table {
     overflow-x: auto;
   }

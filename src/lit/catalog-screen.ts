@@ -12,7 +12,7 @@ import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { renderBrowse, filterGroup } from "./ui/browse";
-import { filterChip, iconButton, inputChip, rovingKeydown, segmented } from "./ui/controls";
+import { filterChip, iconButton, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -185,7 +185,6 @@ export class CatalogScreen extends LitElement {
     view: { state: true },
     filtersOpen: { state: true },
     selected: { state: true },
-    activeBand: { state: true },
     facets: { state: true },
     detailAux: { state: true },
     playingSong: { state: true },
@@ -215,7 +214,6 @@ export class CatalogScreen extends LitElement {
   declare view: "grid" | "list";
   declare filtersOpen: boolean;
   declare selected: Item | null;
-  declare activeBand: number;
   declare facets: Record<string, string[]>;
   declare detailAux: Item;
   declare playingSong: string;
@@ -289,7 +287,6 @@ export class CatalogScreen extends LitElement {
     this.view = "grid";
     this.filtersOpen = false;
     this.selected = null;
-    this.activeBand = 0;
     this.facets = {};
     this.detailAux = {};
     this.playingSong = "";
@@ -340,8 +337,6 @@ export class CatalogScreen extends LitElement {
       this.sort = this.normalizeSort(params.get("sort") ?? this.profile.defaultSort);
       this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
       this.view = params.get("view") === "list" ? "list" : "grid";
-      const bandRail = ["band-item", "character"].includes(this.profile.presentation);
-      this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
       this.selectedId = params.get(this.selectionParam()) || "";
       this.activeMedia = params.get("media") || "full";
       this.characterSection = params.get("section") || "profile";
@@ -355,9 +350,7 @@ export class CatalogScreen extends LitElement {
         // not a facet there; treating it as both collapsed the background list
         // to the selected row whenever a detail was opened.
         character: this.profile.presentation === "character" ? [] : params.getAll("character"),
-        collectionBand: bandRail
-          ? params.getAll("collectionBand")
-          : [...params.getAll("band"), ...params.getAll("collectionBand")],
+        collectionBand: [...params.getAll("band"), ...params.getAll("collectionBand")],
         type: [...params.getAll(typeParam), ...(typeParam === "type" ? [] : params.getAll("type"))],
         rarity: params.getAll("rarity"),
         category: params.getAll("category"),
@@ -567,8 +560,6 @@ export class CatalogScreen extends LitElement {
         for (const [logical, path] of Object.entries(projected))
           this.gameMarks.set(logical, `/runtime/${currentReleaseServer()}/${path.slice("runtime/".length)}`);
       }
-      if (["band-item", "character"].includes(this.profile.presentation) && !this.activeBand)
-        this.activeBand = Number(this.items[0]?.bandId || 0);
       if (this.selectedId) {
         const selected = this.items.find((item) => this.itemId(item) === this.selectedId);
         if (selected) void this.loadEntityDetail(selected);
@@ -586,15 +577,10 @@ export class CatalogScreen extends LitElement {
     set("sort", this.sort, this.profile.defaultSort);
     set("order", this.order, this.profile.defaultOrder);
     set("view", this.view, "grid");
-    const bandRail = ["band-item", "character"].includes(this.profile.presentation);
-    if (bandRail) set("band", String(this.activeBand), "0");
-    else params.delete("band");
     for (const key of ["character", "collectionBand", "type", "rarity", "category"]) {
       const publicKey =
         key === "collectionBand"
-          ? bandRail
-            ? "collectionBand"
-            : "band"
+          ? "band"
           : key === "type" && ["member", "support"].includes(this.profile.presentation)
             ? "cardType"
             : key === "type" && this.profile.presentation === "song"
@@ -627,7 +613,6 @@ export class CatalogScreen extends LitElement {
       this.query,
       this.sort,
       this.order,
-      this.activeBand,
       this.settings.locale,
       JSON.stringify(this.facets),
     ].join("\u0000");
@@ -641,12 +626,7 @@ export class CatalogScreen extends LitElement {
   }
   private computeResults() {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
-    // Rosters browse one band at a time, so that band is the population the
-    // result count is measured against — not the whole catalogue.
-    const source =
-      ["band-item", "character"].includes(this.profile.presentation) && this.activeBand
-        ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
-        : this.items;
+    const source = this.items;
     const faceted = source.filter((item) => this.matchesFacets(item));
     const items = needle
       ? faceted.filter((item) =>
@@ -820,7 +800,12 @@ export class CatalogScreen extends LitElement {
         for (const value of new Set(values(item).map(String))) counts.set(value, (counts.get(value) || 0) + 1);
       return counts;
     };
-    if (["member", "support", "comic", "stamp", "song"].includes(kind)) {
+    // Every collection that has a band axis filters on it the same way.
+    // Characters and band items used to get an avatar tab bar across the top
+    // of the results instead, which made those two pages the only ones where
+    // a band was a mode rather than a filter — two controls for one idea, and
+    // a page that looked unlike the rest of the archive.
+    if (["member", "support", "comic", "stamp", "song", "character", "band-item"].includes(kind)) {
       const counts = tally((item) => this.itemBandIds(item));
       groups.push({
         key: "collectionBand",
@@ -1075,9 +1060,13 @@ export class CatalogScreen extends LitElement {
       .replace(/<[^>]+>/gu, "")
       .trim();
   }
+  /**
+   * The card's subhead: exactly one line naming the one thing that tells two
+   * entries apart. Both lines are a closed contract — a card has a headline
+   * and a subhead, and dense facts belong in the list and table views.
+   */
   private tileDescription(item: Item) {
     const kind = this.profile.presentation;
-    if (kind === "band-item" || kind === "character") return null;
     if (kind === "item") return this.plainGameText(item.description) || this.secondary(item);
     if (kind === "band")
       return this.plainGameText(item.description) || this.localized(item.englishName) || this.localized(item.shortName);
@@ -1613,79 +1602,6 @@ export class CatalogScreen extends LitElement {
         : html`
             <div class=${`collection collection--${kind}`}>${items.map((item) => this.renderTile(item))}</div>
           `;
-    // Band items and characters are browsed one band at a time. That control
-    // selects which panel of the collection is shown, so it is a tab list —
-    // not a row of unlabelled buttons, which is what it used to be.
-    if (kind === "band-item" || kind === "character") {
-      const bands =
-        kind === "band-item"
-          ? (() => {
-              const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
-              return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
-            })()
-          : this.bands;
-      const accent = String(this.band(this.activeBand)?.color || "var(--md-sys-color-primary)");
-      return html`
-        <div class="roster">
-          <div
-            class="tabs tabs--avatars"
-            role="tablist"
-            aria-label=${this.label("band", "Band")}
-            @keydown=${rovingKeydown(
-              bands.map((band) => Number(band.bandId || 0)),
-              this.activeBand,
-              (id) => {
-                this.activeBand = id;
-                this.syncUrl();
-              },
-            )}
-          >
-            ${bands.map((band) => {
-              const id = Number(band.bandId || 0);
-              const name = this.bandName(id);
-              const selected = id === this.activeBand;
-              const mark = String(band.icon || band.logo || "");
-              return html`
-                <button
-                  class="tab tab--avatar"
-                  type="button"
-                  role="tab"
-                  id=${`roster-tab-${id}`}
-                  aria-selected=${String(selected)}
-                  aria-controls="roster-stage"
-                  tabindex=${selected ? "0" : "-1"}
-                  title=${name}
-                  @click=${() => {
-                    this.activeBand = id;
-                    this.syncUrl();
-                  }}
-                >
-                  ${
-                    mark
-                      ? html`
-                          <img src=${mark} alt="" loading="lazy" decoding="async" />
-                        `
-                      : icon("groups", 24)
-                  }
-                  <span class="sr-only">${name}</span>
-                  <span class="tab__indicator" aria-hidden="true"></span>
-                </button>
-              `;
-            })}
-          </div>
-          <div
-            class="roster__stage"
-            id="roster-stage"
-            role="tabpanel"
-            aria-labelledby=${`roster-tab-${this.activeBand}`}
-            tabindex="0"
-            style=${`--roster-background:url('/assets/${currentReleaseServer()}/Assets/AddressableResources/Band/${this.activeBand}/band_room_background.png');--roster-accent:${accent}`}
-          >
-            ${collection}
-          </div>
-        </div>
-      `;
-    }
     return collection;
   }
 
@@ -1697,11 +1613,12 @@ export class CatalogScreen extends LitElement {
       return tile({
         kind: "character",
         title,
-        subtitle: null,
+        // A character's band is what tells two of them apart, and it is the
+        // same subhead every other card in the archive carries.
+        subtitle: this.bandName(Number(item.bandId || 0)),
         label: title,
         image,
         placeholder: icon("person", 32),
-        selected: this.selected ? this.itemId(this.selected) === this.itemId(item) : undefined,
         onOpen: () => this.open(item),
         onImageError: this.imageError,
         style: `--entity-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`,
@@ -1720,7 +1637,6 @@ export class CatalogScreen extends LitElement {
       placeholder:
         kind === "song" ? icon("music_note", 32) : kind === "band-item" ? icon("piano", 32) : icon("image", 32),
       fit: ["band", "item", "band-item", "stamp"].includes(kind) ? "contain" : "cover",
-      selected: this.selected ? this.itemId(this.selected) === this.itemId(item) : undefined,
       onOpen: () => this.open(item),
       onImageError: this.imageError,
       style: kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : undefined,

@@ -1,4 +1,4 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, nothing } from "lit";
 
 /**
  * Specification list.
@@ -44,15 +44,5 @@ export function specList(rows: ReadonlyArray<SpecRow | null | undefined>, option
         `,
       )}
     </dl>
-  `;
-}
-
-/** Inline "label: value" pair for a dense fact row. */
-export function factPair(label: unknown, value: unknown): TemplateResult {
-  return html`
-    <span class="tile__facts">
-      <span>${label}</span>
-      <span class="is-flexible">${value}</span>
-    </span>
   `;
 }
