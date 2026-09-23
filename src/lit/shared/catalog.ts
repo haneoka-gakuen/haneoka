@@ -39,6 +39,8 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   searchAnon: ["ANON TOKYOを検索", "Search ANON TOKYO", "搜尋 ANON TOKYO", "搜索 ANON TOKYO", "ANON TOKYO 검색"],
   bands: ["バンド", "Bands", "樂團", "乐队", "밴드"],
   characters: ["キャラクター", "Characters", "角色", "角色", "캐릭터"],
+  firstCharacter: ["1人目", "First character", "第一位角色", "第一位角色", "첫 번째 캐릭터"],
+  secondCharacter: ["2人目", "Second character", "第二位角色", "第二位角色", "두 번째 캐릭터"],
   character: ["キャラクター", "Character", "角色", "角色", "캐릭터"],
   sort: ["並び替え", "Sort", "排序", "排序", "정렬"],
   release: ["公開日", "Release", "公開日期", "发布日期", "공개일"],

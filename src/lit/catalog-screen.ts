@@ -1070,7 +1070,13 @@ export class CatalogScreen extends LitElement {
     if ((kind === "comic" || kind === "stamp") && ids.length) return this.characterAvatars(ids);
     if (kind === "song" && this.bandLogo(Number(item.bandId || 0)))
       return html`
-        <img src=${this.bandLogo(Number(item.bandId || 0))} alt="" />
+        <img
+          src=${this.bandLogo(Number(item.bandId || 0))}
+          alt=""
+          @error=${(event: Event) => {
+          (event.currentTarget as HTMLImageElement).hidden = true;
+        }}
+        />
       `;
     if ((kind === "member" || kind === "support") && ids.length) return this.characterAvatars(ids);
     return nothing;
@@ -1622,12 +1628,12 @@ export class CatalogScreen extends LitElement {
                 >
                   <span class="list-item__leading">
                     ${
-          image
-            ? html`
-                <img data-src=${image} alt="" decoding="async" @error=${this.imageError} />
-              `
-            : icon(kind === "song" ? "music_note" : kind === "character" ? "person" : "image", 24)
-        }
+                      image
+                        ? html`
+                            <img data-src=${image} alt="" decoding="async" @error=${this.imageError} />
+                          `
+                        : icon(kind === "song" ? "music_note" : kind === "character" ? "person" : "image", 24)
+                    }
                   </span>
                   <span class="list-item__body">
                     <strong class="list-item__headline">${this.itemTitle(item)}</strong>
@@ -1635,12 +1641,15 @@ export class CatalogScreen extends LitElement {
                   </span>
                   <span class="list-item__trailing">
                     ${
-          attribute
-            ? html`
-                <img src=${attribute} alt=${this.fieldValue(item, kind === "song" ? "musicType" : "cardType")} />
-              `
-            : nothing
-        }${icon("chevron_right", 20)}
+                      attribute
+                        ? html`
+                            <img
+                              src=${attribute}
+                              alt=${this.fieldValue(item, kind === "song" ? "musicType" : "cardType")}
+                            />
+                          `
+                        : nothing
+                    }${icon("chevron_right", 20)}
                   </span>
                 </button>
               </li>

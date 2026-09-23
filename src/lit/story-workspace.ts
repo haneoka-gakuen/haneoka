@@ -201,6 +201,11 @@ export class StoryWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
       import("@material/web/progress/circular-progress.js"),
     ]);
+    if (this.mode === "link")
+      void Promise.all([
+        import("@material/web/select/outlined-select.js"),
+        import("@material/web/select/select-option.js"),
+      ]);
     window.addEventListener("keydown", this.onKeydown);
     window.setTimeout(() => {
       const p = new URLSearchParams(location.search);
@@ -1235,6 +1240,64 @@ export class StoryWorkspace extends LitElement {
       ),
     ];
     const root = `/assets/${currentReleaseServer()}/Assets/AddressableResources`;
+    const band = this.bands.find((item) => Number(item.bandId) === activeBand);
+    if (lead && !band?.logo && !band?.icon)
+      return html`
+        <section class="story-pair" aria-label=${uiText(this.locale, "characters")}>
+          <md-outlined-select
+            label=${uiText(this.locale, "firstCharacter")}
+            .value=${leadId}
+            @change=${(event: Event) => {
+          const value = (event.target as HTMLElement & { value: string }).value;
+          this.facets = { ...this.facets, lead: [value] };
+          if (this.linkPartner === value) this.linkPartner = "";
+          this.sync();
+        }}
+          >
+            ${this.characters.map(
+          (item) => html`
+            <md-select-option value=${String(item.characterId)}>
+              <span slot="headline">${this.characterName(item)}</span>
+            </md-select-option>
+          `,
+        )}
+          </md-outlined-select>
+          <button
+            class="icon-button"
+            type="button"
+            aria-label=${uiText(this.locale, "swap")}
+            ?disabled=${!this.linkPartner}
+            @click=${() => {
+          if (!this.linkPartner) return;
+          this.facets = { ...this.facets, lead: [this.linkPartner] };
+          this.linkPartner = leadId;
+          this.sync();
+        }}
+          >
+            ${icon("swap_horiz", 24)}
+          </button>
+          <md-outlined-select
+            label=${uiText(this.locale, "secondCharacter")}
+            .value=${this.linkPartner}
+            @change=${(event: Event) => {
+          this.linkPartner = (event.target as HTMLElement & { value: string }).value;
+          this.facets = { ...this.facets, lead: [leadId] };
+          this.sync();
+        }}
+          >
+            <md-select-option value=""><span slot="headline">${uiText(this.locale, "all")}</span></md-select-option>
+            ${this.characters
+          .filter((item) => String(item.characterId) !== leadId)
+          .map(
+            (item) => html`
+              <md-select-option value=${String(item.characterId)}>
+                <span slot="headline">${this.characterName(item)}</span>
+              </md-select-option>
+            `,
+          )}
+          </md-outlined-select>
+        </section>
+      `;
     return html`
       <section
         class="story-board"
