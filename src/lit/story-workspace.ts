@@ -791,6 +791,7 @@ export class StoryWorkspace extends LitElement {
     document.querySelector<HTMLElement & { pausePlayback?: () => void }>("audio-dock")?.pausePlayback?.();
     try {
       await import("./runtime/vega-story-stage");
+      this.requestUpdate();
     } catch (error) {
       if (this.detailEpisode === episode && this.detailMode === "play") {
         this.detailMode = "text";
@@ -1408,14 +1409,18 @@ export class StoryWorkspace extends LitElement {
         ${
           this.detailMode === "play"
             ? html`
-                <vega-story-stage
-                  .story=${episode}
-                  server=${currentReleaseServer()}
-                  locale=${this.locale}
-                  @open-text=${() => (this.detailMode = "text")}
-                >
-                  ${loadingState(uiText(this.locale, "loading"))}
-                </vega-story-stage>
+                ${
+                  customElements.get("vega-story-stage")
+                    ? html`
+                        <vega-story-stage
+                          .story=${episode}
+                          server=${currentReleaseServer()}
+                          locale=${this.locale}
+                          @open-text=${() => (this.detailMode = "text")}
+                        ></vega-story-stage>
+                      `
+                    : loadingState(uiText(this.locale, "loading"))
+                }
               `
             : html`
                 <div class="story-detail__body">

@@ -1766,7 +1766,11 @@ export class CatalogScreen extends LitElement {
         }${
           attribute
             ? html`
-                <img class="detail-header-mark" src=${attribute} alt="" />
+                <img
+                  class="detail-header-mark"
+                  src=${attribute}
+                  alt=${this.fieldValue(item, this.profile.presentation === "song" ? "musicType" : "cardType")}
+                />
               `
             : nothing
         }

@@ -116,7 +116,11 @@ export function tile(options: TileOptions): TemplateResult {
         ${(options.marks || []).map((mark) =>
           mark
             ? html`
-                <span class=${markClass(mark)} style=${mark.accent ? `--mark:${mark.accent}` : nothing}>
+                <span
+                  class=${markClass(mark)}
+                  title=${mark.label || nothing}
+                  style=${mark.accent ? `--mark:${mark.accent}` : nothing}
+                >
                   ${
                     mark.image
                       ? html`
