@@ -542,6 +542,12 @@ export class CatalogScreen extends LitElement {
         const selected = this.items.find((item) => this.itemId(item) === this.selectedId);
         if (selected) void this.loadEntityDetail(selected);
       }
+      if (
+        !new URLSearchParams(location.search).has("view") &&
+        this.items.length &&
+        !this.items.some((item) => this.image(item))
+      )
+        this.view = "list";
       this.phase = "ready";
     } catch {
       this.phase = "error";
@@ -554,7 +560,7 @@ export class CatalogScreen extends LitElement {
     set("q", this.query);
     set("sort", this.sort, this.profile.defaultSort);
     set("order", this.order, this.profile.defaultOrder);
-    set("view", this.view, "grid");
+    set("view", this.view);
     const bandRail = this.hasBandRail();
     if (bandRail) set("band", String(this.activeBand), "0");
     else params.delete("band");
@@ -1595,6 +1601,53 @@ export class CatalogScreen extends LitElement {
     }));
   }
   private renderStructuredList(items: Item[]) {
+    if (this.compact)
+      return html`
+        <ul class="list catalog-compact-list">
+          ${items.map((item) => {
+            const image = this.image(item);
+            const kind = this.profile.presentation;
+            const attribute =
+              kind === "song"
+                ? this.attributeMark(item.musicType, true)
+                : ["member", "support"].includes(kind)
+                  ? this.attributeMark(item.cardType)
+                  : "";
+            return html`
+              <li>
+                <button
+                  class="list-item list-item--two-line list-item--interactive"
+                  type="button"
+                  @click=${() => this.open(item)}
+                >
+                  <span class="list-item__leading">
+                    ${
+          image
+            ? html`
+                <img data-src=${image} alt="" decoding="async" @error=${this.imageError} />
+              `
+            : icon(kind === "song" ? "music_note" : kind === "character" ? "person" : "image", 24)
+        }
+                  </span>
+                  <span class="list-item__body">
+                    <strong class="list-item__headline">${this.itemTitle(item)}</strong>
+                    <span class="list-item__supporting">${this.tileDescription(item)}</span>
+                  </span>
+                  <span class="list-item__trailing">
+                    ${
+          attribute
+            ? html`
+                <img src=${attribute} alt=${this.fieldValue(item, kind === "song" ? "musicType" : "cardType")} />
+              `
+            : nothing
+        }${icon("chevron_right", 20)}
+                  </span>
+                </button>
+              </li>
+            `;
+          })}
+        </ul>
+      `;
     void import("./catalog-table");
     return html`
       <catalog-table-view .controller=${this} .items=${items}></catalog-table-view>

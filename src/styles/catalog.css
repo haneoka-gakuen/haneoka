@@ -905,4 +905,23 @@
     content: "";
     background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
   }
+  .catalog-compact-list .list-item {
+    width: 100%;
+    padding-inline: 4px;
+  }
+  .catalog-compact-list .list-item__leading {
+    width: 56px;
+    justify-content: center;
+  }
+  .catalog-compact-list .list-item__leading > img {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--md-sys-shape-corner-small);
+    object-fit: cover;
+  }
+  .catalog-compact-list .list-item__trailing > img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
 }
