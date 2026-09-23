@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from "lit";
 import { errorState, loadingState } from "./ui/state";
-import { catalogUrl, fetchJson } from "./shared/catalog";
+import { catalogUrl, fetchJson, currentReleaseServer } from "./shared/catalog";
 interface Branch {
   [key: string]: AssetNode;
 }
@@ -120,11 +120,7 @@ export class AssetExplorer extends LitElement {
       : "";
   }
   private server() {
-    try {
-      return localStorage.getItem("haneoka.release-server") || "intl";
-    } catch {
-      return "intl";
-    }
+    return currentReleaseServer();
   }
   private kind(file: string) {
     const ext = file.split(".").pop()?.toLowerCase();

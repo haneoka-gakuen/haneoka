@@ -25,8 +25,10 @@ const FOCUSABLE = [
 
 const focusable = (root: HTMLElement) =>
   [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-    (node) => !node.hasAttribute("inert") && node.offsetParent !== null,
+    (node) =>
+      !node.closest("[inert]") && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden",
   );
+const stacks = new WeakMap<Document, object[]>();
 
 export interface OverlayOptions {
   /** Called for Escape, and for a click on the scrim if one is passed. */
@@ -42,11 +44,21 @@ export interface OverlayOptions {
  * The returned function is idempotent.
  */
 export function trapFocus(root: HTMLElement, options: OverlayOptions = {}): () => void {
+  const document = root.ownerDocument;
   const previous = options.returnFocus ?? (document.activeElement as HTMLElement | null);
+  const stack = stacks.get(document) ?? [];
+  stacks.set(document, stack);
+  const entry = {};
+  stack.push(entry);
+  const isTop = () => stack.at(-1) === entry;
+  const originalTabindex = root.getAttribute("tabindex");
+  if (originalTabindex === null) root.tabIndex = -1;
   let released = false;
 
   const onKeydown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || !isTop()) return;
     if (event.key === "Escape") {
+      event.preventDefault();
       event.stopPropagation();
       options.onDismiss?.();
       return;
@@ -74,6 +86,7 @@ export function trapFocus(root: HTMLElement, options: OverlayOptions = {}): () =
   // still a dismissal in Material; the scrim handles the visible case, this
   // covers focus arriving from elsewhere in the document.
   const onFocusIn = (event: FocusEvent) => {
+    if (!isTop()) return;
     const target = event.target as HTMLElement | null;
     if (!target || root.contains(target)) return;
     const nodes = focusable(root);
@@ -87,14 +100,19 @@ export function trapFocus(root: HTMLElement, options: OverlayOptions = {}): () =
   // Wait a frame: the overlay is usually mid-transition and a focus() on a
   // `visibility: hidden` element is a no-op.
   requestAnimationFrame(() => {
-    if (!released) initial.focus({ preventScroll: true });
+    if (!released && isTop() && root.isConnected) initial.focus({ preventScroll: true });
   });
 
   return () => {
     if (released) return;
     released = true;
+    const restore = isTop();
+    const index = stack.indexOf(entry);
+    if (index >= 0) stack.splice(index, 1);
+    if (!stack.length) stacks.delete(document);
     root.removeEventListener("keydown", onKeydown);
     document.removeEventListener("focusin", onFocusIn);
-    if (previous?.isConnected) previous.focus({ preventScroll: true });
+    if (originalTabindex === null) root.removeAttribute("tabindex");
+    if (restore && previous?.isConnected) previous.focus({ preventScroll: true });
   };
 }

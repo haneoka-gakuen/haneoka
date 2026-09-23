@@ -9,7 +9,7 @@ inputs:
   key:
     description: Object key of the validated runtime archive.
     required: false
-    default: private/cubism-runtime/haneoka-cubism-web-runtime-v1.tar.gz
+    default: private/cubism-runtime/403a64bf4bd00b89d4b8994ff197de32aad53b6971f4ae96b14cdbd9b9328cc3.tar.gz
 
 runs:
   using: composite

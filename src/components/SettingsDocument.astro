@@ -34,8 +34,8 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
   <AppShell locale={locale} route="/settings" title={title} titleKey="settings">
     <section class="page"><div class="settings-content">
       <section class="page-section">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="palette" /></span><h2><I18nText keyName="appearance" fallback="Appearance" locale={locale} /></h2></header>
-        <div class="icon-row" data-theme-choices role="radiogroup">{themeOptions.map(([value, icon, key]) => <button class="icon-row__item" type="button" role="radio" data-value={value} data-icon={icon} aria-label={t(locale,key,value)} data-i18n-aria-label-values={labelValues(key,value)}><Icon name={icon} /></button>)}</div>
+        <header class="page-section__header"><span class="page-section__icon"><Icon name="palette" /></span><h2 id="appearance-title"><I18nText keyName="appearance" fallback="Appearance" locale={locale} /></h2></header>
+        <div class="settings-choices" data-theme-choices role="radiogroup" aria-labelledby="appearance-title">{themeOptions.map(([value, icon, key]) => <button class="settings-choice" type="button" role="radio" data-value={value} data-icon={icon} aria-label={t(locale,key,value)} data-i18n-aria-label-values={labelValues(key,value)}><Icon name={icon} /><I18nText keyName={key} fallback={value} locale={locale} /></button>)}</div>
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="format_paint" /></span><h2 id="theme-color-title"><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></h2></header>
@@ -43,18 +43,18 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
       </section>
       <section class="page-section is-divided">
         <header class="page-section__header"><span class="page-section__icon"><Icon name="density_medium" /></span><h2 id="density-title"><I18nText keyName="density" fallback="Spacing" locale={locale} /></h2></header>
-        <div class="icon-row" data-density-choices role="radiogroup" aria-labelledby="density-title">{densities.map((option) => <button class="icon-row__item" type="button" role="radio" data-value={option.value} data-icon={option.icon} aria-label={t(locale, option.key, option.fallback)} data-i18n-aria-label-values={labelValues(option.key, option.fallback)} title={t(locale, option.key, option.fallback)}><Icon name={option.icon} /></button>)}</div>
+        <div class="settings-choices" data-density-choices role="radiogroup" aria-labelledby="density-title">{densities.map((option) => <button class="settings-choice" type="button" role="radio" data-value={option.value} data-icon={option.icon} aria-label={t(locale, option.key, option.fallback)} data-i18n-aria-label-values={labelValues(option.key, option.fallback)} title={t(locale, option.key, option.fallback)}><Icon name={option.icon} /><I18nText keyName={option.key} fallback={option.fallback} locale={locale} /></button>)}</div>
       </section>
       <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="language" /></span><h2><I18nText keyName="language" fallback="Language" locale={locale} /></h2></header>
+        <header class="page-section__header"><span class="page-section__icon"><Icon name="language" /></span><h2 id="language-title"><I18nText keyName="language" fallback="Language" locale={locale} /></h2></header>
         <div class="settings-controls">
-          <div class="icon-row" data-locale-choices role="radiogroup">{Object.entries(flags).map(([value,image]) => <button class="icon-row__item" type="button" role="radio" data-value={value} aria-label={languageNames[value as keyof typeof languageNames]}><img class="icon-row__image" src={image} alt="" /></button>)}</div>
+          <div class="settings-choices settings-choices--languages" data-locale-choices role="radiogroup" aria-labelledby="language-title">{Object.entries(flags).map(([value,image]) => <button class="settings-choice" type="button" role="radio" data-value={value} aria-label={languageNames[value as keyof typeof languageNames]}><img class="icon-row__image" src={image} alt="" /><span>{languageNames[value as keyof typeof languageNames]}</span></button>)}</div>
           <label class="settings-switch"><I18nText keyName="forceJapaneseTitles" fallback="Show Japanese song titles" locale={locale} /><md-switch data-japanese-titles></md-switch></label>
         </div>
       </section>
       <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="dns" /></span><h2><I18nText keyName="releaseServer" fallback="Release server" locale={locale} /></h2></header>
-        <div class="icon-row" data-release-choices role="radiogroup">{releases.map(([value,image]) => <button class="icon-row__item" type="button" role="radio" data-value={value} aria-label={releaseNames[value]}><span class="server-icon"><img src={image} alt="" />{value.endsWith("-cbt") && <i>β</i>}</span></button>)}</div>
+        <header class="page-section__header"><span class="page-section__icon"><Icon name="dns" /></span><h2 id="release-title"><I18nText keyName="releaseServer" fallback="Release server" locale={locale} /></h2></header>
+        <div class="settings-choices" data-release-choices role="radiogroup" aria-labelledby="release-title">{releases.map(([value,image]) => <button class="settings-choice" type="button" role="radio" data-value={value} aria-label={releaseNames[value]}><span class="server-icon"><img src={image} alt="" />{value.endsWith("-cbt") && <i>β</i>}</span><span>{releaseNames[value]}</span></button>)}</div>
       </section>
     </div></section>
   </AppShell>
@@ -64,6 +64,7 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
   import "@material/web/switch/switch.js";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
+  import { readReleaseServer, writeReleaseServer } from "../lib/release-server";
   type LocaleWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   const select = (root: Element | null, value: string) => root?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => {
     const selected = node.dataset.value === value;
@@ -93,16 +94,6 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
     applySeed(value, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
     select(seeds, value);
   }));
-  seeds?.addEventListener("keydown", (event) => {
-    const key = (event as KeyboardEvent).key;
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return;
-    event.preventDefault();
-    const nodes = [...seeds.querySelectorAll<HTMLElement>("[data-value]")];
-    const index = nodes.findIndex((node) => node.getAttribute("aria-checked") === "true");
-    const next = nodes[(Math.max(0, index) + (key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1) + nodes.length) % nodes.length];
-    next?.click();
-    next?.focus();
-  });
   const densities = settings.querySelector("[data-density-choices]");
   select(densities, currentDensity());
   densities?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
@@ -113,10 +104,18 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
   }));
   const locales = settings.querySelector("[data-locale-choices]"); select(locales, document.documentElement.dataset.locale || "ja");
   locales?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => { const value = node.dataset.value || "ja"; (window as LocaleWindow).__haneokaApplyLocale?.(value); select(locales, value); }));
-  const release = settings.querySelector("[data-release-choices]"); let releaseValue = "intl";
-  try { releaseValue = localStorage.getItem("haneoka.release-server") || "intl"; } catch {}
-  select(release, releaseValue);
-  release?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => { const value = node.dataset.value || "intl"; try { localStorage.setItem("haneoka.release-server", value); } catch {} select(release, value); }));
+  const release = settings.querySelector("[data-release-choices]");
+  select(release, readReleaseServer());
+  release?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => select(release, writeReleaseServer(node.dataset.value))));
+  settings.querySelectorAll<HTMLElement>('[role="radiogroup"]').forEach((group) => group.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nodes = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    const index = nodes.findIndex((node) => node === document.activeElement);
+    const position = event.key === "Home" ? 0 : event.key === "End" ? nodes.length - 1 : (Math.max(0, index) + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + nodes.length) % nodes.length;
+    nodes[position]?.click();
+    nodes[position]?.focus();
+  }));
   const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
   try { const saved = JSON.parse(localStorage.getItem("haneoka:song-display:v1") || "{}"); if (japanese) japanese.selected = Boolean(saved.forceJapaneseTitles); } catch {}
   japanese?.addEventListener("change", () => { try { localStorage.setItem("haneoka:song-display:v1", JSON.stringify({ forceJapaneseTitles: japanese.selected })); } catch {} });

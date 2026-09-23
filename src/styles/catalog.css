@@ -1,4 +1,5 @@
-/* ==========================================================================
+@layer pages {
+  /* ==========================================================================
    Catalogue pages
    Everything shared with other routes now lives in the system: the browse
    layout, the collection grid, the tile, the detail pane, the data table and
@@ -12,7 +13,7 @@
    imported by eight other documents that needed the same things.
    ========================================================================== */
 
-/* ==========================================================================
+  /* ==========================================================================
    Artwork proportions
    The only thing a resource declares about its tile is the shape of its
    artwork. Everything else — the corner, the full-bleed media, the two-line
@@ -24,883 +25,884 @@
    item sprite, a band logo, an instrument), and that is the shared
    `.tile__media--contain` variant, which the component asks for by name.
    ========================================================================== */
-.tile--member .tile__media {
-  aspect-ratio: 224 / 294;
-}
-.tile--support .tile__media {
-  aspect-ratio: 326 / 184;
-}
-.tile--comic .tile__media {
-  aspect-ratio: 4 / 3;
-}
-.tile--stamp .tile__media {
-  aspect-ratio: 1;
-  background: var(--md-sys-color-surface-container-low);
-}
-.tile--song .tile__media,
-.tile--item .tile__media,
-.tile--band-item .tile__media {
-  aspect-ratio: 1;
-}
-/* A band has no artwork of its own, only a logo, so its media box is a tinted
+  .tile--member .tile__media {
+    aspect-ratio: 224 / 294;
+  }
+  .tile--support .tile__media {
+    aspect-ratio: 326 / 184;
+  }
+  .tile--comic .tile__media {
+    aspect-ratio: 4 / 3;
+  }
+  .tile--stamp .tile__media {
+    aspect-ratio: 1;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .tile--song .tile__media,
+  .tile--item .tile__media,
+  .tile--band-item .tile__media {
+    aspect-ratio: 1;
+  }
+  /* A band has no artwork of its own, only a logo, so its media box is a tinted
    plate in the band's colour with the logo centred on it. The tint is the
    band's identity; the plate is still the same media box as every other. */
-.tile--band .tile__media {
-  aspect-ratio: 3 / 1;
-  background: linear-gradient(
-    110deg,
-    color-mix(in srgb, var(--entity-accent) 22%, transparent),
-    var(--md-sys-color-surface-container-high)
-  );
-}
-/* Character portraits are tall full-body sprites, framed head-first. */
-.tile--character .tile__media {
-  aspect-ratio: 3 / 4;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--entity-accent) 26%, transparent),
-    var(--md-sys-color-surface-container-highest)
-  );
-}
-.tile--character .tile__media > img {
-  object-position: top center;
-}
-.tile--story .tile__media,
-.tile--live2d .tile__media {
-  aspect-ratio: 16 / 9;
-}
+  .tile--band .tile__media {
+    aspect-ratio: 3 / 1;
+    background: linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--entity-accent) 22%, transparent),
+      var(--md-sys-color-surface-container-high)
+    );
+  }
+  /* Character portraits are tall full-body sprites, framed head-first. */
+  .tile--character .tile__media {
+    aspect-ratio: 3 / 4;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--entity-accent) 26%, transparent),
+      var(--md-sys-color-surface-container-highest)
+    );
+  }
+  .tile--character .tile__media > img {
+    object-position: top center;
+  }
+  .tile--story .tile__media,
+  .tile--live2d .tile__media {
+    aspect-ratio: 16 / 9;
+  }
 
-/* ==========================================================================
+  /* ==========================================================================
    Detail pane variants
    ========================================================================== */
-.pane-sections {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-}
-/* Songs put their data first and their jacket second: the jacket is 1:1 and
+  .pane-sections {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+  }
+  /* Songs put their data first and their jacket second: the jacket is 1:1 and
    the data is the reason anyone opened the pane. */
-.sheet--detail-song .detail-media {
-  max-height: 34dvh;
-}
-.sheet--detail-character .sheet__body {
-  background: var(--md-sys-color-surface-container-low);
-}
+  .sheet--detail-song .detail-media {
+    max-height: 34dvh;
+  }
+  .sheet--detail-character .sheet__body {
+    background: var(--md-sys-color-surface-container-low);
+  }
 
-/* ---------- song detail (ported) ---------- */
-.detail-section.song-detail-section {
-  --md-comp-detail-block-gap: 12px;
+  /* ---------- song detail (ported) ---------- */
+  .detail-section.song-detail-section {
+    --md-comp-detail-block-gap: 12px;
 
-  min-width: 0;
-  gap: var(--md-comp-detail-block-gap);
-  padding-block: 16px;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-}
-.song-detail-section:first-child {
-  padding-top: 4px;
-  border-top: 0;
-}
-.song-detail-section .detail-section-title {
-  min-height: 32px;
-  margin: 0;
-}
-.song-detail-section__body {
-  display: grid;
-  min-width: 0;
-  gap: var(--md-comp-detail-block-gap);
-}
-.song-data-grid {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  grid-auto-flow: column;
-  /* min-content, not max-content: the floor is the longest unbreakable word
+    min-width: 0;
+    gap: var(--md-comp-detail-block-gap);
+    padding-block: 16px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .song-detail-section:first-child {
+    padding-top: 4px;
+    border-top: 0;
+  }
+  .song-detail-section .detail-section-title {
+    min-height: 32px;
+    margin: 0;
+  }
+  .song-detail-section__body {
+    display: grid;
+    min-width: 0;
+    gap: var(--md-comp-detail-block-gap);
+  }
+  .song-data-grid {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    grid-auto-flow: column;
+    /* min-content, not max-content: the floor is the longest unbreakable word
    * (a number, a rank letter), so a long reward name wraps in its own column
    * instead of setting a width floor for all five. The strip still scrolls
    * when even those minimums do not fit. */
-  grid-auto-columns: minmax(min-content, 1fr);
-  scrollbar-width: thin;
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-inline: contain;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-lowest);
-  scrollbar-width: thin;
-}
-.song-data-grid > div {
-  min-width: max-content;
-  padding: 8px;
-  border-right: 1px solid var(--md-sys-color-outline-variant);
-  text-align: center;
-}
-.song-data-grid > div:last-child {
-  border-right: 0;
-}
-.song-data-grid dt {
-  display: flex;
-  min-height: 25.3px;
-  align-items: center;
-  justify-content: center;
-  color: var(--md-sys-color-outline);
-  font-size: var(--md-sys-typescale-label-small-size);
-  font-weight: 500;
-  line-height: var(--md-sys-typescale-label-small-line-height);
-  letter-spacing: 0;
-}
-.song-data-grid dd {
-  margin: 3px 0 0;
-  overflow: visible;
-  font-size: var(--md-sys-typescale-body-small-size);
-  line-height: var(--md-sys-typescale-body-small-line-height);
-  white-space: nowrap;
-}
-.song-detail-facts {
-  grid-template-columns: repeat(4, minmax(min-content, 1fr));
-  grid-auto-flow: initial;
-  grid-auto-columns: initial;
-}
-.sheet--detail-character .pane-sections {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 0;
-  padding: 0 8px 0 0;
-  overflow: hidden;
-}
-.character-detail-visual {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 6px;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 71px, rgb(255 255 255 / 24%) 72px 73px),
-    color-mix(in srgb, var(--character-detail-accent) 72%, var(--md-sys-color-surface));
-}
-.character-detail-visual::after {
-  position: absolute;
-  z-index: -1;
-  inset: auto -10% -26% 22%;
-  aspect-ratio: 1;
-  border: 1px solid rgb(255 255 255 / 36%);
-  border-radius: 50%;
-  content: "";
-}
-.character-detail-visual__figure {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: auto;
-  max-width: none;
-  height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 16px 18px rgb(20 35 68 / 15%));
-  transform: translateX(-50%);
-}
-.character-detail-visual__logo {
-  position: absolute;
-  z-index: 2;
-  top: 12px;
-  left: 12px;
-  width: min(38%, 120px);
-  max-height: 42px;
-  object-fit: contain;
-  object-position: left center;
-  filter: drop-shadow(0 2px 7px rgb(255 255 255 / 80%));
-}
+    grid-auto-columns: minmax(min-content, 1fr);
+    scrollbar-width: thin;
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-lowest);
+    scrollbar-width: thin;
+  }
+  .song-data-grid > div {
+    min-width: max-content;
+    padding: 8px;
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    text-align: center;
+  }
+  .song-data-grid > div:last-child {
+    border-right: 0;
+  }
+  .song-data-grid dt {
+    display: flex;
+    min-height: 25.3px;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-sys-color-outline);
+    font-size: var(--md-sys-typescale-label-small-size);
+    font-weight: 500;
+    line-height: var(--md-sys-typescale-label-small-line-height);
+    letter-spacing: 0;
+  }
+  .song-data-grid dd {
+    margin: 3px 0 0;
+    overflow: visible;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    white-space: nowrap;
+  }
+  .song-detail-facts {
+    grid-template-columns: repeat(4, minmax(min-content, 1fr));
+    grid-auto-flow: initial;
+    grid-auto-columns: initial;
+  }
+  .sheet--detail-character .pane-sections {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+    padding: 0 8px 0 0;
+    overflow: hidden;
+  }
+  .character-detail-visual {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: 6px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 71px, rgb(255 255 255 / 24%) 72px 73px),
+      color-mix(in srgb, var(--character-detail-accent) 72%, var(--md-sys-color-surface));
+  }
+  .character-detail-visual::after {
+    position: absolute;
+    z-index: -1;
+    inset: auto -10% -26% 22%;
+    aspect-ratio: 1;
+    border: 1px solid rgb(255 255 255 / 36%);
+    border-radius: 50%;
+    content: "";
+  }
+  .character-detail-visual__figure {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: auto;
+    max-width: none;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 16px 18px rgb(20 35 68 / 15%));
+    transform: translateX(-50%);
+  }
+  .character-detail-visual__logo {
+    position: absolute;
+    z-index: 2;
+    top: 12px;
+    left: 12px;
+    width: min(38%, 120px);
+    max-height: 42px;
+    object-fit: contain;
+    object-position: left center;
+    filter: drop-shadow(0 2px 7px rgb(255 255 255 / 80%));
+  }
 
-/* ---------- detail description (ported) ---------- */
-.detail-description {
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.65;
-  white-space: pre-line;
-}
+  /* ---------- detail description (ported) ---------- */
+  .detail-description {
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.65;
+    white-space: pre-line;
+  }
 
-/* ---------- character detail (ported) ---------- */
-character-detail-archive {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-rows: 52px minmax(0, 1fr);
-  overflow: hidden;
-}
-.character-detail-panel {
-  min-width: 0;
-  min-height: 0;
-  padding: 17px 2px 18px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.character-detail-facts {
-  margin-top: 0;
-  border-top: 0;
-}
-.character-detail-facts > div {
-  min-height: 56px;
-  padding-block: 12px;
-}
-.character-related-grid {
-  --catalog-min: 132px;
-}
-.character-related-grid--support-cards {
-  --catalog-min: 180px;
-}
-.character-related-grid--stamps {
-  --catalog-min: 138px;
-}
-.character-related-grid--stories {
-  --catalog-min: 220px;
-}
-.character-related-grid--live2d {
-  --catalog-min: 132px;
-}
-.character-related-grid--songs {
-  --catalog-min: 126px;
-}
-.character-voice-list,
-.character-mission-list {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.character-voice-list article,
-.character-mission-list article {
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.character-voice-list article:last-child,
-.character-mission-list article:last-child {
-  border-bottom: 0;
-}
-.character-voice-list small,
-.character-mission-list small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-.character-voice-list p {
-  margin: 3px 0 0;
-}
-.character-voice-list article > span {
-  display: grid;
-  min-width: 0;
-}
-.character-voice-list .icon-button.selected {
-  color: var(--md-sys-color-on-primary);
-  background: var(--md-sys-color-primary);
-}
-.character-friendship-workspace {
-  display: grid;
-  gap: 16px;
-}
-.character-friendship-selector {
-  display: grid;
-  min-height: 84px;
-  grid-template-columns: minmax(150px, 0.45fr) 40px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-low);
-}
-.character-friendship-anchor,
-.character-friendship-partners > button {
-  display: flex;
-  min-width: 0;
-  min-height: 56px;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 10px 5px 5px;
-  border-radius: var(--md-sys-shape-corner-full);
-}
-.character-friendship-anchor {
-  color: var(--md-sys-color-on-primary-container);
-  background: var(--md-sys-color-primary-container);
-}
-.character-friendship-selector > span {
-  display: grid;
-  place-items: center;
-  color: var(--md-sys-color-on-surface-variant);
-}
-.character-friendship-anchor img,
-.character-friendship-partners img {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  object-fit: contain;
-  border-radius: 50%;
-}
-.character-friendship-partners {
-  display: flex;
-  min-width: 0;
-  gap: 6px;
-  padding: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.character-friendship-partners > button {
-  min-width: max-content;
-  color: var(--md-sys-color-on-surface-variant);
-  cursor: pointer;
-}
-.character-friendship-partners > button:hover {
-  background: var(--md-sys-color-surface-container-high);
-}
-.character-friendship-partners > button.selected {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-.character-friendship-banner {
-  display: grid;
-  grid-template-columns: minmax(180px, 360px) minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-  color: inherit;
-}
-.character-friendship-banner img {
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-}
-.character-friendship-banner > span {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-}
-.character-friendship-banner small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-@media (max-width: 700px) {
+  /* ---------- character detail (ported) ---------- */
+  character-detail-archive {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: 52px minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .character-detail-panel {
+    min-width: 0;
+    min-height: 0;
+    padding: 17px 2px 18px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .character-detail-facts {
+    margin-top: 0;
+    border-top: 0;
+  }
+  .character-detail-facts > div {
+    min-height: 56px;
+    padding-block: 12px;
+  }
+  .character-related-grid {
+    --catalog-min: 132px;
+  }
+  .character-related-grid--support-cards {
+    --catalog-min: 180px;
+  }
+  .character-related-grid--stamps {
+    --catalog-min: 138px;
+  }
+  .character-related-grid--stories {
+    --catalog-min: 220px;
+  }
+  .character-related-grid--live2d {
+    --catalog-min: 132px;
+  }
+  .character-related-grid--songs {
+    --catalog-min: 126px;
+  }
+  .character-voice-list,
+  .character-mission-list {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .character-voice-list article,
+  .character-mission-list article {
+    display: flex;
+    min-height: 64px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .character-voice-list article:last-child,
+  .character-mission-list article:last-child {
+    border-bottom: 0;
+  }
+  .character-voice-list small,
+  .character-mission-list small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .character-voice-list p {
+    margin: 3px 0 0;
+  }
+  .character-voice-list article > span {
+    display: grid;
+    min-width: 0;
+  }
+  .character-voice-list .icon-button.selected {
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+  .character-friendship-workspace {
+    display: grid;
+    gap: 16px;
+  }
   .character-friendship-selector {
-    grid-template-columns: minmax(0, 1fr);
+    display: grid;
+    min-height: 84px;
+    grid-template-columns: minmax(150px, 0.45fr) 40px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .character-friendship-anchor,
+  .character-friendship-partners > button {
+    display: flex;
+    min-width: 0;
+    min-height: 56px;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 10px 5px 5px;
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+  .character-friendship-anchor {
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
   }
   .character-friendship-selector > span {
-    rotate: 90deg;
+    display: grid;
+    place-items: center;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .character-friendship-anchor img,
+  .character-friendship-partners img {
+    width: 46px;
+    height: 46px;
+    flex: 0 0 46px;
+    object-fit: contain;
+    border-radius: 50%;
+  }
+  .character-friendship-partners {
+    display: flex;
+    min-width: 0;
+    gap: 6px;
+    padding: 2px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .character-friendship-partners > button {
+    min-width: max-content;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+  }
+  .character-friendship-partners > button:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .character-friendship-partners > button.selected {
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
   }
   .character-friendship-banner {
-    grid-template-columns: minmax(0, 1fr);
+    display: grid;
+    grid-template-columns: minmax(180px, 360px) minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    color: inherit;
   }
-}
-.character-mission-list article > span {
-  display: grid;
-  gap: 3px;
-}
-.character-detail-intro {
-  display: grid;
-  gap: 12px;
-  padding: 18px 10px 0;
-  border-bottom: 0;
-}
-.character-detail-intro small {
-  color: var(--md-sys-color-primary);
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
-.character-detail-intro h2 {
-  margin: 0;
-  font-family: var(--md-sys-typescale-display-small-font);
-  font-size: var(--md-sys-typescale-display-small-size);
-  font-weight: var(--md-sys-typescale-display-small-weight);
-  line-height: var(--md-sys-typescale-display-small-line-height);
-}
-.character-detail-intro > strong {
-  font-weight: 500;
-}
-.character-detail-intro p {
-  margin: 0;
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.65;
-}
-.character-detail-catch {
-  padding-top: 24px;
-  margin-top: 8px !important;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-  color: var(--md-sys-color-on-surface) !important;
-  font-weight: 500;
-}
-.character-detail-intro > p:last-child:not(.character-detail-catch) {
-  padding-bottom: 24px;
-  margin-top: 18px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  font-size: var(--md-sys-typescale-body-large-size);
-  line-height: 1.7;
-}
+  .character-friendship-banner img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+  .character-friendship-banner > span {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+  }
+  .character-friendship-banner small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  @media (max-width: 700px) {
+    .character-friendship-selector {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .character-friendship-selector > span {
+      rotate: 90deg;
+    }
+    .character-friendship-banner {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .character-mission-list article > span {
+    display: grid;
+    gap: 3px;
+  }
+  .character-detail-intro {
+    display: grid;
+    gap: 12px;
+    padding: 18px 10px 0;
+    border-bottom: 0;
+  }
+  .character-detail-intro small {
+    color: var(--md-sys-color-primary);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .character-detail-intro h2 {
+    margin: 0;
+    font-family: var(--md-sys-typescale-display-small-font);
+    font-size: var(--md-sys-typescale-display-small-size);
+    font-weight: var(--md-sys-typescale-display-small-weight);
+    line-height: var(--md-sys-typescale-display-small-line-height);
+  }
+  .character-detail-intro > strong {
+    font-weight: 500;
+  }
+  .character-detail-intro p {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.65;
+  }
+  .character-detail-catch {
+    padding-top: 24px;
+    margin-top: 8px !important;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface) !important;
+    font-weight: 500;
+  }
+  .character-detail-intro > p:last-child:not(.character-detail-catch) {
+    padding-bottom: 24px;
+    margin-top: 18px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    font-size: var(--md-sys-typescale-body-large-size);
+    line-height: 1.7;
+  }
 
-/* ---------- skill + level tables (ported) ---------- */
-.detail-section h3 {
-  margin: 0 0 4px;
-  font-size: var(--md-sys-typescale-title-medium-size);
-  font-weight: 500;
-}
-.skill-row {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-.skill-row img {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
-}
-.skill-row span {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-.skill-row small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-.skill-row p {
-  margin: 2px 0 0;
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.5;
-}
-.band-item-level-table {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.band-item-level-table > article {
-  display: grid;
-  min-height: 72px;
-  grid-template-columns: 76px minmax(180px, 1fr) minmax(180px, 0.8fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px 8px 4px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.band-item-level-table > article:last-child {
-  border-bottom: 0;
-}
-.band-item-level-table > article.selected {
-  background: var(--md-sys-color-secondary-container);
-}
-.band-item-level-table__level {
-  display: grid;
-  min-height: 56px;
-  place-items: center;
-  border-radius: var(--md-sys-shape-corner-medium);
-  cursor: pointer;
-}
-.band-item-level-table__level:hover {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-}
-.band-item-level-table__level small,
-.band-item-level-table__costs small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-.band-item-level-table__level strong {
-  font-size: var(--md-sys-typescale-title-large-size);
-}
-.band-item-level-table > article > p {
-  margin: 0;
-}
-.band-item-level-table__costs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.band-item-level-table__costs > span {
-  display: grid;
-  min-width: 84px;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 6px;
-  padding: 5px 8px;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface-container);
-}
-.band-item-level-table__costs img {
-  width: 28px;
-  height: 28px;
-  grid-row: 1 / span 2;
-  object-fit: contain;
-}
-.band-item-level-table__costs b {
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
-.band-item-level-table__costs > .band-item-level-table__free {
-  display: block;
-  min-width: 0;
-  background: transparent;
-}
-@media (max-width: 700px) {
+  /* ---------- skill + level tables (ported) ---------- */
+  .detail-section h3 {
+    margin: 0 0 4px;
+    font-size: var(--md-sys-typescale-title-medium-size);
+    font-weight: 500;
+  }
+  .skill-row {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+  .skill-row img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+  .skill-row span {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+  .skill-row small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .skill-row p {
+    margin: 2px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+  }
+  .band-item-level-table {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
   .band-item-level-table > article {
-    grid-template-columns: 60px minmax(0, 1fr);
+    display: grid;
+    min-height: 72px;
+    grid-template-columns: 76px minmax(180px, 1fr) minmax(180px, 0.8fr);
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px 8px 4px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .band-item-level-table > article:last-child {
+    border-bottom: 0;
+  }
+  .band-item-level-table > article.selected {
+    background: var(--md-sys-color-secondary-container);
+  }
+  .band-item-level-table__level {
+    display: grid;
+    min-height: 56px;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-medium);
+    cursor: pointer;
+  }
+  .band-item-level-table__level:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  }
+  .band-item-level-table__level small,
+  .band-item-level-table__costs small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .band-item-level-table__level strong {
+    font-size: var(--md-sys-typescale-title-large-size);
+  }
+  .band-item-level-table > article > p {
+    margin: 0;
   }
   .band-item-level-table__costs {
-    grid-column: 2;
-    justify-content: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
   }
-}
-.difficulty-segments {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
-  width: max-content;
-  min-width: 224px;
-  max-width: 100%;
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-full);
-}
-.difficulty-segments button {
-  display: grid;
-  min-width: 56px;
-  min-height: 48px;
-  place-content: center;
-  color: var(--difficulty-color);
-  border: 1px solid var(--difficulty-color);
-  border-right: 0;
-  background: transparent;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.difficulty-segments button:first-child {
-  border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
-}
-.difficulty-segments button:last-child {
-  border-right: 1px solid var(--difficulty-color);
-  border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
-}
-.difficulty-segments button[aria-pressed="true"] {
-  color: var(--md-sys-color-on-surface);
-  background: color-mix(in srgb, var(--difficulty-color) 32%, var(--md-sys-color-surface));
-}
-
-/* ---------- chart (ported) ---------- */
-/* Geometry comes from .pane-layer (components/overlay.css); the chart layer
-   sits above the detail pane it was opened from. */
-.chart-detail-layer {
-  z-index: var(--md-sys-z-index-overlay-dialog);
-  grid-template-rows: 56px minmax(0, 1fr);
-}
-.chart-detail-mode {
-  margin-left: auto;
-}
-chart-simulator,
-.chart-runtime {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-.chart-runtime {
-  position: relative;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  overflow: hidden;
-  background: #16171b;
-}
-.chart-runtime__stage {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  touch-action: none;
-}
-.chart-simple-overview {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto hidden;
-  background: #0f131a;
-  scrollbar-color: #68707d #1a2029;
-}
-.chart-simple-overview canvas {
-  display: block;
-  max-width: none;
-}
-.chart-runtime__canvas,
-.chart-runtime__hud {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-.chart-runtime__canvas {
-  z-index: 1;
-}
-.chart-runtime__hud {
-  z-index: 2;
-}
-.chart-runtime__controls {
-  position: relative;
-  z-index: 10;
-  display: grid;
-  min-height: 68px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  color: var(--md-sys-color-on-surface);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-.chart-runtime__timeline {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: auto minmax(56px, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-.chart-runtime__timeline small {
-  min-width: 34px;
-  color: var(--md-sys-color-on-surface-variant);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-.chart-runtime__actions {
-  display: flex;
-  align-items: center;
-}
-.chart-runtime__actions .icon-button[aria-pressed="true"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-.chart-runtime__settings {
-  position: absolute;
-  z-index: 20;
-  right: 12px;
-  bottom: 76px;
-  display: grid;
-  width: min(440px, calc(100% - 24px));
-  max-height: calc(100% - 92px);
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level3);
-}
-.chart-runtime__settings > header,
-.chart-runtime__settings > header > span {
-  display: flex;
-  align-items: center;
-}
-.chart-runtime__settings > header {
-  min-height: 52px;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 6px 4px 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.chart-runtime__settings > header > span {
-  gap: 2px;
-}
-.chart-runtime__settings > header .icon-button {
-  width: 40px;
-  height: 40px;
-}
-.chart-runtime__settings-content {
-  display: grid;
-  gap: 16px;
-  padding: 12px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.chart-runtime__settings-content > section {
-  display: grid;
-  gap: 10px;
-}
-.chart-runtime__settings-content h4 {
-  margin: 0;
-  color: var(--md-sys-color-primary);
-  font-size: var(--md-sys-typescale-label-large-size);
-}
-.chart-runtime__setting {
-  min-width: 0;
-}
-.chart-runtime__setting--slider {
-  display: grid;
-  gap: 2px;
-}
-.chart-runtime__setting--slider > span,
-.chart-runtime__setting--select,
-.chart-runtime__setting--toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.chart-runtime__setting output {
-  color: var(--md-sys-color-on-surface-variant);
-  font-variant-numeric: tabular-nums;
-}
-.chart-runtime__setting md-slider {
-  width: 100%;
-}
-.chart-runtime__setting select {
-  min-width: 136px;
-  max-width: 52%;
-  height: 40px;
-  padding: 0 10px;
-  color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-surface-container-lowest);
-}
-.chart-runtime__setting--toggle input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--md-sys-color-primary);
-}
-@media (max-width: 420px) {
-  .chart-runtime__controls {
-    gap: 4px;
-    padding-inline: 6px;
+  .band-item-level-table__costs > span {
+    display: grid;
+    min-width: 84px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 6px;
+    padding: 5px 8px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
   }
-  .chart-runtime__timeline {
-    gap: 4px;
-  }
-  .chart-runtime__timeline small {
-    display: none;
-  }
-  .chart-runtime__settings {
-    right: 6px;
-    bottom: 74px;
-    width: calc(100% - 12px);
-  }
-}
-/* Below 960px a detail pane is a single column: the artwork sits above the
-   facts instead of beside them, and the header sheds its decorative emblems
-   so the title keeps its room. */
-@media (max-width: 959px) {
-  .detail-media {
-    max-height: none;
-    min-height: min(52dvh, 430px);
-  }
-  .detail-media > img {
-    max-height: min(52dvh, 430px);
-  }
-  .detail-header-leading {
-    gap: 2px;
-  }
-  .detail-header-entity {
-    display: none;
-  }
-  .detail-header-mark {
+  .band-item-level-table__costs img {
     width: 28px;
     height: 28px;
+    grid-row: 1 / span 2;
+    object-fit: contain;
   }
-  .detail-header-mark--rarity {
-    width: 26px;
+  .band-item-level-table__costs b {
+    font-size: var(--md-sys-typescale-label-medium-size);
   }
-  .card-detail-controls__pair {
-    grid-template-columns: minmax(0, 1fr);
+  .band-item-level-table__costs > .band-item-level-table__free {
+    display: block;
+    min-width: 0;
+    background: transparent;
   }
-}
-.detail-media-controls audio,
-.detail-media-controls video {
-  width: 100%;
-}
+  @media (max-width: 700px) {
+    .band-item-level-table > article {
+      grid-template-columns: 60px minmax(0, 1fr);
+    }
+    .band-item-level-table__costs {
+      grid-column: 2;
+      justify-content: flex-start;
+    }
+  }
+  .difficulty-segments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+    width: max-content;
+    min-width: 224px;
+    max-width: 100%;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+  .difficulty-segments button {
+    display: grid;
+    min-width: 56px;
+    min-height: 48px;
+    place-content: center;
+    color: var(--difficulty-color);
+    border: 1px solid var(--difficulty-color);
+    border-right: 0;
+    background: transparent;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .difficulty-segments button:first-child {
+    border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
+  }
+  .difficulty-segments button:last-child {
+    border-right: 1px solid var(--difficulty-color);
+    border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+  }
+  .difficulty-segments button[aria-pressed="true"] {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--difficulty-color) 32%, var(--md-sys-color-surface));
+  }
 
-/* ---------- long copy + song media (ported) ---------- */
-.detail-long-copy {
-  margin: 0;
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.75;
-  white-space: pre-line;
-}
-.song-score-grid,
-.song-reward-items {
-  grid-template-columns: repeat(5, minmax(min-content, 1fr));
-  grid-auto-flow: initial;
-  grid-auto-columns: initial;
-}
-.song-combo-rewards {
-  grid-template-columns: repeat(4, minmax(min-content, 1fr));
-  grid-auto-flow: initial;
-  grid-auto-columns: initial;
-}
-.song-rank-icon {
-  width: 48px;
-  height: 30px;
-  object-fit: contain;
-}
-.song-reward-value {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-.song-reward-value img {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
-  object-fit: contain;
-}
-.song-detail-mv__stage {
-  position: relative;
-  display: grid;
-  box-sizing: border-box;
-  width: min(100%, 960px);
-  height: auto;
-  aspect-ratio: 16 / 9;
-  min-width: 0;
-  min-height: 0;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-high);
-  box-shadow: var(--md-sys-elevation-level1);
-}
-.song-detail-mv__poster,
-.song-detail-mv__stage video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.song-detail-mv__poster {
-  z-index: 0;
-}
-.song-detail-mv__stage video {
-  z-index: 1;
-  display: block;
-  background: var(--md-sys-color-surface-container-high);
-  opacity: 0;
-}
-.song-detail-mv__stage video.is-visible {
-  opacity: 1;
-}
-.song-detail-mv__play {
-  position: relative;
-  z-index: 2;
-  width: 48px;
-  height: 48px;
-  color: var(--md-sys-color-on-primary-container);
-  background: var(--md-sys-color-primary-container);
-}
-.song-detail-mv__play::before {
-  position: absolute;
-  z-index: -1;
-  inset: -999px;
-  content: "";
-  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+  /* ---------- chart (ported) ---------- */
+  /* Geometry comes from .pane-layer (components/overlay.css); the chart layer
+   sits above the detail pane it was opened from. */
+  .chart-detail-layer {
+    z-index: var(--md-sys-z-index-overlay-dialog);
+    grid-template-rows: 56px minmax(0, 1fr);
+  }
+  .chart-detail-mode {
+    margin-left: auto;
+  }
+  chart-simulator,
+  .chart-runtime {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .chart-runtime {
+    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    background: #16171b;
+  }
+  .chart-runtime__stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .chart-simple-overview {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto hidden;
+    background: #0f131a;
+    scrollbar-color: #68707d #1a2029;
+  }
+  .chart-simple-overview canvas {
+    display: block;
+    max-width: none;
+  }
+  .chart-runtime__canvas,
+  .chart-runtime__hud {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .chart-runtime__canvas {
+    z-index: 1;
+  }
+  .chart-runtime__hud {
+    z-index: 2;
+  }
+  .chart-runtime__controls {
+    position: relative;
+    z-index: 10;
+    display: grid;
+    min-height: 68px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+  .chart-runtime__timeline {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(56px, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+  .chart-runtime__timeline small {
+    min-width: 34px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+  .chart-runtime__actions {
+    display: flex;
+    align-items: center;
+  }
+  .chart-runtime__actions .icon-button[aria-pressed="true"] {
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .chart-runtime__settings {
+    position: absolute;
+    z-index: 20;
+    right: 12px;
+    bottom: 76px;
+    display: grid;
+    width: min(440px, calc(100% - 24px));
+    max-height: calc(100% - 92px);
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level3);
+  }
+  .chart-runtime__settings > header,
+  .chart-runtime__settings > header > span {
+    display: flex;
+    align-items: center;
+  }
+  .chart-runtime__settings > header {
+    min-height: 52px;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 6px 4px 16px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .chart-runtime__settings > header > span {
+    gap: 2px;
+  }
+  .chart-runtime__settings > header .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+  .chart-runtime__settings-content {
+    display: grid;
+    gap: 16px;
+    padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .chart-runtime__settings-content > section {
+    display: grid;
+    gap: 10px;
+  }
+  .chart-runtime__settings-content h4 {
+    margin: 0;
+    color: var(--md-sys-color-primary);
+    font-size: var(--md-sys-typescale-label-large-size);
+  }
+  .chart-runtime__setting {
+    min-width: 0;
+  }
+  .chart-runtime__setting--slider {
+    display: grid;
+    gap: 2px;
+  }
+  .chart-runtime__setting--slider > span,
+  .chart-runtime__setting--select,
+  .chart-runtime__setting--toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .chart-runtime__setting output {
+    color: var(--md-sys-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+  .chart-runtime__setting md-slider {
+    width: 100%;
+  }
+  .chart-runtime__setting select {
+    min-width: 136px;
+    max-width: 52%;
+    height: 40px;
+    padding: 0 10px;
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+  .chart-runtime__setting--toggle input {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--md-sys-color-primary);
+  }
+  @media (max-width: 420px) {
+    .chart-runtime__controls {
+      gap: 4px;
+      padding-inline: 6px;
+    }
+    .chart-runtime__timeline {
+      gap: 4px;
+    }
+    .chart-runtime__timeline small {
+      display: none;
+    }
+    .chart-runtime__settings {
+      right: 6px;
+      bottom: 74px;
+      width: calc(100% - 12px);
+    }
+  }
+  /* Below 960px a detail pane is a single column: the artwork sits above the
+   facts instead of beside them, and the header sheds its decorative emblems
+   so the title keeps its room. */
+  @media (max-width: 959px) {
+    .detail-media {
+      max-height: none;
+      min-height: min(52dvh, 430px);
+    }
+    .detail-media > img {
+      max-height: min(52dvh, 430px);
+    }
+    .detail-header-leading {
+      gap: 2px;
+    }
+    .detail-header-entity {
+      display: none;
+    }
+    .detail-header-mark {
+      width: 28px;
+      height: 28px;
+    }
+    .detail-header-mark--rarity {
+      width: 26px;
+    }
+    .card-detail-controls__pair {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .detail-media-controls audio,
+  .detail-media-controls video {
+    width: 100%;
+  }
+
+  /* ---------- long copy + song media (ported) ---------- */
+  .detail-long-copy {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.75;
+    white-space: pre-line;
+  }
+  .song-score-grid,
+  .song-reward-items {
+    grid-template-columns: repeat(5, minmax(min-content, 1fr));
+    grid-auto-flow: initial;
+    grid-auto-columns: initial;
+  }
+  .song-combo-rewards {
+    grid-template-columns: repeat(4, minmax(min-content, 1fr));
+    grid-auto-flow: initial;
+    grid-auto-columns: initial;
+  }
+  .song-rank-icon {
+    width: 48px;
+    height: 30px;
+    object-fit: contain;
+  }
+  .song-reward-value {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .song-reward-value img {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    object-fit: contain;
+  }
+  .song-detail-mv__stage {
+    position: relative;
+    display: grid;
+    box-sizing: border-box;
+    width: min(100%, 960px);
+    height: auto;
+    aspect-ratio: 16 / 9;
+    min-width: 0;
+    min-height: 0;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level1);
+  }
+  .song-detail-mv__poster,
+  .song-detail-mv__stage video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .song-detail-mv__poster {
+    z-index: 0;
+  }
+  .song-detail-mv__stage video {
+    z-index: 1;
+    display: block;
+    background: var(--md-sys-color-surface-container-high);
+    opacity: 0;
+  }
+  .song-detail-mv__stage video.is-visible {
+    opacity: 1;
+  }
+  .song-detail-mv__play {
+    position: relative;
+    z-index: 2;
+    width: 48px;
+    height: 48px;
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+  }
+  .song-detail-mv__play::before {
+    position: absolute;
+    z-index: -1;
+    inset: -999px;
+    content: "";
+    background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+  }
 }

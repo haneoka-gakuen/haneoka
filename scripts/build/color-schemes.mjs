@@ -21,7 +21,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const output = path.join(root, "packages/design-tokens/src/schemes.css");
 
 /** The brand triad comes from the favicon; bands come from MasterBand.color. */
-const BRAND = { primary: "#31356e", secondary: "#79bbc8", tertiary: "#c370b7" };
+const BRAND = { primary: "#31356e", secondary: "#31356e", tertiary: "#79bbc8" };
 export const SEEDS = [
   { id: "haneoka", source: BRAND.primary },
   { id: "band-1", source: "#3388bb" },
@@ -92,9 +92,9 @@ function brandScheme(isDark) {
     variant: Variant.TONAL_SPOT,
     contrastLevel: 0,
     isDark,
-    // Keep the favicon's indigo / teal / orchid triad instead of deriving it.
+    // Shared indigo surfaces with a cyan tertiary accent.
     primaryPalette: TonalPalette.fromHueAndChroma(source.hue, Math.max(source.chroma, 36)),
-    secondaryPalette: TonalPalette.fromHueAndChroma(palette(BRAND.secondary).hue, 24),
+    secondaryPalette: TonalPalette.fromHueAndChroma(palette(BRAND.secondary).hue, 16),
     tertiaryPalette: TonalPalette.fromHueAndChroma(palette(BRAND.tertiary).hue, 32),
     neutralPalette: TonalPalette.fromHueAndChroma(source.hue, 4),
     neutralVariantPalette: TonalPalette.fromHueAndChroma(source.hue, 8),

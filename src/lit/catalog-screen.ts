@@ -1,3 +1,5 @@
+import { openDetailLocation, closeDetailLocation } from "../lib/detail-navigation";
+import { RequestScope } from "../lib/request-scope";
 import { LitElement, html, nothing } from "lit";
 import {
   catalogUrl,
@@ -175,6 +177,7 @@ const cleanMarkup = (value: string) =>
     .trim();
 
 export class CatalogScreen extends LitElement {
+  private detailRequests = new RequestScope();
   static properties = {
     config: { type: String },
     phase: { state: true },
@@ -271,7 +274,7 @@ export class CatalogScreen extends LitElement {
     );
   }
   private onKeydown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
+    if (event.defaultPrevented || event.key !== "Escape") return;
     if (this.selected) this.close();
     else if (this.filtersOpen) this.filtersOpen = false;
   };
@@ -373,6 +376,7 @@ export class CatalogScreen extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.detailRequests.cancel();
     clearBrowseBar();
     this.paneFocus.detach();
     this.filterFocus.detach();
@@ -1084,10 +1088,10 @@ export class CatalogScreen extends LitElement {
     this.chartMode = "simple";
     const params = new URLSearchParams(location.search);
     params.set(this.selectionParam(), this.itemId(item));
-    history.replaceState(history.state, "", `${location.pathname}?${params}`);
-    void this.loadEntityDetail(item);
+    openDetailLocation(`${location.pathname}?${params}`);
   }
   private async loadEntityDetail(summary: Item) {
+    const signal = this.detailRequests.begin();
     const id = this.itemId(summary);
     if (this.profile.presentation === "song") {
       const rewards = this.songDetailRewards
@@ -1108,11 +1112,16 @@ export class CatalogScreen extends LitElement {
     try {
       const response = await fetch(this.sourceUrl(this.settings.resource, id), {
         headers: { accept: "application/json" },
+        signal,
       });
-      if (response.ok && this.selectedId === id) this.selected = (await response.json()) as Item;
+      if (response.ok) {
+        const detail = (await response.json()) as Item;
+        if (this.detailRequests.current(signal) && this.selectedId === id) this.selected = detail;
+      }
     } catch {
       // The summary remains a complete offline fallback.
     }
+    if (!this.detailRequests.current(signal)) return;
     const views: string[] = [];
     if (this.profile.presentation === "member")
       views.push("member-card-levels", "member-card-awake-resources", "skill-level-resources");
@@ -1124,7 +1133,7 @@ export class CatalogScreen extends LitElement {
       const [viewResults, relationResults, progression, skillReference, skillText, cardDetail] = await Promise.all([
         Promise.all(
           views.map(async (view) => {
-            const response = await fetch(catalogUrl(`progression/views/${view}`));
+            const response = await fetch(catalogUrl(`progression/views/${view}`), { signal });
             return [view, response.ok ? await response.json() : []] as const;
           }),
         ),
@@ -1142,21 +1151,25 @@ export class CatalogScreen extends LitElement {
                 "friendships",
                 "character-missions",
               ].map(async (resource) => {
-                const response = await fetch(catalogUrl(resource));
+                const response = await fetch(catalogUrl(resource), { signal });
                 return [resource, response.ok ? await response.json() : {}] as const;
               }),
             )
           : [],
         ["member", "support"].includes(this.profile.presentation)
-          ? fetch(catalogUrl("progression")).then(async (response) => (response.ok ? await response.json() : {}))
+          ? fetch(catalogUrl("progression"), { signal }).then(async (response) =>
+              response.ok ? await response.json() : {},
+            )
           : {},
         ["member", "support"].includes(this.profile.presentation)
-          ? fetch(catalogUrl("skill-reference")).then(async (response) => (response.ok ? await response.json() : {}))
+          ? fetch(catalogUrl("skill-reference"), { signal }).then(async (response) =>
+              response.ok ? await response.json() : {},
+            )
           : {},
         ["member", "support"].includes(this.profile.presentation) ? import("./shared/skill-text") : undefined,
         ["member", "support"].includes(this.profile.presentation) ? import("./card-detail") : undefined,
       ]);
-      if (this.selectedId === id) {
+      if (this.detailRequests.current(signal) && this.selectedId === id) {
         this.skillText = skillText;
         this.cardDetail = cardDetail;
         this.detailAux = {
@@ -1194,6 +1207,7 @@ export class CatalogScreen extends LitElement {
     }
   }
   private close() {
+    this.detailRequests.cancel();
     this.selected = null;
     this.selectedId = "";
     this.detailAux = {};
@@ -1212,7 +1226,7 @@ export class CatalogScreen extends LitElement {
       "gekisouLevel",
       "section",
     ].forEach((key) => params.delete(key));
-    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+    closeDetailLocation(`${location.pathname}${params.size ? `?${params}` : ""}`);
   }
   private setDetailQuery(key: string, value: string | number) {
     this.setDetailQueries({ [key]: value });

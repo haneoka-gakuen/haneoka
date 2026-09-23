@@ -5,6 +5,7 @@ import { icon } from "./ui/icon";
 import { errorState, loadingState } from "./ui/state";
 import {
   catalogUrl,
+  currentReleaseServer,
   formatList,
   localizedText,
   preferredLocale,
@@ -108,11 +109,7 @@ export class AnonTokyoWorkspace extends LitElement {
       .catch(() => host.classList.add("failed"));
   }
   private server() {
-    try {
-      return localStorage.getItem("haneoka.release-server") || "intl";
-    } catch {
-      return "intl";
-    }
+    return currentReleaseServer();
   }
   private async load() {
     try {

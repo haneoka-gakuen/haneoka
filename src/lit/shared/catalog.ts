@@ -1,3 +1,4 @@
+import { readReleaseServer } from "../../lib/release-server";
 export type JsonRecord = Record<string, unknown>;
 export const UI_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
 export function preferredLocale(fallback = "ja"): string {
@@ -11,6 +12,27 @@ export function preferredLocale(fallback = "ja"): string {
   return (UI_LOCALES as readonly string[]).includes(value) ? value : fallback;
 }
 const UI_COPY: Record<string, readonly [string, string, string, string, string]> = {
+  voice: ["ボイス", "Voice", "語音", "语音", "음성"],
+  illustration: ["イラスト", "Illustration", "插圖", "插图", "일러스트"],
+  playVoice: ["ボイスを再生", "Play voice", "播放語音", "播放语音", "음성 재생"],
+  conversation: ["トーク", "Conversation", "聊天", "聊天", "대화"],
+  choices: ["選択肢", "Choices", "選項", "选项", "선택지"],
+  stamp: ["スタンプ", "Sticker", "貼圖", "贴图", "스티커"],
+  video: ["動画", "Video", "影片", "视频", "동영상"],
+  musicPlayer: ["ミュージックプレーヤー", "Music player", "音樂播放器", "音乐播放器", "음악 플레이어"],
+  queue: ["再生キュー", "Queue", "播放佇列", "播放队列", "재생 대기열"],
+  clearQueue: ["キューを消去", "Clear queue", "清空佇列", "清空队列", "대기열 비우기"],
+  playbackPosition: ["再生位置", "Playback position", "播放位置", "播放位置", "재생 위치"],
+  volume: ["音量", "Volume", "音量", "音量", "볼륨"],
+  mute: ["ミュート", "Mute", "靜音", "静音", "음소거"],
+  unmute: ["ミュート解除", "Unmute", "取消靜音", "取消静音", "음소거 해제"],
+  collapse: ["折りたたむ", "Collapse", "收合", "收起", "접기"],
+  expandPlayer: ["プレーヤーを開く", "Expand player", "展開播放器", "展开播放器", "플레이어 펼치기"],
+  reorder: ["並べ替える", "Reorder", "調整順序", "调整顺序", "순서 변경"],
+  playInOrder: ["順番に再生", "Play in order", "順序播放", "顺序播放", "순서대로 재생"],
+  repeatQueue: ["全曲リピート", "Repeat queue", "清單循環", "列表循环", "전체 반복"],
+  repeatTrack: ["1曲リピート", "Repeat track", "單曲循環", "单曲循环", "한 곡 반복"],
+  shuffle: ["シャッフル", "Shuffle", "隨機播放", "随机播放", "셔플"],
   filter: ["フィルター", "Filter", "篩選", "筛选", "필터"],
   searchStories: ["ストーリーを検索", "Search stories", "搜尋故事", "搜索故事", "스토리 검색"],
   searchHelp: ["ヘルプを検索", "Search help", "搜尋幫助", "搜索帮助", "도움말 검색"],
@@ -180,11 +202,7 @@ export function localizedText(value: unknown, locale: string): string {
 }
 
 export function currentReleaseServer(): string {
-  try {
-    return localStorage.getItem("haneoka.release-server") || "intl";
-  } catch {
-    return "intl";
-  }
+  return readReleaseServer();
 }
 
 export function catalogUrl(resource: string, id = "", server = currentReleaseServer()): string {
@@ -193,7 +211,9 @@ export function catalogUrl(resource: string, id = "", server = currentReleaseSer
 }
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { headers: { accept: "application/json", ...init?.headers }, ...init });
+  const headers = new Headers(init?.headers);
+  if (!headers.has("accept")) headers.set("accept", "application/json");
+  const response = await fetch(url, { ...init, headers });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json() as Promise<T>;
 }

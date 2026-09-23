@@ -23,6 +23,7 @@ const titleValues = titleKey
 <!doctype html>
 <html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" transition:animate="none">
   <head>
+    <style is:inline>@layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;</style>
     <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <ClientRouter />
     <script is:inline>(()=>{const ok=/^(ja|en|zh-TW|zh-CN|ko)$/;const match=v=>{try{const p=Intl.getCanonicalLocales(String(v||"").replaceAll("_","-"))[0]?.toLowerCase().split("-")||[];if(p[0]==="ja"||p[0]==="en"||p[0]==="ko")return p[0];if(p[0]!=="zh")return null;if(p.includes("hant")||p.some(x=>["tw","hk","mo"].includes(x)))return"zh-TW";return"zh-CN"}catch{return null}};let l="";try{const s=localStorage.getItem("haneoka.locale");l=ok.test(s||"")?s:""}catch{}if(!l)l=(navigator.languages||[navigator.language]).map(match).find(Boolean)||"ja";const d=document.documentElement,t={ja:"ja-JP",en:"en-US","zh-TW":"zh-TW","zh-CN":"zh-CN",ko:"ko-KR"};d.lang=t[l];d.dataset.locale=l;try{localStorage.setItem("haneoka.locale",l)}catch{}})()</script>

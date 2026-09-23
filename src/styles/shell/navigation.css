@@ -1,66 +1,44 @@
-/* ==========================================================================
-   Navigation — rail ⇄ drawer ⇄ bar, and the tuning control
-   One element tree serves all three Material navigation components; the
-   window size class decides which one it is. The active indicator is a
-   56×32dp pill that grows horizontally into place, which is the only
-   navigation motion in the system.
-   ========================================================================== */
 .nav {
   z-index: var(--md-sys-z-index-shell-navigation);
   display: flex;
-  min-width: 0;
   min-height: 0;
   flex-direction: column;
-  grid-row: 1 / span 2;
   grid-column: 1;
-  overflow: hidden;
+  grid-row: 1;
   color: var(--md-sys-color-on-surface-variant);
   background: var(--md-sys-color-surface-container);
-  font-family: var(--app-font);
 }
 .nav__header {
   display: flex;
   height: var(--top-bar-height);
-  flex: 0 0 auto;
+  min-height: var(--top-bar-height);
   align-items: center;
-  gap: 4px;
-  padding-inline: 16px 12px;
+  gap: 8px;
+  padding-inline: 16px;
 }
 .nav__brand {
   display: flex;
-  min-width: 0;
-  height: 48px;
   align-items: center;
   gap: 10px;
-  padding-inline: 4px 12px;
   color: var(--md-sys-color-on-surface);
-  border-radius: var(--md-sys-shape-corner-full);
-  font: 500 1.125rem/1 var(--app-font);
-  letter-spacing: 0.01em;
+  font: 500 20px/28px var(--app-font);
 }
-.nav__brand img {
-  width: 28px;
-  height: 28px;
-}
-
-/* ---------- Rail ---------- */
 .nav__rail {
   display: grid;
-  gap: 4px;
-  margin: 4px 0 0;
+  gap: 8px;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
 }
 .rail-item {
   display: grid;
   min-height: 64px;
-  justify-items: center;
   align-content: center;
+  justify-items: center;
   gap: 4px;
   padding-block: 4px;
   color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font: 500 12px/16px var(--app-font);
   text-align: center;
 }
 .rail-item > span:last-child {
@@ -69,587 +47,164 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rail-item__indicator,
-.nav-bar__indicator {
+.rail-item__indicator {
   display: grid;
   width: 56px;
   height: 32px;
   place-items: center;
   border-radius: var(--md-sys-shape-corner-full);
+  transition: background-color 200ms var(--ease-standard);
 }
-.rail-item__indicator::after,
-.nav-bar__indicator::after {
-  position: absolute;
-  z-index: -2;
-  inset: 0;
-  content: "";
-  border-radius: inherit;
-  background: var(--md-sys-color-secondary-container);
-  opacity: 0;
-  transform: scaleX(0.32);
-  transition:
-    transform var(--md-sys-motion-duration-medium2) var(--ease-emphasized),
-    opacity var(--md-sys-motion-duration-short2) linear;
-}
-.rail-item[aria-current="page"],
-.nav-bar__item[aria-current="page"] {
+.rail-item[aria-current="page"] {
   color: var(--md-sys-color-on-surface);
 }
-.rail-item[aria-current="page"] .rail-item__indicator,
-.nav-bar__item[aria-current="page"] .nav-bar__indicator {
+.rail-item[aria-current="page"] .rail-item__indicator {
   color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
 }
-.rail-item[aria-current="page"] .rail-item__indicator::after,
-.nav-bar__item[aria-current="page"] .nav-bar__indicator::after {
-  opacity: 1;
-  transform: none;
-}
-.rail-item--footer {
-  margin-top: auto;
-  margin-bottom: 16px;
-}
-/* The ring belongs on the indicator, not the whole 64dp destination. */
-.rail-item:focus-visible,
-.nav-bar__item:focus-visible {
+.rail-item:focus-visible {
   outline: none;
 }
-.rail-item:focus-visible .rail-item__indicator,
-.nav-bar__item:focus-visible .nav-bar__indicator {
+.rail-item:focus-visible .rail-item__indicator {
   outline: 3px solid var(--md-sys-color-secondary);
   outline-offset: 2px;
 }
-
-/* ---------- Expanded rail (what Material calls the expanded navigation rail;
-   it replaces the navigation drawer) ----------
-
-   Hierarchy, top to bottom:
-     brand · tuning · spacing   the shell's own controls
-     PRIMARY destinations       the same five as the collapsed rail
-     ── divider ──
-     section headlines + items  secondary, scrollable
-     account / settings / about pinned to the bottom
-
-   The collapsed and expanded forms share those five destinations, their
-   order and their icons, so one turns into the other instead of being
-   swapped for an unrelated list. Per spec the expanded active indicator is a
-   56dp-tall pill that hugs its label, against 56×32dp when collapsed. */
-.nav__primary {
-  display: grid;
-  gap: 2px;
-  margin: 0 0 8px;
-  padding: 0;
-  list-style: none;
-}
-.nav-item--primary {
-  min-height: 56px;
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
-}
-/* Expressive moves the active label to secondary and drops the bold. */
-.nav-item--primary[aria-current="page"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-/* The secondary list is separated from the primary destinations, not just
-   spaced from them: the divider is what says "different level". */
-.nav__primary + .nav-section,
-.nav__primary + .nav-item {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-}
-
-/* ---------- Drawer ---------- */
 .nav__drawer {
   display: none;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  padding: 0 12px 16px;
+  padding: 16px 12px;
   overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
 }
-.nav__drawer ul {
+.nav__primary,
+.nav__utilities {
   display: grid;
-  gap: 0;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .nav-item {
-  display: grid;
+  display: flex;
   min-height: 48px;
-  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  column-gap: 12px;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 12px 16px;
   color: var(--md-sys-color-on-surface-variant);
   border-radius: var(--md-sys-shape-corner-full);
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  font: 500 14px/20px var(--app-font);
 }
-.nav-item > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.nav-item--primary {
+  min-height: 56px;
 }
-.nav-item[aria-current] {
+.nav-item[aria-current="location"] {
+  color: var(--md-sys-color-on-surface);
+}
+.nav-item[aria-current="page"] {
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
 }
-/* aria-current="true" marks an ancestor section, not the page itself: it is
- * emphasised with colour only, so the filled pill stays unique to the page. */
-.nav-item[aria-current="true"] {
-  color: var(--md-sys-color-on-surface);
-  background: transparent;
+.nav__utilities {
+  margin-top: auto;
+  padding-top: 24px;
 }
-.nav-section {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
+.nav__rail-utilities {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-block: 16px;
 }
-.nav-section__headline {
+.nav__rail-utilities .rail-item {
+  min-height: 56px;
+}
+.nav__destination {
   display: flex;
-  min-height: 40px;
   align-items: center;
-  justify-content: space-between;
-  margin: 0;
-  padding: 0 16px;
-  color: var(--md-sys-color-primary);
-  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
-    var(--md-sys-typescale-title-small-line-height) var(--app-font);
-  letter-spacing: 0.02em;
+  gap: 2px;
 }
-/* Secondary destinations are inset from the primary ones and lighter: two
-   visual levels rather than one flat list. */
-.nav-section .nav-item {
-  min-height: 44px;
-  padding-left: 28px;
-  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
-    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+.nav__destination > .nav-item {
+  min-width: 0;
+  flex: 1;
 }
-summary.nav-section__headline {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: var(--md-sys-shape-corner-full);
-  cursor: pointer;
-  list-style: none;
+.nav__disclosure {
+  flex: 0 0 48px;
 }
-summary.nav-section__headline::-webkit-details-marker {
-  display: none;
-}
-summary.nav-section__headline:hover {
-  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-}
-summary.nav-section__headline > .material-icon {
-  transition: transform var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
-}
-.nav-section[open] > summary > .material-icon {
+.nav__disclosure[aria-expanded="true"] > svg,
+.nav__section[open] > summary > svg {
   transform: rotate(180deg);
 }
-.nav-section--footer {
-  margin-top: auto;
+.nav__branch {
+  padding-block: 4px 12px;
 }
-
-/* ---------- Modal drawer (below expanded, or on compact) ---------- */
-.nav-modal-open .nav {
-  position: fixed;
-  z-index: var(--md-sys-z-index-overlay-drawer);
-  inset: 0 auto 0 0;
-  display: flex;
-  width: min(var(--nav-drawer-width), calc(100vw - 56px));
-  padding-left: env(safe-area-inset-left);
-  border-radius: 0 var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0;
-  background: var(--md-sys-color-surface-container-low);
-  box-shadow: var(--md-sys-elevation-level1);
-  animation: nav-drawer-in var(--md-sys-motion-duration-medium4) var(--ease-decelerate);
-}
-.nav-modal-open .nav__rail,
-.nav-modal-open .rail-item--footer {
-  display: none;
-}
-.nav-modal-open .nav__drawer {
-  display: flex;
-}
-.nav-modal-open .nav__header {
-  justify-content: flex-start;
-  padding-inline: 16px 12px;
-}
-.nav-modal-open .nav__header .nav__brand {
-  display: flex;
-}
-.nav-modal-open .nav-scrim {
-  position: fixed;
-  z-index: var(--md-sys-z-index-overlay-backdrop);
-  inset: 0;
-  display: block;
-  padding: 0;
-  background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
-  cursor: default;
-  animation: overlay-fade var(--md-sys-motion-duration-medium2) linear;
-}
-@keyframes nav-drawer-in {
-  from {
-    transform: translateX(-100%);
-  }
-}
-
-/* ==========================================================================
-   Tuning control — the key signature
-   The one interaction the whole site is built around: it re-tunes every
-   colour role from a precomputed Material scheme. It lives in the rail's FAB
-   slot, extends into a labelled button when the drawer is open, and opens a
-   menu of radio items. lib/tuning.ts performs the circular reveal.
-   ========================================================================== */
-.tune-disc {
-  --swatch: var(--md-sys-color-primary);
-  --swatch-b: var(--md-sys-color-secondary);
-  --swatch-c: var(--md-sys-color-tertiary);
+.nav__children {
   display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  grid-template: 1fr 1fr / 1fr 1fr;
-  overflow: hidden;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
-}
-.tune-disc i:first-child {
-  grid-column: 1 / -1;
-  background: var(--swatch);
-}
-.tune-disc i:nth-child(2) {
-  background: var(--swatch-b);
-}
-.tune-disc i:nth-child(3) {
-  background: var(--swatch-c);
-}
-[data-seed-preview="haneoka"] {
-  --swatch: #31356e;
-  --swatch-b: #79bbc8;
-  --swatch-c: #c370b7;
-}
-[data-seed-preview^="band-"] {
-  --swatch: var(--preview-band);
-  --swatch-b: var(--preview-band-container);
-  --swatch-c: var(--preview-band-on);
-}
-[data-seed-preview="band-1"] {
-  --preview-band: var(--md-ref-band-1);
-  --preview-band-container: var(--md-ref-band-1-container);
-  --preview-band-on: var(--md-ref-band-1-on-container);
-}
-[data-seed-preview="band-2"] {
-  --preview-band: var(--md-ref-band-2);
-  --preview-band-container: var(--md-ref-band-2-container);
-  --preview-band-on: var(--md-ref-band-2-on-container);
-}
-[data-seed-preview="band-3"] {
-  --preview-band: var(--md-ref-band-3);
-  --preview-band-container: var(--md-ref-band-3-container);
-  --preview-band-on: var(--md-ref-band-3-on-container);
-}
-[data-seed-preview="band-4"] {
-  --preview-band: var(--md-ref-band-4);
-  --preview-band-container: var(--md-ref-band-4-container);
-  --preview-band-on: var(--md-ref-band-4-on-container);
-}
-[data-seed-preview="band-5"] {
-  --preview-band: var(--md-ref-band-5);
-  --preview-band-container: var(--md-ref-band-5-container);
-  --preview-band-on: var(--md-ref-band-5-on-container);
-}
-.nav__tune {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  width: 56px;
-  height: 56px;
-  flex: 0 0 auto;
-  place-items: center;
-  margin: 4px auto 12px;
-  padding: 0;
-  overflow: hidden;
-  color: var(--md-sys-color-on-primary-container);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-primary-container);
-  cursor: pointer;
-  transition:
-    border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized),
-    box-shadow var(--md-sys-motion-duration-short3) linear;
-}
-.nav__tune::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
-  background: currentColor;
-  opacity: 0;
-  transition: opacity var(--md-sys-motion-duration-short3) linear;
-}
-@media (hover: hover) {
-  .nav__tune:hover {
-    box-shadow: var(--md-sys-elevation-level1);
-  }
-  .nav__tune:hover::before {
-    opacity: var(--state-hover);
-  }
-}
-.nav__tune:active {
-  border-radius: var(--md-sys-shape-corner-full);
-}
-.nav__tune:active::before {
-  opacity: var(--state-press);
-}
-.nav__tune .tune-disc {
-  width: 28px;
-  height: 28px;
-}
-/* Collapsed rail: the label stays in the accessibility tree
- * ("Theme color, Ave Mujica") even though it is not painted. */
-.nav__tune-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.nav__tune-label small {
-  display: block;
-  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
-    var(--md-sys-typescale-label-small-line-height) var(--app-font);
-  opacity: 0.8;
-}
-.nav__tune-label > span {
-  display: block;
-  overflow: hidden;
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav__tune-label > span[hidden] {
-  display: none;
-}
-/* Expanded navigation: the FAB extends into a labelled key signature. The
- * modal drawer gets this at any size; the persistent drawer only exists on
- * expanded windows, so its rule is scoped to that breakpoint. */
-.nav-modal-open .nav__tune {
-  width: auto;
-  margin: 4px 16px 12px;
-  grid-template-columns: 28px minmax(0, 1fr);
-  justify-content: start;
-  justify-items: start;
-  gap: 12px;
-  padding: 0 20px 0 16px;
-}
-.nav-modal-open .nav__tune-label {
-  position: static;
-  width: auto;
-  height: auto;
-  min-width: 0;
-  clip-path: none;
-  text-align: start;
-}
-@media (min-width: 1200px) {
-  :root[data-nav="expanded"] .nav__tune {
-    width: auto;
-    margin: 4px 16px 12px;
-    grid-template-columns: 28px minmax(0, 1fr);
-    justify-content: start;
-    justify-items: start;
-    gap: 12px;
-    padding: 0 20px 0 16px;
-  }
-  :root[data-nav="expanded"] .nav__tune-label {
-    position: static;
-    width: auto;
-    height: auto;
-    min-width: 0;
-    clip-path: none;
-    text-align: start;
-  }
-}
-/* ---- Spacing: the second dial ----
-   The key signature sets the colour; this sets the line spacing. It is a
-   small tonal pill directly under the FAB, and like the FAB it grows a label
-   when the drawer opens. */
-.nav__spacing {
-  position: relative;
-  isolation: isolate;
-  display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 auto;
-  place-items: center;
-  margin: 0 auto 8px;
-  padding: 0;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: transparent;
-  cursor: pointer;
-  transition:
-    background-color var(--md-sys-motion-duration-short3) linear,
-    color var(--md-sys-motion-duration-short3) linear;
-}
-.nav__spacing::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
-  background: currentColor;
-  opacity: 0;
-  transition: opacity var(--md-sys-motion-duration-short3) linear;
-}
-@media (hover: hover) {
-  .nav__spacing:hover::before {
-    opacity: var(--state-hover);
-  }
-}
-.nav__spacing:active::before {
-  opacity: var(--state-press);
-}
-.nav__spacing[aria-pressed="true"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-.nav__spacing-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.nav__spacing-label small {
-  display: block;
-  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
-    var(--md-sys-typescale-label-small-line-height) var(--app-font);
-  opacity: 0.8;
-}
-.nav__spacing-label > span {
-  display: block;
-  overflow: hidden;
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav__spacing-label > span[hidden] {
-  display: none;
-}
-.nav-modal-open .nav__spacing {
-  width: auto;
-  height: 48px;
-  grid-template-columns: 24px minmax(0, 1fr);
-  justify-items: start;
-  gap: 16px;
-  margin: 0 16px 8px;
-  padding: 0 20px 0 16px;
-  border-radius: var(--md-sys-shape-corner-full);
-}
-.nav-modal-open .nav__spacing-label {
-  position: static;
-  width: auto;
-  height: auto;
-  min-width: 0;
-  clip-path: none;
-  text-align: start;
-}
-@media (min-width: 1200px) {
-  :root[data-nav="expanded"] .nav__spacing {
-    width: auto;
-    height: 48px;
-    grid-template-columns: 24px minmax(0, 1fr);
-    justify-items: start;
-    gap: 16px;
-    margin: 0 16px 8px;
-    padding: 0 20px 0 16px;
-    border-radius: var(--md-sys-shape-corner-full);
-  }
-  :root[data-nav="expanded"] .nav__spacing-label {
-    position: static;
-    width: auto;
-    height: auto;
-    min-width: 0;
-    clip-path: none;
-    text-align: start;
-  }
-}
-
-.tune-menu {
-  position: fixed;
-  inset: auto;
-  top: calc(var(--top-bar-height) + 56px);
-  left: calc(var(--shell-width) + 8px);
-  width: 248px;
   margin: 0;
-  padding: 8px 0;
-  color: var(--md-sys-color-on-surface);
-  border: 0;
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container);
-  box-shadow: var(--md-sys-elevation-level2);
+  padding: 0;
+  list-style: none;
 }
-.tune-menu:popover-open {
-  display: grid;
-  animation: menu-in var(--md-sys-motion-duration-medium2) var(--ease-decelerate);
-  transform-origin: top left;
+.nav__children .nav-item {
+  padding-inline-start: 24px;
+  font-weight: 400;
 }
-.nav-modal-open .tune-menu {
-  left: 16px;
-}
-@keyframes menu-in {
-  from {
-    opacity: 0;
-    transform: scaleY(0.8);
-  }
-}
-.tune-menu__item {
-  position: relative;
-  isolation: isolate;
-  display: grid;
+.nav__section > summary {
+  display: flex;
   min-height: 48px;
-  grid-template-columns: 24px minmax(0, 1fr) 20px;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px 0 16px;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface);
-  background: transparent;
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
-  text-align: start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 8px 24px;
+  border-radius: var(--md-sys-shape-corner-small);
+  font: 500 12px/16px var(--app-font);
+  list-style: none;
   cursor: pointer;
 }
-.tune-menu__item::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
-  background: var(--md-sys-color-on-surface);
-  opacity: 0;
+.nav__section > summary::-webkit-details-marker {
+  display: none;
 }
-.tune-menu__item:hover::before,
-.tune-menu__item:focus-visible::before {
-  opacity: var(--state-hover);
+.nav__section .nav-item {
+  padding-inline-start: 32px;
 }
-.tune-menu__item:focus-visible {
-  outline-offset: -3px;
+.nav__section > summary:hover,
+.nav__children .nav-item:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
-.tune-menu__item > .material-icon {
-  color: var(--md-sys-color-primary);
-  opacity: 0;
+@media (min-width: 1200px) {
+  :root[data-nav="expanded"] .nav__rail-utilities {
+    display: none;
+  }
 }
-.tune-menu__item[aria-checked="true"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
-}
-.tune-menu__item[aria-checked="true"] > .material-icon {
-  opacity: 1;
+@media (max-width: 1199px) {
+  .nav-modal-open .nav {
+    position: fixed;
+    z-index: var(--md-sys-z-index-overlay-drawer);
+    inset: 0 auto 0 0;
+    display: flex;
+    width: min(320px, calc(100vw - 56px));
+    border-radius: 0 28px 28px 0;
+    box-shadow: var(--md-sys-elevation-level3);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .nav-modal-open .nav__header {
+    justify-content: flex-start;
+    padding-inline: 16px;
+  }
+  .nav-modal-open .nav__header .nav__brand {
+    display: flex;
+  }
+  .nav-modal-open .nav__drawer {
+    display: flex;
+  }
+  .nav-modal-open .nav__rail,
+  .nav-modal-open .nav__rail-utilities {
+    display: none;
+  }
+  .nav-modal-open .nav-scrim {
+    position: fixed;
+    z-index: var(--md-sys-z-index-overlay-raised-backdrop);
+    inset: 0;
+    display: block;
+    border: 0;
+    background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
+  }
 }

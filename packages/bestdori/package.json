@@ -77,6 +77,10 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@haneoka/vega-protocol": "workspace:*"
+  },
+  "peerDependencies": {
+    "@haneoka/vega-protocol": "^0.1.0"
   }
 }

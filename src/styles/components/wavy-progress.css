@@ -1,26 +1,20 @@
-/* ==========================================================================
-   Wavy linear progress indicator (Material 3 Expressive)
-   Geometry and behaviour live in lit/ui/wavy-progress.ts; this file is the
-   paint. Specs from the Expressive style
-   `Widget.Material3Expressive.LinearProgressIndicator.Wavy`:
-     · active indicator  colorPrimary, 4dp stroke (8dp thick variant)
-     · track             colorPrimaryContainer, same stroke, fully rounded
-     · stop indicator    4dp, on the active indicator's colour
-     · gap               4dp between indicator and track
-     · wave travel       one wavelength per second
-   ========================================================================== */
+haneoka-wavy-progress {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
 .wavy-progress {
   display: block;
   width: 100%;
   min-width: 0;
   /* Tall enough for the wave's peaks plus a full stroke of headroom. */
-  height: calc(var(--wavy-thickness, 4px) * 2 + 12px);
+  height: var(--wavy-height, 20px);
 }
 .wavy-progress > svg {
   display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 .wavy-progress path,
 .wavy-progress circle {
@@ -34,14 +28,16 @@
   stroke-linecap: round;
   stroke-width: var(--wavy-thickness, 4px);
 }
+.wavy-progress__amplitude {
+  transition: transform var(--md-sys-motion-duration-long2, 500ms) var(--ease-standard);
+  transform-origin: 0 0;
+}
 .wavy-progress__wave {
   fill: none;
   stroke: var(--md-sys-color-primary);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: var(--wavy-thickness, 4px);
-  /* One wavelength per second, off the main thread. The wave is drawn a
-   * cycle wider than the container so the translation never exposes an end. */
   animation: wavy-progress-travel 1s linear infinite;
 }
 .wavy-progress__stop {
@@ -61,5 +57,8 @@
 @media (prefers-reduced-motion: reduce) {
   .wavy-progress__wave {
     animation: none;
+  }
+  .wavy-progress__amplitude {
+    transition: none;
   }
 }

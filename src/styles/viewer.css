@@ -1,364 +1,366 @@
-/* Shared professional viewer shell. Runtime adapters own rendering only. */
-live2d-workspace {
-  display: block;
-  height: 100%;
-}
-spine-workspace {
-  display: block;
-  height: 100%;
-}
-.viewer-model.media-loading::after {
-  left: 32px;
-}
-.viewer-stage {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: radial-gradient(
-    circle at 50% 42%,
-    var(--md-sys-color-surface-container-lowest),
-    var(--md-sys-color-surface-container-high)
-  );
-}
-.viewer-stage canvas {
-  width: 100%;
-  height: 100%;
-}
-.viewer-stage.background-hidden {
-  background: var(--md-sys-color-surface);
-}
-.spine-stage {
-  position: absolute;
-  inset: 0;
-}
-.spine-stage canvas {
-  width: 100%;
-  height: 100%;
-}
-.viewer-state {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  color: #e5e6f3;
-  text-align: center;
-}
-.viewer-state strong {
-  font-size: var(--md-sys-typescale-headline-small-size);
-  font-weight: 500;
-}
-.viewer-state span:not(.progress) {
-  color: #c7ced2;
-}
-.viewer-controls {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  left: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  pointer-events: none;
-}
-.viewer-controls > * {
-  pointer-events: auto;
-}
-.runtime-button,
-.runtime-chip {
-  color: #f5f3ef;
-  border-color: #899399;
-  background: color-mix(in srgb, #202428 82%, transparent);
-  backdrop-filter: blur(16px);
-}
-.runtime-chip[aria-pressed="true"] {
-  color: #173f46;
-  border-color: transparent;
-  background: #d9eff2;
-}
-/* The viewers' grids are the shared collection and the shared tile. They used
+@layer pages {
+  /* Shared professional viewer shell. Runtime adapters own rendering only. */
+  live2d-workspace {
+    display: block;
+    height: 100%;
+  }
+  spine-workspace {
+    display: block;
+    height: 100%;
+  }
+  .viewer-model.media-loading::after {
+    left: 32px;
+  }
+  .viewer-stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: radial-gradient(
+      circle at 50% 42%,
+      var(--md-sys-color-surface-container-lowest),
+      var(--md-sys-color-surface-container-high)
+    );
+  }
+  .viewer-stage canvas {
+    width: 100%;
+    height: 100%;
+  }
+  .viewer-stage.background-hidden {
+    background: var(--md-sys-color-surface);
+  }
+  .spine-stage {
+    position: absolute;
+    inset: 0;
+  }
+  .spine-stage canvas {
+    width: 100%;
+    height: 100%;
+  }
+  .viewer-state {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    color: #e5e6f3;
+    text-align: center;
+  }
+  .viewer-state strong {
+    font-size: var(--md-sys-typescale-headline-small-size);
+    font-weight: 500;
+  }
+  .viewer-state span:not(.progress) {
+    color: #c7ced2;
+  }
+  .viewer-controls {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .viewer-controls > * {
+    pointer-events: auto;
+  }
+  .runtime-button,
+  .runtime-chip {
+    color: #f5f3ef;
+    border-color: #899399;
+    background: color-mix(in srgb, #202428 82%, transparent);
+    backdrop-filter: blur(16px);
+  }
+  .runtime-chip[aria-pressed="true"] {
+    color: #173f46;
+    border-color: transparent;
+    background: #d9eff2;
+  }
+  /* The viewers' grids are the shared collection and the shared tile. They used
    to be a `.model-card` that declared the tile's classes *and* its own
    padding, typography and hover surface on top — so the two viewers were the
    only pages where a card had 8dp of padding and label-sized text. Only the
    model preview's framing is local: a Cubism or Spine preview is a full-body
    render on transparent, anchored at the head. */
-.collection--model {
-  --tile-min: 148px;
-}
-.tile--model .tile__media {
-  aspect-ratio: 1;
-  background: var(--md-sys-color-surface-container-low);
-}
-.tile--model .tile__media > img {
-  object-position: center top;
-}
-.model-list__entity img {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  object-fit: cover;
-  border: 1px solid var(--md-sys-color-surface-container-lowest);
-  border-radius: 50%;
-}
-/* The rows declare the minimum; .table-scroll (components/table.css) owns the
+  .collection--model {
+    --tile-min: 148px;
+  }
+  .tile--model .tile__media {
+    aspect-ratio: 1;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .tile--model .tile__media > img {
+    object-position: center top;
+  }
+  .model-list__entity img {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    object-fit: cover;
+    border: 1px solid var(--md-sys-color-surface-container-lowest);
+    border-radius: 50%;
+  }
+  /* The rows declare the minimum; .table-scroll (components/table.css) owns the
  * overflow. Putting `min-width` and `overflow: auto` on the same element — as
  * this did — makes the element outgrow its parent while its own scrollbar
  * never engages, so the right-hand columns simply leave the pane. */
-.model-list {
-  min-width: 720px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.table-scroll > .model-list {
-  border: 0;
-  border-radius: 0;
-}
-.model-list > header,
-.model-list__row {
-  display: grid;
-  grid-template-columns: minmax(220px, 2fr) 88px minmax(150px, 1fr) minmax(130px, 1fr) 72px;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
-}
-.model-list:not(.spine-model-list) > header,
-.model-list:not(.spine-model-list) .model-list__row {
-  grid-template-columns: minmax(220px, 2fr) 88px minmax(150px, 1fr) minmax(130px, 1fr);
-}
-.model-list > header {
-  min-height: 40px;
-  color: var(--md-sys-color-on-surface-variant);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container);
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
-.model-list__row {
-  width: 100%;
-  min-height: 64px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-lowest);
-  text-align: left;
-  cursor: pointer;
-}
-.model-list__row:hover {
-  background: var(--md-sys-color-surface-container-low);
-}
-.model-list__primary,
-.model-list__entity {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-}
-.spine-model-list > header,
-.spine-model-list .model-list__row {
-  grid-template-columns: minmax(240px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr) 96px;
-}
-.model-list__primary img {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  object-position: top;
-  border-radius: var(--md-sys-shape-corner-small);
-}
-.viewer-detail {
-  /* Geometry comes from .pane-layer (components/overlay.css). */
-  min-height: 0;
-}
-.viewer-detail > header > span {
-  display: grid;
-  min-width: 0;
-}
-.viewer-detail__navigation {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-.viewer-detail > header small {
-  color: var(--md-sys-color-on-surface-variant);
-}
-.viewer-detail__avatar {
-  width: 36px;
-  height: 36px;
-  object-fit: cover;
-  border-radius: 50%;
-}
-.viewer-detail__body {
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 336px);
-}
-.viewer-detail__runtime {
-  min-height: 0;
-}
-.viewer-detail__info {
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  padding: 20px 16px;
-  overflow: auto;
-  border-left: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface-container-low);
-  scrollbar-width: thin;
-}
-.viewer-detail__info h2,
-.viewer-detail__info h3 {
-  margin: 0 0 12px;
-}
-.viewer-detail__info section {
-  margin-top: 20px;
-}
-.viewer-inspector-select {
-  width: 100%;
-}
-.viewer-transform-controls,
-.viewer-parameter-editor > div {
-  display: grid;
-  gap: 10px;
-}
-.viewer-transform-controls label,
-.viewer-parameter-editor label {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(78px, 0.8fr) minmax(110px, 1.2fr) 48px 40px;
-  align-items: center;
-  gap: 8px;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
-.viewer-transform-controls label md-slider {
-  grid-column: 2 / -1;
-}
-.viewer-behavior-controls {
-  display: grid;
-  gap: 2px;
-}
-.viewer-behavior-controls label {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 4px 0 12px;
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.viewer-behavior-controls label:hover {
-  background: var(--md-sys-color-surface-container);
-}
-.viewer-parameter-editor {
-  margin-top: 20px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.viewer-parameter-editor > summary {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 14px;
-  list-style: none;
-  cursor: pointer;
-}
-.viewer-parameter-editor > summary > span {
-  flex: 1;
-  font-weight: 500;
-}
-.viewer-parameter-editor > summary small,
-.viewer-parameter-editor output {
-  color: var(--md-sys-color-on-surface-variant);
-  font-variant-numeric: tabular-nums;
-}
-.viewer-parameter-editor > div {
-  padding: 10px 12px 14px;
-  border-top: 1px solid var(--md-sys-color-outline-variant);
-}
-.viewer-parameter-toolbar {
-  display: grid;
-  gap: 8px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.viewer-parameter-toolbar > span:first-child {
-  color: var(--md-sys-color-on-surface);
-  font-weight: 500;
-}
-.viewer-parameter-toolbar .segmented {
-  width: 100%;
-}
-.viewer-parameter-toolbar .segmented button {
-  min-width: 72px;
-  flex: 1;
-}
-.viewer-parameter-actions {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.viewer-parameter-actions .button {
-  min-height: 36px;
-  flex: 1;
-}
-.viewer-parameter-actions input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-.viewer-parameter-editor label > .icon-button {
-  width: 36px;
-  height: 36px;
-}
-.viewer-parameter-editor label > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.viewer-controls md-outlined-select {
-  width: min(210px, 32vw);
-  --md-outlined-field-container-shape: var(--md-sys-shape-corner-small);
-  --md-outlined-select-text-field-container-color: rgb(32 36 40 / 88%);
-  --md-outlined-field-label-text-color: #f5f3ef;
-  --md-outlined-field-input-text-color: #f5f3ef;
-}
-@media (max-width: 959px) {
+  .model-list {
+    min-width: 720px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .table-scroll > .model-list {
+    border: 0;
+    border-radius: 0;
+  }
+  .model-list > header,
+  .model-list__row {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) 88px minmax(150px, 1fr) minmax(130px, 1fr) 72px;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+  }
+  .model-list:not(.spine-model-list) > header,
+  .model-list:not(.spine-model-list) .model-list__row {
+    grid-template-columns: minmax(220px, 2fr) 88px minmax(150px, 1fr) minmax(130px, 1fr);
+  }
+  .model-list > header {
+    min-height: 40px;
+    color: var(--md-sys-color-on-surface-variant);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .model-list__row {
+    width: 100%;
+    min-height: 64px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-lowest);
+    text-align: left;
+    cursor: pointer;
+  }
+  .model-list__row:hover {
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .model-list__primary,
+  .model-list__entity {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+  .spine-model-list > header,
+  .spine-model-list .model-list__row {
+    grid-template-columns: minmax(240px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr) 96px;
+  }
+  .model-list__primary img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    object-position: top;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
   .viewer-detail {
-    inset: 0;
+    /* Geometry comes from .pane-layer (components/overlay.css). */
+    min-height: 0;
   }
-  .viewer-detail__body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: clamp(320px, 52dvh, 520px) auto;
-    overflow: auto;
-  }
-  .viewer-detail__info {
-    overflow: visible;
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-    border-left: 0;
-  }
-}
-@media (max-width: 479px) {
-  .viewer-detail > header {
-    gap: 2px;
-    padding-inline: 4px;
-  }
-  .viewer-detail__avatar {
-    display: none;
+  .viewer-detail > header > span {
+    display: grid;
+    min-width: 0;
   }
   .viewer-detail__navigation {
-    gap: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .viewer-detail > header small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .viewer-detail__avatar {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+  .viewer-detail__body {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 336px);
+  }
+  .viewer-detail__runtime {
+    min-height: 0;
   }
   .viewer-detail__info {
-    padding: 16px 12px 24px;
+    display: block;
+    min-width: 0;
+    min-height: 0;
+    padding: 20px 16px;
+    overflow: auto;
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-low);
+    scrollbar-width: thin;
+  }
+  .viewer-detail__info h2,
+  .viewer-detail__info h3 {
+    margin: 0 0 12px;
+  }
+  .viewer-detail__info section {
+    margin-top: 20px;
+  }
+  .viewer-inspector-select {
+    width: 100%;
+  }
+  .viewer-transform-controls,
+  .viewer-parameter-editor > div {
+    display: grid;
+    gap: 10px;
   }
   .viewer-transform-controls label,
   .viewer-parameter-editor label {
-    grid-template-columns: minmax(92px, 1fr) minmax(96px, 1.35fr) 44px 36px;
-    gap: 4px;
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(78px, 0.8fr) minmax(110px, 1.2fr) 48px 40px;
+    align-items: center;
+    gap: 8px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .viewer-transform-controls label md-slider {
+    grid-column: 2 / -1;
+  }
+  .viewer-behavior-controls {
+    display: grid;
+    gap: 2px;
+  }
+  .viewer-behavior-controls label {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 4px 0 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .viewer-behavior-controls label:hover {
+    background: var(--md-sys-color-surface-container);
+  }
+  .viewer-parameter-editor {
+    margin-top: 20px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .viewer-parameter-editor > summary {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 4px 14px;
+    list-style: none;
+    cursor: pointer;
+  }
+  .viewer-parameter-editor > summary > span {
+    flex: 1;
+    font-weight: 500;
+  }
+  .viewer-parameter-editor > summary small,
+  .viewer-parameter-editor output {
+    color: var(--md-sys-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+  .viewer-parameter-editor > div {
+    padding: 10px 12px 14px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .viewer-parameter-toolbar {
+    display: grid;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .viewer-parameter-toolbar > span:first-child {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 500;
+  }
+  .viewer-parameter-toolbar .segmented {
+    width: 100%;
+  }
+  .viewer-parameter-toolbar .segmented button {
+    min-width: 72px;
+    flex: 1;
+  }
+  .viewer-parameter-actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .viewer-parameter-actions .button {
+    min-height: 36px;
+    flex: 1;
+  }
+  .viewer-parameter-actions input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .viewer-parameter-editor label > .icon-button {
+    width: 36px;
+    height: 36px;
+  }
+  .viewer-parameter-editor label > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .viewer-controls md-outlined-select {
+    width: min(210px, 32vw);
+    --md-outlined-field-container-shape: var(--md-sys-shape-corner-small);
+    --md-outlined-select-text-field-container-color: rgb(32 36 40 / 88%);
+    --md-outlined-field-label-text-color: #f5f3ef;
+    --md-outlined-field-input-text-color: #f5f3ef;
+  }
+  @media (max-width: 959px) {
+    .viewer-detail {
+      inset: 0;
+    }
+    .viewer-detail__body {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: clamp(320px, 52dvh, 520px) auto;
+      overflow: auto;
+    }
+    .viewer-detail__info {
+      overflow: visible;
+      border-top: 1px solid var(--md-sys-color-outline-variant);
+      border-left: 0;
+    }
+  }
+  @media (max-width: 479px) {
+    .viewer-detail > header {
+      gap: 2px;
+      padding-inline: 4px;
+    }
+    .viewer-detail__avatar {
+      display: none;
+    }
+    .viewer-detail__navigation {
+      gap: 0;
+    }
+    .viewer-detail__info {
+      padding: 16px 12px 24px;
+    }
+    .viewer-transform-controls label,
+    .viewer-parameter-editor label {
+      grid-template-columns: minmax(92px, 1fr) minmax(96px, 1.35fr) 44px 36px;
+      gap: 4px;
+    }
   }
 }

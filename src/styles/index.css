@@ -1,61 +1,41 @@
-/* ==========================================================================
-   haneoka — Material Design 3 foundation
-   Loaded once, by layouts/Base.astro, for every route.
-
-   Import order IS the cascade contract. Nothing below may be re-declared
-   above it, and page stylesheets (imported per document) must only contain
-   selectors that exist nowhere in this file:
-
-     1. tokens      Material ref/sys tokens, then the app's own tokens
-     2. base        reset, accessibility, typography
-     3. system      layout primitives + the overflow guarantees they carry
-     4. components  the Material component library
-     5. shell       the adaptive shell: app bar, navigation, transitions
-     6. patterns    compositions used by more than one route
-     7. utilities   single-purpose overrides, last so they always win
-
-   The rule that keeps this maintainable: a component is defined once. If two
-   routes need the same thing to look the same, it belongs in components or
-   patterns — not copied into both page sheets, which is how 11,000 lines of
-   stylesheet grew four different filter panels and three different tables.
-   ========================================================================== */
+@layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
 
 /* 1 — tokens */
-@import "../../packages/design-tokens/src/tokens.css";
-@import "./base/tokens.css";
+@import "../../packages/design-tokens/src/tokens.css" layer(tokens);
+@import "./base/tokens.css" layer(tokens);
 
 /* 2 — base */
-@import "./base/reset.css";
-@import "./base/typography.css";
+@import "./base/reset.css" layer(reset);
+@import "./base/typography.css" layer(base);
 
 /* 3 — system */
-@import "./system/layout.css";
+@import "./system/layout.css" layer(layout);
 
 /* 4 — components */
-@import "./components/state.css";
-@import "./components/action.css";
-@import "./components/chip.css";
-@import "./components/container.css";
-@import "./components/list.css";
-@import "./components/table.css";
-@import "./components/navigation.css";
-@import "./components/overlay.css";
-@import "./components/input.css";
-@import "./components/feedback.css";
-@import "./components/wavy-progress.css";
+@import "./components/state.css" layer(components);
+@import "./components/action.css" layer(components);
+@import "./components/chip.css" layer(components);
+@import "./components/container.css" layer(components);
+@import "./components/list.css" layer(components);
+@import "./components/table.css" layer(components);
+@import "./components/navigation.css" layer(components);
+@import "./components/overlay.css" layer(components);
+@import "./components/input.css" layer(components);
+@import "./components/feedback.css" layer(components);
+@import "./components/wavy-progress.css" layer(components);
 
 /* 5 — shell */
-@import "./shell/shell.css";
-@import "./shell/navigation.css";
+@import "./shell/navigation.css" layer(shell);
+@import "./shell/shell.css" layer(shell);
 
 /* 6 — patterns */
-@import "./patterns/browse.css";
-@import "./patterns/collection.css";
-@import "./patterns/detail.css";
-@import "./patterns/strip.css";
+@import "./patterns/browse.css" layer(patterns);
+@import "./patterns/collection.css" layer(patterns);
+@import "./patterns/detail.css" layer(patterns);
+@import "./patterns/strip.css" layer(patterns);
 
 /* 7 — utilities */
-@import "./system/utility.css";
+@import "./system/utility.css" layer(utilities);
 
 /* ==========================================================================
    Compact adjustments that span components
@@ -63,14 +43,16 @@
    — "at phone width the page gutter shrinks and secondary labels go" — and
    reading it in one place is how it stays consistent.
    ========================================================================== */
-@media (max-width: 599px) {
-  .page {
-    padding: 8px 16px 24px;
-  }
-  .surface {
-    --surface-padding: 16px;
-  }
-  .detail-section {
-    padding-inline: 16px;
+@layer layout {
+  @media (max-width: 599px) {
+    .page {
+      padding: 8px 16px 24px;
+    }
+    .surface {
+      --surface-padding: 16px;
+    }
+    .detail-section {
+      padding-inline: 16px;
+    }
   }
 }

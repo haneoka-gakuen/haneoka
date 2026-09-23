@@ -17,13 +17,14 @@
   --shell-width: 0px;
   --shell-bottom-inset: 0px;
   --shell-pane-gap: 0px;
-  --shell-stage-block: calc(100dvh - var(--top-bar-height) - var(--shell-bottom-inset) - var(--shell-pane-gap));
+  --shell-stage-block: calc(
+    100dvh - var(--top-bar-height) - var(--shell-bottom-inset) - var(--shell-pane-gap) - var(--audio-dock-height, 0px)
+  );
   /* Detail layers (list-detail) occupy exactly the content pane. */
-  --shell-overlay-inset: 0 0 var(--shell-bottom-inset) 0;
+  --shell-overlay-inset: 0 0 calc(var(--shell-bottom-inset) + var(--audio-dock-height, 0px)) 0;
   --shell-overlay-radius: 0px;
   --nav-rail-width: 80px;
-  --nav-drawer-width: 288px;
-  --nav-bar-height: calc(64px + var(--md-sys-safe-area-inset-bottom));
+  --nav-drawer-width: 224px;
   --content-max: 1440px;
 
   /* ---- Measure ----
@@ -69,7 +70,9 @@
 }
 
 :root:lang(en) {
-  --app-font: "Roboto Variable", "Noto Sans Variable", "Helvetica Neue", Arial, sans-serif;
+  --app-font:
+    "Roboto Variable", "Noto Sans Variable", "Noto Sans JP Variable", "Noto Sans SC Variable", "Noto Sans KR Variable",
+    "Helvetica Neue", Arial, sans-serif;
 }
 :root:lang(zh-TW) {
   --app-font: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;

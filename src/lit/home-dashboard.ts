@@ -1,10 +1,13 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
-import { catalogUrl, fetchJson, localizedText, preferredLocale, recordValues, type JsonRecord } from "./shared/catalog";
-import { SEED_EVENT, applySeed, currentSeed, isSeed, seedForBand, type Seed } from "../lib/tuning";
-
-/* The home page is "the score": five bands are five staff lines, every song is a
- * note placed by its Expert level, and choosing a line re-tunes the whole site's
- * Material color scheme to that band (see lib/tuning.ts). */
+import {
+  catalogUrl,
+  fetchJson,
+  localizedText,
+  preferredLocale,
+  recordValues,
+  uiText,
+  type JsonRecord,
+} from "./shared/catalog";
 
 type ModuleId = "band" | "hub" | "birthdays" | "community" | "news";
 type Birthday = {
@@ -16,8 +19,7 @@ type Birthday = {
   nextAt: number;
   external: boolean;
 };
-type Band = { id: number; seed: Seed; name: string; songs: JsonRecord[]; levels: number[] };
-type Note = { x: number; dy: number; title: string; level: number };
+type Band = { id: number; name: string; image: string; songs: JsonRecord[] };
 
 const MODULES: ModuleId[] = ["band", "hub", "birthdays", "community", "news"];
 const PROFILE_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"];
@@ -42,7 +44,6 @@ const PROFILE_BAND_SEED: Record<string, string> = {
   millsage: "var(--md-ref-band-4)",
   "ikka-dumb-rock": "var(--md-ref-band-5)",
 };
-const NOTE_OFFSETS = [0, -7, 7, -14, 14, -21, 21];
 
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size} aria-hidden="true">
@@ -58,12 +59,6 @@ const timestamp = (value: unknown) =>
 const expertRow = (song: JsonRecord) => {
   const rows = Array.isArray(song.difficulty) ? (song.difficulty as JsonRecord[]) : [];
   return rows.find((row) => row.difficultyName === "expert") ?? rows.at(-1);
-};
-/** Fine-grained level (e.g. 25.9) used to place a note along the staff. */
-const expertLevel = (song: JsonRecord) => {
-  const expert = expertRow(song);
-  const level = Number(expert?.sortLevel ?? expert?.playLevel);
-  return Number.isFinite(level) && level > 0 ? level : 0;
 };
 /** The level players see in game (an integer). */
 const expertDisplayLevel = (song: JsonRecord) => {
@@ -88,8 +83,7 @@ export class HomeDashboard extends LitElement {
     posts: { state: true },
     order: { state: true },
     hiddenModules: { state: true },
-    seed: { state: true },
-    playing: { state: true },
+    selectedBand: { state: true },
   };
   declare locale: string;
   declare labels: string;
@@ -101,20 +95,14 @@ export class HomeDashboard extends LitElement {
   declare posts: JsonRecord[];
   declare order: ModuleId[];
   declare hiddenModules: Record<string, boolean>;
-  declare seed: Seed;
-  declare playing: Seed | "";
+  declare selectedBand: number;
   private copies: Record<string, Record<string, string>> = {};
   private action?: HTMLButtonElement;
   private characterProfiles: JsonRecord[] = [];
   private castProfiles: JsonRecord[] = [];
-  private playTimer = 0;
   private localeListener = (event: Event) => {
     this.locale = String((event as CustomEvent).detail || preferredLocale());
     this.syncAction();
-  };
-  private seedListener = (event: Event) => {
-    const seed = (event as CustomEvent).detail;
-    if (isSeed(seed)) this.seed = seed;
   };
   constructor() {
     super();
@@ -128,8 +116,7 @@ export class HomeDashboard extends LitElement {
     this.posts = [];
     this.order = [...MODULES];
     this.hiddenModules = {};
-    this.seed = "haneoka";
-    this.playing = "";
+    this.selectedBand = 0;
   }
   createRenderRoot() {
     return this;
@@ -138,18 +125,17 @@ export class HomeDashboard extends LitElement {
     super.connectedCallback();
     this.copies = JSON.parse(this.labels || "{}");
     this.locale = preferredLocale(this.locale);
-    this.seed = currentSeed();
+    try {
+      this.selectedBand = Math.max(0, Number(sessionStorage.getItem("haneoka.home.band")) || 0);
+    } catch {}
     this.restoreLayout();
     addEventListener("haneoka:locale-ready", this.localeListener);
-    addEventListener(SEED_EVENT, this.seedListener);
     void this.load();
     void this.loadProfiles();
     queueMicrotask(() => this.mountAction());
   }
   disconnectedCallback() {
     removeEventListener("haneoka:locale-ready", this.localeListener);
-    removeEventListener(SEED_EVENT, this.seedListener);
-    clearTimeout(this.playTimer);
     this.action?.remove();
     super.disconnectedCallback();
   }
@@ -278,41 +264,20 @@ export class HomeDashboard extends LitElement {
   }
   private bands(): Band[] {
     const names = new Map(this.bandRecords.map((band) => [Number(band.bandId), band]));
-    return [1, 2, 3, 4, 5].map((id) => {
-      const songs = this.songs.filter((song) =>
-        Array.isArray(song.bandIds) ? (song.bandIds as unknown[]).map(Number).includes(id) : Number(song.bandId) === id,
-      );
-      return {
-        id,
-        seed: seedForBand(id),
-        name: localizedText(names.get(id)?.bandName, this.locale) || `Band ${id}`,
-        songs,
-        levels: songs.map(expertLevel).filter(Boolean),
-      };
-    });
-  }
-  private levelDomain(bands: Band[]): [number, number] {
-    const levels = bands.flatMap((band) => band.levels);
-    if (!levels.length) return [18, 30];
-    return [Math.floor(Math.min(...levels)) - 0.5, Math.ceil(Math.max(...levels)) + 0.5];
-  }
-  private notes(band: Band, [min, max]: [number, number]): Note[] {
-    const seen = new Map<number, number>();
-    return band.songs
-      .map((song) => ({ song, level: expertLevel(song) }))
-      .filter((entry) => entry.level)
-      .sort((a, b) => a.level - b.level || Number(a.song.musicId) - Number(b.song.musicId))
-      .map(({ song, level }) => {
-        const key = Math.round(level * 2) / 2;
-        const index = seen.get(key) ?? 0;
-        seen.set(key, index + 1);
-        // Songs at the same level stack like a chord; a 7th+ note nudges sideways.
-        const nudge = Math.floor(index / NOTE_OFFSETS.length) * 0.8;
+    return [...names.keys()]
+      .filter((id) => id > 0)
+      .sort((a, b) => a - b)
+      .map((id) => {
+        const songs = this.songs.filter((song) =>
+          Array.isArray(song.bandIds)
+            ? (song.bandIds as unknown[]).map(Number).includes(id)
+            : Number(song.bandId) === id,
+        );
         return {
-          x: ((level - min) / (max - min)) * 100 + nudge,
-          dy: NOTE_OFFSETS[index % NOTE_OFFSETS.length],
-          title: `${this.songTitle(song)} · EXPERT ${expertDisplayLevel(song) || Math.round(level)}`,
-          level,
+          id,
+          image: String(names.get(id)?.icon || names.get(id)?.logo || ""),
+          name: localizedText(names.get(id)?.bandName, this.locale) || `Band ${id}`,
+          songs,
         };
       });
   }
@@ -393,41 +358,15 @@ export class HomeDashboard extends LitElement {
   }
 
   /* ---------- tuning ---------- */
-  private tune(seed: Seed, source?: HTMLElement) {
-    const rect = source?.getBoundingClientRect();
-    applySeed(seed, rect ? { x: rect.left + Math.min(rect.width, 160) / 2, y: rect.top + rect.height / 2 } : undefined);
-    this.seed = seed;
-    if (seed === "haneoka") return;
-    // "Play" the chosen line once: its notes bounce left to right.
-    clearTimeout(this.playTimer);
-    this.playing = seed;
-    this.playTimer = window.setTimeout(() => (this.playing = ""), 900);
-  }
-  private onStaffKeydown(event: KeyboardEvent) {
-    const keys = ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"];
-    if (!keys.includes(event.key)) return;
-    event.preventDefault();
-    const radios = [...this.querySelectorAll<HTMLElement>(".staff [role='radio']")];
-    const current = radios.findIndex((radio) => radio.getAttribute("aria-checked") === "true");
-    const step = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? radios.length - 1
-          : (Math.max(0, current) + step + radios.length) % radios.length;
-    const target = radios[next];
-    const seed = target?.dataset.seed;
-    if (!target || !isSeed(seed)) return;
-    this.tune(seed, target);
-    void this.updateComplete.then(() => target.focus());
+  private selectBand(id: number) {
+    this.selectedBand = id;
+    try {
+      sessionStorage.setItem("haneoka.home.band", String(id));
+    } catch {}
   }
 
   /* ---------- render: hero ---------- */
   private renderHero(bands: Band[]) {
-    const domain = this.levelDomain(bands);
-    const ticks: number[] = [];
-    for (let level = Math.ceil(domain[0]); level <= domain[1]; level += 1) if (level % 2 === 0) ticks.push(level);
     const ready = this.phase !== "loading";
     const stats = [
       ["songs", this.counts.songs ?? this.songs.length],
@@ -453,90 +392,53 @@ export class HomeDashboard extends LitElement {
             )}
           </dl>
         </div>
-        <div
-          class="staff"
-          role="radiogroup"
-          aria-labelledby="staff-title"
-          @keydown=${this.onStaffKeydown}
-        >
-          <div class="staff__header">
-            <h3 id="staff-title" class="staff__title">
-              ${icon("tune", 20)}${this.text("tuneTitle", "Tune the archive")}
-            </h3>
+        <section class="home-bands" aria-labelledby="home-bands-title">
+          <header class="home-bands__header">
+            <h3 id="home-bands-title">${uiText(this.locale, "bands")}</h3>
             <button
-              class="chip staff__default"
+              class="button button--text"
               type="button"
-              role="radio"
-              data-seed="haneoka"
-              aria-checked=${String(this.seed === "haneoka")}
-              tabindex=${this.seed === "haneoka" ? 0 : -1}
-              @click=${(event: Event) => this.tune("haneoka", event.currentTarget as HTMLElement)}
+              aria-pressed=${String(this.selectedBand === 0)}
+              @click=${() => this.selectBand(0)}
             >
-              ${this.seed === "haneoka" ? icon("check", 18) : icon("restart_alt", 18)}${this.text("tuneDefault", "Original key")}
+              ${uiText(this.locale, "all")}
             </button>
-          </div>
-          <div class="staff__lines">
+          </header>
+          <div class="home-bands__list">
             ${bands.map((band) => {
-              const checked = this.seed === band.seed;
-              const notes = this.notes(band, domain);
               const shown = band.songs.map(expertDisplayLevel).filter(Boolean);
-              const range = shown.length ? `EXPERT ${Math.min(...shown)}–${Math.max(...shown)}` : "";
               const summary = this.text("songsCount", "{count} songs").replace(
                 "{count}",
                 this.count(band.songs.length),
               );
               return html`
                 <button
-                  class=${`staff-line${checked ? " is-checked" : ""}${this.playing === band.seed ? " is-playing" : ""}`}
+                  class="home-bands__item state-layer"
                   type="button"
-                  role="radio"
-                  data-seed=${band.seed}
-                  aria-checked=${String(checked)}
-                  tabindex=${checked ? 0 : -1}
-                  aria-label=${`${band.name}, ${summary}${range ? `, ${range}` : ""}`}
-                  style=${`--band: var(--md-ref-${band.seed}); --band-container: var(--md-ref-${band.seed}-container); --band-on-container: var(--md-ref-${band.seed}-on-container)`}
-                  @click=${(event: Event) => this.tune(band.seed, event.currentTarget as HTMLElement)}
+                  aria-pressed=${String(this.selectedBand === band.id)}
+                  @click=${() => this.selectBand(band.id)}
                 >
-                  <span class="staff-line__clef">
+                  <span class="home-bands__art">
+                    ${
+                      band.image
+                        ? html`
+                            <img src=${band.image} alt="" loading="lazy" @error=${hideBrokenImage} />
+                          `
+                        : icon("groups", 24)
+                    }
+                  </span>
+                  <span>
                     <strong>${band.name}</strong>
-                    <small class="tabular">
-                      ${ready ? summary : "—"}${
-                        ready && range
-                          ? html`
-                              <span class="staff-line__range">· ${range.replace("EXPERT ", "Lv ")}</span>
-                            `
-                          : nothing
-                      }
+                    <small>
+                      ${summary}${shown.length ? ` · EXPERT ${Math.min(...shown)}–${Math.max(...shown)}` : ""}
                     </small>
                   </span>
-                  <span class="staff-line__track" aria-hidden="true">
-                    ${notes.map(
-                      (note, index) => html`
-                        <i
-                          class="staff-note"
-                          style=${`--x:${note.x.toFixed(2)}%;--dy:${note.dy}px;--i:${index}`}
-                          title=${note.title}
-                        ></i>
-                      `,
-                    )}
-                  </span>
+                  ${icon(this.selectedBand === band.id ? "check" : "chevron_right", 20)}
                 </button>
               `;
             })}
           </div>
-          <div class="staff__axis" aria-hidden="true">
-            <span class="staff__axis-label">${this.text("expertLevel", "Expert level")}</span>
-            <span class="staff__ticks">
-              ${ticks.map(
-                (level) => html`
-                  <span style=${`--x:${(((level - domain[0]) / (domain[1] - domain[0])) * 100).toFixed(2)}%`}>
-                    ${level}
-                  </span>
-                `,
-              )}
-            </span>
-          </div>
-        </div>
+        </section>
       </section>
     `;
   }
@@ -554,7 +456,7 @@ export class HomeDashboard extends LitElement {
     `;
   }
   private renderBand(bands: Band[]) {
-    const band = bands.find((entry) => entry.seed === this.seed);
+    const band = bands.find((entry) => entry.id === this.selectedBand);
     const songs = (band ? band.songs : this.songs)
       .map((song) => ({ song, time: timestamp(song.publishedAt), level: expertDisplayLevel(song) }))
       .sort((a, b) => b.time - a.time || Number(b.song.musicId) - Number(a.song.musicId))

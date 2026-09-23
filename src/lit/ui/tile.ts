@@ -69,7 +69,13 @@ export interface TileOptions {
 }
 
 const markClass = (mark: TileMark) =>
-  ["tile__mark", `tile__mark--${mark.at}`, mark.accent ? "tile__mark--accent" : ""].filter(Boolean).join(" ");
+  [
+    "tile__mark",
+    `tile__mark--${mark.at}`,
+    mark.image && mark.text == null ? "tile__mark--image" : mark.accent ? "tile__mark--accent" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
 export function tile(options: TileOptions): TemplateResult {
   const classes = [

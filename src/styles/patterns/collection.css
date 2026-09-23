@@ -128,6 +128,7 @@
   background: var(--md-sys-color-surface-container-highest);
 }
 .tile__media > img {
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
   object-fit: var(--tile-fit, cover);
@@ -177,6 +178,17 @@
   color: var(--md-sys-color-on-primary);
   background: var(--mark, var(--md-sys-color-primary));
   backdrop-filter: none;
+}
+.tile__mark--image {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.tile__mark--image > img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 .tile__mark > .material-icon {
   --icon-size: 14px;
@@ -249,11 +261,11 @@
    settles instead of flashing. Errored images stay hidden rather than
    showing a broken-image glyph. */
 .tile__media > img {
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--md-sys-motion-duration-short4) var(--ease-standard);
 }
-.tile__media > img.is-loaded {
-  opacity: 1;
+.tile__media > img[data-loading] {
+  opacity: 0;
 }
 .tile__media > img.is-error {
   visibility: hidden;
@@ -316,4 +328,8 @@
 }
 .avatar-stack img:not(:first-child) {
   margin-inline-start: -6px;
+}
+
+.tile__media > svg {
+  grid-area: 1 / 1;
 }

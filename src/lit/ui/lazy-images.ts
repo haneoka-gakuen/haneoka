@@ -81,10 +81,19 @@ export class LazyImages {
   /** Promotes one image immediately, whether or not it is on screen. */
   load(image: HTMLImageElement) {
     const source = image.dataset.src || "";
-    const candidates = [
-      ...this.candidates(source),
-      ...(image.dataset.fallback ? [image.dataset.fallback] : []),
-    ].filter((value, index, values) => value && values.indexOf(value) === index);
+    const candidates = [...this.candidates(source), ...(image.dataset.fallback ? [image.dataset.fallback] : [])].filter(
+      (value, index, values) => value && values.indexOf(value) === index,
+    );
+    image.classList.remove("is-loaded", "is-error");
+    image.dataset.loading = "true";
+    image.addEventListener(
+      "load",
+      () => {
+        delete image.dataset.loading;
+        image.classList.add("is-loaded");
+      },
+      { once: true },
+    );
     image.dataset.candidates = JSON.stringify(candidates);
     image.dataset.candidateIndex = "0";
     image.src = candidates[0] || source;

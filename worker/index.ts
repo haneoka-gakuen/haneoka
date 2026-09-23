@@ -595,7 +595,7 @@ async function serveR2Object(
   const mediaType = requestedType.split(";", 1)[0]?.trim().toLocaleLowerCase("en-US") || "";
   const safeInline = INLINE_MEDIA_TYPES.has(mediaType);
   const finalType = safeInline ? requestedType : "application/octet-stream";
-  let rangeHeader = request.headers.get("Range");
+  let rangeHeader = request.method === "GET" ? request.headers.get("Range") : null;
   const ifNoneMatch = request.headers.get("If-None-Match");
   const ifRange = request.headers.get("If-Range");
   const headersFor = (object: R2Object): Headers => {
@@ -622,7 +622,7 @@ async function serveR2Object(
     validateSize(metadata);
     const headers = headersFor(metadata);
     if (ifNoneMatch && etagMatches(ifNoneMatch, metadata.httpEtag)) return new Response(null, { status: 304, headers });
-    if (rangeHeader && ifRange && normalizeEtag(ifRange) !== normalizeEtag(metadata.httpEtag)) rangeHeader = null;
+    if (rangeHeader && ifRange && ifRange.trim() !== metadata.httpEtag) rangeHeader = null;
     const range = parseRange(rangeHeader, metadata.size);
     if (range && "invalid" in range) {
       headers.set("Content-Range", `bytes */${metadata.size}`);
@@ -658,26 +658,69 @@ async function edgeCached(
   producer: () => Promise<Response>,
   cacheControl?: string,
 ): Promise<Response> {
-  if (request.method !== "GET" || request.headers.has("Range")) return producer();
-  const hit = await caches.default.match(request);
+  if (request.method !== "GET" && request.method !== "HEAD") return producer();
+  const headers = new Headers(request.headers);
+  if (request.method === "HEAD") headers.delete("Range");
+  const ifRange = headers.get("If-Range");
+  headers.delete("If-Range");
+  const cacheHeaders = new Headers(headers);
+  for (const name of ["Range", "If-None-Match", "If-Modified-Since"]) cacheHeaders.delete(name);
+  const cacheKey = new Request(request.url, { method: "GET", headers: cacheHeaders });
+  if (headers.has("Range") && ifRange) {
+    const whole = await caches.default.match(cacheKey);
+    if (!whole) return producer();
+    if (ifRange.trim() !== whole.headers.get("ETag")) headers.delete("Range");
+    if (whole.body) ctx.waitUntil(whole.body.cancel());
+  }
+  const lookup = new Request(request.url, { method: "GET", headers });
+  const hit = await caches.default.match(lookup);
   if (hit) {
     const etag = hit.headers.get("ETag");
-    if (etag && etagMatches(request.headers.get("If-None-Match"), etag))
+    if (etag && etagMatches(request.headers.get("If-None-Match"), etag)) {
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
       return new Response(null, { status: 304, headers: hit.headers });
+    }
+    if (request.method === "HEAD") {
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
+      return new Response(null, { status: hit.status, headers: hit.headers });
+    }
     return hit;
   }
   const response = await producer();
-  if (response.status === 200) {
-    const headers = new Headers(response.headers);
-    headers.set("Cache-Control", cacheControl || response.headers.get("Cache-Control") || `public, max-age=${ttl}`);
-    const cachedResponse = new Response(response.body, {
-      headers,
+  if (request.method === "HEAD") return response;
+  const range = /^bytes 0-(\d+)\/(\d+)$/.exec(response.headers.get("Content-Range") || "");
+  const completeRange =
+    response.status === 206 &&
+    range &&
+    Number.isSafeInteger(Number(range[2])) &&
+    Number(range[2]) > 0 &&
+    Number(range[1]) + 1 === Number(range[2]) &&
+    response.headers.get("Content-Length") === range[2];
+  if (response.status === 200 || completeRange) {
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.set(
+      "Cache-Control",
+      cacheControl || responseHeaders.get("Cache-Control") || `public, max-age=${ttl}`,
+    );
+    const outgoing = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
+      headers: responseHeaders,
     });
-    const stored = cachedResponse.clone();
-    ctx.waitUntil(caches.default.put(request, stored));
-    return cachedResponse;
+    const cached = outgoing.clone();
+    const cacheResponseHeaders = new Headers(cached.headers);
+    cacheResponseHeaders.set(
+      "Cache-Control",
+      cacheControl || cached.headers.get("Cache-Control") || `public, max-age=${ttl}`,
+    );
+    cacheResponseHeaders.delete("Content-Range");
+    const stored = new Response(cached.body, { status: 200, headers: cacheResponseHeaders });
+    ctx.waitUntil(
+      caches.default.put(cacheKey, stored).catch((error: unknown) => {
+        console.warn("edge_cache_write_failed", error instanceof Error ? error.message : String(error));
+      }),
+    );
+    return outgoing;
   }
   return response;
 }

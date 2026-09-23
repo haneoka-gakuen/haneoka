@@ -1,3 +1,5 @@
+import { DEFAULT_SCENE_GEOMETRY, scenePlaneSize, scenePointFromNdc } from "@haneoka/vega-protocol/coordinates";
+
 /** Pure scene geometry used by the scenario adapter. */
 
 export interface BestdoriSceneVector3 {
@@ -30,7 +32,6 @@ export interface BestdoriStageRuntime {
   backgroundFieldPosition: BestdoriSceneVector3;
   characterFieldScale: number;
   backgroundFieldScale: number;
-  characterCanvasWorldHeight: number;
   backgroundFit: "authored" | "camera-width";
   backgroundOverscan: number;
   fov: number;
@@ -56,23 +57,13 @@ export const BESTDORI_CARD_STILL_STAGE_REF = "bestdori:background:1334x1002";
 export const bestdoriBackgroundStageRef = (aspectRatio: number): string =>
   Math.abs(aspectRatio - 1334 / 1002) < 0.000001 ? BESTDORI_CARD_STILL_STAGE_REF : BESTDORI_BACKGROUND_STAGE_REF;
 
-/**
- * The published viewer uses a fixed 16:9 canvas and assigns model `y=-0.12`
- * and `scale=1.25` after loading. Its Cubism 2 matrix maps those values and
- * `sideToX` directly into clip space. The adapter preserves that composition,
- * but unprojects it onto the neutral ADV engine's authored character plane so
- * every model generation and static portrait shares one perspective camera.
- *
- * `fovYDegrees`, `characterPlaneZ`, and `backgroundPlaneZ` are properties of
- * the target ADV scene. They are deliberately not presented as values from
- * the source viewer, which has no perspective camera.
- */
+/** Fixed calibration for imported model positions and canvas proportions. */
 export const BESTDORI_PERSPECTIVE_SCENE: Readonly<BestdoriPerspectiveScene> = Object.freeze({
   aspect: 16 / 9,
-  fovYDegrees: 39.6,
+  fovYDegrees: DEFAULT_SCENE_GEOMETRY.fov,
   cameraPosition: Object.freeze({ x: 0, y: 0, z: 0 }),
-  characterPlaneZ: 5.5,
-  backgroundPlaneZ: 16,
+  characterPlaneZ: DEFAULT_SCENE_GEOMETRY.characterFieldPosition.z,
+  backgroundPlaneZ: DEFAULT_SCENE_GEOMETRY.backgroundFieldPosition.z,
   characterCenterNdcY: -0.12,
   characterCanvasScale: 1.25,
   backgroundOverscan: 1.1,
@@ -81,26 +72,23 @@ export const BESTDORI_PERSPECTIVE_SCENE: Readonly<BestdoriPerspectiveScene> = Ob
 const finite = (value: unknown, fallback = 0): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-const halfHeightAtPlane = (planeZ: number, scene: BestdoriPerspectiveScene): number => {
-  const depth = Math.max(0.001, planeZ - scene.cameraPosition.z);
-  return depth * Math.tan((scene.fovYDegrees * Math.PI) / 360);
-};
+const coordinateReference = (scene: BestdoriPerspectiveScene) => ({
+  width: scene.aspect,
+  height: 1,
+  fov: scene.fovYDegrees,
+  position: scene.cameraPosition,
+});
 
-/** Map the source viewer's model-centre NDC point onto a real world plane. */
+const halfHeightAtPlane = (planeZ: number, scene: BestdoriPerspectiveScene): number =>
+  scenePlaneSize(coordinateReference(scene), planeZ - scene.cameraPosition.z).height / 2;
+
 export const bestdoriNdcToWorld = (
   ndcX: number,
   ndcY: number,
   planeZ = BESTDORI_PERSPECTIVE_SCENE.characterPlaneZ,
   scene: BestdoriPerspectiveScene = BESTDORI_PERSPECTIVE_SCENE,
-): BestdoriSceneVector3 => {
-  const halfHeight = halfHeightAtPlane(planeZ, scene);
-  const halfWidth = halfHeight * scene.aspect;
-  return {
-    x: scene.cameraPosition.x + finite(ndcX) * halfWidth,
-    y: scene.cameraPosition.y + finite(ndcY) * halfHeight,
-    z: planeZ,
-  };
-};
+): BestdoriSceneVector3 =>
+  scenePointFromNdc(coordinateReference(scene), finite(ndcX), finite(ndcY), planeZ - scene.cameraPosition.z);
 
 /** Exact `sideToX` mapping from the published story viewer. */
 export const bestdoriSideNdcX = (side?: number, offsetX?: number): number => {
@@ -147,42 +135,22 @@ export const bestdoriPositionTypeFromSide = (side?: number): number => {
   return map[side ?? 4] ?? 5;
 };
 
-/**
- * Runtime values are derived from one perspective frustum. In particular,
- * the legacy canvas height is fixed in world units; later camera movement and
- * zoom therefore behave exactly like ordinary 3D scene changes.
- */
+/** Retain the scene basis while applying source-specific background framing. */
 export const createBestdoriSceneRuntime = (
   scene: BestdoriPerspectiveScene = BESTDORI_PERSPECTIVE_SCENE,
 ): BestdoriSceneRuntime => {
-  const characterHalfHeight = halfHeightAtPlane(scene.characterPlaneZ, scene);
   const backgroundHalfHeight = halfHeightAtPlane(scene.backgroundPlaneZ, scene);
-  const characterCanvasWorldHeight = 2 * characterHalfHeight * scene.characterCanvasScale;
   const backgroundWidth = 2 * backgroundHalfHeight * scene.aspect * scene.backgroundOverscan;
   const backgroundHeight = backgroundWidth / scene.aspect;
-  const ndcAnchors = [-1.2, -0.77, -0.34, -0.17, 0, 0.17, 0.34, 0.77, 1.2];
-  const characterFieldPosition = bestdoriNdcToWorld(0, scene.characterCenterNdcY, scene.characterPlaneZ, scene);
-  const focusAnchors: Record<number, BestdoriSceneVector3> = {};
-  for (let index = 0; index < ndcAnchors.length; index += 1) {
-    const world = bestdoriNdcToWorld(ndcAnchors[index]!, scene.characterCenterNdcY, scene.characterPlaneZ, scene);
-    // Stage slots use the same field-local basis as native ADV. The adapter's
-    // command positions remain absolute world points and are resolved against
-    // this field by the generic renderer.
-    focusAnchors[index + 1] = {
-      x: world.x - characterFieldPosition.x,
-      y: world.y - characterFieldPosition.y,
-      z: world.z - characterFieldPosition.z,
-    };
-  }
-  const positions = {
-    1: focusAnchors[1]!,
-    3: focusAnchors[3]!,
-    5: focusAnchors[5]!,
-    7: focusAnchors[7]!,
-    9: focusAnchors[9]!,
-  };
-  const minX = positions[1].x;
-  const maxX = positions[9].x;
+  const characterFieldPosition = { ...DEFAULT_SCENE_GEOMETRY.characterFieldPosition, z: scene.characterPlaneZ };
+  const focusAnchors = Object.fromEntries(
+    Object.entries(DEFAULT_SCENE_GEOMETRY.focusAnchors).map(([key, point]) => [key, { ...point }]),
+  );
+  const positions = Object.fromEntries(
+    Object.entries(DEFAULT_SCENE_GEOMETRY.positions).map(([key, point]) => [key, { ...point }]),
+  );
+  const minX = positions[1]!.x;
+  const maxX = positions[9]!.x;
   const stage: BestdoriStageRuntime = {
     minX,
     maxX,
@@ -194,9 +162,8 @@ export const createBestdoriSceneRuntime = (
     initialCameraRotation: { x: 0, y: 0, z: 0 },
     characterFieldPosition,
     backgroundFieldPosition: { x: 0, y: 0, z: scene.backgroundPlaneZ },
-    characterFieldScale: 1,
+    characterFieldScale: DEFAULT_SCENE_GEOMETRY.characterFieldScale,
     backgroundFieldScale: 1,
-    characterCanvasWorldHeight,
     backgroundFit: "camera-width",
     backgroundOverscan: scene.backgroundOverscan,
     fov: scene.fovYDegrees,

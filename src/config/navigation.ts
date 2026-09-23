@@ -12,7 +12,7 @@ export interface NavSection {
   /** Long sections collapse behind a disclosure so the drawer stays scannable. */
   collapsible?: boolean;
 }
-/** A top-level destination shown in the navigation rail and navigation bar. */
+/** A top-level destination shown in the navigation rail and drawer. */
 export interface PrimaryDestination {
   id: string;
   route: string;
@@ -49,12 +49,24 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
     route: "/catalog",
     icon: "category",
     label: "catalog",
-    match: ["/catalog"],
+    match: ["/catalog", "/community/songs-bestdori", "/community/playlists"],
     exclude: ["/catalog/stories"],
   },
-  { id: "stories", route: "/catalog/stories", icon: "auto_stories", label: "stories", match: ["/catalog/stories"] },
-  { id: "community", route: "/community/feeds", icon: "forum", label: "community", match: ["/community"] },
-  { id: "settings", route: "/settings", icon: "settings", label: "settings", match: ["/settings"] },
+  {
+    id: "stories",
+    route: "/catalog/stories",
+    icon: "auto_stories",
+    label: "stories",
+    match: ["/catalog/stories", "/community/stories-bestdori"],
+  },
+  {
+    id: "community",
+    route: "/community/feeds",
+    icon: "forum",
+    label: "community",
+    match: ["/community"],
+    exclude: ["/community/stories-bestdori", "/community/songs-bestdori", "/community/playlists"],
+  },
 ];
 
 export const NAV_SECTIONS: NavSection[] = [
@@ -185,14 +197,6 @@ export const CATALOG_HUB: Array<NavItem & { resource?: string; countKey?: string
   { route: "/catalog/assets", icon: "folder_open", label: "assets" },
   { route: "/catalog/help", icon: "help", label: "help", resource: "help" },
   { route: "/catalog/anon-tokyo/characters", icon: "storefront", label: "anonTokyo" },
-];
-
-/** Routes whose page is a full-bleed viewer; the compact navigation bar yields its space to them. */
-export const IMMERSIVE_PREFIXES = [
-  "/catalog/live2d",
-  "/catalog/spine",
-  "/catalog/assets",
-  "/catalog/anon-tokyo/outfits",
 ];
 
 export const isRouteActive = (target: string, route: string) =>

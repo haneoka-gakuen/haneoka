@@ -2,7 +2,6 @@
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
 import {
-  IMMERSIVE_PREFIXES,
   NAV_SECTIONS,
   PRIMARY_DESTINATIONS,
   isDestinationActive,
@@ -13,23 +12,28 @@ import { t } from "../i18n/messages";
 interface Props { locale: Locale; route: string; title: string; titleKey?: string }
 const { locale, route, title, titleKey } = Astro.props;
 const itemActive = (target: string) => isRouteActive(target, route);
-const immersive = IMMERSIVE_PREFIXES.some((prefix) => route === prefix || route.startsWith(prefix));
-const sectionActive = (items: { route: string }[]) => items.some((item) => itemActive(item.route));
-// Tuning seeds for the rail's key-signature control (lib/tuning.ts owns the behaviour).
-const seeds = [
-  { value: "haneoka", key: "tuneDefault", fallback: "Original key" },
-  ...[1, 2, 3, 4, 5].map((id) => ({ value: `band-${id}`, key: `band.${id}`, fallback: `Band ${id}` })),
+const navigation = PRIMARY_DESTINATIONS.map((destination) => ({
+  ...destination,
+  sections: NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => isDestinationActive(destination, item.route)),
+  })).filter((section) => section.items.length > 0),
+}));
+const utilities = [
+  { route: "/account", icon: "account_circle", label: "account" },
+  { route: "/settings", icon: "settings", label: "settings" },
+  { route: "/about", icon: "info", label: "about" },
 ];
 const i18nValues = (key: string, fallback: string) =>
   JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
 ---
-<div class="app-shell" data-shell data-immersive={immersive ? "true" : undefined}>
+<div class="app-shell" data-shell>
   <a class="skip-link" href="#main-content"><I18nText keyName="content" fallback="Content" locale={locale} /></a>
-  <button class="nav-scrim" type="button" tabindex="-1" data-nav-close aria-label={t(locale, "close", "Close")}></button>
+  <button class="nav-scrim" type="button" tabindex="-1" data-nav-close aria-label={t(locale, "close", "Close")} data-i18n-aria-label-values={i18nValues("close", "Close")}></button>
 
-  <nav class="nav" id="global-navigation" aria-label={t(locale, "primaryNavigation", "Primary navigation")} data-nav>
+  <nav class="nav" id="global-navigation" aria-label={t(locale, "primaryNavigation", "Primary navigation")} data-i18n-aria-label-values={i18nValues("primaryNavigation", "Primary navigation")} data-nav>
     <div class="nav__header">
-      <button class="icon-button nav__toggle" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")}>
+      <button class="icon-button nav__toggle" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")} data-i18n-aria-label-values={i18nValues("menu", "Menu")}>
         <Icon name="menu" />
       </button>
       <a class="nav__brand" href={localePath("/", locale)} aria-label="haneoka">
@@ -37,39 +41,6 @@ const i18nValues = (key: string, fallback: string) =>
         <span>haneoka</span>
       </a>
     </div>
-
-    <button class="nav__tune" type="button" popovertarget="tune-menu" data-tune-trigger>
-      <span class="tune-disc" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="nav__tune-label">
-        <small><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></small>
-        {seeds.map((seed) => <span data-tune-name={seed.value} hidden={seed.value !== "haneoka"}><I18nText keyName={seed.key} fallback={seed.fallback} locale={locale} /></span>)}
-      </span>
-    </button>
-    <div class="tune-menu" id="tune-menu" popover role="menu" aria-label={t(locale, "themeColor", "Theme color")} data-i18n-aria-label-values={i18nValues("themeColor", "Theme color")} data-tune-menu>
-      {seeds.map((seed) => (
-        <button class="tune-menu__item" type="button" role="menuitemradio" aria-checked={seed.value === "haneoka" ? "true" : "false"} data-seed={seed.value} tabindex="-1">
-          <span class="tune-disc" data-seed-preview={seed.value} aria-hidden="true"><i></i><i></i><i></i></span>
-          <I18nText keyName={seed.key} fallback={seed.fallback} locale={locale} />
-          <Icon name="check" size={20} />
-        </button>
-      ))}
-    </div>
-
-    <button
-      class="nav__spacing"
-      type="button"
-      data-density-toggle
-      aria-pressed="false"
-      aria-label={t(locale, "density", "Density")}
-      data-i18n-aria-label-values={i18nValues("density", "Density")}
-    >
-      <Icon name="density_medium" size={20} />
-      <span class="nav__spacing-label">
-        <small><I18nText keyName="density" fallback="Density" locale={locale} /></small>
-        <span data-density-name="comfortable"><I18nText keyName="comfortable" fallback="Comfortable" locale={locale} /></span>
-        <span data-density-name="compact" hidden><I18nText keyName="compact" fallback="Compact" locale={locale} /></span>
-      </span>
-    </button>
 
     <ul class="nav__rail" role="list">
       {PRIMARY_DESTINATIONS.map((destination) => {
@@ -86,88 +57,59 @@ const i18nValues = (key: string, fallback: string) =>
     </ul>
 
     <div class="nav__drawer">
-      <!-- The expanded rail's primary destinations: the same five entries as
-           the collapsed rail, in the same order, so the two forms read as one
-           component that grew rather than two lists that swapped. -->
       <ul class="nav__primary" role="list">
-        {PRIMARY_DESTINATIONS.map((destination) => {
+        {navigation.map((destination) => {
           const current = isDestinationActive(destination, route);
+          const branchId = `navigation-${destination.id}`;
           return (
             <li>
-              <a class="nav-item nav-item--primary" href={localePath(destination.route, locale)} aria-current={current ? "page" : undefined}>
-                <Icon name={destination.icon} filled={current} />
-                <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
-              </a>
+              <div class="nav__destination">
+                <a class="nav-item nav-item--primary" href={localePath(destination.route, locale)} aria-current={current ? (route === destination.route ? "page" : "location") : undefined}>
+                  <Icon name={destination.icon} filled={current} />
+                  <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
+                </a>
+                {destination.sections.length > 0 && <button class="icon-button nav__disclosure" type="button" data-nav-branch={branchId} aria-controls={branchId} aria-expanded={current} aria-label={t(locale, destination.label, destination.id)} data-i18n-aria-label-values={i18nValues(destination.label, destination.id)}><Icon name="expand_more" /></button>}
+              </div>
+              {destination.sections.length > 0 && <div class="nav__branch" id={branchId} hidden={!current}>
+                {destination.sections.map((section) => {
+                  const links = <ul class="nav__children" role="list">{section.items.map((item) => <li><a class="nav-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a></li>)}</ul>;
+                  return destination.sections.length === 1 ? links : <details class="nav__section" open={section.items.some((item) => itemActive(item.route)) || (route === destination.route && section === destination.sections[0])}><summary><I18nText keyName={section.label} fallback={section.id} locale={locale} /><Icon name="expand_more" /></summary>{links}</details>;
+                })}
+              </div>}
             </li>
           );
         })}
       </ul>
-      {NAV_SECTIONS.map((section) => {
-        const items = section.items.map((item) => (
-          <li>
-            <a class="nav-item" href={localePath(item.route, locale)} aria-current={route === item.route ? "page" : itemActive(item.route) ? "true" : undefined}>
-              <Icon name={item.icon} filled={itemActive(item.route)} />
-              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
-            </a>
-          </li>
-        ));
-        return section.collapsible ? (
-          <details class="nav-section nav-section--collapsible" open={sectionActive(section.items)}>
-            <summary class="nav-section__headline">
-              <I18nText keyName={section.label} fallback={section.id} locale={locale} />
-              <Icon name="expand_more" size={20} />
-            </summary>
-            <ul role="list">{items}</ul>
-          </details>
-        ) : (
-          <section class="nav-section" aria-labelledby={`nav-section-${section.id}`}>
-            <h2 class="nav-section__headline" id={`nav-section-${section.id}`}><I18nText keyName={section.label} fallback={section.id} locale={locale} /></h2>
-            <ul role="list">{items}</ul>
-          </section>
-        );
-      })}
-      <section class="nav-section nav-section--footer" aria-label={t(locale, "settings", "Settings")}>
-        <ul role="list">
-          <li><a class="nav-item" href={localePath("/account", locale)} aria-current={itemActive("/account") ? "page" : undefined}><Icon name="account_circle" filled={itemActive("/account")} /><I18nText keyName="account" fallback="Account" locale={locale} /></a></li>
-          <li><a class="nav-item" href={localePath("/settings", locale)} aria-current={itemActive("/settings") ? "page" : undefined}><Icon name="settings" filled={itemActive("/settings")} /><I18nText keyName="settings" fallback="Settings" locale={locale} /></a></li>
-          <li><a class="nav-item" href={localePath("/about", locale)} aria-current={itemActive("/about") ? "page" : undefined}><Icon name="info" filled={itemActive("/about")} /><I18nText keyName="about" fallback="About" locale={locale} /></a></li>
-        </ul>
-      </section>
+      <ul class="nav__utilities" role="list">
+        {utilities.map((item) => <li><a class="nav-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><Icon name={item.icon} filled={itemActive(item.route)} /><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a></li>)}
+      </ul>
     </div>
 
-    <a class="rail-item rail-item--footer" href={localePath("/account", locale)} aria-current={itemActive("/account") ? "page" : undefined}>
-      <span class="rail-item__indicator"><Icon name="account_circle" filled={itemActive("/account")} /></span>
-      <I18nText keyName="account" fallback="Account" locale={locale} />
-    </a>
+    <div class="nav__rail-utilities">
+      {utilities.map((item) => <a class="rail-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><span class="rail-item__indicator"><Icon name={item.icon} filled={itemActive(item.route)} /></span><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a>)}
+    </div>
   </nav>
 
   <div class="app-shell__body">
     <header class="top-app-bar" data-top-app-bar>
-      <button class="icon-button top-app-bar__menu" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")}><Icon name="menu" /></button>
+      <button class="icon-button top-app-bar__menu" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")} data-i18n-aria-label-values={i18nValues("menu", "Menu")}><Icon name="menu" /></button>
       <h1>{titleKey ? <I18nText keyName={titleKey} fallback={title} locale={locale} /> : title}</h1>
       <div class="top-app-bar__actions" data-top-app-bar-actions></div>
     </header>
-    <main class="app-shell__main page-stage" id="main-content" tabindex="-1"><slot /></main>
+    <main class="app-shell__main page-stage" id="main-content" tabindex="-1">
+      <slot />
+    </main>
   </div>
 
-  <nav class="nav-bar" aria-label={t(locale, "primaryNavigation", "Primary navigation")}>
-    {PRIMARY_DESTINATIONS.map((destination) => {
-      const current = isDestinationActive(destination, route);
-      return (
-        <a class="nav-bar__item" href={localePath(destination.route, locale)} aria-current={current ? "page" : undefined}>
-          <span class="nav-bar__indicator"><Icon name={destination.icon} filled={current} /></span>
-          <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
-        </a>
-      );
-    })}
-  </nav>
+
 </div>
 <script>
-  import { SEED_EVENT, applySeed, currentSeed, isSeed } from "../lib/tuning";
-  import { DENSITY_EVENT, currentDensity, toggleDensity } from "../lib/density";
+  import { trapFocus } from "../lib/overlay";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
   const persistentQuery = matchMedia("(min-width: 1200px)");
   const root = document.documentElement;
+  let releaseNavigationFocus: (() => void) | undefined;
+  const inertTargets = new Set<HTMLElement>();
 
   const shell = () => document.querySelector<HTMLElement>("[data-shell]");
   const syncToggles = (expanded: boolean) =>
@@ -178,10 +120,22 @@ const i18nValues = (key: string, fallback: string) =>
     const host = shell();
     if (!host) return;
     host.classList.toggle("nav-modal-open", open);
-    host.querySelector(".app-shell__body")?.toggleAttribute("inert", open);
-    host.querySelector(".nav-bar")?.toggleAttribute("inert", open);
-    syncToggles(open);
-    if (open) host.querySelector<HTMLElement>(".nav__drawer [aria-current], .nav__drawer .nav-item")?.focus({ preventScroll: false });
+    if (open) {
+      for (const target of document.querySelectorAll<HTMLElement>(".app-shell__body, audio-dock")) {
+        if (!target.inert) { target.inert = true; inertTargets.add(target); }
+      }
+      const navigation = host.querySelector<HTMLElement>("[data-nav]");
+      if (navigation && !releaseNavigationFocus) releaseNavigationFocus = trapFocus(navigation, {
+        onDismiss: () => setModal(false),
+        initialFocus: navigation.querySelector<HTMLElement>(".nav__children [aria-current], .nav__drawer [aria-current], .nav-item"),
+      });
+    } else {
+      for (const target of inertTargets) target.inert = false;
+      inertTargets.clear();
+      releaseNavigationFocus?.();
+      releaseNavigationFocus = undefined;
+    }
+    syncToggles(open || (persistentQuery.matches && root.dataset.nav !== "collapsed"));
   };
   const setPersistent = (expanded: boolean) => {
     root.dataset.nav = expanded ? "expanded" : "collapsed";
@@ -197,6 +151,12 @@ const i18nValues = (key: string, fallback: string) =>
     host.querySelectorAll("[data-nav-toggle]").forEach((node) => node.addEventListener("click", () => {
       if (persistentQuery.matches) setPersistent(root.dataset.nav === "collapsed");
       else setModal(!host.classList.contains("nav-modal-open"));
+    }));
+    host.querySelectorAll<HTMLButtonElement>("[data-nav-branch]").forEach((button) => button.addEventListener("click", () => {
+      const branch = document.getElementById(button.dataset.navBranch || "");
+      if (!branch) return;
+      branch.hidden = !branch.hidden;
+      button.setAttribute("aria-expanded", String(!branch.hidden));
     }));
     host.querySelectorAll("[data-nav-close]").forEach((node) => node.addEventListener("click", () => setModal(false)));
 
@@ -221,84 +181,8 @@ const i18nValues = (key: string, fallback: string) =>
     }, { capture: true, passive: true });
   };
 
-  /* Key-signature control: shows the current tuning everywhere and re-tunes from any page. */
-  const syncTune = () => {
-    const seed = currentSeed();
-    document.querySelectorAll<HTMLElement>("[data-tune-name]").forEach((node) => (node.hidden = node.dataset.tuneName !== seed));
-    document.querySelectorAll<HTMLElement>("[data-tune-menu] [data-seed]").forEach((node) => {
-      node.setAttribute("aria-checked", String(node.dataset.seed === seed));
-    });
-  };
-  const initializeTune = () => {
-    const menu = document.querySelector<HTMLElement & { hidePopover?: () => void }>("[data-tune-menu]");
-    if (!menu || menu.dataset.initialized === "true") return;
-    menu.dataset.initialized = "true";
-    syncTune();
-    const items = () => [...menu.querySelectorAll<HTMLElement>("[data-seed]")];
-    menu.addEventListener("toggle", (event) => {
-      if ((event as ToggleEvent).newState !== "open") return;
-      (items().find((item) => item.getAttribute("aria-checked") === "true") ?? items()[0])?.focus();
-    });
-    menu.addEventListener("click", (event) => {
-      const item = (event.target as Element).closest<HTMLElement>("[data-seed]");
-      const seed = item?.dataset.seed;
-      if (!item || !isSeed(seed)) return;
-      const rect = item.getBoundingClientRect();
-      menu.hidePopover?.();
-      applySeed(seed, { x: rect.left + 28, y: rect.top + rect.height / 2 });
-    });
-    menu.addEventListener("keydown", (event) => {
-      const list = items();
-      const index = list.indexOf(document.activeElement as HTMLElement);
-      const move = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-      if (move) {
-        event.preventDefault();
-        list[(index + move + list.length) % list.length]?.focus();
-      } else if (event.key === "Home" || event.key === "End") {
-        event.preventDefault();
-        list[event.key === "Home" ? 0 : list.length - 1]?.focus();
-      }
-    });
-  };
-
-  /* Spacing: the second dial. Colour sets the key, density sets the spacing;
-     both are reading preferences, so both live beside each other in the rail. */
-  const syncDensity = () => {
-    const density = currentDensity();
-    document
-      .querySelectorAll<HTMLElement>("[data-density-name]")
-      .forEach((node) => (node.hidden = node.dataset.densityName !== density));
-    document
-      .querySelectorAll("[data-density-toggle]")
-      .forEach((node) => node.setAttribute("aria-pressed", String(density === "compact")));
-  };
-  const initializeDensity = () => {
-    document.querySelectorAll<HTMLElement>("[data-density-toggle]").forEach((node) => {
-      if (node.dataset.initialized === "true") return;
-      node.dataset.initialized = "true";
-      node.addEventListener("click", () => toggleDensity());
-    });
-    syncDensity();
-  };
-
   initializeShell();
-  initializeTune();
-  initializeDensity();
-  document.addEventListener("astro:page-load", () => {
-    initializeShell();
-    initializeTune();
-    initializeDensity();
-  });
-  addEventListener(SEED_EVENT, syncTune);
-  addEventListener(DENSITY_EVENT, syncDensity);
+  document.addEventListener("astro:page-load", initializeShell);
   persistentQuery.addEventListener("change", () => setModal(false));
-  if (root.dataset.shellKeyboard !== "true") {
-    root.dataset.shellKeyboard = "true";
-    addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && shell()?.classList.contains("nav-modal-open")) {
-        setModal(false);
-        shell()?.querySelector<HTMLElement>("[data-nav-toggle]:not([hidden])")?.focus();
-      }
-    });
-  }
+  document.addEventListener("astro:before-swap", () => setModal(false));
 </script>

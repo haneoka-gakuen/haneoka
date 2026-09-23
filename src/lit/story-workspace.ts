@@ -1,3 +1,5 @@
+import { openDetailLocation, closeDetailLocation } from "../lib/detail-navigation";
+import { RequestScope } from "../lib/request-scope";
 import { LitElement, html, nothing } from "lit";
 import {
   catalogUrl,
@@ -11,14 +13,10 @@ import {
   uiText,
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
-import { HomeSpotStage } from "./runtime/home-spot-stage";
-import {
-  clearBrowseBar,
-  filterGroup,
-  renderBrowse,
-  type BrowseHeading,
-  type BrowseRailItem,
-} from "./ui/browse";
+import type { HomeSpotStage } from "./runtime/home-spot-stage";
+import { projectHaneokaTranscript, type HaneokaTranscriptEntry } from "@haneoka/vega-plugin-haneoka/transcript";
+import { advText } from "./ui/adv-text";
+import { clearBrowseBar, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
 import { filterChip, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
@@ -119,6 +117,7 @@ export class StoryWorkspace extends LitElement {
     detailEpisode: { state: true },
     detailCard: { state: true },
     detailLoading: { state: true },
+    detailError: { state: true },
     detailMode: { state: true },
     linkPartner: { state: true },
     limit: { state: true },
@@ -142,12 +141,15 @@ export class StoryWorkspace extends LitElement {
   declare detailEpisode: JsonRecord | null;
   declare detailCard: JsonRecord | null;
   declare detailLoading: boolean;
+  declare detailError: string;
   declare detailMode: "text" | "play";
   declare linkPartner: string;
   declare limit: number;
+  private detailRequests = new RequestScope();
   private homeStage?: HomeSpotStage;
   private homeStageSpot = "";
   private storyAudio?: HTMLAudioElement;
+  private transcriptCache = new WeakMap<JsonRecord, readonly HaneokaTranscriptEntry[]>();
   private paneFocus = new PaneFocus();
   /**
    * Story banners exist in localized variants for the band and tutorial
@@ -158,7 +160,7 @@ export class StoryWorkspace extends LitElement {
   private lazyImages = new LazyImages({ candidates: (source) => this.localizedImages(source) });
   private bestdoriDetail?: typeof import("./bestdori-community-detail");
   private onKeydown = (event: KeyboardEvent) => {
-    if (event.key !== "Escape") return;
+    if (event.defaultPrevented || event.key !== "Escape") return;
     if (this.detailEpisode || this.detailCard) this.closeDetail();
     else if (this.filtersOpen) this.filtersOpen = false;
   };
@@ -185,6 +187,7 @@ export class StoryWorkspace extends LitElement {
     this.detailCard = null;
     this.detailLoading = false;
     this.detailMode = "text";
+    this.detailError = "";
     this.linkPartner = "";
     this.limit = 120;
   }
@@ -215,6 +218,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.detailRequests.cancel();
     clearBrowseBar();
     this.lazyImages.disconnect();
     this.homeStage?.dispose();
@@ -286,7 +290,9 @@ export class StoryWorkspace extends LitElement {
   private async loadBestdori() {
     const resource = this.isCardSection() ? "cards" : `stories/${this.mode}`;
     const [items, bands] = await Promise.all([
-      fetchJson<JsonRecord | JsonRecord[]>(`${this.bestdoriBase()}/${resource}?lang=${encodeURIComponent(this.locale)}`),
+      fetchJson<JsonRecord | JsonRecord[]>(
+        `${this.bestdoriBase()}/${resource}?lang=${encodeURIComponent(this.locale)}`,
+      ),
       fetchJson<JsonRecord | JsonRecord[]>(`${this.bestdoriBase()}/bands`).catch(() => ({}) as JsonRecord),
     ]);
     const records = (Array.isArray(items) ? items : recordValues(items)).filter(
@@ -690,6 +696,14 @@ export class StoryWorkspace extends LitElement {
     void this.openScenario(id, source);
   }
   private async openScenario(id: string, source?: JsonRecord) {
+    if (!this.detailCard && new URLSearchParams(location.search).get("story") !== id) {
+      const params = new URLSearchParams(location.search);
+      params.set("story", id);
+      openDetailLocation(`${location.pathname}?${params}`);
+      return;
+    }
+    const signal = this.detailRequests.begin();
+    this.detailError = "";
     const known = source || this.episodes[id];
     this.detailMode = "text";
     this.stopStoryPlayback();
@@ -700,30 +714,48 @@ export class StoryWorkspace extends LitElement {
       const url = this.isBestdori()
         ? `${this.bestdoriBase()}/stories/${encodeURIComponent(id)}?lang=${encodeURIComponent(this.locale)}`
         : catalogUrl("stories", id);
-      const detail = await fetchJson<JsonRecord>(url);
-      this.detailEpisode = { ...(known || {}), ...detail };
-    } catch {
-      this.detailEpisode = known || null;
+      const detail = await fetchJson<JsonRecord>(url, { signal });
+      if (this.detailRequests.current(signal)) this.detailEpisode = { ...(known || {}), ...detail };
+    } catch (error) {
+      if (this.detailRequests.current(signal)) {
+        this.detailEpisode = known || { id, title: id };
+        this.detailError = error instanceof Error ? error.message : String(error);
+      }
     } finally {
-      this.detailLoading = false;
+      if (this.detailRequests.current(signal)) this.detailLoading = false;
     }
   }
   private async openBestdoriCard(item: JsonRecord) {
+    const signal = this.detailRequests.begin();
     this.bestdoriDetail ??= await import("./bestdori-community-detail");
+    if (!this.detailRequests.current(signal)) return;
     this.detailLoading = true;
     this.detailCard = item;
     try {
-      this.detailCard = await fetchJson<JsonRecord>(
+      const detail = await fetchJson<JsonRecord>(
         `${this.bestdoriBase()}/cards/${encodeURIComponent(String(item.cardId || ""))}?lang=${encodeURIComponent(this.locale)}`,
+        { signal },
       );
+      if (this.detailRequests.current(signal)) this.detailCard = detail;
     } catch {
-      /* The list record already carries enough to show the card. */
+      /* Keep the available card summary when detail loading fails. */
     } finally {
-      this.detailLoading = false;
+      if (this.detailRequests.current(signal)) this.detailLoading = false;
     }
   }
   /** One step back: a scenario returns to its card, a card to the collection. */
   private closeDetail() {
+    if (this.detailEpisode && !this.detailCard) {
+      this.stopStoryPlayback();
+      this.detailRequests.cancel();
+      const params = new URLSearchParams(location.search);
+      params.delete("story");
+      closeDetailLocation(`${location.pathname}${params.size ? `?${params}` : ""}`);
+      return;
+    }
+    this.detailRequests.cancel();
+    this.detailLoading = false;
+    this.detailError = "";
     this.stopStoryPlayback();
     if (this.detailEpisode && this.detailCard) this.detailEpisode = null;
     else {
@@ -734,16 +766,37 @@ export class StoryWorkspace extends LitElement {
   }
   private stopStoryPlayback() {
     this.storyAudio?.pause();
+    this.querySelectorAll<HTMLVideoElement>(".story-transcript video").forEach((video) => video.pause());
+    this.requestUpdate();
   }
   private playStoryAudio(url: string) {
-    this.storyAudio?.pause();
+    if (this.storyAudio?.src === new URL(url, location.href).href && !this.storyAudio.paused) {
+      this.storyAudio.pause();
+      this.requestUpdate();
+      return;
+    }
+    this.stopStoryPlayback();
+    document.querySelector<HTMLElement & { pausePlayback?: () => void }>("audio-dock")?.pausePlayback?.();
     this.storyAudio = new Audio(url);
-    void this.storyAudio.play();
+    this.storyAudio.addEventListener("ended", () => this.requestUpdate(), { once: true });
+    void this.storyAudio
+      .play()
+      .then(() => this.requestUpdate())
+      .catch(() => this.requestUpdate());
   }
   private async openVegaPlayer() {
-    await import("./runtime/vega-story-stage");
+    const episode = this.detailEpisode;
     this.detailMode = "play";
     this.stopStoryPlayback();
+    document.querySelector<HTMLElement & { pausePlayback?: () => void }>("audio-dock")?.pausePlayback?.();
+    try {
+      await import("./runtime/vega-story-stage");
+    } catch (error) {
+      if (this.detailEpisode === episode && this.detailMode === "play") {
+        this.detailMode = "text";
+        this.detailError = error instanceof Error ? error.message : String(error);
+      }
+    }
   }
 
   /* ---------------------------------------------------------------- render */
@@ -804,7 +857,11 @@ export class StoryWorkspace extends LitElement {
       (this.facets[group.key] || []).flatMap((value) => {
         const option = group.options.find((entry) => entry.value === value);
         return option
-          ? [inputChip(`${group.label}: ${option.label}`, remove, () => this.toggleFacet(group.key, value, group.single))]
+          ? [
+              inputChip(`${group.label}: ${option.label}`, remove, () =>
+                this.toggleFacet(group.key, value, group.single),
+              ),
+            ]
           : [];
       }),
     );
@@ -826,7 +883,12 @@ export class StoryWorkspace extends LitElement {
   private renderResults(episodes: JsonRecord[]) {
     if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
     if (this.phase === "error")
-      return errorState(uiText(this.locale, "unavailable"), uiText(this.locale, "retry"), () => void this.load(), this.error);
+      return errorState(
+        uiText(this.locale, "unavailable"),
+        uiText(this.locale, "retry"),
+        () => void this.load(),
+        this.error,
+      );
     const stage = this.renderStage();
     if (!episodes.length)
       return html`
@@ -917,7 +979,9 @@ export class StoryWorkspace extends LitElement {
       onOpen: () => void this.openStory(id, episode),
       onImageError: this.imageError,
       marks: [
-        episode.episodeNumber ? { at: "start" as const, text: `#${String(episode.episodeNumber).padStart(2, "0")}` } : null,
+        episode.episodeNumber
+          ? { at: "start" as const, text: `#${String(episode.episodeNumber).padStart(2, "0")}` }
+          : null,
         this.duration(episode) ? { at: "bottom-end" as const, text: this.duration(episode) } : null,
       ],
     });
@@ -945,13 +1009,7 @@ export class StoryWorkspace extends LitElement {
       { label: uiText(this.locale, "release"), numeric: true },
     ];
     return html`
-      <div
-        class="table-scroll"
-        role="region"
-        tabindex="0"
-        aria-label=${uiText(this.locale, "list")}
-        data-scroll-region
-      >
+      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
         <table class="data-table">
           <thead>
             <tr>
@@ -959,9 +1017,11 @@ export class StoryWorkspace extends LitElement {
                 (column) => html`
                   <th
                     scope="col"
-                    class=${[column.numeric ? "is-numeric" : "", column.sticky ? "is-sticky" : ""]
-                      .filter(Boolean)
-                      .join(" ") || nothing}
+                    class=${
+                      [column.numeric ? "is-numeric" : "", column.sticky ? "is-sticky" : ""]
+                        .filter(Boolean)
+                        .join(" ") || nothing
+                    }
                   >
                     ${column.label}
                   </th>
@@ -1137,15 +1197,17 @@ export class StoryWorkspace extends LitElement {
       </section>
     `;
   }
-  private syncHomeStage() {
+  private async syncHomeStage() {
     if (!(this.origin === "release" && this.mode === "home" && this.phase === "ready")) return;
     const host = this.querySelector<HTMLElement>("[data-home-spine-stage]");
     const spot = this.activeSpots()[0];
     const key = String(spot?.spotId || "");
-    if (!host || !spot || !key || (this.homeStageSpot === key && this.homeStage)) return;
+    if (!host || !spot || !key || this.homeStageSpot === key) return;
     this.homeStage?.dispose();
-    this.homeStage = new HomeSpotStage(host);
     this.homeStageSpot = key;
+    const { HomeSpotStage } = await import("./runtime/home-spot-stage");
+    if (!this.isConnected || this.homeStageSpot !== key || !host.isConnected) return;
+    this.homeStage = new HomeSpotStage(host);
     host.classList.remove("ready", "failed");
     void this.homeStage
       .load(spot)
@@ -1173,7 +1235,10 @@ export class StoryWorkspace extends LitElement {
     ];
     const root = `/assets/${currentReleaseServer()}/Assets/AddressableResources`;
     return html`
-      <section class="story-board" style=${`--friendship-stage:url('${root}/Image/Background/FriendshipBackground.png')`}>
+      <section
+        class="story-board"
+        style=${`--friendship-stage:url('${root}/Image/Background/FriendshipBackground.png')`}
+      >
         <div class="story-board__stage">
           <img class="story-board__background" src=${`${root}/Band/${activeBand}/Friendship/photo_board.png`} alt="" />
           ${
@@ -1301,10 +1366,6 @@ export class StoryWorkspace extends LitElement {
   private renderDetail(episode: JsonRecord) {
     const ids = this.characterIds(episode);
     const commands = this.transcript(episode);
-    const sounds = (() => {
-      const assets = (episode.assets as JsonRecord | undefined) || {};
-      return Array.isArray(assets.sounds) ? (assets.sounds as JsonRecord[]) : [];
-    })();
     return html`
       <aside
         class="story-detail pane-layer"
@@ -1315,7 +1376,12 @@ export class StoryWorkspace extends LitElement {
         data-overlay-pane
       >
         <header>
-          <button class="icon-button" type="button" aria-label=${uiText(this.locale, "close")} @click=${() => this.closeDetail()}>
+          <button
+            class="icon-button"
+            type="button"
+            aria-label=${uiText(this.locale, "close")}
+            @click=${() => this.closeDetail()}
+          >
             <svg class="material-icon" width="22" height="22"><use href="/icons.svg#arrow_back"></use></svg>
           </button>
           <span class="story-detail__title">
@@ -1347,7 +1413,9 @@ export class StoryWorkspace extends LitElement {
                   server=${currentReleaseServer()}
                   locale=${this.locale}
                   @open-text=${() => (this.detailMode = "text")}
-                ></vega-story-stage>
+                >
+                  ${loadingState(uiText(this.locale, "loading"))}
+                </vega-story-stage>
               `
             : html`
                 <div class="story-detail__body">
@@ -1358,78 +1426,45 @@ export class StoryWorkspace extends LitElement {
                         `
                       : nothing
                   }
-                  ${specList([
-                    { label: uiText(this.locale, "chapter"), value: this.chapterName(this.chapterOf(episode)) },
-                    { label: uiText(this.locale, "duration"), value: this.duration(episode) },
-                    { label: uiText(this.locale, "release"), value: this.releaseDate(episode) },
-                    episode.unlockCharacterFriendshipLevel
-                      ? {
-                          label: uiText(this.locale, "friendship"),
-                          value: `Lv.${episode.unlockCharacterFriendshipLevel}`,
-                        }
-                      : null,
-                    ids.length
-                      ? {
-                          label: uiText(this.locale, "characters"),
-                          value: formatList(
-                            ids.map((id) => this.characterName(this.character(id) || {})),
-                            this.locale,
-                          ),
-                          wide: true,
-                        }
-                      : null,
-                  ])}
+                  <details class="story-reading-info">
+                    <summary>
+                      ${uiText(this.locale, "details")}
+                      <span>${this.duration(episode)}</span>
+                    </summary>
+                    ${specList([
+                      { label: uiText(this.locale, "chapter"), value: this.chapterName(this.chapterOf(episode)) },
+                      { label: uiText(this.locale, "duration"), value: this.duration(episode) },
+                      { label: uiText(this.locale, "release"), value: this.releaseDate(episode) },
+                      episode.unlockCharacterFriendshipLevel
+                        ? {
+                            label: uiText(this.locale, "friendship"),
+                            value: `Lv.${episode.unlockCharacterFriendshipLevel}`,
+                          }
+                        : null,
+                      ids.length
+                        ? {
+                            label: uiText(this.locale, "characters"),
+                            value: formatList(
+                              ids.map((id) => this.characterName(this.character(id) || {})),
+                              this.locale,
+                            ),
+                            wide: true,
+                          }
+                        : null,
+                    ])}
+                  </details>
+                  ${this.detailError ? errorState(uiText(this.locale, "unavailable"), uiText(this.locale, "retry"), () => void this.openScenario(this.episodeId(episode), episode), this.detailError) : nothing}
                   ${
                     commands.length
                       ? html`
                           <section class="story-detail__transcript">
                             ${renderDetailSectionHeading(uiText(this.locale, "storyText"), "storyText", {
-                              count: commands.length,
+                              count: commands.filter((entry) =>
+                                ["dialogue", "message", "subtitle"].includes(entry.kind),
+                              ).length,
                               level: 2,
                             })}
-                            <div class="story-transcript">
-                              ${commands.map(({ command, visual }) => {
-                                const names = formatList(
-                                  (Array.isArray(command.targetTextNames) ? command.targetTextNames : [])
-                                    .map((name) => this.text(name))
-                                    .filter(Boolean),
-                                  this.locale,
-                                );
-                                const voiceRef = String(
-                                  (Array.isArray(command.voiceRefs) ? command.voiceRefs[0] : "") || "",
-                                );
-                                const voice = sounds.find((sound) => String(sound.resourceRef || "") === voiceRef);
-                                return html`
-                                  <article class=${visual ? "has-visual" : ""}>
-                                    ${
-                                      visual
-                                        ? html`
-                                            <img class="story-transcript__visual" src=${visual} alt="" loading="lazy" />
-                                          `
-                                        : nothing
-                                    }
-                                    <strong>${names || String(command.targetName || "")}</strong>
-                                    <p>${this.text(command.text)}</p>
-                                    ${
-                                      voice?.playableUrl
-                                        ? html`
-                                            <button
-                                              class="icon-button"
-                                              type="button"
-                                              @click=${() => this.playStoryAudio(String(voice.playableUrl))}
-                                              aria-label=${uiText(this.locale, "play")}
-                                            >
-                                              <svg class="material-icon" width="18" height="18">
-                                                <use href="/icons.svg#volume_up"></use>
-                                              </svg>
-                                            </button>
-                                          `
-                                        : nothing
-                                    }
-                                  </article>
-                                `;
-                              })}
-                            </div>
+                            <div class="story-transcript">${this.renderTranscript(commands)}</div>
                           </section>
                         `
                       : this.detailLoading
@@ -1446,37 +1481,184 @@ export class StoryWorkspace extends LitElement {
       </aside>
     `;
   }
-  /**
-   * Flattens a scenario into spoken lines, emitting the backdrop only where
-   * it changes: a scene of forty lines shares one still, so repeating it per
-   * line would be forty copies of the same image.
-   */
   private transcript(episode: JsonRecord) {
-    const all = Array.isArray(episode.commands) ? (episode.commands as JsonRecord[]) : [];
-    const assets = (episode.assets as JsonRecord | undefined) || {};
-    const visuals = new Map<string, string>();
-    ["backgrounds", "stills", "frames"].forEach((group) =>
-      (Array.isArray(assets[group]) ? (assets[group] as JsonRecord[]) : []).forEach((asset) => {
-        const source = String(asset.url || "");
-        [asset.assetName, asset.stageRef, asset.stillRef, asset.frameRef, asset.sourcePath]
-          .map(String)
-          .filter(Boolean)
-          .forEach((key) => visuals.set(key, source));
-      }),
-    );
-    let current = "";
-    let emitted = "";
-    return all.flatMap((command) => {
-      const reference = String(
-        command.backgroundRef || command.stillRef || command.frameRef || command.targetAssetName || "",
-      );
-      const resolved = visuals.get(reference) || visuals.get(reference.split("/").at(-1) || reference) || "";
-      if (resolved) current = resolved;
-      if (!this.text(command.text)) return [];
-      const visual = current !== emitted ? current : "";
-      if (visual) emitted = visual;
-      return [{ command, visual }];
-    });
+    let entries = this.transcriptCache.get(episode);
+    if (!entries) {
+      entries = projectHaneokaTranscript(episode);
+      this.transcriptCache.set(episode, entries);
+    }
+    return entries;
+  }
+  private renderTranscript(entries: readonly HaneokaTranscriptEntry[]) {
+    const content = [];
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (entry.kind !== "image" || entry.mediaKind !== "background") {
+        content.push(this.renderTranscriptEntry(entry));
+        continue;
+      }
+      const backgrounds = [entry];
+      while (entries[index + 1]?.kind === "image" && entries[index + 1]?.mediaKind === "background")
+        backgrounds.push(entries[++index]);
+      content.push(html`
+        <details class="story-transcript__backdrop">
+          <summary>
+            ${icon("image", 20)}
+            <span>${uiText(this.locale, "background")}${backgrounds.length > 1 ? ` · ${backgrounds.length}` : ""}</span>
+            ${icon("expand_more", 20)}
+          </summary>
+          ${backgrounds.map(
+            (background) => html`
+              <figure class="story-transcript__scene" data-command-index=${background.commandIndex}>
+                <img
+                  src=${background.source!}
+                  alt=${uiText(this.locale, "background")}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </figure>
+            `,
+          )}
+        </details>
+      `);
+    }
+    return content;
+  }
+  private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
+    const command = entry.command;
+    const names =
+      Number(command.targetStatus) === 2
+        ? ""
+        : Number(command.targetStatus) === 1
+          ? "???"
+          : formatList(
+              (Array.isArray(command.targetTextNames) ? command.targetTextNames : [])
+                .map((name) => this.text(name))
+                .filter(Boolean),
+              this.locale,
+            ) || this.text(command.targetName);
+    const text = this.text(command.text) || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
+    if (entry.kind === "image")
+      return html`
+        <figure class="story-transcript__scene" data-command-index=${entry.commandIndex}>
+          <img
+            src=${entry.source!}
+            alt=${uiText(this.locale, entry.mediaKind === "background" ? "background" : "illustration")}
+            loading="lazy"
+            decoding="async"
+          />
+          <figcaption>
+            ${uiText(this.locale, entry.mediaKind === "background" ? "background" : "illustration")}
+          </figcaption>
+        </figure>
+      `;
+    if (entry.kind === "video")
+      return html`
+        <figure class="story-transcript__scene" data-command-index=${entry.commandIndex}>
+          <video
+            src=${entry.source!}
+            controls
+            preload="none"
+            playsinline
+            @play=${(event: Event) => {
+              this.storyAudio?.pause();
+              this.querySelectorAll<HTMLVideoElement>(".story-transcript video").forEach((video) => {
+                if (video !== event.currentTarget) video.pause();
+              });
+              document.querySelector<HTMLElement & { pausePlayback?: () => void }>("audio-dock")?.pausePlayback?.();
+            }}
+          ></video>
+          <figcaption>${uiText(this.locale, "video")}</figcaption>
+        </figure>
+      `;
+    if (entry.kind === "location" || entry.kind === "conversation")
+      return html`
+        <div class="story-transcript__chapter" data-command-index=${entry.commandIndex}>
+          ${icon(entry.kind === "conversation" ? "chat" : "location_on", 20)}
+          <h3>${advText(text || names || uiText(this.locale, "conversation"))}</h3>
+        </div>
+      `;
+    if (entry.kind === "choices")
+      return html`
+        <section class="story-transcript__choices" data-command-index=${entry.commandIndex}>
+          <h3>${uiText(this.locale, "choices")}</h3>
+          <ul>
+            ${(command.choices as JsonRecord[]).map(
+              (choice) => html`
+                <li>${advText(this.text(choice.text))}</li>
+              `,
+            )}
+          </ul>
+        </section>
+      `;
+    const media =
+      entry.kind === "stamp"
+        ? html`
+            <div class="story-transcript__stamp">
+              ${
+                entry.source
+                  ? html`
+                      <img src=${entry.source} alt=${uiText(this.locale, "stamp")} loading="lazy" />
+                    `
+                  : html`
+                      ${icon("sentiment_satisfied", 24)}
+                      <span>${uiText(this.locale, "stamp")}</span>
+                    `
+              }
+            </div>
+          `
+        : nothing;
+    if (!text && entry.kind !== "stamp") return nothing;
+    return html`
+      <article
+        class=${`story-transcript__entry story-transcript__entry--${entry.kind}`}
+        data-command-index=${entry.commandIndex}
+      >
+        <div class="story-transcript__line">
+          ${
+            names
+              ? html`
+                  <strong class="story-transcript__speaker" dir="auto">${advText(names)}</strong>
+                `
+              : nothing
+          }
+          ${
+            text
+              ? html`
+                  <p class="story-transcript__text" dir="auto">${advText(text)}</p>
+                `
+              : nothing
+          }${media}
+        </div>
+        ${
+          entry.voices.length
+            ? html`
+                <div class="story-transcript__voices">
+                  ${entry.voices.map((voice, index) => {
+                    const url = String(voice.playableUrl || voice.url || "");
+                    const playing = Boolean(
+                      url && this.storyAudio?.src === new URL(url, location.href).href && !this.storyAudio.paused,
+                    );
+                    return url
+                      ? html`
+                          <button
+                            class="icon-button icon-button--tonal"
+                            type="button"
+                            @click=${() => this.playStoryAudio(url)}
+                            aria-pressed=${String(playing)}
+                            aria-label=${`${uiText(this.locale, playing ? "pause" : "playVoice")}${names ? ` · ${names}` : ""}${entry.voices.length > 1 ? ` · ${index + 1}` : ""}`}
+                          >
+                            ${icon(playing ? "pause" : "volume_up", 20)}
+                          </button>
+                        `
+                      : nothing;
+                  })}
+                </div>
+              `
+            : nothing
+        }
+      </article>
+    `;
   }
 }
 customElements.define("story-workspace", StoryWorkspace);

@@ -11,22 +11,8 @@ import {
 } from "./scene.js";
 import { isBestdoriServer, type BestdoriServer } from "./transport.js";
 
-const CMD = {
-  In: 0,
-  Out: 1,
-  Talk: 2,
-  FadeOut: 5,
-  FadeIn: 6,
-  Expression: 17,
-  Location: 20,
-  Motion: 21,
-  Character: 23,
-  Stage: 25,
-  Bgm: 15,
-  Se: 31,
-  MoveToDirection: 64,
-  CommandGroup: 500,
-} as const;
+import { VEGA_ADV_OPCODE, VEGA_COMMAND_GROUP_OPCODE } from "@haneoka/vega-protocol";
+const CMD = { ...VEGA_ADV_OPCODE, CommandGroup: VEGA_COMMAND_GROUP_OPCODE };
 
 export interface BestdoriSnippet {
   actionType?: number;

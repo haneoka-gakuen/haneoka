@@ -1,4 +1,5 @@
-/* ==========================================================================
+@layer pages {
+  /* ==========================================================================
    Stories
    The story screen is the browse pattern — bar, applied chips, collection,
    modal filter sheet — so almost nothing is declared here. What used to be in
@@ -15,460 +16,499 @@
        board — which sit above the collection in the same pane;
      · the story detail's body and transcript.
    ========================================================================== */
-story-workspace {
-  display: block;
-  min-height: 0;
-}
-/* Story art is a wide banner, so a story tile is wider than a jacket tile.
+  story-workspace {
+    display: block;
+    min-height: 0;
+  }
+  /* Story art is a wide banner, so a story tile is wider than a jacket tile.
    Everything else about it comes from patterns/collection.css. */
-.collection--story {
-  --tile-min: 260px;
-}
+  .collection--story {
+    --tile-min: 260px;
+  }
 
-/* ==========================================================================
+  /* ==========================================================================
    Staged features
    Both are containers of game art with hit targets positioned in percentages
    of that art, so they are sized by aspect ratio and everything inside them
    is placed relatively. They are cards: the same corner, the same surface
    and the same elevation as everything else in the results area.
    ========================================================================== */
-.story-scene,
-.story-board {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  margin-bottom: 16px;
-  overflow: hidden;
-  place-items: center;
-  border-radius: var(--md-sys-shape-corner-large);
-}
+  .story-scene,
+  .story-board {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-large);
+  }
 
-/* ---------- Home scene: a live Cubism stage over its own backdrop ---------- */
-.story-scene {
-  height: clamp(220px, 38dvh, 420px);
-  /* Not a surface role: this is a lit stage, and the game's own backgrounds
+  /* ---------- Home scene: a live Cubism stage over its own backdrop ---------- */
+  .story-scene {
+    height: clamp(220px, 38dvh, 420px);
+    /* Not a surface role: this is a lit stage, and the game's own backgrounds
      assume a dark surround in both colour schemes. */
-  background: #18202a;
-}
-.story-scene > img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.story-scene__runtime {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
-.story-scene__runtime canvas {
-  width: 100%;
-  height: 100%;
-}
-.story-scene__runtime.ready > .progress,
-.story-scene__runtime.failed > .progress,
-.story-scene__runtime.ready > md-circular-progress,
-.story-scene__runtime.failed > md-circular-progress {
-  display: none;
-}
-.story-scene__replay {
-  position: absolute;
-  z-index: 3;
-  top: 12px;
-  right: 12px;
-  color: #fff;
-  background: color-mix(in srgb, #101820 76%, transparent);
-  box-shadow: var(--md-sys-elevation-level1);
-}
-.story-scene__label {
-  position: absolute;
-  z-index: 2;
-  right: 16px;
-  bottom: 16px;
-  display: grid;
-  gap: 2px;
-  padding: 10px 14px;
-  color: #fff;
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: color-mix(in srgb, #101820 76%, transparent);
-  box-shadow: var(--md-sys-elevation-level2);
-  backdrop-filter: blur(12px);
-}
-.story-scene__label small {
-  color: #d7dde2;
-}
+    background: #18202a;
+  }
+  .story-scene > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .story-scene__runtime {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  .story-scene__runtime canvas {
+    width: 100%;
+    height: 100%;
+  }
+  .story-scene__runtime.ready > .progress,
+  .story-scene__runtime.failed > .progress,
+  .story-scene__runtime.ready > md-circular-progress,
+  .story-scene__runtime.failed > md-circular-progress {
+    display: none;
+  }
+  .story-scene__replay {
+    position: absolute;
+    z-index: 3;
+    top: 12px;
+    right: 12px;
+    color: #fff;
+    background: color-mix(in srgb, #101820 76%, transparent);
+    box-shadow: var(--md-sys-elevation-level1);
+  }
+  .story-scene__label {
+    position: absolute;
+    z-index: 2;
+    right: 16px;
+    bottom: 16px;
+    display: grid;
+    gap: 2px;
+    padding: 10px 14px;
+    color: #fff;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: color-mix(in srgb, #101820 76%, transparent);
+    box-shadow: var(--md-sys-elevation-level2);
+    backdrop-filter: blur(12px);
+  }
+  .story-scene__label small {
+    color: #d7dde2;
+  }
 
-/* ---------- Friendship board ----------
+  /* ---------- Friendship board ----------
    The game's own photo board. Every hit target is placed from the asset's
    measured coordinates (--slot-x/--slot-y for a portrait, --arrow-x/--arrow-y
    and --arrow-rotation for the ribbon that points at it), so the board is
    sized to its source ratio and the container query keeps it whole. */
-.story-board {
-  height: clamp(240px, 46dvh, 460px);
-  background-color: var(--md-sys-color-surface-container-low);
-  background-image: var(--friendship-stage);
-  background-position: center;
-  background-size: cover;
-  container-type: size;
-}
-.story-board__stage {
-  position: relative;
-  height: 100%;
-  max-width: 100%;
-  aspect-ratio: 1312 / 964;
-  width: min(calc(100cqw - 18px), calc((100cqh - 12px) * 1.360996));
-}
-.story-board__background {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
-}
-.story-board__logo {
-  position: absolute;
-  z-index: 5;
-  top: 8.92%;
-  left: 13.35%;
-  width: 19.05%;
-  height: 14.52%;
-  object-fit: contain;
-}
-.story-board__lead {
-  position: absolute;
-  z-index: 1;
-  bottom: -3.8%;
-  left: 50%;
-  width: 78.05%;
-  height: 106.22%;
-  object-fit: contain;
-  object-position: center bottom;
-  transform: translateX(-50%);
-  filter: drop-shadow(0 4px 3px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
-}
-.story-board__partners {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-}
-.story-board__partners button {
-  position: absolute;
-  top: var(--slot-y);
-  left: var(--slot-x);
-  width: 26.68%;
-  aspect-ratio: 1;
-  padding: 0;
-  overflow: visible;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  transform: translate(-50%, -50%);
-}
-.story-board__partners button > span {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  display: block;
-  border-radius: 50%;
-}
-.story-board__partners button > span > img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-/* The game marks the chosen partner with a rim light, not a border. */
-.story-board__partners button.is-selected > span {
-  filter: drop-shadow(0 0 2px white) drop-shadow(0 0 5px #48dbea) drop-shadow(0 0 9px rgb(54 157 229 / 72%));
-}
-.story-board__partners button:focus-visible > span {
-  outline: 3px solid var(--md-sys-color-primary);
-  outline-offset: 3px;
-}
-.story-board__arrow {
-  position: absolute;
-  z-index: 1;
-  top: var(--arrow-y);
-  left: var(--arrow-x);
-  width: 45.71%;
-  height: 22.86%;
-  object-fit: contain;
-  transform: translate(-50%, -50%) rotate(var(--arrow-rotation));
-}
-.story-board__bands {
-  position: absolute;
-  z-index: 4;
-  top: 19%;
-  right: 1.3%;
-  display: flex;
-  width: max(9.5%, 40px);
-  flex-direction: column;
-  gap: 4px;
-}
-.story-board__bands button {
-  display: grid;
-  width: 100%;
-  min-height: 32px;
-  aspect-ratio: 1.35;
-  place-items: center;
-  padding: 5%;
-  border: 1px solid rgb(255 255 255 / 36%);
-  border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, rgb(58 88 157 / 93%), rgb(39 59 117 / 95%));
-  cursor: pointer;
-}
-.story-board__bands button.is-selected {
-  outline: 2px solid #74efff;
-  outline-offset: -2px;
-  background: linear-gradient(180deg, rgb(72 111 196 / 98%), rgb(47 75 145 / 98%));
-}
-.story-board__bands img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.story-board__swap {
-  position: absolute;
-  z-index: 5;
-  top: 8px;
-  right: 8px;
-  background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
-  box-shadow: var(--md-sys-elevation-level1);
-}
+  .story-board {
+    height: clamp(240px, 46dvh, 460px);
+    background-color: var(--md-sys-color-surface-container-low);
+    background-image: var(--friendship-stage);
+    background-position: center;
+    background-size: cover;
+    container-type: size;
+  }
+  .story-board__stage {
+    position: relative;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: 1312 / 964;
+    width: min(calc(100cqw - 18px), calc((100cqh - 12px) * 1.360996));
+  }
+  .story-board__background {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
+  }
+  .story-board__logo {
+    position: absolute;
+    z-index: 5;
+    top: 8.92%;
+    left: 13.35%;
+    width: 19.05%;
+    height: 14.52%;
+    object-fit: contain;
+  }
+  .story-board__lead {
+    position: absolute;
+    z-index: 1;
+    bottom: -3.8%;
+    left: 50%;
+    width: 78.05%;
+    height: 106.22%;
+    object-fit: contain;
+    object-position: center bottom;
+    transform: translateX(-50%);
+    filter: drop-shadow(0 4px 3px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
+  }
+  .story-board__partners {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+  }
+  .story-board__partners button {
+    position: absolute;
+    top: var(--slot-y);
+    left: var(--slot-x);
+    width: 26.68%;
+    aspect-ratio: 1;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+  }
+  .story-board__partners button > span {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    display: block;
+    border-radius: 50%;
+  }
+  .story-board__partners button > span > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* The game marks the chosen partner with a rim light, not a border. */
+  .story-board__partners button.is-selected > span {
+    filter: drop-shadow(0 0 2px white) drop-shadow(0 0 5px #48dbea) drop-shadow(0 0 9px rgb(54 157 229 / 72%));
+  }
+  .story-board__partners button:focus-visible > span {
+    outline: 3px solid var(--md-sys-color-primary);
+    outline-offset: 3px;
+  }
+  .story-board__arrow {
+    position: absolute;
+    z-index: 1;
+    top: var(--arrow-y);
+    left: var(--arrow-x);
+    width: 45.71%;
+    height: 22.86%;
+    object-fit: contain;
+    transform: translate(-50%, -50%) rotate(var(--arrow-rotation));
+  }
+  .story-board__bands {
+    position: absolute;
+    z-index: 4;
+    top: 19%;
+    right: 1.3%;
+    display: flex;
+    width: max(9.5%, 40px);
+    flex-direction: column;
+    gap: 4px;
+  }
+  .story-board__bands button {
+    display: grid;
+    width: 100%;
+    min-height: 32px;
+    aspect-ratio: 1.35;
+    place-items: center;
+    padding: 5%;
+    border: 1px solid rgb(255 255 255 / 36%);
+    border-radius: 3px 0 0 3px;
+    background: linear-gradient(180deg, rgb(58 88 157 / 93%), rgb(39 59 117 / 95%));
+    cursor: pointer;
+  }
+  .story-board__bands button.is-selected {
+    outline: 2px solid #74efff;
+    outline-offset: -2px;
+    background: linear-gradient(180deg, rgb(72 111 196 / 98%), rgb(47 75 145 / 98%));
+  }
+  .story-board__bands img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .story-board__swap {
+    position: absolute;
+    z-index: 5;
+    top: 8px;
+    right: 8px;
+    background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
+    box-shadow: var(--md-sys-elevation-level1);
+  }
 
-/* ==========================================================================
+  /* ==========================================================================
    Story detail
    Geometry comes from .pane-layer (components/overlay.css): it fills the
    content pane, keeps the pane's corner, and carries its own back action.
    ========================================================================== */
-.story-detail {
-  grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
-}
-/* An episode's title, over the chapter it belongs to — the same two-line
+  .story-detail {
+    grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
+  }
+  /* An episode's title, over the chapter it belongs to — the same two-line
    identity the sheet header uses, because it is the same idea. */
-.story-detail__title {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  gap: 1px;
-}
-.story-detail__title > strong {
-  min-width: 0;
-  overflow: hidden;
-  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.story-detail__title > small {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
-    var(--md-sys-typescale-body-small-line-height) var(--app-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.story-detail__title > small:empty {
-  display: none;
-}
-.story-detail__body {
-  display: grid;
-  width: min(100%, var(--content-max, 1120px));
-  align-content: start;
-  gap: 16px;
-  padding: 24px 28px 40px;
-  margin-inline: auto;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.story-detail__lede {
-  margin: 0;
-  color: var(--md-sys-color-on-surface-variant);
-  line-height: 1.6;
-}
-.story-detail__transcript {
-  display: grid;
-  gap: 12px;
-  padding-top: 8px;
-}
+  .story-detail__title {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: 1px;
+  }
+  .story-detail__title > strong {
+    min-width: 0;
+    overflow: hidden;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .story-detail__title > small {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .story-detail__title > small:empty {
+    display: none;
+  }
+  .story-detail__body {
+    display: grid;
+    width: min(100%, var(--content-max, 1120px));
+    align-content: start;
+    gap: 16px;
+    padding: 24px 28px 40px;
+    margin-inline: auto;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .story-detail__lede {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.6;
+  }
+  .story-detail__transcript {
+    display: grid;
+    gap: 12px;
+    padding-top: 8px;
+  }
 
-/* ---------- Transcript ----------
+  /* ---------- Transcript ----------
    A scenario read as text: one row per spoken line, with the backdrop shown
    only where it changes. */
-.story-transcript {
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-.story-transcript article {
-  position: relative;
-  display: grid;
-  gap: 4px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-.story-transcript article.has-visual {
-  gap: 8px;
-  padding-top: 12px;
-}
-.story-transcript__visual {
-  width: 100%;
-  height: auto;
-  max-height: 360px;
-  object-fit: contain;
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-surface-container-low);
-}
-.story-transcript article > .icon-button {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-}
-.story-transcript article:has(> .icon-button) {
-  padding-right: 56px;
-}
-.story-transcript article:last-child {
-  border-bottom: 0;
-}
-.story-transcript strong {
-  color: var(--md-sys-color-primary);
-  font-size: var(--md-sys-typescale-label-medium-size);
-}
-.story-transcript p {
-  margin: 0;
-  line-height: 1.65;
-  white-space: pre-line;
-}
 
-/* ==========================================================================
+  /* ==========================================================================
    Player runtime
    The Cubism story player takes the detail's body row whole.
    ========================================================================== */
-vega-story-stage,
-.vega-story-runtime,
-.vega-story-runtime__mount {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-vega-story-stage {
-  grid-row: 2 / -1;
-  overflow: hidden;
-  background: #111317;
-}
-.vega-story-runtime {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  --haneoka-font: var(--app-font);
-  font-family: var(--app-font);
-}
-.vega-story-runtime__mount {
-  position: absolute;
-  inset: 0;
-}
-.vega-story-runtime__controls {
-  position: absolute;
-  z-index: 50;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: grid;
-  min-height: 60px;
-  grid-template-columns: auto auto minmax(80px, 1fr) auto auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 28px 12px 8px;
-  color: #f2f0f7;
-  border-top: 0;
-  background: linear-gradient(180deg, transparent, rgb(13 15 20 / 88%) 48%);
-  transition:
-    opacity 180ms var(--md-sys-motion-easing-standard),
-    transform 180ms var(--md-sys-motion-easing-standard);
-}
-.vega-story-runtime__controls .icon-button {
-  color: #f2f0f7;
-}
-.vega-story-runtime.controls-hidden .vega-story-runtime__controls {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(18px);
-}
-.vega-story-runtime__controls input {
-  min-width: 0;
-  accent-color: var(--md-sys-color-primary);
-}
-.vega-story-runtime__controls md-slider {
-  min-width: 0;
-}
-.vega-story-runtime__settings {
-  position: absolute;
-  z-index: 60;
-  right: 12px;
-  bottom: 68px;
-  display: grid;
-  width: min(320px, calc(100% - 24px));
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-large);
-  background: var(--md-sys-color-surface-container-high);
-}
-.vega-story-runtime__settings header,
-.vega-story-runtime__settings label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.vega-story-runtime__settings header .icon-button {
-  width: 36px;
-  height: 36px;
-}
-.vega-story-runtime__settings label > md-slider {
-  width: 160px;
-}
+  vega-story-stage,
+  .vega-story-runtime,
+  .vega-story-runtime__mount {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  vega-story-stage {
+    grid-row: 2 / -1;
+    overflow: hidden;
+    background: #111317;
+  }
+  .vega-story-runtime {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    --haneoka-font: var(--app-font);
+    font-family: var(--app-font);
+  }
+  .vega-story-runtime__mount {
+    position: absolute;
+    inset: 0;
+  }
 
-@media (max-width: 959px) {
-  .vega-story-runtime__controls {
-    grid-template-columns: auto auto minmax(64px, 1fr) auto auto;
+  @media (max-width: 599px) {
+    .story-detail__body {
+      padding: 16px 12px 32px;
+    }
+    .story-detail > header {
+      gap: 2px;
+      padding-inline: 4px;
+    }
+    .story-scene,
+    .story-board {
+      margin-bottom: 12px;
+    }
   }
-  .vega-story-runtime__controls > small:first-of-type {
-    display: none;
-  }
-}
 
-@media (max-width: 599px) {
-  .story-detail__body {
-    padding: 16px 12px 32px;
-  }
-  .story-detail > header {
-    gap: 2px;
-    padding-inline: 4px;
-  }
-  .story-transcript article {
-    padding: 12px;
-  }
-  .story-transcript__visual {
-    max-height: 52dvh;
-  }
-  .story-scene,
-  .story-board {
-    margin-bottom: 12px;
-  }
-  .vega-story-runtime__controls {
-    min-height: 56px;
-    grid-template-columns: auto minmax(64px, 1fr) auto auto;
+  .story-transcript {
+    display: grid;
+    max-width: 880px;
+    margin: 0 auto;
     gap: 4px;
-    padding: 24px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
-      max(8px, env(safe-area-inset-left));
+    padding-block: 16px 40px;
   }
-  .vega-story-runtime__controls > button:nth-child(2),
-  .vega-story-runtime__controls > small {
+  .story-transcript__entry {
+    display: flex;
+    min-width: 0;
+    gap: 20px;
+    align-items: start;
+    padding: 20px 24px;
+    border-radius: var(--md-sys-shape-corner-large);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 108px;
+  }
+  .story-transcript__entry--message,
+  .story-transcript__entry--stamp {
+    margin-inline: 24px;
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: 20px 20px 20px 6px;
+  }
+  .story-transcript__line {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .story-transcript__speaker {
+    color: var(--md-sys-color-primary);
+    font: 500 14px/20px var(--app-font);
+  }
+  .story-transcript__text {
+    margin: 0;
+    font: 400 18px/1.85 var(--app-font);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .story-transcript__text rt {
+    font-size: 0.5em;
+  }
+  .story-transcript__voices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .story-transcript__scene {
+    margin: 24px 0;
+    display: grid;
+    gap: 8px;
+  }
+  .story-transcript__scene > :is(img, video) {
+    display: block;
+    width: 100%;
+    max-height: 520px;
+    aspect-ratio: 16/9;
+    object-fit: contain;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-lowest);
+  }
+  .story-transcript__scene > figcaption {
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 12px/16px var(--app-font);
+    padding-inline: 12px;
+  }
+  .story-transcript__chapter {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 32px 0 12px;
+    padding: 16px 24px;
+    border-block: 1px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .story-transcript__chapter > h3,
+  .story-transcript__choices > h3 {
+    margin: 0;
+    font: 500 16px/24px var(--app-font);
+  }
+  .story-transcript__choices {
+    margin: 16px 24px;
+    padding: 24px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+  }
+  .story-transcript__choices ul {
+    display: grid;
+    gap: 8px;
+    padding-inline-start: 20px;
+  }
+  .story-transcript__stamp {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .story-transcript__stamp img {
+    max-width: 180px;
+    max-height: 180px;
+    object-fit: contain;
+  }
+  @media (max-width: 599px) {
+    .story-transcript__entry {
+      padding: 16px 4px;
+      gap: 12px;
+    }
+    .story-transcript__entry--message,
+    .story-transcript__entry--stamp {
+      margin-inline: 0;
+      padding: 16px;
+    }
+    .story-transcript__chapter {
+      padding-inline: 4px;
+    }
+    .story-transcript__text {
+      font-size: 17px;
+    }
+  }
+  .story-reading-info {
+    margin: 8px 0 20px;
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .story-reading-info > summary {
+    display: list-item;
+    cursor: pointer;
+    font: 500 14px/24px var(--app-font);
+    color: var(--md-sys-color-on-surface);
+  }
+  .story-reading-info > summary > span {
+    float: inline-end;
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 400;
+  }
+  .story-reading-info[open] > summary {
+    margin-block-end: 16px;
+  }
+  .story-transcript__backdrop {
+    margin-block: 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    overflow: hidden;
+  }
+  .story-transcript__backdrop > summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 12px 20px;
+    cursor: pointer;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 500 14px/20px var(--app-font);
+    list-style: none;
+  }
+  .story-transcript__backdrop > summary::-webkit-details-marker {
     display: none;
+  }
+  .story-transcript__backdrop > summary > span {
+    flex: 1;
+  }
+  .story-transcript__backdrop[open] > summary > svg:last-child {
+    rotate: 180deg;
+  }
+  .story-transcript__backdrop .story-transcript__scene {
+    margin: 0;
   }
 }

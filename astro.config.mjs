@@ -19,10 +19,10 @@ export default defineConfig({
       rollupOptions: {
         output: {
           manualChunks(id) {
+            if (id.includes("/.dependencies/vega-shell-default/dist/flowchart-")) return "vega-flowchart";
             if (id.includes("/node_modules/three/") || id.includes("/node_modules/.pnpm/three@")) return "three-core";
-            if (id.includes("/.dependencies/vega/")) return "vega-engine";
+            if (id.includes("/.dependencies/vega/packages/protocol/")) return "vega-protocol";
             if (id.includes("/.dependencies/vega-renderer-three/")) return "vega-three-renderer";
-            if (id.includes("/.dependencies/vega-")) return "vega-runtime-plugins";
           },
         },
       },

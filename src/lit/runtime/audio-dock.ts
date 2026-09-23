@@ -2,7 +2,8 @@ import { LitElement, html, nothing } from "lit";
 import "../../styles/audio.css";
 import { iconButton } from "../ui/controls";
 import { icon } from "../ui/icon";
-import { wavyProgress } from "../ui/wavy-progress";
+import { trapFocus } from "../../lib/overlay";
+import { preferredLocale, uiText } from "../shared/catalog";
 
 export interface AudioTrack {
   id: string;
@@ -15,10 +16,6 @@ export interface AudioTrack {
 }
 
 type PlaybackMode = "sequential" | "repeat-all" | "repeat-one" | "shuffle";
-interface DockPosition {
-  x: number;
-  y: number;
-}
 interface Snapshot {
   queue: AudioTrack[];
   index: number;
@@ -26,7 +23,6 @@ interface Snapshot {
   volume: number;
   mode: PlaybackMode;
   collapsed: boolean;
-  collapsedPosition?: DockPosition;
 }
 
 const STORAGE_KEY = "haneoka:audio:v2";
@@ -48,6 +44,14 @@ const normalizedTrack = (value: AudioTrack, occurrence = 0): AudioTrack | null =
 };
 
 export class AudioDock extends LitElement {
+  private uiLanguage = preferredLocale();
+  private readonly onLocale = () => {
+    this.uiLanguage = preferredLocale();
+    this.requestUpdate();
+  };
+  private t(key: string): string {
+    return uiText(this.uiLanguage, key);
+  }
   static properties = {
     queue: { state: true },
     index: { state: true },
@@ -73,21 +77,16 @@ export class AudioDock extends LitElement {
   declare draggedIndex: number;
   declare dropIndex: number;
   private audio = new Audio();
-  private frame = 0;
   private restoredTime = 0;
   private inertTargets = new Set<HTMLElement>();
   private dockObserver?: ResizeObserver;
   private observedDock?: HTMLElement;
-  private collapsedPosition?: DockPosition;
-  private collapsedDrag?: {
-    pointerId: number;
-    offsetX: number;
-    offsetY: number;
-    startX: number;
-    startY: number;
-    moved: boolean;
+  private queuePanel?: HTMLElement;
+  private releaseQueueFocus?: () => void;
+  private afterNavigation = () => {
+    this.observedDock = undefined;
+    this.requestUpdate();
   };
-  private suppressCollapsedClick = false;
 
   constructor() {
     super();
@@ -107,7 +106,6 @@ export class AudioDock extends LitElement {
     this.audio.volume = this.volume;
     this.audio.addEventListener("play", () => {
       this.playing = true;
-      this.tick();
       this.emitState();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
     });
@@ -138,8 +136,10 @@ export class AudioDock extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     void import("@material/web/slider/slider.js");
+    addEventListener("haneoka:locale-ready", this.onLocale);
+    this.onLocale();
     addEventListener("pagehide", this.persistBound);
-    addEventListener("keydown", this.onGlobalKeydown, true);
+    document.addEventListener("astro:after-swap", this.afterNavigation);
     addEventListener("popstate", this.onPopState);
     if (this.track) void this.prepare(false, false);
     if ("mediaSession" in navigator) {
@@ -158,9 +158,12 @@ export class AudioDock extends LitElement {
   }
 
   disconnectedCallback() {
-    cancelAnimationFrame(this.frame);
+    removeEventListener("haneoka:locale-ready", this.onLocale);
     removeEventListener("pagehide", this.persistBound);
-    removeEventListener("keydown", this.onGlobalKeydown, true);
+    document.removeEventListener("astro:after-swap", this.afterNavigation);
+    this.releaseQueueFocus?.();
+    this.releaseQueueFocus = undefined;
+    this.queuePanel = undefined;
     removeEventListener("popstate", this.onPopState);
     this.setOverlayIsolation(false);
     this.dockObserver?.disconnect();
@@ -171,6 +174,12 @@ export class AudioDock extends LitElement {
   }
 
   updated() {
+    const panel = this.queueOpen ? this.querySelector<HTMLElement>(".audio-queue-panel") : null;
+    if (panel !== (this.queuePanel ?? null)) {
+      this.releaseQueueFocus?.();
+      this.queuePanel = panel ?? undefined;
+      this.releaseQueueFocus = panel ? trapFocus(panel, { onDismiss: () => this.closeOverlay() }) : undefined;
+    }
     const dock = this.querySelector<HTMLElement>(".player");
     if (dock === this.observedDock) return;
     this.dockObserver?.disconnect();
@@ -182,7 +191,7 @@ export class AudioDock extends LitElement {
     const publishHeight = () =>
       document.documentElement.style.setProperty(
         "--audio-dock-height",
-        `${Math.ceil(dock.getBoundingClientRect().height)}px`,
+        `${Math.ceil(dock.getBoundingClientRect().height) + 32}px`,
       );
     publishHeight();
     this.dockObserver = new ResizeObserver(publishHeight);
@@ -231,12 +240,6 @@ export class AudioDock extends LitElement {
       this.volume = clamp(Number.isFinite(Number(parsed.volume)) ? Number(parsed.volume) : 0.82, 0, 1);
       this.mode = MODES.includes(parsed.mode as PlaybackMode) ? (parsed.mode as PlaybackMode) : "repeat-all";
       this.collapsed = Boolean(parsed.collapsed);
-      const position = parsed.collapsedPosition;
-      if (position && Number.isFinite(Number(position.x)) && Number.isFinite(Number(position.y)))
-        this.collapsedPosition = {
-          x: clamp(Number(position.x), 0, 1),
-          y: clamp(Number(position.y), 0, 1),
-        };
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -254,7 +257,6 @@ export class AudioDock extends LitElement {
           volume: this.volume,
           mode: this.mode,
           collapsed: this.collapsed,
-          ...(this.collapsedPosition ? { collapsedPosition: this.collapsedPosition } : {}),
         } satisfies Snapshot),
       );
     } catch {
@@ -286,14 +288,6 @@ export class AudioDock extends LitElement {
     this.persist();
   }
 
-  private tick = () => {
-    cancelAnimationFrame(this.frame);
-    const update = () => {
-      this.currentTime = this.audio.currentTime || 0;
-      if (this.playing) this.frame = requestAnimationFrame(update);
-    };
-    this.frame = requestAnimationFrame(update);
-  };
   private emitState() {
     dispatchEvent(
       new CustomEvent("haneoka-audio-state", { detail: { id: this.track?.id || "", playing: this.playing } }),
@@ -345,7 +339,8 @@ export class AudioDock extends LitElement {
     this.persist();
   }
   private seek(seconds: number) {
-    const value = clamp(Number(seconds) || 0, 0, this.duration || Number(seconds) || 0);
+    if (!Number.isFinite(this.duration) || this.duration <= 0 || this.audio.readyState < 1) return;
+    const value = clamp(Number(seconds) || 0, 0, this.duration);
     this.audio.currentTime = value;
     this.currentTime = value;
     this.persist();
@@ -422,35 +417,6 @@ export class AudioDock extends LitElement {
       this.querySelector<HTMLButtonElement>(`[data-drag-index="${target}"]`)?.focus({ preventScroll: true }),
     );
   }
-  private onGlobalKeydown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && this.queueOpen) {
-      event.preventDefault();
-      this.closeOverlay();
-      return;
-    }
-    if (event.key !== "Tab" || !this.queueOpen) return;
-    const panel = this.querySelector<HTMLElement>(".audio-queue-panel");
-    const focusable = panel
-      ? [
-          ...panel.querySelectorAll<HTMLElement>(
-            "button:not(:disabled),a[href],input:not(:disabled),md-slider,md-outlined-select",
-          ),
-        ]
-      : [];
-    if (!focusable.length) return;
-    const first = focusable[0]!;
-    const last = focusable.at(-1)!;
-    if (!panel?.contains(document.activeElement)) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus();
-    } else if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
   private onPopState = () => {
     const overlay = history.state?.__haneoka_audio_overlay;
     this.queueOpen = overlay === "queue";
@@ -485,69 +451,39 @@ export class AudioDock extends LitElement {
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   }
 
-  private updateCollapsedPosition(event: PointerEvent) {
-    const drag = this.collapsedDrag;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
-    drag.moved = true;
-    event.preventDefault();
-    const element = event.currentTarget as HTMLElement;
-    const x = clamp((event.clientX - drag.offsetX) / Math.max(1, innerWidth), 0, 1);
-    const y = clamp((event.clientY - drag.offsetY) / Math.max(1, innerHeight), 0, 1);
-    this.collapsedPosition = { x, y };
-    element.style.setProperty("--audio-collapsed-x", `${x * 100}vw`);
-    element.style.setProperty("--audio-collapsed-y", `${y * 100}dvh`);
+  pausePlayback() {
+    this.audio.pause();
   }
-
-  private startCollapsedDrag(event: PointerEvent) {
-    if (event.button !== 0) return;
-    const element = event.currentTarget as HTMLElement;
-    const bounds = element.getBoundingClientRect();
-    this.collapsedDrag = {
-      pointerId: event.pointerId,
-      offsetX: event.clientX - (bounds.left + bounds.width / 2),
-      offsetY: event.clientY - (bounds.top + bounds.height / 2),
-      startX: event.clientX,
-      startY: event.clientY,
-      moved: false,
-    };
-    element.setPointerCapture(event.pointerId);
-  }
-
-  private finishCollapsedDrag(event: PointerEvent, cancelled = false) {
-    const drag = this.collapsedDrag;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const element = event.currentTarget as HTMLElement;
-    if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
-    this.collapsedDrag = undefined;
-    if (!cancelled && drag.moved) {
-      this.suppressCollapsedClick = true;
-      this.persist();
-    }
+  private async togglePlayback() {
+    if (this.playing) this.audio.pause();
+    else
+      await this.audio.play().catch(() => {
+        this.playing = false;
+      });
   }
 
   private renderQueue() {
     if (!this.queueOpen) return nothing;
     return html`
-      <button class="scrim" type="button" aria-label="Close" @click=${this.closeOverlay}></button>
-      <section class="audio-queue-panel" role="dialog" aria-modal="true" aria-label="Queue">
+      <button class="scrim" type="button" aria-label=${this.t("close")} @click=${this.closeOverlay}></button>
+      <section class="audio-queue-panel" role="dialog" aria-modal="true" aria-label=${this.t("queue")}>
         <header>
           <span>
             <svg class="material-icon" width="19" height="19"><use href="/icons.svg#queue_music"></use></svg>
-            <strong>Queue</strong>
+            <strong>${this.t("queue")}</strong>
             <small>${this.queue.length}</small>
           </span>
           <span>
-            <button class="icon-button" aria-label="Previous" @click=${this.previous}>
+            <button class="icon-button" aria-label=${this.t("previous")} @click=${this.previous}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#skip_previous"></use></svg>
             </button>
-            <button class="icon-button" aria-label="Next" @click=${() => this.next()}>
+            <button class="icon-button" aria-label=${this.t("next")} @click=${() => this.next()}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#skip_next"></use></svg>
             </button>
-            <button class="icon-button" aria-label="Clear queue" @click=${this.clearQueue}>
+            <button class="icon-button" aria-label=${this.t("clearQueue")} @click=${this.clearQueue}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#delete_sweep"></use></svg>
             </button>
-            <button class="icon-button" aria-label="Close" @click=${this.closeOverlay}>
+            <button class="icon-button" aria-label=${this.t("close")} @click=${this.closeOverlay}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#close"></use></svg>
             </button>
           </span>
@@ -580,7 +516,7 @@ export class AudioDock extends LitElement {
                 <button
                   class="icon-button audio-queue-panel__drag"
                   data-drag-index=${index}
-                  aria-label=${`Reorder ${entry.title}`}
+                  aria-label=${`${this.t("reorder")} · ${entry.title}`}
                   aria-keyshortcuts="ArrowUp ArrowDown Home End"
                   @keydown=${(event: KeyboardEvent) => this.reorderByKeyboard(event, index)}
                 >
@@ -608,7 +544,7 @@ export class AudioDock extends LitElement {
                 <small>${String(index + 1).padStart(2, "0")}</small>
                 <button
                   class="icon-button audio-queue-panel__remove"
-                  aria-label=${`Remove ${entry.title}`}
+                  aria-label=${`${this.t("remove")} · ${entry.title}`}
                   @click=${() => this.removeQueueItem(index)}
                 >
                   <svg class="material-icon" width="17" height="17"><use href="/icons.svg#delete"></use></svg>
@@ -625,30 +561,22 @@ export class AudioDock extends LitElement {
     const track = this.track;
     if (!track) return nothing;
     if (this.collapsed) return this.renderCollapsed(track);
-    const progress = this.duration > 0 ? this.currentTime / this.duration : 0;
     return html`
-      <aside class="player" aria-label="Music player">
-        <!-- The seek bar spans the player's full width and sits on its top
-             edge: it belongs to the whole surface, not to one column. -->
+      <aside class="player" aria-label=${this.t("musicPlayer")}>
         <div class="player__seek">
-          ${wavyProgress({
-            value: progress,
-            thickness: 4,
-            amplitude: 5,
-            wavelength: 40,
-            still: !this.playing,
-          })}
-          <input
+          <md-slider
             class="player__scrub"
-            type="range"
-            min="0"
-            max=${this.duration || 1}
-            step="0.01"
-            .value=${String(this.currentTime)}
-            aria-label="Playback position"
-            aria-valuetext=${`${this.format(this.currentTime)} of ${this.format(this.duration)}`}
-            @input=${(event: Event) => this.seek(Number((event.target as HTMLInputElement).value))}
-          />
+            labeled
+            .min=${0}
+            .max=${this.duration || 1}
+            .step=${0.01}
+            .value=${this.currentTime}
+            .valueLabel=${this.format(this.currentTime)}
+            ?disabled=${this.duration <= 0}
+            aria-label=${this.t("playbackPosition")}
+            aria-valuetext=${`${this.format(this.currentTime)} / ${this.format(this.duration)}`}
+            @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value: number }).value))}
+          ></md-slider>
         </div>
 
         <div class="player__body">
@@ -672,17 +600,18 @@ export class AudioDock extends LitElement {
           </a>
 
           <div class="player__transport">
-            ${iconButton({ label: "Previous", icon: "skip_previous", onClick: () => void this.previous() })}
+            ${iconButton({ label: this.t("previous"), icon: "skip_previous", onClick: () => void this.previous() })}
             <!-- The play control is the one filled button on the surface. -->
             <button
-              class="player__play"
+              class="player__play state-layer"
+              data-playing=${String(this.playing)}
               type="button"
-              aria-label=${this.playing ? "Pause" : "Play"}
-              @click=${() => (this.playing ? this.audio.pause() : void this.audio.play())}
+              aria-label=${this.t(this.playing ? "pause" : "play")}
+              @click=${() => void this.togglePlayback()}
             >
               ${this.playing ? icon("pause", 26) : icon("play_arrow", 26)}
             </button>
-            ${iconButton({ label: "Next", icon: "skip_next", onClick: () => void this.next() })}
+            ${iconButton({ label: this.t("next"), icon: "skip_next", onClick: () => void this.next() })}
             <span class="player__time tabular">
               ${this.format(this.currentTime)}
               <span aria-hidden="true">/</span>
@@ -702,7 +631,7 @@ export class AudioDock extends LitElement {
               <button
                 class="icon-button"
                 type="button"
-                aria-label=${this.volume ? "Mute" : "Unmute"}
+                aria-label=${this.t(this.volume ? "mute" : "unmute")}
                 @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
               >
                 ${this.volume ? icon("volume_up", 20) : icon("volume_off", 20)}
@@ -713,12 +642,12 @@ export class AudioDock extends LitElement {
                 max="1"
                 step="0.01"
                 .value=${String(this.volume)}
-                aria-label="Volume"
+                aria-label=${this.t("volume")}
                 @input=${(event: Event) => this.setVolume(Number((event.target as HTMLInputElement).value))}
               />
             </label>
             ${iconButton({
-              label: "Queue",
+              label: this.t("queue"),
               icon: "queue_music",
               onClick: () => (this.queueOpen ? this.closeOverlay() : this.openOverlay("queue")),
               pressed: this.queueOpen,
@@ -726,7 +655,7 @@ export class AudioDock extends LitElement {
               badge: this.queue.length,
             })}
             ${iconButton({
-              label: "Collapse",
+              label: this.t("collapse"),
               icon: "expand_more",
               onClick: () => {
                 this.collapsed = true;
@@ -741,68 +670,67 @@ export class AudioDock extends LitElement {
     `;
   }
 
-  /**
-   * Collapsed: a draggable FAB-sized puck. Material has no component for a
-   * floating mini player, so it borrows the FAB's geometry (56dp, 16dp
-   * corner, level-3 elevation) and shows progress as a ring around the
-   * artwork.
-   */
   private renderCollapsed(track: AudioTrack) {
-    const progress = this.duration > 0 ? this.currentTime / this.duration : 0;
     return html`
-      <button
-        class="player-puck"
-        type="button"
-        style=${
-          (this.collapsedPosition
-            ? `--puck-x:${this.collapsedPosition.x * 100}vw;--puck-y:${this.collapsedPosition.y * 100}dvh;`
-            : "") + `--puck-progress:${(progress * 100).toFixed(2)}%`
-        }
-        aria-label=${`Expand player — ${track.title}`}
-        @pointerdown=${this.startCollapsedDrag}
-        @pointermove=${this.updateCollapsedPosition}
-        @pointerup=${(event: PointerEvent) => this.finishCollapsedDrag(event)}
-        @pointercancel=${(event: PointerEvent) => this.finishCollapsedDrag(event, true)}
-        @click=${() => {
-          if (this.suppressCollapsedClick) {
-            this.suppressCollapsedClick = false;
-            return;
-          }
-          this.collapsed = false;
-          this.persist();
-        }}
-      >
-        <span class="player-puck__art">
-          ${
-            track.cover
-              ? html`
-                  <img src=${track.cover} alt="" />
-                `
-              : icon("queue_music", 20)
-          }
-        </span>
-        <span class="player-puck__state" aria-hidden="true">
-          ${this.playing ? icon("pause", 18) : icon("play_arrow", 18)}
-        </span>
-      </button>
+      <aside class="player player--compact" aria-label=${this.t("musicPlayer")}>
+        <button
+          class="player__identity state-layer"
+          type="button"
+          aria-label=${`${this.t("expandPlayer")} · ${track.title}`}
+          @click=${() => {
+            this.collapsed = false;
+            this.persist();
+          }}
+        >
+          <span class="player__cover">
+            ${
+              track.cover
+                ? html`
+                    <img src=${track.cover} alt="" />
+                  `
+                : icon("queue_music", 24)
+            }
+          </span>
+          <span class="player__copy">
+            <strong>${track.title}</strong>
+            <small>${track.artist}</small>
+          </span>
+        </button>
+        <button
+          class="player__play state-layer"
+          type="button"
+          data-playing=${String(this.playing)}
+          aria-label=${this.t(this.playing ? "pause" : "play")}
+          @click=${() => void this.togglePlayback()}
+        >
+          ${icon(this.playing ? "pause" : "play_arrow", 24)}
+        </button>
+        ${iconButton({
+          label: this.t("expandPlayer"),
+          icon: "expand_less",
+          onClick: () => {
+            this.collapsed = false;
+            this.persist();
+          },
+        })}
+      </aside>
     `;
   }
 
   private modeLabel() {
-    return {
-      sequential: "Play in order",
-      "repeat-all": "Repeat queue",
-      "repeat-one": "Repeat track",
-      shuffle: "Shuffle",
-    }[this.mode];
+    return this.t(
+      { sequential: "playInOrder", "repeat-all": "repeatQueue", "repeat-one": "repeatTrack", shuffle: "shuffle" }[
+        this.mode
+      ],
+    );
   }
-
-  /** Written as literals so the icon sprite builder detects every glyph. */
   private modeIconName() {
-    if (this.mode === "repeat-one") return "repeat_one";
-    if (this.mode === "shuffle") return "shuffle";
-    if (this.mode === "sequential") return "playlist_play";
-    return "repeat";
+    return {
+      sequential: "playlist_play",
+      "repeat-all": "repeat",
+      "repeat-one": "repeat_one",
+      shuffle: "shuffle",
+    }[this.mode];
   }
 }
 

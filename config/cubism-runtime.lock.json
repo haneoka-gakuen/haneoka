@@ -2,16 +2,24 @@
   "schemaVersion": 2,
   "runtimeId": "haneoka-cubism-web-runtime-v1",
   "managedRoots": {
-    "target": ["public/Core", "public/cubism-runtime", "public/licenses/cubism-framework"],
-    "output": ["Core", "cubism-runtime", "licenses/cubism-framework"]
+    "target": [
+      "public/Core",
+      "public/cubism-runtime",
+      "public/licenses/cubism-framework"
+    ],
+    "output": [
+      "Core",
+      "cubism-runtime",
+      "licenses/cubism-framework"
+    ]
   },
   "files": [
     {
       "source": "Framework/vega-cubism-web-runtime.mjs",
       "target": "public/cubism-runtime/vega-cubism-web-runtime.mjs",
       "output": "cubism-runtime/vega-cubism-web-runtime.mjs",
-      "bytes": 1597050,
-      "sha256": "3510de8a606cc90adb195c00a0d4d595288ede038836e2c17cc09178d28178f0"
+      "bytes": 472931,
+      "sha256": "c94f58cc809ebfe40b8fd4d5b5179c4cedb50877a8ecc2a0bd64dfb3a6204616"
     },
     {
       "source": "Framework/LICENSE.md",

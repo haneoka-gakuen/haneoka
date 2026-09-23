@@ -1,7 +1,7 @@
 /* ==========================================================================
    Adaptive shell
    Material 3 window size classes:
-     compact  <600    top app bar + navigation bar; navigation opens modally
+     compact  <600    top app bar; navigation opens in a modal drawer
      medium   600+    collapsed navigation rail; content on a rounded pane
      expanded 1200+   the rail expands in place into a sectioned drawer
 
@@ -100,35 +100,6 @@
   scrollbar-gutter: stable;
 }
 
-/* ---------- Navigation bar (compact) ---------- */
-.nav-bar {
-  z-index: var(--md-sys-z-index-shell-navigation);
-  display: none;
-  height: var(--nav-bar-height);
-  grid-column: 1 / -1;
-  grid-row: 2;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 0 max(0px, env(safe-area-inset-right)) var(--md-sys-safe-area-inset-bottom)
-    max(0px, env(safe-area-inset-left));
-  background: var(--md-sys-color-surface-container);
-}
-.nav-bar__item {
-  display: grid;
-  min-width: 0;
-  justify-items: center;
-  align-content: center;
-  gap: 4px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-}
-.nav-bar__item > span:last-child {
-  max-width: 100%;
-  padding-inline: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .nav-scrim {
   display: none;
 }
@@ -136,22 +107,13 @@
 /* ---------- compact ---------- */
 @media (max-width: 599px) {
   :root {
-    --shell-bottom-inset: var(--nav-bar-height);
-  }
-  :root:has(.app-shell[data-immersive]) {
-    --shell-bottom-inset: 0px;
+    --shell-bottom-inset: var(--md-sys-safe-area-inset-bottom);
   }
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
   }
   .app-shell__body {
     grid-column: 1;
-  }
-  .nav-bar {
-    display: grid;
-  }
-  .app-shell[data-immersive] .nav-bar {
-    display: none;
   }
   .nav {
     display: none;
@@ -172,8 +134,8 @@
   :root {
     --shell-width: var(--nav-rail-width);
     --shell-pane-gap: 16px;
-    --shell-overlay-inset: var(--top-bar-height) max(16px, env(safe-area-inset-right)) var(--shell-pane-gap)
-      var(--shell-width);
+    --shell-overlay-inset: var(--top-bar-height) max(16px, env(safe-area-inset-right))
+      calc(var(--shell-pane-gap) + var(--audio-dock-height, 0px)) var(--shell-width);
     --shell-overlay-radius: var(--md-sys-shape-corner-extra-large);
   }
   .top-app-bar .top-app-bar__menu {

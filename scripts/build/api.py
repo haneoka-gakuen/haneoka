@@ -207,7 +207,15 @@ def _rows(root: Path, name: str) -> list[dict[str, Any]]:
 
 
 def _localized(row: dict[str, Any] | None, fallback: str = "") -> list[str]:
-    values = [str((row or {}).get(field) or "") for field in LOCALE_FIELDS]
+    row = row or {}
+    identifier = str(row.get("_id") or "")
+    values = [str(row.get(field) or "") for field in LOCALE_FIELDS]
+    for index, value in enumerate(values):
+        if index == 0:
+            continue
+        is_music_placeholder = identifier.startswith(("Music_Tilte_", "Music_Ruby_Tilte_", "Music_Phonetic_Tilte_")) and re.fullmatch(r"Music_Tilte_\d+", value)
+        if value and (value == identifier or is_music_placeholder):
+            values[index] = ""
     return values if any(values) else [str(fallback), "", "", "", ""]
 
 
