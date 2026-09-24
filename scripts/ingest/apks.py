@@ -74,7 +74,7 @@ def _copy_file(source: Path, target: Path, label: str) -> int:
     size = _required_file_size(source, label)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(
-        f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        f".{target.name[:180]}.{os.getpid()}.{threading.get_ident()}.tmp"
     )
     try:
         with source.open("rb") as input_stream, temporary.open("wb") as output_stream:
@@ -421,8 +421,10 @@ def _download(
     if expected_bytes < 0:
         raise ValueError("download expected size cannot be negative")
     output.parent.mkdir(parents=True, exist_ok=True)
+    # Launch catalogs ship bundle names over 220 bytes; truncate the temp stem
+    # so the pid/tid suffix stays within the 255-byte filename limit.
     temporary = output.with_name(
-        f".{output.name}.{os.getpid()}.{threading.get_ident()}.part"
+        f".{output.name[:180]}.{os.getpid()}.{threading.get_ident()}.part"
     )
     failure: Exception | None = None
     opener = urllib.request.build_opener(_TrustedRedirectHandler(config))
