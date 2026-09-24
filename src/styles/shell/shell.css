@@ -76,6 +76,7 @@
    lib/app-bar.ts; it is a flex row that shrinks its own contents rather than
    the title, and it is empty (and zero-width) on pages that have none. */
 .top-app-bar__actions {
+  justify-self: end;
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
@@ -149,6 +150,7 @@
     grid-template-rows: var(--top-bar-height) minmax(0, 1fr) var(--shell-pane-gap);
   }
   .top-app-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
     padding-inline: 4px max(16px, env(safe-area-inset-right));
   }
   .nav__header {

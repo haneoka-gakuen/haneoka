@@ -1,0 +1,13 @@
+@layer components {
+  .collection--model {
+    --tile-min: 148px;
+  }
+  .tile--model .tile__media {
+    aspect-ratio: 1;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .tile--model .tile__media > img {
+    object-fit: contain;
+    object-position: center top;
+  }
+}

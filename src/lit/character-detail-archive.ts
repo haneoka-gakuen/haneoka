@@ -1,3 +1,5 @@
+import "./character-voices";
+import { modelTile } from "./ui/model-tile";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { songTitle } from "../lib/song-display";
 import { LitElement, html, nothing } from "lit";
@@ -48,8 +50,6 @@ export class CharacterDetailArchive extends LitElement {
     item: { attribute: false },
     fields: { attribute: false },
     section: { type: String },
-    activeVoiceKey: { state: true },
-    voicePlaying: { state: true },
     selectedPartner: { state: true },
     selectedMissionType: { state: true },
   };
@@ -57,27 +57,16 @@ export class CharacterDetailArchive extends LitElement {
   declare item: Item;
   declare fields: Field[];
   declare section: string;
-  declare activeVoiceKey: string;
-  declare voicePlaying: boolean;
   declare selectedPartner: number;
   declare selectedMissionType: number;
-  private voiceAudio = new Audio();
-  private voiceSequence: string[] = [];
-  private voiceSequenceIndex = -1;
   constructor() {
     super();
     this.controller = {} as Controller;
     this.item = {};
     this.fields = [];
     this.section = "profile";
-    this.activeVoiceKey = "";
-    this.voicePlaying = false;
     this.selectedPartner = 0;
     this.selectedMissionType = 0;
-    this.voiceAudio.preload = "metadata";
-    this.voiceAudio.addEventListener("play", () => (this.voicePlaying = true));
-    this.voiceAudio.addEventListener("pause", () => (this.voicePlaying = false));
-    this.voiceAudio.addEventListener("ended", () => void this.advanceVoice());
   }
   createRenderRoot() {
     return this;
@@ -85,6 +74,12 @@ export class CharacterDetailArchive extends LitElement {
   private lazyImages = new LazyImages();
   protected updated() {
     this.lazyImages.observe(this);
+    const tabs = this.querySelector<HTMLElement>(".character-detail-tabs");
+    const selected = tabs?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (tabs && selected) {
+      const offset = selected.getBoundingClientRect().left - tabs.getBoundingClientRect().left;
+      if (offset < 0 || offset + selected.offsetWidth > tabs.clientWidth) tabs.scrollLeft += offset;
+    }
   }
   private collections() {
     const c = this.controller;
@@ -143,58 +138,11 @@ export class CharacterDetailArchive extends LitElement {
     };
   }
   private choose(section: string) {
-    if (section !== "voices") this.stopVoice();
     this.dispatchEvent(new CustomEvent("section-change", { detail: section, bubbles: true, composed: true }));
   }
   disconnectedCallback() {
     this.lazyImages.disconnect();
-    this.stopVoice();
     super.disconnectedCallback();
-  }
-  private voiceLines(entry: Item) {
-    const source = Array.isArray(entry.lines) ? (entry.lines as Item[]) : [entry];
-    return source.flatMap((line) => {
-      const sound = line.sound && typeof line.sound === "object" ? (line.sound as Item) : {};
-      const url = String(sound.playableUrl || line.playableUrl || "");
-      return url
-        ? [{ url, text: this.controller.localized(line.text), cue: String(sound.cueName || line.cueName || "") }]
-        : [];
-    });
-  }
-  private async toggleVoice(entry: Item) {
-    const key = String(entry.voiceKey || "");
-    if (this.activeVoiceKey === key && this.voicePlaying) {
-      this.voiceAudio.pause();
-      return;
-    }
-    const lines = this.voiceLines(entry);
-    if (!lines.length) return;
-    this.activeVoiceKey = key;
-    this.voiceSequence = lines.map((line) => line.url);
-    this.voiceSequenceIndex = 0;
-    this.voiceAudio.src = this.voiceSequence[0] || "";
-    await this.voiceAudio.play().catch(() => {
-      this.voicePlaying = false;
-    });
-  }
-  private async advanceVoice() {
-    this.voiceSequenceIndex += 1;
-    const url = this.voiceSequence[this.voiceSequenceIndex];
-    if (!url) {
-      this.stopVoice();
-      return;
-    }
-    this.voiceAudio.src = url;
-    await this.voiceAudio.play().catch(() => this.stopVoice());
-  }
-  private stopVoice() {
-    this.voiceAudio.pause();
-    this.voiceAudio.removeAttribute("src");
-    this.voiceAudio.load();
-    this.voiceSequence = [];
-    this.voiceSequenceIndex = -1;
-    this.activeVoiceKey = "";
-    this.voicePlaying = false;
   }
   private storyCategory(entry: Item): "band" | "link" | "home" | "afterlive" | "tutorial" {
     const key = String(entry.chapterKey || "").toLocaleLowerCase();
@@ -265,6 +213,13 @@ export class CharacterDetailArchive extends LitElement {
   }
   private relatedTile(entry: Item, route: string, characterId: number) {
     const c = this.controller;
+    if (route === "live2d")
+      return modelTile({
+        model: entry,
+        character: c.character(characterId),
+        locale: document.documentElement.dataset.locale || "ja",
+        href: `/catalog/live2d/?model=${encodeURIComponent(c.relatedId(entry, route))}`,
+      });
     const kind =
       route === "member-cards"
         ? "member"
@@ -433,40 +388,12 @@ export class CharacterDetailArchive extends LitElement {
       if (active === "songs") return this.grid(c.label("songs", "Songs"), "songs", "songs", data.songs, id);
       if (active === "voices")
         return html`
-          <section class="detail-section character-detail-deferred-section">
-            ${this.sectionHeading(c.label("voices", "Voices"), "voices", data.voices.length)}
-            <div class="character-voice-list">
-              ${data.voices.map((entry) => {
-                const playable = this.voiceLines(entry).length > 0;
-                const active = this.activeVoiceKey === String(entry.voiceKey || "");
-                return html`
-                  <article>
-                    <span>
-                      <small>${String(entry.characterVoiceTypeName || "")}</small>
-                      <p>${c.localized(entry.text)}</p>
-                    </span>
-                    ${
-                      playable
-                        ? html`
-                            <button
-                              class=${`icon-button${active ? " selected" : ""}`}
-                              aria-label=${active && this.voicePlaying ? c.label("pause", "Pause") : c.label("play", "Play")}
-                              @click=${() => this.toggleVoice(entry)}
-                            >
-                              <svg class="material-icon" width="22" height="22">
-                                <use
-                                  href=${active && this.voicePlaying ? "/icons.svg#pause-filled" : "/icons.svg#play_arrow"}
-                                ></use>
-                              </svg>
-                            </button>
-                          `
-                        : nothing
-                    }
-                  </article>
-                `;
-              })}
-            </div>
-          </section>
+          <character-voices
+            .entries=${data.voices}
+            .characters=${values(c.detailAux.characters)}
+            .characterId=${id}
+            locale=${document.documentElement.dataset.locale || "ja"}
+          ></character-voices>
         `;
       if (active === "friendships") {
         const partners = values(c.detailAux.characters).filter((entry) => Number(entry.characterId) !== id);

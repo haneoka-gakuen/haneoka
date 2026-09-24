@@ -25,6 +25,7 @@ import { nextImageCandidate } from "./lazy-images";
 export interface BrowseRailItem {
   value: string;
   label: string;
+  language?: string;
   image?: string;
   /** Second line: an episode count, a band, a chapter number. */
   meta?: string;
@@ -56,6 +57,8 @@ export interface BrowseRail {
  */
 export interface BrowseHeading {
   title: string;
+  titleLanguage?: string;
+  supportingLanguage?: string;
   /** The subject's own description, where it has one. Never UI instructions. */
   supporting?: string;
   image?: string;
@@ -121,6 +124,7 @@ function renderRail(rail: BrowseRail): TemplateResult {
             fit: "contain",
             onImageError: nextImageCandidate,
             title: item.label,
+            titleLanguage: item.language,
             subtitle: item.meta ?? null,
             label: item.label,
             image: item.image || "",
@@ -204,11 +208,11 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
                       : nothing
                   }
                   <div class="browse__heading-copy">
-                    <h2>${heading.title}</h2>
+                    <h2 lang=${heading.titleLanguage || nothing}>${heading.title}</h2>
                     ${
                       heading.supporting
                         ? html`
-                            <p>${heading.supporting}</p>
+                            <p lang=${heading.supportingLanguage || nothing}>${heading.supporting}</p>
                           `
                         : nothing
                     }

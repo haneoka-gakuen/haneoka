@@ -55,6 +55,11 @@
     font-size: var(--md-sys-typescale-label-small-size);
     font-variant-numeric: tabular-nums;
   }
+  @media (max-width: 599px) {
+    .character-detail-panel-group {
+      padding-inline: 0;
+    }
+  }
   @media (max-width: 520px) {
     .character-mission-workspace > header {
       position: static;

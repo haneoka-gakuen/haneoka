@@ -1,3 +1,4 @@
+import { localizedContent, localizedList } from "./ui/localized-content";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { storySourceUrl } from "../lib/story-assets";
 import "../styles/bestdori-detail.css";
@@ -76,6 +77,7 @@ type Origin = "release" | "bestdori";
 type ViewMode = CollectionView;
 
 interface FacetOption {
+  language?: string;
   value: string;
   label: string;
   image?: string;
@@ -498,12 +500,20 @@ export class StoryWorkspace extends LitElement {
     const seconds = Math.round(Number(item.playTime || 0));
     return seconds ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}` : "";
   }
+  private episodeTitleValue(episode: JsonRecord) {
+    const sourceLocale = this.isBestdori()
+      ? ({ jp: "ja", en: "en", tw: "zh-TW", cn: "zh-CN", kr: "ko" } as Record<string, string>)[
+          String(episode.sourceServer)
+        ]
+      : undefined;
+    for (const value of [episode.titleText, episode.title, episode.prefix]) {
+      const resolved = resolveLocalizedText(value, this.locale, sourceLocale);
+      if (resolved.text.trim()) return resolved;
+    }
+    return { text: this.episodeId(episode) || uiText(this.locale, "story"), locale: this.locale };
+  }
   private episodeTitle(episode: JsonRecord) {
-    return (
-      this.text(episode.titleText || episode.title || episode.prefix) ||
-      this.episodeId(episode) ||
-      uiText(this.locale, "story")
-    );
+    return this.episodeTitleValue(episode).text;
   }
   private episodeGroup(episode: JsonRecord): string {
     return episode.isAnotherEpisode === true
@@ -621,6 +631,8 @@ export class StoryWorkspace extends LitElement {
         options: usedBands.map((id) => ({
           value: String(id),
           label: this.bandName(id) || String(id),
+          language: resolveLocalizedText(this.bands.find((item) => Number(item.bandId) === id)?.bandName, this.locale)
+            .locale,
           image: String(this.bands.find((item) => Number(item.bandId) === id)?.icon || ""),
         })),
       });
@@ -631,6 +643,7 @@ export class StoryWorkspace extends LitElement {
         options: usedCharacters.map((id) => ({
           value: String(id),
           label: this.characterName(this.character(id) || {}),
+          language: resolveLocalizedText(this.character(id)?.characterName, this.locale).locale,
           image: String(this.character(id)?.faceImage || ""),
         })),
       });
@@ -736,6 +749,7 @@ export class StoryWorkspace extends LitElement {
     return this.relevantChapters().map((chapter) => ({
       value: String(chapter.chapterId),
       label: this.chapterName(chapter) || String(chapter.chapterId || ""),
+      language: resolveLocalizedText(chapter.chapterName, this.locale).locale,
       image: String(chapter.banner || chapter.image || chapter.icon || ""),
       meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "episodes")}`,
     }));
@@ -794,6 +808,8 @@ export class StoryWorkspace extends LitElement {
     if (!chapter || !title) return undefined;
     return {
       title,
+      titleLanguage: resolveLocalizedText(chapter.chapterName, this.locale).locale,
+      supportingLanguage: resolveLocalizedText(chapter.description || chapter.caption, this.locale).locale,
       supporting: this.text(chapter.description) || this.text(chapter.caption) || "",
       image: String(chapter.icon || ""),
     };
@@ -1154,8 +1170,8 @@ export class StoryWorkspace extends LitElement {
             episodes.map((episode) => ({
               id: this.episodeId(episode),
               title: this.episodeTitle(episode),
-              titleLanguage: resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale,
-              subtitle: this.tileSubtitle(episode),
+              titleLanguage: this.episodeTitleValue(episode).locale,
+              subtitle: this.tileSubtitleContent(episode),
               image: this.episodeImage(episode),
               media: this.episodeMedia(episode),
               onOpen: () => void this.openStory(this.episodeId(episode), episode),
@@ -1170,6 +1186,25 @@ export class StoryWorkspace extends LitElement {
       this.characterIds(episode).map((id) => this.characterName(this.character(id) || {})),
       this.locale,
     );
+  }
+  private castContent(episode: JsonRecord) {
+    return localizedList(
+      this.characterIds(episode).map((id) => this.character(id)?.characterName || this.character(id)?.englishName),
+      this.locale,
+    );
+  }
+  private tileSubtitleContent(episode: JsonRecord) {
+    const subtitle = this.tileSubtitle(episode);
+    if (subtitle && subtitle === this.cast(episode)) return this.castContent(episode);
+    for (const value of [
+      episode.description,
+      episode.caption,
+      this.chapterOf(episode)?.chapterName,
+      this.episodeSpot(episode)?.name,
+    ]) {
+      if (subtitle && this.text(value) === subtitle) return localizedContent(value, this.locale);
+    }
+    return subtitle;
   }
   private tileSubtitle(episode: JsonRecord) {
     if (this.mode === "afterlive") {
@@ -1209,8 +1244,8 @@ export class StoryWorkspace extends LitElement {
     return tile({
       kind: "story",
       title,
-      titleLanguage: resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale,
-      subtitle: this.tileSubtitle(episode),
+      titleLanguage: this.episodeTitleValue(episode).locale,
+      subtitle: this.tileSubtitleContent(episode),
       adornment: logo
         ? html`
             <img src=${logo} alt="" width="16" height="16" loading="lazy" />
@@ -1308,12 +1343,14 @@ export class StoryWorkspace extends LitElement {
                         }
                       </span>
                       <span class="table-entity__copy">
-                        <span class="table-entity__name">${this.episodeTitle(episode)}</span>
+                        <span class="table-entity__name" lang=${this.episodeTitleValue(episode).locale}>
+                          ${this.episodeTitle(episode)}
+                        </span>
                       </span>
                     </button>
                   </th>
-                  <td>${this.chapterName(this.chapterOf(episode)) || "—"}</td>
-                  <td>${this.cast(episode) || "—"}</td>
+                  <td>${localizedContent(this.chapterOf(episode)?.chapterName, this.locale)}</td>
+                  <td>${this.castContent(episode)}</td>
                   <td class="is-numeric">${this.duration(episode) || "—"}</td>
                   <td class="is-numeric">${level ? `Lv.${level}` : "—"}</td>
                   <td class="is-numeric">${this.releaseDate(episode) || "—"}</td>
@@ -1587,10 +1624,8 @@ export class StoryWorkspace extends LitElement {
             <svg class="material-icon" width="22" height="22"><use href="/icons.svg#arrow_back"></use></svg>
           </button>
           <span class="story-detail__title">
-            <strong lang=${resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale}>
-              ${this.episodeTitle(episode)}
-            </strong>
-            <small>${this.chapterName(this.chapterOf(episode)) || this.text(episode.chapterName)}</small>
+            <strong lang=${this.episodeTitleValue(episode).locale}>${this.episodeTitle(episode)}</strong>
+            <small>${localizedContent(this.chapterOf(episode)?.chapterName || episode.chapterName, this.locale)}</small>
           </span>
           <span class="row__spacer"></span>
           ${
@@ -1672,7 +1707,10 @@ export class StoryWorkspace extends LitElement {
                       <span>${this.duration(episode)}</span>
                     </summary>
                     ${specList([
-                      { label: uiText(this.locale, "chapter"), value: this.chapterName(this.chapterOf(episode)) },
+                      {
+                        label: uiText(this.locale, "chapter"),
+                        value: localizedContent(this.chapterOf(episode)?.chapterName, this.locale),
+                      },
                       { label: uiText(this.locale, "duration"), value: this.duration(episode) },
                       { label: uiText(this.locale, "release"), value: this.releaseDate(episode) },
                       episode.unlockCharacterFriendshipLevel
@@ -1684,10 +1722,7 @@ export class StoryWorkspace extends LitElement {
                       ids.length
                         ? {
                             label: uiText(this.locale, "characters"),
-                            value: formatList(
-                              ids.map((id) => this.characterName(this.character(id) || {})),
-                              this.locale,
-                            ),
+                            value: this.castContent(episode),
                             wide: true,
                           }
                         : null,

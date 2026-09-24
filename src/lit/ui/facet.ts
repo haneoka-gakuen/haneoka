@@ -7,6 +7,7 @@ export interface FacetOption {
   id?: string | number;
   value: string;
   label: string;
+  language?: string;
   image?: string;
   count?: number;
 }
@@ -92,7 +93,7 @@ export class FilterFacet extends LitElement {
                       `
                     : nothing
                 }
-                <span>${option.label}</span>
+                <span lang=${option.language || nothing}>${option.label}</span>
                 ${
                   option.count === undefined
                     ? nothing

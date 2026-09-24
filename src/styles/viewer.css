@@ -85,16 +85,6 @@
    only pages where a card had 8dp of padding and label-sized text. Only the
    model preview's framing is local: a Cubism or Spine preview is a full-body
    render on transparent, anchored at the head. */
-  .collection--model {
-    --tile-min: 148px;
-  }
-  .tile--model .tile__media {
-    aspect-ratio: 1;
-    background: var(--md-sys-color-surface-container-low);
-  }
-  .tile--model .tile__media > img {
-    object-position: center top;
-  }
   .model-list__entity img {
     width: 18px;
     height: 18px;

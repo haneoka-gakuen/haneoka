@@ -4,8 +4,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
 import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
-import { icon } from "./ui/icon";
-import { tile } from "./ui/tile";
+import { modelTile, modelTitle, modelPreviewSources } from "./ui/model-tile";
 
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { LazyImages } from "./ui/lazy-images";
@@ -197,10 +196,10 @@ export class Live2DWorkspace extends LitElement {
     return String(model.live2dKey || model.assetId || "");
   }
   private modelTitle(model: Value) {
-    return this.text(model.title) || this.text(model.characterName) || String(model.live2dName || this.key(model));
+    return modelTitle(model, this.locale).text;
   }
   private preview(model: Value) {
-    return String(readPath(model, "preview.image") || readPath(model, "preview.runtime") || "");
+    return modelPreviewSources(model)[0] || "";
   }
   private url(path = "") {
     return catalogUrl("live2d", path);
@@ -708,25 +707,7 @@ export class Live2DWorkspace extends LitElement {
   private renderModelGrid(models: Value[]) {
     return html`
       <div class="collection collection--model">
-        ${models.map((model) => {
-          const character = this.character(Number(model.characterId || 0));
-          const title = this.modelTitle(model);
-          return tile({
-            kind: "model",
-            title,
-            subtitle: this.characterName(model),
-            adornment: character?.faceImage
-              ? html`
-                  <img src=${String(character.faceImage)} alt="" width="16" height="16" loading="lazy" />
-                `
-              : undefined,
-            label: title,
-            image: this.preview(model),
-            placeholder: icon("animation", 32),
-            fit: "contain",
-            onOpen: () => this.select(this.key(model)),
-          });
-        })}
+        ${models.map((model) => modelTile({ model, character: this.character(Number(model.characterId || 0)), locale: this.locale, onOpen: () => this.select(this.key(model)) }))}
       </div>
     `;
   }

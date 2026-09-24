@@ -1,3 +1,5 @@
+import { resolveLocalizedText } from "../lib/localized-text";
+import { localizedContent } from "./ui/localized-content";
 import { songTitle } from "../lib/song-display";
 import "./ui/image-gallery";
 import { renderPane } from "./ui/pane";
@@ -60,6 +62,7 @@ export function renderBestdoriDetail(
       kind: "card",
       id: `gbp-card-${card.cardId}`,
       title,
+      titleLanguage: resolveLocalizedText(card.prefix, locale).locale,
       open: true,
       backLabel: label("close", "Close"),
       onClose: actions.closeCard,
@@ -90,7 +93,9 @@ export function renderBestdoriDetail(
                   @click=${() => actions.openStory(storyId, episode.title)}
                 >
                   <span>${String(index + 1).padStart(2, "0")}</span>
-                  <strong>${localizedText(episode.title, locale) || String(episode.scenarioId || storyId)}</strong>
+                  <strong lang=${resolveLocalizedText(episode.title, locale).locale}>
+                    ${localizedText(episode.title, locale) || String(episode.scenarioId || storyId)}
+                  </strong>
                   ${icon("chevron_right")}
                 </button>
               `;
@@ -161,15 +166,15 @@ export function renderBestdoriDetail(
           <dl>
             <div>
               <dt>${label("composer", "Composer")}</dt>
-              <dd>${localizedText(detail.composer, locale) || "—"}</dd>
+              <dd>${localizedContent(detail.composer, locale)}</dd>
             </div>
             <div>
               <dt>${label("lyricist", "Lyrics")}</dt>
-              <dd>${localizedText(detail.lyricist, locale) || "—"}</dd>
+              <dd>${localizedContent(detail.lyricist, locale)}</dd>
             </div>
             <div>
               <dt>${label("arranger", "Arrangement")}</dt>
-              <dd>${localizedText(detail.arranger, locale) || "—"}</dd>
+              <dd>${localizedContent(detail.arranger, locale)}</dd>
             </div>
           </dl>
           <div class="bestdori-difficulties">
@@ -210,7 +215,7 @@ export function renderBestdoriDetail(
         <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
           ${icon("arrow_back")}
         </button>
-        <strong>${title}</strong>
+        <strong lang=${resolveLocalizedText(detail.title || detail.chapterName, locale).locale}>${title}</strong>
         <nav class="segmented">
           <button aria-pressed=${state.view === "text"} @click=${() => actions.setView("text")}>
             ${label("storyText", "Text")}
@@ -240,20 +245,20 @@ export function renderBestdoriDetail(
                 ${lines.map((line) => {
                   const target = Array.isArray(line.targets) ? (line.targets[0] as Value | undefined) : undefined;
                   const targetName = Array.isArray(line.targetTextNames) ? line.targetTextNames[0] : undefined;
-                  const speaker = localizedText(
+                  const speaker = resolveLocalizedText(
                     line.speakerName || line.characterName || target?.name || targetName,
                     locale,
                   );
                   return html`
                     <article>
                       ${
-                        speaker
+                        speaker.text
                           ? html`
-                              <strong>${speaker}</strong>
+                              <strong lang=${speaker.locale}>${speaker.text}</strong>
                             `
                           : nothing
                       }
-                      <p>${localizedText(line.text, locale)}</p>
+                      <p>${localizedContent(line.text, locale)}</p>
                     </article>
                   `;
                 })}

@@ -87,13 +87,26 @@
       .collection--band-item,
       .collection--model,
       .collection--spine,
-      .collection--live2d
+      .collection--live2d,
+      .collection--outfit
     ) {
-      --tile-min: 130px;
-      --tile-gap: 10px;
+      --tile-min: 104px;
+      --tile-gap: 8px;
     }
     .collection:not(.collection--rail) .tile__identity {
-      padding: 10px 12px;
+      padding: 8px;
+    }
+    .collection:is(.collection--story, .collection--comic) {
+      --tile-min: 140px;
+      --tile-gap: 8px;
+    }
+    .collection:not(.collection--rail) .tile__title {
+      font-size: 14px;
+      line-height: 20px;
+    }
+    .collection:not(.collection--rail) .tile__subtitle {
+      font-size: 12px;
+      line-height: 18px;
     }
     .card-stat-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));

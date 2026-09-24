@@ -66,8 +66,7 @@
   .tile--character .tile__media > img {
     object-position: top center;
   }
-  .tile--story .tile__media,
-  .tile--live2d .tile__media {
+  .tile--story .tile__media {
     aspect-ratio: 16 / 9;
   }
 
@@ -212,14 +211,12 @@
     min-height: 56px;
     padding-block: 12px;
   }
-  .character-voice-list,
   .character-mission-list {
     display: grid;
     overflow: hidden;
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-medium);
   }
-  .character-voice-list article,
   .character-mission-list article {
     display: flex;
     min-height: 64px;
@@ -229,24 +226,11 @@
     padding: 10px 14px;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
-  .character-voice-list article:last-child,
   .character-mission-list article:last-child {
     border-bottom: 0;
   }
-  .character-voice-list small,
   .character-mission-list small {
     color: var(--md-sys-color-on-surface-variant);
-  }
-  .character-voice-list p {
-    margin: 3px 0 0;
-  }
-  .character-voice-list article > span {
-    display: grid;
-    min-width: 0;
-  }
-  .character-voice-list .icon-button.selected {
-    color: var(--md-sys-color-on-primary);
-    background: var(--md-sys-color-primary);
   }
   .character-friendship-workspace {
     display: grid;

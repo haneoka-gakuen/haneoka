@@ -1,3 +1,4 @@
+import { localizedFallbacks } from "../src/lib/localized-text";
 /**
  * Bestdori reverse-proxy + transformer.
  *
@@ -181,14 +182,17 @@ const REGION_LOCALE: Readonly<Record<BestdoriRegion, string>> = {
   kr: "ko",
 };
 
-// Map a UI locale to the Bestdori timeline slot, then preserve the established
-// content fallback order: requested locale, JP source, remaining regions.
+// Map content languages to provider regions while keeping release ordering independent.
 const LOCALE_SERVER_INDEX: Record<string, number> = { ja: 0, en: 1, "zh-TW": 2, "zh-CN": 3, ko: 4 };
 const regionChainForLocale = (lang: string | undefined): readonly BestdoriRegion[] => {
-  const index = lang ? LOCALE_SERVER_INDEX[lang] : undefined;
-  const preferred = index === undefined ? undefined : BESTDORI_REGIONS[index];
-  if (!preferred || preferred === "jp") return BESTDORI_REGIONS;
-  return [preferred, "jp", ...BESTDORI_REGIONS.filter((region) => region !== preferred && region !== "jp")];
+  return [
+    ...new Set(
+      localizedFallbacks(lang || "ja").flatMap((locale) => {
+        const index = LOCALE_SERVER_INDEX[locale];
+        return index === undefined ? [] : [BESTDORI_REGIONS[index]!];
+      }),
+    ),
+  ];
 };
 // Release chronology is deliberately distinct from asset-language selection:
 // always use the fixed Bestdori timeline order [jp, en, tw, cn, kr]. Locale
@@ -210,12 +214,6 @@ const isPublishedInRegion = (
   const index = BESTDORI_REGIONS.indexOf(region);
   return index >= 0 && validReleaseTimestamp(timeline[index]) !== undefined;
 };
-const recordsPublishedInRegion = (
-  records: Record<string, unknown>,
-  field: "publishedAt" | "releasedAt" | "startAt",
-  region: BestdoriRegion,
-): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(records).filter(([, value]) => isPublishedInRegion(asObj(value), field, region)));
 const isPublishedInAnyRegion = (entry: Obj, field: "publishedAt" | "releasedAt" | "startAt"): boolean => {
   const timeline = asArray(entry[field]);
   return !timeline.length || BESTDORI_REGIONS.some((region) => isPublishedInRegion(entry, field, region));
@@ -848,7 +846,7 @@ const bandLogo = (server: BestdoriRegion, bandId: number, chapterNumber: number)
 const bandScreenImage = (server: BestdoriRegion, episodeKey: number): string =>
   proxify(`/assets/${server}/story/bg/band/bandstory${episodeKey}_rip/BandStoryScreenImage${episodeKey}.png`);
 
-const storyListFromBand = (raw: Record<string, unknown>, lang?: string, region?: BestdoriRegion): StoryListItem[] => {
+const storyListFromBand = (raw: Record<string, unknown>, lang?: string): StoryListItem[] => {
   const out: StoryListItem[] = [];
   // bestdori duplicates each original band's "Story 1" under two chapter keys
   // (e.g. ch1≡ch8 for Poppin'Party) with identical scenarioIds; the duplicate
@@ -862,7 +860,7 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string, region?:
     const chapterId = numericId(chapterKey);
     const chapterName = chapter.subTitle ?? chapter.mainTitle ?? "";
     const chapterPublishedAt = timestamps(chapter.publishedAt);
-    if (region && !isPublishedInRegion(chapter, "publishedAt", region)) continue;
+    if (!isPublishedInAnyRegion(chapter, "publishedAt")) continue;
     const chapterRegion = regionFor(chapter, lang);
     const stories = Object.entries(asObj(chapter.stories));
     const firstScenario = String(asObj(stories[0]?.[1]).scenarioId || "");
@@ -876,7 +874,7 @@ const storyListFromBand = (raw: Record<string, unknown>, lang?: string, region?:
       const ep = asObj(epRaw);
       const scenarioId = String(ep.scenarioId || "");
       if (!scenarioId) return;
-      if (region && asArray(ep.publishedAt).length && !isPublishedInRegion(ep, "publishedAt", region)) return;
+      if (!isPublishedInAnyRegion(ep, "publishedAt")) return;
       // bestdori's episode key is a GLOBAL story index (the screen-image N),
       // not a per-chapter episode number — display the within-chapter position
       // and use the global key only for the screen-image URL.
@@ -933,11 +931,11 @@ const isMainSeasonStart = (entry: Obj): boolean => {
   return caption.some((slot) => typeof slot === "string" && /^(?:Opening\s*1|オープニング１)$/.test(slot.trim()));
 };
 
-const storyListFromMain = (raw: Record<string, unknown>, lang?: string, region?: BestdoriRegion): StoryListItem[] => {
+const storyListFromMain = (raw: Record<string, unknown>, lang?: string): StoryListItem[] => {
   const ids = Object.keys(raw)
     .map(Number)
     .filter((id) => Number.isFinite(id))
-    .filter((id) => !region || isPublishedInRegion(asObj(raw[String(id)]), "publishedAt", region))
+    .filter((id) => isPublishedInAnyRegion(asObj(raw[String(id)]), "publishedAt"))
     .sort((left, right) => left - right);
   // Bestdori ships 3 main-story seasons (ids 1–25, 26–48, 49–73 at time of
   // writing). Split by the "Opening 1" caption resets so it tracks future
@@ -986,17 +984,20 @@ const storyListFromMain = (raw: Record<string, unknown>, lang?: string, region?:
   });
 };
 
-const storyListFromAfterLive = (
-  raw: Record<string, unknown>,
-  characters: Record<string, unknown>,
-  region?: BestdoriRegion,
-): StoryListItem[] => {
+const afterLiveDescription = (value: unknown): unknown => {
+  if (!Array.isArray(value)) return value ?? "";
+  const original = value[0];
+  if (typeof original !== "string" || !/(?:大成功|成功|失敗)会話/u.test(original)) return value;
+  return value.map((text, index) => (index > 0 && text === original ? null : text));
+};
+
+const storyListFromAfterLive = (raw: Record<string, unknown>, characters: Record<string, unknown>): StoryListItem[] => {
   const aliases = bestdoriCharacterAliases(characters);
   return Object.entries(raw).flatMap(([id, value]) => {
     const entry = asObj(value);
     const episodeNumber = numericId(id);
     if (episodeNumber === undefined) return [];
-    if (region && asArray(entry.publishedAt).length && !isPublishedInRegion(entry, "publishedAt", region)) return [];
+    if (!isPublishedInAnyRegion(entry, "publishedAt")) return [];
     const storyId = `afterlive.${id}`;
     return [
       {
@@ -1006,31 +1007,29 @@ const storyListFromAfterLive = (
         episodeNumber,
         chapterKey: "bestdori:afterlive",
         storySort: episodeNumber,
-        title: entry.description ?? "",
+        title: afterLiveDescription(entry.description),
         characterIds: bestdoriAfterLiveCharacterIds(entry.description, aliases),
       },
     ];
   });
 };
 
-const buildStoryCollection = async (
-  section: "event" | "band" | "main" | "afterlive",
-  lang?: string,
-  region?: BestdoriRegion,
-): Promise<Obj> => {
+const buildStoryCollection = async (section: "event" | "band" | "main" | "afterlive", lang?: string): Promise<Obj> => {
   if (section === "event") {
     const [stories, events] = await Promise.all([allEventStories(), allEvents()]);
     return storyItemRecord(
       Object.entries(stories).flatMap(([eventId, value]) => {
         const id = numericId(eventId);
-        return id === undefined ? [] : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang);
+        return id === undefined || !isPublishedInAnyRegion(asObj(events[eventId]), "startAt")
+          ? []
+          : storyListFromEvent(id, asObj(value), asObj(events[eventId]), lang);
       }),
     );
   }
-  if (section === "band") return storyItemRecord(storyListFromBand(await bandStoriesIndex(), lang, region));
-  if (section === "main") return storyItemRecord(storyListFromMain(await mainStoriesIndex(), lang, region));
+  if (section === "band") return storyItemRecord(storyListFromBand(await bandStoriesIndex(), lang));
+  if (section === "main") return storyItemRecord(storyListFromMain(await mainStoriesIndex(), lang));
   const [stories, characters] = await Promise.all([afterLiveIndex(), allCharactersFull()]);
-  return storyItemRecord(storyListFromAfterLive(stories, characters, region));
+  return storyItemRecord(storyListFromAfterLive(stories, characters));
 };
 
 // ---- single story → AdvStory ----
@@ -1914,7 +1913,7 @@ export async function handleGarupaBestdoriApi(
   }
   if (tail === "cards") {
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(transformCards(recordsPublishedInRegion(await allCards(), "releasedAt", region), lang)),
+      jsonBody(transformCards(recordsPublishedInAnyRegion(await allCards(), "releasedAt"), lang)),
     );
   }
   const editorAssets = /^editor-assets(?:\/(.*))?$/.exec(tail);
@@ -1950,7 +1949,7 @@ export async function handleGarupaBestdoriApi(
   if (storyCollection) {
     const section = storyCollection[1]! as "event" | "band" | "main" | "afterlive";
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () =>
-      jsonBody(await buildStoryCollection(section, lang, region)),
+      jsonBody(await buildStoryCollection(section, lang)),
     );
   }
 

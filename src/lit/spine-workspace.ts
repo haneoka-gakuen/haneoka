@@ -1,3 +1,4 @@
+import "../styles/model-tile.css";
 import { saveCanvasFrame } from "../lib/canvas-capture";
 import { facet } from "./ui/facet";
 import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";

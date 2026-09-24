@@ -1,3 +1,6 @@
+import { localizedContent, localizedList } from "./ui/localized-content";
+import "../styles/model-tile.css";
+import "../styles/character-voices.css";
 import { difficultyKey } from "./ui/difficulty-picker";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { resolveLocalizedText } from "../lib/localized-text";
@@ -871,6 +874,18 @@ export class CatalogScreen extends LitElement {
     const values = Array.isArray(value) ? value : [value];
     return String(values.find((entry) => typeof entry === "string" && entry.trim()) || "").normalize("NFKC");
   }
+  itemArtistContent(item: Item) {
+    for (const value of [item.artistName, item.bandName])
+      if (this.localized(value)) return localizedContent(value, this.settings.locale);
+    return localizedList(
+      this.itemBandIds(item).map((id) => this.band(id)?.bandName),
+      this.settings.locale,
+    );
+  }
+  private tileDescriptionContent(item: Item) {
+    if (this.profile.presentation === "song") return this.itemArtistContent(item);
+    return this.tileDescription(item);
+  }
   private itemArtist(item: Item) {
     return (
       this.localized(item.artistName) ||
@@ -1415,8 +1430,12 @@ export class CatalogScreen extends LitElement {
                 "friendships",
                 "character-missions",
               ].map(async (resource) => {
-                const response = await fetch(catalogUrl(resource), { signal });
-                return [resource, response.ok ? await response.json() : {}] as const;
+                const response = await fetch(
+                  resource === "voices" ? catalogUrl("voices/relations/character", id) : catalogUrl(resource),
+                  { signal },
+                );
+                const value = response.ok ? await response.json() : {};
+                return [resource, resource === "voices" ? { entries: value } : value] as const;
               }),
             )
           : [],
@@ -1939,7 +1958,7 @@ export class CatalogScreen extends LitElement {
                 id: this.itemId(item),
                 title: this.itemTitle(item),
                 titleLanguage: this.itemTitleLanguage(item),
-                subtitle: this.tileDescription(item),
+                subtitle: this.tileDescriptionContent(item),
                 image: this.image(item),
                 onOpen: () => this.open(item),
               })),
@@ -1976,7 +1995,7 @@ export class CatalogScreen extends LitElement {
       kind,
       title,
       titleLanguage: this.itemTitleLanguage(item),
-      subtitle: this.tileDescription(item),
+      subtitle: this.tileDescriptionContent(item),
       adornment: this.tileAdornment(item, ids),
       label: title,
       image,
@@ -2419,7 +2438,7 @@ export class CatalogScreen extends LitElement {
         id: `detail-${this.itemId(item)}`,
         title: this.itemTitle(item),
         titleLanguage: this.itemTitleLanguage(item),
-        subtitle: this.secondary(item),
+        subtitle: this.profile.presentation === "song" ? this.itemArtistContent(item) : this.secondary(item),
         backLabel: this.label("close", "Close"),
         onClose: () => this.close(),
         leading: this.renderDetailLeading(item),

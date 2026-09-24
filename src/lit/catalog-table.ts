@@ -278,7 +278,7 @@ export class CatalogTable extends LitElement {
           }
           <span class="table-entity__copy">
             <span class="table-entity__name">
-              ${c.profile.presentation === "song" ? c.itemArtist(item) : c.bandName(bandId)}
+              ${c.profile.presentation === "song" ? c.itemArtistContent(item) : c.bandName(bandId)}
             </span>
           </span>
         </span>

@@ -18,18 +18,27 @@ const canonicalLocale = (locale: string): string => {
   }
 };
 
-export function resolveLocalizedText(value: unknown, locale: string): LocalizedValue {
+export function localizedFallbacks(locale: string): string[] {
   const requested = canonicalLocale(locale);
-  if (typeof value === "string" || typeof value === "number") return { text: String(value), locale: requested };
+  return [
+    ...new Set(
+      requested === "zh" || /^zh-(?:CN|Hans)(?:-|$)/u.test(requested)
+        ? [requested, "zh-CN", "zh-Hans", "zh-TW", "zh-Hant", "ja", "en", "ko"]
+        : /^zh-(?:TW|HK|MO|Hant)(?:-|$)/u.test(requested)
+          ? [requested, "zh-TW", "zh-Hant", "ja", "en", "zh-CN", "ko"]
+          : [requested, requested.split("-")[0]!, "ja", ...TEXT_LOCALES],
+    ),
+  ];
+}
+
+export function resolveLocalizedText(value: unknown, locale: string, sourceLocale?: string): LocalizedValue {
+  const requested = canonicalLocale(locale);
+  if (typeof value === "string" || typeof value === "number")
+    return { text: String(value), locale: sourceLocale || requested };
   if (!value || typeof value !== "object") return { text: "", locale: requested };
   const record = value as Record<string, unknown>;
   const list = Array.isArray(value) ? value : Array.isArray(record.values) ? record.values : null;
-  const order =
-    requested === "zh" || /^zh-(?:CN|Hans)(?:-|$)/u.test(requested)
-      ? [requested, "zh-CN", "zh-Hans", "zh-TW", "zh-Hant", "ja", "en", "ko"]
-      : /^zh-(?:TW|HK|MO|Hant)(?:-|$)/u.test(requested)
-        ? [requested, "zh-TW", "zh-Hant", "ja", "en", "zh-CN", "ko"]
-        : [requested, requested.split("-")[0]!, "ja", ...TEXT_LOCALES];
+  const order = localizedFallbacks(requested);
   if (list) {
     for (const language of new Set(order)) {
       const text = list[TEXT_LOCALES.indexOf(language as (typeof TEXT_LOCALES)[number])];
