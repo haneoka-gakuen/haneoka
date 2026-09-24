@@ -6,7 +6,7 @@
       "name": "vega",
       "url": "https://github.com/haneoka-gakuen/vega.git",
       "branch": "main",
-      "commit": "5ca7b7e252b7252fa855512a60fb78ae996778a5",
+      "commit": "4203611deed8ea5d68078b603fa8f620e591c391",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -14,7 +14,7 @@
       "name": "vega-renderer-three",
       "url": "https://github.com/haneoka-gakuen/vega-renderer-three.git",
       "branch": "main",
-      "commit": "8f966ad68b64ec8325f8097ab4c360a0e057dc5e",
+      "commit": "a858c9f7c2e1222d23afceee08662650474354e3",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -22,7 +22,7 @@
       "name": "vega-theme-haneoka",
       "url": "https://github.com/haneoka-gakuen/vega-theme-haneoka.git",
       "branch": "main",
-      "commit": "beb3c7185dd276b93a3b8778bf9680ddeed7bacf",
+      "commit": "8f89f57b435196d026e08db85b2d0e4671d18c1f",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -62,7 +62,7 @@
       "name": "vega-plugin-haneoka",
       "url": "https://github.com/haneoka-gakuen/vega-plugin-haneoka.git",
       "branch": "main",
-      "commit": "d7884fa4de8849b81439b01a8c2c15a5e0039121",
+      "commit": "a7a30eac2d6f35126038084341d0cf2397a8c568",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -78,7 +78,7 @@
       "name": "cassiopeia-plugin-our-notes",
       "url": "https://github.com/haneoka-gakuen/cassiopeia-plugin-our-notes.git",
       "branch": "main",
-      "commit": "aee7b0892b2f8468d866c3e3228e9d23bc300a30",
+      "commit": "ceb5bd970d7b8088d6de6ee4edb7678317d1c833",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -86,7 +86,7 @@
       "name": "cassiopeia-renderer-three",
       "url": "https://github.com/haneoka-gakuen/cassiopeia-renderer-three.git",
       "branch": "main",
-      "commit": "a3038869f31ea9c881a53c9887ac3b9f9958b7c0",
+      "commit": "ee0e65e92e64ae3b0b2a17089818b2475b8db921",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -94,7 +94,7 @@
       "name": "cassiopeia-host-web",
       "url": "https://github.com/haneoka-gakuen/cassiopeia-host-web.git",
       "branch": "main",
-      "commit": "055f6180fa4c66106f369d2a08823d09cad8c081",
+      "commit": "27fca120dec695df9c15f01db2a76e76b5a8b5e4",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -102,7 +102,7 @@
       "name": "cassiopeia-ui-vue",
       "url": "https://github.com/haneoka-gakuen/cassiopeia-ui-vue.git",
       "branch": "main",
-      "commit": "30122f22e40ad873ed3f9859f6663119539a66e5",
+      "commit": "d859732d23f3952f212da469d5cc424cf22c8a61",
       "version": "0.1.0",
       "kind": "node"
     },
