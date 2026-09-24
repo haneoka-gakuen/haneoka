@@ -180,14 +180,11 @@ export class VegaStoryStage extends LitElement {
           : Promise.all(keys.map((key) => this.json(url("live2d", key), signal))),
       ]);
       if (!active()) return;
-      const hydrated = hydrateStoryPayload(
-        {
-          ...story,
-          assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
-          runtime: resolveStoryRuntimeAssets(merge(runtime, story.runtime), server),
-        },
-        { runtimeProfile: !providerBase && server === "intl" ? "intl-1.0.1" : undefined },
-      ) as AdvStory;
+      const hydrated = hydrateStoryPayload({
+        ...story,
+        assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
+        runtime: resolveStoryRuntimeAssets(merge(runtime, story.runtime), server),
+      }) as AdvStory;
       this.phase = "ready";
       await this.updateComplete;
       if (!active()) return;

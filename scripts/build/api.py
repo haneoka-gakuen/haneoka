@@ -7,12 +7,15 @@ file exists in the normalized build.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
 import re
 import subprocess
+import struct
 import sys
+import zlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -2497,6 +2500,122 @@ def _frame_color(value: Any) -> str:
     return "#" + "".join(f"{max(0, min(255, round(channel * 255))):02x}" for channel in channels)
 
 
+_FRAME_ANIMATION_PROPERTIES = {
+    (225, zlib.crc32(b"m_Alpha")): ("opacity", 1),
+    (224, zlib.crc32(b"m_AnchoredPosition.x")): ("positionX", 1),
+    (224, zlib.crc32(b"m_AnchoredPosition.y")): ("positionY", 1),
+    (224, zlib.crc32(b"m_SizeDelta.x")): ("sizeX", 1),
+    (224, zlib.crc32(b"m_SizeDelta.y")): ("sizeY", 1),
+    (4, 3): ("scale", 3),
+    (1, zlib.crc32(b"m_IsActive")): ("active", 1),
+    (114, zlib.crc32(b"m_Color.r")): ("imageR", 1),
+    (114, zlib.crc32(b"m_Color.g")): ("imageG", 1),
+    (114, zlib.crc32(b"m_Color.b")): ("imageB", 1),
+}
+
+
+def _frame_animation(
+    data: BuildData,
+    target_asset: str,
+    objects: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    group = PurePosixPath(target_asset).parts[0]
+    leaf = PurePosixPath(target_asset).name.casefold()
+    animation_root = f"{ADV_FRAME_ROOT}/{group}/data/Animation/"
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    for source in data.source_paths:
+        if not source.startswith(animation_root) or not source.endswith(".anim"):
+            continue
+        descriptor, clip_objects = data.source_objects(source)
+        for object_id in descriptor.get("rootObjects", []):
+            clip = clip_objects.get(str(int(object_id)))
+            if not clip or clip.get("type") != "AnimationClip":
+                continue
+            raw = clip.get("data", {})
+            name = str(raw.get("m_Name") or "").casefold()
+            if name == leaf:
+                candidates.append((0, raw))
+            elif name == f"{leaf}_loop":
+                candidates.append((1, raw))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda entry: entry[0])
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        return None
+    clip = candidates[0][1]
+    muscle = clip.get("m_MuscleClip", {})
+    clip_data = muscle.get("m_Clip", {}).get("data", {})
+    streamed = clip_data.get("m_StreamedClip", {})
+    words = streamed.get("data", [])
+    constants = clip_data.get("m_ConstantClip", {}).get("data", [])
+    bindings = clip.get("m_ClipBindingConstant", {}).get("genericBindings", [])
+    if not words or not bindings:
+        return None
+
+    game_names = {
+        object_id: str(record.get("data", {}).get("m_Name") or "")
+        for object_id, record in objects.items()
+        if record.get("type") == "GameObject"
+    }
+    transforms = {
+        object_id: record.get("data", {})
+        for object_id, record in objects.items()
+        if record.get("type") in {"Transform", "RectTransform"}
+    }
+    by_game = {
+        _unity_pointer_id(raw.get("m_GameObject")): object_id
+        for object_id, raw in transforms.items()
+    }
+    animator_roots = [
+        by_game.get(_unity_pointer_id(record.get("data", {}).get("m_GameObject")))
+        for record in objects.values()
+        if record.get("type") == "Animator"
+    ]
+    if len(animator_roots) != 1 or not animator_roots[0]:
+        return None
+    root = animator_roots[0]
+    path_nodes: dict[int, str] = {}
+
+    def visit(object_id: str, prefix: str) -> None:
+        raw = transforms[object_id]
+        game_id = _unity_pointer_id(raw.get("m_GameObject"))
+        name = game_names.get(game_id or "", "")
+        relative = "" if object_id == root else f"{prefix}/{name}" if prefix else name
+        path_hash = zlib.crc32(relative.encode("utf-8"))
+        if path_hash in path_nodes:
+            raise ValueError(f"ADV animation transform path collides: {target_asset}:{relative}")
+        path_nodes[path_hash] = object_id
+        for child in raw.get("m_Children", []):
+            child_id = _unity_pointer_id(child)
+            if child_id in transforms:
+                visit(child_id, relative)
+
+    visit(root, "")
+    projected = []
+    curve_start = 0
+    for binding in bindings:
+        property_info = _FRAME_ANIMATION_PROPERTIES.get(
+            (int(binding.get("typeID") or 0), int(binding.get("attribute") or 0))
+        )
+        node = path_nodes.get(int(binding.get("path") or 0))
+        if property_info is None or node is None:
+            return None
+        property_name, components = property_info
+        projected.append({"node": node, "property": property_name, "curve": curve_start})
+        curve_start += components
+    if curve_start != int(streamed.get("curveCount") or 0) + len(constants):
+        raise ValueError(f"ADV animation curve count is invalid: {target_asset}")
+    packed = struct.pack(f"<{len(words)}I", *(int(word) & 0xFFFFFFFF for word in words))
+    return {
+        "duration": float(muscle["m_StopTime"]),
+        "loop": bool(muscle.get("m_LoopTime")),
+        "streamedCurveCount": int(streamed["curveCount"]),
+        "constantValues": [float(value) for value in constants],
+        "stream": base64.b64encode(packed).decode("ascii"),
+        "bindings": projected,
+    }
+
+
 def _unity_min_max(value: Any) -> dict[str, Any]:
     raw = value if isinstance(value, dict) else {}
     mode = int(raw.get("minMaxState") or 0)
@@ -2653,62 +2772,7 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
             raise ValueError(f"ADV video frame alpha is invalid: {source_path}")
         result.update(type="fill", color=color, canvasAlpha=canvas_alpha * image_alpha, variant="video")
     elif lower.startswith("adv_frame_lightleak"):
-        texture_root = f"{ADV_FRAME_ROOT}/adv_frame_lightleak/data/Texture"
-        glow = data.asset(f"{texture_root}/adv_frame_lightleak_glow.png")
-        background = data.asset(f"{texture_root}/adv_frame_lightleak_bg.png")
-        glow_game_object = game_objects.get("Glow1", ("", {}))[1]
-        glow_image = _frame_image_component(objects, glow_game_object) if glow_game_object else None
-        glow_group = _frame_component(objects, glow_game_object, "CanvasGroup") if glow_game_object else None
-        glow_color = (glow_image or {}).get("data", {}).get("m_Color")
-        if not glow or not isinstance(glow_color, dict) or glow_group is None:
-            raise ValueError(f"ADV light leak frame inputs are incomplete: {source_path}")
-
-        def lightleak_node(
-            identity: str, texture_key: str, rgba: list[float], opacity: float, blend: str
-        ) -> dict[str, Any]:
-            return {
-                "id": identity,
-                "anchorMin": [0, 0],
-                "anchorMax": [1, 1],
-                "pivot": [0.5, 0.5],
-                "position": [0, 0],
-                "size": [0, 0],
-                "scale": [1, 1],
-                "rotation": 0,
-                "opacity": opacity,
-                "active": True,
-                "image": {
-                    "textureKey": texture_key,
-                    "color": rgba,
-                    "blend": blend,
-                    "preserveAspect": False,
-                },
-            }
-
-        nodes = []
-        textures = {"glow": glow}
-        if lower.endswith("_black"):
-            if not background or "Bg" not in game_objects:
-                raise ValueError(f"ADV black light leak background is incomplete: {source_path}")
-            textures["background"] = background
-            nodes.append(lightleak_node("background", "background", [0, 0, 0, 1], 1, "normal"))
-        nodes.append(
-            lightleak_node(
-                "glow",
-                "glow",
-                [float(glow_color[channel]) for channel in ("r", "g", "b", "a")],
-                float(glow_group["data"].get("m_Alpha", 1)),
-                "additive",
-            )
-        )
-        # The game animates five identical glow layers. The archive renders one
-        # authored layer as a static overlay until that animator is reconstructed.
-        result.update(
-            type="lightleak",
-            textures=textures,
-            layout={"referenceWidth": 1920, "nodes": nodes},
-            approximation="single-static-glow-layer",
-        )
+        result.update(_authored_frame_fallback(data, target_asset, source_path, objects, game_objects))
     elif lower.startswith("adv_frame_letterbox"):
         band_heights = []
         for name in ("Top", "Bottom"):
@@ -2773,6 +2837,12 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
         result.update(type="lensflare", textures=textures, referenceWidth=1920, referenceHeight=1080)
     else:
         result.update(_authored_frame_fallback(data, target_asset, source_path, objects, game_objects))
+    animation = _frame_animation(data, target_asset, objects)
+    if animation and isinstance(result.get("layout"), dict):
+        result["animation"] = animation
+        unsupported = [value for value in result.get("unsupportedFeatures", []) if value != "Animator"]
+        result["unsupportedFeatures"] = unsupported
+        result["approximation"] = "static-frame-layout" if unsupported else "none"
     data._adv_frame_cache[target_asset] = result
     return result
 
@@ -4608,6 +4678,52 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
     }
 
 
+def _adv_player_settings(data: BuildData) -> dict[str, Any]:
+    source = "Assets/AddressableResources/Common/Adv/Settings/AdvPlayerSettings.asset"
+    _, objects = data.source_objects(source)
+    matches = [
+        record.get("data", {})
+        for record in objects.values()
+        if record.get("type") == "MonoBehaviour"
+        and record.get("data", {}).get("m_Name") == "AdvPlayerSettings"
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"ADV player settings are missing or ambiguous: {source}")
+    native = matches[0]
+    flags = {
+        "allowUnityLighting": "_allowUnityLighting",
+        "allowCharacterPhysics": "_allowCharacterPhysics",
+        "allowCharacterBreathMotion": "_allowCharacterBreathMotion",
+        "allowCharacterBlur": "_allowCharacterBlur",
+        "allowBackgroundBlur": "_allowBackgroundBlur",
+        "allowStageParticleEffect": "_allowStageParticleEffect",
+        "allowStagePostEffect": "_allowStagePostEffect",
+    }
+    numbers = {
+        "waitAfterVoiceTime": "_waitAfterVoiceTime",
+        "waitTalkTextUnitTime": "_waitTalkTextUnitTime",
+        "minTalkDisplayTime": "_minTalkDisplayTime",
+        "waitVideoLingeringTimeOnAutoPlay": "_waitVideoLingeringTimeOnAutoPlay",
+        "waitSubtitlesLingeringTimeOnAutoPlay": "_waitSubtitlesLingeringTimeOnAutoPlay",
+        "waitCommandLingeringTimeOnAutoPlay": "_waitCommandLingeringTimeOnAutoPlay",
+        "shakeFieldStrength": "_shakeFieldStrength",
+        "shakeUIStrength": "_shakeUIStrength",
+        "cameraShakeStrength": "_cameraShakeStrength",
+        "cameraShakeDuration": "_cameraShakeDuration",
+        "cameraShakeVibrato": "_cameraShakeVibrato",
+        "cameraShakeRandomness": "_cameraShakeRandomness",
+        "defaultPanV2FocusSlideRate": "_defaultPanV2FocusSlideRate",
+    }
+    quality = ("Worst", "Low", "Middle", "High", "Best")
+    return {
+        **{field: bool(native[key]) for field, key in flags.items()},
+        **{field: float(native[key]) for field, key in numbers.items()},
+        "targetNameSplitKey": str(native["_targetNameSplitKey"]),
+        "renderScaleByQuality": [float(native[f"_renderScaleFor{mode}Quality"]) for mode in quality],
+        "targetFrameRateByQuality": [int(native[f"_targetFrameRateFor{mode}Quality"]) for mode in quality],
+    }
+
+
 def _story_runtime(data: BuildData, stories: dict[str, Any]) -> dict[str, Any]:
     transition = "Assets/AddressableResources/Adv/Transition/adv_transition_0001/texture.png"
     episodes = stories.get("episodes", {})
@@ -4640,25 +4756,11 @@ def _story_runtime(data: BuildData, stories: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"ADV stage references an unknown post effect: {name}")
             post_effects[str(name)] = profile
     return {
-        "allowUnityLighting": True,
-        "allowCharacterPhysics": True,
-        "allowCharacterBreathMotion": True,
-        "allowCharacterBlur": True,
-        "allowBackgroundBlur": True,
-        "allowStageParticleEffect": True,
-        "allowStagePostEffect": True,
-        "renderScaleByQuality": [1, 1, 1, 1, 1],
-        "targetFrameRateByQuality": [30, 30, 45, 60, 60],
-        "targetNameSplitKey": "・",
+        **_adv_player_settings(data),
         "uiSprites": _story_ui_sprites(data),
         "chatAssets": _adv_chat_assets(data),
         "postEffects": dict(sorted(post_effects.items())),
         "stages": stages,
-        "waitTalkTextUnitTime": 0.04,
-        "minTalkDisplayTime": 1.6,
-        "waitVideoLingeringTimeOnAutoPlay": 0.3,
-        "waitSubtitlesLingeringTimeOnAutoPlay": 0.1,
-        "waitCommandLingeringTimeOnAutoPlay": 2,
         "stage": {
             "positions": {str(value): {"x": (value - 5) * 0.4, "y": 0, "z": 0} for value in (1, 3, 5, 7, 9)},
             "focusAnchors": {str(value): {"x": (value - 5) * 0.4, "y": 0, "z": 0} for value in range(1, 10)},
