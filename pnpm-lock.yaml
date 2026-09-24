@@ -277,6 +277,9 @@ importers:
       '@types/node':
         specifier: ^26.1.0
         version: 26.1.0
+      prettier:
+        specifier: 3.7.4
+        version: 3.7.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -293,6 +296,9 @@ importers:
       '@types/node':
         specifier: ^26.1.0
         version: 26.1.0
+      prettier:
+        specifier: 3.7.4
+        version: 3.7.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -371,6 +377,9 @@ importers:
       '@types/three':
         specifier: ^0.184.1
         version: 0.184.1
+      prettier:
+        specifier: 3.7.4
+        version: 3.7.4
       three:
         specifier: 0.184.0
         version: 0.184.0
@@ -405,6 +414,9 @@ importers:
       '@vue/compiler-sfc':
         specifier: ^3.5.39
         version: 3.5.39
+      prettier:
+        specifier: 3.7.4
+        version: 3.7.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
