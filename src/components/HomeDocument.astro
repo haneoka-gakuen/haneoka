@@ -7,9 +7,25 @@ import { group, t } from "../i18n/messages";
 import { LOCALES, type Locale } from "../i18n/locales";
 const { locale } = Astro.props as { locale: Locale };
 const title = t(locale, "homePage.overview", "haneoka");
+const seoTitleValues: Record<Locale, string> = {
+  ja: "BanG Dream! Our Notes 資料アーカイブ",
+  en: "BanG Dream! Our Notes Archive",
+  "zh-TW": "BanG Dream! Our Notes 資料庫",
+  "zh-CN": "BanG Dream! Our Notes 资料库",
+  ko: "BanG Dream! Our Notes 자료 아카이브",
+};
 const extraKeys = [
-  "tuneTitle", "tuneDefault", "expertLevel", "songsCount", "members", "viewAll",
-  "latestSongs", "catalog", "archive", "cards", "memberCards",
+  "tuneTitle",
+  "tuneDefault",
+  "expertLevel",
+  "songsCount",
+  "members",
+  "viewAll",
+  "latestSongs",
+  "catalog",
+  "archive",
+  "cards",
+  "memberCards",
   ...CATALOG_HUB.map((item) => item.label),
 ];
 const labels = JSON.stringify(
@@ -21,4 +37,9 @@ const labels = JSON.stringify(
   ),
 );
 ---
-<Base locale={locale} route="/" title={title} titleKey="homePage.overview"><AppShell locale={locale} route="/" title={title} titleKey="homePage.overview"><HomePage locale={locale} labels={labels} /></AppShell></Base>
+
+<Base locale={locale} route="/" title={title} titleKey="homePage.overview" seoTitleValues={seoTitleValues}>
+  <AppShell locale={locale} route="/" title={title} titleKey="homePage.overview">
+    <HomePage locale={locale} labels={labels} />
+  </AppShell>
+</Base>

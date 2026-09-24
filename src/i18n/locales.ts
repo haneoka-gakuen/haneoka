@@ -8,7 +8,7 @@ export const localeTag = (locale: Locale) =>
 export const localeFallbacks = (locale: Locale): readonly Locale[] =>
   locale === "zh-CN" ? ["zh-CN", "zh-TW", "ja", "en", "ko"] : [locale, "ja", ...LOCALES];
 export const localePath = (route: string, locale: Locale) => {
-  const clean = route === "/" ? "/" : `/${route.replace(/^\/+|\/+$/g, "")}`;
+  const clean = route === "/" ? "/" : `/${route.replace(/^\/+|\/+$/g, "")}/`;
   void locale;
   return clean;
 };

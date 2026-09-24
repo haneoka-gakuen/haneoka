@@ -1,15 +1,16 @@
 ---
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
-import {
-  NAV_SECTIONS,
-  PRIMARY_DESTINATIONS,
-  isDestinationActive,
-  isRouteActive,
-} from "../config/navigation";
+import { NAV_SECTIONS, PRIMARY_DESTINATIONS, isDestinationActive, isRouteActive } from "../config/navigation";
 import { LOCALES, localePath, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-interface Props { locale: Locale; route: string; title: string; titleKey?: string }
+import { pageDescription, shouldNoindex } from "../lib/seo";
+interface Props {
+  locale: Locale;
+  route: string;
+  title: string;
+  titleKey?: string;
+}
 const { locale, route, title, titleKey } = Astro.props;
 const itemActive = (target: string) => isRouteActive(target, route);
 const navigation = PRIMARY_DESTINATIONS.map((destination) => ({
@@ -26,14 +27,46 @@ const utilities = [
 ];
 const i18nValues = (key: string, fallback: string) =>
   JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
+const showSearchContext =
+  !shouldNoindex(route) && (route === "/catalog" || route.startsWith("/catalog/") || route.startsWith("/community/"));
+const searchContextValues = showSearchContext
+  ? Object.fromEntries(
+      LOCALES.map((target) => [target, pageDescription(target, route, titleKey ? t(target, titleKey, title) : title)]),
+    )
+  : undefined;
+const searchContext = searchContextValues?.[locale];
 ---
-<div class="app-shell" data-shell>
-  <a class="skip-link" href="#main-content"><I18nText keyName="content" fallback="Content" locale={locale} /></a>
-  <button class="nav-scrim" type="button" tabindex="-1" data-nav-close aria-label={t(locale, "close", "Close")} data-i18n-aria-label-values={i18nValues("close", "Close")}></button>
 
-  <nav class="nav" id="global-navigation" aria-label={t(locale, "primaryNavigation", "Primary navigation")} data-i18n-aria-label-values={i18nValues("primaryNavigation", "Primary navigation")} data-nav>
+<div class="app-shell" data-shell>
+  <a class="skip-link" href="#main-content">
+    <I18nText keyName="content" fallback="Content" locale={locale} />
+  </a>
+  <button
+    class="nav-scrim"
+    type="button"
+    tabindex="-1"
+    data-nav-close
+    aria-label={t(locale, "close", "Close")}
+    data-i18n-aria-label-values={i18nValues("close", "Close")}
+  ></button>
+
+  <nav
+    class="nav"
+    id="global-navigation"
+    aria-label={t(locale, "primaryNavigation", "Primary navigation")}
+    data-i18n-aria-label-values={i18nValues("primaryNavigation", "Primary navigation")}
+    data-nav
+  >
     <div class="nav__header">
-      <button class="icon-button nav__toggle" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")} data-i18n-aria-label-values={i18nValues("menu", "Menu")}>
+      <button
+        class="icon-button nav__toggle"
+        type="button"
+        data-nav-toggle
+        aria-controls="global-navigation"
+        aria-expanded="false"
+        aria-label={t(locale, "menu", "Menu")}
+        data-i18n-aria-label-values={i18nValues("menu", "Menu")}
+      >
         <Icon name="menu" />
       </button>
       <a class="nav__brand" href={localePath("/", locale)} aria-label="haneoka">
@@ -47,8 +80,14 @@ const i18nValues = (key: string, fallback: string) =>
         const current = isDestinationActive(destination, route);
         return (
           <li>
-            <a class="rail-item" href={localePath(destination.route, locale)} aria-current={current ? "page" : undefined}>
-              <span class="rail-item__indicator"><Icon name={destination.icon} filled={current} /></span>
+            <a
+              class="rail-item"
+              href={localePath(destination.route, locale)}
+              aria-current={current ? "page" : undefined}
+            >
+              <span class="rail-item__indicator">
+                <Icon name={destination.icon} filled={current} />
+              </span>
               <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
             </a>
           </li>
@@ -64,44 +103,127 @@ const i18nValues = (key: string, fallback: string) =>
           return (
             <li>
               <div class="nav__destination">
-                <a class="nav-item nav-item--primary" href={localePath(destination.route, locale)} aria-current={current ? (route === destination.route ? "page" : "location") : undefined}>
+                <a
+                  class="nav-item nav-item--primary"
+                  href={localePath(destination.route, locale)}
+                  aria-current={current ? (route === destination.route ? "page" : "location") : undefined}
+                >
                   <Icon name={destination.icon} filled={current} />
                   <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
                 </a>
-                {destination.sections.length > 0 && <button class="icon-button nav__disclosure" type="button" data-nav-branch={branchId} aria-controls={branchId} aria-expanded={current} aria-label={t(locale, destination.label, destination.id)} data-i18n-aria-label-values={i18nValues(destination.label, destination.id)}><Icon name="expand_more" /></button>}
+                {destination.sections.length > 0 && (
+                  <button
+                    class="icon-button nav__disclosure"
+                    type="button"
+                    data-nav-branch={branchId}
+                    aria-controls={branchId}
+                    aria-expanded={current}
+                    aria-label={t(locale, destination.label, destination.id)}
+                    data-i18n-aria-label-values={i18nValues(destination.label, destination.id)}
+                  >
+                    <Icon name="expand_more" />
+                  </button>
+                )}
               </div>
-              {destination.sections.length > 0 && <div class="nav__branch" id={branchId} hidden={!current}>
-                {destination.sections.map((section) => {
-                  const links = <ul class="nav__children" role="list">{section.items.map((item) => <li><a class="nav-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a></li>)}</ul>;
-                  return destination.sections.length === 1 ? links : <details class="nav__section" open={section.items.some((item) => itemActive(item.route)) || (route === destination.route && section === destination.sections[0])}><summary><I18nText keyName={section.label} fallback={section.id} locale={locale} /><Icon name="expand_more" /></summary>{links}</details>;
-                })}
-              </div>}
+              {destination.sections.length > 0 && (
+                <div class="nav__branch" id={branchId} hidden={!current}>
+                  {destination.sections.map((section) => {
+                    const links = (
+                      <ul class="nav__children" role="list">
+                        {section.items.map((item) => (
+                          <li>
+                            <a
+                              class="nav-item"
+                              href={localePath(item.route, locale)}
+                              aria-current={itemActive(item.route) ? "page" : undefined}
+                            >
+                              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                    return destination.sections.length === 1 ? (
+                      links
+                    ) : (
+                      <details
+                        class="nav__section"
+                        open={
+                          section.items.some((item) => itemActive(item.route)) ||
+                          (route === destination.route && section === destination.sections[0])
+                        }
+                      >
+                        <summary>
+                          <I18nText keyName={section.label} fallback={section.id} locale={locale} />
+                          <Icon name="expand_more" />
+                        </summary>
+                        {links}
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
             </li>
           );
         })}
       </ul>
       <ul class="nav__utilities" role="list">
-        {utilities.map((item) => <li><a class="nav-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><Icon name={item.icon} filled={itemActive(item.route)} /><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a></li>)}
+        {utilities.map((item) => (
+          <li>
+            <a
+              class="nav-item"
+              href={localePath(item.route, locale)}
+              aria-current={itemActive(item.route) ? "page" : undefined}
+            >
+              <Icon name={item.icon} filled={itemActive(item.route)} />
+              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
+            </a>
+          </li>
+        ))}
       </ul>
     </div>
 
     <div class="nav__rail-utilities">
-      {utilities.map((item) => <a class="rail-item" href={localePath(item.route, locale)} aria-current={itemActive(item.route) ? "page" : undefined}><span class="rail-item__indicator"><Icon name={item.icon} filled={itemActive(item.route)} /></span><I18nText keyName={item.label} fallback={item.label} locale={locale} /></a>)}
+      {utilities.map((item) => (
+        <a
+          class="rail-item"
+          href={localePath(item.route, locale)}
+          aria-current={itemActive(item.route) ? "page" : undefined}
+        >
+          <span class="rail-item__indicator">
+            <Icon name={item.icon} filled={itemActive(item.route)} />
+          </span>
+          <I18nText keyName={item.label} fallback={item.label} locale={locale} />
+        </a>
+      ))}
     </div>
   </nav>
 
   <div class="app-shell__body">
     <header class="top-app-bar" data-top-app-bar>
-      <button class="icon-button top-app-bar__menu" type="button" data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "menu", "Menu")} data-i18n-aria-label-values={i18nValues("menu", "Menu")}><Icon name="menu" /></button>
+      <button
+        class="icon-button top-app-bar__menu"
+        type="button"
+        data-nav-toggle
+        aria-controls="global-navigation"
+        aria-expanded="false"
+        aria-label={t(locale, "menu", "Menu")}
+        data-i18n-aria-label-values={i18nValues("menu", "Menu")}
+      >
+        <Icon name="menu" />
+      </button>
       <h1>{titleKey ? <I18nText keyName={titleKey} fallback={title} locale={locale} /> : title}</h1>
       <div class="top-app-bar__actions" data-top-app-bar-actions></div>
     </header>
     <main class="app-shell__main page-stage" id="main-content" tabindex="-1">
+      {searchContext && (
+        <p class="page-search-context" data-i18n-values={JSON.stringify(searchContextValues)}>
+          {searchContext}
+        </p>
+      )}
       <slot />
     </main>
   </div>
-
-
 </div>
 <script>
   import { trapFocus } from "../lib/overlay";
@@ -113,7 +235,9 @@ const i18nValues = (key: string, fallback: string) =>
 
   const shell = () => document.querySelector<HTMLElement>("[data-shell]");
   const syncToggles = (expanded: boolean) =>
-    document.querySelectorAll("[data-nav-toggle]").forEach((node) => node.setAttribute("aria-expanded", String(expanded)));
+    document
+      .querySelectorAll("[data-nav-toggle]")
+      .forEach((node) => node.setAttribute("aria-expanded", String(expanded)));
 
   /** Below 1200px the expanded navigation is modal: it floats over a scrim and the page goes inert. */
   const setModal = (open: boolean) => {
@@ -122,13 +246,19 @@ const i18nValues = (key: string, fallback: string) =>
     host.classList.toggle("nav-modal-open", open);
     if (open) {
       for (const target of document.querySelectorAll<HTMLElement>(".app-shell__body, audio-dock")) {
-        if (!target.inert) { target.inert = true; inertTargets.add(target); }
+        if (!target.inert) {
+          target.inert = true;
+          inertTargets.add(target);
+        }
       }
       const navigation = host.querySelector<HTMLElement>("[data-nav]");
-      if (navigation && !releaseNavigationFocus) releaseNavigationFocus = trapFocus(navigation, {
-        onDismiss: () => setModal(false),
-        initialFocus: navigation.querySelector<HTMLElement>(".nav__children [aria-current], .nav__drawer [aria-current], .nav-item"),
-      });
+      if (navigation && !releaseNavigationFocus)
+        releaseNavigationFocus = trapFocus(navigation, {
+          onDismiss: () => setModal(false),
+          initialFocus: navigation.querySelector<HTMLElement>(
+            ".nav__children [aria-current], .nav__drawer [aria-current], .nav-item",
+          ),
+        });
     } else {
       for (const target of inertTargets) target.inert = false;
       inertTargets.clear();
@@ -139,7 +269,9 @@ const i18nValues = (key: string, fallback: string) =>
   };
   const setPersistent = (expanded: boolean) => {
     root.dataset.nav = expanded ? "expanded" : "collapsed";
-    try { localStorage.setItem(EXPANDED_KEY, String(expanded)); } catch {}
+    try {
+      localStorage.setItem(EXPANDED_KEY, String(expanded));
+    } catch {}
     syncToggles(expanded);
   };
 
@@ -148,37 +280,53 @@ const i18nValues = (key: string, fallback: string) =>
     if (!host || host.dataset.initialized === "true") return;
     host.dataset.initialized = "true";
     syncToggles(persistentQuery.matches && root.dataset.nav !== "collapsed");
-    host.querySelectorAll("[data-nav-toggle]").forEach((node) => node.addEventListener("click", () => {
-      if (persistentQuery.matches) setPersistent(root.dataset.nav === "collapsed");
-      else setModal(!host.classList.contains("nav-modal-open"));
-    }));
-    host.querySelectorAll<HTMLButtonElement>("[data-nav-branch]").forEach((button) => button.addEventListener("click", () => {
-      const branch = document.getElementById(button.dataset.navBranch || "");
-      if (!branch) return;
-      branch.hidden = !branch.hidden;
-      button.setAttribute("aria-expanded", String(!branch.hidden));
-    }));
+    host.querySelectorAll("[data-nav-toggle]").forEach((node) =>
+      node.addEventListener("click", () => {
+        if (persistentQuery.matches) setPersistent(root.dataset.nav === "collapsed");
+        else setModal(!host.classList.contains("nav-modal-open"));
+      }),
+    );
+    host.querySelectorAll<HTMLButtonElement>("[data-nav-branch]").forEach((button) =>
+      button.addEventListener("click", () => {
+        const branch = document.getElementById(button.dataset.navBranch || "");
+        if (!branch) return;
+        branch.hidden = !branch.hidden;
+        button.setAttribute("aria-expanded", String(!branch.hidden));
+      }),
+    );
     host.querySelectorAll("[data-nav-close]").forEach((node) => node.addEventListener("click", () => setModal(false)));
 
     // Keep the drawer's scroll position across page swaps so long sections don't jump.
     const drawer = host.querySelector<HTMLElement>(".nav__drawer");
-    try { if (drawer) drawer.scrollTop = Number(sessionStorage.getItem("haneoka.navigation.scroll.v2") || 0); } catch {}
-    drawer?.addEventListener("scroll", () => {
-      try { sessionStorage.setItem("haneoka.navigation.scroll.v2", String(drawer.scrollTop)); } catch {}
-    }, { passive: true });
+    try {
+      if (drawer) drawer.scrollTop = Number(sessionStorage.getItem("haneoka.navigation.scroll.v2") || 0);
+    } catch {}
+    drawer?.addEventListener(
+      "scroll",
+      () => {
+        try {
+          sessionStorage.setItem("haneoka.navigation.scroll.v2", String(drawer.scrollTop));
+        } catch {}
+      },
+      { passive: true },
+    );
 
     // Material top app bar: the container switches to the "on scroll" surface once content scrolls under it.
     const bar = host.querySelector<HTMLElement>("[data-top-app-bar]");
     const main = host.querySelector<HTMLElement>("#main-content");
     let frame = 0;
-    main?.addEventListener("scroll", (event) => {
-      if (frame) return;
-      const target = event.target as HTMLElement;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        bar?.classList.toggle("is-scrolled", target.scrollTop > 2);
-      });
-    }, { capture: true, passive: true });
+    main?.addEventListener(
+      "scroll",
+      (event) => {
+        if (frame) return;
+        const target = event.target as HTMLElement;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          bar?.classList.toggle("is-scrolled", target.scrollTop > 2);
+        });
+      },
+      { capture: true, passive: true },
+    );
   };
 
   initializeShell();
@@ -186,3 +334,12 @@ const i18nValues = (key: string, fallback: string) =>
   persistentQuery.addEventListener("change", () => setModal(false));
   document.addEventListener("astro:before-swap", () => setModal(false));
 </script>
+<style>
+  .page-search-context {
+    width: min(100%, var(--content-max));
+    margin: 0 auto 8px;
+    padding-inline: var(--md-comp-page-inline-space);
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 0.95rem/1.65 var(--app-font);
+  }
+</style>

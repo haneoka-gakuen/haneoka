@@ -9,81 +9,255 @@ import "@fontsource-variable/noto-sans-kr/wght.css";
 import { ClientRouter } from "astro:transitions";
 import { DEFAULT_LOCALE, LOCALES, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-interface Props { locale: Locale; title: string; titleKey?: string; description?: string; route: string }
-const { locale, title, titleKey, description, route } = Astro.props;
+import { canonicalPath, pageDescription, shouldNoindex } from "../lib/seo";
+interface Props {
+  locale: Locale;
+  title: string;
+  titleKey?: string;
+  description?: string;
+  route: string;
+  seoTitleValues?: Partial<Record<Locale, string>>;
+}
+const { locale, title, titleKey, description, route, seoTitleValues } = Astro.props;
 const origin = Astro.site?.origin ?? "https://haneoka.org";
-const fullTitle = title === "haneoka" ? title : `${title} · haneoka`;
-const titleValues = titleKey
-  ? Object.fromEntries(LOCALES.map((target) => {
-      const value = t(target, titleKey, title);
-      return [target, value === "haneoka" ? value : `${value} · haneoka`];
-    }))
-  : Object.fromEntries(LOCALES.map((target) => [target, fullTitle]));
+const formatTitle = (value: string) => (value === "haneoka" ? value : `${value} · haneoka`);
+const fullTitle = formatTitle(seoTitleValues?.[locale] ?? title);
+const titleValues = seoTitleValues
+  ? Object.fromEntries(LOCALES.map((target) => [target, formatTitle(seoTitleValues[target] ?? title)]))
+  : titleKey
+    ? Object.fromEntries(
+        LOCALES.map((target) => {
+          const value = t(target, titleKey, title);
+          return [target, formatTitle(value)];
+        }),
+      )
+    : Object.fromEntries(LOCALES.map((target) => [target, formatTitle(title)]));
+const descriptionValues = Object.fromEntries(
+  LOCALES.map((target) => {
+    const localizedTitle = titleKey ? t(target, titleKey, title) : title;
+    const customDescription = description?.trim() && description.trim() !== title.trim() ? description : undefined;
+    return [target, customDescription ?? pageDescription(target, route, localizedTitle)];
+  }),
+);
+const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE))}`;
 ---
+
 <!doctype html>
 <html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" transition:animate="none">
   <head>
-    <style is:inline>@layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;</style>
-    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <script is:inline>if(!window.__haneokaDetailHistoryHook){window.__haneokaDetailHistoryHook=true;window.addEventListener("popstate",(event)=>{const local=new CustomEvent("haneoka:detail-popstate",{cancelable:true});window.dispatchEvent(local);if(local.defaultPrevented)event.stopImmediatePropagation();},true);}</script>
+    <style is:inline>
+      @layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
+    </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <script is:inline>
+      if (!window.__haneokaDetailHistoryHook) {
+        window.__haneokaDetailHistoryHook = true;
+        window.addEventListener(
+          "popstate",
+          (event) => {
+            const local = new CustomEvent("haneoka:detail-popstate", { cancelable: true });
+            window.dispatchEvent(local);
+            if (local.defaultPrevented) event.stopImmediatePropagation();
+          },
+          true,
+        );
+      }
+    </script>
     <ClientRouter />
-    <script is:inline>(()=>{const ok=/^(ja|en|zh-TW|zh-CN|ko)$/;const match=v=>{try{const p=Intl.getCanonicalLocales(String(v||"").replaceAll("_","-"))[0]?.toLowerCase().split("-")||[];if(p[0]==="ja"||p[0]==="en"||p[0]==="ko")return p[0];if(p[0]!=="zh")return null;if(p.includes("hant")||p.some(x=>["tw","hk","mo"].includes(x)))return"zh-TW";return"zh-CN"}catch{return null}};let l="";try{const s=localStorage.getItem("haneoka.locale");l=ok.test(s||"")?s:""}catch{}if(!l)l=(navigator.languages||[navigator.language]).map(match).find(Boolean)||"ja";const d=document.documentElement,t={ja:"ja-JP",en:"en-US","zh-TW":"zh-TW","zh-CN":"zh-CN",ko:"ko-KR"};d.lang=t[l];d.dataset.locale=l;try{localStorage.setItem("haneoka.locale",l)}catch{}})()</script>
-    <script is:inline>(()=>{const d=document.documentElement;try{const p=localStorage.getItem("haneoka.ui-theme.v1")||"system",r=p==="system"?(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light"):p;d.dataset.theme=r;d.dataset.themePreference=p}catch{}try{const s=localStorage.getItem("haneoka.ui-seed.v1");d.dataset.seed=/^(haneoka|band-[1-5])$/.test(s||"")?s:"haneoka";d.dataset.nav=localStorage.getItem("haneoka.navigation.expanded.v2")==="false"?"collapsed":"expanded";d.dataset.density=localStorage.getItem("haneoka.ui-density.v1")==="compact"?"compact":"comfortable"}catch{d.dataset.seed="haneoka";d.dataset.nav="expanded";d.dataset.density="comfortable"}})()</script>
-    <title data-i18n-values={JSON.stringify(titleValues)}>{fullTitle}</title><meta name="description" content={description ?? title} /><meta name="theme-color" content="#f0edf1" /><meta name="color-scheme" content="light dark" />
-    <link rel="canonical" href={`${origin}${localePath(route, DEFAULT_LOCALE)}`} />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" /><link rel="manifest" href="/site.webmanifest" />
+    <script is:inline>
+      (() => {
+        const ok = /^(ja|en|zh-TW|zh-CN|ko)$/;
+        const match = (v) => {
+          try {
+            const p =
+              Intl.getCanonicalLocales(String(v || "").replaceAll("_", "-"))[0]
+                ?.toLowerCase()
+                .split("-") || [];
+            if (p[0] === "ja" || p[0] === "en" || p[0] === "ko") return p[0];
+            if (p[0] !== "zh") return null;
+            if (p.includes("hant") || p.some((x) => ["tw", "hk", "mo"].includes(x))) return "zh-TW";
+            return "zh-CN";
+          } catch {
+            return null;
+          }
+        };
+        let l = "";
+        try {
+          const s = localStorage.getItem("haneoka.locale");
+          l = ok.test(s || "") ? s : "";
+        } catch {}
+        if (!l) l = (navigator.languages || [navigator.language]).map(match).find(Boolean) || "ja";
+        const d = document.documentElement,
+          t = { ja: "ja-JP", en: "en-US", "zh-TW": "zh-TW", "zh-CN": "zh-CN", ko: "ko-KR" };
+        d.lang = t[l];
+        d.dataset.locale = l;
+        try {
+          localStorage.setItem("haneoka.locale", l);
+        } catch {}
+      })();
+    </script>
+    <script is:inline>
+      (() => {
+        const d = document.documentElement;
+        try {
+          const p = localStorage.getItem("haneoka.ui-theme.v1") || "system",
+            r = p === "system" ? (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light") : p;
+          d.dataset.theme = r;
+          d.dataset.themePreference = p;
+        } catch {}
+        try {
+          const s = localStorage.getItem("haneoka.ui-seed.v1");
+          d.dataset.seed = /^(haneoka|band-[1-5])$/.test(s || "") ? s : "haneoka";
+          d.dataset.nav = localStorage.getItem("haneoka.navigation.expanded.v2") === "false" ? "collapsed" : "expanded";
+          d.dataset.density = localStorage.getItem("haneoka.ui-density.v1") === "compact" ? "compact" : "comfortable";
+        } catch {
+          d.dataset.seed = "haneoka";
+          d.dataset.nav = "expanded";
+          d.dataset.density = "comfortable";
+        }
+      })();
+    </script>
+    <title data-i18n-values={JSON.stringify(titleValues)}>{fullTitle}</title>
+    <meta name="description" content={descriptionValues[locale]} data-i18n-values={JSON.stringify(descriptionValues)} />
+    <meta name="theme-color" content="#f0edf1" />
+    <meta name="color-scheme" content="light dark" />
+    {shouldNoindex(route) && <meta name="robots" content="noindex,follow" />}
+    <link rel="canonical" href={canonicalHref} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/site.webmanifest" />
   </head>
-  <body><slot /><audio-dock transition:persist="haneoka-audio"></audio-dock><script is:inline>(()=>{const tags={ja:"ja-JP",en:"en-US","zh-TW":"zh-TW","zh-CN":"zh-CN",ko:"ko-KR"};const apply=l=>{if(!tags[l])return;const d=document.documentElement;d.dataset.locale=l;d.lang=tags[l];try{localStorage.setItem("haneoka.locale",l)}catch{}document.cookie="haneoka.locale="+encodeURIComponent(l)+"; Path=/; Max-Age=31536000; SameSite=Lax";document.querySelectorAll("[data-i18n-values]").forEach(n=>{try{const v=JSON.parse(n.getAttribute("data-i18n-values")||"{}");if(typeof v[l]==="string")n.textContent=v[l]}catch{}});document.querySelectorAll("[data-i18n-aria-label-values]").forEach(n=>{try{const v=JSON.parse(n.getAttribute("data-i18n-aria-label-values")||"{}");if(typeof v[l]==="string")n.setAttribute("aria-label",v[l])}catch{}});window.dispatchEvent(new CustomEvent("haneoka:locale-ready",{detail:l}))};window.__haneokaApplyLocale=apply;apply(document.documentElement.dataset.locale||"ja")})()</script><script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}),{once:true});</script><script>const restoreAudioDock=async()=>{try{const value=JSON.parse(localStorage.getItem("haneoka:audio:v2")||"null");if(!Array.isArray(value?.queue)||!value.queue.length)return;if(!customElements.get("audio-dock"))await import("../lit/runtime/audio-dock");if(!document.querySelector("audio-dock")){const dock=document.createElement("audio-dock");dock.setAttribute("data-astro-transition-persist","haneoka-audio");document.body.append(dock)}}catch{}};void restoreAudioDock();document.addEventListener("astro:page-load",restoreAudioDock);const localeTags={ja:"ja-JP",en:"en-US","zh-TW":"zh-TW","zh-CN":"zh-CN",ko:"ko-KR"};document.addEventListener("astro:before-swap",(event)=>{const locale=document.documentElement.dataset.locale||"ja";const next=(event as Event&{newDocument:Document}).newDocument;if(next){next.documentElement.dataset.locale=locale;next.documentElement.lang=localeTags[locale as keyof typeof localeTags]||"ja-JP"}});document.addEventListener("astro:after-swap",()=>{let locale=document.documentElement.dataset.locale||"";try{locale=localStorage.getItem("haneoka.locale")||locale}catch{};(window as Window&{__haneokaApplyLocale?:(locale:string)=>void}).__haneokaApplyLocale?.(locale||"ja")});</script><script>
-    import { SEED_KEY, isSeed, syncThemeColor } from "../lib/tuning";
-    import { installRipple } from "../lib/ripple";
-    installRipple();
-    // Material "fade through" for page navigation, scoped to the content pane. The
-    // view-transition-name is only present while a navigation runs: a permanent one
-    // would make the pane a stacking context and trap the pages' fixed overlays.
-    type SwapEvent = Event & { newDocument: Document; viewTransition?: { finished: Promise<void> } };
-    document.addEventListener("astro:after-preparation", () => {
-      document.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
-    });
-    document.addEventListener("astro:before-swap", (event) => {
-      const swap = event as SwapEvent;
-      swap.newDocument.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
-      const clear = () => document.querySelector<HTMLElement>("#main-content")?.style.removeProperty("view-transition-name");
-      if (swap.viewTransition) swap.viewTransition.finished.finally(clear);
-      else queueMicrotask(clear);
-    });
-    type ThemeWindow = Window & { __haneokaApplyTheme?: () => void };
-    const themeMedia = matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => {
-      let preference = "system";
-      try { preference = localStorage.getItem("haneoka.ui-theme.v1") || "system"; } catch {}
-      if (!['light', 'dark', 'system'].includes(preference)) preference = "system";
-      const resolved = preference === "system" ? (themeMedia.matches ? "dark" : "light") : preference;
-      const root = document.documentElement;
-      root.dataset.theme = resolved;
-      root.dataset.themePreference = preference;
-      syncThemeColor();
-    };
-    (window as ThemeWindow).__haneokaApplyTheme = applyTheme;
-    applyTheme();
-    if (document.documentElement.dataset.themeListener !== "true") {
-      document.documentElement.dataset.themeListener = "true";
-      themeMedia.addEventListener("change", () => {
-        let preference = "system";
-        try { preference = localStorage.getItem("haneoka.ui-theme.v1") || "system"; } catch {}
-        if (preference === "system") applyTheme();
+  <body>
+    <slot />
+    <audio-dock transition:persist="haneoka-audio"></audio-dock>
+    <script is:inline>
+      (() => {
+        const tags = { ja: "ja-JP", en: "en-US", "zh-TW": "zh-TW", "zh-CN": "zh-CN", ko: "ko-KR" };
+        const apply = (l) => {
+          if (!tags[l]) return;
+          const d = document.documentElement;
+          d.dataset.locale = l;
+          d.lang = tags[l];
+          try {
+            localStorage.setItem("haneoka.locale", l);
+          } catch {}
+          document.cookie = "haneoka.locale=" + encodeURIComponent(l) + "; Path=/; Max-Age=31536000; SameSite=Lax";
+          document.querySelectorAll("[data-i18n-values]").forEach((n) => {
+            try {
+              const v = JSON.parse(n.getAttribute("data-i18n-values") || "{}");
+              if (typeof v[l] === "string") {
+                if (n instanceof HTMLMetaElement && n.name === "description") n.content = v[l];
+                else n.textContent = v[l];
+              }
+            } catch {}
+          });
+          document.querySelectorAll("[data-i18n-aria-label-values]").forEach((n) => {
+            try {
+              const v = JSON.parse(n.getAttribute("data-i18n-aria-label-values") || "{}");
+              if (typeof v[l] === "string") n.setAttribute("aria-label", v[l]);
+            } catch {}
+          });
+          window.dispatchEvent(new CustomEvent("haneoka:locale-ready", { detail: l }));
+        };
+        window.__haneokaApplyLocale = apply;
+        apply(document.documentElement.dataset.locale || "ja");
+      })();
+    </script>
+    <script>
+      if ("serviceWorker" in navigator)
+        addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });
+    </script>
+    <script>
+      const restoreAudioDock = async () => {
+        try {
+          const value = JSON.parse(localStorage.getItem("haneoka:audio:v2") || "null");
+          if (!Array.isArray(value?.queue) || !value.queue.length) return;
+          if (!customElements.get("audio-dock")) await import("../lit/runtime/audio-dock");
+          if (!document.querySelector("audio-dock")) {
+            const dock = document.createElement("audio-dock");
+            dock.setAttribute("data-astro-transition-persist", "haneoka-audio");
+            document.body.append(dock);
+          }
+        } catch {}
+      };
+      void restoreAudioDock();
+      document.addEventListener("astro:page-load", restoreAudioDock);
+      const localeTags = { ja: "ja-JP", en: "en-US", "zh-TW": "zh-TW", "zh-CN": "zh-CN", ko: "ko-KR" };
+      document.addEventListener("astro:before-swap", (event) => {
+        const locale = document.documentElement.dataset.locale || "ja";
+        const next = (event as Event & { newDocument: Document }).newDocument;
+        if (next) {
+          next.documentElement.dataset.locale = locale;
+          next.documentElement.lang = localeTags[locale as keyof typeof localeTags] || "ja-JP";
+        }
       });
-    }
-    document.addEventListener("astro:before-swap", (event) => {
-      const next = (event as Event & { newDocument: Document }).newDocument;
-      if (!next) return;
-      next.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
-      next.documentElement.dataset.themePreference = document.documentElement.dataset.themePreference || "system";
-      next.documentElement.dataset.nav = document.documentElement.dataset.nav || "expanded";
-      next.documentElement.dataset.density = document.documentElement.dataset.density || "comfortable";
-      let seed = document.documentElement.dataset.seed;
-      try { seed = localStorage.getItem(SEED_KEY) || seed; } catch {}
-      next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";
-    });
-    document.addEventListener("astro:after-swap", applyTheme);
-  </script></body>
+      document.addEventListener("astro:after-swap", () => {
+        let locale = document.documentElement.dataset.locale || "";
+        try {
+          locale = localStorage.getItem("haneoka.locale") || locale;
+        } catch {}
+        (window as Window & { __haneokaApplyLocale?: (locale: string) => void }).__haneokaApplyLocale?.(locale || "ja");
+      });
+    </script>
+    <script>
+      import { SEED_KEY, isSeed, syncThemeColor } from "../lib/tuning";
+      import { installRipple } from "../lib/ripple";
+      installRipple();
+      // Material "fade through" for page navigation, scoped to the content pane. The
+      // view-transition-name is only present while a navigation runs: a permanent one
+      // would make the pane a stacking context and trap the pages' fixed overlays.
+      type SwapEvent = Event & { newDocument: Document; viewTransition?: { finished: Promise<void> } };
+      document.addEventListener("astro:after-preparation", () => {
+        document.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
+      });
+      document.addEventListener("astro:before-swap", (event) => {
+        const swap = event as SwapEvent;
+        swap.newDocument.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
+        const clear = () =>
+          document.querySelector<HTMLElement>("#main-content")?.style.removeProperty("view-transition-name");
+        if (swap.viewTransition) swap.viewTransition.finished.finally(clear);
+        else queueMicrotask(clear);
+      });
+      type ThemeWindow = Window & { __haneokaApplyTheme?: () => void };
+      const themeMedia = matchMedia("(prefers-color-scheme: dark)");
+      const applyTheme = () => {
+        let preference = "system";
+        try {
+          preference = localStorage.getItem("haneoka.ui-theme.v1") || "system";
+        } catch {}
+        if (!["light", "dark", "system"].includes(preference)) preference = "system";
+        const resolved = preference === "system" ? (themeMedia.matches ? "dark" : "light") : preference;
+        const root = document.documentElement;
+        root.dataset.theme = resolved;
+        root.dataset.themePreference = preference;
+        syncThemeColor();
+      };
+      (window as ThemeWindow).__haneokaApplyTheme = applyTheme;
+      applyTheme();
+      if (document.documentElement.dataset.themeListener !== "true") {
+        document.documentElement.dataset.themeListener = "true";
+        themeMedia.addEventListener("change", () => {
+          let preference = "system";
+          try {
+            preference = localStorage.getItem("haneoka.ui-theme.v1") || "system";
+          } catch {}
+          if (preference === "system") applyTheme();
+        });
+      }
+      document.addEventListener("astro:before-swap", (event) => {
+        const next = (event as Event & { newDocument: Document }).newDocument;
+        if (!next) return;
+        next.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
+        next.documentElement.dataset.themePreference = document.documentElement.dataset.themePreference || "system";
+        next.documentElement.dataset.nav = document.documentElement.dataset.nav || "expanded";
+        next.documentElement.dataset.density = document.documentElement.dataset.density || "comfortable";
+        let seed = document.documentElement.dataset.seed;
+        try {
+          seed = localStorage.getItem(SEED_KEY) || seed;
+        } catch {}
+        next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";
+      });
+      document.addEventListener("astro:after-swap", applyTheme);
+    </script>
+  </body>
 </html>
