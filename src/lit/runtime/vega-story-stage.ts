@@ -15,6 +15,7 @@ import { vegaDefaultShell } from "@haneoka/vega-shell-default";
 import {
   vegaHaneokaTheme,
   createHaneokaThemeAssetsPlugin,
+  createHaneokaStorySequencePlugin,
   HANEOKA_POST_TEXTURE_ASSETS,
 } from "@haneoka/vega-theme-haneoka";
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
@@ -35,7 +36,9 @@ const CUBISM_PROVISION_URL = "/cubism-runtime/vega-cubism-web-runtime.mjs";
 const cubismAdapter = (): CubismRuntimeAdapter => {
   let resolved: CubismRuntimeAdapter | undefined;
   const runtime = async () => {
-    provision ??= import(/* @vite-ignore */ CUBISM_PROVISION_URL) as Promise<CubismProvision>;
+    provision ??= import(
+      /* @vite-ignore */ new URL(CUBISM_PROVISION_URL, document.baseURI).href
+    ) as Promise<CubismProvision>;
     resolved ??= (await provision).createCubismWebRuntimeAdapter({
       id: "haneoka.web-cubism-runtime",
       runtime: runtimeUrls,
@@ -99,6 +102,10 @@ export class VegaStoryStage extends LitElement {
   private loadedKey = "";
   private engine?: VegaEngine;
   private loadController?: AbortController;
+  private continuousPlay = false;
+  private sequenceListeners = new Set<() => void>();
+  private stopCompletionObserver?: () => void;
+  private completionEmitted = false;
 
   constructor() {
     super();
@@ -108,6 +115,11 @@ export class VegaStoryStage extends LitElement {
     this.providerBase = "";
     this.phase = "loading";
     this.issue = "";
+    try {
+      this.continuousPlay = localStorage.getItem("haneoka:story-continuous") === "true";
+    } catch {
+      /* Playback remains available without persistent storage. */
+    }
   }
   createRenderRoot() {
     return this;
@@ -168,16 +180,20 @@ export class VegaStoryStage extends LitElement {
           : Promise.all(keys.map((key) => this.json(url("live2d", key), signal))),
       ]);
       if (!active()) return;
-      const hydrated = hydrateStoryPayload({
-        ...story,
-        assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
-        runtime: resolveStoryRuntimeAssets(merge(runtime, story.runtime), server),
-      }) as AdvStory;
+      const hydrated = hydrateStoryPayload(
+        {
+          ...story,
+          assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
+          runtime: resolveStoryRuntimeAssets(merge(runtime, story.runtime), server),
+        },
+        { runtimeProfile: !providerBase && server === "intl" ? "intl-1.0.1" : undefined },
+      ) as AdvStory;
       this.phase = "ready";
       await this.updateComplete;
       if (!active()) return;
       const mount = this.querySelector<HTMLElement>(".vega-story-runtime__mount");
       if (!mount) throw new Error("Vega player host is unavailable");
+      const stage = this;
       const engine = createVega({
         plugins: [
           createVegaRichTextPlugin(),
@@ -187,6 +203,29 @@ export class VegaStoryStage extends LitElement {
           createCubismPlugin({ adapter: cubismAdapter() }),
           createHaneokaThemeAssetsPlugin({
             resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
+          }),
+          createHaneokaStorySequencePlugin({
+            get continuous() {
+              return stage.continuousPlay;
+            },
+            toggleContinuous: () => {
+              this.continuousPlay = !this.continuousPlay;
+              try {
+                localStorage.setItem("haneoka:story-continuous", String(this.continuousPlay));
+              } catch {
+                /* Keep the in-memory setting. */
+              }
+              for (const listener of this.sequenceListeners) listener();
+            },
+            interrupt: () => this.dispatchEvent(new CustomEvent("haneoka-story-interrupt", { bubbles: true })),
+            subscribe: (listener) => {
+              this.sequenceListeners.add(listener);
+              return {
+                dispose: () => {
+                  this.sequenceListeners.delete(listener);
+                },
+              };
+            },
           }),
           vegaHaneokaTheme,
         ],
@@ -218,6 +257,20 @@ export class VegaStoryStage extends LitElement {
       }
       player.shell?.setSetting("uiLanguage", locale);
       player.shell?.resume();
+      this.completionEmitted = false;
+      const completion = () => {
+        if (!active() || this.completionEmitted || !player.player.state.finished) return;
+        this.completionEmitted = true;
+        if (this.continuousPlay)
+          this.dispatchEvent(
+            new CustomEvent("haneoka-story-finished", {
+              bubbles: true,
+              detail: { storyId: String(story.storyId) },
+            }),
+          );
+      };
+      this.stopCompletionObserver = player.player.subscribePresentationObserver(completion);
+      completion();
     } catch (error) {
       if (!active()) return;
       console.error(error);
@@ -253,6 +306,8 @@ export class VegaStoryStage extends LitElement {
   }
 
   private async disposePlayer() {
+    this.stopCompletionObserver?.();
+    this.stopCompletionObserver = undefined;
     const engine = this.engine;
     this.engine = undefined;
     await engine?.dispose().catch(() => undefined);

@@ -28,13 +28,12 @@ import { advText } from "./ui/adv-text";
 import { clearBrowseBar, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
 import { inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
-import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
+import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
 import { specList } from "./ui/spec";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { tile } from "./ui/tile";
 import { storyCastMedia } from "./ui/story-media";
-import { characterPair } from "./ui/character-pair";
 
 /**
  * Stories — one screen for every story collection on the site.
@@ -130,7 +129,6 @@ export class StoryWorkspace extends LitElement {
     detailLoading: { state: true },
     detailError: { state: true },
     detailMode: { state: true },
-    linkPartner: { state: true },
     limit: { state: true },
   };
   declare locale: string;
@@ -154,7 +152,6 @@ export class StoryWorkspace extends LitElement {
   declare detailLoading: boolean;
   declare detailError: string;
   declare detailMode: "text" | "play";
-  declare linkPartner: string;
   declare limit: number;
   private detailRequests = new RequestScope();
   private homeStage?: HomeSpotStage;
@@ -169,7 +166,6 @@ export class StoryWorkspace extends LitElement {
         .map((key) => [key, params.getAll(key)])
         .filter(([, values]) => values.length),
     );
-    this.linkPartner = params.get("second") || "";
     this.ensureRailSelection();
     const cardId = params.get("card") || "";
     const id = params.get("story") || "";
@@ -231,7 +227,6 @@ export class StoryWorkspace extends LitElement {
     this.detailLoading = false;
     this.detailMode = "text";
     this.detailError = "";
-    this.linkPartner = "";
     this.limit = 120;
   }
   createRenderRoot() {
@@ -252,11 +247,6 @@ export class StoryWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
       import("@material/web/progress/circular-progress.js"),
     ]);
-    if (this.mode === "link")
-      void Promise.all([
-        import("@material/web/select/outlined-select.js"),
-        import("@material/web/select/select-option.js"),
-      ]);
     window.addEventListener("keydown", this.onKeydown);
     window.setTimeout(() => {
       const p = new URLSearchParams(location.search);
@@ -269,7 +259,6 @@ export class StoryWorkspace extends LitElement {
           .map((key) => [key, p.getAll(key)] as const)
           .filter(([, values]) => values.length),
       );
-      this.linkPartner = p.get("second") || "";
       void this.load();
     }, 0);
   }
@@ -310,11 +299,36 @@ export class StoryWorkspace extends LitElement {
   private text(value: unknown) {
     return localizedText(value, this.locale);
   }
-  /** Only the band and tutorial sections have localized banner artwork. */
+  /** Any release artwork may have a localized sibling; the media endpoint falls back to the base. */
   private localizedImages(source: string): string[] {
-    return this.origin === "release" && ["band", "tutorial"].includes(this.mode)
-      ? localeTaggedCandidates(source, this.locale)
-      : [source];
+    return this.origin === "release" ? localeTaggedCandidates(source, this.locale) : [source];
+  }
+  private imageForLocale(source: string): string {
+    return this.origin === "release" ? localizedAssetUrl(source, this.locale) : source;
+  }
+  private localizedEpisodeArtwork(episode: JsonRecord) {
+    if (this.origin !== "release") return nothing;
+    const source = this.episodeImage(episode);
+    const own = (episode.imageVariants || {}) as Record<string, Record<string, string>>;
+    const chapter = (this.chapterOf(episode)?.imageVariants || {}) as Record<string, Record<string, string>>;
+    const variants = own[source] || chapter[source];
+    if (!variants || Object.keys(variants).length < 2) return nothing;
+    const languageNames = new Intl.DisplayNames([this.locale], { type: "language" });
+    const images = ["ja", "en", "zh-Hant", "zh-Hans", "ko"].flatMap((language) =>
+      variants[language]
+        ? [{ id: language, source: variants[language], label: languageNames.of(language) || language }]
+        : [],
+    );
+    const preferred =
+      ({ "zh-TW": "zh-Hant", "zh-CN": "zh-Hans" } as Record<string, string>)[this.locale] || this.locale;
+    return html`
+      <image-gallery
+        .images=${images}
+        .active=${variants[preferred] ? preferred : "ja"}
+        .locale=${this.locale}
+        .title=${this.episodeTitle(episode)}
+      ></image-gallery>
+    `;
   }
   private async load() {
     this.phase = "loading";
@@ -713,7 +727,6 @@ export class StoryWorkspace extends LitElement {
   private reset() {
     this.facets = {};
     this.query = "";
-    this.linkPartner = "";
     this.limit = 120;
     this.sync();
   }
@@ -777,7 +790,6 @@ export class StoryWorkspace extends LitElement {
   private selectRail(value: string) {
     this.facets = { ...this.facets, [this.railAxis()]: [value] };
     this.limit = 120;
-    if (this.mode === "link") this.linkPartner = "";
     this.sync();
   }
   /** The heading: the rail's current destination, named. */
@@ -793,13 +805,8 @@ export class StoryWorkspace extends LitElement {
       };
     }
     if (this.mode === "link") {
-      const character = this.character(Number(value));
-      if (!character) return undefined;
-      return {
-        title: this.characterName(character),
-        supporting: this.bandName(Number(character.bandId)),
-        image: String(character.faceImage || ""),
-      };
+      // The pair picker immediately below names and pictures the lead already.
+      return undefined;
     }
     const chapter = this.relevantChapters().find((item) => String(item.chapterId) === value);
     const title = this.chapterName(chapter);
@@ -827,7 +834,6 @@ export class StoryWorkspace extends LitElement {
     const rangeStart = filterDateBound(facets.releaseFrom?.[0]) ?? -Infinity;
     const rangeEnd = filterDateBound(facets.releaseTo?.[0], true) ?? Infinity;
     const lead = Number((facets.lead || [])[0] || 0);
-    const partner = Number(this.linkPartner || 0);
     const list = this.allEpisodes().filter((episode) => {
       const ids = this.characterIds(episode);
       if (facets.kind?.length && !facets.kind.includes(this.episodeGroup(episode))) return false;
@@ -843,7 +849,6 @@ export class StoryWorkspace extends LitElement {
       )
         return false;
       if (lead && !ids.includes(lead)) return false;
-      if (partner && !ids.includes(partner)) return false;
       if (chapters.length && !chapters.includes(String(this.chapterOf(episode)?.chapterId ?? ""))) return false;
       if (characters.length && !characters.some((id) => ids.includes(id))) return false;
       if (
@@ -889,7 +894,6 @@ export class StoryWorkspace extends LitElement {
     if (this.view !== "grid") p.set("view", this.view);
     if (this.sort !== this.defaultSort()) p.set("sort", this.sort);
     if (this.order !== this.defaultOrder()) p.set("order", this.order);
-    if (this.linkPartner) p.set("second", this.linkPartner);
     Object.entries(this.facets).forEach(([key, values]) => values.forEach((value) => p.append(key, value)));
     const open = this.detailEpisode ? this.episodeId(this.detailEpisode) : "";
     if (open) p.set("story", open);
@@ -1016,6 +1020,25 @@ export class StoryWorkspace extends LitElement {
         this.detailError = error instanceof Error ? error.message : String(error);
       }
     }
+  }
+
+  private async continueStory(event: CustomEvent<{ storyId: string }>) {
+    const current = this.detailEpisode;
+    if (!current || this.detailMode !== "play" || this.episodeId(current) !== event.detail.storyId) return;
+    const chapter = this.chapterOf(current);
+    const candidates = chapter ? this.chapterEpisodes(chapter) : this.allEpisodes();
+    const group = this.episodeGroup(current);
+    const sequence = candidates.filter((episode) => this.episodeGroup(episode) === group);
+    const index = sequence.findIndex((episode) => this.episodeId(episode) === event.detail.storyId);
+    if (index < 0) return;
+    const next = sequence[index + 1];
+    if (!next) return;
+    const id = this.episodeId(next);
+    const params = new URLSearchParams(location.search);
+    params.set("story", id);
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+    await this.openScenario(id, next);
+    if (this.episodeId(this.detailEpisode || {}) === id) await this.openVegaPlayer();
   }
 
   /* ---------------------------------------------------------------- render */
@@ -1240,15 +1263,15 @@ export class StoryWorkspace extends LitElement {
     const title = this.episodeTitle(episode);
     const chapter = this.chapterOf(episode);
     const band = Number(episode.bandId || chapter?.bandId || 0);
-    const logo = band ? String(this.bands.find((item) => Number(item.bandId) === band)?.logo || "") : "";
+    const bandIcon = band ? String(this.bands.find((item) => Number(item.bandId) === band)?.icon || "") : "";
     return tile({
       kind: "story",
       title,
       titleLanguage: this.episodeTitleValue(episode).locale,
       subtitle: this.tileSubtitleContent(episode),
-      adornment: logo
+      adornment: bandIcon
         ? html`
-            <img src=${logo} alt="" width="16" height="16" loading="lazy" />
+            <img src=${this.imageForLocale(bandIcon)} alt="" width="16" height="16" loading="lazy" />
           `
         : undefined,
       label: title,
@@ -1466,16 +1489,9 @@ export class StoryWorkspace extends LitElement {
 
   /* ------------------------------------------------------- staged features */
 
-  /**
-   * Two sections carry something the collection cannot: the friendship board,
-   * where a pair of characters is chosen on the game's own photo board, and
-   * the home scene, which is a live Cubism stage. Both sit above the results
-   * inside the same pane — they are features of those sections, not a
-   * different layout for them.
-   */
+  /** The Home Spot section carries a live scene above its results. */
   private renderStage() {
     if (this.origin !== "release") return nothing;
-    if (this.mode === "link") return this.renderFriendshipBoard();
     if (this.mode === "home") return this.renderHomeScene();
     return nothing;
   }
@@ -1489,7 +1505,7 @@ export class StoryWorkspace extends LitElement {
           preview
             ? html`
                 <img
-                  src=${preview}
+                  src=${this.imageForLocale(preview)}
                   alt=${this.text(spot.name)}
                   @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
                 />
@@ -1531,42 +1547,6 @@ export class StoryWorkspace extends LitElement {
       .then(() => host.classList.add("ready"))
       .catch(() => host.classList.add("failed"));
   }
-  private renderFriendshipBoard() {
-    const lead = String((this.facets.lead || [])[0] || this.characters[0]?.characterId || "");
-    return characterPair({
-      locale: this.locale,
-      characters: this.characters.map((character) => ({
-        value: String(character.characterId),
-        label: this.characterName(character),
-        image: String(character.faceImage || ""),
-        bandId: Number(character.bandId),
-      })),
-      bands: this.bands.map((band) => ({
-        id: Number(band.bandId),
-        label: this.bandName(Number(band.bandId)),
-        image: String(band.logo || band.icon || ""),
-      })),
-      first: lead,
-      second: this.linkPartner,
-      onFirst: (value) => {
-        this.facets = { ...this.facets, lead: [value] };
-        if (this.linkPartner === value) this.linkPartner = "";
-        this.sync();
-      },
-      onSecond: (value) => {
-        this.linkPartner = value;
-        this.facets = { ...this.facets, lead: [lead] };
-        this.sync();
-      },
-      onSwap: () => {
-        if (!this.linkPartner) return;
-        this.facets = { ...this.facets, lead: [this.linkPartner] };
-        this.linkPartner = lead;
-        this.sync();
-      },
-    });
-  }
-
   /* ---------------------------------------------------------- detail layer */
 
   private renderDetailLayer() {
@@ -1682,6 +1662,8 @@ export class StoryWorkspace extends LitElement {
                           server=${currentReleaseServer()}
                           locale=${this.locale}
                           @open-text=${() => (this.detailMode = "text")}
+                          @haneoka-story-finished=${(event: CustomEvent<{ storyId: string }>) => void this.continueStory(event)}
+                          @haneoka-story-interrupt=${() => this.closeDetail()}
                         ></vega-story-stage>
                       `
                     : loadingState(uiText(this.locale, "loading"))
@@ -1689,6 +1671,7 @@ export class StoryWorkspace extends LitElement {
               `
             : html`
                 <div class="story-detail__body">
+                  ${this.localizedEpisodeArtwork(episode)}
                   ${
                     this.text(episode.description)
                       ? html`
@@ -1822,7 +1805,7 @@ export class StoryWorkspace extends LitElement {
         ${[...new Set(images)].map(
           (image) => html`
             <img
-              src=${image}
+              src=${this.imageForLocale(image)}
               alt=""
               loading="lazy"
               decoding="async"
@@ -1837,6 +1820,12 @@ export class StoryWorkspace extends LitElement {
   }
   private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
     const command = entry.command;
+    const namedTargets = (Array.isArray(command.targets) ? command.targets : [])
+      .map((target) => {
+        const value = target as JsonRecord;
+        return this.text(value.name) || this.text(this.character(Number(value.characterId))?.characterName);
+      })
+      .filter(Boolean);
     const names =
       Number(command.targetStatus) === 2
         ? ""
@@ -1847,14 +1836,16 @@ export class StoryWorkspace extends LitElement {
                 .map((name) => this.text(name))
                 .filter(Boolean),
               this.locale,
-            ) || this.text(command.targetName);
+            ) ||
+            formatList(namedTargets, this.locale) ||
+            this.text(command.targetName);
     const resolved = resolveLocalizedText(command.text, this.locale);
     const text = resolved.text || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
     if (entry.kind === "image")
       return html`
         <figure class="story-transcript__scene" data-command-index=${entry.commandIndex}>
           <img
-            src=${entry.source!}
+            src=${this.imageForLocale(entry.source!)}
             alt=${uiText(this.locale, entry.mediaKind === "background" ? "background" : "illustration")}
             loading="lazy"
             decoding="async"
@@ -1912,7 +1903,11 @@ export class StoryWorkspace extends LitElement {
               ${
                 entry.source
                   ? html`
-                      <img src=${entry.source} alt=${uiText(this.locale, "stamp")} loading="lazy" />
+                      <img
+                        src=${this.imageForLocale(entry.source)}
+                        alt=${uiText(this.locale, "stamp")}
+                        loading="lazy"
+                      />
                     `
                   : html`
                       ${icon("sentiment_satisfied", 24)}

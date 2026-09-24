@@ -9,14 +9,16 @@ import {
   type CassiopeiaSessionPort,
 } from "@haneoka/cassiopeia/plugin";
 import {
-  OUR_NOTES_RUNTIME_SOURCES,
   OUR_NOTES_RULES,
+  OUR_NOTES_NOTE_SKINS,
+  OUR_NOTES_NOTE_SKIN_NAMES,
   DEFAULT_RENDER_SETTINGS,
   createOurNotesPlugin,
   type RenderFrameBuilder,
   type RenderSettings,
   type OurNotesAssetManifest,
   type OurNotesRuntimeMediaManifest,
+  type OurNotesNoteSkin,
 } from "@haneoka/cassiopeia-plugin-our-notes";
 import { THREE_RENDERER, createThreeRendererPlugin, type OurNotesRenderer } from "@haneoka/cassiopeia-renderer-three";
 import {
@@ -29,7 +31,11 @@ import {
 import { drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
 
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
-type RuntimeDescriptor = { sourcePath?: string; outputs?: RuntimeOutput[] };
+type RuntimeDescriptor = {
+  sourcePath?: string;
+  outputs?: RuntimeOutput[];
+  runtimeObjects?: Array<{ pathId: string | number; path: string; type: string }>;
+};
 type StageBackground = "auto" | "none" | "1" | "2";
 type NumericRenderSetting =
   "noteSpeed" | "noteSize" | "longAlpha" | "guideAlpha" | "guidelineOpacity" | "laneOpacity" | "backgroundBrightness";
@@ -47,6 +53,7 @@ type ChartUiKey =
   | "notes"
   | "noteSpeed"
   | "noteSize"
+  | "noteSkin"
   | "longOpacity"
   | "guideOpacity"
   | "mirror"
@@ -91,6 +98,7 @@ export class ChartSimulator extends LitElement {
     fullscreen: { state: true },
     settingsOpen: { state: true },
     playerSettings: { state: true },
+    noteSkin: { state: true },
     stageBackground: { state: true },
     playbackRate: { state: true },
     volume: { state: true },
@@ -110,6 +118,7 @@ export class ChartSimulator extends LitElement {
   declare fullscreen: boolean;
   declare settingsOpen: boolean;
   declare playerSettings: RenderSettings;
+  declare noteSkin: OurNotesNoteSkin;
   declare stageBackground: StageBackground;
   declare playbackRate: number;
   declare volume: number;
@@ -134,6 +143,7 @@ export class ChartSimulator extends LitElement {
   private resizeObserver?: ResizeObserver;
   private animationFrame = 0;
   private loadedKey = "";
+  private availableNoteSkins: readonly OurNotesNoteSkin[] = ["skin001"];
   private resumeAfterScrub = false;
 
   constructor() {
@@ -153,6 +163,7 @@ export class ChartSimulator extends LitElement {
     this.fullscreen = false;
     this.settingsOpen = false;
     this.playerSettings = { ...DEFAULT_RENDER_SETTINGS };
+    this.noteSkin = "skin001";
     this.stageBackground = "auto";
     this.playbackRate = 1;
     this.volume = 0.8;
@@ -190,6 +201,26 @@ export class ChartSimulator extends LitElement {
     if (!response.ok) throw new Error(`Runtime source ${response.status}`);
     return (await response.json()) as RuntimeDescriptor;
   }
+  private async sourceFiles() {
+    const response = await fetch(`/api/v1/servers/${encodeURIComponent(this.server)}/sources/tree`);
+    if (!response.ok) throw new Error(`Runtime source tree ${response.status}`);
+    const tree = (await response.json()) as Record<string, unknown>;
+    const files = new Set<string>();
+    const walk = (value: unknown, prefix: string) => {
+      if (typeof value === "number") {
+        files.add(prefix);
+      } else if (value && typeof value === "object" && !Array.isArray(value)) {
+        for (const [part, child] of Object.entries(value)) walk(child, prefix ? `${prefix}/${part}` : part);
+      }
+    };
+    walk(tree, "");
+    return files;
+  }
+  private sourceWithName(files: Set<string>, name: string) {
+    const matches = [...files].filter((path) => path.endsWith(`/${name}`));
+    if (matches.length !== 1) throw new Error(`Missing or ambiguous runtime source ${name}`);
+    return matches[0]!;
+  }
   private output(descriptor: RuntimeDescriptor, type: string, name?: string) {
     const matches = (descriptor.outputs || []).filter(
       (entry) => entry.type === type && (!name || logicalName(entry) === name),
@@ -198,18 +229,94 @@ export class ChartSimulator extends LitElement {
     return `/runtime/${encodeURIComponent(this.server)}/${matches[0]!.path.replace(/^runtime\//u, "")}`;
   }
   private async runtimeAssets() {
-    const [note, judgement, live, combo, font] = await Promise.all([
-      this.descriptor(OUR_NOTES_RUNTIME_SOURCES.noteAtlas),
-      this.descriptor(OUR_NOTES_RUNTIME_SOURCES.judgementAtlas),
-      this.descriptor(OUR_NOTES_RUNTIME_SOURCES.liveAtlas),
-      this.descriptor(OUR_NOTES_RUNTIME_SOURCES.comboAtlas),
-      this.descriptor(OUR_NOTES_RUNTIME_SOURCES.font).catch(() => undefined),
+    const files = await this.sourceFiles();
+    const source = (name: string) => this.sourceWithName(files, name);
+    const fontSource = [...files].filter((path) => path.endsWith("/VibeMOPro-Medium SDF.asset"));
+    this.availableNoteSkins = OUR_NOTES_NOTE_SKINS.filter((skin) =>
+      files.has(`Assets/AddressableResources/Live/Note/${skin}/${skin}.spriteatlasv2`),
+    );
+    const selectedSkin = this.availableNoteSkins.includes(this.noteSkin) ? this.noteSkin : "skin001";
+    this.noteSkin = selectedSkin;
+    const noteSkinSource = `Assets/AddressableResources/Live/Note/${selectedSkin}/LiveNoteSkinAsset.asset`;
+    const [note, judgement, live, combo, font, noteSkin] = await Promise.all([
+      this.descriptor(source(`${selectedSkin}.spriteatlasv2`)),
+      this.descriptor(source("JudgementAtlas.spriteatlasv2")),
+      this.descriptor(source("LiveAtlas.spriteatlasv2")),
+      this.descriptor(source("LiveComboAtlas.spriteatlasv2")),
+      fontSource.length === 1 ? this.descriptor(fontSource[0]!).catch(() => undefined) : Promise.resolve(undefined),
+      files.has(noteSkinSource) ? this.descriptor(noteSkinSource) : Promise.resolve(undefined),
     ]);
-    const sprite = (descriptor: RuntimeDescriptor, name: string) => this.output(descriptor, "Sprite", name);
+    const root = `/assets/${encodeURIComponent(this.server)}`;
+    const assetUrl = (path: string) => `${root}/${path.split("/").map(encodeURIComponent).join("/")}`;
+    const sprite = (descriptor: RuntimeDescriptor, name: string) => {
+      if (descriptor.outputs?.some((entry) => entry.type === "Sprite")) return this.output(descriptor, "Sprite", name);
+      const atlas = descriptor.sourcePath || "";
+      const match = /^(.*)\/Atlas\/([^/]+)\.spriteatlasv2$/u.exec(atlas);
+      const sourcePath = match ? `${match[1]}/AtlasSources/${match[2]}/${name}` : "";
+      if (!sourcePath || !files.has(sourcePath)) throw new Error(`Missing Sprite ${name}`);
+      return assetUrl(sourcePath);
+    };
     const digits = (prefix: string) =>
       Array.from({ length: 10 }, (_, value) => sprite(combo, `${prefix}_${value}.png`));
-    const root = `/assets/${encodeURIComponent(this.server)}`;
+    const byFilename = new Map<string, string[]>();
+    for (const path of files) {
+      const filename = path.slice(path.lastIndexOf("/") + 1);
+      byFilename.set(filename, [...(byFilename.get(filename) || []), path]);
+    }
+    const resolveSource = (oldPath: string): string => {
+      if (files.has(oldPath)) return oldPath;
+      let filename = oldPath.slice(oldPath.lastIndexOf("/") + 1);
+      if (filename === "note_excellent.prefab") filename = "note_just.prefab";
+      let matches = byFilename.get(filename) || [];
+      if (oldPath.includes("/NoteEffect/effect001/"))
+        matches = matches.filter((path) => path.includes("/NoteEffect/effect001/"));
+      else if (oldPath.includes("/NoteEffect/common/"))
+        matches = matches.filter((path) => path.includes("/NoteEffect/common/"));
+      else if (oldPath.includes("/Live/Prefabs/LiveGame/Effect/"))
+        matches = matches.filter((path) => path.includes("/LaneEffect/effect001/"));
+      if (matches.length !== 1) throw new Error(`Missing or ambiguous runtime source ${oldPath}`);
+      return matches[0]!;
+    };
+    const noteObjectPaths = new Map(
+      (noteSkin?.runtimeObjects || [])
+        .filter((entry) => entry.type === "Sprite")
+        .map((entry) => [String(entry.pathId), entry.path]),
+    );
+    const noteSprites = new Map<string, { image: string; metadata: string }>();
+    for (const output of noteSkin?.outputs || []) {
+      if (output.type !== "Sprite") continue;
+      const metadata = noteObjectPaths.get(String(output.objectId));
+      if (metadata) noteSprites.set(logicalName(output), { image: output.path, metadata });
+    }
+    const runtimeUrl = (path: string) =>
+      `/runtime/${encodeURIComponent(this.server)}/${path
+        .replace(/^runtime\//u, "")
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`;
+    const nativeAsset = (path: string): string => {
+      if (path.endsWith("/slideline_purple2.png") && noteSprites.has("notes_slide_side_0.png"))
+        return runtimeUrl(noteSprites.get("notes_slide_side_0.png")!.image);
+      return assetUrl(resolveSource(path));
+    };
+    const nativeRuntime = (path: string): string => {
+      const match = /^unity-json\/(.*)\/([A-Za-z0-9_]+\.json)$/u.exec(path);
+      if (!match) return runtimeUrl(path);
+      const oldSource = match[1]!;
+      if (files.has(oldSource)) return runtimeUrl(path);
+      if (
+        match[2] === "Sprite.json" &&
+        oldSource.startsWith(`Assets/AddressableResources/Live/Note/${selectedSkin}/`)
+      ) {
+        const name = oldSource.slice(oldSource.lastIndexOf("/") + 1);
+        const metadata = noteSprites.get(name)?.metadata;
+        if (!metadata) throw new Error(`Missing note sprite metadata ${name}`);
+        return runtimeUrl(metadata);
+      }
+      return runtimeUrl(`unity-json/${resolveSource(oldSource)}/${match[2]}`);
+    };
     const media: OurNotesRuntimeMediaManifest = {
+      noteSkin: selectedSkin,
       noteAtlasTextureUrl: this.output(note, "Texture2D"),
       ...(font ? { fontAtlasTextureUrl: this.output(font, "Texture2D") } : {}),
       hud: {
@@ -248,13 +355,10 @@ export class ChartSimulator extends LitElement {
         whiteSpriteUrl: sprite(live, "live_game_white.png"),
       },
     };
-    return this.runtime()
-      .require(OUR_NOTES_RULES)
-      .createAssets(media, {
-        asset: (path) => `${root}/${path.split("/").map(encodeURIComponent).join("/")}`,
-        runtime: (path) =>
-          `/runtime/${encodeURIComponent(this.server)}/${path.split("/").map(encodeURIComponent).join("/")}`,
-      });
+    return this.runtime().require(OUR_NOTES_RULES).createAssets(media, {
+      asset: nativeAsset,
+      runtime: nativeRuntime,
+    });
   }
 
   private async load() {
@@ -288,6 +392,7 @@ export class ChartSimulator extends LitElement {
         stageBackground?: StageBackground;
         playbackRate?: number;
         volume?: number;
+        noteSkin?: OurNotesNoteSkin;
       } | null;
       if (!saved) return;
       const number = (value: unknown, minimum: number, maximum: number, fallback: number) => {
@@ -320,6 +425,7 @@ export class ChartSimulator extends LitElement {
         this.stageBackground = saved.stageBackground as StageBackground;
       this.playbackRate = number(saved.playbackRate, 0.5, 2, 1);
       this.volume = number(saved.volume, 0, 1, 0.8);
+      if (OUR_NOTES_NOTE_SKINS.includes(saved.noteSkin as OurNotesNoteSkin)) this.noteSkin = saved.noteSkin!;
     } catch {
       localStorage.removeItem(SETTINGS_KEY);
     }
@@ -333,6 +439,7 @@ export class ChartSimulator extends LitElement {
           stageBackground: this.stageBackground,
           playbackRate: this.playbackRate,
           volume: this.volume,
+          noteSkin: this.noteSkin,
         }),
       );
     } catch {
@@ -424,7 +531,7 @@ export class ChartSimulator extends LitElement {
           now: () => this.clock?.timeMs || 0,
           laneAtClientPoint: (x, y) => this.renderer?.clientPointToLane(x, y) ?? 12,
           screenDpi: 96,
-          flickDistanceCm: 0.1,
+          flickDistanceCm: 0.2,
         },
       );
     this.clock.audio.addEventListener("play", () => {
@@ -522,6 +629,8 @@ export class ChartSimulator extends LitElement {
     this.pluginRuntime?.dispose();
     this.pluginRuntime = undefined;
     cancelAnimationFrame(this.animationFrame);
+    this.playing = false;
+    this.resumeAfterScrub = false;
     this.resizeObserver?.disconnect();
     this.input?.destroy();
     this.clock?.destroy();
@@ -553,6 +662,7 @@ export class ChartSimulator extends LitElement {
       notes: ["ノーツ", "Notes", "音符", "音符", "노트"],
       noteSpeed: ["ノーツ速度", "Note speed", "音符速度", "音符速度", "노트 속도"],
       noteSize: ["ノーツ幅", "Note width", "音符寬度", "音符宽度", "노트 너비"],
+      noteSkin: ["ノーツデザイン", "Note design", "音符樣式", "音符样式", "노트 디자인"],
       longOpacity: ["ロング透明度", "Long-note opacity", "長條透明度", "长条透明度", "롱 노트 투명도"],
       guideOpacity: ["ガイド透明度", "Guide-note opacity", "引導音符透明度", "引导音符透明度", "가이드 노트 투명도"],
       mirror: ["ミラー", "Mirror", "鏡像", "镜像", "미러"],
@@ -669,6 +779,30 @@ export class ChartSimulator extends LitElement {
           </section>
           <section>
             <h4>${this.ui("notes")}</h4>
+            <label class="chart-runtime__setting chart-runtime__setting--select">
+              <span>${this.ui("noteSkin")}</span>
+              <select
+                @change=${(event: Event) => {
+                  const position = this.currentTime;
+                  const resume = this.playing;
+                  this.noteSkin = (event.currentTarget as HTMLSelectElement).value as OurNotesNoteSkin;
+                  this.persistSettings();
+                  void this.load().then(async () => {
+                    if (this.phase !== "ready") return;
+                    this.seek(position);
+                    if (resume) await this.toggle();
+                  });
+                }}
+              >
+                ${this.availableNoteSkins.map(
+                  (skin) => html`
+                    <option value=${skin} ?selected=${this.noteSkin === skin}>
+                      ${OUR_NOTES_NOTE_SKIN_NAMES[skin][this.locale] || OUR_NOTES_NOTE_SKIN_NAMES[skin].en}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
             ${this.renderSettingSlider("noteSpeed", this.ui("noteSpeed"), 1, 12, 0.1)}
             ${this.renderSettingSlider("noteSize", this.ui("noteSize"), 0.5, 1.5, 0.05, percent)}
             ${this.renderSettingSlider("longAlpha", this.ui("longOpacity"), 0.1, 1, 0.05, percent)}
