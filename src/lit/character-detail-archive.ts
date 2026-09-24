@@ -27,6 +27,7 @@ interface Controller {
   bandName(id: number): string;
   character(id: number): Item | undefined;
   band(id: number): Item | undefined;
+  imageForLocale(source: string): string;
   imageForRelated(item: Item, route: string): string;
   relatedImageCandidates(item: Item, route: string): string[];
   relatedTitle(item: Item, route: string): string;
@@ -255,13 +256,13 @@ export class CharacterDetailArchive extends LitElement {
         ? c.characterAvatars(ids)
         : (route === "member-cards" || route === "support-cards") && ids.length
           ? c.characterAvatars(ids)
-          : route === "songs" && c.band(Number(entry.bandId || 0))?.logo
+          : route === "songs" && c.band(Number(entry.bandId || 0))?.icon
             ? html`
-                <img src=${String(c.band(Number(entry.bandId || 0))?.logo)} alt="" />
+                <img src=${c.imageForLocale(String(c.band(Number(entry.bandId || 0))?.icon))} alt="" />
               `
             : route === "live2d" && c.character(characterId)?.faceImage
               ? html`
-                  <img src=${String(c.character(characterId)?.faceImage)} alt="" />
+                  <img src=${c.imageForLocale(String(c.character(characterId)?.faceImage))} alt="" />
                 `
               : nothing;
     const attribute = route === "songs" ? c.attributeMark(entry.musicType, true) : c.attributeMark(entry.cardType);
@@ -440,7 +441,7 @@ export class CharacterDetailArchive extends LitElement {
                         ${
                           friendship.storyBanner
                             ? html`
-                                <img src=${String(friendship.storyBanner)} alt="" />
+                                <img src=${c.imageForLocale(String(friendship.storyBanner))} alt="" />
                               `
                             : nothing
                         }
@@ -467,7 +468,7 @@ export class CharacterDetailArchive extends LitElement {
                                 ${
                                   resolved.image
                                     ? html`
-                                        <img src=${String(resolved.image)} alt="" />
+                                        <img src=${c.imageForLocale(String(resolved.image))} alt="" />
                                       `
                                     : html`
                                         <svg class="material-icon" width="22" height="22">
@@ -558,7 +559,7 @@ export class CharacterDetailArchive extends LitElement {
                             ${
                               resolved.image
                                 ? html`
-                                    <img src=${String(resolved.image)} alt="" loading="lazy" />
+                                    <img src=${c.imageForLocale(String(resolved.image))} alt="" loading="lazy" />
                                   `
                                 : html`
                                     <svg class="material-icon" width="22" height="22">

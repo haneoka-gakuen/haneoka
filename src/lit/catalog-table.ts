@@ -234,7 +234,7 @@ export class CatalogTable extends LitElement {
               image
                 ? html`
                     <span class="table-entity__media">
-                      <img src=${image} alt="" loading="lazy" decoding="async" />
+                      <img src=${c.imageForLocale(image)} alt="" loading="lazy" decoding="async" />
                     </span>
                   `
                 : nothing
@@ -271,7 +271,12 @@ export class CatalogTable extends LitElement {
             band?.logo || band?.icon
               ? html`
                   <span class="table-entity__media">
-                    <img src=${String(band.logo || band.icon)} alt="" loading="lazy" decoding="async" />
+                    <img
+                      src=${c.imageForLocale(String(band.logo || band.icon))}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </span>
                 `
               : nothing

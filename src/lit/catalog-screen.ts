@@ -33,7 +33,7 @@ import { CHARACTER_ART } from "../config/character-art";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { clearBrowseBar, renderBrowse, filterGroup } from "./ui/browse";
-import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
+import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { iconButton, inputChip } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
@@ -489,9 +489,10 @@ export class CatalogScreen extends LitElement {
     this.lazyImages.observe(this);
   }
   private localizedImageCandidates = (source: string) =>
-    ["comic", "stamp"].includes(this.profile.presentation)
-      ? localeTaggedCandidates(source, this.settings.locale)
-      : [source];
+    this.settings.origin === "bestdori" ? [source] : localeTaggedCandidates(source, this.settings.locale);
+  imageForLocale(source: string) {
+    return this.settings.origin === "bestdori" ? source : localizedAssetUrl(source, this.settings.locale);
+  }
   private imageError = nextImageCandidate;
   /** Bestdori's region is chosen by the reading locale, as the worker expects. */
   private bestdoriRegion() {
@@ -1166,6 +1167,10 @@ export class CatalogScreen extends LitElement {
     const band = this.band(id);
     return String(band?.logo || band?.icon || "");
   }
+  private bandIcon(id: number) {
+    const band = this.band(id);
+    return String(band?.icon || "");
+  }
   private bandName(id: number) {
     return this.localized(this.band(id)?.bandName) || (id ? `${this.label("band", "Band")} ${id}` : "—");
   }
@@ -1213,18 +1218,16 @@ export class CatalogScreen extends LitElement {
   }
   private attributeMark(value: unknown, live = false) {
     const id = Number(value || 0);
-    const names = live
-      ? `sp_icon_live_music_type_${id}.png`
-      : (
-          {
-            1: "CardType-Red.png",
-            2: "CardType-Blue.png",
-            3: "CardType-Green.png",
-            4: "CardType-Yellow.png",
-            5: "CardType-Purple.png",
-          } as Record<number, string>
-        )[id];
-    return names ? this.gameMarks.get(names) || "" : "";
+    const cardTypes: Record<number, string> = {
+      1: "CardType-Red.png",
+      2: "CardType-Blue.png",
+      3: "CardType-Green.png",
+      4: "CardType-Yellow.png",
+      5: "CardType-Purple.png",
+    };
+    const names = live ? `sp_icon_live_music_type_${id}.png` : cardTypes[id];
+    const fallback = cardTypes[id];
+    return (names && this.gameMarks.get(names)) || (live && fallback && this.gameMarks.get(fallback)) || "";
   }
   private fieldValue(item: Item, key: string) {
     const raw = readPath(item, key);
@@ -1325,10 +1328,10 @@ export class CatalogScreen extends LitElement {
   private tileAdornment(item: Item, ids: number[]): GridIdentityAdornment {
     const kind = this.profile.presentation;
     if ((kind === "comic" || kind === "stamp") && ids.length) return this.characterAvatars(ids);
-    if (kind === "song" && this.bandLogo(Number(item.bandId || 0)))
+    if (kind === "song" && this.bandIcon(Number(item.bandId || 0)))
       return html`
         <img
-          src=${this.bandLogo(Number(item.bandId || 0))}
+          src=${this.imageForLocale(this.bandIcon(Number(item.bandId || 0)))}
           alt=""
           @error=${(event: Event) => {
             (event.currentTarget as HTMLImageElement).hidden = true;
@@ -2084,10 +2087,27 @@ export class CatalogScreen extends LitElement {
               ]
             : [{ id: "full", label: this.label("details", "Preview"), source: this.detailImage(item) }];
     const seen = new Set<string>();
+    const imageVariants = (item.imageVariants || {}) as Record<string, Record<string, string>>;
+    const languages = ["ja", "en", "zh-Hant", "zh-Hans", "ko"];
+    const languageNames = new Intl.DisplayNames([this.settings.locale], { type: "language" });
     return candidates.flatMap((entry) => {
       const source = typeof entry.source === "string" ? entry.source : "";
       if (!source || seen.has(source)) return [];
       seen.add(source);
+      const variants = imageVariants[source];
+      if (variants)
+        return languages.flatMap((language) => {
+          const variant = variants[language];
+          return variant
+            ? [
+                {
+                  id: `${entry.id}:${language}`,
+                  label: `${entry.label} · ${languageNames.of(language) || language}`,
+                  source: variant,
+                },
+              ]
+            : [];
+        });
       return [{ ...entry, source }];
     });
   }
@@ -2115,7 +2135,7 @@ export class CatalogScreen extends LitElement {
             ? this.characterAvatars(characterIds)
             : entity
               ? html`
-                  <img class="detail-header-entity" src=${entity} alt=${this.secondary(item)} />
+                  <img class="detail-header-entity" src=${this.imageForLocale(entity)} alt=${this.secondary(item)} />
                 `
               : nothing
         }${
@@ -2223,10 +2243,20 @@ export class CatalogScreen extends LitElement {
   renderDetailMedia(item: Item) {
     const media = this.detailMediaItems(item);
     if (!media.length) return nothing;
+    const localeTag = { "zh-TW": "zh-Hant", "zh-CN": "zh-Hans" }[this.settings.locale] || this.settings.locale;
+    const active =
+      this.activeMedia === "full"
+        ? media.find((entry) => entry.id === `full:${localeTag}`)?.id ||
+          media.find((entry) => entry.id === "full:ja")?.id ||
+          this.activeMedia
+        : this.activeMedia;
     return html`
       <image-gallery
-        .images=${media.map((entry) => ({ ...entry, candidates: this.localizedImageCandidates(entry.source) }))}
-        .active=${this.activeMedia}
+        .images=${media.map((entry) => ({
+          ...entry,
+          candidates: entry.id.includes(":") ? [entry.source] : this.localizedImageCandidates(entry.source),
+        }))}
+        .active=${active}
         .locale=${this.settings.locale}
         .title=${this.itemTitle(item)}
         @image-change=${(event: CustomEvent<string>) => {
@@ -2851,11 +2881,9 @@ export class CatalogScreen extends LitElement {
       const source = readPath(item, path);
       return typeof source === "string" && source ? [source] : [];
     });
-    const localized = route === "stamps" && sources[0] ? this.localizedImageCandidatesForRoute(sources[0]) : [];
-    return [...localized, ...sources].filter((value, index, all) => all.indexOf(value) === index);
-  }
-  private localizedImageCandidatesForRoute(source: string) {
-    return localeTaggedCandidates(source, this.settings.locale);
+    return sources
+      .flatMap((source) => this.localizedImageCandidates(source))
+      .filter((value, index, all) => all.indexOf(value) === index);
   }
 }
 customElements.define("catalog-screen", CatalogScreen);

@@ -17,6 +17,7 @@
     "iv": "9b94c91e242a562e97fcd505b75a5129b2b80632a269034cf942ec7293d489a1"
   },
   "catalog": {
-    "version": "1.0.0.100"
+    "version": "1.0.0.100",
+    "locales": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
   }
 }

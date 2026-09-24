@@ -30,7 +30,9 @@ export function modelTile(options: {
     kind: "model",
     title: title.text,
     titleLanguage: title.locale,
-    subtitle: localizedText(model.characterName || character?.characterName, locale),
+    subtitle:
+      localizedText(model.characterName || character?.characterName, locale) ||
+      String(model.characterKey || model.live2dKey || ""),
     adornment: face
       ? html`
           <img src=${face} alt="" width="16" height="16" loading="lazy" />

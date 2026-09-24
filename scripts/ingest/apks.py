@@ -24,7 +24,7 @@ from typing import Any
 from core.config import ServerConfig
 from core.contracts import PACKAGE_MAX_BYTES, SOURCE_SCHEMA
 from core.hashes import sha256_file
-from core.manifests import read_json, write_json
+from core.manifests import read_json, stable_json, write_json
 from core.paths import source_layout
 from core.zip_io import open_validated_zip
 from ingest.addressables import downloadable_locations
@@ -704,6 +704,7 @@ def ingest_package(
             else:
                 catalog_entries.append(("", Path(entry)))
         extra_readable_catalogs: list[tuple[str, Path]] = []
+        extra_catalog_files: list[tuple[str, Path]] = []
         if catalog_entries:
             _primary_locale, catalog_path = catalog_entries[0]
             catalog_sha = sha256_file(catalog_path)
@@ -718,6 +719,7 @@ def ingest_package(
                 _copy_file(extra_path, extra_copy, f"override Addressables catalog ({locale_tag})")
                 extra_readable, _ = _readable_catalog(extra_copy, scratch)
                 extra_readable_catalogs.append((locale_tag, extra_readable))
+                extra_catalog_files.append((locale_tag, extra_copy))
         elif config.offline:
             (
                 remote_hash_file,
@@ -775,6 +777,7 @@ def ingest_package(
                 )
                 extra_readable, _ = _readable_catalog(locale_catalog, scratch)
                 extra_readable_catalogs.append((locale, extra_readable))
+                extra_catalog_files.append((locale, locale_catalog))
         else:
             remote_hash_file = scratch / "catalog_main.hash"
             if not config.remote_root:
@@ -799,13 +802,23 @@ def ingest_package(
             readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
 
         version = package_metadata["versionCode"] or "unknown"
-        source_id = f"v{version}-{package_sha[:12]}-{catalog_sha[:12]}-{_normalization_revision()}"
+        catalog_identity_sha = (
+            hashlib.sha256(
+                stable_json(
+                    [("", catalog_sha), *[(locale, sha256_file(path)) for locale, path in extra_catalog_files]]
+                ).encode("utf-8")
+            ).hexdigest()
+            if extra_catalog_files
+            else catalog_sha
+        )
+        source_id = f"v{version}-{package_sha[:12]}-{catalog_identity_sha[:12]}-{_normalization_revision()}"
         if probe_only:
             return {
                 "server": config.id,
                 "sourceId": source_id,
                 "packageSha256": package_sha,
                 "catalogSha256": catalog_sha,
+                "sourceCatalogSha256": catalog_identity_sha,
                 "catalogHash": catalog_hash,
                 "versionCode": version,
             }
@@ -840,6 +853,8 @@ def ingest_package(
             layout.catalogs / remote_catalog.name,
             "Addressables catalog",
         )
+        for locale, path in extra_catalog_files:
+            _copy_file(path, layout.catalogs / path.name, f"Addressables catalog ({locale})")
 
         addressables_by_file: dict[Path, dict[str, Any]] = {}
         with open_validated_zip(asset_pack, "Unity asset-pack APK") as archive:
@@ -901,15 +916,10 @@ def ingest_package(
                 "primaryKey": location.get("primaryKey", ""),
                 "primaryParts": location.get("primaryParts", []),
                 "url": location["remoteUrl"],
-                # Every locale catalog that references this artifact. A bundle shared
-                # across locales (identical content, same hash) used to be dropped
-                # after the first locale, which silently lost per-locale variant files
-                # — e.g. when zh-Hans artwork is byte-identical to zh-Hant, the
-                # zh-Hans bundle was discarded and stamp_illust_x(zh-Hans).png was
-                # never created, leaving locale clients to 404 into the fallback
-                # chain. Recording every locale lets extraction emit a namespaced
-                # variant per locale from this single shared bundle. "" is the
-                # locale-less primary catalog (served as the ja base).
+                # Record every locale catalog that references this artifact.
+                # Extraction writes named variants for locale-only bundles and
+                # one untagged copy when the same bytes also serve ja. "" is
+                # the locale-less primary catalog (the ja base).
                 "locales": [locale_tag],
             }
             existing_plan = plans.get(filename)
@@ -979,6 +989,10 @@ def ingest_package(
             _file_record(layout.root, package_target, "package"),
             _file_record(layout.root, layout.catalogs / remote_hash_file.name, "catalog-hash"),
             _file_record(layout.root, layout.catalogs / remote_catalog.name, "catalog"),
+            *(
+                _file_record(layout.root, layout.catalogs / path.name, "catalog-locale")
+                for _, path in extra_catalog_files
+            ),
             _file_record(layout.root, layout.catalogs / "embedded_catalog_main.bin", "embedded-catalog"),
             *downloaded,
         ]
@@ -998,6 +1012,13 @@ def ingest_package(
                 "hash": catalog_hash,
                 "file": (layout.catalogs / remote_catalog.name).relative_to(layout.root).as_posix(),
                 "encoding": catalog_encoding,
+                "locales": {
+                    locale: {
+                        "file": (layout.catalogs / path.name).relative_to(layout.root).as_posix(),
+                        "sha256": sha256_file(path),
+                    }
+                    for locale, path in extra_catalog_files
+                },
             },
             "unityIndex": unity_index,
             "files": source_files,

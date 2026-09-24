@@ -34,13 +34,23 @@ const LOCALE_IMAGE_TAGS: Record<string, readonly string[]> = {
 };
 
 export function localeTaggedCandidates(source: string, locale: string): string[] {
-  if (!source || locale === "ja") return [source];
+  if (
+    !source ||
+    locale === "ja" ||
+    !/^\/assets\/[^/]+\/(?:Assets|Packages)\//u.test(source) ||
+    /\((?:en|ko|zh-Hans|zh-Hant)\)(?=\.[^./]+$)/u.test(source)
+  )
+    return [source];
   const tagged = (localeTag: string) => {
     const slash = source.lastIndexOf("/");
     const dot = source.lastIndexOf(".");
     return dot > slash ? `${source.slice(0, dot)}(${localeTag})${source.slice(dot)}` : `${source}(${localeTag})`;
   };
   return [...(LOCALE_IMAGE_TAGS[locale] || []).map(tagged), source];
+}
+
+export function localizedAssetUrl(source: string, locale: string): string {
+  return localeTaggedCandidates(source, locale)[0] || source;
 }
 
 export interface LazyImageOptions {

@@ -27,6 +27,13 @@ CHUNK_SUFFIX = re.compile(r"-(\d+)\.bytes$", re.IGNORECASE)
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
 CRI_SCHEMA = "haneoka-cri-runtime-v1"
 CRI_TRANSFORM_SCHEMA = "haneoka-cri-transform-v1"
+# The published UTF-8-only release uses the same decoding for every source it
+# successfully processed. Its content-hashed outputs remain reusable after
+# the cp932 fallback was added, provided the HCA key is unchanged.
+COMPATIBLE_TRANSFORM_IDS = {
+    "ec14e1a80a83abd5ed9cadcf5fb59e107544c69dc6e09496165a0110f44001ad",
+}
+COMPATIBLE_HCA_KEY_SHA256 = "cd0b2ad6de5baa070f1c00baa33658b493a138919f00a4ed8418a7ff6af6ba2f"
 RestoreOutput = Callable[[dict[str, Any], Path], None]
 
 
@@ -243,7 +250,14 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="haneoka-usm-") as directory:
         scratch = Path(directory)
-        usm = Usm.open(str(payload), key=int(key))
+        try:
+            usm = Usm.open(str(payload), key=int(key))
+            encoding = "UTF-8"
+        except UnicodeDecodeError:
+            # Localized CRI UTF tables can encode channel names in Windows
+            # Japanese even when the video itself is otherwise ordinary USM.
+            usm = Usm.open(str(payload), key=int(key), encoding="cp932")
+            encoding = "cp932"
         video_files = []
         for index, _ in enumerate(usm.videos):
             selected = None
@@ -252,7 +266,11 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
             # video. Try the declared encrypted form first and accept only a
             # stream whose header and FFprobe result agree.
             for mode in (OpMode.DECRYPT, OpMode.NONE):
-                active_usm = usm if mode == OpMode.DECRYPT else Usm.open(str(payload), key=int(key))
+                active_usm = (
+                    usm
+                    if mode == OpMode.DECRYPT
+                    else Usm.open(str(payload), key=int(key), encoding=encoding)
+                )
                 active_stream = active_usm.videos[index]
                 candidate = scratch / f"video-{index}-{mode.name.lower()}.bin"
                 with candidate.open("wb") as file:
@@ -343,6 +361,11 @@ def _remote_runtime_path(artifact: dict[str, Any]) -> PurePosixPath:
     parts = addressables.get("primaryParts") or []
     filename = str(parts[0] if parts else artifact["originalFilename"])
     stem = HASH_SUFFIX.sub("", filename)
+    locales = set(str(value) for value in addressables.get("locales", []))
+    if locales and not locales.intersection({"", "ja"}):
+        if len(locales) != 1 or not locales <= {"en", "zh-Hant", "zh-Hans", "ko"}:
+            raise ValueError(f"CRI payload has unsupported locale ownership: {filename}: {sorted(locales)}")
+        stem = f"{stem}({next(iter(locales))})"
     namespace = str(parts[1] if len(parts) > 1 else "cri_assets_cri/unknown")
     if namespace.startswith("cri_assets_"):
         namespace = namespace.removeprefix("cri_assets_")
@@ -579,7 +602,7 @@ def _cached_records(manifest: dict[str, Any] | None, transform_id: str) -> dict[
     if (
         not isinstance(manifest, dict)
         or manifest.get("schema") != CRI_SCHEMA
-        or manifest.get("transformId") != transform_id
+        or manifest.get("transformId") not in {transform_id, *COMPATIBLE_TRANSFORM_IDS}
         or not isinstance(manifest.get("entries"), list)
     ):
         return {}
@@ -1062,7 +1085,22 @@ def extract_cri(
         staging.mkdir(parents=True, exist_ok=True)
         cache_manifest_accepted = False
         try:
-            cached = _cached_records(reuse_manifest, transform_id)
+            previous_transform = str((reuse_manifest or {}).get("transformId") or "")
+            compatible_key = sha256_bytes(config.cri_hca_key) == COMPATIBLE_HCA_KEY_SHA256
+            cached = (
+                _cached_records(reuse_manifest, transform_id)
+                if previous_transform == transform_id or compatible_key
+                else {}
+            )
+            if cached and previous_transform != transform_id:
+                cached = {
+                    task["taskId"]: {
+                        **cached[_cri_task_id(task, previous_transform)],
+                        "taskId": task["taskId"],
+                    }
+                    for task in tasks
+                    if _cri_task_id(task, previous_transform) in cached
+                }
             cache_manifest_accepted = bool(cached)
         except ValueError:
             cached = {}

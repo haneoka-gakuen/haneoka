@@ -165,12 +165,9 @@ def _source_groups(
     preload_table = list(getattr(bundle, "m_PreloadTable", []) or [])
     for raw_path, info in list(getattr(bundle, "m_Container", []) or []):
         base_path = validate_unity_path(raw_path)
-        # Fan every container out to a variant per locale when the bundle is shared
-        # across locales. The locale-less ("") entry is the ja base; each non-empty
-        # locale gets a `(tag)`-namespaced sibling so the per-locale variant file
-        # exists for the runtime to fetch. Byte-identical variants still share one
-        # content-addressed blob at publish time, so universal fan-out costs no extra
-        # storage — it only ensures no locale is silently missing its variant.
+        # A bundle shared with ja has identical bytes in every listed locale.
+        # Keep one untagged copy; image consumers fall back to it when a tagged
+        # variant does not exist. Bundles without ja retain their locale tags.
         path_locales = locales
         root_pointer = getattr(info, "asset", None)
         root_reference = _pointer_identity(root_pointer)
@@ -532,6 +529,8 @@ def extract_bundle(
     # ja is served as the locale-less base (`x.png`), never `x(ja).png`; collapse it
     # onto "" and de-duplicate so the un-namespaced base is produced exactly once.
     locale_list = list(dict.fromkeys("" if loc == "ja" else loc for loc in locale_list))
+    if "" in locale_list:
+        locale_list = [""]
     groups = (
         _source_groups(bundle_object.read(), objects_by_identity, locale_list)
         if bundle_object

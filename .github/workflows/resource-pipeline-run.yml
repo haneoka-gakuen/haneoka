@@ -53,6 +53,7 @@ jobs:
       build_id: ${{ steps.identity.outputs.build_id }}
       shard_count: ${{ steps.identity.outputs.shard_count }}
       shard_matrix: ${{ steps.identity.outputs.shard_matrix }}
+      shard_archives: ${{ steps.stage_shards.outputs.available }}
       skip: ${{ steps.source_input.outputs.skip }}
     env:
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
@@ -157,6 +158,52 @@ jobs:
             python scripts/pipeline.py --server "$RESOURCE_SERVER" publish-source \
               --source "${{ steps.identity.outputs.source_id }}"
           fi
+      - name: Stage Unity input archives
+        id: stage_shards
+        if: steps.source_input.outputs.skip != 'true' && inputs.source_id == ''
+        run: |
+          SOURCE_ID="${{ steps.identity.outputs.source_id }}"
+          SHARDS="${{ steps.identity.outputs.shard_count }}"
+          endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          stage_one() {
+            local shard="$1"
+            local archive="$RUNNER_TEMP/unity-input-$shard.tar"
+            python scripts/stage_unity_shard.py --server "$RESOURCE_SERVER" \
+              --source "$SOURCE_ID" --shard-index "$shard" \
+              --shard-count "$SHARDS" --output "$archive" \
+              > "$RUNNER_TEMP/unity-input-$shard.json"
+            local digest
+            digest="$(jq -r .sha256 "$RUNNER_TEMP/unity-input-$shard.json")"
+            printf '%s  %s\n' "$digest" "unity-input-$shard.tar" > "$archive.sha256"
+            aws s3 cp "$archive" \
+              "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-input-$shard.tar" \
+              --endpoint-url "$endpoint" --region auto --no-progress
+            aws s3 cp "$archive.sha256" \
+              "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-input-$shard.tar.sha256" \
+              --endpoint-url "$endpoint" --region auto --no-progress
+            rm -f "$archive" "$archive.sha256"
+          }
+          pids=()
+          failed=0
+          for ((shard=0; shard<SHARDS; shard++)); do
+            stage_one "$shard" &
+            pids+=("$!")
+            if (( ${#pids[@]} == 4 )); then
+              for pid in "${pids[@]}"; do
+                if ! wait "$pid"; then failed=1; fi
+              done
+              pids=()
+            fi
+          done
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then failed=1; fi
+          done
+          if (( failed )); then
+            echo "Shard archives were incomplete; Unity jobs will fetch immutable CAS objects directly" >&2
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Extract Master
         if: steps.source_input.outputs.skip != 'true'
         run: >-
@@ -189,7 +236,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
+      - name: Restore this shard's input archive
+        if: needs.prepare.outputs.shard_archives == 'true'
+        run: |
+          shard="${{ matrix.shard }}"
+          archive="$RUNNER_TEMP/unity-input-$shard.tar"
+          endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          aws s3 cp \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-input-$shard.tar" \
+            "$archive" --endpoint-url "$endpoint" --region auto --no-progress
+          aws s3 cp \
+            "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-input-$shard.tar.sha256" \
+            "$archive.sha256" --endpoint-url "$endpoint" --region auto --no-progress
+          (cd "$RUNNER_TEMP" && sha256sum -c "unity-input-$shard.tar.sha256")
+          source_root="data/servers/$RESOURCE_SERVER/sources/${{ needs.prepare.outputs.source_id }}"
+          mkdir -p "$source_root"
+          tar --extract --file "$archive" --directory "$source_root"
+          rm -f "$archive" "$archive.sha256"
       - name: Fetch this shard's original bundles
+        if: needs.prepare.outputs.shard_archives != 'true'
         run: >-
           python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source
           --source "${{ needs.prepare.outputs.source_id }}"

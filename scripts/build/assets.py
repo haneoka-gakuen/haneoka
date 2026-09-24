@@ -19,12 +19,16 @@ from core.unity_objects import iter_unity_object_archive
 
 
 MERGE_TREES = ("objects", "metadata/bundles")
-RUNTIME_PROJECTION_PREFIXES = ("Assets/AddressableResources/Live/",)
-RUNTIME_PROJECTION_TYPES = {"AnimationClip", "ParticleSystem", "Sprite", "SpriteAtlas", "SpriteRenderer"}
-HUD_FONT_RUNTIME_SOURCE = (
-    "Assets/AddressableResources/Font/VibeMOPro-Medium/"
-    "VibeMOPro-Medium SDF.asset"
+RUNTIME_PROJECTION_PREFIXES = (
+    "Assets/AddressableResources/Live/",
+    "Assets/AddressableResources/Effect/Live/",
 )
+RUNTIME_PROJECTION_TYPES = {"AnimationClip", "ParticleSystem", "Sprite", "SpriteAtlas", "SpriteRenderer"}
+HUD_FONT_RUNTIME_SOURCES = {
+    "Assets/AddressableResources/Font/VibeMOPro-Medium/VibeMOPro-Medium SDF.asset",
+    "Packages/com.fromtokyo.sirius-asset/AddressableResources/Font/"
+    "VibeMOPro-Medium/VibeMOPro-Medium SDF.asset",
+}
 
 
 def _merge_tree(source: Path, target: Path) -> None:
@@ -184,7 +188,7 @@ def _runtime_projections(layout, sources: list[dict[str, Any]]) -> int:
         source_path = source["sourcePath"]
         if (
             source_path.startswith(RUNTIME_PROJECTION_PREFIXES)
-            or source_path == HUD_FONT_RUNTIME_SOURCE
+            or source_path in HUD_FONT_RUNTIME_SOURCES
         ):
             by_bundle[source["selectedBundle"]].append(source)
     output_count = 0
@@ -209,7 +213,7 @@ def _runtime_projections(layout, sources: list[dict[str, Any]]) -> int:
                 # The live HUD consumes this one TMP_FontAsset descriptor.
                 # Do not make MonoBehaviour a global projection type: Live
                 # bundles contain many unrelated script objects.
-                if source["sourcePath"] == HUD_FONT_RUNTIME_SOURCE:
+                if source["sourcePath"] in HUD_FONT_RUNTIME_SOURCES:
                     allowed = object_type == "MonoBehaviour"
                 if not allowed:
                     continue

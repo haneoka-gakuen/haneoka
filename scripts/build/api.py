@@ -1832,17 +1832,73 @@ def _comics(data: BuildData) -> dict[str, Any]:
     return output
 
 
+def _image_variants(data: BuildData, record: dict[str, Any]) -> dict[str, dict[str, str]]:
+    prefix = f"/assets/{data.server}/"
+    urls: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str) and value.startswith(prefix):
+            urls.add(value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(record)
+    variants: dict[str, dict[str, str]] = {}
+    for url in sorted(urls):
+        source = PurePosixPath(url[len(prefix):])
+        if source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            continue
+        choices = {"ja": url}
+        for locale in ("en", "zh-Hant", "zh-Hans", "ko"):
+            candidate = source.with_name(f"{source.stem}({locale}){source.suffix}")
+            if (data.assets / Path(*candidate.parts)).is_file():
+                choices[locale] = f"{prefix}{candidate.as_posix()}"
+        if len(choices) > 1:
+            variants[url] = choices
+    return variants
+
+
+def _enrich_image_variants(data: BuildData, documents: dict[str, Any]) -> None:
+    collections = [
+        *(documents[name] for name in (
+            "bands", "characters", "cards", "support-cards", "songs", "comics", "stamps", "live2d"
+        )),
+        documents["items"].get("items", {}),
+        documents["band-items"].get("items", {}),
+        *(documents["stories"].get(name, {}) for name in ("chapters", "episodes", "homeSpots")),
+    ]
+    for collection in collections:
+        if not isinstance(collection, dict):
+            continue
+        for record in collection.values():
+            if isinstance(record, dict):
+                variants = _image_variants(data, record)
+                if variants:
+                    record["imageVariants"] = variants
+
+
 def _stamps(data: BuildData) -> dict[str, Any]:
     output = {}
     for row in data.rows("MasterStamp"):
         identity = int(row.get("_id") or 0)
-        asset = PurePosixPath(str(row.get("_stampAsset") or "")).name
+        asset = str(row.get("_stampAsset") or "").strip("/")
+        path = PurePosixPath(asset)
+        if not asset.startswith("Stamp/") or ".." in path.parts or path.suffix:
+            raise ValueError(f"MasterStamp has an invalid asset path: {identity}::{asset}")
+        source_path = f"Assets/AddressableResources/{asset}.png"
+        image = data.asset(source_path)
+        if not image:
+            raise ValueError(f"MasterStamp image is absent: {identity}::{source_path}")
         output[str(identity)] = _present(
             stampId=identity,
             name=data.text(row.get("_nameTextId"), f"Stamp {identity}"),
             characterIds=[int(value) for value in row.get("_characterIds", [])],
             releasedAt=_timestamp(row.get("_startAt")),
-            image=data.asset(f"Assets/AddressableResources/Stamp/illust/{asset}.png"),
+            image=image,
         )
     return output
 
@@ -6589,6 +6645,7 @@ def build_api(config: ServerConfig, source_id: str, build_id: str) -> dict[str, 
     }
     if tuple(documents) != CATALOG_RESOURCES:
         raise AssertionError("catalog resource contract and builder are out of sync")
+    _enrich_image_variants(data, documents)
     layout.api.mkdir(parents=True, exist_ok=True)
     for resource, document in documents.items():
         write_json(layout.api / f"{resource}.json", document)

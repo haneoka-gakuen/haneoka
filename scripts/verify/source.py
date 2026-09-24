@@ -16,6 +16,7 @@ SHA256 = re.compile(r"^[a-f0-9]{64}$")
 SOURCE_ROLE_PREFIXES = {
     "package": "package/",
     "catalog": "android/catalogs/",
+    "catalog-locale": "android/catalogs/",
     "catalog-hash": "android/catalogs/",
     "embedded-catalog": "android/catalogs/",
     "unity-bundle": "android/bundles/",
