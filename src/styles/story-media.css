@@ -1,0 +1,53 @@
+@layer pages {
+  .story-cast-media {
+    position: relative;
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    min-width: 0;
+  }
+  .story-cast-media__background {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .story-cast-media__people {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+  }
+  .story-cast-media__people > span {
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+  }
+  .story-cast-media__people img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 50%;
+  }
+  .story-cast-media--home .story-cast-media__people {
+    align-self: end;
+    justify-self: start;
+  }
+  .story-cast-media--home .story-cast-media__people > span {
+    width: 36px;
+    height: 36px;
+  }
+  .collection-list .story-cast-media__people {
+    padding: 0;
+    gap: 2px;
+  }
+  .collection-list .story-cast-media__people > span {
+    width: 24px;
+    height: 24px;
+  }
+}

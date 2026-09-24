@@ -15,6 +15,15 @@ import {
   uiText,
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { detailLayout } from "./ui/detail-layout";
+import { upgradeCost } from "./ui/upgrade-cost";
+import "./ui/image-gallery";
+import "../styles/card-detail.css";
+import "../styles/character-detail.css";
+import "../styles/character-profile.css";
+import "../styles/character-pair.css";
+import "../styles/story-media.css";
+import { CHARACTER_ART } from "../config/character-art";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { clearBrowseBar, renderBrowse, filterGroup } from "./ui/browse";
@@ -292,7 +301,7 @@ export class CatalogScreen extends LitElement {
   private releaseLocation?: () => void;
   private restoreLocation = () => {
     const params = new URLSearchParams(location.search);
-    if (params.has("view")) this.view = collectionView(params.get("view"));
+    this.view = collectionView(params.get("view"));
     const id = params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
       this.restoreDetailQuery();
@@ -556,6 +565,7 @@ export class CatalogScreen extends LitElement {
   private async load() {
     this.phase = "loading";
     try {
+      if (this.profile.presentation === "character") await import("./character-detail-archive");
       const needsRelations = ["member", "support", "character", "comic", "stamp", "song", "band-item"].includes(
         this.profile.presentation,
       );
@@ -599,12 +609,6 @@ export class CatalogScreen extends LitElement {
           void this.loadEntityDetail(selected);
         }
       }
-      if (
-        !new URLSearchParams(location.search).has("view") &&
-        this.items.length &&
-        !this.items.some((item) => this.image(item))
-      )
-        this.view = "list";
       this.phase = "ready";
     } catch {
       this.phase = "error";
@@ -617,7 +621,7 @@ export class CatalogScreen extends LitElement {
     set("q", this.query);
     set("sort", this.sort, this.profile.defaultSort);
     set("order", this.order, this.profile.defaultOrder);
-    set("view", this.view);
+    set("view", this.view, "grid");
     const bandRail = this.hasBandRail();
     if (bandRail) set("band", String(this.activeBand), "0");
     else params.delete("band");
@@ -951,7 +955,7 @@ export class CatalogScreen extends LitElement {
     const groups: Array<{
       key: string;
       label: string;
-      options: Array<{ value: string; label: string; image?: string; count?: number }>;
+      options: Array<{ id?: number; value: string; label: string; image?: string; count?: number }>;
     }> = [];
     /** How many entries each facet value would leave. Shown on every chip. */
     const tally = (values: (item: Item) => unknown[]) => {
@@ -968,18 +972,14 @@ export class CatalogScreen extends LitElement {
       groups.push({
         key: "collectionBand",
         label: this.label("band", "Band"),
-        options: [...counts.keys()]
-          .map((value) => ({
-            value,
-            label: value.startsWith("credit:")
-              ? this.itemArtist(
-                  this.items.find((item) => this.facetValues(item, "collectionBand").includes(value)) || {},
-                )
-              : this.bandName(Number(value)),
-            image: value.startsWith("credit:") ? "" : String(this.band(Number(value))?.icon || ""),
-            count: counts.get(value),
-          }))
-          .sort((a, b) => a.label.localeCompare(b.label, this.settings.locale)),
+        options: [...counts.keys()].map((value) => ({
+          value,
+          label: value.startsWith("credit:")
+            ? this.itemArtist(this.items.find((item) => this.facetValues(item, "collectionBand").includes(value)) || {})
+            : this.bandName(Number(value)),
+          image: value.startsWith("credit:") ? "" : String(this.band(Number(value))?.icon || ""),
+          count: counts.get(value),
+        })),
       });
     }
     if (["member", "support", "comic", "stamp", "song"].includes(kind)) {
@@ -1003,7 +1003,7 @@ export class CatalogScreen extends LitElement {
       groups.push({
         key: "rarity",
         label: this.label("rarity", "Rarity"),
-        options: [...counts.keys()].sort().map((value) => ({
+        options: [...counts.keys()].map((value) => ({
           value,
           label: this.fieldValue({ rarity: value }, "rarity"),
           image: this.rarityMark(value),
@@ -1058,6 +1058,15 @@ export class CatalogScreen extends LitElement {
             : ["artwork"];
     for (const key of fields) {
       const counts = tally((item) => this.facetValues(item, key));
+      const ids = new Map<string, number>();
+      if (key === "difficulty") {
+        for (const item of this.items) {
+          for (const row of (Array.isArray(item.difficulty) ? item.difficulty : []) as Item[]) {
+            const id = Number(row.difficulty);
+            if (Number.isFinite(id)) ids.set(String(row.difficultyName ?? row.difficulty), id);
+          }
+        }
+      }
       groups.push({
         key,
         label:
@@ -1066,14 +1075,12 @@ export class CatalogScreen extends LitElement {
             : key === "artwork"
               ? uiText(this.settings.locale, "availableImage")
               : this.detailLabel(key),
-        options: [...counts.keys()]
-          .filter(Boolean)
-          .map((value) => ({
-            value,
-            label: ["yes", "no"].includes(value) ? uiText(this.settings.locale, value) : this.label(value, value),
-            count: counts.get(value),
-          }))
-          .sort((a, b) => a.label.localeCompare(b.label, this.settings.locale, { numeric: true })),
+        options: [...counts.keys()].filter(Boolean).map((value) => ({
+          value,
+          id: ids.get(value),
+          label: ["yes", "no"].includes(value) ? uiText(this.settings.locale, value) : this.label(value, value),
+          count: counts.get(value),
+        })),
       });
     }
     return groups.filter((group) => group.options.length > 1);
@@ -1972,6 +1979,13 @@ export class CatalogScreen extends LitElement {
     );
   }
   private detailMediaItems(item: Item) {
+    const portraits = this.profile.presentation === "character" ? CHARACTER_ART[Number(item.characterId)] : undefined;
+    if (portraits?.length)
+      return portraits.map((portrait, index) => ({
+        ...portrait,
+        id: `visual${index + 1}`,
+        label: `${uiText(this.settings.locale, "portrait")} ${String(index + 1).padStart(2, "0")}`,
+      }));
     const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
     const candidates: Array<{ id: string; label: string; source: unknown }> =
       this.profile.presentation === "member"
@@ -1981,12 +1995,22 @@ export class CatalogScreen extends LitElement {
             { id: "background", label: this.label("stage", "Background"), source: images.background },
             { id: "skill", label: this.label("skills", "Skill"), source: images.skill },
           ]
-        : this.profile.presentation === "support"
+        : this.profile.presentation === "character"
           ? [
-              { id: "full", label: this.label("details", "Full"), source: images.full || images.thumbnail },
-              { id: "skill", label: this.label("skills", "Skill"), source: images.skill },
+              {
+                id: "sprite",
+                label: this.label("character", "Character"),
+                source: item.spriteImage || item.profileImage,
+              },
+              { id: "profile", label: this.label("profile", "Profile"), source: item.profileImage },
+              { id: "face", label: this.label("visual", "Visual"), source: item.faceImage },
             ]
-          : [{ id: "full", label: this.label("details", "Preview"), source: this.detailImage(item) }];
+          : this.profile.presentation === "support"
+            ? [
+                { id: "full", label: this.label("details", "Full"), source: images.full || images.thumbnail },
+                { id: "skill", label: this.label("skills", "Skill"), source: images.skill },
+              ]
+            : [{ id: "full", label: this.label("details", "Preview"), source: this.detailImage(item) }];
     const seen = new Set<string>();
     return candidates.flatMap((entry) => {
       const source = typeof entry.source === "string" ? entry.source : "";
@@ -2109,50 +2133,20 @@ export class CatalogScreen extends LitElement {
       </span>
     `;
   }
-  private renderDetailMedia(item: Item) {
+  renderDetailMedia(item: Item) {
     const media = this.detailMediaItems(item);
-    const active = media.find((entry) => entry.id === this.activeMedia) || media[0];
-    const activeIndex = Math.max(0, media.indexOf(active));
-    const move = (offset: number) => {
-      this.activeMedia = media[(activeIndex + offset + media.length) % media.length]?.id || active.id;
-      this.setDetailQuery("media", this.activeMedia);
-    };
-    if (!active) return nothing;
+    if (!media.length) return nothing;
     return html`
-      <div class="detail-media media-loading">
-        <img
-          src=${this.localizedImageCandidates(active.source)[0] || active.source}
-          data-candidates=${JSON.stringify(this.localizedImageCandidates(active.source))}
-          data-candidate-index="0"
-          alt=${active.label}
-          @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-          @error=${this.imageError}
-        />
-        ${
-          media.length > 1
-            ? html`
-                <button
-                  class="icon-button detail-media__nav detail-media__nav--previous"
-                  @click=${() => move(-1)}
-                  aria-label=${this.label("previous", "Previous")}
-                >
-                  <svg class="material-icon" width="22" height="22"><use href="/icons.svg#chevron_left"></use></svg>
-                </button>
-                <nav class="detail-media__switch" aria-label=${this.label("media", "Media")}>
-                  <strong>${active.label}</strong>
-                  <span>${activeIndex + 1}/${media.length}</span>
-                </nav>
-                <button
-                  class="icon-button detail-media__nav detail-media__nav--next"
-                  @click=${() => move(1)}
-                  aria-label=${this.label("next", "Next")}
-                >
-                  <svg class="material-icon" width="22" height="22"><use href="/icons.svg#chevron_right"></use></svg>
-                </button>
-              `
-            : nothing
-        }
-      </div>
+      <image-gallery
+        .images=${media.map((entry) => ({ ...entry, candidates: this.localizedImageCandidates(entry.source) }))}
+        .active=${this.activeMedia}
+        .locale=${this.settings.locale}
+        .title=${this.itemTitle(item)}
+        @image-change=${(event: CustomEvent<string>) => {
+          this.activeMedia = event.detail;
+          this.setDetailQuery("media", this.activeMedia);
+        }}
+      ></image-gallery>
     `;
   }
   progressionRows(key: string) {
@@ -2194,7 +2188,18 @@ export class CatalogScreen extends LitElement {
     return this.cardDetail?.renderCardRelations(this, item) ?? nothing;
   }
   renderCardCosts(item: Item, data: ReturnType<CatalogScreen["cardControlData"]>) {
-    if (data.support) return nothing;
+    const piece = this.gameItems.find((entry) => Number(entry.itemId) === Number(item.rankUpItemId));
+    if (data.support) {
+      const rows = data.supportRankRows.filter(
+        (row: Item) => Number(row._rank) === this.detailRank && Number(row._requiredRankUpItemCount) > 0,
+      );
+      return piece
+        ? this.renderCostList(
+            this.label("rank", "Rank"),
+            rows.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece })),
+          )
+        : nothing;
+    }
     const trainingRows = asItems(this.detailAux["member-card-awake-resources"]).filter(
       (row) =>
         Number(row.group) === Number(item.memberCardAwakeResourceGroup) &&
@@ -2203,7 +2208,6 @@ export class CatalogScreen extends LitElement {
     const ranks = data.rankRows.filter(
       (row: Item) => Number(row._rank) > 1 && Number(row._rank) === this.detailAwakening,
     );
-    const piece = this.gameItems.find((entry) => Number(entry.itemId) === Number(item.rankUpItemId));
     return html`
       <div class="card-costs">
         ${this.renderCostList(
@@ -2217,53 +2221,24 @@ export class CatalogScreen extends LitElement {
     `;
   }
   private renderCostList(label: string, rows: Item[]) {
-    const levels = [
-      ...rows.reduce((groups, row) => {
-        const level = Number(row.level);
-        const entries = groups.get(level) || [];
-        entries.push(row);
-        groups.set(level, entries);
-        return groups;
-      }, new Map<number, Item[]>()),
-    ].sort(([left], [right]) => left - right);
-    return levels.length
-      ? html`
-          <details class="level-cost-list">
-            <summary>
-              <svg class="material-icon" width="16" height="16"><use href="/icons.svg#trending_up"></use></svg>
-              <span>${label}</span>
-              <svg class="material-icon" width="18" height="18"><use href="/icons.svg#expand_more"></use></svg>
-            </summary>
-            <div>
-              ${levels.map(([level, entries]) => {
-                return html`
-                  <div class="level-cost-list__row">
-                    <small aria-label=${`${label} ${level}`}>${level}</small>
-                    <div class="level-cost-list__resources">
-                      ${entries.map((row) => {
-                        const item = (row.item as Item | undefined) || {};
-                        return html`
-                          <span class="level-cost-list__resource">
-                            ${
-                              item.image
-                                ? html`
-                                    <img src=${String(item.image)} alt="" />
-                                  `
-                                : nothing
-                            }
-                            <span>${this.localized(item.name)}</span>
-                            <b>×${Number(row.count || 0).toLocaleString()}</b>
-                          </span>
-                        `;
-                      })}
-                    </div>
-                  </div>
-                `;
-              })}
-            </div>
-          </details>
-        `
-      : nothing;
+    if (!rows.length) return nothing;
+    const level = Number(rows[0].level || 1);
+    return upgradeCost({
+      label,
+      from: Math.max(0, level - 1),
+      to: level,
+      locale: this.settings.locale,
+      items: rows
+        .filter((row) => Number(row.level) === level)
+        .map((row) => {
+          const item = row.item as Item | undefined;
+          return {
+            name: this.localized(item?.name) || this.label("required", "Required"),
+            count: Number(row.count || 0),
+            image: String(item?.image || ""),
+          };
+        }),
+    });
   }
   private skillDescription(skill: Item, requestedLevel?: number) {
     const raw = localizedText(skill.description, this.settings.locale);
@@ -2308,32 +2283,6 @@ export class CatalogScreen extends LitElement {
   private setCharacterSection(section: string) {
     this.characterSection = section;
     this.setDetailQuery("section", section);
-  }
-  private renderCharacterVisual(item: Item) {
-    const band = this.band(Number(item.bandId || 0));
-    const source = String(item.spriteImage || item.profileImage || "");
-    return html`
-      <section
-        class="character-detail-visual"
-        style=${`--character-detail-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`}
-        aria-label=${this.label("visual", "Visual")}
-      >
-        ${
-          source
-            ? html`
-                <img class="character-detail-visual__figure" src=${source} alt=${this.itemTitle(item)} />
-              `
-            : nothing
-        }
-        ${
-          band?.logo
-            ? html`
-                <img class="character-detail-visual__logo" src=${String(band.logo)} alt="" />
-              `
-            : nothing
-        }
-      </section>
-    `;
   }
   private renderCharacterArchive(item: Item, fields: Array<{ key: string; value: string }>) {
     return html`
@@ -2406,9 +2355,9 @@ export class CatalogScreen extends LitElement {
         onClose: () => this.close(),
         leading: this.renderDetailLeading(item),
         actions: this.renderDetailActions(item),
-        body: html`
-          ${this.profile.presentation === "character" ? this.renderCharacterVisual(item) : this.renderDetailMedia(item)}
-          <div class="pane-sections">
+        body: detailLayout(
+          this.profile.presentation === "character" ? nothing : this.renderDetailMedia(item),
+          html`
             ${
               this.profile.presentation === "character"
                 ? this.renderCharacterArchive(item, fields)
@@ -2524,56 +2473,30 @@ export class CatalogScreen extends LitElement {
                 ? html`
                     <section class="detail-section band-item-level-detail">
                       ${renderDetailSectionHeading(this.label("effectsByLevel", "Effects by level"), "effects")}
-                      <div class="band-item-level-table">
-                        ${bandLevelValues.map((level) => {
-                          const effect = bandEffects.find((row) => Number(row.level) === level) || {};
-                          const costs = bandResourceRows.filter((row) => Number(row.level) === level);
-                          const description = this.plainGameText(item.description).replace(
-                            /\{0(?::[^}]*)?\}/gu,
-                            String(Number(effect.effectValue || 0) / 100),
-                          );
-                          return html`
-                            <article class=${level === this.detailLevel ? "selected" : ""}>
-                              <button
-                                class="band-item-level-table__level"
-                                @click=${() => {
-                                  this.detailLevel = level;
-                                  this.setDetailQuery("level", level);
-                                }}
-                              >
-                                <small>${this.label("level", "Level")}</small>
-                                <strong>${level}</strong>
-                              </button>
-                              <p>${description}</p>
-                              <div class="band-item-level-table__costs">
-                                ${
-                                  costs.length
-                                    ? costs.map((row) => {
-                                        const resource = (row.item as Item | undefined) || {};
-                                        return html`
-                                          <span>
-                                            ${
-                                              resource.image
-                                                ? html`
-                                                    <img src=${String(resource.image)} alt="" />
-                                                  `
-                                                : nothing
-                                            }
-                                            <small>
-                                              ${this.localized(resource.name) || this.label("required", "Required")}
-                                            </small>
-                                            <b>×${Number(row.count || 0).toLocaleString()}</b>
-                                          </span>
-                                        `;
-                                      })
-                                    : html`
-                                        <span class="band-item-level-table__free">—</span>
-                                      `
-                                }
-                              </div>
-                            </article>
-                          `;
-                        })}
+                      <div class="band-item-upgrade">
+                        <md-outlined-select
+                          label=${this.label("level", "Level")}
+                          .value=${String(this.detailLevel)}
+                          @change=${(event: Event) => {
+                            this.detailLevel = Number((event.target as HTMLElement & { value: string }).value);
+                            this.setDetailQuery("level", this.detailLevel);
+                          }}
+                        >
+                          ${bandLevelValues.map(
+                            (level) => html`
+                              <md-select-option value=${String(level)}>
+                                <span slot="headline">Lv.${Math.max(0, level - 1)} → Lv.${level}</span>
+                              </md-select-option>
+                            `,
+                          )}
+                        </md-outlined-select>
+                        <p>
+                          ${this.plainGameText(item.description).replace(/\{0(?::[^}]*)?\}/gu, String(Number(bandEffects.find((row) => Number(row.level) === this.detailLevel)?.effectValue || 0) / 100))}
+                        </p>
+                        ${this.renderCostList(
+                          this.label("required", "Required"),
+                          bandResourceRows.filter((row) => Number(row.level) === this.detailLevel),
+                        )}
                       </div>
                     </section>
                   `
@@ -2679,8 +2602,8 @@ export class CatalogScreen extends LitElement {
                   `
                 : nothing
             }${this.renderExtendedDetail(item)}
-          </div>
-        `,
+          `,
+        ),
       })}
       ${
         this.chartOpen && chart.file

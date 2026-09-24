@@ -1,0 +1,63 @@
+@layer components {
+  .upgrade-cost {
+    min-width: 0;
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 16px;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .upgrade-cost header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 500 14px/20px var(--app-font);
+  }
+  .upgrade-cost header > span {
+    flex-shrink: 0;
+    color: var(--md-sys-color-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .upgrade-cost ul {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0;
+    display: grid;
+    gap: 8px;
+  }
+  .upgrade-cost li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    font: 400 14px/20px var(--app-font);
+  }
+  .upgrade-cost img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    flex: 0 0 32px;
+  }
+  .upgrade-cost li > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .upgrade-cost li > strong {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .band-item-upgrade {
+    display: grid;
+    gap: 16px;
+  }
+  .band-item-upgrade > md-outlined-select {
+    width: min(100%, 280px);
+  }
+  .band-item-upgrade > p {
+    margin: 0;
+    font: 400 16px/1.6 var(--app-font);
+  }
+}

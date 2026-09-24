@@ -392,11 +392,11 @@
     "home": "홈 스토리",
     "afterlive": "애프터 라이브 스토리",
     "tutorial": "튜토리얼 스토리",
-    "bestdoriEvent": "이벤트 스토리",
-    "bestdoriBand": "밴드 스토리",
-    "bestdoriMain": "메인 스토리",
-    "bestdoriAfterlive": "애프터 라이브 스토리",
-    "bestdoriCard": "카드 스토리"
+    "bestdoriEvent": "GBP 이벤트 스토리",
+    "bestdoriBand": "GBP 밴드 스토리",
+    "bestdoriMain": "GBP 메인 스토리",
+    "bestdoriAfterlive": "GBP 애프터 라이브 스토리",
+    "bestdoriCard": "GBP 카드 스토리"
   },
   "homeStories": "홈",
   "linkStories": "인연 스토리",
@@ -797,8 +797,8 @@
     "activityPostUnavailable": "토론에 접근할 수 없음",
     "activityRevision": "저장된 버전: {count}",
     "customCharts": "사용자 제작 채보",
-    "songsBestDori": "Bestdori 곡",
-    "storiesBestDori": "Bestdori 스토리",
+    "songsBestDori": "GBP 곡",
+    "storiesBestDori": "GBP 스토리",
     "playlistPage": {
       "title": "플레이리스트",
       "bands": "밴드",
@@ -821,7 +821,7 @@
       "masterUnavailable": "이용 불가",
       "audioUnavailable": "오디오 없음",
       "sourceCatalog": "도감",
-      "sourceBestdori": "Bestdori",
+      "sourceBestdori": "GBP",
       "sourceUserUpload": "사용자 업로드"
     },
     "planned": "예정",

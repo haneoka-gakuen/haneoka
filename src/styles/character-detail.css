@@ -1,16 +1,4 @@
 @layer pages {
-  .character-detail-facts dd {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .character-detail-fact-image {
-    width: 88px;
-    height: 24px;
-    flex: 0 0 auto;
-    object-fit: contain;
-    object-position: left center;
-  }
   .character-detail-deferred-section,
   .character-detail-groups {
     display: flex;
@@ -22,40 +10,6 @@
   }
   .character-detail-groups {
     gap: 22px;
-  }
-  .character-related-story-logo {
-    position: absolute !important;
-    z-index: 3 !important;
-    top: 7px;
-    left: 7px;
-    width: min(36%, 76px) !important;
-    height: 28% !important;
-    object-fit: contain !important;
-    object-position: left top;
-    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 35%));
-  }
-  .character-related-story-avatars {
-    position: absolute;
-    z-index: 4;
-    right: 7px;
-    bottom: 7px;
-  }
-  .character-related-story-avatars .avatar-stack img {
-    width: 26px;
-    height: 26px;
-    border: 2px solid white;
-  }
-  .character-story-avatar-media {
-    display: grid;
-    width: 100%;
-    height: 100%;
-    place-items: center;
-  }
-  .character-story-avatar-media .avatar-stack img {
-    width: 48px;
-    height: 48px;
-    margin-right: -9px;
-    border: 2px solid var(--md-sys-color-surface-container-lowest);
   }
   .character-mission-workspace {
     display: grid;

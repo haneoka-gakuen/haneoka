@@ -15,8 +15,8 @@ export const viewSwitch = (locale: string, value: CollectionView, onSelect: (vie
     iconOnly: true,
     options: [
       { value: "grid", label: uiText(locale, "grid"), icon: "grid_view" },
-      { value: "list", label: uiText(locale, "list"), icon: "view_list" },
-      { value: "table", label: uiText(locale, "table"), icon: "table_rows" },
+      { value: "list", label: uiText(locale, "list"), icon: "table_rows" },
+      { value: "table", label: uiText(locale, "table"), icon: "view_list" },
     ],
   });
 export interface CollectionListEntry {

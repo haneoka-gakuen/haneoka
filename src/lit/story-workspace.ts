@@ -1,4 +1,6 @@
 import "../styles/bestdori-detail.css";
+import "./ui/image-gallery";
+import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { filterDateBound } from "../lib/filter-date";
 import { facet } from "./ui/facet";
 import { collectionList, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
@@ -28,6 +30,8 @@ import { PaneFocus } from "./ui/pane";
 import { specList } from "./ui/spec";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { tile } from "./ui/tile";
+import { storyCastMedia } from "./ui/story-media";
+import { characterPair } from "./ui/character-pair";
 
 /**
  * Stories — one screen for every story collection on the site.
@@ -81,20 +85,6 @@ interface FacetDefinition {
   /** One value at a time: picking a second replaces the first. */
   single?: boolean;
 }
-
-const FRIENDSHIP_SELF_SLOTS = [
-  ["18.82622%", "43.36100%", "90.85714%", "68.57143%", "-11.853991deg"],
-  ["27.59146%", "77.80083%", "93.28571%", "33.08571%", "-44.430576deg"],
-  ["74.16159%", "67.20954%", "3.51429%", "40.37143%", "29.744215deg"],
-  ["73.93293%", "25.82988%", "7.42857%", "80.62857%", "-29.195091deg"],
-] as const;
-const FRIENDSHIP_OTHER_SLOTS = [
-  ["19.28354%", "30.18672%", "90.60000%", "75.37143%", "29.658096deg"],
-  ["20.88415%", "69.91701%", "96.00000%", "44.85714%", "-36.740987deg"],
-  ["68.90244%", "80.18672%", "10.71429%", "13.57143%", "52.050356deg"],
-  ["79.64939%", "49.48133%", "-0.28571%", "50.00000%", "3.755137deg"],
-  ["71.95122%", "20.12448%", "9.34286%", "86.82857%", "-43.944990deg"],
-] as const;
 
 const BESTDORI_REGIONS: Record<string, string> = { "zh-TW": "tw", "zh-CN": "cn", ko: "kr", en: "en" };
 /** Query keys the screen round-trips, independent of what the data offers. */
@@ -285,7 +275,9 @@ export class StoryWorkspace extends LitElement {
   }
   updated() {
     // Focus stays inside a detail while it is open.
-    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => this.closeDetail());
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane], [data-detail-pane]"), () =>
+      this.closeDetail(),
+    );
     // tile() defers its artwork as `data-src`; this is what promotes it.
     this.lazyImages.observe(this);
     this.syncHomeStage();
@@ -353,7 +345,7 @@ export class StoryWorkspace extends LitElement {
     const resource = this.isCardSection() ? "cards" : `stories/${this.mode}`;
     const [items, bands, characters] = await Promise.all([
       fetchJson<JsonRecord | JsonRecord[]>(
-        `${this.bestdoriBase()}/${resource}?lang=${encodeURIComponent(this.locale)}`,
+        `${this.bestdoriBase()}/${resource}?lang=${encodeURIComponent(this.locale)}&projection=${BESTDORI_CATALOG_VERSION}`,
       ),
       fetchJson<JsonRecord | JsonRecord[]>(`${this.bestdoriBase()}/bands`).catch(() => ({}) as JsonRecord),
       fetchJson<JsonRecord | JsonRecord[]>(`${this.bestdoriBase()}/characters`).catch(() => ({}) as JsonRecord),
@@ -395,16 +387,23 @@ export class StoryWorkspace extends LitElement {
     return String(episode.storyId || episode.cardId || episode.storyKey || "");
   }
   private defaultSort() {
+    if (this.isBestdori() && this.mode === "event") return "id";
     return this.mode === "link" || this.mode === "afterlive" || this.mode === "event" ? "release" : "id";
   }
   private defaultOrder(): "asc" | "desc" {
-    return this.defaultSort() === "release" ? "desc" : "asc";
+    return this.isCardSection() || this.defaultSort() === "release" ? "desc" : "asc";
   }
   private chapterKind(chapter: JsonRecord) {
     return String(chapter.chapterKey || "").toLowerCase();
   }
   private relevantChapters(): JsonRecord[] {
-    if (this.isBestdori()) return this.chapters;
+    if (this.isBestdori())
+      return this.mode === "event"
+        ? [...this.chapters].sort(
+            (a, b) =>
+              Number(b.chapterSort || 0) - Number(a.chapterSort || 0) || Number(b.chapterId) - Number(a.chapterId),
+          )
+        : this.chapters;
     if (this.mode === "band")
       return this.chapters
         .filter((c) => Number(c.chapterId) < 900000)
@@ -473,7 +472,9 @@ export class StoryWorkspace extends LitElement {
     return this.characters.find((item) => Number(item.characterId) === id);
   }
   private characterIds(episode: JsonRecord) {
-    return (Array.isArray(episode.characterIds) ? episode.characterIds : []).map(Number);
+    return (
+      Array.isArray(episode.characterIds) ? episode.characterIds : episode.characterId ? [episode.characterId] : []
+    ).map(Number);
   }
   private releaseValue(item: JsonRecord) {
     const value = item.releaseAt || item.publishedAt || item.startAt;
@@ -509,7 +510,26 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private episodeMedia(episode: JsonRecord) {
-    if (this.isBestdori() && !this.isCardSection())
+    if (this.isCardSection()) {
+      const thumbnails = episode.cardThumbnails as JsonRecord | undefined;
+      const images = episode.cardImages as JsonRecord | undefined;
+      const variants = ["normal", "trained"].flatMap((key) => {
+        const image = String(thumbnails?.[key] || images?.[key] || (key === "normal" ? episode.cardImage || "" : ""));
+        return image ? [{ image, fallback: String(images?.[key] || "") }] : [];
+      });
+      if (variants.length)
+        return html`
+          <span class="story-card-media">
+            ${variants.map(
+              ({ image, fallback }) => html`
+                <img data-src=${image} data-fallback=${fallback} alt="" decoding="async" @error=${this.imageError} />
+              `,
+            )}
+          </span>
+        `;
+      return undefined;
+    }
+    if (this.isBestdori() && this.mode !== "afterlive")
       return html`
         <img
           class="story-thumbnail"
@@ -519,47 +539,28 @@ export class StoryWorkspace extends LitElement {
           @error=${this.imageError}
         />
       `;
-    if (this.origin !== "release" || !["home", "afterlive"].includes(this.mode)) return undefined;
+    if (!["home", "afterlive"].includes(this.mode)) return undefined;
     const spot = this.episodeSpot(episode);
     const image = String((spot?.spine as JsonRecord | undefined)?.backgroundPreview || spot?.backgroundPreview || "");
     const ids = this.characterIds(episode);
-    return html`
-      <span class=${`story-cast-media ${this.mode === "home" ? "story-cast-media--home" : ""}`}>
-        ${
-          this.mode === "home" && image
-            ? html`
-                <img class="story-cast-media__background" data-src=${image} alt="" @error=${this.imageError} />
-              `
-            : nothing
-        }
-        <span class="story-cast-media__people">
-          ${ids.map((id) => {
-            const character = this.character(id) || {};
-            const source = String(character.faceImage || character.thumbnailImage || "");
-            return html`
-              <span title=${this.characterName(character)}>
-                ${
-                  source
-                    ? html`
-                        <img data-src=${source} alt=${this.characterName(character)} @error=${this.imageError} />
-                      `
-                    : html`
-                        <span>${this.characterName(character)}</span>
-                      `
-                }
-              </span>
-            `;
-          })}
-        </span>
-      </span>
-    `;
+    return storyCastMedia(
+      ids.map((id) => {
+        const character = this.character(id) || {};
+        return {
+          name: this.characterName(character),
+          image: String(character.faceImage || character.thumbnailImage || ""),
+        };
+      }),
+      this.mode === "home" ? image : "",
+    );
   }
+
   private episodeImage(item: JsonRecord) {
     if (this.origin === "release" && this.mode === "home") {
       const spot = this.episodeSpot(item);
       return String((spot?.spine as JsonRecord | undefined)?.backgroundPreview || spot?.backgroundPreview || "");
     }
-    if (this.origin === "release" && this.mode === "afterlive") return "";
+    if (this.mode === "afterlive") return "";
     return String(
       item.episodeImage ||
         item.banner ||
@@ -837,6 +838,11 @@ export class StoryWorkspace extends LitElement {
     if (!sorted) return list;
     const direction = this.order === "asc" ? 1 : -1;
     return list.sort((a, b) => {
+      if (this.isBestdori() && this.mode === "event" && this.sort === "id") {
+        const chapter =
+          Number(b.chapterSort || 0) - Number(a.chapterSort || 0) || Number(b.chapterId) - Number(a.chapterId);
+        return chapter || direction * (Number(a.episodeNumber || 0) - Number(b.episodeNumber || 0));
+      }
       if (this.origin === "release" && this.mode === "band") {
         const order = ["bandStory", "extraStory", "perspectiveStory"];
         const group = order.indexOf(this.episodeGroup(a)) - order.indexOf(this.episodeGroup(b));
@@ -1202,6 +1208,7 @@ export class StoryWorkspace extends LitElement {
       // Story art is a 16:9 banner and the media box is 16:9, so it fills
       // without cropping. No inset: it is artwork, not a symbol.
       fit: this.isBestdori() && !this.isCardSection() ? "fill" : this.isCardSection() ? "contain" : "cover",
+      natural: this.origin === "release" && !["home", "afterlive"].includes(this.mode),
       onOpen: () => void this.openStory(id, episode),
       onImageError: this.imageError,
       marks: [
@@ -1266,7 +1273,9 @@ export class StoryWorkspace extends LitElement {
                       type="button"
                       @click=${() => void this.openStory(this.episodeId(episode), episode)}
                     >
-                      <span class=${`table-entity__media ${this.isCardSection() ? "" : "story-table-media"}`}>
+                      <span
+                        class=${`table-entity__media ${this.isCardSection() ? "story-table-media--cards" : "story-table-media"}`}
+                      >
                         ${
                           this.episodeMedia(episode) ??
                           (this.episodeImage(episode)
@@ -1470,175 +1479,33 @@ export class StoryWorkspace extends LitElement {
       .catch(() => host.classList.add("failed"));
   }
   private renderFriendshipBoard() {
-    const lead = this.character(Number((this.facets.lead || [])[0] || 0)) || this.characters[0];
-    const leadId = String(lead?.characterId || "");
-    const leadBand = Number(lead?.bandId || 1);
-    const partner = this.character(Number(this.linkPartner));
-    const activeBand = this.linkPartner ? Number(partner?.bandId || leadBand) : leadBand;
-    const sameBand = Boolean(lead) && leadBand === activeBand;
-    const slots = sameBand ? FRIENDSHIP_SELF_SLOTS : FRIENDSHIP_OTHER_SLOTS;
-    const partners = this.characters.filter(
-      (item) => String(item.characterId) !== leadId && Number(item.bandId) === activeBand,
-    );
-    const bands = [
-      ...new Set(
-        this.characters
-          .filter((item) => String(item.characterId) !== leadId)
-          .map((item) => Number(item.bandId))
-          .filter(Boolean),
-      ),
-    ];
-    const root = `/assets/${currentReleaseServer()}/Assets/AddressableResources`;
-    const band = this.bands.find((item) => Number(item.bandId) === activeBand);
-    if (lead && !band?.logo && !band?.icon)
-      return html`
-        <section class="story-pair" aria-label=${uiText(this.locale, "characters")}>
-          <md-outlined-select
-            label=${uiText(this.locale, "firstCharacter")}
-            .value=${leadId}
-            @change=${(event: Event) => {
-              const value = (event.target as HTMLElement & { value: string }).value;
-              this.facets = { ...this.facets, lead: [value] };
-              if (this.linkPartner === value) this.linkPartner = "";
-              this.sync();
-            }}
-          >
-            ${this.characters.map(
-              (item) => html`
-                <md-select-option value=${String(item.characterId)}>
-                  <span slot="headline">${this.characterName(item)}</span>
-                </md-select-option>
-              `,
-            )}
-          </md-outlined-select>
-          <button
-            class="icon-button"
-            type="button"
-            aria-label=${uiText(this.locale, "swap")}
-            ?disabled=${!this.linkPartner}
-            @click=${() => {
-              if (!this.linkPartner) return;
-              this.facets = { ...this.facets, lead: [this.linkPartner] };
-              this.linkPartner = leadId;
-              this.sync();
-            }}
-          >
-            ${icon("swap_horiz", 24)}
-          </button>
-          <md-outlined-select
-            label=${uiText(this.locale, "secondCharacter")}
-            .value=${this.linkPartner}
-            @change=${(event: Event) => {
-              this.linkPartner = (event.target as HTMLElement & { value: string }).value;
-              this.facets = { ...this.facets, lead: [leadId] };
-              this.sync();
-            }}
-          >
-            <md-select-option value=""><span slot="headline">${uiText(this.locale, "all")}</span></md-select-option>
-            ${this.characters
-              .filter((item) => String(item.characterId) !== leadId)
-              .map(
-                (item) => html`
-                  <md-select-option value=${String(item.characterId)}>
-                    <span slot="headline">${this.characterName(item)}</span>
-                  </md-select-option>
-                `,
-              )}
-          </md-outlined-select>
-        </section>
-      `;
-    return html`
-      <section
-        class="story-board"
-        style=${`--friendship-stage:url('${root}/Image/Background/FriendshipBackground.png')`}
-      >
-        <div class="story-board__stage">
-          <img class="story-board__background" src=${`${root}/Band/${activeBand}/Friendship/photo_board.png`} alt="" />
-          ${
-            sameBand
-              ? html`
-                  <img class="story-board__logo" src=${`${root}/Band/${activeBand}/band_logo.png`} alt="" />
-                `
-              : nothing
-          }
-          ${
-            lead
-              ? html`
-                  <img
-                    class="story-board__lead"
-                    src=${`${root}/Character/Image/${leadId}/character_sprite.png`}
-                    alt=${this.characterName(lead)}
-                  />
-                `
-              : nothing
-          }
-          <nav class="story-board__partners" aria-label=${uiText(this.locale, "characters")}>
-            ${partners.map((character, index) => {
-              const id = String(character.characterId);
-              const slot = slots[index] || FRIENDSHIP_OTHER_SLOTS[0];
-              const rotation = sameBand && activeBand === 2 && index === 0 ? "168.146055deg" : slot[4];
-              return html`
-                <button
-                  class=${id === this.linkPartner ? "is-selected" : ""}
-                  type="button"
-                  aria-pressed=${String(id === this.linkPartner)}
-                  style=${`--slot-x:${slot[0]};--slot-y:${slot[1]};--arrow-x:${slot[2]};--arrow-y:${slot[3]};--arrow-rotation:${rotation}`}
-                  @click=${() => {
-                    this.linkPartner = this.linkPartner === id ? "" : id;
-                    this.sync();
-                  }}
-                  aria-label=${this.characterName(character)}
-                  title=${this.characterName(character)}
-                >
-                  <img
-                    class="story-board__arrow"
-                    src=${`${root}/Band/${activeBand}/Friendship/FriendshipArrow_1.png`}
-                    alt=""
-                  />
-                  <span><img src=${`${root}/Character/Image/${id}/board_icon.png`} alt="" /></span>
-                </button>
-              `;
-            })}
-          </nav>
-          <nav class="story-board__bands" aria-label=${uiText(this.locale, "bands")}>
-            ${bands.map(
-              (bandId) => html`
-                <button
-                  class=${bandId === activeBand ? "is-selected" : ""}
-                  type="button"
-                  aria-pressed=${String(bandId === activeBand)}
-                  @click=${() => {
-                    const next = this.characters.find(
-                      (item) => Number(item.bandId) === bandId && String(item.characterId) !== leadId,
-                    );
-                    this.linkPartner = next ? String(next.characterId) : "";
-                    this.sync();
-                  }}
-                  aria-label=${this.bandName(bandId)}
-                >
-                  <img src=${`${root}/Band/${bandId}/band_logo.png`} alt="" />
-                </button>
-              `,
-            )}
-          </nav>
-          <button
-            class="icon-button story-board__swap"
-            type="button"
-            ?disabled=${!this.linkPartner}
-            @click=${() => {
-              if (!this.linkPartner) return;
-              const next = this.linkPartner;
-              this.linkPartner = leadId;
-              this.facets = { ...this.facets, lead: [next] };
-              this.sync();
-            }}
-            aria-label=${uiText(this.locale, "swap")}
-          >
-            <svg class="material-icon" width="20" height="20"><use href="/icons.svg#swap_horiz"></use></svg>
-          </button>
-        </div>
-      </section>
-    `;
+    const lead = String((this.facets.lead || [])[0] || this.characters[0]?.characterId || "");
+    return characterPair({
+      locale: this.locale,
+      characters: this.characters.map((character) => ({
+        value: String(character.characterId),
+        label: this.characterName(character),
+        image: String(character.faceImage || ""),
+      })),
+      first: lead,
+      second: this.linkPartner,
+      onFirst: (value) => {
+        this.facets = { ...this.facets, lead: [value] };
+        if (this.linkPartner === value) this.linkPartner = "";
+        this.sync();
+      },
+      onSecond: (value) => {
+        this.linkPartner = value;
+        this.facets = { ...this.facets, lead: [lead] };
+        this.sync();
+      },
+      onSwap: () => {
+        if (!this.linkPartner) return;
+        this.facets = { ...this.facets, lead: [this.linkPartner] };
+        this.linkPartner = lead;
+        this.sync();
+      },
+    });
   }
 
   /* ---------------------------------------------------------- detail layer */

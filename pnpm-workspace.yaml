@@ -46,6 +46,7 @@ catalog:
   wrangler: 4.111.0
   "@iconify-json/material-symbols": ^1.2.90
   "@fontsource/material-symbols-rounded": ^5.3.4
+  photoswipe: ^5.4.4
 catalogMode: prefer
 cleanupUnusedCatalogs: true
 allowBuilds:

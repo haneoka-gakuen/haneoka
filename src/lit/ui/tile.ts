@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { html as staticHtml, literal } from "lit/static-html.js";
 import { icon } from "./icon";
 
 /**
@@ -41,6 +42,9 @@ export interface TileOptions {
   label: string;
   image: string;
   imageFallback?: string;
+  imageCandidates?: string[];
+  natural?: boolean;
+  href?: string;
   /** Rendered when the resource has no artwork: a rendered 32dp icon. */
   placeholder?: unknown;
   media?: unknown;
@@ -54,7 +58,7 @@ export interface TileOptions {
    * can act on.
    */
   selected?: boolean;
-  onOpen: () => void;
+  onOpen?: () => void;
   onImageError?: (event: Event) => void;
   style?: string;
   /** `contain` for logos and items that must not be cropped. */
@@ -79,6 +83,8 @@ const markClass = (mark: TileMark) =>
     .join(" ");
 
 export function tile(options: TileOptions): TemplateResult {
+  const tag = options.href ? literal`a` : literal`button`;
+  const natural = options.natural ?? !["rail", "story", "model", "live2d", "spine"].includes(options.kind || "");
   const classes = [
     "tile",
     "tile--interactive",
@@ -87,19 +93,20 @@ export function tile(options: TileOptions): TemplateResult {
   ]
     .filter(Boolean)
     .join(" ");
-  return html`
-    <button
+  return staticHtml`
+    <${tag}
       class=${classes}
-      type="button"
+      type=${options.href ? nothing : "button"}
+      href=${options.href || nothing}
       role=${options.role ?? nothing}
       aria-controls=${options.controls ?? nothing}
       tabindex=${options.tabIndex ?? nothing}
       aria-label=${options.label}
       aria-selected=${options.selected === undefined ? nothing : String(options.selected)}
       style=${options.style || nothing}
-      @click=${options.onOpen}
+      @click=${options.onOpen ?? nothing}
     >
-      <span class=${`tile__media ${options.fit ? `tile__media--${options.fit}` : ""}`}>
+      <span class=${`tile__media ${natural ? "tile__media--natural" : ""} ${options.fit ? `tile__media--${options.fit}` : ""}`}>
         ${
           options.media ??
           (options.image
@@ -107,6 +114,7 @@ export function tile(options: TileOptions): TemplateResult {
                 <img
                   data-src=${options.image}
                   data-fallback=${options.imageFallback || nothing}
+                  data-fallbacks=${options.imageCandidates ? JSON.stringify(options.imageCandidates) : nothing}
                   alt=""
                   decoding="async"
                   @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
@@ -149,6 +157,6 @@ export function tile(options: TileOptions): TemplateResult {
               `
         }
       </span>
-    </button>
+    </${tag}>
   `;
 }

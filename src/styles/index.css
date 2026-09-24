@@ -56,3 +56,20 @@
     }
   }
 }
+
+@layer utilities {
+  .collection {
+    align-items: start;
+  }
+  .tile__media--natural {
+    aspect-ratio: auto;
+    min-height: 80px;
+    background: transparent;
+  }
+  .tile__media--natural > img {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+}

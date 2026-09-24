@@ -32,13 +32,14 @@
   }
   .card-detail-controls__pair {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
     gap: 8px;
   }
   .detail-level-switch {
     display: grid;
     min-height: 48px;
-    grid-template-columns: auto 48px minmax(80px, 1fr) 48px;
+    min-width: 0;
+    grid-template-columns: auto 40px minmax(0, 1fr) 40px;
     align-items: center;
     gap: 4px;
     padding-left: 12px;
@@ -47,10 +48,13 @@
     background: var(--md-sys-color-surface-container-lowest);
   }
   .detail-level-switch__value {
-    display: inline-flex;
-    min-width: 58px;
-    align-items: baseline;
-    gap: 8px;
+    display: flex;
+    min-width: 56px;
+    max-width: 96px;
+    flex-direction: column;
+    align-items: flex-start;
+    overflow-wrap: anywhere;
+    gap: 0;
   }
   .detail-level-switch__value small {
     color: var(--md-sys-color-outline);

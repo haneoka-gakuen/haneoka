@@ -1,8 +1,10 @@
 import { LitElement, html, nothing } from "lit";
 import { uiText } from "../shared/catalog";
+import { orderFacetOptions } from "../../lib/facet-order";
 import "@material/web/checkbox/checkbox.js";
 
 export interface FacetOption {
+  id?: string | number;
   value: string;
   label: string;
   image?: string;
@@ -84,8 +86,8 @@ export class FilterFacet extends LitElement {
                           alt=""
                           loading="lazy"
                           @error=${(event: Event) => {
-                        (event.target as HTMLImageElement).hidden = true;
-                      }}
+                            (event.target as HTMLImageElement).hidden = true;
+                          }}
                         />
                       `
                     : nothing
@@ -132,7 +134,7 @@ export const facet = (
   <filter-facet
     .label=${label}
     .locale=${locale}
-    .options=${options}
+    .options=${orderFacetOptions(options)}
     .selected=${selected}
     .onToggle=${onToggle}
   ></filter-facet>

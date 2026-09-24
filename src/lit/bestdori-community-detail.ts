@@ -1,3 +1,6 @@
+import "./ui/image-gallery";
+import { renderPane } from "./ui/pane";
+import { detailLayout } from "./ui/detail-layout";
 import "../styles/bestdori-detail.css";
 import { html, nothing, type TemplateResult } from "lit";
 import { localizedText } from "./shared/catalog";
@@ -48,43 +51,55 @@ export function renderBestdoriDetail(
       title = localizedText(card.prefix, locale) || String(card.cardId || "—");
     const images = card.cardImages as Value | undefined;
     const episodes = Array.isArray(card.episodes) ? (card.episodes as Value[]) : [];
-    return html`
-      <aside class="bestdori-detail pane-layer" role="dialog" aria-modal="true" tabindex="-1" data-overlay-pane>
-        <header>
-          <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeCard}>
-            ${icon("arrow_back")}
-          </button>
-          <strong>${title}</strong>
-        </header>
-        <div class="bestdori-card-detail">
-          <div class="bestdori-card-detail__images">
-            ${[images?.normal || card.cardImage, images?.trained].filter(Boolean).map(
-              (source) => html`
-                <img src=${String(source)} alt="" />
-              `,
-            )}
-          </div>
-          ${renderDetailSectionHeading(label("storiesBestDori", "Stories"), "stories", {
-            count: episodes.length,
-            level: 2,
-          })}
-          ${episodes.map((episode, index) => {
-            const storyId = `card.${episode.resourceSetName || card.resourceSetName}.${episode.scenarioId}`;
-            return html`
-              <button
-                class="surface surface--outlined bestdori-episode"
-                @click=${() => actions.openStory(storyId, episode.title)}
-              >
-                <span>${String(index + 1).padStart(2, "0")}</span>
-                <strong>${localizedText(episode.title, locale) || String(episode.scenarioId || storyId)}</strong>
-                ${icon("chevron_right")}
-              </button>
-            `;
-          })}
-        </div>
-      </aside>
-    `;
+    const gallery = [
+      { id: "normal", source: String(images?.normal || card.cardImage || ""), label: label("normalArt", "Normal") },
+      { id: "trained", source: String(images?.trained || ""), label: label("trainedArt", "Trained") },
+    ].filter((image) => image.source);
+    return renderPane({
+      kind: "card",
+      id: `gbp-card-${card.cardId}`,
+      title,
+      open: true,
+      backLabel: label("close", "Close"),
+      onClose: actions.closeCard,
+      body: detailLayout(
+        gallery.length
+          ? html`
+              <image-gallery .images=${gallery} .locale=${locale} .title=${title}></image-gallery>
+            `
+          : nothing,
+        html`
+          <section class="detail-section">
+            ${renderDetailSectionHeading(label("storiesBestDori", "Stories"), "stories", { count: episodes.length, level: 2 })}
+            ${
+              state.busy
+                ? html`
+                    <md-circular-progress
+                      indeterminate
+                      aria-label=${label("loading", "Loading")}
+                    ></md-circular-progress>
+                  `
+                : nothing
+            }
+            ${episodes.map((episode, index) => {
+              const storyId = `card.${episode.resourceSetName || card.resourceSetName}.${episode.scenarioId}`;
+              return html`
+                <button
+                  class="surface surface--outlined bestdori-episode"
+                  @click=${() => actions.openStory(storyId, episode.title)}
+                >
+                  <span>${String(index + 1).padStart(2, "0")}</span>
+                  <strong>${localizedText(episode.title, locale) || String(episode.scenarioId || storyId)}</strong>
+                  ${icon("chevron_right")}
+                </button>
+              `;
+            })}
+          </section>
+        `,
+      ),
+    });
   }
+
   const detail = state.detail;
   if (!detail)
     return state.busy

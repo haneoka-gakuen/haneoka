@@ -1,0 +1,63 @@
+---
+import Icon from "./Icon.astro";
+import { LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+
+interface Props {
+  name: string;
+  value: string;
+  locale: Locale;
+  label: string;
+  keyName?: string;
+  icon?: string;
+  image?: string;
+  swatch?: string;
+  beta?: boolean;
+  selected?: boolean;
+}
+const { name, value, locale, label, keyName, icon, image, swatch, beta, selected } = Astro.props;
+const text = keyName ? t(locale, keyName, label) : label;
+const labels = keyName
+  ? JSON.stringify(Object.fromEntries(LOCALES.map((language) => [language, t(language, keyName, label)])))
+  : undefined;
+---
+
+<label
+  class:list={["settings-option", { "settings-option--swatch": swatch }]}
+  style={
+    swatch && swatch !== "haneoka"
+      ? `--swatch: var(--md-ref-${swatch}); --swatch-container: var(--md-ref-${swatch}-container); --swatch-on: var(--md-ref-${swatch}-on-container)`
+      : undefined
+  }
+>
+  <input
+    type="radio"
+    name={name}
+    value={value}
+    checked={selected}
+    aria-label={text}
+    data-i18n-aria-label-values={labels}
+  />
+  <span class="settings-option__face" aria-hidden="true">
+    {swatch ? (
+      <span class="settings-option__palette">
+        <i></i>
+        <i></i>
+        <i></i>
+      </span>
+    ) : image ? (
+      <span class="settings-option__image">
+        <img src={image} width="28" height="28" alt="" />
+        {beta && <i>β</i>}
+      </span>
+    ) : (
+      icon && <Icon name={icon} />
+    )}
+    <span class="settings-option__check">
+      <Icon name="check" size={12} />
+    </span>
+  </span>
+  <span class="settings-option__tooltip" aria-hidden="true" data-i18n-values={labels}>
+    {text}
+  </span>
+</label>

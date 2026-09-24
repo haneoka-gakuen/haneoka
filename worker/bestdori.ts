@@ -27,7 +27,12 @@
  */
 
 import { bestdoriBuildDataToLive2dEntry, bestdoriBuildDataTransitionPath } from "@haneoka/bestdori/live2d";
-import { BESTDORI_CATALOG_VERSION, hasBestdoriCharacterIcon } from "@haneoka/bestdori/resources";
+import {
+  BESTDORI_CATALOG_VERSION,
+  hasBestdoriCharacterIcon,
+  bestdoriCharacterAliases,
+  bestdoriAfterLiveCharacterIds,
+} from "@haneoka/bestdori/resources";
 import { convertBestdoriScenario } from "@haneoka/bestdori/scenario";
 import { bestdoriChartToSsText } from "@haneoka/bestdori/chart";
 import { BESTDORI_CACHE_POLICY, bestdoriCacheControl } from "@haneoka/bestdori/cache-policy";
@@ -687,6 +692,7 @@ const transformCards = (raw: Record<string, unknown>, lang?: string): Obj => {
       resourceSetName && hasTraining
         ? proxify(`/assets/${assetRegion}/characters/resourceset/${resourceSetName}_rip/card_after_training.png`)
         : null;
+    const thumbnailBase = `/assets/${assetRegion}/thumb/chara/card${String(Math.floor(id / 50)).padStart(5, "0")}_rip/${resourceSetName}`;
     out[key] = {
       cardId: id,
       characterId: num(entry.characterId),
@@ -707,6 +713,12 @@ const transformCards = (raw: Record<string, unknown>, lang?: string): Obj => {
         normal: normalImage,
         ...(trainedImage ? { trained: trainedImage } : {}),
       },
+      cardThumbnails: resourceSetName
+        ? {
+            normal: proxify(`${thumbnailBase}_normal.png`),
+            ...(hasTraining ? { trained: proxify(`${thumbnailBase}_after_training.png`) } : {}),
+          }
+        : {},
       episodes: episodes
         .filter((ep) => ep.scenarioId)
         .map((ep) => ({
@@ -974,47 +986,12 @@ const storyListFromMain = (raw: Record<string, unknown>, lang?: string, region?:
   });
 };
 
-const normalizeAfterLiveCharacterName = (value: string): string =>
-  value.normalize("NFKC").replace(/\s+/gu, "").replaceAll("ヴ", "ブ");
-
-const afterLiveCharacterAliases = (characters: Record<string, unknown>): Map<string, number> => {
-  const aliases = new Map<string, number>();
-  for (const [key, value] of Object.entries(characters)) {
-    const characterId = numericId(key);
-    if (characterId === undefined) continue;
-    const entry = asObj(value);
-    // Bestdori models Misaki's uncostumed form as the auxiliary character 601,
-    // while story playback and the public round icon use canonical character 15.
-    const canonicalId = characterId === 601 ? 15 : characterId;
-    for (const field of ["characterName", "firstName", "nickname"] as const) {
-      const japaneseName = asArray(entry[field])[0];
-      if (typeof japaneseName !== "string" || !japaneseName.trim()) continue;
-      aliases.set(normalizeAfterLiveCharacterName(japaneseName), canonicalId);
-    }
-  }
-  return aliases;
-};
-
-const afterLiveCharacterIds = (entry: Obj, aliases: ReadonlyMap<string, number>): number[] => {
-  const japaneseDescription = asArray(entry.description)[0];
-  if (typeof japaneseDescription !== "string") return [];
-  const cast = normalizeAfterLiveCharacterName(japaneseDescription).replace(
-    /の(?:大成功(?:位)?|成功|失敗)会話\d*$/u,
-    "",
-  );
-  const ids = cast
-    .split(/と|×/u)
-    .map((name) => aliases.get(name))
-    .filter((id): id is number => id !== undefined);
-  return ids.filter((id, index) => ids.indexOf(id) === index);
-};
-
 const storyListFromAfterLive = (
   raw: Record<string, unknown>,
   characters: Record<string, unknown>,
   region?: BestdoriRegion,
 ): StoryListItem[] => {
-  const aliases = afterLiveCharacterAliases(characters);
+  const aliases = bestdoriCharacterAliases(characters);
   return Object.entries(raw).flatMap(([id, value]) => {
     const entry = asObj(value);
     const episodeNumber = numericId(id);
@@ -1030,7 +1007,7 @@ const storyListFromAfterLive = (
         chapterKey: "bestdori:afterlive",
         storySort: episodeNumber,
         title: entry.description ?? "",
-        characterIds: afterLiveCharacterIds(entry, aliases),
+        characterIds: bestdoriAfterLiveCharacterIds(entry.description, aliases),
       },
     ];
   });

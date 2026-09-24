@@ -3,9 +3,10 @@ import Base from "../layouts/Base.astro";
 import AppShell from "./AppShell.astro";
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
+import SettingsOption from "./SettingsOption.astro";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-import "../styles/account-settings.css";
+import "../styles/settings.css";
 import cnFlag from "circle-flags/flags/cn.svg?url";
 import gbFlag from "circle-flags/flags/gb.svg?url";
 import hkFlag from "circle-flags/flags/hk.svg?url";
@@ -17,46 +18,158 @@ import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 
 const { locale } = Astro.props as { locale: Locale };
 const title = t(locale, "settings", "Settings");
-const flags = { ja: jpFlag, en: gbFlag, "zh-TW": hkFlag, "zh-CN": cnFlag, ko: krFlag } as const;
-const bilibiliBody = bilibiliSvg.replace(/^<svg[^>]*>/, "").replace(/<title>.*?<\/title>/, "").replace(/<\/svg>$/, "");
+const bilibiliBody = bilibiliSvg
+  .replace(/^<svg[^>]*>/, "")
+  .replace(/<title>.*?<\/title>/, "")
+  .replace(/<\/svg>$/, "");
 const bilibili = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="256" fill="#00a1d6"/><g fill="#fff" transform="translate(76 76) scale(15)">${bilibiliBody}</g></svg>`)}`;
-const themeOptions = [["light", "light_mode", "themeLight"], ["system", "brightness_auto", "themeSystem"], ["dark", "dark_mode", "themeDark"]] as const;
-const seeds = [["haneoka", "tuneDefault", "Original key"], ...[1, 2, 3, 4, 5].map((id) => [`band-${id}`, `band.${id}`, `Band ${id}`])] as const;
-const releases = [["intl", intlIcon], ["jp-cbt", bushimo], ["intl-cbt", bilibili]] as const;
-// Objects, not tuples: the icon sprite builder detects `icon: "name"` literals, so a positional entry would leave the glyph out of the sprite.
-const densities = [{ value: "comfortable", icon: "density_medium", key: "comfortable", fallback: "Comfortable" }, { value: "compact", icon: "density_small", key: "compact", fallback: "Compact" }] as const;
-const labelValues = (key: string, fallback: string) => JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
-const languageNames = { ja: "日本語", en: "English", "zh-TW": "繁體中文", "zh-CN": "简体中文", ko: "한국어" } as const;
-const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "Global CBT" } as const;
+interface Option {
+  value: string;
+  label: string;
+  keyName?: string;
+  icon?: string;
+  image?: string;
+  swatch?: string;
+  beta?: boolean;
+}
+interface Group {
+  name: string;
+  key: string;
+  label: string;
+  icon: string;
+  initial: string;
+  options: Option[];
+}
+const groups: Group[] = [
+  {
+    name: "theme",
+    key: "appearance",
+    label: "Appearance",
+    icon: "palette",
+    initial: "system",
+    options: [
+      { value: "light", icon: "light_mode", keyName: "themeLight", label: "Light" },
+      { value: "system", icon: "brightness_auto", keyName: "themeSystem", label: "Follow system" },
+      { value: "dark", icon: "dark_mode", keyName: "themeDark", label: "Dark" },
+    ],
+  },
+  {
+    name: "seed",
+    key: "themeColor",
+    label: "Theme color",
+    icon: "format_paint",
+    initial: "haneoka",
+    options: [
+      { value: "haneoka", swatch: "haneoka", keyName: "tuneDefault", label: "Original key" },
+      ...[1, 2, 3, 4, 5].map((id) => ({
+        value: `band-${id}`,
+        swatch: `band-${id}`,
+        keyName: `band.${id}`,
+        label: `Band ${id}`,
+      })),
+    ],
+  },
+  {
+    name: "density",
+    key: "density",
+    label: "Spacing",
+    icon: "density_medium",
+    initial: "comfortable",
+    options: [
+      { value: "comfortable", icon: "density_medium", keyName: "comfortable", label: "Comfortable" },
+      { value: "compact", icon: "density_small", keyName: "compact", label: "Compact" },
+    ],
+  },
+  {
+    name: "locale",
+    key: "language",
+    label: "Language",
+    icon: "language",
+    initial: locale,
+    options: [
+      { value: "ja", image: jpFlag, label: "日本語" },
+      { value: "en", image: gbFlag, label: "English" },
+      { value: "zh-TW", image: hkFlag, label: "繁體中文" },
+      { value: "zh-CN", image: cnFlag, label: "简体中文" },
+      { value: "ko", image: krFlag, label: "한국어" },
+    ],
+  },
+  {
+    name: "release",
+    key: "releaseServer",
+    label: "Release server",
+    icon: "dns",
+    initial: "intl",
+    options: [
+      { value: "intl", image: intlIcon, label: "Our Notes" },
+      { value: "jp-cbt", image: bushimo, beta: true, keyName: "settingsJapanCbt", label: "Japan CBT" },
+      { value: "intl-cbt", image: bilibili, beta: true, keyName: "settingsGlobalCbt", label: "Global CBT" },
+    ],
+  },
+];
+const japaneseLabel = "forceJapaneseTitles";
+const japaneseLabels = JSON.stringify(
+  Object.fromEntries(LOCALES.map((target) => [target, t(target, japaneseLabel, "Show Japanese song titles")])),
+);
 ---
 
 <Base locale={locale} route="/settings" title={title} titleKey="settings">
   <AppShell locale={locale} route="/settings" title={title} titleKey="settings">
-    <section class="page"><div class="settings-content">
-      <section class="page-section">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="palette" /></span><h2 id="appearance-title"><I18nText keyName="appearance" fallback="Appearance" locale={locale} /></h2></header>
-        <div class="settings-choices" data-theme-choices role="radiogroup" aria-labelledby="appearance-title">{themeOptions.map(([value, icon, key]) => <button class="settings-choice" type="button" role="radio" data-value={value} data-icon={icon} aria-label={t(locale,key,value)} data-i18n-aria-label-values={labelValues(key,value)}><Icon name={icon} /><I18nText keyName={key} fallback={value} locale={locale} /></button>)}</div>
-      </section>
-      <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="format_paint" /></span><h2 id="theme-color-title"><I18nText keyName="themeColor" fallback="Theme color" locale={locale} /></h2></header>
-        <div class="seed-row" data-seed-choices role="radiogroup" aria-labelledby="theme-color-title">{seeds.map(([value, key, fallback]) => <button class="seed-swatch" type="button" role="radio" data-value={value} style={value === "haneoka" ? undefined : `--swatch: var(--md-ref-${value}); --swatch-container: var(--md-ref-${value}-container); --swatch-on: var(--md-ref-${value}-on-container)`} aria-label={t(locale, key, fallback)} data-i18n-aria-label-values={labelValues(key, fallback)} title={t(locale, key, fallback)}><span class="seed-swatch__disc" aria-hidden="true"><i></i><i></i><i></i></span><svg class="material-icon seed-swatch__check" width="20" height="20" aria-hidden="true"><use href="/icons.svg#check"></use></svg></button>)}</div>
-      </section>
-      <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="density_medium" /></span><h2 id="density-title"><I18nText keyName="density" fallback="Spacing" locale={locale} /></h2></header>
-        <div class="settings-choices" data-density-choices role="radiogroup" aria-labelledby="density-title">{densities.map((option) => <button class="settings-choice" type="button" role="radio" data-value={option.value} data-icon={option.icon} aria-label={t(locale, option.key, option.fallback)} data-i18n-aria-label-values={labelValues(option.key, option.fallback)} title={t(locale, option.key, option.fallback)}><Icon name={option.icon} /><I18nText keyName={option.key} fallback={option.fallback} locale={locale} /></button>)}</div>
-      </section>
-      <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="language" /></span><h2 id="language-title"><I18nText keyName="language" fallback="Language" locale={locale} /></h2></header>
-        <div class="settings-controls">
-          <div class="settings-choices settings-choices--languages" data-locale-choices role="radiogroup" aria-labelledby="language-title">{Object.entries(flags).map(([value,image]) => <button class="settings-choice" type="button" role="radio" data-value={value} aria-label={languageNames[value as keyof typeof languageNames]}><img class="icon-row__image" src={image} alt="" /><span>{languageNames[value as keyof typeof languageNames]}</span></button>)}</div>
-          <label class="settings-switch"><I18nText keyName="forceJapaneseTitles" fallback="Show Japanese song titles" locale={locale} /><md-switch data-japanese-titles></md-switch></label>
-        </div>
-      </section>
-      <section class="page-section is-divided">
-        <header class="page-section__header"><span class="page-section__icon"><Icon name="dns" /></span><h2 id="release-title"><I18nText keyName="releaseServer" fallback="Release server" locale={locale} /></h2></header>
-        <div class="settings-choices" data-release-choices role="radiogroup" aria-labelledby="release-title">{releases.map(([value,image]) => <button class="settings-choice" type="button" role="radio" data-value={value} aria-label={releaseNames[value]}><span class="server-icon"><img src={image} alt="" />{value.endsWith("-cbt") && <i>β</i>}</span><span>{releaseNames[value]}</span></button>)}</div>
-      </section>
-    </div></section>
+    <section class="page">
+      <div class="settings-content">
+        {[groups.slice(0, 3), groups.slice(3, 4), groups.slice(4)].map((card) => (
+          <div class="settings-card">
+            {card.map((group) => (
+              <section class="settings-group" aria-labelledby={`${group.name}-title`}>
+                <div class="settings-row">
+                  <header class="settings-row__header">
+                    <span class="settings-row__icon">
+                      <Icon name={group.icon} />
+                    </span>
+                    <div>
+                      <h2 id={`${group.name}-title`}>
+                        <I18nText keyName={group.key} fallback={group.label} locale={locale} />
+                      </h2>
+                      <p class="settings-current" data-current={group.name} aria-live="polite"></p>
+                    </div>
+                  </header>
+                  <div
+                    class:list={["settings-options", `settings-options--${group.name}`]}
+                    role="radiogroup"
+                    aria-labelledby={`${group.name}-title`}
+                    data-settings-group={group.name}
+                  >
+                    {group.options.map((option) => (
+                      <SettingsOption
+                        {...option}
+                        name={group.name}
+                        locale={locale}
+                        selected={option.value === group.initial}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {group.name === "locale" && (
+                  <div class="settings-toggle">
+                    <label for="japanese-titles">
+                      <Icon name="music_note" size={20} />
+                      <I18nText keyName={japaneseLabel} fallback="Show Japanese song titles" locale={locale} />
+                    </label>
+                    <md-switch
+                      id="japanese-titles"
+                      data-japanese-titles
+                      icons
+                      aria-label={t(locale, japaneseLabel, "Show Japanese song titles")}
+                      data-i18n-aria-label-values={japaneseLabels}
+                    ></md-switch>
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
   </AppShell>
 </Base>
 
@@ -65,61 +178,91 @@ const releaseNames = { "intl": "Our Notes", "jp-cbt": "Japan CBT", "intl-cbt": "
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
   import { readReleaseServer, writeReleaseServer } from "../lib/release-server";
-  type LocaleWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
-  const select = (root: Element | null, value: string) => root?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => {
-    const selected = node.dataset.value === value;
-    node.classList.toggle("is-selected", selected);
-    node.setAttribute("aria-checked", String(selected));
-    node.tabIndex = selected ? 0 : -1;
-    const icon = node.dataset.icon, use = node.querySelector("use");
-    if (icon && use) use.setAttribute("href", `/icons.svg#${icon}${selected ? "-filled" : ""}`);
-  });
+
+  type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
+  let disposeSettings: (() => void) | undefined;
   const initializeSettings = () => {
-  const settings = document.querySelector<HTMLElement>(".settings-content");
-  if (!settings || settings.dataset.initialized === "true") return;
-  settings.dataset.initialized = "true";
-  const theme = settings.querySelector("[data-theme-choices]"); let themeValue = "system";
-  try { themeValue = localStorage.getItem("haneoka.ui-theme.v1") || "system"; } catch {}
-  select(theme, themeValue);
-  theme?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
-    const value = node.dataset.value || "system"; try { localStorage.setItem("haneoka.ui-theme.v1", value); } catch {}
-    (window as LocaleWindow).__haneokaApplyTheme?.(); select(theme, value);
-  }));
-  const seeds = settings.querySelector("[data-seed-choices]");
-  select(seeds, currentSeed());
-  seeds?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
-    const value = node.dataset.value;
-    if (!isSeed(value)) return;
-    const rect = node.getBoundingClientRect();
-    applySeed(value, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-    select(seeds, value);
-  }));
-  const densities = settings.querySelector("[data-density-choices]");
-  select(densities, currentDensity());
-  densities?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => {
-    const value = node.dataset.value;
-    if (!isDensity(value)) return;
-    applyDensity(value);
-    select(densities, value);
-  }));
-  const locales = settings.querySelector("[data-locale-choices]"); select(locales, document.documentElement.dataset.locale || "ja");
-  locales?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => { const value = node.dataset.value || "ja"; (window as LocaleWindow).__haneokaApplyLocale?.(value); select(locales, value); }));
-  const release = settings.querySelector("[data-release-choices]");
-  select(release, readReleaseServer());
-  release?.querySelectorAll<HTMLElement>("[data-value]").forEach((node) => node.addEventListener("click", () => select(release, writeReleaseServer(node.dataset.value))));
-  settings.querySelectorAll<HTMLElement>('[role="radiogroup"]').forEach((group) => group.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const nodes = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
-    const index = nodes.findIndex((node) => node === document.activeElement);
-    const position = event.key === "Home" ? 0 : event.key === "End" ? nodes.length - 1 : (Math.max(0, index) + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + nodes.length) % nodes.length;
-    nodes[position]?.click();
-    nodes[position]?.focus();
-  }));
-  const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
-  try { const saved = JSON.parse(localStorage.getItem("haneoka:song-display:v1") || "{}"); if (japanese) japanese.selected = Boolean(saved.forceJapaneseTitles); } catch {}
-  japanese?.addEventListener("change", () => { try { localStorage.setItem("haneoka:song-display:v1", JSON.stringify({ forceJapaneseTitles: japanese.selected })); } catch {} });
+    disposeSettings?.();
+    const settings = document.querySelector<HTMLElement>(".settings-content");
+    if (!settings) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    disposeSettings = () => controller.abort();
+    const readSongDisplay = (): Record<string, unknown> => {
+      try {
+        const value = JSON.parse(localStorage.getItem("haneoka:song-display:v1") || "{}");
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      } catch {
+        return {};
+      }
+    };
+    const updateSummary = (group: string) => {
+      const selected = settings.querySelector<HTMLInputElement>(`input[name="${group}"]:checked`);
+      const output = settings.querySelector<HTMLElement>(`[data-current="${group}"]`);
+      if (output) output.textContent = selected?.getAttribute("aria-label") || "";
+    };
+    const select = (name: string, value: string) => {
+      settings
+        .querySelectorAll<HTMLInputElement>(`input[name="${name}"]`)
+        .forEach((input) => (input.checked = input.value === value));
+      updateSummary(name);
+    };
+    const syncLocale = () => {
+      select("locale", document.documentElement.dataset.locale || "ja");
+      settings
+        .querySelectorAll<HTMLElement>("[data-settings-group]")
+        .forEach((group) => updateSummary(group.dataset.settingsGroup!));
+    };
+    select("theme", document.documentElement.dataset.themePreference || "system");
+    select("seed", currentSeed());
+    select("density", currentDensity());
+    select("release", readReleaseServer());
+    syncLocale();
+    requestAnimationFrame(() => {
+      if (!signal.aborted) settings.dataset.ready = "true";
+    });
+    addEventListener("haneoka:locale-ready", syncLocale, { signal });
+    settings.addEventListener(
+      "change",
+      (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || input.type !== "radio") return;
+        const { name, value } = input;
+        if (name === "theme") {
+          try {
+            localStorage.setItem("haneoka.ui-theme.v1", value);
+          } catch {}
+          (window as SettingsWindow).__haneokaApplyTheme?.();
+        } else if (name === "seed" && isSeed(value)) {
+          const rect = input.getBoundingClientRect();
+          applySeed(value, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        } else if (name === "density" && isDensity(value)) {
+          applyDensity(value);
+        } else if (name === "locale") {
+          (window as SettingsWindow).__haneokaApplyLocale?.(value);
+        } else if (name === "release") {
+          writeReleaseServer(value);
+        }
+        updateSummary(name);
+      },
+      { signal },
+    );
+    const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
+    if (japanese) japanese.selected = Boolean(readSongDisplay().forceJapaneseTitles);
+    japanese?.addEventListener(
+      "change",
+      () => {
+        try {
+          localStorage.setItem(
+            "haneoka:song-display:v1",
+            JSON.stringify({ ...readSongDisplay(), forceJapaneseTitles: japanese.selected }),
+          );
+        } catch {}
+      },
+      { signal },
+    );
   };
   initializeSettings();
   document.addEventListener("astro:page-load", initializeSettings);
+  document.addEventListener("astro:before-swap", () => disposeSettings?.());
 </script>

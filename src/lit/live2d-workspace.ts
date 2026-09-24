@@ -1,3 +1,4 @@
+import { saveCanvasFrame } from "../lib/canvas-capture";
 import { facet } from "./ui/facet";
 import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { LitElement, html, nothing } from "lit";
@@ -15,6 +16,7 @@ type Value = Record<string, unknown>;
 type Parameter = { id: string; value: number; minimum: number; maximum: number; defaultValue: number };
 interface Viewer {
   readonly ready: boolean;
+  captureFrame(notify?: boolean): boolean;
   load(options: {
     modelUrl: string;
     harmonicMotion?: unknown;
@@ -40,6 +42,8 @@ export class Live2DWorkspace extends LitElement {
   static properties = {
     locale: { type: String },
     phase: { state: true },
+    capturing: { state: true },
+    captureMessage: { state: true },
     models: { state: true },
     selected: { state: true },
     detail: { state: true },
@@ -68,6 +72,8 @@ export class Live2DWorkspace extends LitElement {
     lookY: { state: true },
     docked: { state: true },
   };
+  declare capturing: boolean;
+  declare captureMessage: string;
   declare locale: string;
   declare phase: "loading" | "ready" | "error";
   declare models: Value[];
@@ -106,6 +112,8 @@ export class Live2DWorkspace extends LitElement {
 
   constructor() {
     super();
+    this.capturing = false;
+    this.captureMessage = "";
     this.locale = "ja";
     this.phase = "loading";
     this.models = [];
@@ -114,7 +122,7 @@ export class Live2DWorkspace extends LitElement {
     this.paused = false;
     this.breath = true;
     this.blink = true;
-    this.sway = true;
+    this.sway = false;
     this.backgroundVisible = true;
     this.error = "";
     this.view = "grid";
@@ -515,20 +523,29 @@ export class Live2DWorkspace extends LitElement {
     const next = models[index + offset];
     if (next) void this.select(this.key(next));
   }
-  private captureStage() {
+  private async captureStage() {
     const canvas = this.querySelector<HTMLCanvasElement>(".viewer-detail__runtime canvas");
-    canvas?.toBlob((blob) => {
-      if (!blob) return;
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${this.selected || "live2d"}.png`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 0);
-    });
+    if (!canvas || this.capturing) return;
+    this.capturing = true;
+    this.captureMessage = "";
+    try {
+      await saveCanvasFrame(
+        canvas,
+        `${this.selected || "viewer"}.png`,
+        () => this.viewer?.captureFrame(false) ?? false,
+      );
+    } catch {
+      this.captureMessage = uiText(this.locale, "captureFailed");
+    } finally {
+      this.capturing = false;
+    }
   }
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
-    if (this.selected) return this.renderModelDetail();
+    if (this.selected) {
+      clearBrowseBar();
+      return this.renderModelDetail();
+    }
     const types = [...new Set(this.models.map((model) => String(model.modelType || "")).filter(Boolean))];
     return html`
       ${renderBrowse({
@@ -835,6 +852,13 @@ export class Live2DWorkspace extends LitElement {
             }${
               detail
                 ? html`
+                    ${
+                      this.captureMessage
+                        ? html`
+                            <p class="viewer-capture-status" role="alert">${this.captureMessage}</p>
+                          `
+                        : nothing
+                    }
                     <div class="viewer-controls">
                       <button
                         class="icon-button runtime-button"
@@ -847,6 +871,7 @@ export class Live2DWorkspace extends LitElement {
                       </button>
                       <button
                         class="icon-button runtime-button"
+                        ?disabled=${this.capturing}
                         @click=${this.captureStage}
                         aria-label=${uiText(this.locale, "screenshot")}
                       >

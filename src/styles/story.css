@@ -33,8 +33,7 @@
    is placed relatively. They are cards: the same corner, the same surface
    and the same elevation as everything else in the results area.
    ========================================================================== */
-  .story-scene,
-  .story-board {
+  .story-scene {
     position: relative;
     display: grid;
     min-width: 0;
@@ -78,9 +77,9 @@
     z-index: 3;
     top: 12px;
     right: 12px;
-    color: #fff;
-    background: color-mix(in srgb, #101820 76%, transparent);
-    box-shadow: var(--md-sys-elevation-level1);
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    box-shadow: none;
   }
   .story-scene__label {
     position: absolute;
@@ -90,152 +89,13 @@
     display: grid;
     gap: 2px;
     padding: 10px 14px;
-    color: #fff;
+    color: var(--md-sys-color-on-surface);
     border-radius: var(--md-sys-shape-corner-medium);
-    background: color-mix(in srgb, #101820 76%, transparent);
-    box-shadow: var(--md-sys-elevation-level2);
-    backdrop-filter: blur(12px);
+    background: var(--md-sys-color-surface-container);
+    box-shadow: none;
   }
   .story-scene__label small {
-    color: #d7dde2;
-  }
-
-  /* ---------- Friendship board ----------
-   The game's own photo board. Every hit target is placed from the asset's
-   measured coordinates (--slot-x/--slot-y for a portrait, --arrow-x/--arrow-y
-   and --arrow-rotation for the ribbon that points at it), so the board is
-   sized to its source ratio and the container query keeps it whole. */
-  .story-board {
-    height: clamp(240px, 46dvh, 460px);
-    background-color: var(--md-sys-color-surface-container-low);
-    background-image: var(--friendship-stage);
-    background-position: center;
-    background-size: cover;
-    container-type: size;
-  }
-  .story-board__stage {
-    position: relative;
-    height: 100%;
-    max-width: 100%;
-    aspect-ratio: 1312 / 964;
-    width: min(calc(100cqw - 18px), calc((100cqh - 12px) * 1.360996));
-  }
-  .story-board__background {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
-  }
-  .story-board__logo {
-    position: absolute;
-    z-index: 5;
-    top: 8.92%;
-    left: 13.35%;
-    width: 19.05%;
-    height: 14.52%;
-    object-fit: contain;
-  }
-  .story-board__lead {
-    position: absolute;
-    z-index: 1;
-    bottom: -3.8%;
-    left: 50%;
-    width: 78.05%;
-    height: 106.22%;
-    object-fit: contain;
-    object-position: center bottom;
-    transform: translateX(-50%);
-    filter: drop-shadow(0 4px 3px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
-  }
-  .story-board__partners {
-    position: absolute;
-    z-index: 2;
-    inset: 0;
-  }
-  .story-board__partners button {
-    position: absolute;
-    top: var(--slot-y);
-    left: var(--slot-x);
-    width: 26.68%;
-    aspect-ratio: 1;
-    padding: 0;
-    overflow: visible;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-    transform: translate(-50%, -50%);
-  }
-  .story-board__partners button > span {
-    position: absolute;
-    z-index: 2;
-    inset: 0;
-    display: block;
-    border-radius: 50%;
-  }
-  .story-board__partners button > span > img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  /* The game marks the chosen partner with a rim light, not a border. */
-  .story-board__partners button.is-selected > span {
-    filter: drop-shadow(0 0 2px white) drop-shadow(0 0 5px #48dbea) drop-shadow(0 0 9px rgb(54 157 229 / 72%));
-  }
-  .story-board__partners button:focus-visible > span {
-    outline: 3px solid var(--md-sys-color-primary);
-    outline-offset: 3px;
-  }
-  .story-board__arrow {
-    position: absolute;
-    z-index: 1;
-    top: var(--arrow-y);
-    left: var(--arrow-x);
-    width: 45.71%;
-    height: 22.86%;
-    object-fit: contain;
-    transform: translate(-50%, -50%) rotate(var(--arrow-rotation));
-  }
-  .story-board__bands {
-    position: absolute;
-    z-index: 4;
-    top: 19%;
-    right: 1.3%;
-    display: flex;
-    width: max(9.5%, 40px);
-    flex-direction: column;
-    gap: 4px;
-  }
-  .story-board__bands button {
-    display: grid;
-    width: 100%;
-    min-height: 32px;
-    aspect-ratio: 1.35;
-    place-items: center;
-    padding: 5%;
-    border: 1px solid rgb(255 255 255 / 36%);
-    border-radius: 3px 0 0 3px;
-    background: linear-gradient(180deg, rgb(58 88 157 / 93%), rgb(39 59 117 / 95%));
-    cursor: pointer;
-  }
-  .story-board__bands button.is-selected {
-    outline: 2px solid #74efff;
-    outline-offset: -2px;
-    background: linear-gradient(180deg, rgb(72 111 196 / 98%), rgb(47 75 145 / 98%));
-  }
-  .story-board__bands img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  .story-board__swap {
-    position: absolute;
-    z-index: 5;
-    top: 8px;
-    right: 8px;
-    background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
-    box-shadow: var(--md-sys-elevation-level1);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   /* ==========================================================================
@@ -337,8 +197,7 @@
       gap: 2px;
       padding-inline: 4px;
     }
-    .story-scene,
-    .story-board {
+    .story-scene {
       margin-bottom: 12px;
     }
   }
@@ -511,27 +370,34 @@
   .story-transcript__backdrop .story-transcript__scene {
     margin: 0;
   }
-  .story-pair {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
-    padding: 16px var(--pane-gutter);
-  }
-  .story-pair md-outlined-select {
-    min-width: 0;
-  }
-  @media (max-width: 599px) {
-    .story-pair {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 4px;
-    }
-    .story-pair > button {
-      justify-self: center;
-    }
-  }
 }
 @layer pages {
+  .story-card-media {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+  }
+  .story-card-media > img {
+    display: block;
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    height: 100%;
+    object-fit: contain;
+  }
+  .collection-list .list-item__leading:has(.story-card-media) {
+    width: 100px;
+    height: 48px;
+  }
+  .story-table-media--cards {
+    display: block;
+    width: 92px;
+    height: 44px;
+  }
   .story-episode-group {
     margin-block: 0 24px;
     min-width: 0;
@@ -546,57 +412,6 @@
   .story-episode-group > h3 small {
     font: 400 12px/16px var(--app-font);
     color: var(--md-sys-color-on-surface-variant);
-  }
-  .story-cast-media {
-    position: relative;
-    display: grid;
-    width: 100%;
-    height: 100%;
-    place-items: center;
-    min-width: 0;
-  }
-  .story-cast-media__background {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .story-cast-media__people {
-    position: relative;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-    padding: 12px;
-  }
-  .story-cast-media__people > span {
-    width: 64px;
-    height: 64px;
-    display: grid;
-    place-items: center;
-  }
-  .story-cast-media__people img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    border-radius: 50%;
-  }
-  .story-cast-media--home .story-cast-media__people {
-    align-self: end;
-    justify-self: start;
-  }
-  .story-cast-media--home .story-cast-media__people > span {
-    width: 36px;
-    height: 36px;
-  }
-  .collection-list .story-cast-media__people {
-    padding: 0;
-    gap: 2px;
-  }
-  .collection-list .story-cast-media__people > span {
-    width: 24px;
-    height: 24px;
   }
   .story-table-media {
     display: grid;

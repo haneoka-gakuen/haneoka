@@ -392,11 +392,11 @@
     "home": "ホームストーリー",
     "afterlive": "アフターライブストーリー",
     "tutorial": "チュートリアルストーリー",
-    "bestdoriEvent": "イベントストーリー",
-    "bestdoriBand": "バンドストーリー",
-    "bestdoriMain": "メインストーリー",
-    "bestdoriAfterlive": "アフターライブストーリー",
-    "bestdoriCard": "カードストーリー"
+    "bestdoriEvent": "ガルパ イベントストーリー",
+    "bestdoriBand": "ガルパ バンドストーリー",
+    "bestdoriMain": "ガルパ メインストーリー",
+    "bestdoriAfterlive": "ガルパ アフターライブストーリー",
+    "bestdoriCard": "ガルパ カードストーリー"
   },
   "homeStories": "ホーム",
   "linkStories": "絆ストーリー",
@@ -797,8 +797,8 @@
     "activityPostUnavailable": "スレッドにアクセスできません",
     "activityRevision": "保存済みバージョン：{count}",
     "customCharts": "自作譜面",
-    "songsBestDori": "Bestdori 楽曲",
-    "storiesBestDori": "Bestdori ストーリー",
+    "songsBestDori": "ガルパ 楽曲",
+    "storiesBestDori": "ガルパ ストーリー",
     "playlistPage": {
       "title": "プレイリスト",
       "bands": "バンド",
@@ -821,7 +821,7 @@
       "masterUnavailable": "利用不可",
       "audioUnavailable": "音源なし",
       "sourceCatalog": "図鑑",
-      "sourceBestdori": "Bestdori",
+      "sourceBestdori": "ガルパ",
       "sourceUserUpload": "ユーザー投稿"
     },
     "planned": "予定",

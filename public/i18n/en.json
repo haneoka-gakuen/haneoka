@@ -392,11 +392,11 @@
     "home": "Home Stories",
     "afterlive": "Afterlive Stories",
     "tutorial": "Tutorial Stories",
-    "bestdoriEvent": "Event Stories",
-    "bestdoriBand": "Band Stories",
-    "bestdoriMain": "Main Stories",
-    "bestdoriAfterlive": "After Live Stories",
-    "bestdoriCard": "Card Stories"
+    "bestdoriEvent": "GBP Event Stories",
+    "bestdoriBand": "GBP Band Stories",
+    "bestdoriMain": "GBP Main Stories",
+    "bestdoriAfterlive": "GBP After Live Stories",
+    "bestdoriCard": "GBP Card Stories"
   },
   "homeStories": "Home",
   "linkStories": "Bond Stories",
@@ -797,8 +797,8 @@
     "activityPostUnavailable": "Discussion unavailable",
     "activityRevision": "Saved versions: {count}",
     "customCharts": "Custom charts",
-    "songsBestDori": "Bestdori Songs",
-    "storiesBestDori": "Bestdori Stories",
+    "songsBestDori": "GBP Songs",
+    "storiesBestDori": "GBP Stories",
     "playlistPage": {
       "title": "Playlists",
       "bands": "Bands",
@@ -821,7 +821,7 @@
       "masterUnavailable": "Unavailable",
       "audioUnavailable": "No audio",
       "sourceCatalog": "Catalog",
-      "sourceBestdori": "Bestdori",
+      "sourceBestdori": "GBP",
       "sourceUserUpload": "User upload"
     },
     "planned": "Planned",

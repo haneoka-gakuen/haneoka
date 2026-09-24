@@ -70,15 +70,14 @@
   }
   .runtime-button,
   .runtime-chip {
-    color: #f5f3ef;
-    border-color: #899399;
-    background: color-mix(in srgb, #202428 82%, transparent);
-    backdrop-filter: blur(16px);
+    color: var(--md-sys-color-on-surface);
+    border-color: var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
   }
   .runtime-chip[aria-pressed="true"] {
-    color: #173f46;
+    color: var(--md-sys-color-on-secondary-container);
     border-color: transparent;
-    background: #d9eff2;
+    background: var(--md-sys-color-secondary-container);
   }
   /* The viewers' grids are the shared collection and the shared tile. They used
    to be a `.model-card` that declared the tile's classes *and* its own
@@ -362,5 +361,20 @@
       grid-template-columns: minmax(92px, 1fr) minmax(96px, 1.35fr) 44px 36px;
       gap: 4px;
     }
+  }
+}
+
+@layer pages {
+  .viewer-capture-status {
+    position: absolute;
+    z-index: 3;
+    inset-inline: 16px;
+    bottom: 80px;
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 12px;
+    color: var(--md-sys-color-on-error-container);
+    background: var(--md-sys-color-error-container);
+    font: 400 14px/20px var(--app-font);
   }
 }

@@ -130,6 +130,12 @@ export class SpineStage {
     this.resize();
     this.frame = requestAnimationFrame(this.render);
   }
+  captureFrame(): boolean {
+    const stage = this.active;
+    if (!stage) return false;
+    stage.renderer.render(stage.scene, stage.camera);
+    return true;
+  }
   setPaused(value: boolean) {
     this.paused = value;
   }
@@ -157,14 +163,16 @@ export class SpineStage {
     const height = Math.max(1, this.host.clientHeight);
     stage.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     stage.renderer.setSize(width, height, false);
-    stage.mesh.updateMatrixWorld(true);
-    const bounds = new stage.three.Box3().setFromObject(stage.mesh);
-    if (bounds.isEmpty()) return;
-    const size = bounds.getSize(new stage.three.Vector3());
-    const center = bounds.getCenter(new stage.three.Vector3());
+    const bounds = stage.mesh.skeleton.getBoundsRect();
+    if (
+      !(bounds.width > 0 && bounds.height > 0) ||
+      !Number.isFinite(bounds.x + bounds.y + bounds.width + bounds.height)
+    )
+      return;
+    const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
     const aspect = width / height;
-    let w = size.x * 1.12;
-    let h = size.y * 1.12;
+    let w = bounds.width * 1.12;
+    let h = bounds.height * 1.12;
     if (w / h < aspect) w = h * aspect;
     else h = w / aspect;
     Object.assign(stage.camera, { left: -w / 2, right: w / 2, top: h / 2, bottom: -h / 2 });

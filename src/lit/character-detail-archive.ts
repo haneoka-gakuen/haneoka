@@ -1,6 +1,11 @@
 import { LitElement, html, nothing } from "lit";
+import { characterProfile } from "./shared/character-profile";
+import { characterPair } from "./ui/character-pair";
 import { renderDetailSectionHeading, type DetailSectionKind } from "./shared/detail-section-heading";
-import { renderGridIdentity, type GridIdentityAdornment } from "./shared/grid-identity";
+import type { GridIdentityAdornment } from "./shared/grid-identity";
+import { tile } from "./ui/tile";
+import { storyCastMedia } from "./ui/story-media";
+import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
 import { rovingKeydown } from "./ui/controls";
 import "../styles/character-detail.css";
 
@@ -8,6 +13,7 @@ type Item = Record<string, unknown>;
 type Field = { key: string; value: string };
 interface Controller {
   detailAux: Item;
+  renderDetailMedia(item: Item): unknown;
   label(key: string, fallback: string): string;
   itemCharacterIds(item: Item): number[];
   localized(value: unknown): string;
@@ -74,6 +80,10 @@ export class CharacterDetailArchive extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private lazyImages = new LazyImages();
+  protected updated() {
+    this.lazyImages.observe(this);
+  }
   private collections() {
     const c = this.controller;
     const id = Number(this.item.characterId || 0);
@@ -135,6 +145,7 @@ export class CharacterDetailArchive extends LitElement {
     this.dispatchEvent(new CustomEvent("section-change", { detail: section, bubbles: true, composed: true }));
   }
   disconnectedCallback() {
+    this.lazyImages.disconnect();
     this.stopVoice();
     super.disconnectedCallback();
   }
@@ -299,94 +310,35 @@ export class CharacterDetailArchive extends LitElement {
     const attribute = route === "songs" ? c.attributeMark(entry.musicType, true) : c.attributeMark(entry.cardType);
     const rarity = c.rarityMark(entry.rarity);
     const hrefRoute = route === "stories" ? `stories/${storyVisual?.category || "band"}` : route;
-    return html`
-      <a
-        class=${`tile tile--interactive tile--${kind} character-related-tile`}
-        href=${`/catalog/${hrefRoute}?${c.relatedParam(route)}=${encodeURIComponent(c.relatedId(entry, route))}`}
-      >
-        <span class=${`tile__media ${source ? "media-loading" : ""}`}>
-          ${
-            source
-              ? html`
-                  <img
-                    src=${source}
-                    data-candidates=${JSON.stringify(imageCandidates)}
-                    data-candidate-index="0"
-                    alt=""
-                    loading="lazy"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                    @error=${(event: Event) => {
-                      const image = event.currentTarget as HTMLImageElement;
-                      const candidates = JSON.parse(image.dataset.candidates || "[]") as string[];
-                      const next = Number(image.dataset.candidateIndex || 0) + 1;
-                      if (candidates[next]) {
-                        image.dataset.candidateIndex = String(next);
-                        image.src = candidates[next];
-                      } else image.classList.add("is-error");
-                    }}
-                  />
-                `
-              : html`
-                  ${
-                    route === "stories" && storyVisual?.category === "afterlive"
-                      ? html`
-                          <span class="character-story-avatar-media">${c.characterAvatars(ids)}</span>
-                        `
-                      : html`
-                          <svg class="material-icon" width="32" height="32"><use href="/icons.svg#image"></use></svg>
-                        `
-                  }
-                `
-          }
-          ${
-            route === "member-cards" || route === "support-cards"
-              ? html`
-                  ${
-                    attribute
-                      ? html`
-                          <span class="tile__mark tile__mark--start">
-                            <img src=${attribute} alt="" width="16" height="16" />
-                          </span>
-                        `
-                      : nothing
-                  }${
-                    rarity
-                      ? html`
-                          <span class="tile__mark tile__mark--end">
-                            <img src=${rarity} alt="" width="16" height="16" />
-                          </span>
-                        `
-                      : nothing
-                  }
-                `
-              : route === "songs" && attribute
-                ? html`
-                    <span class="tile__mark tile__mark--start">
-                      <img src=${attribute} alt="" width="16" height="16" />
-                    </span>
-                    <span class="tile__mark tile__mark--bottom-start">${this.songCategory(entry)}</span>
-                  `
-                : nothing
-          }
-          ${
-            storyVisual?.logo
-              ? html`
-                  <img class="character-related-story-logo is-loaded" src=${storyVisual.logo} alt="" />
-                `
-              : nothing
-          }
-          ${
-            route === "stories" && source && ["link", "home"].includes(storyVisual?.category || "")
-              ? html`
-                  <span class="character-related-story-avatars">${c.characterAvatars(ids)}</span>
-                `
-              : nothing
-          }
-        </span>
-        <span class="tile__identity">${renderGridIdentity(c.relatedTitle(entry, route), description, adornment)}</span>
-      </a>
-    `;
+    return tile({
+      kind,
+      title: c.relatedTitle(entry, route),
+      subtitle: description,
+      adornment,
+      label: c.relatedTitle(entry, route),
+      image: source,
+      imageCandidates,
+      href: `/catalog/${hrefRoute}?${c.relatedParam(route)}=${encodeURIComponent(c.relatedId(entry, route))}`,
+      fit: "contain",
+      natural:
+        route !== "live2d" &&
+        (route !== "stories" || (Boolean(source) && !["home", "afterlive"].includes(storyVisual?.category || ""))),
+      onImageError: nextImageCandidate,
+      media:
+        route === "stories" && ["afterlive", "home"].includes(storyVisual?.category || "")
+          ? storyCastMedia(
+              ids.map((id) => ({ name: c.characterName(id), image: String(c.character(id)?.faceImage || "") })),
+              storyVisual?.category === "home" ? source : "",
+            )
+          : undefined,
+      marks: [
+        attribute && ["member", "support", "song"].includes(kind) ? { at: "start", image: attribute } : null,
+        rarity && ["member", "support"].includes(kind) ? { at: "end", image: rarity } : null,
+        route === "songs" ? { at: "bottom-start", text: this.songCategory(entry) } : null,
+      ],
+    });
   }
+
   private grid(title: string, kind: DetailSectionKind, route: string, entries: Item[], characterId: number) {
     const c = this.controller;
     return html`
@@ -395,7 +347,9 @@ export class CharacterDetailArchive extends LitElement {
         ${
           entries.length
             ? html`
-                <div class=${`collection character-related-grid character-related-grid--${route}`}>
+                <div
+                  class=${`collection collection--${route === "member-cards" ? "member" : route === "support-cards" ? "support" : route === "songs" ? "song" : route === "stamps" ? "stamp" : route === "live2d" ? "model" : "story"}`}
+                >
                   ${entries.map((entry) => this.relatedTile(entry, route, characterId))}
                 </div>
               `
@@ -428,57 +382,20 @@ export class CharacterDetailArchive extends LitElement {
     const active = tabs.some(([section]) => section === this.section) ? this.section : "profile";
     const panel = (() => {
       if (active === "profile")
-        return html`
-          <section class="character-detail-intro">
-            <small>
-              ${c.formatList([String(item.bandPart || ""), c.localized(item.englishName)].filter(Boolean), "unit")}
-            </small>
-            <h2>${c.itemTitle(item)}</h2>
-            ${
-              item.voiceActor
-                ? html`
-                    <strong>${c.localized(item.voiceActor)}</strong>
-                  `
-                : nothing
-            }
-            ${
-              item.catchCopy
-                ? html`
-                    <p class="character-detail-catch">${c.localized(item.catchCopy)}</p>
-                  `
-                : nothing
-            }
-            ${
-              item.description
-                ? html`
-                    <p>${c.localized(item.description)}</p>
-                  `
-                : nothing
-            }
-          </section>
-          <dl class="spec-list character-detail-facts">
-            ${this.fields.map(
-              ({ key, value }) => html`
-                <div>
-                  <dt>${c.detailLabel(key)}</dt>
-                  <dd>
-                    ${
-                      key === "bandId" && c.band(Number(item.bandId || 0))?.logo
-                        ? html`
-                            <img
-                              class="character-detail-fact-image"
-                              src=${String(c.band(Number(item.bandId || 0))?.logo)}
-                              alt=""
-                            />
-                          `
-                        : nothing
-                    }${value}
-                  </dd>
-                </div>
-              `,
-            )}
-          </dl>
-        `;
+        return characterProfile({
+          item,
+          name: c.itemTitle(item),
+          part: String(item.bandPart || ""),
+          description: c.localized(item.description),
+          catchCopy: c.localized(item.catchCopy),
+          voiceActor: c.localized(item.voiceActor),
+          alternateName: c.localized(item.englishName),
+          bandLogo: String(c.band(Number(item.bandId || 0))?.logo || ""),
+          gallery: c.renderDetailMedia(item),
+          fields: this.fields
+            .filter((field) => !["voiceActor", "bandPart", "englishName"].includes(field.key))
+            .map((field) => ({ label: c.detailLabel(field.key), value: field.value })),
+        });
       if (active === "cards")
         return html`
           <section class="detail-section character-detail-deferred-section">
@@ -539,53 +456,31 @@ export class CharacterDetailArchive extends LitElement {
         `;
       if (active === "friendships") {
         const partners = values(c.detailAux.characters).filter((entry) => Number(entry.characterId) !== id);
-        const partnerId = this.selectedPartner || Number(partners[0]?.characterId || 0);
+        const partnerId =
+          this.selectedPartner === -1 ? 0 : this.selectedPartner || Number(partners[0]?.characterId || 0);
         const friendship = data.friendships.find((entry) => c.itemCharacterIds(entry).includes(partnerId));
         const stories = data.stories.filter(
-          (entry) => this.storyCategory(entry) === "link" && c.itemCharacterIds(entry).includes(partnerId),
+          (entry) =>
+            this.storyCategory(entry) === "link" && (!partnerId || c.itemCharacterIds(entry).includes(partnerId)),
         );
         const rewards = friendship && Array.isArray(friendship.rewards) ? (friendship.rewards as Item[]) : [];
         return html`
           <section class="detail-section character-detail-deferred-section">
             ${this.sectionHeading(c.label("characterBonds", "Character Bonds"), "friendships", data.friendships.length)}
             <div class="character-friendship-workspace">
-              <div class="character-friendship-selector">
-                <div class="character-friendship-anchor">
-                  ${
-                    c.character(id)?.faceImage
-                      ? html`
-                          <img src=${String(c.character(id)?.faceImage)} alt="" />
-                        `
-                      : nothing
-                  }
-                  <strong>${c.characterName(id)}</strong>
-                </div>
-                <span>
-                  ${html`
-                    <svg class="material-icon" width="22" height="22"><use href="/icons.svg#swap_horiz"></use></svg>
-                  `}
-                </span>
-                <div class="character-friendship-partners">
-                  ${partners.map((partner) => {
-                    const candidate = Number(partner.characterId || 0);
-                    return html`
-                      <button
-                        class=${candidate === partnerId ? "selected" : ""}
-                        @click=${() => (this.selectedPartner = candidate)}
-                      >
-                        ${
-                          partner.faceImage
-                            ? html`
-                                <img src=${String(partner.faceImage)} alt="" />
-                              `
-                            : nothing
-                        }
-                        <span>${c.characterName(candidate)}</span>
-                      </button>
-                    `;
-                  })}
-                </div>
-              </div>
+              ${characterPair({
+                locale: document.documentElement.dataset.locale || "ja",
+                characters: values(c.detailAux.characters).map((character) => ({
+                  value: String(character.characterId),
+                  label: c.characterName(Number(character.characterId)),
+                  image: String(character.faceImage || ""),
+                })),
+                first: String(id),
+                second: partnerId ? String(partnerId) : "",
+                onSecond: (value) => {
+                  this.selectedPartner = value ? Number(value) : -1;
+                },
+              })}
               ${
                 friendship
                   ? html`

@@ -392,11 +392,11 @@
     "home": "主页故事",
     "afterlive": "演出后故事",
     "tutorial": "教程故事",
-    "bestdoriEvent": "活动故事",
-    "bestdoriBand": "乐队故事",
-    "bestdoriMain": "主线故事",
-    "bestdoriAfterlive": "演出后故事",
-    "bestdoriCard": "卡面故事"
+    "bestdoriEvent": "GBP 活动故事",
+    "bestdoriBand": "GBP 乐队故事",
+    "bestdoriMain": "GBP 主线故事",
+    "bestdoriAfterlive": "GBP 演出后故事",
+    "bestdoriCard": "GBP 卡面故事"
   },
   "homeStories": "主页",
   "linkStories": "羁绊故事",
@@ -797,8 +797,8 @@
     "activityPostUnavailable": "讨论当前不可访问",
     "activityRevision": "已保存版本：{count}",
     "customCharts": "自制谱面",
-    "songsBestDori": "Bestdori 乐曲",
-    "storiesBestDori": "Bestdori 故事",
+    "songsBestDori": "GBP 乐曲",
+    "storiesBestDori": "GBP 故事",
     "playlistPage": {
       "title": "歌单",
       "bands": "乐队",
@@ -821,7 +821,7 @@
       "masterUnavailable": "不可用",
       "audioUnavailable": "没有音频",
       "sourceCatalog": "图鉴",
-      "sourceBestdori": "Bestdori",
+      "sourceBestdori": "GBP",
       "sourceUserUpload": "用户上传"
     },
     "planned": "规划中",

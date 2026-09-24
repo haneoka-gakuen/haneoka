@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
@@ -331,7 +332,7 @@ export class CommunityWorkspace extends LitElement {
             });
           this.items = [
             ...playlists(ourSongs, ourBands, "our-notes", "Our Notes"),
-            ...playlists(bestdoriSongs, bestdoriBands, "bestdori", "Bestdori"),
+            ...playlists(bestdoriSongs, bestdoriBands, "bestdori", "GBP"),
           ];
         }
         this.document =
@@ -1590,9 +1591,7 @@ ${String(comment.body || "")}</textarea>
                           >
                             <span class="list-item__body">
                               <span class="list-item__headline">${String(work.title || "")}</span>
-                              <span class="list-item__supporting">
-                                ${String(work.summary || work.kind || "")}
-                              </span>
+                              <span class="list-item__supporting">${String(work.summary || work.kind || "")}</span>
                             </span>
                           </a>
                         </li>
@@ -1812,9 +1811,11 @@ ${String(comment.body || "")}</textarea>
       `;
     }
     const items = this.playlistItems();
-    const bands = [...new Set(this.items.map((item) => String(item.bandId || item.band || "")).filter(Boolean))].sort(
-      (a, b) => a.localeCompare(b, "en", { numeric: true }),
-    );
+    const bands = orderFacetOptions(
+      [...new Set(this.items.map((item) => String(item.bandId || item.band || "")).filter(Boolean))].map((value) => ({
+        value,
+      })),
+    ).map((option) => option.value);
     const groups = [
       ["band", items.filter((item) => String(item.source || item.type || "band") === "band")],
       ["stage-challenge", items.filter((item) => String(item.source || item.type || "") === "stage-challenge")],
@@ -1914,13 +1915,10 @@ ${String(comment.body || "")}</textarea>
                           <span class="list-item__avatar list-item__avatar--square">${icon("queue_music", 20)}</span>
                           <span class="list-item__body">
                             <span class="list-item__headline">${this.playlistTitle(playlist)}</span>
-                            <span class="list-item__supporting">
-                              ${String(playlist.source || playlist.type || "")}
-                            </span>
+                            <span class="list-item__supporting">${String(playlist.source || playlist.type || "")}</span>
                           </span>
                           <span class="list-item__trailing list-item__meta">
-                            ${this.playlistTracks(playlist).length}
-                            ${this.label("playlistPage.songs", "songs")}
+                            ${this.playlistTracks(playlist).length} ${this.label("playlistPage.songs", "songs")}
                           </span>
                         </a>
                       </li>

@@ -20,6 +20,8 @@ const supplemental: Record<string, readonly [string, string, string, string, str
   density: ["行間", "Spacing", "行距", "行距", "행간"],
   comfortable: ["標準", "Comfortable", "標準", "标准", "표준"],
   compact: ["高密度", "Compact", "高密度", "高密度", "고밀도"],
+  settingsJapanCbt: ["日本版 CBT", "Japan CBT", "日版封閉測試", "日服封闭测试", "일본 CBT"],
+  settingsGlobalCbt: ["グローバル版 CBT", "Global CBT", "國際版封閉測試", "国际服封闭测试", "글로벌 CBT"],
   remove: ["削除", "Remove", "移除", "移除", "제거"],
   expertLevel: ["EXPERT レベル", "Expert level", "EXPERT 等級", "EXPERT 等级", "EXPERT 레벨"],
   songsCount: ["{count} 曲", "{count} songs", "{count} 首", "{count} 首", "{count}곡"],

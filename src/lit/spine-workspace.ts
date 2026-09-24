@@ -1,3 +1,4 @@
+import { saveCanvasFrame } from "../lib/canvas-capture";
 import { facet } from "./ui/facet";
 import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { LitElement, html, nothing } from "lit";
@@ -17,6 +18,8 @@ export class SpineWorkspace extends LitElement {
   static properties = {
     locale: { type: String },
     phase: { state: true },
+    capturing: { state: true },
+    captureMessage: { state: true },
     models: { state: true },
     selected: { state: true },
     detail: { state: true },
@@ -34,6 +37,8 @@ export class SpineWorkspace extends LitElement {
     versionFilter: { state: true },
     docked: { state: true },
   };
+  declare capturing: boolean;
+  declare captureMessage: string;
   declare locale: string;
   declare phase: "loading" | "ready" | "error";
   declare models: Value[];
@@ -59,6 +64,8 @@ export class SpineWorkspace extends LitElement {
   private generation = 0;
   constructor() {
     super();
+    this.capturing = false;
+    this.captureMessage = "";
     this.locale = "ja";
     this.phase = "loading";
     this.models = [];
@@ -275,26 +282,27 @@ export class SpineWorkspace extends LitElement {
     const next = models[index + offset];
     if (next) void this.select(String(next.id));
   }
-  private captureStage() {
+  private async captureStage() {
     const canvas = this.querySelector<HTMLCanvasElement>(".viewer-detail__runtime canvas");
-    canvas?.toBlob((blob) => {
-      if (!blob) return;
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${this.selected || "spine"}.png`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 0);
-    });
+    if (!canvas || this.capturing) return;
+    this.capturing = true;
+    this.captureMessage = "";
+    try {
+      await saveCanvasFrame(canvas, `${this.selected || "stage"}.png`, () => this.stage?.captureFrame() ?? false);
+    } catch {
+      this.captureMessage = uiText(this.locale, "captureFailed");
+    } finally {
+      this.capturing = false;
+    }
   }
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
-    if (this.selected) return this.renderModelDetail();
-    const families = [...new Set(this.models.map((model) => String(model.family || "")).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, "en", { numeric: true }),
-    );
-    const versions = [...new Set(this.models.map((model) => String(model.spineVersion || "")).filter(Boolean))].sort(
-      (a, b) => a.localeCompare(b, "en", { numeric: true }),
-    );
+    if (this.selected) {
+      clearBrowseBar();
+      return this.renderModelDetail();
+    }
+    const families = [...new Set(this.models.map((model) => String(model.family || "")).filter(Boolean))];
+    const versions = [...new Set(this.models.map((model) => String(model.spineVersion || "")).filter(Boolean))];
     return html`
       ${renderBrowse({
         kind: "model",
@@ -550,6 +558,13 @@ export class SpineWorkspace extends LitElement {
             }${
               detail
                 ? html`
+                    ${
+                      this.captureMessage
+                        ? html`
+                            <p class="viewer-capture-status" role="alert">${this.captureMessage}</p>
+                          `
+                        : nothing
+                    }
                     <div class="viewer-controls">
                       <button
                         class="icon-button runtime-button"
@@ -569,6 +584,7 @@ export class SpineWorkspace extends LitElement {
                       </button>
                       <button
                         class="icon-button runtime-button"
+                        ?disabled=${this.capturing}
                         @click=${this.captureStage}
                         aria-label=${uiText(this.locale, "screenshot")}
                       >
