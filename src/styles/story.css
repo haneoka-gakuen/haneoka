@@ -598,4 +598,27 @@
     width: 24px;
     height: 24px;
   }
+  .story-table-media {
+    display: grid;
+    place-items: center;
+    width: 80px;
+    height: 45px;
+  }
+  .story-table-media .story-cast-media__people {
+    max-width: 100%;
+    flex-wrap: nowrap;
+    padding: 0;
+    gap: 0;
+  }
+  .story-table-media .story-cast-media__people > span {
+    flex: 0 1 24px;
+    min-width: 0;
+    width: 24px;
+    height: 24px;
+  }
+  .story-table-media .story-cast-media--home .story-cast-media__people > span {
+    flex-basis: 14px;
+    width: 14px;
+    height: 14px;
+  }
 }

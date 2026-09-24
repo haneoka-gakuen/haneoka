@@ -1212,18 +1212,6 @@ export class StoryWorkspace extends LitElement {
       ],
     });
   }
-  /**
-   * The list view is the site's data table, the same one every catalogue
-   * resource uses. Each column is as wide as its own content and the region
-   * scrolls when the sum exceeds the pane — which is the point of a list
-   * view: it is for reading the facts a card deliberately leaves out.
-   *
-   * It replaced a list of rows that joined every fact into one no-wrap
-   * string in the trailing slot. That string's max-content width was the
-   * widest track in the row, so it took the space first and left the episode
-   * title clamped to its 12ch floor: the title, which is the only thing a
-   * reader is scanning for, was the narrowest column on screen.
-   */
   private renderTable(episodes: JsonRecord[]) {
     const columns: Array<{ label: string; numeric?: boolean; sticky?: boolean }> = [
       { label: "#", numeric: true },
@@ -1235,7 +1223,13 @@ export class StoryWorkspace extends LitElement {
       { label: uiText(this.locale, "release"), numeric: true },
     ];
     return html`
-      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
+      <div
+        class="table-scroll"
+        role="region"
+        tabindex="0"
+        aria-label=${uiText(this.locale, "table")}
+        data-scroll-region
+      >
         <table class="data-table">
           <thead>
             <tr>
@@ -1272,14 +1266,21 @@ export class StoryWorkspace extends LitElement {
                       type="button"
                       @click=${() => void this.openStory(this.episodeId(episode), episode)}
                     >
-                      <span class="table-entity__media">
-                        <img
-                          data-src=${this.episodeImage(episode)}
-                          data-fallback=${String(this.chapterOf(episode)?.banner || "")}
-                          alt=""
-                          decoding="async"
-                          @error=${this.imageError}
-                        />
+                      <span class=${`table-entity__media ${this.isCardSection() ? "" : "story-table-media"}`}>
+                        ${
+                          this.episodeMedia(episode) ??
+                          (this.episodeImage(episode)
+                            ? html`
+                                <img
+                                  data-src=${this.episodeImage(episode)}
+                                  data-fallback=${String(this.chapterOf(episode)?.banner || "")}
+                                  alt=""
+                                  decoding="async"
+                                  @error=${this.imageError}
+                                />
+                              `
+                            : icon("auto_stories", 24))
+                        }
                       </span>
                       <span class="table-entity__copy">
                         <span class="table-entity__name">${this.episodeTitle(episode)}</span>
