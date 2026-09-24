@@ -32,6 +32,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
     with:
+      github_environment: resource-${{ inputs.server }}
       server: ${{ inputs.server }}
       package_r2_key: ${{ inputs.package_r2_key }}
       source_id: ${{ inputs.source_id }}
@@ -40,4 +41,3 @@ jobs:
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
