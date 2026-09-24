@@ -68,15 +68,21 @@ jobs:
           else
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-package \
               --key "$PACKAGE_R2_KEY" --output "$RUNNER_TEMP/package-input"
-            # 1.0.x packages embed the launch catalog at assets/aa/catalog.bin;
-            # use it while the remote catalog_main is not yet published.
-            if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
-              unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
-                > "$RUNNER_TEMP/embedded-catalog.bin"
-              export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
+            # Prefer the live CDN catalog; fall back to the package's embedded
+            # assets/aa/catalog.bin only when the remote ingest cannot resolve one.
+            if ! python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
+              --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"; then
+              if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
+                echo "remote catalog ingest failed; retrying with the embedded catalog" >&2
+                unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
+                  > "$RUNNER_TEMP/embedded-catalog.bin"
+                export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
+                python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
+                  --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
+              else
+                exit 1
+              fi
             fi
-            python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
-              --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
           fi
       - name: Export build identity
         id: identity
