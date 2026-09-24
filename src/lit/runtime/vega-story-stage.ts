@@ -1,3 +1,4 @@
+import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { LitElement, html } from "lit";
 import { uiText } from "../shared/catalog";
 import { loadingState } from "../ui/state";
@@ -154,7 +155,7 @@ export class VegaStoryStage extends LitElement {
         providerBase
           ? keys.length
             ? this.json(
-                `${providerBase}/live2d?${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}`,
+                `${providerBase}/live2d?projection=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}&${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}${story.sourceServer ? `&server=${encodeURIComponent(String(story.sourceServer))}` : ""}`,
                 signal,
               ).then((payload) => keys.map((key) => (payload.items as RecordValue | undefined)?.[key] || {}))
             : []

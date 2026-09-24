@@ -1727,6 +1727,7 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
         output[str(identity)] = _present(
             musicId=identity,
             musicTitle=data.text(row.get("_titleTextID"), f"Music {identity}"),
+            artistId=row.get("_bandNameTextID") or None,
             artistName=(
                 data.text(row.get("_bandNameTextID"), "")
                 if row.get("_bandNameTextID")
@@ -3710,6 +3711,10 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
         episode_metadata[adv_id] = {
             "chapterId": chapter_id,
             "episodeNumber": int(row.get("_episodeNumber") or 0),
+            "isExtraEpisode": bool(row.get("_isExtraEpisode")),
+            "isAnotherEpisode": bool(row.get("_isAnotherEpisode")),
+            "perspectiveCharacterId": int(row.get("_characterId") or 0),
+            "characterRank": int(row.get("_characterRank") or 0),
             "description": data.text(row.get("_descriptionTextId"), ""),
             "characterIds": chapters.get(str(chapter_id), {}).get("mainCharacterIds", []),
             "publishedAt": chapters.get(str(chapter_id), {}).get("startAt", [0, None, None, None, None]),
@@ -3803,6 +3808,10 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
             chapterKey=str(chapter.get("chapterKey") or chapter_id),
             chapterName=chapter.get("chapterName", ["", "", "", "", ""]),
             storySort=int(metadata.get("episodeNumber") or adv_id),
+            isExtraEpisode=metadata.get("isExtraEpisode", False),
+            isAnotherEpisode=metadata.get("isAnotherEpisode", False),
+            perspectiveCharacterId=metadata.get("perspectiveCharacterId", 0),
+            characterRank=metadata.get("characterRank", 0),
             title=home_spot_titles.get(adv_id) or data.text(adv.get("_titleTextId"), story_id),
             description=metadata.get("description", ["", "", "", "", ""]),
             bandId=chapter.get("bandId", 0),

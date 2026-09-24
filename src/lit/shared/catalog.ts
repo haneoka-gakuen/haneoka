@@ -105,6 +105,22 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   order: ["表示順", "Order", "顯示順序", "显示顺序", "표시 순서"],
   ascending: ["昇順", "Ascending", "升冪", "升序", "오름차순"],
   descending: ["降順", "Descending", "降冪", "降序", "내림차순"],
+  minimum: ["最小", "Minimum", "最小", "最小", "최소"],
+  maximum: ["最大", "Maximum", "最大", "最大", "최대"],
+  availableAudio: ["音声あり", "Playable audio", "可播放音訊", "可播放音频", "재생 가능한 오디오"],
+  availableImage: ["画像あり", "Artwork", "圖片", "图片", "이미지"],
+  yes: ["あり", "Yes", "有", "有", "있음"],
+  no: ["なし", "No", "無", "无", "없음"],
+  quality: ["品質", "Quality", "品質", "品质", "품질"],
+  costumeId: ["衣装", "Costume", "服裝", "服装", "의상"],
+  subCharacter: ["サブキャラクター", "Supporting character", "配角", "配角", "서브 캐릭터"],
+  preview: ["プレビュー画像", "Preview image", "預覽圖", "预览图", "미리보기"],
+  fullscreen: ["全画面", "Full screen", "全螢幕", "全屏", "전체 화면"],
+  table: ["表", "Table", "表格", "表格", "표"],
+  bandStory: ["バンドストーリー", "Band story", "樂團故事", "乐队故事", "밴드 스토리"],
+  extraStory: ["Extra", "Extra", "Extra", "Extra", "Extra"],
+  perspectiveCharacter: ["視点のキャラクター", "Viewpoint character", "視角角色", "视角角色", "시점 캐릭터"],
+  perspectiveStory: ["視点ストーリー", "Perspective story", "視角故事", "视角故事", "시점 스토리"],
   grid: ["グリッド", "Grid", "網格", "网格", "그리드"],
   list: ["リスト", "List", "列表", "列表", "목록"],
   close: ["閉じる", "Close", "關閉", "关闭", "닫기"],
@@ -209,7 +225,7 @@ export function currentReleaseServer(): string {
 
 export function catalogUrl(resource: string, id = "", server = currentReleaseServer()): string {
   const path = resource.split("/").filter(Boolean).map(encodeURIComponent).join("/");
-  return `/api/v1/servers/${encodeURIComponent(server)}/${path}${id ? `/${encodeURIComponent(id)}` : ""}`;
+  return `/api/v1/servers/${encodeURIComponent(server)}/${path}${id ? `/${encodeURIComponent(id)}` : ""}${!id && ["stories", "songs"].includes(resource) ? "?projection=4" : ""}`;
 }
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

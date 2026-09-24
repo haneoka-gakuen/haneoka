@@ -462,6 +462,9 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
         projection=ProjectionSpec(
             include=(
                 "arranger",
+                "artistId",
+                "artistName",
+                "bandName",
                 "bandId",
                 "bandIds",
                 "composer",

@@ -43,6 +43,7 @@ export interface TileOptions {
   imageFallback?: string;
   /** Rendered when the resource has no artwork: a rendered 32dp icon. */
   placeholder?: unknown;
+  media?: unknown;
   /** Presentation hook, e.g. "song" → `.tile--song`. */
   kind?: string;
   marks?: ReadonlyArray<TileMark | null | undefined>;
@@ -57,7 +58,7 @@ export interface TileOptions {
   onImageError?: (event: Event) => void;
   style?: string;
   /** `contain` for logos and items that must not be cropped. */
-  fit?: "cover" | "contain";
+  fit?: "cover" | "contain" | "fill";
   /**
    * `tab` when the tile is one of a set that switches what an adjacent region
    * shows — a chapter in the pane rail, a band in the roster rail. Pair it
@@ -98,9 +99,10 @@ export function tile(options: TileOptions): TemplateResult {
       style=${options.style || nothing}
       @click=${options.onOpen}
     >
-      <span class=${`tile__media ${options.fit === "contain" ? "tile__media--contain" : ""}`}>
+      <span class=${`tile__media ${options.fit ? `tile__media--${options.fit}` : ""}`}>
         ${
-          options.image
+          options.media ??
+          (options.image
             ? html`
                 <img
                   data-src=${options.image}
@@ -111,7 +113,7 @@ export function tile(options: TileOptions): TemplateResult {
                   @error=${options.onImageError}
                 />
               `
-            : (options.placeholder ?? icon("image", 32))
+            : (options.placeholder ?? icon("image", 32)))
         }
         ${(options.marks || []).map((mark) =>
           mark

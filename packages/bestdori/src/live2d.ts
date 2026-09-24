@@ -1,3 +1,4 @@
+import { BESTDORI_PERSPECTIVE_SCENE } from "./scene.js";
 import { isRecord, parseBestdoriJson, type BestdoriInput } from "./input.js";
 import type { BestdoriServer } from "./transport.js";
 
@@ -42,6 +43,15 @@ export interface BestdoriLive2dProfile extends Record<string, unknown> {
   preservePresentationOnHide: boolean;
   basePosition: { x: number; y: number; z: number };
   baseScale: number;
+  placement: {
+    anchor: "stage";
+    referenceWidth: number;
+    referenceHeight: number;
+    fit: "height";
+    scale: number;
+    align: [number, number];
+    offset: [number, number];
+  };
 }
 
 export interface BestdoriLive2dRuntime extends Record<string, unknown> {
@@ -64,6 +74,15 @@ export interface BestdoriLive2dEntry extends Record<string, unknown> {
 const createLive2dProfile = (): BestdoriLive2dProfile => ({
   basePosition: { x: 0, y: 0, z: 0 },
   baseScale: 1,
+  placement: {
+    anchor: "stage",
+    referenceWidth: 1280,
+    referenceHeight: 720,
+    fit: "height",
+    scale: BESTDORI_PERSPECTIVE_SCENE.characterCanvasScale,
+    align: [0.5, 0.5],
+    offset: [0, -BESTDORI_PERSPECTIVE_SCENE.characterCenterNdcY * 360],
+  },
   presentationFadeInSeconds: -1,
   playDefaultMotionBeforePresentation: true,
   preservePresentationOnHide: true,

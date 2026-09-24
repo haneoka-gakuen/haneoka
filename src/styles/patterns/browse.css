@@ -73,14 +73,16 @@
    rail unreadable. It is fitted inside a fixed height instead, so the rail
    still has one rhythm while every banner stays whole. */
 .tile--rail .tile__media {
-  height: var(--rail-media-height, 76px);
+  height: var(--rail-media-height, 48px);
   aspect-ratio: auto;
   padding: 0;
   background: transparent;
 }
 .tile--rail .tile__media > img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: var(--rail-media-height, 48px);
+  min-height: 0;
+  max-height: var(--rail-media-height, 48px);
   object-fit: contain;
 }
 .tile--rail > .tile__identity {
@@ -89,6 +91,7 @@
 }
 .tile--rail .tile__title {
   min-block-size: 0;
+  -webkit-line-clamp: 1;
   font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
     var(--md-sys-typescale-title-small-line-height) var(--app-font);
 }
@@ -315,4 +318,83 @@ fieldset.browse__filter-group {
   .browse__results {
     padding-inline: 12px;
   }
+}
+filter-facet {
+  display: block;
+  min-width: 0;
+}
+.filter-facet {
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding-bottom: 8px;
+}
+.filter-facet > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  gap: 8px;
+  cursor: pointer;
+  font: 500 14px/20px var(--app-font);
+}
+.filter-facet__summary {
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.filter-facet__search {
+  width: 100%;
+  min-height: 44px;
+  margin-block: 4px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 12px;
+  background: var(--md-sys-color-surface);
+}
+.filter-facet__options {
+  display: grid;
+}
+.filter-facet__option {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  gap: 10px;
+  padding-inline: 4px;
+  cursor: pointer;
+}
+.filter-facet__option > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.filter-facet__option > img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+.filter-facet__option > small {
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+.filter-facet__option:has(md-checkbox[disabled]) {
+  opacity: 0.48;
+}
+.filter-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.filter-range > label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: 400 12px/18px var(--app-font);
+}
+.filter-range input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 8px;
+  background: var(--md-sys-color-surface);
 }

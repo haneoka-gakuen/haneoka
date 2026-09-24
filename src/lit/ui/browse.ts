@@ -3,6 +3,7 @@ import { clearAppBarActions, setAppBarActions } from "../../lib/app-bar";
 import { icon } from "./icon";
 import { iconButton, rovingKeydown } from "./controls";
 import { tile } from "./tile";
+import { nextImageCandidate } from "./lazy-images";
 
 /**
  * The browse screen.
@@ -27,6 +28,7 @@ export interface BrowseRailItem {
   image?: string;
   /** Second line: an episode count, a band, a chapter number. */
   meta?: string;
+  group?: string;
 }
 
 /**
@@ -116,6 +118,8 @@ function renderRail(rail: BrowseRail): TemplateResult {
           const selected = item.value === rail.value;
           return tile({
             kind: "rail",
+            fit: "contain",
+            onImageError: nextImageCandidate,
             title: item.label,
             subtitle: item.meta ?? null,
             label: item.label,
@@ -189,7 +193,13 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
                   ${
                     heading.image
                       ? html`
-                          <img class="browse__heading-art" src=${heading.image} alt="" loading="lazy" />
+                          <img
+                            class="browse__heading-art"
+                            data-src=${heading.image}
+                            alt=""
+                            decoding="async"
+                            @error=${nextImageCandidate}
+                          />
                         `
                       : nothing
                   }

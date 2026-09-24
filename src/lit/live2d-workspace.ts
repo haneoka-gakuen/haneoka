@@ -1,9 +1,11 @@
+import { facet } from "./ui/facet";
+import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
 import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
-import { filterChip, segmented } from "./ui/controls";
+
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { LazyImages } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
@@ -52,6 +54,7 @@ export class Live2DWorkspace extends LitElement {
     sort: { state: true },
     order: { state: true },
     filtersOpen: { state: true },
+    metaFilters: { state: true },
     bandFilter: { state: true },
     characterFilter: { state: true },
     typeFilter: { state: true },
@@ -76,11 +79,12 @@ export class Live2DWorkspace extends LitElement {
   declare sway: boolean;
   declare backgroundVisible: boolean;
   declare error: string;
-  declare view: "grid" | "list";
+  declare view: CollectionView;
   declare query: string;
   declare sort: "id" | "title" | "type" | "character" | "band";
   declare order: "asc" | "desc";
   declare filtersOpen: boolean;
+  declare metaFilters: Record<string, string>;
   declare docked: boolean;
   declare bandFilter: number;
   declare characterFilter: number;
@@ -118,6 +122,7 @@ export class Live2DWorkspace extends LitElement {
     this.sort = "id";
     this.order = "asc";
     this.filtersOpen = false;
+    this.metaFilters = {};
     this.docked = matches(EXPANDED);
     this.bandFilter = 0;
     this.characterFilter = 0;
@@ -150,7 +155,10 @@ export class Live2DWorkspace extends LitElement {
       const params = new URLSearchParams(location.search);
       this.selected = params.get("model") || "";
       this.query = params.get("q") || "";
-      this.view = params.get("view") === "list" ? "list" : "grid";
+      this.view = collectionView(params.get("view"));
+      this.metaFilters = Object.fromEntries(
+        ["quality", "costumeId", "subCharacter", "preview"].map((key) => [key, params.get(key) || ""]),
+      );
       this.sort = (
         ["id", "title", "type", "character", "band"].includes(params.get("sort") || "") ? params.get("sort") : "id"
       ) as typeof this.sort;
@@ -420,12 +428,48 @@ export class Live2DWorkspace extends LitElement {
     if (this.bandFilter) params.set("band", String(this.bandFilter));
     if (this.characterFilter) params.set("character", String(this.characterFilter));
     if (this.typeFilter) params.set("type", this.typeFilter);
+    for (const [key, value] of Object.entries(this.metaFilters)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+  private modelFacetValue(model: Value, key: string): string {
+    if (key === "preview") return (model.preview as Value | undefined)?.url ? "yes" : "no";
+    if (typeof model[key] === "boolean") return model[key] ? "yes" : "no";
+    return model[key] == null ? "" : String(model[key]);
+  }
+  private renderMetadataFilters() {
+    return ["quality", "costumeId", "subCharacter", "preview"].map((key) => {
+      const counts = new Map<string, number>();
+      for (const model of this.models) {
+        const value = this.modelFacetValue(model, key);
+        if (value) counts.set(value, (counts.get(value) || 0) + 1);
+      }
+      if (counts.size < 2) return nothing;
+      return facet(
+        uiText(this.locale, key),
+        this.locale,
+        [...counts].map(([value, count]) => ({
+          value,
+          label: ["yes", "no"].includes(value) ? uiText(this.locale, value) : value,
+          count,
+        })),
+        this.metaFilters[key] ? [this.metaFilters[key]] : [],
+        (value) => {
+          this.metaFilters = { ...this.metaFilters, [key]: this.metaFilters[key] === value ? "" : value };
+          this.sync();
+        },
+      );
+    });
   }
   private filteredModels() {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
     return this.models
+      .filter((model) =>
+        Object.entries(this.metaFilters).every(([key, value]) => !value || this.modelFacetValue(model, key) === value),
+      )
       .filter((model) => {
         if (this.bandFilter && Number(model.bandId) !== this.bandFilter) return false;
         if (this.characterFilter && Number(model.characterId) !== this.characterFilter) return false;
@@ -486,23 +530,13 @@ export class Live2DWorkspace extends LitElement {
     const models = this.filteredModels();
     if (this.selected) return this.renderModelDetail();
     const types = [...new Set(this.models.map((model) => String(model.modelType || "")).filter(Boolean))];
-    const setView = (view: "grid" | "list") => {
-      this.view = view;
-      this.sync();
-    };
     return html`
       ${renderBrowse({
         kind: "model",
         count: { value: models.length, label: "" },
-        controls: segmented({
-          label: uiText(this.locale, "view"),
-          value: this.view,
-          options: [
-            { value: "grid" as const, label: uiText(this.locale, "grid"), icon: "grid_view" },
-            { value: "list" as const, label: uiText(this.locale, "list"), icon: "view_list" },
-          ],
-          onSelect: setView,
-          iconOnly: true,
+        controls: viewSwitch(this.locale, this.view, (view) => {
+          this.view = view;
+          this.sync();
         }),
         results:
           this.phase === "loading"
@@ -516,7 +550,9 @@ export class Live2DWorkspace extends LitElement {
                 )
               : this.view === "grid"
                 ? this.renderModelGrid(models)
-                : this.renderModelList(models),
+                : this.view === "table"
+                  ? this.renderModelList(models)
+                  : this.renderSimpleList(models),
         filters: {
           label: uiText(this.locale, "filter"),
           open: this.filtersOpen,
@@ -524,13 +560,15 @@ export class Live2DWorkspace extends LitElement {
             Number(Boolean(this.query)) +
             Number(Boolean(this.bandFilter)) +
             Number(Boolean(this.characterFilter)) +
-            Number(Boolean(this.typeFilter)),
+            Number(Boolean(this.typeFilter)) +
+            Object.values(this.metaFilters).filter(Boolean).length,
           closeLabel: uiText(this.locale, "close"),
           resetLabel: uiText(this.locale, "reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => {
             this.query = "";
+            this.metaFilters = {};
             this.bandFilter = 0;
             this.characterFilter = 0;
             this.typeFilter = "";
@@ -571,23 +609,21 @@ export class Live2DWorkspace extends LitElement {
               (item) => String(item.faceImage || ""),
               (value) => (this.characterFilter = Number(value)),
             )}
-            ${filterGroup(
+            ${facet(
               uiText(this.locale, "type"),
-              html`
-                <div class="chip-set" role="group" aria-label=${uiText(this.locale, "type")}>
-                  ${types.map((type) =>
-                    filterChip({
-                      label: this.modelType({ modelType: type }),
-                      selected: this.typeFilter === type,
-                      onToggle: () => {
-                        this.typeFilter = this.typeFilter === type ? "" : type;
-                        this.sync();
-                      },
-                    }),
-                  )}
-                </div>
-              `,
+              this.locale,
+              types.map((value) => ({
+                value,
+                label: this.modelType({ modelType: value }),
+                count: this.models.filter((model) => model.modelType === value).length,
+              })),
+              this.typeFilter ? [this.typeFilter] : [],
+              (value) => {
+                this.typeFilter = this.typeFilter === value ? "" : value;
+                this.sync();
+              },
             )}
+            ${this.renderMetadataFilters()}
             ${filterGroup(
               uiText(this.locale, "sort"),
               html`
@@ -635,24 +671,22 @@ export class Live2DWorkspace extends LitElement {
     image: (item: Value) => string,
     update: (value: number) => void,
   ) {
-    return html`
-      <fieldset class="browse__filter-group">
-        <legend>${label}</legend>
-        <div class="chip-set">
-          ${items.map((item) =>
-            filterChip({
-              label: title(item),
-              image: image(item),
-              selected: selected === id(item),
-              onToggle: () => {
-                update(selected === id(item) ? 0 : id(item));
-                this.sync();
-              },
-            }),
-          )}
-        </div>
-      </fieldset>
-    `;
+    const key = label === uiText(this.locale, "band") ? "bandId" : "characterId";
+    return facet(
+      label,
+      this.locale,
+      items.map((item) => ({
+        value: String(id(item)),
+        label: title(item),
+        image: image(item),
+        count: this.models.filter((model) => Number(model[key]) === id(item)).length,
+      })),
+      selected ? [String(selected)] : [],
+      (value) => {
+        update(selected === Number(value) ? 0 : Number(value));
+        this.sync();
+      },
+    );
   }
   private renderModelGrid(models: Value[]) {
     return html`
@@ -679,47 +713,47 @@ export class Live2DWorkspace extends LitElement {
       </div>
     `;
   }
+  private renderSimpleList(models: Value[]) {
+    return collectionList(
+      models.map((model) => ({
+        id: this.key(model),
+        title: this.modelTitle(model),
+        subtitle: this.characterName(model),
+        image: this.preview(model),
+        onOpen: () => this.select(this.key(model)),
+      })),
+    );
+  }
   private renderModelList(models: Value[]) {
-    return html`
-      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
-        <div class="model-list">
-          <header>
-            <span>${uiText(this.locale, "model")}</span>
-            <span>${uiText(this.locale, "type")}</span>
-            <span>${uiText(this.locale, "character")}</span>
-            <span>${uiText(this.locale, "band")}</span>
-          </header>
-          ${models.map((model) => {
-            const character = this.character(Number(model.characterId || 0));
-            return html`
-              <button class="model-list__row" @click=${() => this.select(this.key(model))}>
-                <span class="model-list__primary">
-                  ${
-                  this.preview(model)
-                    ? html`
-                        <img src=${this.preview(model)} alt="" loading="lazy" />
-                      `
-                    : nothing
-                }
-                  <strong>${this.modelTitle(model)}</strong>
-                </span>
-                <span>${this.modelType(model)}</span>
-                <span class="model-list__entity">
-                  ${
-                  character?.faceImage
-                    ? html`
-                        <img src=${String(character.faceImage)} alt="" />
-                      `
-                    : nothing
-                }${this.characterName(model)}
-                </span>
-                <span>${this.bandName(model) || "—"}</span>
-              </button>
-            `;
-          })}
-        </div>
-      </div>
-    `;
+    return collectionTable(
+      uiText(this.locale, "table"),
+      [
+        uiText(this.locale, "model"),
+        uiText(this.locale, "type"),
+        uiText(this.locale, "character"),
+        uiText(this.locale, "band"),
+      ],
+      models.map((model) => [
+        html`
+          <button class="table-entity" type="button" @click=${() => this.select(this.key(model))}>
+            ${
+              this.preview(model)
+                ? html`
+                    <span class="table-entity__media"><img data-src=${this.preview(model)} alt="" /></span>
+                  `
+                : nothing
+            }
+            <span class="table-entity__copy">
+              <strong>${this.modelTitle(model)}</strong>
+              <small>${this.characterName(model)}</small>
+            </span>
+          </button>
+        `,
+        this.modelType(model),
+        this.characterName(model),
+        this.bandName(model) || "—",
+      ]),
+    );
   }
   private renderModelDetail() {
     const detail = this.detail;

@@ -1,3 +1,4 @@
+import { catalogProjectionTables, projectCatalogDocument } from "../src/lib/catalog-projection";
 import { handleAdminRequest } from "./admin";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
 import { handleAvatarRequest } from "./avatar";
@@ -209,7 +210,7 @@ const SONOLUS_VERSION = "1.1.4";
 const CAS_PREFIX = "cas/v1/sha256";
 const RESOURCE_SERVER_CACHE_TTL_MS = 15_000;
 const RESOURCE_SERVER_CACHE_LIMIT = 128;
-const RELEASE_REPRESENTATION_VERSION = "v3-safe-media";
+const RELEASE_REPRESENTATION_VERSION = "v4-catalog-details";
 const RELEASE_INDEX_ALGORITHM = "fnv1a32-mod-256";
 const RELEASE_INDEX_SHARDS = 256;
 const RELEASE_INDEX_CACHE_LIMIT = 64;
@@ -1635,6 +1636,22 @@ async function handleCatalogStorageApi(
         producer = () => catalogBatch(env, request, release, resource.entities, ids);
       } else {
         producer = async () => {
+          const tables = catalogProjectionTables(resourceName);
+          if (tables.length) {
+            const [document, ...data] = await Promise.all([
+              readReleaseJson(env, release, resource.index),
+              ...tables.map((name) => readReleaseJson(env, release, `objects/master/${name}.json`)),
+            ]);
+            if (!document) return errorResponse(request, 502, "catalog_missing", "Catalog index is missing");
+            return jsonResponse(
+              request,
+              projectCatalogDocument(
+                resourceName,
+                document,
+                Object.fromEntries(tables.map((name, index) => [name, data[index]])),
+              ),
+            );
+          }
           const response = await serveReleaseObject(
             env,
             request,

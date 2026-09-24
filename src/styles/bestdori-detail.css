@@ -1,0 +1,188 @@
+@layer pages {
+  .bestdori-detail > header {
+    gap: 10px;
+    padding-inline: 12px;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .bestdori-detail > header > strong {
+    flex: 1;
+  }
+  .bestdori-detail > header > .segmented {
+    margin-left: auto;
+  }
+  .bestdori-detail-loading {
+    position: fixed;
+    z-index: 31;
+    inset: var(--shell-overlay-inset);
+    border-radius: var(--shell-overlay-radius);
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--md-sys-color-surface) 84%, transparent);
+  }
+  .bestdori-card-detail,
+  .bestdori-song-detail,
+  .bestdori-transcript {
+    min-width: 0;
+    min-height: 0;
+    padding: 20px;
+    overflow: auto;
+  }
+  .bestdori-card-detail {
+    width: min(100%, 1100px);
+    margin-inline: auto;
+  }
+  .bestdori-card-detail__images {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .bestdori-card-detail__images img {
+    width: 100%;
+    max-height: 56dvh;
+    object-fit: contain;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .bestdori-episode {
+    display: grid;
+    width: 100%;
+    min-height: 56px;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .bestdori-song-detail {
+    display: grid;
+    width: min(100%, 1100px);
+    grid-template-columns: minmax(240px, 480px) minmax(280px, 1fr);
+    align-content: start;
+    gap: 24px;
+    margin-inline: auto;
+  }
+  .bestdori-song-detail > img {
+    width: 100%;
+    object-fit: contain;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .bestdori-song-detail dl {
+    margin: 0;
+  }
+  .bestdori-song-detail dl > div {
+    display: grid;
+    grid-template-columns: minmax(100px, 0.6fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .bestdori-song-detail dd {
+    margin: 0;
+  }
+  .bestdori-difficulties {
+    display: flex;
+    grid-column: 2;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+  .bestdori-difficulties > span {
+    display: grid;
+    min-width: 72px;
+    flex: 1;
+    place-items: center;
+    padding: 8px;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .bestdori-rewards {
+    display: grid;
+    grid-column: 2;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .bestdori-rewards h3:not(.detail-section-title) {
+    margin: 0;
+    font-size: var(--md-sys-typescale-title-medium-size);
+    text-transform: capitalize;
+  }
+  .bestdori-rewards > div {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .bestdori-rewards > div > span {
+    display: grid;
+    min-height: 72px;
+    place-items: center;
+    padding: 8px;
+    background: var(--md-sys-color-surface-container-low);
+    text-align: center;
+  }
+  .bestdori-rewards img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+  .bestdori-rewards small {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .bestdori-transcript {
+    width: min(100%, 1000px);
+    margin-inline: auto;
+  }
+  .bestdori-transcript article {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .bestdori-transcript article strong {
+    color: var(--md-sys-color-primary);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .bestdori-transcript article p {
+    margin: 4px 0 0;
+    white-space: pre-line;
+  }
+  .bestdori-story-detail vega-story-stage {
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  @media (max-width: 599px) {
+    .bestdori-detail,
+    .bestdori-detail-loading {
+      inset: 0;
+    }
+    .bestdori-detail > header {
+      padding-inline: 4px;
+    }
+    .bestdori-detail > header > .segmented button {
+      min-width: 62px;
+      padding-inline: 10px;
+    }
+    .bestdori-card-detail,
+    .bestdori-song-detail,
+    .bestdori-transcript {
+      padding: 12px;
+    }
+    .bestdori-card-detail__images,
+    .bestdori-song-detail {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .bestdori-difficulties {
+      grid-column: 1;
+      overflow-x: auto;
+      border-radius: var(--md-sys-shape-corner-large);
+    }
+    .bestdori-rewards {
+      grid-column: 1;
+    }
+  }
+}

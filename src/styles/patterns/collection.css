@@ -333,3 +333,46 @@
 .tile__media > svg {
   grid-area: 1 / 1;
 }
+
+.tile__media--fill {
+  --tile-fit: fill;
+}
+.collection-list .list-item {
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+.collection-list .list-item:hover {
+  background: var(--md-sys-color-surface-container);
+}
+.collection-list .list-item__leading {
+  width: 64px;
+  justify-content: center;
+}
+.collection-list .list-item__leading > img {
+  width: 64px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.collection-list .list-item__headline {
+  font-weight: 500;
+}
+.collection-list .list-item__supporting {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.collection-list .list-item__trailing > img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+@media (max-width: 599px) {
+  .collection-list .list-item {
+    padding-inline: 4px;
+  }
+  .collection-list .list-item__leading {
+    width: 56px;
+  }
+}

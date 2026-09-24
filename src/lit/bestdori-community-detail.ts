@@ -1,3 +1,4 @@
+import "../styles/bestdori-detail.css";
 import { html, nothing, type TemplateResult } from "lit";
 import { localizedText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";

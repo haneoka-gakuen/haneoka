@@ -1,198 +1,114 @@
-/* ==========================================================================
-   Data table
-   The archive's densest view: eighteen columns of song metadata, sortable.
-
-   What was wrong before: the table was divs with role="table" and a fixed
-   grid-template of hard pixel widths summing to ~2370px, inside a container
-   that declared `min-width: max-content; overflow: hidden`. On any window
-   narrower than the sum, the right-hand columns were simply clipped away —
-   unreachable, with no scrollbar. That is the out-of-bounds bug.
-
-   What it is now:
-     · a real <table> — so screen readers, column headers and sort state are
-       conveyed by the platform rather than by hand-written ARIA;
-     · wrapped in .table-scroll, the single element that owns the horizontal
-       overflow, is keyboard focusable, and announces itself as a region;
-     · column widths are content-driven with a per-column max, so the table
-       is as narrow as its data allows and only scrolls when it must;
-     · the header row sticks while scrolling, and the primary column sticks
-       horizontally so a row never loses its identity.
-   ========================================================================== */
 .table-scroll {
   position: relative;
   min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
+  max-height: calc(var(--shell-stage-block) - 48px);
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-medium);
+  border-radius: 16px;
   background: var(--md-sys-color-surface);
-  /* Edge shading tells the reader there is more table off-screen. It is
-   * painted by background-attachment, so it costs no element and no script. */
-  background-image:
-    linear-gradient(to right, var(--md-sys-color-surface) 40%, transparent),
-    linear-gradient(to left, var(--md-sys-color-surface) 40%, transparent),
-    linear-gradient(to right, color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent), transparent 12px),
-    linear-gradient(to left, color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent), transparent 12px);
-  background-repeat: no-repeat;
-  background-attachment: local, local, scroll, scroll;
-  background-position:
-    0 0,
-    100% 0,
-    0 0,
-    100% 0;
-  background-size:
-    32px 100%,
-    32px 100%,
-    12px 100%,
-    12px 100%;
+  scrollbar-width: thin;
 }
-.table-scroll:focus-visible {
-  outline: 3px solid var(--md-sys-color-secondary);
-  outline-offset: 2px;
-}
-
-/* Every column is exactly as wide as its own content needs.
- *
- * `width: 100%` was doing the opposite: it made the table fill the pane, so
- * the auto layout had to divide a fixed width between however many columns
- * there were — nineteen, for a song — and every one of them came out
- * narrower than its data. Numbers wrapped, titles broke mid-word, and the
- * whole table read as squeezed however much room the window had.
- *
- * `max-content` sizes each column to its content and `min-width: 100%` keeps
- * the table filling the region when the data is narrower than the pane, so
- * short tables still look like tables. .table-scroll owns the overflow for
- * when the sum is wider. */
 .data-table {
   width: max-content;
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  font: 400 14px/20px var(--app-font);
   color: var(--md-sys-color-on-surface);
-  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
-    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
-  table-layout: auto;
 }
 .data-table :where(th, td) {
-  /* Every cell declares its own ceiling instead of a fixed width: narrow data
-   * packs tight, long titles wrap at a sane measure. */
-  max-width: var(--cell-max, 320px);
-  padding: var(--cell-block) 12px;
-  overflow-wrap: break-word;
+  max-width: var(--cell-max, 280px);
+  padding: 12px 16px;
   text-align: start;
   vertical-align: middle;
+  overflow-wrap: break-word;
 }
 .data-table thead th {
   position: sticky;
   z-index: 2;
   top: 0;
-  height: var(--row-height);
-  color: var(--md-sys-color-on-surface-variant);
+  height: 48px;
   background: var(--md-sys-color-surface-container);
-  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  color: var(--md-sys-color-on-surface-variant);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  font: 500 12px/18px var(--app-font);
   white-space: nowrap;
 }
-.data-table thead th::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 1px;
-  content: "";
-  background: var(--md-sys-color-outline-variant);
+.data-table tbody :where(th, td) {
+  height: 64px;
+  border-bottom: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 55%, transparent);
 }
-.data-table tbody tr {
-  height: var(--row-height);
+.data-table tbody tr:last-child :where(th, td) {
+  border-bottom: 0;
 }
-.data-table tbody td {
-  border-top: 1px solid var(--md-sys-color-outline-variant);
+.data-table tbody tr:hover {
+  background: var(--md-sys-color-surface-container-low);
 }
-.data-table tbody tr:first-child td {
-  border-top: 0;
-}
-.data-table tbody tr.is-selected {
-  background: var(--md-sys-color-secondary-container);
-}
-@media (hover: hover) {
-  .data-table tbody tr:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) calc(var(--state-hover) * 100%), transparent);
-  }
-}
-/* The identity column stays put while the rest scrolls sideways. */
 .data-table :where(th, td).is-sticky {
   position: sticky;
-  z-index: 1;
   left: 0;
+  z-index: 1;
   background: var(--md-sys-color-surface);
+  min-width: 200px;
   box-shadow: 1px 0 0 var(--md-sys-color-outline-variant);
 }
 .data-table thead th.is-sticky {
   z-index: 3;
   background: var(--md-sys-color-surface-container);
 }
-.data-table tbody tr.is-selected .is-sticky {
+.data-table tbody tr:hover .is-sticky {
+  background: var(--md-sys-color-surface-container-low);
+}
+.data-table tbody tr.is-selected :where(th, td) {
   background: var(--md-sys-color-secondary-container);
 }
-@media (hover: hover) {
-  .data-table tbody tr:hover .is-sticky {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface));
-  }
-}
-/* Numeric columns: right-aligned, tabular, never wrapped. */
 .data-table :where(th, td).is-numeric {
-  --cell-max: none;
   font-variant-numeric: tabular-nums;
   text-align: end;
   white-space: nowrap;
 }
 .data-table :where(th, td).is-compact {
-  --cell-max: none;
   width: 1%;
   white-space: nowrap;
 }
-
-/* Sortable header: the whole cell is the button, sort state is conveyed by
- * aria-sort on the <th> and mirrored by the arrow. */
 .data-table th > .table-sort {
-  display: inline-flex;
+  display: flex;
+  min-height: 32px;
   width: 100%;
-  min-width: 0;
+  gap: 8px;
   align-items: center;
-  gap: 4px;
   color: inherit;
   font: inherit;
+  text-align: inherit;
   cursor: pointer;
 }
 .data-table th.is-numeric > .table-sort {
   justify-content: flex-end;
 }
 .data-table th > .table-sort > .material-icon {
-  --icon-size: 18px;
-  opacity: 0;
-  transition: opacity var(--md-sys-motion-duration-short3) linear;
+  --icon-size: 16px;
+  opacity: 0.35;
 }
 .data-table th[aria-sort] > .table-sort {
   color: var(--md-sys-color-primary);
 }
-.data-table th[aria-sort] > .table-sort > .material-icon,
-.data-table th > .table-sort:hover > .material-icon,
-.data-table th > .table-sort:focus-visible > .material-icon {
+.data-table th[aria-sort] > .table-sort > .material-icon {
   opacity: 1;
-}
-/* Without a hover state there is nothing to discover, so every sortable
- * header shows a low-emphasis arrow on touch. */
-@media (hover: none) {
-  .data-table th > .table-sort > .material-icon {
-    opacity: 0.38;
-  }
 }
 .data-table th[aria-sort="descending"] > .table-sort > .material-icon {
   transform: rotate(180deg);
 }
-
+@media (max-width: 599px) {
+  .data-table :where(th, td) {
+    padding: 10px 12px;
+  }
+  .data-table :where(th, td).is-sticky {
+    min-width: 160px;
+    max-width: 200px;
+  }
+}
 /* A cell holding an entity: thumbnail + name + secondary line. */
 .table-entity {
   display: grid;
@@ -212,17 +128,17 @@ button.table-entity {
   cursor: pointer;
 }
 .table-entity__media {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
   overflow: hidden;
   border-radius: var(--md-sys-shape-corner-extra-small);
-  background: var(--md-sys-color-surface-container-highest);
+  background: transparent;
 }
 .table-entity__media > img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 .table-entity__copy {
   display: grid;

@@ -1,5 +1,5 @@
 export const BESTDORI_CHARACTER_ICON_MAX_ID = 50;
-export const BESTDORI_CATALOG_VERSION = "v21-canonical-release-order";
+export const BESTDORI_CATALOG_VERSION = "v22-model-placement";
 
 export const hasBestdoriCharacterIcon = (characterId: unknown): boolean => {
   const id = Number(characterId);

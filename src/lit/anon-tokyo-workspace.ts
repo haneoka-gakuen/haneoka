@@ -1,6 +1,7 @@
+import { facet as renderFacet } from "./ui/facet";
 import { LitElement, html, nothing } from "lit";
-import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
-import { filterChip, inputChip } from "./ui/controls";
+import { clearBrowseBar, renderBrowse } from "./ui/browse";
+import { inputChip } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { errorState, loadingState } from "./ui/state";
 import {
@@ -285,7 +286,12 @@ export class AnonTokyoWorkspace extends LitElement {
     };
     const key = facetKey[this.mode] || "";
     const facets = key ? [...new Set(source.map((item) => String(item[key] ?? "")).filter(Boolean))] : [];
-    const list = source.filter((item) => !this.facet || String(item[key] ?? "") === this.facet);
+    const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase(this.locale);
+    const list = source.filter(
+      (item) =>
+        (!this.facet || String(item[key] ?? "") === this.facet) &&
+        (!needle || JSON.stringify(item).normalize("NFKC").toLocaleLowerCase(this.locale).includes(needle)),
+    );
     const shown = list.slice(0, this.visible);
     return renderBrowse({
       kind: `anon-${this.mode}`,
@@ -294,10 +300,8 @@ export class AnonTokyoWorkspace extends LitElement {
         label: list.length === source.length ? "" : `/ ${source.length.toLocaleString()}`,
       },
       applied: this.facet
-        ? inputChip(
-            `${this.facetTitle(key)}: ${this.facetLabel(key, this.facet)}`,
-            uiText(this.locale, "remove"),
-            () => this.setFacet(""),
+        ? inputChip(`${this.facetTitle(key)}: ${this.facetLabel(key, this.facet)}`, uiText(this.locale, "remove"), () =>
+            this.setFacet(""),
           )
         : undefined,
       results: html`
@@ -316,37 +320,45 @@ export class AnonTokyoWorkspace extends LitElement {
             : nothing
         }
       `,
-      filters: facets.length
-        ? {
-            label: uiText(this.locale, "filter"),
-            open: this.filtersOpen,
-            count: this.facet ? 1 : 0,
-            closeLabel: uiText(this.locale, "close"),
-            resetLabel: uiText(this.locale, "reset"),
-            onOpen: () => (this.filtersOpen = true),
-            onClose: () => (this.filtersOpen = false),
-            onReset: () => this.setFacet(""),
-            body: filterGroup(
-              this.facetTitle(key),
-              html`
-                <div class="chip-set" role="group" aria-label=${this.facetTitle(key)}>
-                  ${filterChip({
-                    label: uiText(this.locale, "all"),
-                    selected: !this.facet,
-                    onToggle: () => this.setFacet(""),
-                  })}
-                  ${facets.map((value) =>
-                    filterChip({
-                      label: this.facetLabel(key, value),
-                      selected: this.facet === value,
-                      onToggle: () => this.setFacet(value),
-                    }),
-                  )}
-                </div>
-              `,
-            ),
+      filters: {
+        label: uiText(this.locale, "filter"),
+        open: this.filtersOpen,
+        count: Number(Boolean(this.facet)) + Number(Boolean(this.query)),
+        closeLabel: uiText(this.locale, "close"),
+        resetLabel: uiText(this.locale, "reset"),
+        onOpen: () => (this.filtersOpen = true),
+        onClose: () => (this.filtersOpen = false),
+        onReset: () => {
+          this.query = "";
+          this.setFacet("");
+        },
+        body: html`
+          <md-outlined-text-field
+            type="search"
+            label=${uiText(this.locale, "search")}
+            .value=${this.query}
+            @input=${(event: Event) => {
+              this.query = (event.target as HTMLElement & { value: string }).value;
+              this.visible = 100;
+            }}
+          ></md-outlined-text-field>
+          ${
+            facets.length
+              ? renderFacet(
+                  this.facetTitle(key),
+                  this.locale,
+                  facets.map((value) => ({
+                    value,
+                    label: this.facetLabel(key, value),
+                    count: source.filter((item) => String(item[key] ?? "") === value).length,
+                  })),
+                  this.facet ? [this.facet] : [],
+                  (value) => this.setFacet(this.facet === value ? "" : value),
+                )
+              : nothing
           }
-        : undefined,
+        `,
+      },
     });
   }
   private setFacet(value: string) {
@@ -628,8 +640,7 @@ export class AnonTokyoWorkspace extends LitElement {
       return "";
     })();
     const description = this.text(item.description) || this.text(item.text) || "";
-    const audio =
-      this.mode === "fever" && item.entityKind === "bgm" ? String(item.playableUrl || item.url || "") : "";
+    const audio = this.mode === "fever" && item.entityKind === "bgm" ? String(item.playableUrl || item.url || "") : "";
     // A 56dp thumbnail, a headline and one supporting line: that is a
     // Material list item, so it is one. It used to be an `.anon-card` that
     // borrowed the tile's text classes while laying itself out as a row,

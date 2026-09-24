@@ -1,3 +1,5 @@
+import { facet } from "./ui/facet";
+import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
@@ -27,6 +29,7 @@ export class SpineWorkspace extends LitElement {
     sort: { state: true },
     order: { state: true },
     filtersOpen: { state: true },
+    metaFilters: { state: true },
     familyFilter: { state: true },
     versionFilter: { state: true },
     docked: { state: true },
@@ -41,10 +44,11 @@ export class SpineWorkspace extends LitElement {
   declare loop: boolean;
   declare visible: number;
   declare query: string;
-  declare view: "grid" | "list";
+  declare view: CollectionView;
   declare sort: "id" | "source" | "family" | "version";
   declare order: "asc" | "desc";
   declare filtersOpen: boolean;
+  declare metaFilters: Record<string, string>;
   declare docked: boolean;
   declare familyFilter: string;
   declare versionFilter: string;
@@ -69,6 +73,7 @@ export class SpineWorkspace extends LitElement {
     this.sort = "id";
     this.order = "asc";
     this.filtersOpen = false;
+    this.metaFilters = {};
     this.docked = matches(EXPANDED);
     this.familyFilter = "";
     this.versionFilter = "";
@@ -90,7 +95,10 @@ export class SpineWorkspace extends LitElement {
       const params = new URLSearchParams(location.search);
       this.selected = params.get("model") || "";
       this.query = params.get("q") || "";
-      this.view = params.get("view") === "list" ? "list" : "grid";
+      this.view = collectionView(params.get("view"));
+      this.metaFilters = Object.fromEntries(
+        ["quality", "costumeId", "subCharacter", "preview"].map((key) => [key, params.get(key) || ""]),
+      );
       this.sort = (
         ["id", "source", "family", "version"].includes(params.get("sort") || "") ? params.get("sort") : "id"
       ) as typeof this.sort;
@@ -183,12 +191,48 @@ export class SpineWorkspace extends LitElement {
     if (this.order !== "asc") params.set("order", this.order);
     if (this.familyFilter) params.set("family", this.familyFilter);
     if (this.versionFilter) params.set("version", this.versionFilter);
+    for (const [key, value] of Object.entries(this.metaFilters)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+  private modelFacetValue(model: Value, key: string): string {
+    if (key === "preview") return (model.preview as Value | undefined)?.url ? "yes" : "no";
+    if (typeof model[key] === "boolean") return model[key] ? "yes" : "no";
+    return model[key] == null ? "" : String(model[key]);
+  }
+  private renderMetadataFilters() {
+    return ["quality", "costumeId", "subCharacter", "preview"].map((key) => {
+      const counts = new Map<string, number>();
+      for (const model of this.models) {
+        const value = this.modelFacetValue(model, key);
+        if (value) counts.set(value, (counts.get(value) || 0) + 1);
+      }
+      if (counts.size < 2) return nothing;
+      return facet(
+        uiText(this.locale, key),
+        this.locale,
+        [...counts].map(([value, count]) => ({
+          value,
+          label: ["yes", "no"].includes(value) ? uiText(this.locale, value) : value,
+          count,
+        })),
+        this.metaFilters[key] ? [this.metaFilters[key]] : [],
+        (value) => {
+          this.metaFilters = { ...this.metaFilters, [key]: this.metaFilters[key] === value ? "" : value };
+          this.sync();
+        },
+      );
+    });
   }
   private filteredModels() {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
     return this.models
+      .filter((model) =>
+        Object.entries(this.metaFilters).every(([key, value]) => !value || this.modelFacetValue(model, key) === value),
+      )
       .filter(
         (model) =>
           (!this.familyFilter || model.family === this.familyFilter) &&
@@ -255,18 +299,9 @@ export class SpineWorkspace extends LitElement {
       ${renderBrowse({
         kind: "model",
         count: { value: models.length, label: "" },
-        controls: segmented({
-          label: uiText(this.locale, "view"),
-          value: this.view,
-          options: [
-            { value: "grid" as const, label: uiText(this.locale, "grid"), icon: "grid_view" },
-            { value: "list" as const, label: uiText(this.locale, "list"), icon: "view_list" },
-          ],
-          onSelect: (view) => {
-            this.view = view;
-            this.sync();
-          },
-          iconOnly: true,
+        controls: viewSwitch(this.locale, this.view, (view) => {
+          this.view = view;
+          this.sync();
         }),
         results:
           this.phase === "loading"
@@ -280,19 +315,28 @@ export class SpineWorkspace extends LitElement {
                 )
               : this.view === "grid"
                 ? html`
-                    <div class="collection collection--model">${models.map((model) => this.renderModelCard(model))}</div>
+                    <div class="collection collection--model">
+                      ${models.map((model) => this.renderModelCard(model))}
+                    </div>
                   `
-                : this.renderModelList(models),
+                : this.view === "table"
+                  ? this.renderModelList(models)
+                  : this.renderSimpleList(models),
         filters: {
           label: uiText(this.locale, "filter"),
           open: this.filtersOpen,
-          count: Number(Boolean(this.query)) + Number(Boolean(this.familyFilter)) + Number(Boolean(this.versionFilter)),
+          count:
+            Number(Boolean(this.query)) +
+            Number(Boolean(this.familyFilter)) +
+            Number(Boolean(this.versionFilter)) +
+            Object.values(this.metaFilters).filter(Boolean).length,
           closeLabel: uiText(this.locale, "close"),
           resetLabel: uiText(this.locale, "reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => {
             this.query = "";
+            this.metaFilters = {};
             this.familyFilter = "";
             this.versionFilter = "";
             this.sync();
@@ -316,6 +360,7 @@ export class SpineWorkspace extends LitElement {
             </div>
             ${this.renderFacet(uiText(this.locale, "family"), families, this.familyFilter, (value) => (this.familyFilter = value))}
             ${this.renderFacet(uiText(this.locale, "version"), versions, this.versionFilter, (value) => (this.versionFilter = value))}
+            ${this.renderMetadataFilters()}
             ${filterGroup(
               uiText(this.locale, "sort"),
               html`
@@ -367,27 +412,21 @@ export class SpineWorkspace extends LitElement {
     `;
   }
   private renderFacet(label: string, values: string[], selected: string, update: (value: string) => void) {
-    return html`
-      <fieldset class="browse__filter-group">
-        <legend>${label}</legend>
-        <div class="chip-set">
-          ${values.map(
-            (value) => html`
-              <button
-                class="chip"
-                aria-pressed=${selected === value}
-                @click=${() => {
-                  update(selected === value ? "" : value);
-                  this.sync();
-                }}
-              >
-                ${value}
-              </button>
-            `,
-          )}
-        </div>
-      </fieldset>
-    `;
+    const key = label === uiText(this.locale, "family") ? "family" : "spineVersion";
+    return facet(
+      label,
+      this.locale,
+      values.map((value) => ({
+        value,
+        label: key === "family" ? this.familyName(value) : value,
+        count: this.models.filter((model) => String(model[key]) === value).length,
+      })),
+      selected ? [selected] : [],
+      (value) => {
+        update(selected === value ? "" : value);
+        this.sync();
+      },
+    );
   }
   private preview(model: Value) {
     return String((model.preview as Value | undefined)?.url || "");
@@ -405,40 +444,47 @@ export class SpineWorkspace extends LitElement {
       onOpen: () => this.select(String(model.id)),
     });
   }
+  private renderSimpleList(models: Value[]) {
+    return collectionList(
+      models.map((model) => ({
+        id: String(model.id),
+        title: this.modelTitle(model),
+        subtitle: this.familyName(model.family || model.spineVersion || "Spine"),
+        image: this.preview(model),
+        onOpen: () => this.select(String(model.id)),
+      })),
+    );
+  }
   private renderModelList(models: Value[]) {
-    return html`
-      <div class="table-scroll" role="region" tabindex="0" aria-label=${uiText(this.locale, "list")} data-scroll-region>
-        <div class="model-list spine-model-list">
-          <header>
-            <span>${uiText(this.locale, "model")}</span>
-            <span>${uiText(this.locale, "family")}</span>
-            <span>${uiText(this.locale, "version")}</span>
-            <span>${uiText(this.locale, "animations")}</span>
-          </header>
-          ${models.map(
-            (model) => html`
-              <button class="model-list__row" @click=${() => this.select(String(model.id))}>
-                <span class="model-list__primary">
-                  ${
-                  this.preview(model)
-                    ? html`
-                        <img src=${this.preview(model)} alt="" loading="lazy" />
-                      `
-                    : nothing
-                }
-                  <strong>${this.modelTitle(model)}</strong>
-                </span>
-                <span>${this.familyName(model.family)}</span>
-                <span>${String(model.spineVersion || "—")}</span>
-                <span>
-                  ${Number(model.animationCount || (Array.isArray(model.animations) ? model.animations.length : 0))}
-                </span>
-              </button>
-            `,
-          )}
-        </div>
-      </div>
-    `;
+    return collectionTable(
+      uiText(this.locale, "table"),
+      [
+        uiText(this.locale, "model"),
+        uiText(this.locale, "family"),
+        uiText(this.locale, "version"),
+        uiText(this.locale, "animations"),
+      ],
+      models.map((model) => [
+        html`
+          <button class="table-entity" type="button" @click=${() => this.select(String(model.id))}>
+            ${
+              this.preview(model)
+                ? html`
+                    <span class="table-entity__media"><img data-src=${this.preview(model)} alt="" /></span>
+                  `
+                : nothing
+            }
+            <span class="table-entity__copy">
+              <strong>${this.modelTitle(model)}</strong>
+              <small>${this.familyName(model.family)}</small>
+            </span>
+          </button>
+        `,
+        this.familyName(model.family),
+        String(model.spineVersion || "—"),
+        Number(model.animationCount || (Array.isArray(model.animations) ? model.animations.length : 0)),
+      ]),
+    );
   }
   private renderModelDetail() {
     const detail = this.detail;

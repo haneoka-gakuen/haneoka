@@ -150,7 +150,7 @@ export class CatalogTable extends LitElement {
     const columns = COLUMNS[c.profile.presentation] || COLUMNS.item;
     const label = (key: string) => c.detailLabel(key);
     return html`
-      <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("list", "List")} data-scroll-region>
+      <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("table", "Table")} data-scroll-region>
         <table class="data-table">
           <thead>
             <tr>${columns.map((entry) => this.header(entry, label(entry.key)))}</tr>
@@ -217,7 +217,7 @@ export class CatalogTable extends LitElement {
     const characterIds: number[] = c.itemCharacterIds(item);
     const characterId = characterIds[0] || Number(item.characterId || 0);
     const character = c.character(characterId);
-    const bandId = Number(item.bandId || character?.bandId || 0);
+    const bandId = Number(item.bandId || (c.profile.presentation === "song" ? 0 : character?.bandId) || 0);
     const band = c.band(bandId);
 
     if (key === "title") {
@@ -274,7 +274,9 @@ export class CatalogTable extends LitElement {
               : nothing
           }
           <span class="table-entity__copy">
-            <span class="table-entity__name">${c.bandName(bandId)}</span>
+            <span class="table-entity__name">
+              ${c.profile.presentation === "song" ? c.itemArtist(item) : c.bandName(bandId)}
+            </span>
           </span>
         </span>
       `);
@@ -288,7 +290,6 @@ export class CatalogTable extends LitElement {
               <img src=${source} alt=${text} title=${text} width="24" height="24" />
             `
           : html`
-              <span class="sr-only">${text || "—"}</span>
               ${text || "—"}
             `,
       );

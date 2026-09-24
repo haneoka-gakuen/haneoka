@@ -49,15 +49,7 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
     route: "/catalog",
     icon: "category",
     label: "catalog",
-    match: ["/catalog", "/community/songs-bestdori", "/community/playlists"],
-    exclude: ["/catalog/stories"],
-  },
-  {
-    id: "stories",
-    route: "/catalog/stories",
-    icon: "auto_stories",
-    label: "stories",
-    match: ["/catalog/stories", "/community/stories-bestdori"],
+    match: ["/catalog", "/community/stories-bestdori", "/community/songs-bestdori", "/community/playlists"],
   },
   {
     id: "community",
@@ -69,7 +61,7 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
   },
 ];
 
-export const NAV_SECTIONS: NavSection[] = [
+const sections: NavSection[] = [
   {
     id: "library",
     label: "library",
@@ -180,6 +172,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
 ];
+
+const library = sections.find((section) => section.id === "library")!;
+library.items.push(
+  ...sections.filter((section) => ["collection", "game"].includes(section.id)).flatMap((section) => section.items),
+);
+export const NAV_SECTIONS = sections.filter((section) => !["collection", "game"].includes(section.id));
 
 /** Catalog hub cards: every browsable collection with the catalog resource that counts it. */
 export const CATALOG_HUB: Array<NavItem & { resource?: string; countKey?: string }> = [
