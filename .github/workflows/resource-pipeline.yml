@@ -8,6 +8,11 @@ on:
         required: true
         default: intl
         type: string
+      github_environment:
+        description: GitHub Actions environment for the run
+        required: false
+        default: resource-intl
+        type: string
       package_r2_key:
         description: Private R2 CAS key of one APK, APKS, or XAPK file
         required: false
