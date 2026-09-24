@@ -35,7 +35,16 @@ def _http_safe_url(url: str) -> str:
 def _remote_url(parts: list[str], remote_root: str = "") -> str:
     if parts and urlsplit(parts[-1]).scheme.lower() in {"http", "https"}:
         values = list(reversed(parts))
-        return _http_safe_url(f"{values[0]}/{'/'.join(values[1:])}")
+        url = _http_safe_url(f"{values[0]}/{'/'.join(values[1:])}")
+        # Unity leaves the remote load path as a placeholder origin
+        # (https://dummy.net/asset/<platform>); re-anchor those bundles onto the
+        # configured CDN root the same way the RuntimePath token is resolved.
+        parsed = urlsplit(url)
+        if parsed.hostname == "dummy.net" and remote_root:
+            segments = parsed.path.split("/", 3)
+            tail = segments[3] if len(segments) == 4 else parsed.path.lstrip("/")
+            return _http_safe_url(f"{remote_root.rstrip('/')}/{tail}")
+        return url
     # Unity Addressables stores remote bundle paths as
     # "<bundle>/{UnityEngine.AddressableAssets.Addressables.RuntimePath}/Android";
     # the {RuntimePath} token resolves to the CDN RemoteLoadPath at runtime. With no
