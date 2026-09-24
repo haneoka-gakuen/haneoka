@@ -219,12 +219,18 @@ export class ImageGallery extends LitElement {
           <span class="image-gallery__expand" aria-hidden="true">${icon("zoom_in", 20)}</span>
         </a>
         <div class="image-gallery__toolbar">
-          ${iconButton({ icon: "chevron_left", label: uiText(this.locale, "previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) })}
+          ${this.images.length > 1 ? iconButton({ icon: "chevron_left", label: uiText(this.locale, "previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) }) : nothing}
           <span class="image-gallery__caption">
             <strong>${active.label}</strong>
-            <small>${index + 1} / ${this.images.length}</small>
+            ${
+              this.images.length > 1
+                ? html`
+                    <small>${index + 1} / ${this.images.length}</small>
+                  `
+                : nothing
+            }
           </span>
-          ${iconButton({ icon: "chevron_right", label: uiText(this.locale, "nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) })}
+          ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
           <a
             class="icon-button"
             href=${this.dimensions.get(active.source)?.src || candidates[0]}

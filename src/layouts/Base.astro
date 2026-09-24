@@ -9,7 +9,7 @@ import "@fontsource-variable/noto-sans-kr/wght.css";
 import { ClientRouter } from "astro:transitions";
 import { DEFAULT_LOCALE, LOCALES, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-import { canonicalPath, pageDescription, shouldNoindex } from "../lib/seo";
+import { canonicalPath, pageDescription, pageStructuredData, shouldNoindex } from "../lib/seo";
 interface Props {
   locale: Locale;
   title: string;
@@ -40,6 +40,14 @@ const descriptionValues = Object.fromEntries(
   }),
 );
 const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE))}`;
+const structuredValues = Object.fromEntries(
+  LOCALES.map((target) => [
+    target,
+    JSON.stringify(
+      pageStructuredData(origin, route, target, titleValues[target], descriptionValues[target]),
+    ).replaceAll("<", "\\u003c"),
+  ]),
+);
 ---
 
 <!doctype html>
@@ -120,12 +128,38 @@ const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE
     </script>
     <title data-i18n-values={JSON.stringify(titleValues)}>{fullTitle}</title>
     <meta name="description" content={descriptionValues[locale]} data-i18n-values={JSON.stringify(descriptionValues)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="haneoka" />
+    <meta property="og:title" content={fullTitle} data-i18n-values={JSON.stringify(titleValues)} />
+    <meta
+      property="og:description"
+      content={descriptionValues[locale]}
+      data-i18n-values={JSON.stringify(descriptionValues)}
+    />
+    <meta property="og:url" content={canonicalHref} />
+    <meta property="og:image" content={`${origin}/images/haneoka-social-card.png`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} data-i18n-values={JSON.stringify(titleValues)} />
+    <meta
+      name="twitter:description"
+      content={descriptionValues[locale]}
+      data-i18n-values={JSON.stringify(descriptionValues)}
+    />
+    <meta name="twitter:image" content={`${origin}/images/haneoka-social-card.png`} />
     <meta name="theme-color" content="#f0edf1" />
     <meta name="color-scheme" content="light dark" />
     {shouldNoindex(route) && <meta name="robots" content="noindex,follow" />}
     <link rel="canonical" href={canonicalHref} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/site.webmanifest" />
+    {!shouldNoindex(route) && (
+      <script
+        type="application/ld+json"
+        is:inline
+        data-i18n-values={JSON.stringify(structuredValues)}
+        set:html={structuredValues[locale]}
+      ></script>
+    )}
   </head>
   <body>
     <slot />
@@ -146,7 +180,7 @@ const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE
             try {
               const v = JSON.parse(n.getAttribute("data-i18n-values") || "{}");
               if (typeof v[l] === "string") {
-                if (n instanceof HTMLMetaElement && n.name === "description") n.content = v[l];
+                if (n instanceof HTMLMetaElement) n.content = v[l];
                 else n.textContent = v[l];
               }
             } catch {}

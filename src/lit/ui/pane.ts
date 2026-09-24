@@ -14,6 +14,7 @@ import { iconButton } from "./controls";
 export interface PaneOptions {
   /** Heading. `title` is the entity, `subtitle` its supporting line. */
   title: unknown;
+  titleLanguage?: string;
   subtitle?: unknown;
   /** Presentation hook: `.sheet--detail-{kind}`. */
   kind?: string;
@@ -59,7 +60,7 @@ export function renderPane(options: PaneOptions): TemplateResult {
           onClick: options.onClose,
         })}
         <span class="sheet__title" id=${headingId}>
-          <strong>${options.title}</strong>
+          <strong lang=${options.titleLanguage || nothing}>${options.title}</strong>
           ${
             options.subtitle
               ? html`

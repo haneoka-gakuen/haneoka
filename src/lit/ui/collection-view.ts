@@ -22,6 +22,7 @@ export const viewSwitch = (locale: string, value: CollectionView, onSelect: (vie
 export interface CollectionListEntry {
   id: string;
   title: unknown;
+  titleLanguage?: string;
   subtitle: unknown;
   image?: string;
   media?: unknown;
@@ -46,7 +47,7 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
                 }
               </span>
               <span class="list-item__body">
-                <strong class="list-item__headline">${entry.title}</strong>
+                <strong class="list-item__headline" lang=${entry.titleLanguage || nothing}>${entry.title}</strong>
                 <span class="list-item__supporting">${entry.subtitle || "—"}</span>
               </span>
               <span class="list-item__trailing">${entry.trailing ?? nothing}${icon("chevron_right", 20)}</span>

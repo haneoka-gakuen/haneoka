@@ -105,56 +105,83 @@
     display: grid;
     width: 100%;
     min-width: 0;
-    max-width: 100%;
-    grid-auto-flow: column;
-    /* min-content, not max-content: the floor is the longest unbreakable word
-   * (a number, a rank letter), so a long reward name wraps in its own column
-   * instead of setting a width floor for all five. The strip still scrolls
-   * when even those minimums do not fit. */
-    grid-auto-columns: minmax(min-content, 1fr);
-    scrollbar-width: thin;
-    box-sizing: border-box;
-    padding: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+    gap: 20px 16px;
+    padding: 8px 0;
     margin: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-inline: contain;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface-container-lowest);
-    scrollbar-width: thin;
   }
   .song-data-grid > div {
-    min-width: max-content;
-    padding: 8px;
-    border-right: 1px solid var(--md-sys-color-outline-variant);
-    text-align: center;
-  }
-  .song-data-grid > div:last-child {
-    border-right: 0;
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 6px;
   }
   .song-data-grid dt {
-    display: flex;
-    min-height: 25.3px;
-    align-items: center;
-    justify-content: center;
-    color: var(--md-sys-color-outline);
-    font-size: var(--md-sys-typescale-label-small-size);
-    font-weight: 500;
-    line-height: var(--md-sys-typescale-label-small-line-height);
-    letter-spacing: 0;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 12px/18px var(--app-font);
   }
   .song-data-grid dd {
-    margin: 3px 0 0;
-    overflow: visible;
-    font-size: var(--md-sys-typescale-body-small-size);
-    line-height: var(--md-sys-typescale-body-small-line-height);
-    white-space: nowrap;
+    margin: 0;
+    min-width: 0;
+    font: 500 15px/24px var(--app-font);
+    overflow-wrap: anywhere;
+  }
+  .song-meta-strip dd {
+    font: 600 22px/28px var(--app-font);
+    font-variant-numeric: tabular-nums;
   }
   .song-detail-facts {
-    grid-template-columns: repeat(4, minmax(min-content, 1fr));
-    grid-auto-flow: initial;
-    grid-auto-columns: initial;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    padding-block: 16px;
+  }
+  .song-detail-subheading {
+    margin: 12px 0 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 500 14px/20px var(--app-font);
+  }
+  .song-reward-list {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .song-reward-list > li {
+    display: grid;
+    grid-template-columns: 36px minmax(90px, 1fr) minmax(0, 1.3fr);
+    gap: 12px;
+    align-items: center;
+    min-height: 64px;
+    padding-block: 8px;
+  }
+  .song-reward-list > li + li {
+    border-top: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 50%, transparent);
+  }
+  .song-reward-list > li > img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+  .song-reward-list__condition {
+    display: grid;
+    gap: 2px;
+  }
+  .song-reward-list__condition strong {
+    font: 600 16px/24px var(--app-font);
+  }
+  .song-reward-list__condition small {
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 12px/18px var(--app-font);
+  }
+  .song-reward-list .song-reward-value {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font: 400 14px/20px var(--app-font);
+  }
+  .song-combo-list > li {
+    grid-template-columns: minmax(90px, 1fr) minmax(0, 1.3fr);
   }
   /* ---------- detail description (ported) ---------- */
   .detail-description {
@@ -165,19 +192,17 @@
 
   /* ---------- character detail (ported) ---------- */
   character-detail-archive {
-    display: grid;
+    display: block;
     min-width: 0;
     min-height: 0;
-    grid-template-rows: 52px minmax(0, 1fr);
-    overflow: hidden;
+    overflow: visible;
   }
   .character-detail-panel {
     min-width: 0;
     min-height: 0;
     padding: 17px 2px 18px;
-    overflow: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+    overflow: visible;
+    overscroll-behavior: auto;
   }
   .character-detail-facts {
     margin-top: 0;
@@ -268,22 +293,24 @@
   .skill-row {
     display: flex;
     min-height: 56px;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     padding: 12px 16px;
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container-lowest);
   }
-  .skill-row img {
+  .skill-row > img {
     width: 40px;
     height: 40px;
     object-fit: contain;
+    flex: 0 0 40px;
   }
-  .skill-row span {
+  .skill-row > span {
     display: grid;
     min-width: 0;
     gap: 3px;
+    flex: 1;
   }
   .skill-row small {
     color: var(--md-sys-color-on-surface-variant);

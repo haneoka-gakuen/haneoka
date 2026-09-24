@@ -69,17 +69,24 @@
   --tile-gap: 8px;
 }
 
-:root:lang(en) {
+:where([lang]):lang(en) {
   --app-font:
     "Roboto Variable", "Noto Sans Variable", "Noto Sans JP Variable", "Noto Sans SC Variable", "Noto Sans KR Variable",
     "Helvetica Neue", Arial, sans-serif;
 }
-:root:lang(zh-TW) {
+:where([lang]):is(:lang(zh-TW), :lang(zh-Hant)) {
   --app-font: "Roboto Variable", "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
-:root:lang(zh-CN) {
+:where([lang]):is(:lang(zh-CN), :lang(zh-Hans)) {
   --app-font: "Roboto Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
-:root:lang(ko) {
+:where([lang]):lang(ko) {
   --app-font: "Roboto Variable", "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+}
+
+:where([lang]):lang(ja) {
+  --app-font: "Roboto Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN", sans-serif;
+}
+:where([lang]) {
+  font-family: var(--app-font);
 }

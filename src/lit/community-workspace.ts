@@ -1,8 +1,11 @@
-import { LitElement, html, nothing } from "lit";
+import { resolvePlaylistTracks } from "../lib/playlist-tracks";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
+import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
-import { PaneFocus } from "./ui/pane";
+import { PaneFocus, renderPane } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { catalogUrl, localizedText, preferredLocale } from "./shared/catalog";
+import { catalogUrl, currentReleaseServer, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
@@ -106,6 +109,12 @@ export class CommunityWorkspace extends LitElement {
   declare editorReady: boolean;
   declare session: Value | null;
   private copy: Value = {};
+  private onLocale = () => {
+    this.locale = preferredLocale(this.locale);
+    const labels = JSON.parse(this.labels || "{}") as Record<string, Value>;
+    this.copy = labels[this.locale] || labels.ja || {};
+    this.requestUpdate();
+  };
   private published = false;
   constructor() {
     super();
@@ -138,23 +147,76 @@ export class CommunityWorkspace extends LitElement {
     this.session = null;
   }
   private paneFocus = new PaneFocus();
+  private disposeSongDisplay?: () => void;
+  private releaseLocation?: () => void;
+  private playlistSequence = 0;
+  private restorePlaylist = () => {
+    if (this.mode !== "playlists") return;
+    const id = new URLSearchParams(location.search).get("playlist") || "";
+    if (id) void this.openPlaylist(id, false);
+    else {
+      this.playlistSequence++;
+      this.document = null;
+      this.routeKind = "collection";
+      this.busy = false;
+    }
+  };
+  private async openPlaylist(id: string, push = true) {
+    if (push) {
+      const params = new URLSearchParams(location.search);
+      params.set("playlist", id);
+      openDetailLocation(`${location.pathname}?${params}`);
+    }
+    const sequence = ++this.playlistSequence;
+    this.entityId = id;
+    this.routeKind = "playlist-detail";
+    this.document = this.items.find((item) => String(item.id || item.playlistId) === id) || null;
+    this.message = "";
+    if (!this.document) {
+      this.message = this.label("unavailable", "Unavailable");
+      return;
+    }
+    const playlist = this.document;
+    this.busy = true;
+    try {
+      const tracks = await resolvePlaylistTracks(this.playlistTracks(playlist), currentReleaseServer());
+      if (this.isConnected && sequence === this.playlistSequence) this.document = { ...playlist, tracks };
+    } catch (error) {
+      if (sequence === this.playlistSequence) this.message = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (sequence === this.playlistSequence) this.busy = false;
+    }
+  }
+  private closePlaylist() {
+    const params = new URLSearchParams(location.search);
+    params.delete("playlist");
+    closeDetailLocation(`${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+
   createRenderRoot() {
     return this;
   }
   updated() {
     // The dialog is modal: focus stays inside it and Escape closes it.
     this.paneFocus.sync(
-      this.dialog ? this.querySelector<HTMLElement>("[data-overlay-pane]") : null,
-      () => (this.dialog = null),
+      this.querySelector<HTMLElement>(this.dialog ? "[data-overlay-pane]" : "[data-detail-pane]"),
+      () => (this.dialog ? (this.dialog = null) : this.closePlaylist()),
     );
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
+    this.releaseLocation?.();
+    removeEventListener("haneoka:locale-ready", this.onLocale);
+    this.playlistSequence++;
     this.paneFocus.detach();
     if (this.routeKind === "post-new" && !this.published && this.uploads.length) void this.discardUploads();
     super.disconnectedCallback();
   }
   connectedCallback() {
     super.connectedCallback();
+    addEventListener("haneoka:locale-ready", this.onLocale);
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
+    this.releaseLocation = observeDetailLocation(this.restorePlaylist, this);
     this.locale = preferredLocale(this.locale);
     const labels = JSON.parse(this.labels || "{}") as Record<string, Value>;
     this.copy = labels[this.locale] || labels.ja || {};
@@ -179,6 +241,10 @@ export class CommunityWorkspace extends LitElement {
         this.mode = "playlists";
       }
       const query = new URLSearchParams(location.search);
+      if (this.mode === "playlists" && query.has("playlist")) {
+        this.entityId = query.get("playlist") || "";
+        this.routeKind = "playlist-detail";
+      }
       this.query = query.get("q") || "";
       const scope = query.get("scope");
       if (scope === "latest" || scope === "following" || scope === "recommended") this.feedScope = scope;
@@ -320,7 +386,7 @@ export class CommunityWorkspace extends LitElement {
                   thumbnail: String(tracks[0]?.jacketThumbUrl || tracks[0]?.jacketUrl || ""),
                   tracks: tracks.map((track) => ({
                     ...track,
-                    title: localizedText(track.musicTitle || track.title, this.locale),
+                    title: track.musicTitle || track.title,
                     artist: name,
                     detailPath:
                       prefix === "bestdori"
@@ -335,12 +401,8 @@ export class CommunityWorkspace extends LitElement {
             ...playlists(bestdoriSongs, bestdoriBands, "bestdori", "GBP"),
           ];
         }
-        this.document =
-          this.routeKind === "playlist-detail"
-            ? this.items.find((item) => String(item.id || item.playlistId || "") === this.entityId) || null
-            : null;
-        if (this.document) this.setPageTitle(this.playlistTitle(this.document));
         this.phase = "ready";
+        if (this.routeKind === "playlist-detail") await this.openPlaylist(this.entityId, false);
         return;
       }
       const response = await fetch(this.endpoint(append), {
@@ -389,7 +451,11 @@ export class CommunityWorkspace extends LitElement {
     const value = path
       .split(".")
       .reduce<unknown>((node, key) => (node && typeof node === "object" ? (node as Value)[key] : undefined), this.copy);
-    return typeof value === "string" && value ? value : fallback;
+    return typeof value === "string" && value
+      ? value
+      : uiText(this.locale, path) !== path
+        ? uiText(this.locale, path)
+        : fallback;
   }
   private async request(path: string, init: RequestInit = {}) {
     const headers = new Headers({ accept: "application/json" });
@@ -1719,95 +1785,101 @@ ${String(comment.body || "")}</textarea>
       document.body.append(dock);
     }
     const queue = tracks.map((track) => ({
-      id: String(track.musicId || track.id || ""),
-      title: localizedText(track.title || track.musicTitle || track.name, this.locale) || String(track.id || ""),
+      id: String(track.id || track.musicId || ""),
+      title: songTitle(track, this.locale).text,
+      titleSource: track.musicTitle || track.title || track.name,
+      titleLanguage: songTitle(track, this.locale).locale,
+      artistSource: track.artist || track.bandName,
       artist: localizedText(track.artist || track.bandName, this.locale),
       cover: String(track.jacketUrl || track.jacketThumbUrl || track.cover || ""),
       url: String(track.musicUrl || track.url || ""),
       detailPath: String(track.detailPath || ""),
     }));
-    const startId = requested ? String(requested.musicId || requested.id || "") : "";
+    const startId = requested ? String(requested.id || requested.musicId || "") : "";
     const first = (startId && queue.find((entry) => entry.id === startId)) || queue[0]!;
     await dock.playTrack(first, queue);
   }
-  private renderPlaylists() {
+  private renderPlaylists(collectionOnly = false): TemplateResult {
     const playlist = this.document;
-    if (this.routeKind === "playlist-detail" && playlist) {
-      const tracks = this.playlistTracks(playlist);
+    if (!collectionOnly && this.routeKind === "playlist-detail") {
+      const tracks = playlist ? this.playlistTracks(playlist) : [];
       return html`
-        <section class="page page--compact playlist-detail">
-          <header class="playlist-hero">
-            <span class="playlist-hero__art">
-              ${
-                playlist.thumbnail
-                  ? html`
-                      <img src=${String(playlist.thumbnail)} alt="" loading="lazy" />
-                    `
-                  : icon("queue_music", 32)
-              }
-            </span>
-            <span class="playlist-hero__copy">
-              <h2>${String(playlist.title || playlist.titleText || this.entityId)}</h2>
-              <p>${this.label("songs", "Songs")} · ${tracks.length}</p>
-            </span>
-            ${
-              tracks.some((track) => track.musicUrl || track.url)
-                ? html`
-                    <button class="button" @click=${() => this.playPlaylist(playlist)}>
-                      ${icon("playlist_play", 18)}${this.label("playlistPage.playAll", "Play all")}
-                    </button>
-                  `
-                : nothing
-            }
-          </header>
-          <ul class="list list--divided" role="list">
-            ${tracks.map(
-              (track, index) => html`
-                <li>
-                  <a
-                    class="list-item list-item--interactive"
-                    href=${String(track.detailPath || `/catalog/songs?song=${track.musicId || track.id}`)}
-                  >
-                    <span class="list-item__leading">
-                      <span class="list-item__marker">${index + 1}</span>
-                    </span>
-                    <span class="list-item__body">
-                      <span class="list-item__headline">
-                        ${localizedText(track.title || track.musicTitle, this.locale) || String(track.id || "")}
-                      </span>
+        ${this.renderPlaylists(true)}${renderPane({
+          title: playlist ? this.playlistTitle(playlist) : this.entityId,
+          open: true,
+          backLabel: this.label("close", "Close"),
+          onClose: () => this.closePlaylist(),
+          body: html`
+            <section class="page page--compact playlist-detail">
+              <header class="playlist-hero">
+                <span class="playlist-hero__art">
+                  ${
+                    playlist?.thumbnail
+                      ? html`
+                          <img src=${String(playlist?.thumbnail)} alt="" loading="lazy" />
+                        `
+                      : icon("queue_music", 32)
+                  }
+                </span>
+                <span class="playlist-hero__copy">
+                  <h2>${playlist ? this.playlistTitle(playlist) : this.entityId}</h2>
+                  <p>${this.label("songs", "Songs")} · ${tracks.length}</p>
+                </span>
+                ${
+                  tracks.some((track) => track.musicUrl || track.url)
+                    ? html`
+                        <button class="button" @click=${() => playlist && this.playPlaylist(playlist)}>
+                          ${icon("playlist_play", 18)}${this.label("playlistPage.playAll", "Play all")}
+                        </button>
+                      `
+                    : nothing
+                }
+              </header>
+              ${this.busy ? loadingState(this.label("loading", "Loading")) : nothing}
+              ${this.message ? errorState(this.message, this.label("retry", "Retry"), () => void this.openPlaylist(this.entityId, false)) : nothing}
+              <ul class="list list--divided" role="list">
+                ${tracks.map(
+                  (track, index) => html`
+                    <li class="playlist-track">
+                      <a
+                        class="list-item list-item--two-line list-item--interactive"
+                        href=${String(track.detailPath || `/catalog/songs?song=${track.musicId || track.id}`)}
+                      >
+                        <span class="list-item__leading"><span class="list-item__marker">${index + 1}</span></span>
+                        <span class="list-item__body">
+                          <span class="list-item__headline" lang=${songTitle(track, this.locale).locale}>
+                            ${songTitle(track, this.locale).text}
+                          </span>
+                          <span class="list-item__supporting">${this.trackArtist(track)}</span>
+                        </span>
+                      </a>
                       ${
-                        this.trackArtist(track)
+                        track.musicUrl || track.url
                           ? html`
-                              <span class="list-item__supporting">${this.trackArtist(track)}</span>
-                            `
-                          : nothing
-                      }
-                    </span>
-                    ${
-                      track.musicUrl || track.url
-                        ? html`
-                            <span class="list-item__trailing">
                               <button
                                 class="icon-button"
                                 type="button"
-                                aria-label=${this.label("play", "Play")}
-                                @click=${(event: Event) => {
-                                  event.preventDefault();
-                                  void this.playPlaylist(playlist, index);
+                                aria-label=${`${this.label("play", "Play")} · ${songTitle(track, this.locale).text}`}
+                                @click=${() => {
+                                  if (playlist) void this.playPlaylist(playlist, index);
                                 }}
                               >
                                 ${icon("play_arrow", 20)}
                               </button>
-                            </span>
-                          `
-                        : nothing
-                    }
-                  </a>
-                </li>
-              `,
-            )}
-          </ul>
-        </section>
+                            `
+                          : html`
+                              <span class="playlist-track__unavailable">
+                                ${this.label("playlistPage.audioUnavailable", "Audio unavailable")}
+                              </span>
+                            `
+                      }
+                    </li>
+                  `,
+                )}
+              </ul>
+            </section>
+          `,
+        })}
       `;
     }
     const items = this.playlistItems();
@@ -1825,7 +1897,7 @@ ${String(comment.body || "")}</textarea>
       ],
     ] as const;
     return html`
-      <section class="page">
+      <section class="page" ?inert=${this.routeKind === "playlist-detail"}>
         <header class="playlist-toolbar">
           <label class="search-bar">
             ${icon("search", 20)}
@@ -1844,7 +1916,7 @@ ${String(comment.body || "")}</textarea>
             bands.length
               ? html`
                   <md-outlined-select
-                    label=${this.label("playlistPage.band", "Band")}
+                    label=${this.label("playlistPage.bands", "Band")}
                     value=${this.playlistBand}
                     @change=${(event: Event) => {
                       this.playlistBand = String((event.target as HTMLElement & { value?: string }).value || "");
@@ -1852,7 +1924,7 @@ ${String(comment.body || "")}</textarea>
                     }}
                   >
                     <md-select-option value="">
-                      <div slot="headline">${this.label("playlistPage.allBands", "All bands")}</div>
+                      <div slot="headline">${this.label("all", "All")}</div>
                     </md-select-option>
                     ${bands.map(
                       (band) => html`
@@ -1864,7 +1936,7 @@ ${String(comment.body || "")}</textarea>
               : nothing
           }
           <md-outlined-select
-            label=${this.label("playlistPage.sort", "Sort")}
+            label=${this.label("sort", "Sort")}
             value=${this.playlistSort}
             @change=${(event: Event) => {
               this.playlistSort = String((event.target as HTMLElement & { value?: string }).value || "order");
@@ -1874,7 +1946,7 @@ ${String(comment.body || "")}</textarea>
             ${["order", "id", "title", "type", "songs", "release"].map(
               (sort) => html`
                 <md-select-option value=${sort}>
-                  <div slot="headline">${this.label(`playlistPage.sorts.${sort}`, sort)}</div>
+                  <div slot="headline">${this.label(sort === "songs" ? "playlistPage.tracks" : sort, sort)}</div>
                 </md-select-option>
               `,
             )}
@@ -1895,7 +1967,9 @@ ${String(comment.body || "")}</textarea>
             ([group, entries]) => html`
               <section class="playlist-group">
                 <header>
-                  <h2>${this.label(`playlistPage.groups.${group}`, group)}</h2>
+                  <h2>
+                    ${this.label(group === "band" ? "playlistPage.bands" : group === "stage-challenge" ? "playlistPage.stageChallenges" : "all", group)}
+                  </h2>
                   <span>${entries.length}</span>
                 </header>
                 <!-- A playlist is a name and a track count. That is a list
@@ -1910,15 +1984,23 @@ ${String(comment.body || "")}</textarea>
                       <li>
                         <a
                           class="list-item list-item--two-line list-item--interactive"
-                          href=${`/community/playlists/${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                          href=${`/community/playlists/?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                          @click=${(event: MouseEvent) => {
+                            if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                              return;
+                            event.preventDefault();
+                            void this.openPlaylist(String(playlist.id || playlist.playlistId || ""));
+                          }}
                         >
                           <span class="list-item__avatar list-item__avatar--square">${icon("queue_music", 20)}</span>
                           <span class="list-item__body">
                             <span class="list-item__headline">${this.playlistTitle(playlist)}</span>
-                            <span class="list-item__supporting">${String(playlist.source || playlist.type || "")}</span>
+                            <span class="list-item__supporting">
+                              ${this.label(String(playlist.source || playlist.type) === "band" ? "playlistPage.systemPlaylist" : "playlistPage.inGamePlaylist", "")}
+                            </span>
                           </span>
                           <span class="list-item__trailing list-item__meta">
-                            ${this.playlistTracks(playlist).length} ${this.label("playlistPage.songs", "songs")}
+                            ${this.playlistTracks(playlist).length} ${this.label("playlistPage.tracks", "Songs")}
                           </span>
                         </a>
                       </li>

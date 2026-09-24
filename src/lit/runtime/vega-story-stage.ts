@@ -1,5 +1,7 @@
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { LitElement, html } from "lit";
+import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-assets";
+import { resolveLocalizedText } from "../../lib/localized-text";
 import { uiText } from "../shared/catalog";
 import { loadingState } from "../ui/state";
 import { createVega, type AdvStory, type VegaEngine } from "@haneoka/vega/engine";
@@ -10,7 +12,11 @@ import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { createVegaRichTextPlugin } from "@haneoka/vega-plugin-richtext";
 import { createThreeRendererPlugin } from "@haneoka/vega-renderer-three";
 import { vegaDefaultShell } from "@haneoka/vega-shell-default";
-import { vegaHaneokaTheme, HANEOKA_POST_TEXTURE_ASSETS } from "@haneoka/vega-theme-haneoka";
+import {
+  vegaHaneokaTheme,
+  createHaneokaThemeAssetsPlugin,
+  HANEOKA_POST_TEXTURE_ASSETS,
+} from "@haneoka/vega-theme-haneoka";
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 
 type RecordValue = Record<string, unknown>;
@@ -165,7 +171,7 @@ export class VegaStoryStage extends LitElement {
       const hydrated = hydrateStoryPayload({
         ...story,
         assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
-        runtime: merge(runtime, story.runtime),
+        runtime: resolveStoryRuntimeAssets(merge(runtime, story.runtime), server),
       }) as AdvStory;
       this.phase = "ready";
       await this.updateComplete;
@@ -179,6 +185,9 @@ export class VegaStoryStage extends LitElement {
           vegaDefaultShell,
           createThreeRendererPlugin({ postTextureAssets: HANEOKA_POST_TEXTURE_ASSETS }),
           createCubismPlugin({ adapter: cubismAdapter() }),
+          createHaneokaThemeAssetsPlugin({
+            resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
+          }),
           vegaHaneokaTheme,
         ],
       });
@@ -237,29 +246,12 @@ export class VegaStoryStage extends LitElement {
     }
   }
   private localizedTextResolver(locale: string) {
-    const languages = ["ja", "en", "zh-TW", "zh-CN", "ko"];
-    const index = Math.max(0, languages.indexOf(locale));
-    const resolve = (value: unknown): StoryResolvedText => {
-      if (Array.isArray(value)) {
-        for (const candidate of new Set([index, 0, ...value.map((_, ordinal) => ordinal)])) {
-          const resolved = resolve(value[candidate]);
-          if (resolved.text.trim()) return { text: resolved.text, lang: languages[candidate] || locale };
-        }
-        return { text: "" };
-      }
-      if (value && typeof value === "object") {
-        const record = value as RecordValue;
-        if (Array.isArray(record.values)) return resolve(record.values);
-        for (const language of new Set([locale, ...languages])) {
-          const candidate = record[language];
-          if (typeof candidate === "string" && candidate.trim()) return { text: candidate, lang: language };
-        }
-        return resolve(record.text ?? record.value ?? "");
-      }
-      return { text: value == null ? "" : String(value), lang: locale };
+    return (value: unknown): StoryResolvedText => {
+      const resolved = resolveLocalizedText(value, locale);
+      return { text: resolved.text, lang: resolved.locale };
     };
-    return resolve;
   }
+
   private async disposePlayer() {
     const engine = this.engine;
     this.engine = undefined;

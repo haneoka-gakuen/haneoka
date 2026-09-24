@@ -177,6 +177,7 @@ const japaneseLabels = JSON.stringify(
   import "@material/web/switch/switch.js";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
+  import { japaneseSongTitles, setJapaneseSongTitles } from "../lib/song-display";
   import { readReleaseServer, writeReleaseServer } from "../lib/release-server";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
@@ -188,14 +189,6 @@ const japaneseLabels = JSON.stringify(
     const controller = new AbortController();
     const { signal } = controller;
     disposeSettings = () => controller.abort();
-    const readSongDisplay = (): Record<string, unknown> => {
-      try {
-        const value = JSON.parse(localStorage.getItem("haneoka:song-display:v1") || "{}");
-        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-      } catch {
-        return {};
-      }
-    };
     const updateSummary = (group: string) => {
       const selected = settings.querySelector<HTMLInputElement>(`input[name="${group}"]:checked`);
       const output = settings.querySelector<HTMLElement>(`[data-current="${group}"]`);
@@ -248,16 +241,11 @@ const japaneseLabels = JSON.stringify(
       { signal },
     );
     const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
-    if (japanese) japanese.selected = Boolean(readSongDisplay().forceJapaneseTitles);
+    if (japanese) japanese.selected = japaneseSongTitles();
     japanese?.addEventListener(
       "change",
       () => {
-        try {
-          localStorage.setItem(
-            "haneoka:song-display:v1",
-            JSON.stringify({ ...readSongDisplay(), forceJapaneseTitles: japanese.selected }),
-          );
-        } catch {}
+        setJapaneseSongTitles(japanese.selected);
       },
       { signal },
     );

@@ -1,31 +1,285 @@
 @layer components {
+  character-pair-board {
+    display: block;
+    min-width: 0;
+  }
   .character-pair {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr);
     gap: 12px;
-    align-items: center;
-    padding: 20px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 24px;
-    background: var(--md-sys-color-surface-container-low);
-  }
-  .character-pair md-outlined-select {
     min-width: 0;
-    width: 100%;
   }
-  .character-pair md-select-option img {
-    border-radius: 50%;
+  .character-pair__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .character-pair__picker {
+    flex: 1;
+    min-width: 160px;
+  }
+  .character-pair__picker > summary,
+  .character-pair__identity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 16px;
+    border-radius: 24px;
+    background: var(--md-sys-color-surface-container);
+    cursor: pointer;
+    list-style: none;
+  }
+  .character-pair__picker > summary::-webkit-details-marker {
+    display: none;
+  }
+  .character-pair__picker > summary > span {
+    flex: 1;
+  }
+  .character-pair__picker > summary > img,
+  .character-pair__identity > img {
+    width: 32px;
+    height: 32px;
     object-fit: contain;
   }
+  .character-pair__identity {
+    flex: 1;
+    background: transparent;
+    cursor: default;
+  }
+  .character-pair__choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    padding: 12px;
+    max-height: 340px;
+    overflow: auto;
+  }
+  .character-pair__choices button {
+    display: grid;
+    place-items: center;
+    gap: 4px;
+    padding: 8px;
+    border: 2px solid transparent;
+    border-radius: 16px;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container);
+  }
+  .character-pair__choices button[aria-pressed="true"] {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .character-pair__choices img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+  }
+  .character-pair__bands {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px;
+  }
+  .character-pair__bands button {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    min-width: 64px;
+    min-height: 48px;
+    padding: 8px 16px;
+    border: 2px solid transparent;
+    border-radius: 20px;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container);
+  }
+  .character-pair__bands button[aria-pressed="true"] {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .character-pair__bands img {
+    width: auto;
+    max-width: 120px;
+    height: 32px;
+    object-fit: contain;
+  }
+  .story-board {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+
+  /* ---------- Home scene: a live Cubism stage over its own backdrop ---------- */
+  .story-scene {
+    height: clamp(220px, 38dvh, 420px);
+    /* Not a surface role: this is a lit stage, and the game's own backgrounds
+     assume a dark surround in both colour schemes. */
+    background: #18202a;
+  }
+  .story-scene > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .story-scene__runtime {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
+  .story-scene__runtime canvas {
+    width: 100%;
+    height: 100%;
+  }
+  .story-scene__runtime.ready > .progress,
+  .story-scene__runtime.failed > .progress,
+  .story-scene__runtime.ready > md-circular-progress,
+  .story-scene__runtime.failed > md-circular-progress {
+    display: none;
+  }
+  .story-scene__replay {
+    position: absolute;
+    z-index: 3;
+    top: 12px;
+    right: 12px;
+    color: #fff;
+    background: color-mix(in srgb, #101820 76%, transparent);
+    box-shadow: var(--md-sys-elevation-level1);
+  }
+  .story-scene__label {
+    position: absolute;
+    z-index: 2;
+    right: 16px;
+    bottom: 16px;
+    display: grid;
+    gap: 2px;
+    padding: 10px 14px;
+    color: #fff;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: color-mix(in srgb, #101820 76%, transparent);
+    box-shadow: var(--md-sys-elevation-level2);
+    backdrop-filter: blur(12px);
+  }
+  .story-scene__label small {
+    color: #d7dde2;
+  }
+
+  /* ---------- Friendship board ----------
+   The game's own photo board. Every hit target is placed from the asset's
+   measured coordinates (--slot-x/--slot-y for a portrait, --arrow-x/--arrow-y
+   and --arrow-rotation for the ribbon that points at it), so the board is
+   sized to its source ratio and the container query keeps it whole. */
+  .story-board {
+    height: clamp(240px, 46dvh, 460px);
+    background-color: var(--md-sys-color-surface-container-low);
+    background-image: var(--friendship-stage);
+    background-position: center;
+    background-size: cover;
+    container-type: size;
+  }
+  .story-board__stage {
+    position: relative;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: 1312 / 964;
+    width: min(calc(100cqw - 18px), calc((100cqh - 12px) * 1.360996));
+  }
+  .story-board__background {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
+  }
+  .story-board__logo {
+    position: absolute;
+    z-index: 5;
+    top: 8.92%;
+    left: 13.35%;
+    width: 19.05%;
+    height: 14.52%;
+    object-fit: contain;
+  }
+  .story-board__lead {
+    position: absolute;
+    z-index: 1;
+    bottom: -3.8%;
+    left: 50%;
+    width: 78.05%;
+    height: 106.22%;
+    object-fit: contain;
+    object-position: center bottom;
+    transform: translateX(-50%);
+    filter: drop-shadow(0 4px 3px color-mix(in srgb, var(--md-sys-color-shadow) 28%, transparent));
+  }
+  .story-board__partners {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+  }
+  .story-board__partners button {
+    position: absolute;
+    top: var(--slot-y);
+    left: var(--slot-x);
+    width: 26.68%;
+    aspect-ratio: 1;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    transform: translate(-50%, -50%);
+  }
+  .story-board__partners button > span {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    display: block;
+    border-radius: 50%;
+  }
+  .story-board__partners button > span > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* The game marks the chosen partner with a rim light, not a border. */
+  .story-board__partners button.is-selected > span {
+    filter: drop-shadow(0 0 2px white) drop-shadow(0 0 5px #48dbea) drop-shadow(0 0 9px rgb(54 157 229 / 72%));
+  }
+  .story-board__partners button:focus-visible > span {
+    outline: 3px solid var(--md-sys-color-primary);
+    outline-offset: 3px;
+  }
+  .story-board__arrow {
+    position: absolute;
+    z-index: 1;
+    top: var(--arrow-y);
+    left: var(--arrow-x);
+    width: 45.71%;
+    height: 22.86%;
+    object-fit: contain;
+    transform: translate(-50%, -50%) rotate(var(--arrow-rotation));
+  }
+  .story-board {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 24px;
+  }
+  .story-board__stage {
+    margin: auto;
+  }
+  .story-board img[hidden] {
+    display: none;
+  }
   @media (max-width: 599px) {
-    .character-pair {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 8px;
-      padding: 16px;
-      border-radius: 20px;
-    }
-    .character-pair > .icon-button {
-      justify-self: center;
+    .story-board {
+      height: min(420px, 95vw);
     }
   }
 }

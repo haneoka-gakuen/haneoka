@@ -73,3 +73,33 @@
     object-fit: contain;
   }
 }
+
+@layer utilities {
+  @media (max-width: 599px) {
+    .collection:is(
+      .collection--member,
+      .collection--support,
+      .collection--song,
+      .collection--character,
+      .collection--anon,
+      .collection--band,
+      .collection--item,
+      .collection--band-item,
+      .collection--model,
+      .collection--spine,
+      .collection--live2d
+    ) {
+      --tile-min: 130px;
+      --tile-gap: 10px;
+    }
+    .collection:not(.collection--rail) .tile__identity {
+      padding: 10px 12px;
+    }
+    .card-stat-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .spec-list--split:has(> div) {
+      gap: 16px;
+    }
+  }
+}

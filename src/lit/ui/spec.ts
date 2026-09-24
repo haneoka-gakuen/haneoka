@@ -39,8 +39,10 @@ export function specList(rows: ReadonlyArray<SpecRow | null | undefined>, option
     <dl class=${classes}>
       ${entries.map(
         (row) => html`
-          <dt class=${row.wide ? "spec-list__wide" : nothing}>${row.label}</dt>
-          <dd class=${row.wide ? "spec-list__wide" : nothing}>${row.value}</dd>
+          <div class=${row.wide ? "spec-list__wide" : nothing}>
+            <dt>${row.label}</dt>
+            <dd>${row.value}</dd>
+          </div>
         `,
       )}
     </dl>

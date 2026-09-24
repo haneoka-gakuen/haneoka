@@ -145,71 +145,23 @@
   }
   .card-stat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-    gap: 0;
-    overflow: hidden;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 16px;
+    padding-block: 8px;
   }
   .card-stat-grid div {
     display: grid;
-    gap: 2px;
-    padding: 10px 12px;
-    border-right: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface-container-lowest);
-    text-align: center;
-  }
-  .card-stat-grid div:last-child {
-    border-right: 0;
+    gap: 6px;
+    min-width: 0;
   }
   .card-stat-grid span,
   .card-stat-section > small {
     color: var(--md-sys-color-on-surface-variant);
-    font-size: var(--md-sys-typescale-label-small-size);
+    font: 400 12px/18px var(--app-font);
   }
   .card-stat-grid strong {
-    font-size: var(--md-sys-typescale-title-medium-size);
+    font: 600 22px/28px var(--app-font);
     font-variant-numeric: tabular-nums;
-  }
-  /* A card's headline facts (rarity, attribute, type, release) read as a
-   four-across strip rather than a label/value list: they are four short,
-   comparable values, and a strip lets the eye take all four at once. */
-  .sheet--detail-member .detail-section--facts .spec-list,
-  .sheet--detail-support .detail-section--facts .spec-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 96px), 1fr));
-    gap: 0;
-    overflow: hidden;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-  }
-  .sheet--detail-member .detail-section--facts .spec-list > div,
-  .sheet--detail-support .detail-section--facts .spec-list > div {
-    /* Overrides the spec list's `display: contents` so each pair becomes a
-     cell of the strip instead of two cells of a two-column grid. */
-    display: grid;
-    box-sizing: border-box;
-    min-height: 70px;
-    grid-template-columns: minmax(0, 1fr);
-    place-items: center;
-    align-content: center;
-    gap: 4px;
-    padding: 8px;
-    border-right: 1px solid var(--md-sys-color-outline-variant);
-    text-align: center;
-  }
-  .sheet--detail-member .detail-section--facts .spec-list > div:last-child,
-  .sheet--detail-support .detail-section--facts .spec-list > div:last-child {
-    border-right: 0;
-  }
-  .sheet--detail-member .detail-section--facts .spec-list :where(dt, dd),
-  .sheet--detail-support .detail-section--facts .spec-list :where(dt, dd) {
-    padding: 0;
-    border-top: 0;
-  }
-  .sheet--detail-member .detail-section--facts .spec-list dt,
-  .sheet--detail-support .detail-section--facts .spec-list dt {
-    font-size: var(--md-sys-typescale-label-small-size);
   }
   .detail-fact-mark {
     width: 28px;

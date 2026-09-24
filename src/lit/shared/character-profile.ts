@@ -1,9 +1,11 @@
+import { resolveLocalizedText } from "../../lib/localized-text";
 import { html, nothing } from "lit";
 import "../../styles/character-profile.css";
 
 type Item = Record<string, unknown>;
 export function characterProfile(options: {
   item: Item;
+  locale: string;
   name: string;
   description: string;
   catchCopy: string;
@@ -12,7 +14,7 @@ export function characterProfile(options: {
   alternateName: string;
   bandLogo?: string;
   gallery: unknown;
-  fields: Array<{ label: string; value: string }>;
+  fields: Array<{ label: string; value: string; language?: string }>;
 }) {
   return html`
     <section
@@ -36,18 +38,21 @@ export function characterProfile(options: {
                 `
               : nothing
           }
-          <h2>${options.name}</h2>
+          <h2 lang=${resolveLocalizedText(options.item.characterName, options.locale).locale}>${options.name}</h2>
           ${
             options.alternateName && options.alternateName !== options.name
               ? html`
-                  <p class="character-profile__alternate">${options.alternateName}</p>
+                  <p class="character-profile__alternate" lang="en">${options.alternateName}</p>
                 `
               : nothing
           }
           ${
             options.voiceActor
               ? html`
-                  <p class="character-profile__voice">
+                  <p
+                    class="character-profile__voice"
+                    lang=${resolveLocalizedText(options.item.voiceActor, options.locale).locale}
+                  >
                     <small>CV.</small>
                     ${options.voiceActor.replace(/^CV\s*[.．:：]\s*/iu, "")}
                   </p>
@@ -58,14 +63,24 @@ export function characterProfile(options: {
         ${
           options.catchCopy
             ? html`
-                <p class="character-profile__catch">${options.catchCopy}</p>
+                <p
+                  class="character-profile__catch"
+                  lang=${resolveLocalizedText(options.item.catchCopy, options.locale).locale}
+                >
+                  ${options.catchCopy}
+                </p>
               `
             : nothing
         }
         ${
           options.description
             ? html`
-                <p class="character-profile__description">${options.description}</p>
+                <p
+                  class="character-profile__description"
+                  lang=${resolveLocalizedText(options.item.description, options.locale).locale}
+                >
+                  ${options.description}
+                </p>
               `
             : nothing
         }
@@ -74,7 +89,7 @@ export function characterProfile(options: {
             (field) => html`
               <div>
                 <dt>${field.label}</dt>
-                <dd>${field.value}</dd>
+                <dd lang=${field.language || options.locale}>${field.value}</dd>
               </div>
             `,
           )}

@@ -1,3 +1,4 @@
+import { resolveLocalizedText } from "../lib/localized-text";
 export const LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
 export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = "ja";
@@ -13,12 +14,5 @@ export const localePath = (route: string, locale: Locale) => {
   return clean;
 };
 export function localizeValue(value: unknown, locale: Locale): string {
-  if (typeof value === "string") return value;
-  if (!Array.isArray(value)) return "";
-  for (const target of localeFallbacks(locale)) {
-    const candidate = value[LOCALES.indexOf(target)];
-    if (typeof candidate === "string" && candidate.trim()) return candidate;
-  }
-  for (const candidate of value) if (typeof candidate === "string" && candidate.trim()) return candidate;
-  return "";
+  return resolveLocalizedText(value, locale).text;
 }

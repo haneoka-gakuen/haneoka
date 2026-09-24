@@ -1,3 +1,6 @@
+import { difficultyKey } from "./ui/difficulty-picker";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
+import { resolveLocalizedText } from "../lib/localized-text";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
 import { facet } from "./ui/facet";
@@ -233,6 +236,7 @@ export class CatalogScreen extends LitElement {
     playingSong: { state: true },
     activeMedia: { state: true },
     detailDifficulty: { state: true },
+    selectedSongDifficulty: { state: true },
     detailLevel: { state: true },
     detailTraining: { state: true },
     detailAwakening: { state: true },
@@ -269,6 +273,7 @@ export class CatalogScreen extends LitElement {
   declare playingSong: string;
   declare activeMedia: string;
   declare detailDifficulty: number;
+  declare selectedSongDifficulty: string;
   declare detailLevel: number;
   declare detailTraining: number;
   declare detailAwakening: number;
@@ -302,6 +307,7 @@ export class CatalogScreen extends LitElement {
   private restoreLocation = () => {
     const params = new URLSearchParams(location.search);
     this.view = collectionView(params.get("view"));
+    this.selectedSongDifficulty = params.get("chartDifficulty") || "expert";
     const id = params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
       this.restoreDetailQuery();
@@ -362,6 +368,7 @@ export class CatalogScreen extends LitElement {
     this.playingSong = "";
     this.activeMedia = "full";
     this.detailDifficulty = 3;
+    this.selectedSongDifficulty = "expert";
     this.detailLevel = 1;
     this.detailTraining = 1;
     this.detailAwakening = 1;
@@ -380,9 +387,20 @@ export class CatalogScreen extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private disposeSongDisplay?: () => void;
+  private onLocale = () => {
+    this.settings = { ...this.settings, locale: preferredLocale() };
+    this.settings.labels = this.settings.labelsByLocale?.[this.settings.locale] || this.settings.labels;
+    this.requestUpdate();
+  };
   connectedCallback() {
     super.connectedCallback();
-    this.releaseLocation = observeDetailLocation(this.restoreLocation);
+    this.disposeSongDisplay = observeSongDisplay(() => {
+      this.resultCache = undefined;
+      this.requestUpdate();
+    });
+    addEventListener("haneoka:locale-ready", this.onLocale);
+    this.releaseLocation = observeDetailLocation(this.restoreLocation, this);
     void Promise.all([
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
@@ -405,6 +423,7 @@ export class CatalogScreen extends LitElement {
       this.profile = profiles[this.settings.resource] ?? fallbackProfile;
       const params = new URLSearchParams(location.search);
       this.query = params.get("q") ?? "";
+      this.selectedSongDifficulty = params.get("chartDifficulty") || "expert";
       this.sort = this.normalizeSort(params.get("sort") ?? this.profile.defaultSort);
       this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
       this.view = collectionView(params.get("view"));
@@ -436,6 +455,8 @@ export class CatalogScreen extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
+    removeEventListener("haneoka:locale-ready", this.onLocale);
     this.detailRequests.cancel();
     this.releaseLocation?.();
     clearBrowseBar();
@@ -481,7 +502,12 @@ export class CatalogScreen extends LitElement {
     return `${base}/${path}?lang=${encodeURIComponent(this.settings.locale)}`;
   }
   private label(key: string, fallback: string) {
-    return this.settings.labels[key] || fallback;
+    const value = this.settings.labels[key];
+    return value && value !== key
+      ? value
+      : uiText(this.settings.locale, key) !== key
+        ? uiText(this.settings.locale, key)
+        : fallback;
   }
   private normalizeSort(value: string) {
     const aliases: Record<string, string> = {
@@ -498,7 +524,7 @@ export class CatalogScreen extends LitElement {
     return aliases[value] || value;
   }
   private localized(value: unknown): string {
-    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "boolean") return uiText(this.settings.locale, value ? "yes" : "no");
     return cleanMarkup(localizedText(value, this.settings.locale));
   }
   private formatList(values: unknown[], type: Intl.ListFormatOptions["type"] = "conjunction") {
@@ -528,7 +554,18 @@ export class CatalogScreen extends LitElement {
     return String(this.first(item, this.profile.id) ?? item._key ?? "");
   }
   private itemTitle(item: Item) {
-    return this.localized(this.first(item, this.profile.title)) || "—";
+    return cleanMarkup(this.itemTitleValue(item).text) || "—";
+  }
+  private itemTitleValue(item: Item) {
+    return this.profile.presentation === "song"
+      ? songTitle(item, this.settings.locale)
+      : resolveLocalizedText(this.first(item, this.profile.title), this.settings.locale);
+  }
+  itemTitleLanguage(item: Item) {
+    return this.itemTitleValue(item).locale;
+  }
+  localizedLanguage(value: unknown) {
+    return resolveLocalizedText(value, this.settings.locale).locale;
   }
   private image(item: Item): string {
     if (this.profile.presentation === "band-item") {
@@ -669,6 +706,7 @@ export class CatalogScreen extends LitElement {
       this.order,
       this.activeBand,
       this.settings.locale,
+      this.selectedSongDifficulty,
       JSON.stringify(this.facets),
     ].join("\u0000");
     if (this.resultCache?.key === key && this.resultCache.items.length <= this.items.length) return this.resultCache;
@@ -726,7 +764,9 @@ export class CatalogScreen extends LitElement {
   }
   private songMetaValue(item: Item, key: string) {
     const song = this.songMeta[String(item.musicId || "")] as Item | undefined;
-    const difficulty = song?.["3"] as Item | undefined;
+    const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
+    const index = rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
+    const difficulty = song?.[String(index)] as Item | undefined;
     const chart = difficulty?.chart as Item | undefined;
     if (!chart) return Number.NaN;
     if (key === "bpm") return Number(chart.firstBpm ?? chart.minBpm ?? chart.maxBpm);
@@ -1288,7 +1328,9 @@ export class CatalogScreen extends LitElement {
     this.selectedId = this.itemId(item);
     this.detailAux = {};
     this.activeMedia = "full";
-    this.detailDifficulty = Math.min(3, Math.max(0, (Array.isArray(item.difficulty) ? item.difficulty.length : 1) - 1));
+    const difficulties = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
+    const preferred = difficulties.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
+    this.detailDifficulty = preferred >= 0 ? preferred : Math.min(3, Math.max(0, difficulties.length - 1));
     this.detailLevel = 1;
     this.detailTraining = 1;
     this.detailAwakening = 1;
@@ -1863,7 +1905,12 @@ export class CatalogScreen extends LitElement {
   }
   private renderStructuredList(items: Item[]) {
     return html`
-      <catalog-table-view .controller=${this} .items=${items}></catalog-table-view>
+      <catalog-table-view
+        .controller=${this}
+        .items=${items}
+        .difficulty=${this.selectedSongDifficulty}
+        .locale=${this.settings.locale}
+      ></catalog-table-view>
     `;
   }
   private renderContent(items: Item[]) {
@@ -1891,6 +1938,7 @@ export class CatalogScreen extends LitElement {
               items.map((item) => ({
                 id: this.itemId(item),
                 title: this.itemTitle(item),
+                titleLanguage: this.itemTitleLanguage(item),
                 subtitle: this.tileDescription(item),
                 image: this.image(item),
                 onOpen: () => this.open(item),
@@ -1910,6 +1958,7 @@ export class CatalogScreen extends LitElement {
       return tile({
         kind: "character",
         title,
+        titleLanguage: this.itemTitleLanguage(item),
         // A character's band is what tells two of them apart, and it is the
         // same subhead every other card in the archive carries.
         subtitle: this.bandName(Number(item.bandId || 0)),
@@ -1926,6 +1975,7 @@ export class CatalogScreen extends LitElement {
     return tile({
       kind,
       title,
+      titleLanguage: this.itemTitleLanguage(item),
       subtitle: this.tileDescription(item),
       adornment: this.tileAdornment(item, ids),
       label: title,
@@ -1966,6 +2016,9 @@ export class CatalogScreen extends LitElement {
     const track = (item: Item) => ({
       id: this.itemId(item),
       title: this.itemTitle(item),
+      titleSource: item.musicTitle || item.title,
+      artistSource: item.bandName || item.artist,
+      titleLanguage: this.itemTitleLanguage(item),
       artist: this.itemArtist(item),
       cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
       url: String(item.musicUrl || ""),
@@ -2069,6 +2122,21 @@ export class CatalogScreen extends LitElement {
         }
       </span>
     `;
+  }
+  selectSongDifficulty(key: string) {
+    this.selectedSongDifficulty = key;
+    this.resultCache = undefined;
+    const params = new URLSearchParams(location.search);
+    params.set("chartDifficulty", key);
+    if (this.selected) {
+      const rows = Array.isArray(this.selected.difficulty) ? (this.selected.difficulty as Item[]) : [];
+      const index = rows.findIndex((row, index) => difficultyKey(row, index) === key);
+      if (index >= 0) {
+        this.detailDifficulty = index;
+        params.set("difficulty", String(index));
+      }
+    }
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
   }
   private chartRow(item: Item) {
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
@@ -2350,6 +2418,7 @@ export class CatalogScreen extends LitElement {
         style: `--entity-accent:${this.detailAccent(item)}`,
         id: `detail-${this.itemId(item)}`,
         title: this.itemTitle(item),
+        titleLanguage: this.itemTitleLanguage(item),
         subtitle: this.secondary(item),
         backLabel: this.label("close", "Close"),
         onClose: () => this.close(),
@@ -2363,7 +2432,9 @@ export class CatalogScreen extends LitElement {
                 ? this.renderCharacterArchive(item, fields)
                 : this.localized(item.description) && !["item", "band-item"].includes(this.profile.presentation)
                   ? html`
-                      <p class="detail-description">${this.localized(item.description)}</p>
+                      <p class="detail-description" lang=${this.localizedLanguage(item.description)}>
+                        ${this.localized(item.description)}
+                      </p>
                     `
                   : nothing
             }
@@ -2378,7 +2449,7 @@ export class CatalogScreen extends LitElement {
                           ({ key, value }) => html`
                             <div>
                               <dt>${this.detailLabel(key)}</dt>
-                              <dd>
+                              <dd lang=${this.localizedLanguage(readPath(item, key))}>
                                 ${
                                   key === "rarity" && this.rarityMark(item.rarity)
                                     ? html`
@@ -2418,8 +2489,7 @@ export class CatalogScreen extends LitElement {
                     detailLabel: (key) => this.detailLabel(key),
                     fieldValue: (source, key) => this.fieldValue(source, key),
                     selectDifficulty: (index) => {
-                      this.detailDifficulty = index;
-                      this.setDetailQuery("difficulty", index);
+                      this.selectSongDifficulty(difficultyKey(difficulty[index] || {}, index));
                     },
                   }) ?? nothing)
                 : nothing
@@ -2429,7 +2499,9 @@ export class CatalogScreen extends LitElement {
                 ? html`
                     <section class="detail-section">
                       ${renderDetailSectionHeading(this.label("content", "Content"), "content")}
-                      <p class="detail-description">${this.localized(item.description)}</p>
+                      <p class="detail-description" lang=${this.localizedLanguage(item.description)}>
+                        ${this.localized(item.description)}
+                      </p>
                     </section>
                   `
                 : nothing
@@ -2452,11 +2524,15 @@ export class CatalogScreen extends LitElement {
                               }
                               <span>
                                 <small>${this.label(`${group}Skill`, group)}</small>
-                                <strong>${this.localized((skill as Item).skillName) || group}</strong>
+                                <strong lang=${this.localizedLanguage((skill as Item).skillName)}>
+                                  ${this.localized((skill as Item).skillName) || group}
+                                </strong>
                                 ${
                                   this.skillDescription(skill as Item, this.skillLevel(group, item))
                                     ? html`
-                                        <p>${this.skillDescription(skill as Item, this.skillLevel(group, item))}</p>
+                                        <p lang=${this.localizedLanguage((skill as Item).description)}>
+                                          ${this.skillDescription(skill as Item, this.skillLevel(group, item))}
+                                        </p>
                                       `
                                     : nothing
                                 }${this.renderSkillCost(group, item)}
@@ -2734,7 +2810,9 @@ export class CatalogScreen extends LitElement {
       live2d: ["live2dName", "name", "assetName", "characterName"],
       stories: ["title"],
     };
-    return this.localized(this.first(item, paths[route] || ["name", "title"])) || "—";
+    return route === "songs"
+      ? songTitle(item, this.settings.locale).text
+      : this.localized(this.first(item, paths[route] || ["name", "title"])) || "—";
   }
   imageForRelated(item: Item, route: string) {
     return this.relatedImageCandidates(item, route)[0] || "";

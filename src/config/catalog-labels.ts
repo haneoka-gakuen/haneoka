@@ -65,6 +65,9 @@ const LABEL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ["stats", "stats"],
   ["details", "details"],
   ["difficulty", "difficulty"],
+  ...["metaR", "metaTime", "metaScore", "metaEff", "metaBpm", "metaN", "metaNps", "metaSr", "combo"].map(
+    (key) => [key, key] as const,
+  ),
   ["diary", "diary"],
   ["rewards", "rewards"],
   ["content", "content"],

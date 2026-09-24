@@ -1,3 +1,5 @@
+import { resolveLocalizedText } from "../lib/localized-text";
+import { songTitle } from "../lib/song-display";
 import { LitElement, html, nothing } from "lit";
 import { characterProfile } from "./shared/character-profile";
 import { characterPair } from "./ui/character-pair";
@@ -289,8 +291,8 @@ export class CharacterDetailArchive extends LitElement {
             : route === "stories"
               ? ["band", "tutorial"].includes(storyVisual?.category || "")
                 ? c.localized(entry.chapterName) || c.localized(this.storyChapter(entry)?.chapterName)
-                : storyVisual?.category === "afterlive" && entry.unlockCharacterFriendshipLevel
-                  ? `${c.label("friendship", "Friendship")} ${entry.unlockCharacterFriendshipLevel}`
+                : storyVisual?.category === "afterlive"
+                  ? `${c.label("friendship", "Friendship")} ${entry.unlockCharacterFriendshipLevel == null ? "—" : `Lv.${entry.unlockCharacterFriendshipLevel}`}`
                   : ""
               : c.formatList(ids.map((id) => c.characterName(id))) || c.localized(entry.chapterName);
     const adornment =
@@ -313,6 +315,13 @@ export class CharacterDetailArchive extends LitElement {
     return tile({
       kind,
       title: c.relatedTitle(entry, route),
+      titleLanguage:
+        route === "songs"
+          ? songTitle(entry, document.documentElement.dataset.locale || "ja").locale
+          : resolveLocalizedText(
+              entry.prefix || entry.name || entry.title,
+              document.documentElement.dataset.locale || "ja",
+            ).locale,
       subtitle: description,
       adornment,
       label: c.relatedTitle(entry, route),
@@ -384,6 +393,7 @@ export class CharacterDetailArchive extends LitElement {
       if (active === "profile")
         return characterProfile({
           item,
+          locale: document.documentElement.dataset.locale || "ja",
           name: c.itemTitle(item),
           part: String(item.bandPart || ""),
           description: c.localized(item.description),
@@ -394,7 +404,11 @@ export class CharacterDetailArchive extends LitElement {
           gallery: c.renderDetailMedia(item),
           fields: this.fields
             .filter((field) => !["voiceActor", "bandPart", "englishName"].includes(field.key))
-            .map((field) => ({ label: c.detailLabel(field.key), value: field.value })),
+            .map((field) => ({
+              label: c.detailLabel(field.key),
+              value: field.value,
+              language: resolveLocalizedText(item[field.key], document.documentElement.dataset.locale || "ja").locale,
+            })),
         });
       if (active === "cards")
         return html`
@@ -474,7 +488,15 @@ export class CharacterDetailArchive extends LitElement {
                   value: String(character.characterId),
                   label: c.characterName(Number(character.characterId)),
                   image: String(character.faceImage || ""),
+                  bandId: Number(character.bandId),
                 })),
+                bands: [...new Set(values(c.detailAux.characters).map((character) => Number(character.bandId)))]
+                  .filter(Boolean)
+                  .map((bandId) => ({
+                    id: bandId,
+                    label: c.bandName(bandId),
+                    image: String(c.band(bandId)?.logo || c.band(bandId)?.icon || ""),
+                  })),
                 first: String(id),
                 second: partnerId ? String(partnerId) : "",
                 onSecond: (value) => {

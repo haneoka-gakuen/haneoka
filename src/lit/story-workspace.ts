@@ -1,3 +1,5 @@
+import { resolveLocalizedText } from "../lib/localized-text";
+import { storySourceUrl } from "../lib/story-assets";
 import "../styles/bestdori-detail.css";
 import "./ui/image-gallery";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
@@ -233,9 +235,16 @@ export class StoryWorkspace extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private onLocale = () => {
+    const locale = preferredLocale(this.locale);
+    if (locale === this.locale) return;
+    this.locale = locale;
+    if (this.isBestdori()) void this.load();
+  };
   connectedCallback() {
     super.connectedCallback();
-    this.releaseLocation = observeDetailLocation(this.restoreLocation);
+    addEventListener("haneoka:locale-ready", this.onLocale);
+    this.releaseLocation = observeDetailLocation(this.restoreLocation, this);
     this.locale = preferredLocale(this.locale);
     void Promise.all([
       import("@material/web/textfield/outlined-text-field.js"),
@@ -263,6 +272,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    removeEventListener("haneoka:locale-ready", this.onLocale);
     this.detailRequests.cancel();
     this.releaseLocation?.();
     clearBrowseBar();
@@ -1144,6 +1154,7 @@ export class StoryWorkspace extends LitElement {
             episodes.map((episode) => ({
               id: this.episodeId(episode),
               title: this.episodeTitle(episode),
+              titleLanguage: resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale,
               subtitle: this.tileSubtitle(episode),
               image: this.episodeImage(episode),
               media: this.episodeMedia(episode),
@@ -1161,6 +1172,10 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private tileSubtitle(episode: JsonRecord) {
+    if (this.mode === "afterlive") {
+      const level = episode.unlockCharacterFriendshipLevel ?? episode.friendshipLevel;
+      return `${uiText(this.locale, "friendship")} ${level == null ? "—" : `Lv.${Number(level)}`}`;
+    }
     if (this.origin === "release") {
       // The level that unlocks it — the one thing that orders a pair's
       // stories. Their names are already the rail's selection and the page's
@@ -1194,6 +1209,7 @@ export class StoryWorkspace extends LitElement {
     return tile({
       kind: "story",
       title,
+      titleLanguage: resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale,
       subtitle: this.tileSubtitle(episode),
       adornment: logo
         ? html`
@@ -1486,6 +1502,12 @@ export class StoryWorkspace extends LitElement {
         value: String(character.characterId),
         label: this.characterName(character),
         image: String(character.faceImage || ""),
+        bandId: Number(character.bandId),
+      })),
+      bands: this.bands.map((band) => ({
+        id: Number(band.bandId),
+        label: this.bandName(Number(band.bandId)),
+        image: String(band.logo || band.icon || ""),
       })),
       first: lead,
       second: this.linkPartner,
@@ -1565,7 +1587,9 @@ export class StoryWorkspace extends LitElement {
             <svg class="material-icon" width="22" height="22"><use href="/icons.svg#arrow_back"></use></svg>
           </button>
           <span class="story-detail__title">
-            <strong>${this.episodeTitle(episode)}</strong>
+            <strong lang=${resolveLocalizedText(episode.title || episode.chapterName, this.locale).locale}>
+              ${this.episodeTitle(episode)}
+            </strong>
             <small>${this.chapterName(this.chapterOf(episode)) || this.text(episode.chapterName)}</small>
           </span>
           <span class="row__spacer"></span>
@@ -1633,7 +1657,12 @@ export class StoryWorkspace extends LitElement {
                   ${
                     this.text(episode.description)
                       ? html`
-                          <p class="story-detail__lede">${this.text(episode.description)}</p>
+                          <p
+                            class="story-detail__lede"
+                            lang=${resolveLocalizedText(episode.description, this.locale).locale}
+                          >
+                            ${this.text(episode.description)}
+                          </p>
                         `
                       : nothing
                   }
@@ -1701,41 +1730,75 @@ export class StoryWorkspace extends LitElement {
     return entries;
   }
   private renderTranscript(entries: readonly HaneokaTranscriptEntry[]) {
+    const textKinds = new Set(["dialogue", "message", "location", "conversation", "subtitle", "choices"]);
     const content = [];
     for (let index = 0; index < entries.length; index += 1) {
-      const entry = entries[index];
-      if (entry.kind !== "image") {
+      const entry = entries[index]!;
+      if (textKinds.has(entry.kind)) {
         content.push(this.renderTranscriptEntry(entry));
         continue;
       }
-      const backgrounds = [entry];
-      while (entries[index + 1]?.kind === "image" && entries[index + 1]?.mediaKind === entry.mediaKind)
-        backgrounds.push(entries[++index]);
+      const media = [entry];
+      while (entries[index + 1]?.kind === entry.kind && entries[index + 1]?.mediaKind === entry.mediaKind)
+        media.push(entries[++index]!);
+      const kind =
+        entry.kind === "image" ? (entry.mediaKind === "background" ? "background" : "illustration") : entry.kind;
+      const mediaIcon =
+        entry.kind === "video"
+          ? icon("movie", 20)
+          : entry.kind === "voice"
+            ? icon("volume_up", 20)
+            : entry.kind === "stamp"
+              ? icon("emoji_emotions", 20)
+              : icon("image", 20);
       content.push(html`
-        <details class="story-transcript__backdrop">
+        <details
+          class="story-transcript__media"
+          @toggle=${(event: Event) => {
+            const details = event.currentTarget as HTMLDetailsElement;
+            if (!details.open) details.querySelectorAll<HTMLVideoElement>("video").forEach((video) => video.pause());
+          }}
+        >
           <summary>
-            ${icon("image", 20)}
-            <span>
-              ${uiText(this.locale, entry.mediaKind === "background" ? "background" : "illustration")}${backgrounds.length > 1 ? ` · ${backgrounds.length}` : ""}
-            </span>
+            ${mediaIcon}
+            <span>${uiText(this.locale, kind)}${media.length > 1 ? ` · ${media.length}` : ""}</span>
             ${icon("expand_more", 20)}
           </summary>
-          ${backgrounds.map(
-            (background) => html`
-              <figure class="story-transcript__scene" data-command-index=${background.commandIndex}>
-                <img
-                  src=${background.source!}
-                  alt=${uiText(this.locale, background.mediaKind === "background" ? "background" : "illustration")}
-                  loading="lazy"
-                  decoding="async"
-                />
-              </figure>
-            `,
-          )}
+          <div class="story-transcript__media-body">${media.map((item) => this.renderTranscriptEntry(item))}</div>
         </details>
       `);
     }
     return content;
+  }
+  private transcriptAvatars(entry: HaneokaTranscriptEntry) {
+    const command = entry.command;
+    if (Number(command.targetStatus) > 0) return nothing;
+    const iconAsset = typeof command.chatIconAssetName === "string" ? command.chatIconAssetName : "";
+    const targets = Array.isArray(command.targets) ? (command.targets as JsonRecord[]) : [];
+    const images =
+      iconAsset && ["message", "stamp"].includes(entry.kind)
+        ? [storySourceUrl(`Assets/AddressableResources/Adv/Chat/Icon/${iconAsset}.png`, currentReleaseServer())]
+        : targets
+            .map((target) => String(target.faceImage || this.character(Number(target.characterId))?.faceImage || ""))
+            .filter(Boolean);
+    if (!images.length) return nothing;
+    return html`
+      <span class="story-transcript__avatars" aria-hidden="true">
+        ${[...new Set(images)].map(
+          (image) => html`
+            <img
+              src=${image}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              width="48"
+              height="48"
+              @error=${(event: Event) => ((event.currentTarget as HTMLImageElement).hidden = true)}
+            />
+          `,
+        )}
+      </span>
+    `;
   }
   private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
     const command = entry.command;
@@ -1750,7 +1813,8 @@ export class StoryWorkspace extends LitElement {
                 .filter(Boolean),
               this.locale,
             ) || this.text(command.targetName);
-    const text = this.text(command.text) || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
+    const resolved = resolveLocalizedText(command.text, this.locale);
+    const text = resolved.text || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
     if (entry.kind === "image")
       return html`
         <figure class="story-transcript__scene" data-command-index=${entry.commandIndex}>
@@ -1788,7 +1852,7 @@ export class StoryWorkspace extends LitElement {
       return html`
         <div class="story-transcript__chapter" data-command-index=${entry.commandIndex}>
           ${icon(entry.kind === "conversation" ? "chat" : "location_on", 20)}
-          <h3>${advText(text || names || uiText(this.locale, "conversation"))}</h3>
+          <h3 lang=${resolved.locale}>${advText(text || names || uiText(this.locale, "conversation"))}</h3>
         </div>
       `;
     if (entry.kind === "choices")
@@ -1798,7 +1862,9 @@ export class StoryWorkspace extends LitElement {
           <ul>
             ${(command.choices as JsonRecord[]).map(
               (choice) => html`
-                <li>${advText(this.text(choice.text))}</li>
+                <li lang=${resolveLocalizedText(choice.text, this.locale).locale}>
+                  ${advText(this.text(choice.text))}
+                </li>
               `,
             )}
           </ul>
@@ -1827,18 +1893,25 @@ export class StoryWorkspace extends LitElement {
         class=${`story-transcript__entry story-transcript__entry--${entry.kind}`}
         data-command-index=${entry.commandIndex}
       >
+        ${["dialogue", "message", "stamp"].includes(entry.kind) ? this.transcriptAvatars(entry) : nothing}
         <div class="story-transcript__line">
           ${
             names
               ? html`
-                  <strong class="story-transcript__speaker" dir="auto">${advText(names)}</strong>
+                  <strong
+                    class="story-transcript__speaker"
+                    lang=${resolveLocalizedText((Array.isArray(command.targetTextNames) ? command.targetTextNames[0] : command.targetName) || (Array.isArray(command.targets) ? (command.targets[0] as JsonRecord)?.name : ""), this.locale).locale}
+                    dir="auto"
+                  >
+                    ${advText(names)}
+                  </strong>
                 `
               : nothing
           }
           ${
             text
               ? html`
-                  <p class="story-transcript__text" dir="auto">${advText(text)}</p>
+                  <p class="story-transcript__text" lang=${resolved.locale} dir="auto">${advText(text)}</p>
                 `
               : nothing
           }${media}

@@ -136,10 +136,15 @@
   }
   .story-detail__body {
     display: grid;
-    width: min(100%, var(--content-max, 1120px));
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr);
+    scrollbar-gutter: stable;
     align-content: start;
     gap: 16px;
-    padding: 24px 28px 40px;
+    padding: 24px clamp(16px, 3vw, 48px) 40px;
     margin-inline: auto;
     overflow: auto;
     overscroll-behavior: contain;
@@ -153,6 +158,8 @@
     display: grid;
     gap: 12px;
     padding-top: 8px;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* ---------- Transcript ----------
@@ -204,8 +211,10 @@
 
   .story-transcript {
     display: grid;
-    max-width: 880px;
-    margin: 0 auto;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    margin: 0;
     gap: 4px;
     padding-block: 16px 40px;
   }
@@ -251,7 +260,8 @@
     flex-shrink: 0;
   }
   .story-transcript__scene {
-    margin: 24px 0;
+    margin: 0;
+    min-width: 0;
     display: grid;
     gap: 8px;
   }
@@ -341,13 +351,14 @@
   .story-reading-info[open] > summary {
     margin-block-end: 16px;
   }
-  .story-transcript__backdrop {
+  .story-transcript__media {
+    min-width: 0;
     margin-block: 12px;
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-large);
     overflow: hidden;
   }
-  .story-transcript__backdrop > summary {
+  .story-transcript__media > summary {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -358,16 +369,16 @@
     font: 500 14px/20px var(--app-font);
     list-style: none;
   }
-  .story-transcript__backdrop > summary::-webkit-details-marker {
+  .story-transcript__media > summary::-webkit-details-marker {
     display: none;
   }
-  .story-transcript__backdrop > summary > span {
+  .story-transcript__media > summary > span {
     flex: 1;
   }
-  .story-transcript__backdrop[open] > summary > svg:last-child {
+  .story-transcript__media[open] > summary > svg:last-child {
     rotate: 180deg;
   }
-  .story-transcript__backdrop .story-transcript__scene {
+  .story-transcript__media .story-transcript__scene {
     margin: 0;
   }
 }
@@ -435,5 +446,48 @@
     flex-basis: 14px;
     width: 14px;
     height: 14px;
+  }
+}
+
+@layer pages {
+  .story-transcript__avatars {
+    display: grid;
+    gap: 6px;
+    flex: 0 0 48px;
+    width: 48px;
+  }
+  .story-transcript__avatars img {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    border-radius: 50%;
+  }
+  .story-transcript__avatars img[hidden] {
+    display: none;
+  }
+  .story-transcript__media-body {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+  }
+  .story-transcript__media > summary > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 599px) {
+    .story-transcript__avatars {
+      flex-basis: 36px;
+      width: 36px;
+    }
+    .story-transcript__avatars img {
+      width: 36px;
+      height: 36px;
+    }
+    .story-transcript__voices {
+      max-width: 44px;
+    }
   }
 }

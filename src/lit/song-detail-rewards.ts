@@ -1,3 +1,5 @@
+import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
+import { resolveLocalizedText } from "../lib/localized-text";
 import { html, nothing } from "lit";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 
@@ -67,33 +69,13 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
   return html`
     <section class="detail-section song-detail-section song-detail-summary">
       ${renderDetailSectionHeading(label("details", "Details"), "details")}
-      ${
-        difficulty.length
-          ? html`
-              <div class="difficulty-segments">
-                ${difficulty.map(
-                  (row, index) => html`
-                    <button
-                      class=${`difficulty-${index}`}
-                      aria-pressed=${selectedDifficulty === index}
-                      aria-label=${`${String(row.difficultyName || "")} ${String(row.displayLevel || "")}`}
-                      style=${`--difficulty-color:var(--md-extended-color-difficulty-${String(row.difficultyName || "master").toLowerCase()}, ${["#35a969", "#3c8ed5", "#d99d1e", "#d94e56", "#8c62d6"][index] || "#8c62d6"})`}
-                      @click=${() => selectDifficulty(index)}
-                    >
-                      <b>${row.displayLevel}</b>
-                    </button>
-                  `,
-                )}
-              </div>
-            `
-          : nothing
-      }
+      ${difficulty.length ? difficultyPicker({ rows: difficulty, selected: difficultyKey(difficulty[selectedDifficulty] || {}, selectedDifficulty), locale, onSelect: (_key, index) => selectDifficulty(index) }) : nothing}
       <dl class="song-data-grid song-meta-strip">
         ${metrics.map(
           ([key, fallback, value]) => html`
             <div>
               <dt title=${label(key, fallback)}>${label(key, fallback)}</dt>
-              <dd>${value}</dd>
+              <dd lang=${resolveLocalizedText(item[key], locale).locale}>${value}</dd>
             </div>
           `,
         )}
@@ -103,7 +85,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
           ({ key, value }) => html`
             <div>
               <dt>${detailLabel(key)}</dt>
-              <dd>${value}</dd>
+              <dd lang=${resolveLocalizedText(item[key], locale).locale}>${value}</dd>
             </div>
           `,
         )}
@@ -143,50 +125,65 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
         count: ranks.length + scoreRewards.length + combo.length,
       })}
       <div class="song-detail-section__body">
-        <dl class="song-data-grid song-score-grid" aria-label=${label("scoreRanks", "Score ranks")}>
-          ${ranks.map((rank) => {
-            const rankName = names[Number(rank.scoreRank)] || "—";
-            return html`
-              <div>
-                <dt><img class="song-rank-icon" src=${rankIcon(rankName)} alt=${rankName} /></dt>
-                <dd>${Number(rank.requiredScore || 0).toLocaleString()}</dd>
-              </div>
-            `;
-          })}
-        </dl>
-        <dl class="song-data-grid song-reward-items" aria-label=${label("scoreRanks", "Score ranks")}>
-          ${scoreRewards.map((reward) => {
-            const rankName = names[Number(reward.liveScoreRank)] || "—";
-            const value = rewardValue(reward);
-            return html`
-              <div>
-                <dt><img class="song-rank-icon" src=${rankIcon(rankName)} alt=${rankName} /></dt>
-                <dd class="song-reward-value">
-                  ${
-                    value.image
-                      ? html`
-                          <img src=${value.image} alt="" />
-                        `
-                      : nothing
-                  }
-                  <span>${value.name} ×${value.count}</span>
-                </dd>
-              </div>
-            `;
-          })}
-        </dl>
-        <dl class="song-data-grid song-combo-rewards" aria-label=${label("combo", "Combo")}>
+        <h3 class="song-detail-subheading">${label("score", "Score")}</h3>
+        <ul class="song-reward-list">
+          ${[
+            ...new Set([
+              ...ranks.map((rank) => Number(rank.scoreRank)),
+              ...scoreRewards.map((reward) => Number(reward.liveScoreRank)),
+            ]),
+          ]
+            .sort((a, b) => a - b)
+            .map((rankId) => {
+              const rankName = names[rankId] || "—";
+              const rank = ranks.find((entry) => Number(entry.scoreRank) === rankId);
+              const rewards = scoreRewards.filter((entry) => Number(entry.liveScoreRank) === rankId);
+              return html`
+                <li>
+                  <img src=${rankIcon(rankName)} alt=${rankName} />
+                  <span class="song-reward-list__condition">
+                    <strong>${rank ? Number(rank.requiredScore || 0).toLocaleString() : rankName}</strong>
+                    <small>${label("score", "Score")}</small>
+                  </span>
+                  <div>
+                    ${rewards.map((reward) => {
+                      const value = rewardValue(reward);
+                      return html`
+                        <span class="song-reward-value">
+                          ${
+                            value.image
+                              ? html`
+                                  <img src=${value.image} alt="" />
+                                `
+                              : nothing
+                          }
+                          <span>
+                            ${value.name}
+                            <b>×${value.count}</b>
+                          </span>
+                        </span>
+                      `;
+                    })}
+                  </div>
+                </li>
+              `;
+            })}
+        </ul>
+        <h3 class="song-detail-subheading">${label("combo", "Combo")}</h3>
+        <ul class="song-reward-list song-combo-list">
           ${combo.map((reward) => {
             const value = rewardValue(reward);
-            const index = Number(reward.comboRateType || 0);
-            const percentage = comboPercentages[index] || 0;
-            const explicit = Number(reward.comboCount || 0);
-            const notes = Number(chart.noteCount || 0);
-            const count = explicit || (percentage && notes ? Math.ceil((notes * percentage) / 100) : 0);
+            const percentage = comboPercentages[Number(reward.comboRateType || 0)] || 0;
+            const count =
+              Number(reward.comboCount || 0) ||
+              (percentage && Number(chart.noteCount) ? Math.ceil((Number(chart.noteCount) * percentage) / 100) : 0);
             return html`
-              <div>
-                <dt>${count ? count.toLocaleString() : "—"} · ${percentage === 100 ? "FULL" : `${percentage}%`}</dt>
-                <dd class="song-reward-value">
+              <li>
+                <span class="song-reward-list__condition">
+                  <strong>${percentage === 100 ? "FULL COMBO" : `${percentage}%`}</strong>
+                  <small>${count ? count.toLocaleString() : "—"} ${label("notes", "notes")}</small>
+                </span>
+                <span class="song-reward-value">
                   ${
                     value.image
                       ? html`
@@ -194,12 +191,15 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
                         `
                       : nothing
                   }
-                  <span>${value.name} ×${value.count}</span>
-                </dd>
-              </div>
+                  <span>
+                    ${value.name}
+                    <b>×${value.count}</b>
+                  </span>
+                </span>
+              </li>
             `;
           })}
-        </dl>
+        </ul>
       </div>
     </section>
   `;

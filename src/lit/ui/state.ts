@@ -26,6 +26,24 @@ export interface EmptyStateOptions {
   action?: TemplateResult;
 }
 
+export function noticeState(options: EmptyStateOptions): TemplateResult {
+  return html`
+    <div class="notice notice--construction" role="status">
+      <div class="notice__art"><img src="/images/maintenance-characters.png" alt="" decoding="async" /></div>
+      <span class="notice__icon">${icon(options.icon || "construction", 36)}</span>
+      <h2>${options.title}</h2>
+      ${
+        options.body
+          ? html`
+              <p>${options.body}</p>
+            `
+          : nothing
+      }
+      ${options.action ?? nothing}
+    </div>
+  `;
+}
+
 export function emptyState(options: EmptyStateOptions): TemplateResult {
   return html`
     <div class="state" role="status">

@@ -4,7 +4,6 @@ import I18nText from "./I18nText.astro";
 import { NAV_SECTIONS, PRIMARY_DESTINATIONS, isDestinationActive, isRouteActive } from "../config/navigation";
 import { LOCALES, localePath, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-import { pageDescription, shouldNoindex } from "../lib/seo";
 interface Props {
   locale: Locale;
   route: string;
@@ -27,17 +26,9 @@ const utilities = [
 ];
 const i18nValues = (key: string, fallback: string) =>
   JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, t(target, key, fallback)])));
-const showSearchContext =
-  !shouldNoindex(route) && (route === "/catalog" || route.startsWith("/catalog/") || route.startsWith("/community/"));
-const searchContextValues = showSearchContext
-  ? Object.fromEntries(
-      LOCALES.map((target) => [target, pageDescription(target, route, titleKey ? t(target, titleKey, title) : title)]),
-    )
-  : undefined;
-const searchContext = searchContextValues?.[locale];
 ---
 
-<div class="app-shell" data-shell>
+<div class="app-shell" data-shell data-route={route}>
   <a class="skip-link" href="#main-content">
     <I18nText keyName="content" fallback="Content" locale={locale} />
   </a>
@@ -216,11 +207,6 @@ const searchContext = searchContextValues?.[locale];
       <div class="top-app-bar__actions" data-top-app-bar-actions></div>
     </header>
     <main class="app-shell__main page-stage" id="main-content" tabindex="-1">
-      {searchContext && (
-        <p class="page-search-context" data-i18n-values={JSON.stringify(searchContextValues)}>
-          {searchContext}
-        </p>
-      )}
       <slot />
     </main>
   </div>
@@ -334,12 +320,3 @@ const searchContext = searchContextValues?.[locale];
   persistentQuery.addEventListener("change", () => setModal(false));
   document.addEventListener("astro:before-swap", () => setModal(false));
 </script>
-<style>
-  .page-search-context {
-    width: min(100%, var(--content-max));
-    margin: 0 auto 8px;
-    padding-inline: var(--md-comp-page-inline-space);
-    color: var(--md-sys-color-on-surface-variant);
-    font: 400 0.95rem/1.65 var(--app-font);
-  }
-</style>

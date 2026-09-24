@@ -285,11 +285,15 @@ fieldset.browse__filter-group {
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     scroll-padding-inline: 12px;
   }
-  .collection--rail {
-    grid-auto-flow: column;
-    grid-auto-columns: 148px;
-    grid-template-columns: none;
-    --tile-gap: 8px;
+  .browse__rail > .collection--rail {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .browse__rail > .collection--rail > .tile--rail {
+    flex: 0 0 148px;
+    width: 148px;
+    max-width: 148px;
   }
   .browse__rail .tile--rail {
     background: var(--md-sys-color-surface-container);

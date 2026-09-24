@@ -12,7 +12,22 @@ import "../styles/catalog.css";
 
 export function getStaticPaths() {
   const locale = DEFAULT_LOCALE;
-  return ROUTES.filter((entry) => !["/", "/account", "/account/reset-password", "/settings", "/catalog/assets", "/catalog/help", "/catalog/live2d", "/catalog/spine"].includes(entry.route) && !entry.route.startsWith("/community") && !entry.route.startsWith("/catalog/anon-tokyo") && !entry.route.startsWith("/catalog/stories")).map((entry) => {
+  return ROUTES.filter(
+    (entry) =>
+      ![
+        "/",
+        "/account",
+        "/account/reset-password",
+        "/settings",
+        "/catalog/assets",
+        "/catalog/help",
+        "/catalog/live2d",
+        "/catalog/spine",
+      ].includes(entry.route) &&
+      !entry.route.startsWith("/community") &&
+      !entry.route.startsWith("/catalog/anon-tokyo") &&
+      !entry.route.startsWith("/catalog/stories"),
+  ).map((entry) => {
     const routeSlug = entry.route.replace(/^\/+/, "");
     const slug = routeSlug || undefined;
     return { params: { slug }, props: { locale, entry, title: titleOf(entry, locale) } };
@@ -20,16 +35,22 @@ export function getStaticPaths() {
 }
 
 const { locale, entry, title } = Astro.props as { locale: Locale; entry: RouteDefinition; title: string };
-const screenConfig = entry.kind === "catalog" && entry.resource
-  ? catalogConfig({ resource: entry.resource, locale, aspectRatio: entry.resource === "cards" ? "224 / 294" : "1" })
-  : "";
+const screenConfig =
+  entry.kind === "catalog" && entry.resource
+    ? catalogConfig({ resource: entry.resource, locale, aspectRatio: entry.resource === "cards" ? "224 / 294" : "1" })
+    : "";
 ---
+
 <Base locale={locale} route={entry.route} title={title} titleKey={entry.titleKey} description={title}>
   <AppShell locale={locale} route={entry.route} title={title} titleKey={entry.titleKey}>
     {entry.kind === "index" && <CatalogIndexPage locale={locale} />}
     {entry.kind === "legal" && entry.page && <LegalPage locale={locale} page={entry.page} />}
-    {entry.kind === "notice" && <NoticePage locale={locale} title={title} route={entry.route} />}
+    {entry.kind === "notice" && (
+      <NoticePage locale={locale} title={title} titleKey={entry.titleKey} route={entry.route} />
+    )}
     {entry.kind === "catalog" && <catalog-screen config={screenConfig}></catalog-screen>}
   </AppShell>
 </Base>
-<script>import "../lit/catalog-screen";</script>
+<script>
+  import "../lit/catalog-screen";
+</script>

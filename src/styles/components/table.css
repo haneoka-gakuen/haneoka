@@ -181,3 +181,9 @@ button.table-entity {
   background: var(--mark, var(--md-sys-color-surface-container-highest));
   font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / 1 var(--app-font);
 }
+
+@media (max-width: 599px) {
+  .data-table .is-sticky {
+    position: static;
+  }
+}

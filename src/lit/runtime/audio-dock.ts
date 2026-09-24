@@ -1,3 +1,5 @@
+import { observeSongDisplay, songTitle } from "../../lib/song-display";
+import { resolveLocalizedText } from "../../lib/localized-text";
 import { LitElement, html, nothing } from "lit";
 import "../../styles/audio.css";
 import { iconButton } from "../ui/controls";
@@ -9,6 +11,9 @@ export interface AudioTrack {
   id: string;
   queueId?: string;
   title: string;
+  titleSource?: unknown;
+  artistSource?: unknown;
+  titleLanguage?: string;
   artist: string;
   cover: string;
   url: string;
@@ -36,6 +41,9 @@ const normalizedTrack = (value: AudioTrack, occurrence = 0): AudioTrack | null =
     id,
     queueId: value.queueId || `${id}:${occurrence}:${url}`,
     title: String(value.title || id),
+    titleSource: value.titleSource,
+    artistSource: value.artistSource,
+    titleLanguage: value.titleLanguage,
     artist: String(value.artist || ""),
     cover: String(value.cover || ""),
     url,
@@ -47,8 +55,33 @@ export class AudioDock extends LitElement {
   private uiLanguage = preferredLocale();
   private readonly onLocale = () => {
     this.uiLanguage = preferredLocale();
-    this.requestUpdate();
+    this.refreshLabels();
   };
+  private disposeSongDisplay?: () => void;
+  private refreshLabels() {
+    this.queue = this.queue.map((track) => {
+      const title =
+        track.titleSource == null
+          ? { text: track.title, locale: track.titleLanguage || this.uiLanguage }
+          : songTitle({ title: track.titleSource }, this.uiLanguage);
+      return {
+        ...track,
+        title: title.text,
+        titleLanguage: title.locale,
+        artist:
+          track.artistSource == null ? track.artist : resolveLocalizedText(track.artistSource, this.uiLanguage).text,
+      };
+    });
+    if (this.track) this.updateMetadata(this.track);
+  }
+  private updateMetadata(track: AudioTrack) {
+    if ("mediaSession" in navigator && "MediaMetadata" in window)
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist,
+        artwork: track.cover ? [{ src: track.cover }] : [],
+      });
+  }
   private t(key: string): string {
     return uiText(this.uiLanguage, key);
   }
@@ -135,6 +168,7 @@ export class AudioDock extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.refreshLabels());
     void import("@material/web/slider/slider.js");
     addEventListener("haneoka:locale-ready", this.onLocale);
     this.onLocale();
@@ -158,6 +192,7 @@ export class AudioDock extends LitElement {
   }
 
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     removeEventListener("haneoka:locale-ready", this.onLocale);
     removeEventListener("pagehide", this.persistBound);
     document.removeEventListener("astro:after-swap", this.afterNavigation);
@@ -278,12 +313,7 @@ export class AudioDock extends LitElement {
       this.currentTime = 0;
     }
     this.audio.volume = this.volume;
-    if ("mediaSession" in navigator && "MediaMetadata" in window)
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: track.title,
-        artist: track.artist,
-        artwork: track.cover ? [{ src: track.cover }] : [],
-      });
+    this.updateMetadata(track);
     if (shouldPlay) await this.audio.play().catch(() => undefined);
     this.persist();
   }
@@ -537,7 +567,7 @@ export class AudioDock extends LitElement {
                         `
                   }
                   <span>
-                    <strong>${entry.title}</strong>
+                    <strong lang=${entry.titleLanguage || this.uiLanguage}>${entry.title}</strong>
                     <small>${entry.artist}</small>
                   </span>
                 </button>
@@ -594,7 +624,7 @@ export class AudioDock extends LitElement {
               }
             </span>
             <span class="player__copy">
-              <strong>${track.title}</strong>
+              <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
               <small>${track.artist || "\u00a0"}</small>
             </span>
           </a>
@@ -692,7 +722,7 @@ export class AudioDock extends LitElement {
             }
           </span>
           <span class="player__copy">
-            <strong>${track.title}</strong>
+            <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
             <small>${track.artist}</small>
           </span>
         </button>

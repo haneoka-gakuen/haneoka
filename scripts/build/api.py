@@ -4153,7 +4153,7 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
         if icon_asset:
             icon_source = f"{chat_root}/Icon/{icon_asset}.png"
             if icon_source in data.source_path_set:
-                icon_images_by_asset[icon_asset] = icon_source
+                icon_images_by_asset[icon_asset] = data.asset(icon_source) or icon_source
         if not window_asset:
             continue
         prefab_matches = [

@@ -1,3 +1,4 @@
+import { difficultyPicker } from "./ui/difficulty-picker";
 import { LitElement, html, nothing } from "lit";
 import { icon } from "./ui/icon";
 
@@ -137,7 +138,9 @@ const CELL_MAX: Record<string, string> = {
 };
 
 export class CatalogTable extends LitElement {
-  static properties = { controller: { attribute: false }, items: { attribute: false } };
+  static properties = { controller: { attribute: false }, items: { attribute: false }, difficulty: {}, locale: {} };
+  declare difficulty: string;
+  declare locale: string;
   declare controller: Controller;
   declare items: Item[];
   createRenderRoot() {
@@ -237,7 +240,7 @@ export class CatalogTable extends LitElement {
                 : nothing
             }
             <span class="table-entity__copy">
-              <span class="table-entity__name">${c.itemTitle(item)}</span>
+              <span class="table-entity__name" lang=${c.itemTitleLanguage(item)}>${c.itemTitle(item)}</span>
               ${
                 c.tileDescription(item)
                   ? html`
@@ -390,24 +393,16 @@ export class CatalogTable extends LitElement {
           : nothing,
       );
     }
-    if (key === "difficulty") {
-      const levels = (Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : []).map((row) =>
-        Number(row.displayLevel || 0),
+    if (key === "difficulty")
+      return wrap(
+        difficultyPicker({
+          rows: Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [],
+          selected: c.selectedSongDifficulty,
+          locale: c.settings.locale,
+          compact: true,
+          onSelect: (key) => c.selectSongDifficulty(key),
+        }),
       );
-      return wrap(html`
-        <span class="table-values">
-          ${levels.map(
-            (level, index) => html`
-              <span
-                style=${`--mark:var(--md-extended-color-difficulty-${["easy", "normal", "hard", "expert", "master"][index] || "easy"})`}
-              >
-                ${level || "—"}
-              </span>
-            `,
-          )}
-        </span>
-      `);
-    }
     if (key === "category") {
       const value =
         c.profile.presentation === "song"
@@ -420,7 +415,10 @@ export class CatalogTable extends LitElement {
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");
     if (key === "part") return wrap(c.localized(item.bandPart) || "—");
     if (key === "school") return wrap(c.localized(item.school) || "—");
-    if (key === "composer" || key === "lyricist" || key === "arranger") return wrap(c.localized(item[key]) || "—");
+    if (key === "composer" || key === "lyricist" || key === "arranger")
+      return wrap(html`
+        <span lang=${c.localizedLanguage(item[key])}>${c.localized(item[key]) || "—"}</span>
+      `);
     if (key === "order") return wrap(c.displayValue(item.displayOrder) || "—");
     if (key === "levels") return wrap(Array.isArray(item.levels) ? item.levels.length : 0);
     if (key === "type") return wrap(c.localized(item.itemTypeName) || "—");

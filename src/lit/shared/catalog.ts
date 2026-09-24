@@ -1,3 +1,4 @@
+import { resolveLocalizedText } from "../../lib/localized-text";
 import { readReleaseServer } from "../../lib/release-server";
 export type JsonRecord = Record<string, unknown>;
 export const UI_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
@@ -12,6 +13,8 @@ export function preferredLocale(fallback = "ja"): string {
   return (UI_LOCALES as readonly string[]).includes(value) ? value : fallback;
 }
 const UI_COPY: Record<string, readonly [string, string, string, string, string]> = {
+  difficulty: ["難易度", "Difficulty", "難度", "难度", "난이도"],
+  songs: ["楽曲", "Songs", "樂曲", "乐曲", "악곡"],
   voice: ["ボイス", "Voice", "語音", "语音", "음성"],
   illustration: ["イラスト", "Illustration", "插圖", "插图", "일러스트"],
   playVoice: ["ボイスを再生", "Play voice", "播放語音", "播放语音", "음성 재생"],
@@ -214,24 +217,7 @@ export function recordValues(value: unknown): JsonRecord[] {
 }
 
 export function localizedText(value: unknown, locale: string): string {
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
-  const list = Array.isArray(value)
-    ? value
-    : value && typeof value === "object"
-      ? (value as JsonRecord).values
-      : undefined;
-  if (!Array.isArray(list)) return "";
-  const requested = UI_LOCALES.includes(locale as (typeof UI_LOCALES)[number])
-    ? (locale as (typeof UI_LOCALES)[number])
-    : "ja";
-  const order = requested === "zh-CN" ? ["zh-CN", "zh-TW", "ja", "en", "ko"] : [requested, "ja", ...UI_LOCALES];
-  for (const target of order) {
-    const item = list[UI_LOCALES.indexOf(target as (typeof UI_LOCALES)[number])];
-    if (typeof item === "string" && item.trim()) return item;
-  }
-  for (const item of list) if (typeof item === "string" && item.trim()) return item;
-  return "";
+  return resolveLocalizedText(value, locale).text;
 }
 
 export function currentReleaseServer(): string {

@@ -1,3 +1,4 @@
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import {
   catalogUrl,
@@ -121,8 +122,10 @@ export class HomeDashboard extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.copies = JSON.parse(this.labels || "{}");
     this.locale = preferredLocale(this.locale);
     try {
@@ -135,6 +138,7 @@ export class HomeDashboard extends LitElement {
     queueMicrotask(() => this.mountAction());
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     removeEventListener("haneoka:locale-ready", this.localeListener);
     this.action?.remove();
     super.disconnectedCallback();
@@ -260,7 +264,7 @@ export class HomeDashboard extends LitElement {
         ).format(date);
   }
   private songTitle(song: JsonRecord) {
-    return localizedText(song.musicTitle || song.title, this.locale) || String(song.musicId || "—");
+    return songTitle(song, this.locale).text;
   }
   private bands(): Band[] {
     const names = new Map(this.bandRecords.map((band) => [Number(band.bandId), band]));
@@ -547,7 +551,9 @@ export class HomeDashboard extends LitElement {
                             }
                           </span>
                           <span class="tile__identity">
-                            <strong class="tile__title">${this.songTitle(song)}</strong>
+                            <strong class="tile__title" lang=${songTitle(song, this.locale).locale}>
+                              ${this.songTitle(song)}
+                            </strong>
                           </span>
                         </a>
                       </li>

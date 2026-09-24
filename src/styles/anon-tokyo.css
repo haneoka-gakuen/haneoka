@@ -1,182 +1,98 @@
 @layer pages {
-  /* ANON TOKYO collection and dressing-room workspace. */
   anon-tokyo-workspace {
     display: block;
-    height: 100%;
-  }
-  .outfit-characters .media-loading::after {
-    width: 18px;
-    height: 18px;
-  }
-  .anon-guide-images {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-    gap: 12px;
-  }
-  .anon-guide-images img {
-    width: 100%;
-    height: auto;
-    object-fit: contain;
-    border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface-container-low);
-  }
-  /* Every collection is one divided list of shared list items, so the ten
-   per-mode grid/card/media overrides that used to live here are gone: they
-   existed only because each mode had reinvented the row. The only local
-   decision left is that the rows read as a single surface. */
-  .anon-collection {
-    display: grid;
     min-width: 0;
-    align-content: start;
+    min-height: 0;
   }
-  .anon-collection .list {
-    overflow: hidden;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface);
+  .collection--anon {
+    --tile-min: 200px;
   }
-  .anon-collection--staff .list-item__thumb,
-  .anon-collection--customers .list-item__thumb {
-    border-radius: var(--md-sys-shape-corner-full);
+  .collection--anon .tile__media:has(> .material-icon) {
+    min-height: 120px;
   }
-  .anon-board,
-  .anon-task-stack {
-    display: grid;
-    align-content: start;
-    gap: 24px;
-    max-width: 1040px;
-  }
-  .anon-board > section > header,
-  .anon-task-group > header {
+  .anon-table-title {
     display: flex;
-    min-height: 44px;
-    align-items: center;
-    gap: 8px;
-  }
-  .anon-board h2,
-  .anon-task-group h2 {
-    flex: 1;
-    margin: 0;
-    font-size: var(--md-sys-typescale-title-large-size);
-    font-weight: 500;
-  }
-  .anon-task-group > header > span {
-    color: var(--md-sys-color-on-surface-variant);
-    font-variant-numeric: tabular-nums;
-  }
-  .anon-data-table,
-  .anon-task-group > div {
-    overflow: hidden;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface);
-  }
-  .anon-data-table > div {
-    display: grid;
-    min-height: 52px;
-    grid-template-columns: 80px repeat(3, minmax(0, 1fr));
     align-items: center;
     gap: 12px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .anon-data-table > div:last-child,
-  .anon-task-group details:last-child {
-    border-bottom: 0;
-  }
-  .anon-data-table span {
-    color: var(--md-sys-color-on-surface-variant);
-  }
-  .anon-task-group details {
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .anon-task-group summary {
-    display: grid;
-    min-height: 52px;
-    grid-template-columns: minmax(0, 1fr) auto 20px;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    list-style: none;
+    border: 0;
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    text-align: start;
+    padding: 8px 0;
     cursor: pointer;
   }
-  .anon-task-group summary::-webkit-details-marker {
-    display: none;
+  .anon-table-title img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
   }
-  .anon-task-group summary small {
-    color: var(--md-sys-color-on-surface-variant);
+  .sheet--detail-anon .spec-list {
+    overflow-wrap: anywhere;
   }
-  .anon-task-group details[open] summary .material-icon {
-    rotate: 180deg;
-  }
-  .anon-task-group details > p {
-    margin: 0;
-    padding: 12px 16px 16px;
-    color: var(--md-sys-color-on-surface-variant);
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface-container-low);
-    white-space: pre-line;
+  .sheet--detail-anon audio {
+    width: 100%;
+    margin-top: 24px;
   }
   .outfit-workspace {
     display: grid;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    grid-template-columns: 72px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(200px, 38%);
-    gap: 0;
-    padding: 0;
+    min-width: 0;
+    grid-template-columns: minmax(260px, 2fr) minmax(300px, 3fr);
+    grid-template-rows: auto auto;
+    align-items: start;
+    gap: 24px;
+    padding: var(--pane-gutter);
   }
   .outfit-characters {
+    grid-column: 1 / -1;
     display: flex;
-    width: 72px;
-    min-height: 0;
-    align-items: center;
-    flex-direction: column;
-    gap: var(--md-sys-spacing-2);
-    padding: var(--md-sys-spacing-3) var(--md-sys-spacing-2);
-    overflow: auto;
-    grid-row: 1 / -1;
-    max-height: 100%;
-    border-right: 1px solid var(--md-sys-color-outline-variant);
-    background: var(--md-sys-color-surface-container-low);
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px;
   }
   .outfit-characters button {
-    width: 48px;
-    height: 48px;
-    min-height: 48px;
-    flex: 0 0 48px;
-    padding: 5px;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: transparent;
+    flex: 0 0 96px;
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px 8px;
+    border: 2px solid transparent;
+    border-radius: 24px;
+    background: var(--md-sys-color-surface-container-low);
+    color: var(--md-sys-color-on-surface);
     cursor: pointer;
   }
-  .outfit-characters button.selected {
+  .outfit-characters button[aria-pressed="true"] {
+    border-color: var(--md-sys-color-primary);
+    border-radius: 16px;
     background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
   }
   .outfit-characters img {
-    width: 38px;
-    height: 38px;
-    object-fit: cover;
-    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+  }
+  .outfit-characters span {
+    font: 500 12px/18px var(--app-font);
+    text-align: center;
+  }
+  .outfit-preview {
+    display: grid;
+    gap: 16px;
+    position: sticky;
+    top: 16px;
+    min-width: 0;
   }
   .outfit-stage {
     position: relative;
     display: grid;
-    min-width: 0;
-    min-height: 0;
     place-items: center;
+    height: clamp(320px, 58dvh, 660px);
+    min-width: 0;
     overflow: hidden;
-    grid-column: 2;
-    grid-row: 1;
-    margin: 12px 12px 6px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    background: radial-gradient(
-      circle at 50% 36%,
-      var(--md-sys-color-surface-container-lowest),
-      var(--md-sys-color-surface-container)
-    );
+    border-radius: 28px;
+    background: var(--md-sys-color-surface-container-low);
   }
   .outfit-stage > img {
     width: 100%;
@@ -188,156 +104,114 @@
   }
   .outfit-stage__runtime {
     position: absolute;
-    z-index: 1;
-    inset: 24px 8% 76px;
-    display: grid;
-    place-items: center;
+    inset: 12px;
   }
   .outfit-stage__runtime canvas {
     width: 100%;
     height: 100%;
   }
-  .outfit-stage__runtime.ready > .progress,
-  .outfit-stage__runtime.failed > .progress {
-    display: none;
+  .outfit-preview__caption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
   .outfit-closet {
     display: grid;
     min-width: 0;
-    min-height: 0;
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-column: 2;
-    grid-row: 2;
-    gap: 8px;
-    padding: 6px 12px 12px;
-    background: transparent;
+    gap: 16px;
   }
   .outfit-tabs {
-    display: flex;
-    padding: 0;
-    overflow: auto hidden;
-  }
-  .outfit-tabs > button {
-    min-width: max-content;
-    flex: 1 0 auto;
-  }
-  .outfit-items {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-    align-content: start;
-    gap: 8px;
-    padding: 8px;
-    overflow: auto;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-surface-container-lowest);
-  }
-  .outfit-item {
-    /* The selected check mark is an absolutely positioned ::after, so the item
-   * has to be the containing block. */
-    position: relative;
-    display: grid;
     min-width: 0;
-    gap: 6px;
+    overflow-x: auto;
     padding: 4px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-surface-container-lowest);
-    cursor: pointer;
   }
-  .outfit-item:hover {
-    background: var(--md-sys-color-surface-container);
+  .outfit-tabs .segmented {
+    width: 100%;
+    min-width: max-content;
   }
-  .outfit-item.selected {
-    color: var(--md-sys-color-on-secondary-container);
-    border-color: var(--md-sys-color-primary);
+  .collection--outfit {
+    --tile-min: 136px;
+  }
+  .collection--outfit .tile.is-selected {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
     background: var(--md-sys-color-secondary-container);
   }
-  .outfit-item.selected::after {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    display: grid;
-    width: 22px;
-    height: 22px;
-    place-items: center;
-    content: "✓";
-    color: var(--md-sys-color-on-primary);
-    border-radius: 50%;
-    background: var(--md-sys-color-primary);
-    font-size: 13px;
-  }
-  .outfit-item img {
-    width: 100%;
-    aspect-ratio: 1;
-    object-fit: contain;
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-surface-container-low);
-  }
-  .outfit-item span {
-    overflow: hidden;
-    font-size: var(--md-sys-typescale-label-medium-size);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  @media (max-width: 959px) {
+  @media (max-width: 839px) {
     .outfit-workspace {
-      height: auto;
-      min-height: 100%;
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: 64px minmax(320px, 1fr) auto;
-      overflow-y: auto;
+      gap: 16px;
     }
-    .outfit-characters {
-      grid-column: 1;
-      grid-row: 1;
-      max-height: none;
-      flex-direction: row;
-      overflow: auto hidden;
-      border-right: 0;
-      border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    .outfit-preview {
+      position: static;
     }
     .outfit-stage {
-      grid-column: 1;
-      grid-row: 2;
+      height: clamp(320px, 48dvh, 480px);
     }
-    .outfit-closet {
-      grid-column: 1;
-      grid-row: 3;
-    }
-    .outfit-items {
-      max-height: 320px;
+    .collection--outfit {
+      --tile-min: 120px;
     }
   }
+}
 
+@layer pages {
+  .anon-detail-sections {
+    display: grid;
+    gap: 8px;
+  }
+  .anon-detail-section {
+    padding: 16px 0;
+  }
+  .sheet--detail-anon .detail-layout {
+    grid-template-columns: minmax(0, var(--detail-media-size, 340px)) minmax(0, 1fr);
+  }
+  .sheet--detail-anon .image-gallery__stage {
+    height: var(--detail-media-size, 320px);
+    min-height: 0;
+  }
+  @media (max-width: 839px) {
+    .sheet--detail-anon .detail-layout {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+    .sheet--detail-anon .detail-layout__media {
+      width: min(100%, var(--detail-media-size, 340px));
+      justify-self: center;
+    }
+    .sheet--detail-anon .image-gallery__stage {
+      height: min(var(--detail-media-size, 320px), 26dvh);
+    }
+  }
   @media (max-width: 599px) {
-    .anon-data-table {
-      overflow-x: auto;
+    .collection--anon {
+      --tile-min: 136px;
     }
-    .anon-data-table > div {
-      min-width: 560px;
-    }
-    .outfit-workspace {
-      grid-template-rows: 56px clamp(300px, 48dvh, 440px) auto;
-    }
-    .outfit-characters {
-      width: 100%;
+    .collection--anon .tile__identity {
+      padding: 10px;
       gap: 4px;
-      padding: 4px 8px;
     }
     .outfit-stage {
-      margin: 8px 8px 4px;
-      border-radius: var(--md-sys-shape-corner-medium);
+      height: clamp(240px, 34dvh, 340px);
     }
-    .outfit-stage__runtime {
-      inset: 12px 5% 60px;
+    .outfit-characters button {
+      flex-basis: 76px;
+      padding: 8px 4px;
+      gap: 4px;
     }
-    .outfit-closet {
-      padding: 4px 8px max(12px, env(safe-area-inset-bottom));
+    .outfit-characters img {
+      width: 40px;
+      height: 40px;
     }
-    .outfit-items {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      padding: 6px;
+    .outfit-characters span {
+      font-size: 11px;
+      line-height: 16px;
+    }
+    .anon-detail-section {
+      padding-block: 12px;
+    }
+    .detail-section {
+      gap: 12px;
     }
   }
 }

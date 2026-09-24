@@ -35,6 +35,7 @@ export interface TileMark {
 export interface TileOptions {
   /** Headline: title-medium, clamped to two lines. */
   title: unknown;
+  titleLanguage?: string;
   /** Subhead: body-medium, one line. null drops it; "" reserves its height. */
   subtitle?: unknown;
   /** 16dp emblem before the subhead (band logo, attribute). */
@@ -145,7 +146,7 @@ export function tile(options: TileOptions): TemplateResult {
         )}
       </span>
       <span class="tile__identity">
-        <strong class="tile__title">${options.title}</strong>
+        <strong class="tile__title" lang=${options.titleLanguage || nothing}>${options.title}</strong>
         ${
           options.subtitle === null || options.subtitle === undefined
             ? nothing

@@ -1,3 +1,4 @@
+import { songTitle } from "../lib/song-display";
 import "./ui/image-gallery";
 import { renderPane } from "./ui/pane";
 import { detailLayout } from "./ui/detail-layout";
@@ -108,7 +109,7 @@ export function renderBestdoriDetail(
         `
       : nothing;
   if (state.routeKind === "bestdori-songs") {
-    const title = localizedText(detail.musicTitle || detail.title, locale) || String(detail.musicId || "—");
+    const title = songTitle(detail, locale);
     const difficulties = Array.isArray(detail.difficulty) ? (detail.difficulty as Value[]) : [];
     const comboGroups =
       detail.comboRewards && typeof detail.comboRewards === "object"
@@ -138,7 +139,9 @@ export function renderBestdoriDetail(
           <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
             ${icon("arrow_back")}
           </button>
-          <strong>${title}</strong>
+          <strong lang=${typeof title === "string" ? nothing : title.locale}>
+            ${typeof title === "string" ? title : title.text}
+          </strong>
           ${
             detail.musicUrl
               ? html`

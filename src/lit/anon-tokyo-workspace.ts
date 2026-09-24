@@ -1,9 +1,16 @@
-import { facet as renderFacet } from "./ui/facet";
+import { renderAnonTokyoDetails } from "./shared/anon-tokyo-detail";
 import { LitElement, html, nothing } from "lit";
+import { facet as renderFacet } from "./ui/facet";
 import { clearBrowseBar, renderBrowse } from "./ui/browse";
-import { inputChip } from "./ui/controls";
+import { inputChip, segmented } from "./ui/controls";
+import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
+import { tile } from "./ui/tile";
+import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
+import { PaneFocus, renderPane } from "./ui/pane";
+import { detailLayout } from "./ui/detail-layout";
+import "./ui/image-gallery";
 import { icon } from "./ui/icon";
-import { errorState, loadingState } from "./ui/state";
+import { emptyState, errorState, loadingState, noticeState } from "./ui/state";
 import {
   catalogUrl,
   currentReleaseServer,
@@ -14,15 +21,59 @@ import {
   recordValues,
   uiText,
 } from "./shared/catalog";
+import { resolveLocalizedText } from "../lib/localized-text";
+import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
+import { writeReleaseServer } from "../lib/release-server";
 import { OutfitStage } from "./runtime/outfit-stage";
 type Value = Record<string, unknown>;
 const read = readPath;
 const values = recordValues;
+const referenceDocuments = new Map<string, Promise<Value>>();
+const MODE_GROUPS: Record<string, readonly (readonly [string, string])[]> = {
+  characters: [["characters", "characters"]],
+  shop: [
+    ["shop.stores", "storeLevels"],
+    ["progression.playerLevels", "playerLevels"],
+  ],
+  goods: [["goods.items", "goods"]],
+  decorations: [["shop.decorations", "decorations"]],
+  staff: [
+    ["staffing.clerks", "clerks"],
+    ["staffing.helpers", "helpers"],
+    ["staffing.deliveries", "deliveries"],
+    ["staffing.deliverymen", "deliveries"],
+  ],
+  customers: [["staffing.customers", "customers"]],
+  tasks: [
+    ["tasks.main", "mainTasks"],
+    ["tasks.daily", "dailyTasks"],
+    ["tasks.achievementTasks", "achievements"],
+    ["tasks.achievements", "achievements"],
+    ["tasks.chapter", "chapter"],
+  ],
+  guide: [
+    ["guides.steps", "guide"],
+    ["guides.imagePages", "page"],
+  ],
+  fever: [
+    ["stages.music", "music"],
+    ["stages.stages", "stages"],
+    ["stages.bgm", "music"],
+  ],
+};
+const FIELD_ALIASES: Record<string, string> = {
+  entityGroup: "category",
+  categoryId: "category",
+  bandId: "band",
+  taskTabId: "taskTabs",
+  levelLimit: "unlockLevel",
+};
 
 export class AnonTokyoWorkspace extends LitElement {
   static properties = {
     locale: { type: String },
     mode: { type: String },
+    labels: { type: String },
     phase: { state: true },
     document: { state: true },
     selectedCharacter: { state: true },
@@ -31,12 +82,15 @@ export class AnonTokyoWorkspace extends LitElement {
     query: { state: true },
     visible: { state: true },
     filtersOpen: { state: true },
-    facet: { state: true },
+    facets: { state: true },
+    view: { state: true },
     outfitSelections: { state: true },
     error: { state: true },
+    outfitError: { state: true },
   };
   declare locale: string;
   declare mode: string;
+  declare labels: string;
   declare phase: "loading" | "ready" | "error";
   declare document: Value | null;
   declare selectedCharacter: string;
@@ -45,17 +99,28 @@ export class AnonTokyoWorkspace extends LitElement {
   declare query: string;
   declare visible: number;
   declare filtersOpen: boolean;
-  declare facet: string;
+  declare facets: Record<string, string[]>;
+  declare view: CollectionView;
   declare outfitSelections: Record<number, string>;
   declare error: string;
+  declare outfitError: string;
   private bands: Value[] = [];
+  private referenceData?: Value;
+  private copies: Record<string, Record<string, string>> = {};
   private outfitStage?: OutfitStage;
   private outfitRecipeKey = "";
   private outfitStageCharacter = "";
+  private lazyImages = new LazyImages();
+  private paneFocus = new PaneFocus();
+  private releaseLocation?: () => void;
+  private onLocale = () => {
+    this.locale = preferredLocale();
+  };
   constructor() {
     super();
     this.locale = "ja";
     this.mode = "characters";
+    this.labels = "{}";
     this.phase = "loading";
     this.document = null;
     this.selectedCharacter = "";
@@ -64,9 +129,11 @@ export class AnonTokyoWorkspace extends LitElement {
     this.query = "";
     this.visible = 80;
     this.filtersOpen = false;
-    this.facet = "";
+    this.facets = {};
+    this.view = "grid";
     this.outfitSelections = {};
     this.error = "";
+    this.outfitError = "";
   }
   createRenderRoot() {
     return this;
@@ -74,31 +141,91 @@ export class AnonTokyoWorkspace extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.locale = preferredLocale(this.locale);
+    this.copies = JSON.parse(this.labels || "{}");
+    this.releaseLocation = observeDetailLocation(this.restoreLocation, this);
+    addEventListener("haneoka:locale-ready", this.onLocale);
+    void import("@material/web/textfield/outlined-text-field.js");
     void import("@material/web/progress/circular-progress.js");
-    const params = new URLSearchParams(location.search);
-    this.selectedCharacter = params.get("character") || "";
-    this.selectedItem = params.get("item") || "";
-    this.facet = params.get("filter") || "";
+    this.restoreLocation();
     void this.load();
   }
   disconnectedCallback() {
     clearBrowseBar();
+    this.releaseLocation?.();
+    this.paneFocus.detach();
+    this.lazyImages.disconnect();
     this.outfitStage?.dispose();
+    removeEventListener("haneoka:locale-ready", this.onLocale);
     super.disconnectedCallback();
   }
+  private restoreLocation = () => {
+    const params = new URLSearchParams(location.search);
+    this.selectedCharacter = params.get("character") || "";
+    this.selectedItem = params.get("item") || "";
+    this.query = params.get("q") || "";
+    this.view = collectionView(params.get("view"));
+    this.facets = Object.fromEntries(
+      [...params.keys()].filter((key) => key.startsWith("filter.")).map((key) => [key.slice(7), params.getAll(key)]),
+    );
+  };
+  private sync() {
+    const params = new URLSearchParams(location.search);
+    for (const key of [...params.keys()]) if (key.startsWith("filter.")) params.delete(key);
+    for (const [key, choices] of Object.entries(this.facets))
+      for (const choice of choices) params.append(`filter.${key}`, choice);
+    this.query ? params.set("q", this.query) : params.delete("q");
+    this.view !== "grid" ? params.set("view", this.view) : params.delete("view");
+    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+  private async loadReferenceData() {
+    const server = this.server();
+    let request = referenceDocuments.get(server);
+    if (!request) {
+      request = fetch(catalogUrl("anon-tokyo", "", server)).then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<Value>;
+      });
+      referenceDocuments.set(server, request);
+      request.catch(() => referenceDocuments.delete(server));
+    }
+    try {
+      const data = await request;
+      if (this.isConnected && this.server() === server) {
+        this.referenceData = data;
+        this.requestUpdate();
+      }
+    } catch {
+      /* The collection payload still provides the primary details. */
+    }
+  }
+  private openItem(item: Value) {
+    void this.loadReferenceData();
+    this.selectedItem = String(item.id);
+    const params = new URLSearchParams(location.search);
+    params.set("item", this.selectedItem);
+    openDetailLocation(`${location.pathname}?${params}`);
+  }
+  private closeItem() {
+    const params = new URLSearchParams(location.search);
+    params.delete("item");
+    closeDetailLocation(`${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
   updated() {
+    this.lazyImages.observe(this);
+    this.paneFocus.sync(this.querySelector<HTMLElement>("[data-detail-pane]"), () => this.closeItem());
     if (this.mode !== "outfits" || this.phase !== "ready") return;
     const host = this.querySelector<HTMLElement>("[data-outfit-runtime]");
     const recipe = this.outfitRecipe();
     const key = String(recipe?.id || "");
-    if (!host || !recipe || !key || (this.outfitRecipeKey === key && this.outfitStage)) return;
-    const characterKey = String(recipe.characterId || this.selectedCharacter || "");
+    if (!host || !recipe || !key || this.outfitRecipeKey === key) return;
+    const characterKey = String(recipe.characterId || this.selectedCharacter);
     if (!this.outfitStage || this.outfitStageCharacter !== characterKey) {
       this.outfitStage?.dispose();
       this.outfitStage = new OutfitStage(host, this.server());
       this.outfitStageCharacter = characterKey;
     }
     this.outfitRecipeKey = key;
+    this.outfitError = "";
     host.classList.remove("ready", "failed");
     void this.outfitStage
       .load(
@@ -106,13 +233,23 @@ export class AnonTokyoWorkspace extends LitElement {
         String((recipe.animation as Value | undefined)?.name || "f_idle"),
         Number(recipe.scale || 1),
       )
-      .then(() => host.classList.add("ready"))
-      .catch(() => host.classList.add("failed"));
+      .then(() => {
+        if (this.outfitRecipeKey === key) host.classList.add("ready");
+      })
+      .catch((error) => {
+        if (this.outfitRecipeKey === key) {
+          host.classList.add("failed");
+          this.outfitError = error instanceof Error ? error.message : String(error);
+        }
+      });
   }
   private server() {
     return currentReleaseServer();
   }
   private async load() {
+    this.phase = "loading";
+    this.error = "";
+    this.referenceData = undefined;
     try {
       const base = catalogUrl("anon-tokyo", "", this.server());
       const requestedByMode: Record<string, string[]> = {
@@ -165,10 +302,15 @@ export class AnonTokyoWorkspace extends LitElement {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         this.document = (await response.json()) as Value;
       }
+      if (this.mode === "tasks") await this.loadReferenceData();
       this.phase = "ready";
+      if (this.selectedItem && this.mode !== "outfits") void this.loadReferenceData();
       if (this.mode === "outfits" && this.selectedItem) {
         const selected = values(read(this.document, "goods.reloading")).find((item) => item.id === this.selectedItem);
-        if (selected) this.outfitSelections = { [Number(selected.spineType || 1)]: this.selectedItem };
+        if (selected) {
+          this.tab = Number(selected.spineType || 1);
+          this.outfitSelections = { [this.tab]: this.selectedItem };
+        }
       }
       if (this.mode === "fever") {
         const response = await fetch(catalogUrl("bands"));
@@ -181,84 +323,88 @@ export class AnonTokyoWorkspace extends LitElement {
       this.phase = "error";
     }
   }
-  private text(value: unknown): string {
+  private label(key: string) {
+    const value = this.copies[this.locale]?.[key] || this.copies.en?.[key];
+    if (value) return value;
+    const common = uiText(this.locale, key);
+    return common !== key
+      ? common
+      : key.replace(/([a-z])([A-Z])/gu, "$1 $2").replace(/^./u, (letter) => letter.toUpperCase());
+  }
+  private text(value: unknown) {
     return localizedText(value, this.locale);
+  }
+  private titleValue(item: Value) {
+    return resolveLocalizedText(item.name || item.displayName || item.title || item.text, this.locale);
+  }
+  private entityTitle(item: Value): string {
+    if (this.mode === "tasks" && item.taskTypeId) return this.taskTitle(item);
+    const named = this.titleValue(item).text;
+    if (this.mode === "guide" && !named)
+      return `${this.label(item.pageIndex == null ? "guideStep" : "page")} ${Number(item.pageIndex ?? item.rawId ?? 0) + 1}`;
+    if (this.mode === "fever" && item.cueName && !named) return this.label("backgroundMusic");
+    if (named && !/^(?:normal|helper|deliveryman|customer):\d+$/u.test(named)) return named;
+    if (this.mode === "customers" && item.customerKind) return this.label(String(item.customerKind));
+    if (this.mode === "staff" && item.nameKey && this.copies[this.locale]?.[String(item.nameKey)])
+      return this.label(String(item.nameKey));
+    if (this.mode === "fever" && item.bandId)
+      return `${this.anonBandName(Number(item.bandId))} · ${this.label(String(item.entityGroup || "stages"))}`;
+    if (item.level != null) return `${this.label(String(item.entityGroup || "level"))} · Lv.${item.level}`;
+    return this.label(String(item.entityGroup || this.mode));
   }
   private media(item: Value): string {
     for (const key of ["image", "icon", "avatar", "preview", "thumbnail"]) {
       const value = item[key];
-      if (typeof value === "string") return value;
-      if (value && typeof value === "object" && (value as Value).url) return String((value as Value).url);
+      if (typeof value === "string" && /^(?:https?:|\/|data:)/u.test(value)) return value;
+      if (value && typeof value === "object") {
+        const data = value as Value;
+        const variants = data.variants as Value | undefined;
+        const language = this.locale === "zh-CN" ? "zh-Hans" : this.locale === "zh-TW" ? "zh-Hant" : this.locale;
+        const variant = variants?.[language] as Value | undefined;
+        const url = String(variant?.url || data.url || "");
+        if (url) return url;
+      }
     }
     return "";
   }
-  private entityTitle(item: Value) {
-    return (
-      this.text(item.name) ||
-      this.text(item.displayName) ||
-      this.text(item.title) ||
-      String(item.label || item.displayLabel || item.cueName || uiText(this.locale, "unavailable"))
-    );
-  }
-  private selectCharacter(id: string) {
-    this.selectedCharacter = id;
-    this.selectedItem = "";
-    this.outfitSelections = {};
-    const params = new URLSearchParams(location.search);
-    params.set("character", id);
-    params.delete("item");
-    history.replaceState(history.state, "", `${location.pathname}?${params}`);
-  }
   private collection(): Value[] {
-    if (this.mode === "staff")
-      return [
-        ...values(read(this.document, "staffing.clerks")).map((item) => ({ ...item, entityKind: "clerk" })),
-        ...values(read(this.document, "staffing.helpers")).map((item) => ({ ...item, entityKind: "helper" })),
-        ...values(read(this.document, "staffing.deliveries")).map((item) => ({ ...item, entityKind: "delivery" })),
-        ...values(read(this.document, "staffing.deliverymen")).map((item) => ({ ...item, entityKind: "deliveryman" })),
-      ].sort((left, right) =>
-        String((left as Value).id || (left as Value).rawId || "").localeCompare(
-          String((right as Value).id || (right as Value).rawId || ""),
-          "en",
-          {
-            numeric: true,
-          },
-        ),
+    return (MODE_GROUPS[this.mode] || [])
+      .flatMap(([path, entityGroup]) =>
+        values(read(this.document, path)).map((item): Value => ({ ...item, entityGroup })),
+      )
+      .sort(
+        (a, b) =>
+          Number(a.rawId ?? Number.MAX_SAFE_INTEGER) - Number(b.rawId ?? Number.MAX_SAFE_INTEGER) ||
+          String(a.id).localeCompare(String(b.id), "en", { numeric: true }),
       );
+  }
+  private subtitle(item: Value): string {
+    if (this.mode === "characters")
+      return Number(item.levelLimit) > 0
+        ? `${this.label("unlockLevel")} · Lv.${item.levelLimit}`
+        : this.label("noLevelRequirement");
+    if (this.mode === "goods")
+      return `${this.label("unitCost")} ${Number(read(item, "purchase.cost") || 0).toLocaleString(this.locale)} · ${this.label("quantity")} ${Number(read(item, "purchase.count") || 0).toLocaleString(this.locale)}`;
+    if (this.mode === "decorations")
+      return `${(item.size as number[] | undefined)?.join(" × ") || "—"} · ${this.label("popularity")} +${Number(read(item, "popularity.count") || 0)}`;
+    if (this.mode === "shop")
+      return `${this.label("customerCapacity")} ${item.customerCount ?? "—"} · ${item.exp != null ? `EXP ${item.exp}` : `${this.label("roomSize")} ${(item.size as number[] | undefined)?.join(" × ") || "—"}`}`;
+    if (this.mode === "tasks") return this.rewardText(item.reward) || this.label(String(item.entityGroup || "tasks"));
+    if (this.mode === "staff")
+      return `${this.label(String(item.entityGroup || "staff"))}${item.point != null ? ` · ${item.point} ${this.label("point")}` : ""}`;
+    if (this.mode === "customers")
+      return `${this.label(String(item.customerKind || "customers"))} · Lv.${read(item, "values.customerLv") || item.level || 1}`;
+    if (this.mode === "guide")
+      return item.pageIndex != null ? `${this.label("page")} ${Number(item.pageIndex) + 1}` : this.label("guide");
     if (this.mode === "fever")
       return [
-        ...values(read(this.document, "stages.music")).map((item) => ({ ...item, entityKind: "music" })),
-        ...values(read(this.document, "stages.stages")).map((item) => ({ ...item, entityKind: "stage" })),
-        ...values(read(this.document, "stages.bgm")).map((item) => ({ ...item, entityKind: "bgm" })),
-      ].sort((left, right) =>
-        String((left as Value).id || (left as Value).rawId || "").localeCompare(
-          String((right as Value).id || (right as Value).rawId || ""),
-          "en",
-          {
-            numeric: true,
-          },
-        ),
-      );
-    const paths: Record<string, string> = {
-      characters: "characters",
-      shop: "shop.stores",
-      goods: "goods.items",
-      decorations: "shop.decorations",
-      staff: "staffing.clerks",
-      customers: "staffing.customers",
-      tasks: "tasks.main",
-      guide: "guides.steps",
-      fever: "stages.music",
-    };
-    return values(read(this.document, paths[this.mode] || this.mode)).sort((left, right) => {
-      const order = Number(left.displayOrder ?? left.order ?? left.rawId);
-      const other = Number(right.displayOrder ?? right.order ?? right.rawId);
-      if (Number.isFinite(order) && Number.isFinite(other) && order !== other) return order - other;
-      return String(left.id || left.rawId || "").localeCompare(String(right.id || right.rawId || ""), "en", {
-        numeric: true,
-        sensitivity: "base",
-      });
-    });
+        this.label(String(item.entityGroup)),
+        this.anonBandName(Number(item.bandId)),
+        item.durationSeconds != null ? `${item.durationSeconds}s` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    return this.text(item.description) || `#${item.rawId}`;
   }
   render() {
     if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
@@ -269,132 +415,365 @@ export class AnonTokyoWorkspace extends LitElement {
         () => void this.load(),
         this.error,
       );
+    if (
+      this.document.available === false ||
+      (this.mode === "outfits" ? !values(this.document.characters).length : !this.collection().length)
+    ) {
+      clearBrowseBar();
+      return html`
+        <section class="page">
+          ${noticeState({
+            title: this.label("availabilityTitle"),
+            body: this.label("unavailable"),
+            icon: "inventory_2",
+            action: html`
+              <button
+                class="button button--tonal"
+                @click=${() => {
+                  writeReleaseServer("intl-cbt");
+                  void this.load();
+                }}
+              >
+                ${uiText(this.locale, "settingsGlobalCbt") === "settingsGlobalCbt" ? this.label("viewCbt") : uiText(this.locale, "settingsGlobalCbt")}
+              </button>
+            `,
+          })}
+        </section>
+      `;
+    }
     return this.mode === "outfits" ? this.renderOutfits() : this.renderCollection();
   }
   private renderCollection() {
-    if (this.mode === "shop") return this.renderShop();
-    if (this.mode === "tasks") return this.renderTasks();
-    if (this.mode === "guide") return this.renderGuide();
     const source = this.collection();
-    const facetKey: Record<string, string> = {
-      characters: "levelLimit",
-      goods: "categoryId",
-      decorations: "type",
-      staff: "point",
-      customers: "customerKind",
-      fever: "bandId",
-    };
-    const key = facetKey[this.mode] || "";
-    const facets = key ? [...new Set(source.map((item) => String(item[key] ?? "")).filter(Boolean))] : [];
+    const keys = [
+      "entityGroup",
+      "categoryId",
+      "type",
+      "subType",
+      "customerKind",
+      "bandId",
+      "taskTabId",
+      "levelLimit",
+      "rarity",
+      "isShow",
+    ];
+    const filters = keys.flatMap((key) => {
+      const choices = [...new Set(source.flatMap((item) => (item[key] == null ? [] : [String(item[key])])))];
+      return choices.length > 1 ? [{ key, choices }] : [];
+    });
     const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase(this.locale);
-    const list = source.filter(
+    const filtered = source.filter(
       (item) =>
-        (!this.facet || String(item[key] ?? "") === this.facet) &&
-        (!needle || JSON.stringify(item).normalize("NFKC").toLocaleLowerCase(this.locale).includes(needle)),
+        (!needle ||
+          `${this.entityTitle(item)} ${this.subtitle(item)} ${item.rawId}`
+            .normalize("NFKC")
+            .toLocaleLowerCase(this.locale)
+            .includes(needle)) &&
+        Object.entries(this.facets).every(([key, values]) => !values.length || values.includes(String(item[key]))),
     );
-    const shown = list.slice(0, this.visible);
-    return renderBrowse({
-      kind: `anon-${this.mode}`,
-      count: {
-        value: list.length,
-        label: list.length === source.length ? "" : `/ ${source.length.toLocaleString()}`,
-      },
-      applied: this.facet
-        ? inputChip(`${this.facetTitle(key)}: ${this.facetLabel(key, this.facet)}`, uiText(this.locale, "remove"), () =>
-            this.setFacet(""),
-          )
-        : undefined,
-      results: html`
-        <ul class="list list--divided" role="list">
-          ${shown.map((item) => this.renderCollectionItem(item))}
-        </ul>
-        ${
-          list.length > shown.length
-            ? html`
-                <div class="load-more">
-                  <button class="button button--tonal" type="button" @click=${() => (this.visible += 80)}>
-                    ${uiText(this.locale, "loadMore")}
+    const shown = filtered.slice(0, this.visible);
+    const title = (item: Value) => html`
+      <span lang=${this.titleValue(item).locale}>${this.entityTitle(item)}</span>
+    `;
+    const collection =
+      this.view === "grid"
+        ? html`
+            <div class="collection collection--anon">
+              ${shown.map((item) => tile({ kind: "anon", title: title(item), subtitle: this.subtitle(item), label: this.entityTitle(item), image: this.media(item), fit: "contain", onOpen: () => this.openItem(item), onImageError: nextImageCandidate, placeholder: icon(this.mode === "fever" ? "music_note" : this.mode === "characters" ? "person" : "inventory_2", 32) }))}
+            </div>
+          `
+        : this.view === "list"
+          ? collectionList(
+              shown.map((item) => ({
+                id: String(item.id),
+                title: title(item),
+                subtitle: this.subtitle(item),
+                image: this.media(item),
+                onOpen: () => this.openItem(item),
+              })),
+            )
+          : collectionTable(
+              this.label(this.mode),
+              ["ID", this.label("name"), this.label("details"), this.label("category")],
+              shown.map((item) => [
+                item.rawId,
+                html`
+                  <button class="anon-table-title" @click=${() => this.openItem(item)}>
+                    ${
+                      this.media(item)
+                        ? html`
+                            <img src=${this.media(item)} alt="" loading="lazy" />
+                          `
+                        : nothing
+                    }${title(item)}
                   </button>
-                </div>
-              `
-            : nothing
-        }
-      `,
-      filters: {
-        label: uiText(this.locale, "filter"),
-        open: this.filtersOpen,
-        count: Number(Boolean(this.facet)) + Number(Boolean(this.query)),
-        closeLabel: uiText(this.locale, "close"),
-        resetLabel: uiText(this.locale, "reset"),
-        onOpen: () => (this.filtersOpen = true),
-        onClose: () => (this.filtersOpen = false),
-        onReset: () => {
-          this.query = "";
-          this.setFacet("");
-        },
-        body: html`
-          <md-outlined-text-field
-            type="search"
-            label=${uiText(this.locale, "search")}
-            .value=${this.query}
-            @input=${(event: Event) => {
-              this.query = (event.target as HTMLElement & { value: string }).value;
-              this.visible = 100;
-            }}
-          ></md-outlined-text-field>
-          ${
-            facets.length
-              ? renderFacet(
-                  this.facetTitle(key),
-                  this.locale,
-                  facets.map((value) => ({
-                    value,
-                    label: this.facetLabel(key, value),
-                    count: source.filter((item) => String(item[key] ?? "") === value).length,
-                  })),
-                  this.facet ? [this.facet] : [],
-                  (value) => this.setFacet(this.facet === value ? "" : value),
-                )
+                `,
+                this.subtitle(item),
+                this.label(String(item.entityGroup)),
+              ]),
+            );
+    const selected = source.find((item) => String(item.id) === this.selectedItem);
+    return html`
+      ${renderBrowse({
+        kind: "anon",
+        count: { value: filtered.length, label: source.length === filtered.length ? "" : `/ ${source.length}` },
+        controls: viewSwitch(this.locale, this.view, (view) => {
+          this.view = view;
+          this.sync();
+        }),
+        applied: Object.entries(this.facets).flatMap(([key, values]) =>
+          values.map((value) =>
+            inputChip(
+              `${this.label(FIELD_ALIASES[key] || key)}: ${this.facetValue(key, value)}`,
+              uiText(this.locale, "remove"),
+              () => this.toggleFacet(key, value),
+            ),
+          ),
+        ),
+        results: html`
+          ${filtered.length ? collection : emptyState({ title: uiText(this.locale, "empty"), icon: "search_off" })}${
+            shown.length < filtered.length
+              ? html`
+                  <div class="load-more">
+                    <button class="button button--tonal" @click=${() => (this.visible += 80)}>
+                      ${uiText(this.locale, "loadMore")}
+                    </button>
+                  </div>
+                `
               : nothing
           }
         `,
-      },
+        filters: {
+          label: uiText(this.locale, "filter"),
+          open: this.filtersOpen,
+          count:
+            Object.values(this.facets).reduce((sum, values) => sum + values.length, 0) + Number(Boolean(this.query)),
+          closeLabel: uiText(this.locale, "close"),
+          resetLabel: uiText(this.locale, "reset"),
+          onOpen: () => (this.filtersOpen = true),
+          onClose: () => (this.filtersOpen = false),
+          onReset: () => {
+            this.query = "";
+            this.facets = {};
+            this.visible = 80;
+            this.sync();
+          },
+          body: html`
+            <md-outlined-text-field
+              type="search"
+              label=${uiText(this.locale, "search")}
+              .value=${this.query}
+              @input=${(event: Event) => {
+                this.query = (event.target as HTMLInputElement).value;
+                this.visible = 80;
+                this.sync();
+              }}
+            ></md-outlined-text-field>
+            ${filters.map(({ key, choices }) =>
+              renderFacet(
+                this.label(FIELD_ALIASES[key] || key),
+                this.locale,
+                choices.map((value) => ({
+                  value,
+                  label: this.facetValue(key, value),
+                  count: source.filter((item) => String(item[key]) === value).length,
+                })),
+                this.facets[key] || [],
+                (value) => this.toggleFacet(key, value),
+              ),
+            )}
+          `,
+        },
+      })}${selected ? this.renderDetail(selected) : nothing}
+    `;
+  }
+  private toggleFacet(key: string, value: string) {
+    const next = this.facets[key] || [];
+    this.facets = {
+      ...this.facets,
+      [key]: next.includes(value) ? next.filter((item) => item !== value) : [...next, value],
+    };
+    this.visible = 80;
+    this.sync();
+  }
+  private facetValue(key: string, value: string) {
+    if (key === "entityGroup") return this.label(value);
+    if (key === "categoryId")
+      return (
+        this.entityTitle(
+          values(read(this.document, "goods.categories")).find((item) => String(item.rawId) === value) || {},
+        ) || value
+      );
+    if (key === "bandId") return this.anonBandName(Number(value)) || value;
+    if (key === "taskTabId")
+      return (
+        this.text(values(read(this.document, "tasks.tabs")).find((item) => String(item.rawId) === value)?.name) || value
+      );
+    if (value === "true" || value === "false") return this.label(value === "true" ? "yes" : "no");
+    return value;
+  }
+  private renderDetail(item: Value) {
+    const image = this.media(item);
+    const audio = String(item.playableUrl || "");
+    return renderPane({
+      title: this.entityTitle(item),
+      titleLanguage: this.titleValue(item).locale,
+      subtitle: this.subtitle(item),
+      kind: "anon",
+      style: this.mode === "guide" ? "" : "--detail-media-size:220px",
+      open: true,
+      backLabel: uiText(this.locale, "close"),
+      onClose: () => this.closeItem(),
+      body: detailLayout(
+        image
+          ? html`
+              <image-gallery
+                .images=${[{ id: "image", source: image, label: this.entityTitle(item) }]}
+                locale=${this.locale}
+                title=${this.entityTitle(item)}
+              ></image-gallery>
+            `
+          : nothing,
+        html`
+          <section class="detail-section">
+            ${renderAnonTokyoDetails({ item, data: this.referenceData || this.document || {}, locale: this.locale, mode: this.mode, label: (key) => this.label(key), text: (value) => this.text(value), media: (value) => this.media(value), title: (value) => this.entityTitle(value), taskTitle: (value) => this.taskTitle(value) })}${
+              audio
+                ? html`
+                    <audio controls preload="none" src=${audio}></audio>
+                  `
+                : nothing
+            }
+          </section>
+        `,
+      ),
     });
   }
-  private setFacet(value: string) {
-    this.facet = value;
+  private selectCharacter(id: string) {
+    this.selectedCharacter = id;
+    this.selectedItem = "";
+    this.outfitSelections = {};
     const params = new URLSearchParams(location.search);
-    value ? params.set("filter", value) : params.delete("filter");
-    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+    params.set("character", id);
+    params.delete("item");
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+  }
+  private renderOutfits() {
+    clearBrowseBar();
+    const characters = values(this.document?.characters).sort((a, b) => Number(a.rawId) - Number(b.rawId));
+    const character = characters.find((item) => item.id === this.selectedCharacter) || characters[0];
+    const rawId = Number(character?.rawId);
+    const wearables = values(read(this.document, "goods.reloading"))
+      .filter(
+        (item) =>
+          (!Array.isArray(item.characterIds) ||
+            !item.characterIds.length ||
+            item.characterIds.map(Number).includes(rawId)) &&
+          Number(item.spineType) === this.tab,
+      )
+      .sort((a, b) => Number(a.rawId) - Number(b.rawId));
+    const recipe = this.outfitRecipe();
+    const preview = recipe?.preview as Value | undefined;
+    const selectedId = this.outfitSelections[this.tab] || "";
+    const labels = ["", "headwear", "top", "bottom", "shoes", "set"];
+    return html`
+      <section class="outfit-workspace">
+        <div class="outfit-characters" role="group" aria-label=${uiText(this.locale, "characters")}>
+          ${characters.map(
+            (item) => html`
+              <button
+                type="button"
+                aria-pressed=${character?.id === item.id}
+                aria-label=${this.entityTitle(item)}
+                title=${this.entityTitle(item)}
+                @click=${() => this.selectCharacter(String(item.id))}
+              >
+                ${
+                  this.media(item)
+                    ? html`
+                        <img src=${this.media(item)} alt="" loading="lazy" />
+                      `
+                    : icon("person", 24)
+                }
+                <span>${this.entityTitle(item)}</span>
+              </button>
+            `,
+          )}
+        </div>
+        <section class="outfit-preview" aria-label=${this.label("preview")}>
+          <div class="outfit-stage">
+            ${
+              preview?.url
+                ? html`
+                    <img src=${String(preview.url)} alt=${this.entityTitle(character || {})} />
+                  `
+                : nothing
+            }
+            <div class="outfit-stage__runtime" data-outfit-runtime></div>
+            ${!recipe ? emptyState({ title: this.label("previewMissing"), icon: "person" }) : nothing}
+          </div>
+          <div class="outfit-preview__caption">
+            <strong>${this.entityTitle(character || {})}</strong>
+            <button
+              class="button button--tonal"
+              @click=${() => {
+                this.outfitSelections = {};
+                this.selectedItem = "";
+              }}
+            >
+              ${this.label("defaultOutfit")}
+            </button>
+          </div>
+          ${
+            this.outfitError
+              ? errorState(this.label("modelUnavailable"), uiText(this.locale, "retry"), () => {
+                  this.outfitRecipeKey = "";
+                  this.requestUpdate();
+                })
+              : nothing
+          }
+        </section>
+        <section class="outfit-closet">
+          <div class="outfit-tabs">
+            ${segmented({ label: uiText(this.locale, "outfitParts"), value: String(this.tab), options: [1, 2, 3, 4, 5].map((kind) => ({ value: String(kind), label: uiText(this.locale, labels[kind]!) })), onSelect: (value) => (this.tab = Number(value)) })}
+          </div>
+          <div class="collection collection--outfit">
+            ${wearables.map((item) =>
+              tile({
+                title: this.entityTitle(item),
+                titleLanguage: this.titleValue(item).locale,
+                subtitle: `${this.label("rarity")} ${item.rarity || "—"} · ${this.label("popularity")} ${item.popularity || 0}`,
+                label: this.entityTitle(item),
+                image: this.media(item),
+                fit: "contain",
+                selected: selectedId === item.id,
+                kind: "outfit",
+                onOpen: () => {
+                  const value = item.id === selectedId ? "" : String(item.id);
+                  const next = { ...this.outfitSelections, [this.tab]: value };
+                  if (value && this.tab === 5) {
+                    next[2] = "";
+                    next[3] = "";
+                    next[4] = "";
+                  } else if (value && [2, 3, 4].includes(this.tab)) next[5] = "";
+                  this.outfitSelections = next;
+                  this.selectedItem = value;
+                },
+                onImageError: nextImageCandidate,
+              }),
+            )}
+          </div>
+        </section>
+      </section>
+    `;
   }
   private currencyName(id: number) {
-    const currency = values(read(this.document, "progression.currencies")).find((item) => Number(item.rawId) === id);
+    const currency = values(read(this.referenceData || this.document, "progression.currencies")).find(
+      (item) => Number(item.rawId) === id,
+    );
     return this.text(currency?.name) || uiText(this.locale, "currency");
   }
   private anonBandName(id: number) {
     return this.text(this.bands.find((band) => Number(band.bandId) === id)?.bandName) || "";
-  }
-  /** A human title for the facet a collection is grouped by. */
-  private facetTitle(key: string) {
-    const titles: Record<string, string> = {
-      levelLimit: uiText(this.locale, "playerLevels"),
-      categoryId: uiText(this.locale, "category"),
-      type: uiText(this.locale, "type"),
-      point: uiText(this.locale, "weight"),
-      customerKind: uiText(this.locale, "customers"),
-      bandId: uiText(this.locale, "band"),
-    };
-    return titles[key] || uiText(this.locale, "filter");
-  }
-  private facetLabel(key: string, value: string) {
-    if (key === "categoryId") {
-      const category = values(read(this.document, "goods.categories")).find((item) => String(item.rawId) === value);
-      return this.text(category?.name) || this.text(category?.title) || uiText(this.locale, "category");
-    }
-    if (key === "bandId") return this.anonBandName(Number(value)) || uiText(this.locale, "band");
-    if (key === "levelLimit") return `Lv.${value}`;
-    if (key === "point") return `${value} pt`;
-    return value;
   }
   private rewardText(value: unknown) {
     const source = value && typeof value === "object" ? String((value as Value).raw || "") : String(value || "");
@@ -408,28 +787,41 @@ export class AnonTokyoWorkspace extends LitElement {
       "unit",
     );
   }
-  private taskParameter(kind: string, value: unknown) {
+  private taskParameter(kind: string, value: unknown): string {
     const id = Number(value || 0);
-    if (kind === "goodsid") {
-      const item = values(read(this.document, "goods.items")).find((entry) => Number(entry.rawId) === id);
-      return this.entityTitle(item || {});
+    const paths: Record<string, string> = {
+      goodsid: "goods.items",
+      tagid: "goods.tags",
+      goodstypeid: "goods.categories",
+      decorationid: "shop.decorations",
+      characterid: "characters",
+      clerkid: "staffing.clerks",
+      subtypeid: "shop.subTypes",
+      suitid: "themes",
+    };
+    const path = paths[kind];
+    if (path) {
+      const entry = values(read(this.referenceData || this.document, path)).find((entry) => Number(entry.rawId) === id);
+      return entry
+        ? this.text(entry.name || entry.title) || this.label("unavailableObject")
+        : this.label("unavailableObject");
     }
-    if (kind === "tagid") {
-      const item = values(read(this.document, "goods.tags")).find((entry) => Number(entry.rawId) === id);
-      return this.entityTitle(item || {});
-    }
-    if (kind === "goodstypeid") {
-      const item = values(read(this.document, "goods.categories")).find((entry) => Number(entry.rawId) === id);
-      return this.entityTitle(item || {});
-    }
-    if (kind === "decorationid") {
-      const item = values(read(this.document, "shop.decorations")).find((entry) => Number(entry.rawId) === id);
-      return this.entityTitle(item || {});
+    if (kind === "time") {
+      const seconds = Math.max(0, Number(value) || 0);
+      return new Intl.NumberFormat(this.locale, { style: "unit", unit: "second", unitDisplay: "short" }).format(
+        seconds,
+      );
     }
     return String(value ?? "");
   }
-  private taskTitle(entry: Value) {
-    const type = values(read(this.document, "tasks.types")).find(
+  private taskTitle(entry: Value): string {
+    if (!entry.taskTypeId) {
+      const main = values(read(this.referenceData || this.document, "tasks.main")).find(
+        (item) => Number(item.rawId) === Number(entry.rawId),
+      );
+      if (main?.taskTypeId) return this.taskTitle(main);
+    }
+    const type = values(read(this.referenceData || this.document, "tasks.types")).find(
       (candidate) => Number(candidate.rawId) === Number(entry.taskTypeId),
     );
     const template = this.text(type?.description);
@@ -445,365 +837,6 @@ export class AnonTokyoWorkspace extends LitElement {
           )
         : uiText(this.locale, "task"))
     );
-  }
-  private renderShop() {
-    const playerLevels = values(read(this.document, "progression.playerLevels"));
-    const stores = values(read(this.document, "shop.stores"));
-    return html`
-      <section class="page anon-board">
-        <section>
-          <header>
-            <svg class="material-icon" width="22" height="22"><use href="/icons.svg#trending_up"></use></svg>
-            <h2>${uiText(this.locale, "playerLevels")}</h2>
-          </header>
-          <div class="anon-data-table">
-            ${playerLevels.map(
-              (entry) => html`
-                <div>
-                  <strong>Lv.${entry.level}</strong>
-                  <span>EXP ${Number(entry.exp || 0).toLocaleString()}</span>
-                  <span>${entry.customerCount || 0} ${uiText(this.locale, "customers")}</span>
-                  <span>${this.rewardText(entry.reward)}</span>
-                </div>
-              `,
-            )}
-          </div>
-        </section>
-        <section>
-          <header>
-            <svg class="material-icon" width="22" height="22"><use href="/icons.svg#storefront"></use></svg>
-            <h2>${uiText(this.locale, "expansion")}</h2>
-          </header>
-          <div class="anon-data-table">
-            ${stores.map(
-              (entry) => html`
-                <div>
-                  <strong>Lv.${entry.level || entry.rawId}</strong>
-                  <span>${(entry.size as unknown[] | undefined)?.join(" × ") || "—"}</span>
-                  <span>${entry.customerCount || 0} ${uiText(this.locale, "customers")}</span>
-                  <span>
-                    ${Number((entry.popularity as Value | undefined)?.shopRequirement || 0).toLocaleString()}
-                    ${uiText(this.locale, "popularity")}
-                  </span>
-                </div>
-              `,
-            )}
-          </div>
-        </section>
-      </section>
-    `;
-  }
-  private renderTasks() {
-    const main = values(read(this.document, "tasks.main"));
-    const tabs = values(read(this.document, "tasks.tabs"));
-    const groups = new Map<string, Value[]>();
-    for (const entry of main) {
-      const key = String(entry.taskTabId || entry.tabId || "");
-      groups.set(key, [...(groups.get(key) || []), entry]);
-    }
-    const extra = [
-      [uiText(this.locale, "daily"), values(read(this.document, "tasks.daily"))],
-      [
-        uiText(this.locale, "achievements"),
-        [
-          ...values(read(this.document, "tasks.achievementTasks")),
-          ...values(read(this.document, "tasks.achievements")),
-        ],
-      ],
-      [uiText(this.locale, "chapter"), values(read(this.document, "tasks.chapter"))],
-    ] as const;
-    const sections = [
-      ...[...groups].map(([key, entries]) => ({
-        title: this.text(tabs.find((tab) => String(tab.rawId) === key)?.name) || uiText(this.locale, "tasks"),
-        entries,
-      })),
-      ...extra.filter(([, entries]) => entries.length).map(([title, entries]) => ({ title, entries })),
-    ];
-    return html`
-      <section class="page anon-task-stack">
-        ${sections.map(
-          (section) => html`
-            <section class="anon-task-group">
-              <header>
-                <svg class="material-icon" width="20" height="20"><use href="/icons.svg#fact_check"></use></svg>
-                <h2>${section.title}</h2>
-                <span>${section.entries.length}</span>
-              </header>
-              <div>
-                ${section.entries.map(
-                  (entry) => html`
-                    <details>
-                      <summary>
-                        <span>${this.taskTitle(entry) || this.text(entry.name)}</span>
-                        ${
-                          this.rewardText(entry.reward)
-                            ? html`
-                                <small>${this.rewardText(entry.reward)}</small>
-                              `
-                            : nothing
-                        }
-                        <svg class="material-icon" width="20" height="20">
-                          <use href="/icons.svg#expand_more"></use>
-                        </svg>
-                      </summary>
-                      <p>${this.text(entry.description) || this.text(entry.chapterName) || ""}</p>
-                    </details>
-                  `,
-                )}
-              </div>
-            </section>
-          `,
-        )}
-      </section>
-    `;
-  }
-  private renderGuide() {
-    const groups = new Map<string, Value[]>();
-    for (const entry of values(read(this.document, "guides.steps"))) {
-      const key = String(entry.page || uiText(this.locale, "guide"));
-      groups.set(key, [...(groups.get(key) || []), entry]);
-    }
-    return html`
-      <section class="page anon-task-stack">
-        ${[...groups].map(
-          ([page, entries]) => html`
-            <section class="anon-task-group">
-              <header>
-                <svg class="material-icon" width="20" height="20"><use href="/icons.svg#menu_book"></use></svg>
-                <h2>${page}</h2>
-                <span>${entries.length}</span>
-              </header>
-              <div>
-                ${entries.map(
-                  (entry) => html`
-                    <details>
-                      <summary>
-                        <span>
-                          ${this.text(entry.title) || this.text(entry.text) || uiText(this.locale, "guideStep")}
-                        </span>
-                        <svg class="material-icon" width="20" height="20">
-                          <use href="/icons.svg#expand_more"></use>
-                        </svg>
-                      </summary>
-                      <p>${this.text(entry.hint) || this.text(entry.text) || ""}</p>
-                    </details>
-                  `,
-                )}
-              </div>
-            </section>
-          `,
-        )}
-        ${
-          values(read(this.document, "guides.imagePages")).length
-            ? html`
-                <section class="anon-guide-images">
-                  ${values(read(this.document, "guides.imagePages")).map((entry) =>
-                    this.media(entry)
-                      ? html`
-                          <img src=${this.media(entry)} alt=${this.entityTitle(entry)} loading="lazy" />
-                        `
-                      : nothing,
-                  )}
-                </section>
-              `
-            : nothing
-        }
-      </section>
-    `;
-  }
-  private renderCollectionItem(item: Value) {
-    const source = this.media(item);
-    const iconNames: Record<string, string> = {
-      characters: "person",
-      shop: "storefront",
-      goods: "shopping_bag",
-      decorations: "chair",
-      staff: "badge",
-      customers: "groups",
-      tasks: "task_alt",
-      guide: "signpost",
-      fever: "music_note",
-    };
-    const meta = (() => {
-      if (this.mode === "characters") return `Lv.${item.levelLimit || 0}`;
-      if (this.mode === "shop")
-        return `${(item.size as unknown[] | undefined)?.join(" × ") || "—"} / ${item.customerCount || 0} ${uiText(this.locale, "customers")}`;
-      if (this.mode === "goods")
-        return `${item.buyItemCount || (item.purchase as Value | undefined)?.count || 0} × ${item.buyItemCost || (item.purchase as Value | undefined)?.cost || 0}`;
-      if (this.mode === "decorations")
-        return `${(item.size as unknown[] | undefined)?.join(" × ") || "—"} / +${Number((item.popularity as Value | undefined)?.count || 0)} ${uiText(this.locale, "popularity")}`;
-      if (this.mode === "staff") return `${item.entityKind || ""} / ${item.point || 0} pt`;
-      if (this.mode === "customers")
-        return `${item.customerKind || uiText(this.locale, "guest")} / ${uiText(this.locale, "weight")} ${item.baseSpawnWeight || 0}`;
-      if (this.mode === "fever")
-        return `${item.entityKind || ""} / ${item.durationSeconds || 0}s / ${this.anonBandName(Number(item.bandId || 0))}`;
-      return "";
-    })();
-    const description = this.text(item.description) || this.text(item.text) || "";
-    const audio = this.mode === "fever" && item.entityKind === "bgm" ? String(item.playableUrl || item.url || "") : "";
-    // A 56dp thumbnail, a headline and one supporting line: that is a
-    // Material list item, so it is one. It used to be an `.anon-card` that
-    // borrowed the tile's text classes while laying itself out as a row,
-    // which meant it inherited card padding it had no card to sit in.
-    return html`
-      <li>
-        <div class=${`list-item ${description ? "list-item--two-line" : ""}`}>
-          <span class=${`list-item__thumb list-item__thumb--icon ${source ? "media-loading" : ""}`}>
-            ${
-              source
-                ? html`
-                    <img
-                      src=${source}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                      @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                    />
-                  `
-                : icon(iconNames[this.mode] || "storefront", 24)
-            }
-          </span>
-          <span class="list-item__body">
-            <span class="list-item__headline">${this.entityTitle(item)}</span>
-            ${
-              description
-                ? html`
-                    <span class="list-item__supporting">${description}</span>
-                  `
-                : nothing
-            }
-            ${
-              audio
-                ? html`
-                    <audio src=${audio} controls preload="metadata"></audio>
-                  `
-                : nothing
-            }
-          </span>
-          ${
-            meta
-              ? html`
-                  <span class="list-item__trailing list-item__meta">${meta}</span>
-                `
-              : nothing
-          }
-        </div>
-      </li>
-    `;
-  }
-  private renderOutfits() {
-    const characters = values(this.document?.characters);
-    const character = characters.find((item) => item.id === this.selectedCharacter) || characters[0];
-    const rawId = Number(character?.rawId);
-    const wearables = values(read(this.document, "goods.reloading")).filter(
-      (item) =>
-        item.isShow !== false &&
-        (!Array.isArray(item.characterIds) ||
-          !(item.characterIds as unknown[]).length ||
-          (item.characterIds as unknown[]).map(Number).includes(rawId)) &&
-        Number(item.spineType) === this.tab,
-    );
-    const selectedId = this.outfitSelections[this.tab] || "";
-    const recipe = this.outfitRecipe();
-    const preview = recipe?.preview as Value | undefined;
-    const labels = ["", "headwear", "top", "bottom", "shoes", "set"];
-    return html`
-      <section class="outfit-workspace">
-        <aside class="outfit-characters">
-          ${characters.map(
-            (item) => html`
-              <button
-                class=${`${this.media(item) ? "media-loading" : ""} ${item.id === character?.id ? "selected" : ""}`}
-                @click=${() => this.selectCharacter(String(item.id))}
-              >
-                <img
-                  src=${this.media(item)}
-                  alt=${this.entityTitle(item)}
-                  loading="lazy"
-                  decoding="async"
-                  @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                  @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                />
-              </button>
-            `,
-          )}
-        </aside>
-        <div class=${`outfit-stage ${preview?.url ? "media-loading" : ""}`}>
-          ${
-            preview?.url
-              ? html`
-                  <img
-                    src=${String(preview.url)}
-                    alt=${this.entityTitle(character || {})}
-                    decoding="async"
-                    @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                    @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                  />
-                `
-              : html`
-                  <div class="viewer-state"><span>${uiText(this.locale, "previewUnavailable")}</span></div>
-                `
-          }
-          <div class="outfit-stage__runtime" data-outfit-runtime>
-            <md-circular-progress indeterminate></md-circular-progress>
-          </div>
-        </div>
-        <aside class="outfit-closet">
-          <div class="outfit-tabs segmented" aria-label=${uiText(this.locale, "outfitParts")}>
-            ${[1, 2, 3, 4, 5].map(
-              (kind) => html`
-                <button
-                  aria-pressed=${this.tab === kind}
-                  @click=${() => {
-                    this.tab = kind;
-                    this.selectedItem = "";
-                  }}
-                >
-                  ${uiText(this.locale, labels[kind] || "set")}
-                </button>
-              `,
-            )}
-          </div>
-          <div class="outfit-items">
-            ${wearables.map(
-              (item) => html`
-                <button
-                  class=${`outfit-item ${this.media(item) ? "media-loading" : ""} ${item.id === selectedId ? "selected" : ""}`}
-                  @click=${() => {
-                    const value = item.id === selectedId ? "" : String(item.id);
-                    const next = { ...this.outfitSelections, [this.tab]: value };
-                    if (value && this.tab === 5) {
-                      next[2] = "";
-                      next[3] = "";
-                      next[4] = "";
-                    } else if (value && [2, 3, 4].includes(this.tab)) next[5] = "";
-                    this.outfitSelections = next;
-                    this.selectedItem = value;
-                  }}
-                >
-                  ${
-                    this.media(item)
-                      ? html`
-                          <img
-                            src=${this.media(item)}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                            @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                          />
-                        `
-                      : nothing
-                  }
-                  <span>${this.entityTitle(item)}</span>
-                </button>
-              `,
-            )}
-          </div>
-        </aside>
-      </section>
-    `;
   }
   private outfitRecipe(): Value | undefined {
     const characters = values(this.document?.characters);
