@@ -144,6 +144,7 @@ export class ChartSimulator extends LitElement {
   private animationFrame = 0;
   private loadedKey = "";
   private availableNoteSkins: readonly OurNotesNoteSkin[] = ["skin001"];
+  private sourceFilesCache?: { server: string; promise: Promise<Set<string>> };
   private resumeAfterScrub = false;
 
   constructor() {
@@ -202,19 +203,30 @@ export class ChartSimulator extends LitElement {
     return (await response.json()) as RuntimeDescriptor;
   }
   private async sourceFiles() {
-    const response = await fetch(`/api/v1/servers/${encodeURIComponent(this.server)}/sources/tree`);
-    if (!response.ok) throw new Error(`Runtime source tree ${response.status}`);
-    const tree = (await response.json()) as Record<string, unknown>;
-    const files = new Set<string>();
-    const walk = (value: unknown, prefix: string) => {
-      if (typeof value === "number") {
-        files.add(prefix);
-      } else if (value && typeof value === "object" && !Array.isArray(value)) {
-        for (const [part, child] of Object.entries(value)) walk(child, prefix ? `${prefix}/${part}` : part);
-      }
-    };
-    walk(tree, "");
-    return files;
+    const server = this.server;
+    if (this.sourceFilesCache?.server === server) return this.sourceFilesCache.promise;
+    const promise = (async () => {
+      const response = await fetch(`/api/v1/servers/${encodeURIComponent(server)}/sources/tree`);
+      if (!response.ok) throw new Error(`Runtime source tree ${response.status}`);
+      const tree = (await response.json()) as Record<string, unknown>;
+      const files = new Set<string>();
+      const walk = (value: unknown, prefix: string) => {
+        if (typeof value === "number") {
+          files.add(prefix);
+        } else if (value && typeof value === "object" && !Array.isArray(value)) {
+          for (const [part, child] of Object.entries(value)) walk(child, prefix ? `${prefix}/${part}` : part);
+        }
+      };
+      walk(tree, "");
+      return files;
+    })();
+    this.sourceFilesCache = { server, promise };
+    try {
+      return await promise;
+    } catch (error) {
+      if (this.sourceFilesCache?.promise === promise) this.sourceFilesCache = undefined;
+      throw error;
+    }
   }
   private sourceWithName(files: Set<string>, name: string) {
     const matches = [...files].filter((path) => path.endsWith(`/${name}`));
