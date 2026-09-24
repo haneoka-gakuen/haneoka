@@ -24,6 +24,7 @@ from core.contracts import (
     RELEASE_TREES,
 )
 from core.hashes import sha256_file
+from core.fingerprints import build_fingerprint
 from core.manifests import read_json, stable_json, write_json
 from core.paths import (
     release_layout,
@@ -322,6 +323,7 @@ def fetch_package_artifact(store: R2Store, key: str, output: Path) -> dict[str, 
         key,
         output,
         expected_bytes=declared_bytes,
+        expected_sha256=expected,
     )
     return {
         "schema": "haneoka-package-fetch-v1",
@@ -652,6 +654,11 @@ def publish_source(
             "reusedObjects": len(unique),
             "releasedPackageLeases": released_leases,
         }
+    if existing_manifest is not None:
+        raise ValueError(
+            f"refusing to overwrite immutable source manifest {manifest_key}; "
+            "bump the source normalization revision when its interpretation changes"
+        )
 
     pointer = _current_pointer(store, config)
     previous_source_id = str((pointer or {}).get("sourceId") or "")
@@ -902,6 +909,7 @@ def publish_release(
         "schema": POINTER_SCHEMA,
         "server": config.id,
         "sourceId": manifest["sourceId"],
+        "pipelineFingerprint": build_fingerprint(Path(__file__).resolve().parents[2], config)[:16],
         "releaseId": release_id,
         "releaseManifest": manifest_key,
         "releaseIndex": {

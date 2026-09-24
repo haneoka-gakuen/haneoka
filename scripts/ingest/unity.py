@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import UnityPy
+from ingest.bundle_crypto import load_unity_bundle
 
 
 def _bundle_metadata(file: Path) -> dict[str, list[str]]:
@@ -14,7 +14,17 @@ def _bundle_metadata(file: Path) -> dict[str, list[str]]:
         raise FileNotFoundError(f"Unity bundle is not a file: {file}")
     if file.stat().st_size == 0:
         raise ValueError(f"Unity bundle is empty: {file}")
-    environment = UnityPy.load(str(file))
+    environment = load_unity_bundle(file)
+    # UnityPy accepts an unknown binary as a raw CAB with no objects. Production
+    # Android packages now contain encrypted bundle headers, so accepting that
+    # fallback silently published releases with no Live2D, Spine or story art.
+    if not environment.objects:
+        with file.open("rb") as stream:
+            signature = stream.read(8)
+        raise ValueError(
+            f"Unity bundle has no readable objects (possible encrypted header, "
+            f"signature={signature.hex()}): {file.name}"
+        )
     cab_files = sorted({str(name).casefold() for name in environment.cabs})
     external_cabs = sorted(
         {

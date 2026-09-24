@@ -16,6 +16,7 @@ BUILD_INPUTS = (
     "scripts/build",
     "scripts/core",
     "scripts/extract",
+    "scripts/ingest",
     "scripts/requirements.txt",
     "scripts/verify/release.py",
     "package.json",

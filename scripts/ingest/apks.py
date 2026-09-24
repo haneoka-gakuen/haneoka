@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import ipaddress
 import itertools
 import json
@@ -42,6 +43,21 @@ PUBLIC_DNS_CACHE_SECONDS = 60
 _public_dns_cache: dict[tuple[str, int], float] = {}
 _public_dns_lock = threading.Lock()
 STREAM_CHUNK_BYTES = 1024 * 1024
+def _normalization_revision() -> str:
+    """Give changed ingest logic a new immutable source key automatically."""
+    directory = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for name in ("apks.py", "addressables.py", "unity.py"):
+        digest.update(name.encode("ascii"))
+        digest.update(bytes.fromhex(sha256_file(directory / name)))
+    return "n" + digest.hexdigest()[:8]
+EMBEDDED_ONLY_CATALOG_PREFIXES = (
+    "cri_addressables_anchor_group_",
+    "embbuildtempanchor_assets_",
+    "embfont_assets_",
+    "embthirdparty_assets_",
+    "shared_monoscripts_",
+)
 
 
 def _required_file_size(file: Path, label: str) -> int:
@@ -288,6 +304,9 @@ def _embedded_catalog(asset_pack: Path, scratch: Path) -> tuple[Path, Path, str,
         catalog_entries = [
             member for member in members if member.filename.endswith("assets/aa/Android/catalog_main.bin")
         ]
+        if not catalog_entries:
+            catalog_entries = [member for member in members if member.filename == "assets/aa/catalog.bin"]
+            hash_entries = [member for member in members if member.filename == "assets/aa/catalog.hash"]
         if len(hash_entries) != 1 or len(catalog_entries) != 1:
             raise ValueError(
                 "offline ingest requires exactly one embedded catalog_main.hash and one "
@@ -643,6 +662,7 @@ def ingest_package(
     config: ServerConfig,
     artifact_cache: Path | None = None,
     concurrency: int = 12,
+    probe_only: bool = False,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="haneoka-source-") as temporary:
         scratch = Path(temporary)
@@ -781,7 +801,16 @@ def ingest_package(
             readable_catalog, catalog_encoding = _readable_catalog(remote_catalog, scratch)
 
         version = package_metadata["versionCode"] or "unknown"
-        source_id = f"v{version}-{package_sha[:12]}-{catalog_sha[:12]}"
+        source_id = f"v{version}-{package_sha[:12]}-{catalog_sha[:12]}-{_normalization_revision()}"
+        if probe_only:
+            return {
+                "server": config.id,
+                "sourceId": source_id,
+                "packageSha256": package_sha,
+                "catalogSha256": catalog_sha,
+                "catalogHash": catalog_hash,
+                "versionCode": version,
+            }
         layout = source_layout(config.id, source_id)
         if layout.manifest.is_file():
             value = read_json(layout.manifest)
@@ -916,6 +945,10 @@ def ingest_package(
                         unity_version=unity_version,
                         missing_ok=True,
                     ):
+                        if not filename.startswith(EMBEDDED_ONLY_CATALOG_PREFIXES):
+                            raise FileNotFoundError(
+                                f"required Addressables artifact is absent from the CDN: {filename}"
+                            )
                         sys.stderr.write(f"warning: artifact not on CDN, skipping: {filename}\n")
                         return None
                     actual = _required_file_size(target, f"artifact {filename}")

@@ -1,6 +1,9 @@
 name: Resource pipeline
 
 on:
+  schedule:
+    # Daily at 11:24 Asia/Shanghai. Japan joins after its Android catalog feed is verified.
+    - cron: "24 3 * * *"
   workflow_dispatch:
     inputs:
       server:
@@ -27,18 +30,22 @@ on:
         default: false
         type: boolean
 concurrency:
-  group: resource-pipeline-${{ inputs.server }}
+  group: resource-pipeline-${{ github.event_name == 'schedule' && 'production-daily' || inputs.server }}
   cancel-in-progress: false
 
 jobs:
   pipeline:
     name: Build and publish resources
+    strategy:
+      fail-fast: false
+      matrix:
+        server: ${{ fromJSON(github.event_name == 'schedule' && '["intl"]' || format('["{0}"]', inputs.server)) }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
     with:
-      github_environment: resource-${{ inputs.server }}
-      server: ${{ inputs.server }}
+      github_environment: resource-${{ matrix.server }}
+      server: ${{ matrix.server }}
       package_r2_key: ${{ inputs.package_r2_key }}
       source_id: ${{ inputs.source_id }}
       ktx2: ${{ inputs.ktx2 }}

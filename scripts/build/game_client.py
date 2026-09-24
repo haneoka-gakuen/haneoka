@@ -193,7 +193,7 @@ def assemble_game_client(
         "server": server,
         "sourceId": source_id,
         "master": {
-            "systemVersion": master["systemVersion"],
+            "systemVersion": system_version,
             "versionFile": VERSION_FILE,
             "tableCount": len(client_tables),
             "totalBytes": sum(item["bytes"] for item in client_tables)

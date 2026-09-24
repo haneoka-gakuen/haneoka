@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 import UnityPy
 from UnityPy.helpers.MeshHelper import MeshHandler
+from ingest.bundle_crypto import load_unity_bundle
 
 from build.home_spot_preview import (
     PREVIEW_ASPECT,
@@ -390,6 +391,10 @@ class _GlbBuilder:
 
     def _mesh(self, game_object: Any, renderer: Any, mesh_filter: Any) -> int | None:
         mesh_pointer = mesh_filter.m_Mesh
+        # Unity allows an enabled renderer on an empty placeholder object. It
+        # draws nothing until a mesh is assigned at runtime.
+        if not mesh_pointer or not int(getattr(mesh_pointer, "m_PathID", 0) or 0):
+            return None
         mesh_reader = mesh_pointer.deref() if mesh_pointer else None
         if mesh_reader is None or mesh_reader.type.name != "Mesh":
             raise ValueError(f"MeshFilter is unresolved: {game_object.m_Name}")
@@ -666,9 +671,10 @@ def _load_environment(
         dependencies.append(path)
         pending.extend((dependency.get("unity") or {}).get("dependencies", []))
 
-    environment = UnityPy.load(str(source.root / root_path))
-    for path in sorted(dependencies):
-        environment.load_file(str(source.root / path), is_dependency=True)
+    environment = load_unity_bundle(
+        source.root / root_path,
+        (source.root / path for path in sorted(dependencies)),
+    )
     if len(environment.assets) != 1:
         raise ValueError(
             f"selected Unity bundle must expose one primary assets file: {root_path}; "
@@ -831,6 +837,11 @@ def _hidden_objects(root: Any, situation_name: str, source_path: str) -> set[int
         value = reader.read_typetree()
         if "_situationObjects" in value:
             candidates.append(value["_situationObjects"])
+    # Some production backgrounds have no situation controller: their scene is
+    # shared unchanged by every situation. A repeated HideObjects pointer is
+    # likewise idempotent; Unity treats the list as a set of objects to hide.
+    if not candidates:
+        return set()
     if len(candidates) != 1 or not isinstance(candidates[0], list):
         raise ValueError(
             f"Home Spot background situation table must resolve uniquely: {source_path}"
@@ -855,11 +866,8 @@ def _hidden_objects(root: Any, situation_name: str, source_path: str) -> set[int
                 f"Home Spot HideObjects contains a non-local pointer: {source_path}:{situation_name}"
             )
         identity = int(pointer.get("m_PathID") or 0)
-        if not identity or identity in result:
-            raise ValueError(
-                f"Home Spot HideObjects contains an empty or repeated pointer: "
-                f"{source_path}:{situation_name}"
-            )
+        if not identity:
+            continue
         result.add(identity)
     return result
 

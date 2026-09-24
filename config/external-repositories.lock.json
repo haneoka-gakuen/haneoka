@@ -62,7 +62,7 @@
       "name": "vega-plugin-haneoka",
       "url": "https://github.com/haneoka-gakuen/vega-plugin-haneoka.git",
       "branch": "main",
-      "commit": "14147045529a42d04c39cadf265ee94bf922649e",
+      "commit": "d7884fa4de8849b81439b01a8c2c15a5e0039121",
       "version": "0.1.0",
       "kind": "node"
     },

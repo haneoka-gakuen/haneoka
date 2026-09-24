@@ -293,7 +293,10 @@ def _model_identity(match: re.Match[str]) -> tuple[str, str, str, str, int | Non
     model_name = directory
     if character:
         costume = re.sub(r"^(?:adv_)?live2d_[a-z0-9]+_[0-9]{3}_", "", model_name, flags=re.IGNORECASE)
-        return f"{character}_{costume}", costume, raw_mode or "adv", character, int(character), False
+        # Production catalogs carry both ADV and LIVE prefabs for the same
+        # character/costume. Keep historical ADV keys and namespace LIVE keys.
+        key = f"{character}_{costume}" if raw_mode != "live" else f"{character}_live-mode_{costume}"
+        return key, costume, raw_mode or "adv", character, int(character), False
     costume = re.sub(
         rf"^adv_live2d_sub_{re.escape(sub_character or '')}_",
         "",
@@ -487,6 +490,19 @@ def _runtime_url(server: str, key: str, relative: str) -> str:
     return f"/runtime/{server}/live2d/{key}/{relative}"
 
 
+def _packed_moc_payload(records: dict[str, dict[str, Any]]) -> bytes:
+    candidates = []
+    for record in records.values():
+        data = record.get("data")
+        raw = data.get("_bytes") if isinstance(data, dict) else None
+        if not isinstance(raw, list) or len(raw) < 4 or raw[:4] != [77, 79, 67, 51]:
+            continue
+        candidates.append(bytes(int(value) & 255 for value in raw))
+    if len(candidates) != 1:
+        raise ValueError(f"packed Live2D bundle has {len(candidates)} MOC3 payloads")
+    return candidates[0]
+
+
 def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[str, Any]:
     layout = build_layout(config.id, build_id)
     index = read_json(layout.metadata / "source-index.json")
@@ -509,16 +525,28 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
         seen_keys.add(key)
         model_name = PurePosixPath(model_root).name
         source_path = f"{model_root}/model/{model_name}.prefab"
+        descriptor = store.descriptor(source_path) if source_path in index.get("sources", {}) else None
+        records = None
 
         missing = []
-        if source_path not in index.get("sources", {}):
+        if descriptor is None:
             missing.append("prefab")
         try:
             moc, moc_source = _moc_payload(store, paths, model_root)
         except ValueError:
-            moc = b""
-            moc_source = ""
-            missing.append("moc3")
+            if descriptor is None:
+                moc = b""
+                moc_source = ""
+                missing.append("moc3")
+            else:
+                records = store.records(descriptor["selectedBundle"], descriptor["serializedFile"])
+                try:
+                    moc = _packed_moc_payload(records)
+                    moc_source = source_path
+                except ValueError:
+                    moc = b""
+                    moc_source = ""
+                    missing.append("moc3")
         texture_prefix = f"{model_root}/model/"
         texture_paths = [
             value
@@ -528,7 +556,23 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
             and value.casefold().endswith(".png")
             and (layout.assets / Path(*PurePosixPath(value).parts)).is_file()
         ]
-        if not texture_paths:
+        textures = [f"/assets/{config.id}/{value}" for value in texture_paths]
+        if not textures and descriptor is not None:
+            packed_textures = sorted(
+                (
+                    output for output in descriptor.get("outputs", [])
+                    if output.get("type") == "Texture2D"
+                    and str(output.get("path") or "").endswith(".png")
+                    and str(output.get("path") or "").startswith("runtime/unity/")
+                ),
+                key=lambda output: str(output["path"]),
+            )
+            if all((layout.root / str(output["path"])).is_file() for output in packed_textures):
+                textures = [
+                    f"/runtime/{config.id}/{str(output['path']).removeprefix('runtime/')}"
+                    for output in packed_textures
+                ]
+        if not textures:
             missing.append("textures")
         if missing:
             skipped_models.append(
@@ -543,14 +587,11 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
             )
             continue
 
-        descriptor = store.descriptor(source_path)
-        records = store.records(
-            descriptor["selectedBundle"], descriptor["serializedFile"]
-        )
+        if records is None:
+            records = store.records(descriptor["selectedBundle"], descriptor["serializedFile"])
         runtime_dir = layout.runtime / "live2d" / key
 
         atomic_write(runtime_dir / "model.moc3", moc)
-        textures = [f"/assets/{config.id}/{value}" for value in texture_paths]
 
         motions = []
         motion_references = []
@@ -576,6 +617,32 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
                 }
             )
             motion_references.append({"File": relative, "FadeInTime": fade_in, "FadeOutTime": fade_out})
+        if not motions:
+            packed_motions = sorted(
+                (
+                    (str(data.get("MotionName") or ""), str(record["pathId"]), data)
+                    for record in records.values()
+                    if isinstance((data := record.get("data")), dict)
+                    and isinstance(data.get("ParameterCurves"), list)
+                    and str(data.get("MotionName") or "").startswith(motion_prefix)
+                ),
+                key=lambda item: (item[0], item[1]),
+            )
+            for motion_path, object_id, data in packed_motions:
+                name = PurePosixPath(motion_path).name.removesuffix(".motion3.json")
+                relative = f"motions/{name}.motion3.json"
+                write_json(runtime_dir / relative, motion3_from_fade_asset(data))
+                fade_in = _number(data.get("FadeInTime"), 1)
+                fade_out = _number(data.get("FadeOutTime"), 1)
+                motions.append({
+                    "name": name,
+                    "sourcePath": source_path,
+                    "bundleObjectId": object_id,
+                    "runtime": _runtime_url(config.id, key, relative),
+                    "fadeInTime": fade_in,
+                    "fadeOutTime": fade_out,
+                })
+                motion_references.append({"File": relative, "FadeInTime": fade_in, "FadeOutTime": fade_out})
 
         expressions = []
         expression_references = []
@@ -591,6 +658,29 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
             write_json(runtime_dir / relative, exp3_from_expression_asset(data))
             expressions.append({"name": name, "sourcePath": value, "runtime": _runtime_url(config.id, key, relative)})
             expression_references.append({"Name": name, "File": relative})
+        if not expressions:
+            packed_expressions = sorted(
+                (
+                    (str(data.get("m_Name") or ""), str(record["pathId"]), data)
+                    for record in records.values()
+                    if isinstance((data := record.get("data")), dict)
+                    and data.get("Type") == "Live2D Expression"
+                    and isinstance(data.get("Parameters"), list)
+                    and str(data.get("m_Name") or "").endswith(".exp3")
+                ),
+                key=lambda item: (item[0], item[1]),
+            )
+            for expression_name, object_id, data in packed_expressions:
+                name = expression_name.removesuffix(".exp3")
+                relative = f"expressions/{name}.exp3.json"
+                write_json(runtime_dir / relative, exp3_from_expression_asset(data))
+                expressions.append({
+                    "name": name,
+                    "sourcePath": source_path,
+                    "bundleObjectId": object_id,
+                    "runtime": _runtime_url(config.id, key, relative),
+                })
+                expression_references.append({"Name": name, "File": relative})
 
         physics = next(
             (

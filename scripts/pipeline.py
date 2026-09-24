@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 
 from build.api import build_api
@@ -140,6 +141,11 @@ def command_ingest(args: argparse.Namespace) -> None:
         Path(args.input), config, Path(args.cache) if args.cache else None, args.concurrency
     )
     _print(_source_summary(manifest))
+
+
+def command_probe_source(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    _print(ingest_package(Path(args.input), config, probe_only=True))
 
 
 def command_verify_source(args: argparse.Namespace) -> None:
@@ -305,8 +311,16 @@ def command_build_release(args: argparse.Namespace) -> None:
 
 def _run_build(config: ServerConfig, source_id: str, identity: str, include_ktx2: bool) -> dict:
     extract_master(_source_package(config.id, source_id), build_layout(config.id, identity).master, config)
-    for index in range(config.extraction_shards):
-        extract_shard(config.id, source_id, identity, index, config.extraction_shards)
+    # UnityPy decoding is CPU-heavy Python work. Use separate processes locally;
+    # GitHub Actions already distributes these shards across independent jobs.
+    workers = min(config.extraction_shards, os.cpu_count() or 1, 4)
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(extract_shard, config.id, source_id, identity, index, config.extraction_shards)
+            for index in range(config.extraction_shards)
+        ]
+        for future in futures:
+            future.result()
     merge_unity_shards(config.id, source_id, identity, config.extraction_shards)
     stages = [
         lambda: extract_cri(config, source_id, identity),
@@ -539,6 +553,10 @@ def parser() -> argparse.ArgumentParser:
     ingest.add_argument("--cache", help="flat cache of exact original download filenames")
     ingest.add_argument("--concurrency", type=int, default=12)
     ingest.set_defaults(run=command_ingest)
+
+    probe = commands.add_parser("probe-source", help="identify package and live catalog without downloading bundles")
+    probe.add_argument("--input", required=True)
+    probe.set_defaults(run=command_probe_source)
 
     identity = commands.add_parser("build-id", help="derive the build id for a source")
     identity.add_argument("--source", required=True)

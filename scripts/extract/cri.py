@@ -245,12 +245,41 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
         scratch = Path(directory)
         usm = Usm.open(str(payload), key=int(key))
         video_files = []
-        for index, stream in enumerate(usm.videos):
-            target = scratch / f"video-{index}.ivf"
-            with target.open("wb") as file:
-                for packet in stream.stream(OpMode.DECRYPT, usm.video_key):
-                    file.write(packet[0] if isinstance(packet, tuple) else packet)
-            video_files.append(target)
+        for index, _ in enumerate(usm.videos):
+            selected = None
+            # CRI streams in production are mixed: most require the USM video
+            # XOR pass, while some member previews contain unencrypted MPEG
+            # video. Try the declared encrypted form first and accept only a
+            # stream whose header and FFprobe result agree.
+            for mode in (OpMode.DECRYPT, OpMode.NONE):
+                active_usm = usm if mode == OpMode.DECRYPT else Usm.open(str(payload), key=int(key))
+                active_stream = active_usm.videos[index]
+                candidate = scratch / f"video-{index}-{mode.name.lower()}.bin"
+                with candidate.open("wb") as file:
+                    for packet in active_stream.stream(mode, active_usm.video_key):
+                        file.write(packet[0] if isinstance(packet, tuple) else packet)
+                with candidate.open("rb") as input_stream:
+                    header = input_stream.read(12)
+                try:
+                    suffix, _, _ = _video_output_profile(header)
+                except ValueError:
+                    candidate.unlink()
+                    continue
+                target = candidate.with_suffix(".ivf" if header.startswith(b"DKIF") else ".m2v")
+                os.replace(candidate, target)
+                try:
+                    probe = _probe_streams(target)
+                except (RuntimeError, ValueError):
+                    target.unlink()
+                    continue
+                if probe["videoCount"] != 1:
+                    target.unlink()
+                    continue
+                selected = target
+                break
+            if selected is None:
+                raise ValueError(f"USM video stream {index} is neither a supported encrypted nor plain video")
+            video_files.append(selected)
         audio = None
         for index, stream in enumerate(usm.audios[:1]):
             raw_audio = scratch / f"audio-{index}.bin"
@@ -1055,10 +1084,14 @@ def extract_cri(
             try:
                 return _decode_task(task, config, staging / f"{index:04d}")
             except Exception as error:
-                sys.stderr.write(
-                    f"warning: failed to decode CRI source {task.get('label')}: {error}; skipping\n"
-                )
-                return None
+                if task["kind"] == "usm" and task["relative"] == PurePosixPath("cri/video/test/movie"):
+                    sys.stderr.write(
+                        f"warning: test-only CRI movie has no decodable video stream: {task.get('label')}; skipping\n"
+                    )
+                    return None
+                raise RuntimeError(
+                    f"required CRI source failed to decode: {task.get('label')}"
+                ) from error
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             decoded = list(executor.map(decode, pending))

@@ -14,12 +14,12 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-import UnityPy
 from UnityPy.classes.PPtr import PPtr
 
 from core.hashes import sha256_bytes, sha256_file
 from core.manifests import read_json, stable_json, write_json
 from core.paths import build_layout, source_layout, validate_unity_path
+from ingest.bundle_crypto import load_unity_bundle
 
 
 ARCHIVE_FORMAT = "haneoka-unity-objects-jsonl-v1"
@@ -508,10 +508,13 @@ def extract_bundle(
     dependencies = list(dependencies or [])
     for dependency in dependencies:
         _required_file_size(dependency, "Unity dependency bundle")
-    environment = UnityPy.load(str(bundle))
-    for dependency in dependencies:
-        environment.load_file(str(dependency), is_dependency=True)
+    environment = load_unity_bundle(bundle, dependencies)
     objects = list(environment.objects)
+    if not objects:
+        raise ValueError(
+            f"Unity bundle has no readable objects (possible encrypted header): "
+            f"{artifact['originalFilename']}"
+        )
     objects_by_identity = {
         (str(obj.assets_file.name), int(obj.path_id)): obj for obj in objects
     }

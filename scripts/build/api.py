@@ -242,6 +242,10 @@ class BuildData:
         self.tables = {file.stem: _rows(self.master, file.stem) for file in sorted(self.master.glob("*.json"))}
         self.texts = {str(row.get("_id")): row for row in self.tables.get("MasterText", [])}
         self.sounds = {int(row.get("_id") or 0): row for row in self.tables.get("MasterSound", [])}
+        self.missing_chat_sound_ids: set[int] = set()
+        self.missing_story_stills: set[str] = set()
+        self.missing_story_sound_ids: set[tuple[int, int]] = set()
+        self.mismatched_story_sound_ids: set[tuple[int, int, int]] = set()
         self.sound_sheets = {
             int(row.get("_id") or 0): row for row in self.tables.get("MasterSoundCueSheet", [])
         }
@@ -2583,6 +2587,72 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
     color = _frame_color(image_colors[0]) if image_colors else "#000000"
     if lower.startswith("adv_frame_fill"):
         result.update(type="fill", color=color)
+    elif lower == "adv_frame_video":
+        # Production adds a full-screen ColorBlue Image for video scenes. Its
+        # Image alpha is authored independently of the root CanvasGroup.
+        if len(image_colors) != 1 or "ColorBlue" not in game_objects:
+            raise ValueError(f"ADV video frame image is invalid: {source_path}")
+        image_alpha = float(image_colors[0].get("a", 1))
+        if not 0 <= image_alpha <= 1:
+            raise ValueError(f"ADV video frame alpha is invalid: {source_path}")
+        result.update(type="fill", color=color, canvasAlpha=canvas_alpha * image_alpha, variant="video")
+    elif lower.startswith("adv_frame_lightleak"):
+        texture_root = f"{ADV_FRAME_ROOT}/adv_frame_lightleak/data/Texture"
+        glow = data.asset(f"{texture_root}/adv_frame_lightleak_glow.png")
+        background = data.asset(f"{texture_root}/adv_frame_lightleak_bg.png")
+        glow_game_object = game_objects.get("Glow1", ("", {}))[1]
+        glow_image = _frame_image_component(objects, glow_game_object) if glow_game_object else None
+        glow_group = _frame_component(objects, glow_game_object, "CanvasGroup") if glow_game_object else None
+        glow_color = (glow_image or {}).get("data", {}).get("m_Color")
+        if not glow or not isinstance(glow_color, dict) or glow_group is None:
+            raise ValueError(f"ADV light leak frame inputs are incomplete: {source_path}")
+
+        def lightleak_node(
+            identity: str, texture_key: str, rgba: list[float], opacity: float, blend: str
+        ) -> dict[str, Any]:
+            return {
+                "id": identity,
+                "anchorMin": [0, 0],
+                "anchorMax": [1, 1],
+                "pivot": [0.5, 0.5],
+                "position": [0, 0],
+                "size": [0, 0],
+                "scale": [1, 1],
+                "rotation": 0,
+                "opacity": opacity,
+                "active": True,
+                "image": {
+                    "textureKey": texture_key,
+                    "color": rgba,
+                    "blend": blend,
+                    "preserveAspect": False,
+                },
+            }
+
+        nodes = []
+        textures = {"glow": glow}
+        if lower.endswith("_black"):
+            if not background or "Bg" not in game_objects:
+                raise ValueError(f"ADV black light leak background is incomplete: {source_path}")
+            textures["background"] = background
+            nodes.append(lightleak_node("background", "background", [0, 0, 0, 1], 1, "normal"))
+        nodes.append(
+            lightleak_node(
+                "glow",
+                "glow",
+                [float(glow_color[channel]) for channel in ("r", "g", "b", "a")],
+                float(glow_group["data"].get("m_Alpha", 1)),
+                "additive",
+            )
+        )
+        # The game animates five identical glow layers. The archive renders one
+        # authored layer as a static overlay until that animator is reconstructed.
+        result.update(
+            type="lightleak",
+            textures=textures,
+            layout={"referenceWidth": 1920, "nodes": nodes},
+            approximation="single-static-glow-layer",
+        )
     elif lower.startswith("adv_frame_letterbox"):
         band_heights = []
         for name in ("Top", "Bottom"):
@@ -2646,9 +2716,125 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
             raise ValueError(f"ADV lens flare textures are incomplete: {source_path}")
         result.update(type="lensflare", textures=textures, referenceWidth=1920, referenceHeight=1080)
     else:
-        raise ValueError(f"Unsupported ADV frame prefab: {source_path}")
+        result.update(_authored_frame_fallback(data, target_asset, source_path, objects, game_objects))
     data._adv_frame_cache[target_asset] = result
     return result
+
+
+def _authored_frame_fallback(
+    data: BuildData,
+    target_asset: str,
+    source_path: str,
+    objects: dict[str, dict[str, Any]],
+    game_objects: dict[str, tuple[str, dict[str, Any]]],
+) -> dict[str, Any]:
+    """Preserve static Image/RectTransform composition of newer ADV frames.
+
+    Animated particle and shader behaviour needs a dedicated renderer. This
+    fallback records that limitation while keeping stories with new frame
+    prefabs playable and showing their authored static images where possible.
+    """
+    group = PurePosixPath(target_asset).parts[0]
+    group_prefix = f"{ADV_FRAME_ROOT}/{group}/"
+    available_pngs = [
+        path for path in data.source_path_set
+        if path.casefold().endswith(".png")
+        and (data.assets / Path(*PurePosixPath(path).parts)).is_file()
+    ]
+    group_pngs = sorted(path for path in available_pngs if path.startswith(group_prefix))
+
+    def texture_for(name: str) -> str | None:
+        if not name:
+            return None
+        lowered = name.casefold()
+        names = {lowered, re.sub(r"_\d+$", "", lowered)}
+        candidates = [path for path in group_pngs if PurePosixPath(path).stem.casefold() in names]
+        if not candidates:
+            candidates = [path for path in available_pngs if PurePosixPath(path).stem.casefold() in names]
+        return data.asset(candidates[0]) if len(candidates) == 1 else None
+
+    rect_ids = {
+        str(rect["pathId"])
+        for _, game_object in game_objects.values()
+        if (rect := _frame_component(objects, game_object, "RectTransform")) is not None
+    }
+    nodes: list[dict[str, Any]] = []
+    textures: dict[str, str] = {}
+    for _, game_object in game_objects.values():
+        rect = _frame_component(objects, game_object, "RectTransform")
+        if rect is None:
+            continue
+        raw = rect.get("data") or {}
+        identity = str(rect["pathId"])
+        parent_id = _unity_pointer_id(raw.get("m_Father"))
+        group_component = _frame_component(objects, game_object, "CanvasGroup")
+        opacity = float((group_component or {}).get("data", {}).get("m_Alpha", 1))
+
+        def vector(field: str, default: tuple[float, float]) -> list[float]:
+            value = raw.get(field) or {}
+            return [float(value.get(axis, fallback)) for axis, fallback in zip(("x", "y"), default)]
+
+        node: dict[str, Any] = {
+            "id": identity,
+            **({"parent": parent_id} if parent_id in rect_ids else {}),
+            "anchorMin": vector("m_AnchorMin", (0, 0)),
+            "anchorMax": vector("m_AnchorMax", (1, 1)),
+            "pivot": vector("m_Pivot", (0.5, 0.5)),
+            "position": vector("m_AnchoredPosition", (0, 0)),
+            "size": vector("m_SizeDelta", (0, 0)),
+            "scale": vector("m_LocalScale", (1, 1)),
+            "rotation": _unity_rotation_z(raw.get("m_LocalRotation")),
+            "opacity": opacity,
+            "active": bool(game_object.get("data", {}).get("m_IsActive", True)),
+        }
+        image = _frame_image_component(objects, game_object)
+        if image is not None:
+            image_data = image.get("data") or {}
+            color = image_data.get("m_Color") or {}
+            sprite = image_data.get("m_Sprite") or {}
+            sprite_name = str((sprite.get("reference") or {}).get("name") or "")
+            texture = texture_for(sprite_name)
+            if texture:
+                textures[sprite_name] = texture
+            elif sprite_name:
+                # A missing sprite must not become an opaque color rectangle.
+                node["active"] = False
+            if texture or not sprite_name:
+                node["image"] = {
+                    **({"texture": texture} if texture else {}),
+                    "color": [float(color.get(channel, 1)) for channel in ("r", "g", "b", "a")],
+                    "blend": "additive" if "glow" in sprite_name.casefold() else "normal",
+                    "preserveAspect": bool(image_data.get("m_PreserveAspect")),
+                }
+        nodes.append(node)
+
+    image_nodes = [node for node in nodes if "image" in node]
+    if image_nodes and not any(node["active"] for node in image_nodes):
+        image_nodes[0]["active"] = True
+    if not image_nodes and group_pngs:
+        texture = data.asset(group_pngs[0])
+        if texture:
+            textures[PurePosixPath(group_pngs[0]).stem] = texture
+            nodes.append({
+                "id": "particle-preview",
+                "anchorMin": [0, 0], "anchorMax": [1, 1], "pivot": [0.5, 0.5],
+                "position": [0, 0], "size": [0, 0], "scale": [1, 1],
+                "rotation": 0, "opacity": 0.35, "active": True,
+                "image": {"texture": texture, "color": [1, 1, 1, 1], "blend": "additive", "preserveAspect": False},
+            })
+    if not any("image" in node for node in nodes):
+        raise ValueError(f"ADV frame has no renderable image or texture: {source_path}")
+    unsupported = sorted({
+        record["type"] for record in objects.values()
+        if record.get("type") in {"Animator", "ParticleSystem", "ParticleSystemRenderer"}
+    })
+    return {
+        "type": "authored-layout",
+        "textures": textures,
+        "layout": {"referenceWidth": 1920, "nodes": nodes},
+        "approximation": "static-frame-layout" if unsupported else "none",
+        "unsupportedFeatures": unsupported,
+    }
 
 
 def _effect_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
@@ -2788,10 +2974,15 @@ def _story_assets(
         resource_ref = str(resource["resourceRef"])
         previous_id = sound_id_by_resource_ref.get(resource_ref)
         if previous_id is not None and previous_id != identity:
-            raise ValueError(
-                f"ADV sound authoring identity is ambiguous: {asset_name}::{resource_ref}; "
-                f"sound IDs {previous_id} and {identity}"
-            )
+            previous = sounds[previous_id]
+            shared_fields = ("playableUrl", "cueSheetName", "cueName", "category", "categoryName", "runtimePath", "outputPath")
+            if any(previous.get(field) != sound.get(field) for field in shared_fields):
+                raise ValueError(
+                    f"ADV sound authoring identity is ambiguous: {asset_name}::{resource_ref}; "
+                    f"sound IDs {previous_id} and {identity}"
+                )
+            # Production ADV tables can give a referenced line a second ID
+            # while retaining the exact same cue-sheet/cue binding.
         sound_id_by_resource_ref[resource_ref] = identity
         sounds[identity] = resource
         return resource_ref
@@ -2873,27 +3064,36 @@ def _story_assets(
                 )
             window_asset = str(chat_master.get("_chatWindowAssetName") or "")
             icon_asset = str(chat_master.get("_chatIconAssetName") or "")
-            chat_preset_ref = window_asset or icon_asset
-            if not chat_preset_ref:
+            if not (window_asset or icon_asset):
                 raise ValueError(
                     f"MasterAdvChat row has no semantic preset asset: {chat_id}"
                 )
-            command["chatPresetRef"] = chat_preset_ref
+            command["chatPresetRef"] = f"chat:{chat_id}"
             if window_asset:
                 command["chatWindowAssetName"] = window_asset
             if icon_asset:
                 command["chatIconAssetName"] = icon_asset
             chat_sound_id = int(chat_master.get("_chatSoundId") or 0)
             if chat_sound_id and code in {37, 38, 65}:
-                chat_sound = _require_story_sound_role(
-                    resolve_chat_sound(chat_sound_id),
-                    1,
-                    f"{asset_name}::{command.get('index')}::chatSoundId={chat_sound_id}",
-                )
-                command["chatSound"] = _story_sound_resource(
-                    chat_sound,
-                    f"{asset_name}::{command.get('index')}::chatSoundId={chat_sound_id}",
-                )
+                candidate = resolve_chat_sound(chat_sound_id)
+                if candidate is None:
+                    # Launch MasterAdvChat references some sounds omitted from
+                    # this package's MasterSound and both ADV sound tables.
+                    # Preserve the unresolved id without inventing a cue.
+                    command["chatSoundUnavailableId"] = chat_sound_id
+                    if chat_sound_id not in data.missing_chat_sound_ids:
+                        data.missing_chat_sound_ids.add(chat_sound_id)
+                        sys.stderr.write(f"warning: chat sound {chat_sound_id} is absent from all sound tables\n")
+                else:
+                    chat_sound = _require_story_sound_role(
+                        candidate,
+                        1,
+                        f"{asset_name}::{command.get('index')}::chatSoundId={chat_sound_id}",
+                    )
+                    command["chatSound"] = _story_sound_resource(
+                        chat_sound,
+                        f"{asset_name}::{command.get('index')}::chatSoundId={chat_sound_id}",
+                    )
         if code == 43 and target_asset:
             post_effect_source = f"{ADV_POST_EFFECT_ROOT}/{target_asset}.asset"
             if post_effect_source not in data.source_path_set:
@@ -2932,12 +3132,32 @@ def _story_assets(
             source_path = (
                 f"{ADV_STILL_ROOT}/{target_path.parent}/data/{target_path.name}.png"
             )
-            if source_path not in data.source_path_set:
-                raise ValueError(f"ADV still is missing: {source_path}")
+            source_paths = [source_path] if source_path in data.source_path_set else [
+                value for value in data.source_paths
+                if re.fullmatch(re.escape(source_path.removesuffix('.png')) + r"_\d+\.png", value)
+            ]
+            source_paths.sort(key=lambda value: (
+                int(match.group(1)) if (match := re.search(r"_(\d+)\.png$", value)) else 0,
+                value,
+            ))
+            if not source_paths:
+                command["stillUnavailableRef"] = target_asset
+                if source_path not in data.missing_story_stills:
+                    data.missing_story_stills.add(source_path)
+                    sys.stderr.write(f"warning: ADV still is absent from the catalog: {source_path}\n")
+                continue
+            urls = [data.asset(value) for value in source_paths]
+            if any(url is None for url in urls):
+                raise ValueError(f"ADV still has a catalog entry without an extracted image: {target_asset}")
             still = _present(
                 assetName=target_asset,
-                url=data.asset(source_path),
-                sourcePath=source_path,
+                url=urls[0],
+                sourcePath=source_paths[0],
+                variants=[
+                    {"sourcePath": value, "url": url}
+                    for value, url in zip(source_paths, urls, strict=True)
+                ],
+                **({"presentation": "first-of-sequence"} if len(urls) > 1 else {}),
             )
             if still.get("url"):
                 stills[target_asset] = still
@@ -2946,29 +3166,61 @@ def _story_assets(
         bgm_id = int(command.get("bgmId") or 0)
         se_id = int(command.get("seId") or 0)
         voice_ids = [int(value) for value in command.get("voiceIds", []) if int(value)]
+
+        def optional_sound(identity: int, category: int, label: str) -> dict[str, Any] | None:
+            candidate = resolve_sound(identity)
+            if candidate is None:
+                key = (category, identity)
+                if key not in data.missing_story_sound_ids:
+                    data.missing_story_sound_ids.add(key)
+                    sys.stderr.write(
+                        f"warning: ADV {CRI_SOUND_CATEGORIES[category]} sound {identity} "
+                        "is absent from Master and episode tables\n"
+                    )
+                return None
+            actual_category = int(candidate.get("category", -1))
+            if actual_category != category and candidate.get("sourceTable") == "AdvEpisodeSound":
+                # An episode can intentionally play a looping BGM cue through
+                # its SE command. Bind the exact cue and retain the authored
+                # category instead of rejecting the entire episode.
+                key = (category, actual_category, identity)
+                if key not in data.mismatched_story_sound_ids:
+                    data.mismatched_story_sound_ids.add(key)
+                    sys.stderr.write(
+                        f"warning: ADV sound {identity} is authored as category "
+                        f"{actual_category} for command category {category}\n"
+                    )
+                command.setdefault("soundRoleOverrides", {})[str(identity)] = actual_category
+                return candidate
+            return _require_story_sound_role(candidate, category, label)
+
         if bgm_id:
             label = f"{asset_name}::{command.get('index')}::bgmId={bgm_id}"
-            sound = _require_story_sound_role(
-                resolve_sound(bgm_id), 0, label
-            )
-            command["bgmRef"] = register_sound(bgm_id, sound, label)
+            sound = optional_sound(bgm_id, 0, label)
+            if sound is None:
+                command["bgmUnavailableId"] = bgm_id
+            else:
+                command["bgmRef"] = register_sound(bgm_id, sound, label)
         if se_id:
             label = f"{asset_name}::{command.get('index')}::seId={se_id}"
-            sound = _require_story_sound_role(
-                resolve_sound(se_id), 1, label
-            )
-            command["seRef"] = register_sound(se_id, sound, label)
+            sound = optional_sound(se_id, 1, label)
+            if sound is None:
+                command["seUnavailableId"] = se_id
+            else:
+                command["seRef"] = register_sound(se_id, sound, label)
         voice_refs = []
+        unavailable_voice_ids = []
         for identity in voice_ids:
             label = f"{asset_name}::{command.get('index')}::voiceId={identity}"
-            sound = _require_story_sound_role(
-                resolve_sound(identity),
-                2,
-                label,
-            )
-            voice_refs.append(register_sound(identity, sound, label))
+            sound = optional_sound(identity, 2, label)
+            if sound is None:
+                unavailable_voice_ids.append(identity)
+            else:
+                voice_refs.append(register_sound(identity, sound, label))
         if voice_refs:
             command["voiceRefs"] = voice_refs
+        if unavailable_voice_ids:
+            command["voiceUnavailableIds"] = unavailable_voice_ids
 
         video_id = int(command.get("videoId") or 0)
         if video_id:
@@ -3379,7 +3631,16 @@ def _home_spot_spine_runtime(
         if character_id:
             character_labels[str(character_id)] = name
 
-    spine_parent = PurePosixPath(source_path).parent / "Spine"
+    scene_parent = PurePosixPath(source_path).parent
+    spine_directories = {
+        PurePosixPath(value).parent
+        for value in data.source_paths
+        if PurePosixPath(value).parent.parent == scene_parent
+        and PurePosixPath(value).parent.name.lower() == "spine"
+    }
+    if len(spine_directories) != 1:
+        raise ValueError(f"Home Spot has no unique Spine directory: {source_path}")
+    spine_parent = next(iter(spine_directories))
     spine_prefix = spine_parent.as_posix() + "/"
     atlas_sources = [
         value
@@ -3398,28 +3659,47 @@ def _home_spot_spine_runtime(
         for value in data.source_paths
         if value.startswith(spine_prefix) and value.endswith("_SkeletonData.asset")
     ]
-    if len(atlas_sources) != 1 or len(texture_sources) != 1 or not skeleton_sources:
+    if not atlas_sources or len(atlas_sources) != len(texture_sources) or not skeleton_sources:
         raise ValueError(
             f"Home Spot Spine sources are incomplete: {source_path}; "
             f"atlas={len(atlas_sources)}, texture={len(texture_sources)}, "
             f"skeletons={len(skeleton_sources)}"
         )
-    atlas_source = atlas_sources[0]
-    texture_source = texture_sources[0]
-    atlas = data.asset(atlas_source)
-    texture = data.asset(texture_source)
-    if not atlas or not texture:
-        raise ValueError(f"Home Spot atlas/texture assets are absent: {source_path}")
-    atlas_file = data.assets / Path(*PurePosixPath(atlas_source).parts)
-    atlas_pages = {
-        line.strip()
-        for line in atlas_file.read_text(encoding="utf-8").splitlines()
-        if re.fullmatch(r"[^/\\]+\.png", line.strip(), re.IGNORECASE)
+    atlas_by_stem: dict[str, tuple[str, str]] = {}
+    texture_set = set(texture_sources)
+    for atlas_source in atlas_sources:
+        atlas_stem = PurePosixPath(atlas_source).name.removesuffix(".atlas.txt")
+        texture_source = (spine_parent / f"{atlas_stem}.png").as_posix()
+        atlas = data.asset(atlas_source)
+        texture = data.asset(texture_source)
+        if texture_source not in texture_set or not atlas or not texture:
+            raise ValueError(f"Home Spot atlas/texture assets are absent: {atlas_source}")
+        atlas_file = data.assets / Path(*PurePosixPath(atlas_source).parts)
+        atlas_pages = {
+            line.strip()
+            for line in atlas_file.read_text(encoding="utf-8").splitlines()
+            if re.fullmatch(r"[^/\\]+\.png", line.strip(), re.IGNORECASE)
+        }
+        if atlas_pages != {PurePosixPath(texture_source).name}:
+            raise ValueError(
+                f"Home Spot atlas page does not match its canonical texture: {atlas_source}"
+            )
+        atlas_by_stem[atlas_stem] = atlas, texture
+
+    # Some scenes reuse a skeleton and its atlas from an earlier situation.
+    # Resolve those references by the serialized Unity identity, never by a
+    # potentially duplicated filename alone.
+    referenced_names = {
+        str(animation.get("skeletonDataAsset", {}).get("reference", {}).get("name") or "")
+        for pointer in scene.get("_spotSpineCharacters", [])
+        for wrapper in [objects.get(_unity_pointer_id(pointer), {}).get("data", {})]
+        for animation in [objects.get(_unity_pointer_id(wrapper.get("_animation")), {}).get("data", {})]
     }
-    if atlas_pages != {PurePosixPath(texture_source).name}:
-        raise ValueError(
-            f"Home Spot atlas page does not match its canonical texture: {atlas_source}"
-        )
+    skeleton_sources = sorted(set(skeleton_sources) | {
+        value for value in data.source_paths
+        if PurePosixPath(value).name in {f"{name}.asset" for name in referenced_names if name}
+        and value.endswith("_SkeletonData.asset")
+    })
 
     skeletons_by_root: dict[tuple[str, str], dict[str, Any]] = {}
     scales: set[float] = set()
@@ -3447,25 +3727,42 @@ def _home_spot_spine_runtime(
             for output in skeleton_descriptor.get("outputs", [])
             if output.get("type") == "TextAsset" and output.get("role") == "derivative"
         ]
-        if root_object.get("type") != "MonoBehaviour" or len(outputs) != 1:
+        if root_object.get("type") != "MonoBehaviour" or len(outputs) > 1:
             raise ValueError(f"Home Spot SkeletonData is invalid: {skeleton_source}")
-        output = outputs[0]
-        json_id = _unity_pointer_id(root_data.get("skeletonJSON"))
-        try:
-            output_id = str(int(output.get("objectId")))
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"Home Spot skeleton JSON output has an invalid id: {skeleton_source}"
-            ) from error
-        runtime_url = data.runtime_output_url(str(output.get("path") or ""))
+        skeleton_pointer = root_data.get("skeletonJSON")
+        skeleton_data_identity = data.unity_pointer_identity(
+            skeleton_pointer, skeleton_serialized_file
+        )
+        runtime_url = None
+        binary = False
+        if len(outputs) == 1:
+            output = outputs[0]
+            output_identity = (
+                str(output.get("serializedFile") or ""),
+                str(int(output.get("objectId") or 0)),
+            )
+            if skeleton_data_identity == output_identity:
+                runtime_url = data.runtime_output_url(str(output.get("path") or ""))
+        else:
+            reference = skeleton_pointer.get("reference", {}) if isinstance(skeleton_pointer, dict) else {}
+            binary_name = str(reference.get("name") or "")
+            binary_candidates = [
+                value for value in data.source_paths
+                if PurePosixPath(value).parent == PurePosixPath(skeleton_source).parent
+                and PurePosixPath(value).name == f"{binary_name}.bytes"
+            ]
+            for binary_source in binary_candidates:
+                binary_descriptor, _ = data.source_objects(binary_source)
+                binary_identity = (
+                    str(binary_descriptor.get("serializedFile") or ""),
+                    str(int(binary_descriptor.get("rootObjects", [0])[0])),
+                )
+                if binary_identity == skeleton_data_identity:
+                    runtime_url = data.asset(binary_source)
+                    binary = True
+                    break
         scale = float(root_data.get("scale") or 0)
-        output_serialized_file = str(output.get("serializedFile") or "")
-        if (
-            json_id != output_id
-            or output_serialized_file != skeleton_serialized_file
-            or not runtime_url
-            or scale <= 0
-        ):
+        if not runtime_url or scale <= 0:
             raise ValueError(
                 f"Home Spot skeleton JSON binding is incomplete: {skeleton_source}"
             )
@@ -3474,9 +3771,36 @@ def _home_spot_spine_runtime(
                 f"Home Spot repeats SkeletonData root "
                 f"{skeleton_serialized_file}:{root_id}: {source_path}"
             )
+        skeleton_stem = PurePosixPath(skeleton_source).name.removesuffix("_SkeletonData.asset")
+        skeleton_dir = PurePosixPath(skeleton_source).parent
+        matching_atlases = sorted(
+            (
+                value for value in data.source_paths
+                if PurePosixPath(value).parent == skeleton_dir
+                and value.endswith(".atlas.txt")
+                and skeleton_stem.startswith(PurePosixPath(value).name.removesuffix(".atlas.txt"))
+            ),
+            key=lambda value: len(PurePosixPath(value).name),
+            reverse=True,
+        )
+        if not matching_atlases:
+            folder_atlases = [
+                value for value in data.source_paths
+                if PurePosixPath(value).parent == skeleton_dir
+                and value.endswith(".atlas.txt")
+            ]
+            if len(folder_atlases) == 1:
+                matching_atlases = folder_atlases
+            else:
+                raise ValueError(f"Home Spot SkeletonData has no atlas: {skeleton_source}")
+        skeleton_atlas = data.asset(matching_atlases[0])
+        if not skeleton_atlas:
+            raise ValueError(f"Home Spot SkeletonData atlas is absent: {skeleton_source}")
         skeletons_by_root[skeleton_identity] = {
             "sourcePath": skeleton_source,
             "url": runtime_url,
+            "atlas": skeleton_atlas,
+            "binary": binary,
         }
         scales.add(scale)
     if len(scales) != 1:
@@ -3512,51 +3836,75 @@ def _home_spot_spine_runtime(
                 for component_id in _unity_component_ids(game_object)
                 if objects.get(component_id, {}).get("type") == "BoxCollider2D"
             )
-        if len(colliders) > 1:
-            raise ValueError(
-                f"Home Spot {label} has multiple BoxCollider2D hit areas: {source_path}"
-            )
         if not colliders:
             return None
-        collider_transform_id, collider = colliders[0]
-        offset = collider.get("m_Offset", {})
-        size = collider.get("m_Size", {})
-        width = float(size.get("x") or 0)
-        height = float(size.get("y") or 0)
-        if width <= 0 or height <= 0:
-            raise ValueError(f"Home Spot {label} has an invalid hit area: {source_path}")
-        center_x = float(offset.get("x") or 0)
-        center_y = float(offset.get("y") or 0)
         animation_world = _unity_world_matrix(
             objects, transform_id, source_path, matrix_cache
         )
-        collider_world = _unity_world_matrix(
-            objects, collider_transform_id, source_path, matrix_cache
+        animation_inverse = _unity_affine_inverse(
+            animation_world, f"{source_path}::{transform_id}"
         )
-        collider_to_animation = _unity_matrix_multiply(
-            _unity_affine_inverse(
-                animation_world, f"{source_path}::{transform_id}"
-            ),
-            collider_world,
-        )
-        half_width = width / 2
-        half_height = height / 2
-        return [
-            _unity_transform_point(collider_to_animation, corner)
-            for corner in (
-                (center_x - half_width, center_y - half_height, 0),
-                (center_x + half_width, center_y - half_height, 0),
-                (center_x + half_width, center_y + half_height, 0),
-                (center_x - half_width, center_y + half_height, 0),
+        points: list[list[float]] = []
+        for collider_transform_id, collider in colliders:
+            offset = collider.get("m_Offset", {})
+            size = collider.get("m_Size", {})
+            width = float(size.get("x") or 0)
+            height = float(size.get("y") or 0)
+            if width <= 0 or height <= 0:
+                raise ValueError(f"Home Spot {label} has an invalid hit area: {source_path}")
+            center_x = float(offset.get("x") or 0)
+            center_y = float(offset.get("y") or 0)
+            collider_world = _unity_world_matrix(
+                objects, collider_transform_id, source_path, matrix_cache
             )
-        ]
+            collider_to_animation = _unity_matrix_multiply(animation_inverse, collider_world)
+            half_width = width / 2
+            half_height = height / 2
+            points.extend(
+                _unity_transform_point(collider_to_animation, corner)
+                for corner in (
+                    (center_x - half_width, center_y - half_height, 0),
+                    (center_x + half_width, center_y - half_height, 0),
+                    (center_x + half_width, center_y + half_height, 0),
+                    (center_x - half_width, center_y + half_height, 0),
+                )
+            )
+        if len(colliders) == 1:
+            return points
+        # A combined Spine layer can expose several overlapping tap boxes.
+        # The viewer consumes one polygon, so enclose their union with a
+        # deterministic convex hull in the animation's local coordinate space.
+        unique = {(point[0], point[1]): point for point in points}
+        ordered = [unique[key] for key in sorted(unique)]
+
+        def cross(a: list[float], b: list[float], c: list[float]) -> float:
+            return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+        lower: list[list[float]] = []
+        upper: list[list[float]] = []
+        for point in ordered:
+            while len(lower) > 1 and cross(lower[-2], lower[-1], point) <= 0:
+                lower.pop()
+            lower.append(point)
+        for point in reversed(ordered):
+            while len(upper) > 1 and cross(upper[-2], upper[-1], point) <= 0:
+                upper.pop()
+            upper.append(point)
+        hull = lower[:-1] + upper[:-1]
+        if len(hull) < 3:
+            raise ValueError(f"Home Spot {label} has a degenerate combined hit area: {source_path}")
+        return hull
 
     layer_documents: list[dict[str, Any]] = []
     hit_polygons_by_key: dict[str, list[list[float]]] = {}
     layer_keys: set[str] = set()
+    seen_wrapper_ids: set[str] = set()
     referenced_skeletons: set[str] = set()
     for pointer in scene.get("_spotSpineCharacters", []):
         wrapper_id = local_pointer(pointer, "Spine layer")
+        if wrapper_id in seen_wrapper_ids:
+            continue
+        seen_wrapper_ids.add(wrapper_id)
         wrapper = objects.get(wrapper_id, {})
         wrapper_data = wrapper.get("data", {})
         if wrapper.get("type") != "MonoBehaviour":
@@ -3572,6 +3920,9 @@ def _home_spot_spine_runtime(
         layer_keys.add(layer_key)
         character_key = _home_spot_character_key(layer_key)
 
+        if not _unity_pointer_id(wrapper_data.get("_animation")):
+            # The client stores empty decorative wrappers alongside playable layers.
+            continue
         animation_id = local_pointer(wrapper_data.get("_animation"), "Spine animation")
         animation_object = objects.get(animation_id, {})
         animation_data = animation_object.get("data", {})
@@ -3618,13 +3969,17 @@ def _home_spot_spine_runtime(
                 "animation": str(animation_data.get("_animationName") or ""),
                 "skeleton": skeleton["url"],
                 "skeletonSourcePath": skeleton["sourcePath"],
+                "runtime": {
+                    "atlas": skeleton["atlas"],
+                    **({"skel": skeleton["url"]} if skeleton["binary"] else {"json": skeleton["url"]}),
+                },
                 "transform": _unity_world_matrix(
                     objects, transform_id, source_path, matrix_cache
                 ),
                 "_characterKey": character_key,
             }
         )
-    if not layer_documents or len(referenced_skeletons) != len(layer_documents):
+    if not layer_documents:
         raise ValueError(
             f"Home Spot Spine layers are empty or reuse SkeletonData: {source_path}"
         )
@@ -3647,8 +4002,8 @@ def _home_spot_spine_runtime(
         sourcePath=source_path,
         backgroundSourcePath=background_source_path,
         backgroundPreview=background_preview_url,
-        atlas=atlas,
-        texture=texture,
+        atlas=next(iter(atlas_by_stem.values()))[0],
+        texture=next(iter(atlas_by_stem.values()))[1],
         backgroundScene=background_url,
         backgroundTransform=background_matrix,
         scale=next(iter(scales)),
@@ -4132,9 +4487,9 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
         identity = int(row.get("_id") or 0)
         window_asset = str(row.get("_chatWindowAssetName") or "")
         icon_asset = str(row.get("_chatIconAssetName") or "")
-        preset_ref = window_asset or icon_asset
-        if not preset_ref:
+        if not (window_asset or icon_asset):
             raise ValueError(f"MasterAdvChat row has no semantic preset asset: {identity}")
+        preset_ref = f"chat:{identity}"
         master = {
             "id": identity,
             "chatSoundId": int(row.get("_chatSoundId") or 0),
@@ -4142,13 +4497,10 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
             "chatWindowAssetName": window_asset,
             "chatIconAssetName": icon_asset,
         }
-        existing_preset = presets_by_ref.get(preset_ref)
-        if existing_preset is not None and existing_preset.get("id") != identity:
-            raise ValueError(
-                f"MasterAdvChat semantic preset is ambiguous: {preset_ref}; "
-                f"IDs {existing_preset.get('id')} and {identity}"
-            )
         masters[str(identity)] = master
+        # Several native rows share a window while varying the character icon
+        # or cue. Key the semantic reference by master ID so hydration retains
+        # the authored choice even when the visible asset name is shared.
         presets_by_ref[preset_ref] = master
         if icon_asset:
             icon_source = f"{chat_root}/Icon/{icon_asset}.png"
@@ -4170,10 +4522,15 @@ def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
                 f"found {len(prefab_matches)}"
             )
         prefab_source = prefab_matches[0]
-        directory = PurePosixPath(prefab_source).parent.name
+        directory = PurePosixPath(prefab_source).relative_to(prefab_prefix).parent.as_posix()
         data_root = f"{chat_root}/Data/{directory}/data"
         sprite_source = f"{data_root}/chatwindow_image.png"
         if sprite_source not in data.source_path_set:
+            if directory == "_misc":
+                # Miscellaneous overlays have prefabs but no chat window
+                # sprite or data directory. The viewer uses its template
+                # geometry when no window-specific data root is registered.
+                continue
             raise ValueError(
                 f"ADV chat window data is missing for prefab: {prefab_source}"
             )
@@ -4542,10 +4899,9 @@ def _story_assets_catalog(
                     f"ADV episode sound has an unknown category: {source_path}::{sound_id}::{category}"
                 )
             usages = usage_by_episode_sound.get((episode_asset_name, sound_id), [])
-            if any(value["expectedCategory"] != category for value in usages):
-                raise ValueError(
-                    f"ADV episode sound usage/category mismatch: {source_path}::{sound_id}"
-                )
+            category_mismatch = any(
+                value["expectedCategory"] != category for value in usages
+            )
             sound = data.story_sound(sound_id, sound_rows, cue_sheet_rows)
             if sound is None:
                 raise ValueError(f"ADV episode sound is unresolved: {source_path}::{sound_id}")
@@ -4563,6 +4919,7 @@ def _story_assets_catalog(
                     "storyIds": [story_id] if story_id else [],
                     "declaredCategoryCode": category,
                     "declaredCategory": CRI_SOUND_CATEGORIES[category],
+                    "categoryMismatch": category_mismatch,
                     "usages": sorted({str(value["role"]) for value in usages}),
                     "usageEvidence": usages,
                 }

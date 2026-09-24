@@ -53,21 +53,67 @@ jobs:
       build_id: ${{ steps.identity.outputs.build_id }}
       shard_count: ${{ steps.identity.outputs.shard_count }}
       shard_matrix: ${{ steps.identity.outputs.shard_matrix }}
+      skip: ${{ steps.source_input.outputs.skip }}
     env:
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
       SOURCE_ID_INPUT: ${{ inputs.source_id }}
-      RESOURCE_CDN_AUTHORIZATION: ${{ secrets.resource_cdn_authorization }}
+      RESOURCE_CDN_AUTHORIZATION: ${{ secrets.RESOURCE_CDN_AUTHORIZATION || secrets.resource_cdn_authorization }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
       - name: Materialize source input
+        id: source_input
         run: |
           if [[ -n "$SOURCE_ID_INPUT" ]]; then
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source \
               --source "$SOURCE_ID_INPUT" --role package > "$RUNNER_TEMP/source.json"
           else
+            if [[ -z "$PACKAGE_R2_KEY" ]]; then
+              python scripts/acquire_package.py --server "$RESOURCE_SERVER" \
+                --output "$RUNNER_TEMP/discovered-package" > "$RUNNER_TEMP/discovered-package.json"
+              PACKAGE_R2_KEY="$(jq -r .casKey "$RUNNER_TEMP/discovered-package.json")"
+              package_sha="$(jq -r .sha256 "$RUNNER_TEMP/discovered-package.json")"
+              package_size="$(jq -r .bytes "$RUNNER_TEMP/discovered-package.json")"
+              endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+              if aws s3api head-object --bucket "$PIPELINE_STAGE_BUCKET" \
+                --key "$PACKAGE_R2_KEY" --endpoint-url "$endpoint" --region auto \
+                --query '[ContentLength,Metadata.sha256]' --output text \
+                > "$RUNNER_TEMP/package-head" 2>/dev/null; then
+                read -r remote_size remote_sha < "$RUNNER_TEMP/package-head"
+                if [[ "$remote_size" != "$package_size" || ( "$remote_sha" != "None" && "$remote_sha" != "$package_sha" ) ]]; then
+                  echo "Existing R2 package CAS object has mismatched metadata" >&2
+                  exit 1
+                fi
+              else
+                aws s3 cp "$RUNNER_TEMP/discovered-package" \
+                  "s3://$PIPELINE_STAGE_BUCKET/$PACKAGE_R2_KEY" \
+                  --endpoint-url "$endpoint" --region auto --no-progress \
+                  --metadata "sha256=$package_sha" \
+                  --content-type application/octet-stream
+              fi
+            fi
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-package \
               --key "$PACKAGE_R2_KEY" --output "$RUNNER_TEMP/package-input"
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-source \
+              --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source-probe.json"
+            probed_source="$(jq -r .sourceId "$RUNNER_TEMP/source-probe.json")"
+            wanted_build="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" build-id \
+              --source "$probed_source" | jq -r .buildId)"
+            wanted_fingerprint="${wanted_build: -16}"
+            if aws s3 cp \
+              "s3://$PIPELINE_STAGE_BUCKET/servers/$RESOURCE_SERVER/current.json" \
+              "$RUNNER_TEMP/current-pointer.json" \
+              --endpoint-url "https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com" \
+              --region auto --no-progress 2>/dev/null; then
+              current_source="$(jq -r .sourceId "$RUNNER_TEMP/current-pointer.json")"
+              current_fingerprint="$(jq -r '.pipelineFingerprint // empty' "$RUNNER_TEMP/current-pointer.json")"
+              if [[ "$current_source" == "$probed_source" && "$current_fingerprint" == "$wanted_fingerprint" ]]; then
+                echo "Source and pipeline fingerprint are unchanged; skipping this build"
+                cp "$RUNNER_TEMP/source-probe.json" "$RUNNER_TEMP/source.json"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
             # Prefer the live CDN catalog; fall back to the package's embedded
             # assets/aa/catalog.bin only when the remote ingest cannot resolve one.
             if ! python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
@@ -76,6 +122,16 @@ jobs:
                 echo "remote catalog ingest failed; retrying with the embedded catalog" >&2
                 unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
                   > "$RUNNER_TEMP/embedded-catalog.bin"
+              elif unzip -l "$RUNNER_TEMP/package-input" "UnityDataAssetPack.apk" > /dev/null 2>&1; then
+                echo "remote catalog ingest failed; retrying with the XAPK asset-pack catalog" >&2
+                unzip -p "$RUNNER_TEMP/package-input" "UnityDataAssetPack.apk" \
+                  > "$RUNNER_TEMP/UnityDataAssetPack.apk"
+                unzip -p "$RUNNER_TEMP/UnityDataAssetPack.apk" "assets/aa/catalog.bin" \
+                  > "$RUNNER_TEMP/embedded-catalog.bin"
+              else
+                exit 1
+              fi
+              if [[ -s "$RUNNER_TEMP/embedded-catalog.bin" ]]; then
                 export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
                 python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
                   --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
@@ -95,17 +151,20 @@ jobs:
           echo "shard_count=$SHARD_COUNT" >> "$GITHUB_OUTPUT"
           echo "shard_matrix=$(python -c 'import json,sys; print(json.dumps(list(range(int(sys.argv[1])))))' "$SHARD_COUNT")" >> "$GITHUB_OUTPUT"
       - name: Publish source CAS
+        if: steps.source_input.outputs.skip != 'true'
         run: |
           if [[ -z "$SOURCE_ID_INPUT" ]]; then
             python scripts/pipeline.py --server "$RESOURCE_SERVER" publish-source \
               --source "${{ steps.identity.outputs.source_id }}"
           fi
       - name: Extract Master
+        if: steps.source_input.outputs.skip != 'true'
         run: >-
           python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-master
           --source "${{ steps.identity.outputs.source_id }}"
           --build "${{ steps.identity.outputs.build_id }}"
       - name: Preserve Master build stage in private R2
+        if: steps.source_input.outputs.skip != 'true'
         run: |
           build_root="data/servers/$RESOURCE_SERVER/builds/${{ steps.identity.outputs.build_id }}"
           archive="$RUNNER_TEMP/resource-master.tar.gz"
@@ -119,6 +178,7 @@ jobs:
   unity:
     name: Unity shard ${{ matrix.shard }}
     needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -157,6 +217,7 @@ jobs:
   release:
     name: Assemble and publish release
     needs: [prepare, unity]
+    if: needs.prepare.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -165,6 +226,16 @@ jobs:
       HANEOKA_MODEL_PREVIEW_POLICY: required
     steps:
       - uses: actions/checkout@v7
+      - name: Reclaim unused hosted-runner SDK space
+        run: |
+          # This job uses Node, Python and FFmpeg. The preinstalled Android,
+          # .NET, Swift and Haskell SDKs consume disk needed by full Unity media.
+          sudo rm -rf -- \
+            /usr/local/lib/android/sdk \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            /usr/local/.ghcup
+          df -h .
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -254,6 +325,7 @@ jobs:
             --region auto \
             --no-progress
           tar --extract --gzip --file "$archive" --directory "$build_root"
+          rm -f "$archive"
       - name: Restore all Unity shards from private R2
         run: |
           build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"
@@ -280,6 +352,7 @@ jobs:
           fi
           for archive in "${archives[@]}"; do
             tar --extract --gzip --file "$archive" --directory "$build_root"
+            rm -f "$archive"
           done
       - name: Fetch original CRI payloads
         run: >-
@@ -334,6 +407,11 @@ jobs:
             cat "$RUNNER_TEMP/${names[$index]}.log"
           done
           exit "$failed"
+      - name: Release decoded CRI source copies
+        run: |
+          # Immutable originals remain in R2 CAS. No subsequent build stage
+          # reads this local 4–5 GiB source directory after CRI extraction.
+          rm -rf -- "data/servers/$RESOURCE_SERVER/sources/${{ needs.prepare.outputs.source_id }}/android/cri"
       - name: Assemble release
         run: |
           SOURCE_ID="${{ needs.prepare.outputs.source_id }}"

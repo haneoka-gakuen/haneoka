@@ -755,7 +755,20 @@ def _catalog_storage_errors(
         if not isinstance(views, dict):
             errors.append(f"catalog resource views must be an object: {resource}")
             views = {}
-        expected_views = {view.name: view for view in RESOURCE_SPECS[resource].views}
+        index_document = None
+        if index_path in declared and any(
+            view.optional for view in RESOURCE_SPECS[resource].views
+        ):
+            try:
+                index_document = read_json(root / index_path)
+            except Exception as error:
+                errors.append(f"invalid catalog {resource} index: {error}")
+        expected_views = {
+            view.name: view
+            for view in RESOURCE_SPECS[resource].views
+            if not view.optional
+            or _catalog_nested(index_document, view.collection) is not None
+        }
         if set(views) != set(expected_views):
             errors.append(f"catalog resource views do not match the registry: {resource}")
         for view_name, view_descriptor in views.items():
