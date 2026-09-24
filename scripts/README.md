@@ -27,8 +27,7 @@ complete split-APK set.
 The scheduled GitHub Actions run currently checks the international production
 server once a day. `scripts/acquire_package.py` reads the Android APK URL from
 the publisher's `bdon.biligames.com` application script, downloads the current
-file, verifies its Android package name and pinned signing certificate, and
-stores it under a SHA-256 content-addressed R2 key. The **APK file hash is
+file and stores it under a SHA-256 content-addressed R2 key. The **APK file hash is
 calculated anew on every run**; it is not pinned, so normal APK updates create
 new keys. `aws s3 cp` uploads large packages through the S3 multipart API.
 
@@ -37,10 +36,9 @@ source identity before the expensive bundle download. A scheduled run skips the
 build when both this identity and the pipeline fingerprint equal the published
 release. An APK update or catalog hot update starts a new build automatically.
 
-The Japanese publisher currently offers only a Google Play link. The Japanese
-XAPK mirror acquisition path is implemented with a pinned APK signing
-certificate, but scheduled Japanese builds remain disabled until the Android
-catalog URL and its versioned CDN root can be discovered and validated without
+The Japanese publisher currently offers only a Google Play link. A Japanese
+XAPK mirror acquisition path is implemented, but scheduled Japanese builds
+remain disabled until the Android catalog URL and its versioned CDN root can be discovered and validated without
 manual packet capture. The Japanese package transport is independent of that
 catalog discovery work.
 

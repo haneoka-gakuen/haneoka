@@ -1,9 +1,8 @@
-"""Discover and verify production Android packages before staging them in R2.
+"""Discover production Android packages before staging them in R2.
 
 The international publisher serves a direct APK from its own website. The
 Japanese publisher links only to Google Play, so the JP transport is a Play
-split-package mirror. Its signing certificate is pinned; a changed or
-incomplete mirror package stops the scheduled run.
+split-package mirror. Package bytes receive a fresh SHA-256 CAS key each run.
 """
 
 from __future__ import annotations
@@ -15,16 +14,10 @@ import html
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
-import zipfile
 from pathlib import Path
-
-from apkutils2 import APK
 
 from core.contracts import PACKAGE_MAX_BYTES
 from core.storage import cas_key
@@ -32,10 +25,7 @@ from core.storage import cas_key
 USER_AGENT = "HaneokaResourcePipeline/1.0"
 INTL_SITE = "https://bdon.biligames.com/"
 JP_MIRROR = "https://apkcombo.com/bang-dream-our-notes/com.bushiroad.sirius/download/apk"
-PACKAGE_NAMES_AND_SIGNING_CERT_SHA256 = {
-    "intl": ("com.bilibili.sirius.official", "bf683e367551a3f629b90e16a63b315af74e387bcc5d94f26dcd626e7eea3637"),
-    "jp": ("com.bushiroad.sirius", "34fd32c2860f454dd320930f6ba0876ea8cc8e60a3d8320b3277aa761072508e"),
-}
+SERVERS = ("intl", "jp")
 
 
 def _host(url: str) -> str:
@@ -75,7 +65,7 @@ def _read_small(url: str, hosts: set[str], limit: int = 2_000_000) -> str:
     return data.decode("utf-8")
 
 
-def _discover_intl() -> tuple[str, str, set[str], int | None]:
+def _discover_intl() -> tuple[str, str, set[str]]:
     page = _read_small(INTL_SITE, {"bdon.biligames.com"})
     scripts = re.findall(
         r"(?:https?:)?//s1\.biligames\.com/fe-static/game-global-bangdreamon/gw/js/chunk-common\.[a-f0-9]+\.js",
@@ -90,10 +80,10 @@ def _discover_intl() -> tuple[str, str, set[str], int | None]:
         raise ValueError("international official site did not expose one APK URL")
     url = urls.pop()
     host = _host(url)
-    return url, "publisher-website", {host}, None
+    return url, "publisher-website", {host}
 
 
-def _discover_jp() -> tuple[str, str, set[str], int | None]:
+def _discover_jp() -> tuple[str, str, set[str]]:
     page = _read_small(JP_MIRROR, {"apkcombo.com"})
     variants = []
     for match in re.finditer(r'<a\s+href="([^"]+)"\s+class="variant"[^>]*>(.*?)</a>', page, re.S):
@@ -113,8 +103,8 @@ def _discover_jp() -> tuple[str, str, set[str], int | None]:
         variants.append((int(code_match.group(1)), url))
     if not variants:
         raise ValueError("Japanese mirror has no verifiable XAPK variant")
-    version, url = max(variants)
-    return url, "play-package-mirror", {"download.pureapk.com", "data.winudf.com"}, version
+    _, url = max(variants)
+    return url, "play-package-mirror", {"download.pureapk.com", "data.winudf.com"}
 
 
 def _download(url: str, hosts: set[str], output: Path) -> tuple[int, str]:
@@ -143,104 +133,16 @@ def _download(url: str, hosts: set[str], output: Path) -> tuple[int, str]:
     return total, digest.hexdigest()
 
 
-def _apksigner() -> Path:
-    direct = shutil.which("apksigner")
-    if direct:
-        return Path(direct)
-    for root_name in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
-        root = os.environ.get(root_name)
-        if root:
-            candidates = sorted(Path(root).glob("build-tools/*/apksigner"), reverse=True)
-            if candidates:
-                return candidates[0]
-    raise RuntimeError("Android apksigner is required to verify package signatures")
-
-
-def _verify_apk(file: Path, package_name: str, certificate: str, signer: Path) -> int:
-    result = subprocess.run(
-        [str(signer), "verify", "--print-certs", str(file)],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    signatures = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([a-f0-9]{64})$", result.stdout, re.M)
-    if signatures != [certificate]:
-        raise ValueError("APK signing certificate changed or has multiple signers")
-    manifest = APK(str(file)).get_manifest()
-    if manifest.get("@package") != package_name:
-        raise ValueError("APK package name does not match the selected server")
-    version = int(manifest.get("@android:versionCode", 0))
-    if version < 1:
-        raise ValueError("APK has no valid version code")
-    return version
-
-
-def _validate_package(file: Path, server: str, expected_version: int | None) -> int:
-    package_name, certificate = PACKAGE_NAMES_AND_SIGNING_CERT_SHA256[server]
-    signer = _apksigner()
-    with zipfile.ZipFile(file) as archive, tempfile.TemporaryDirectory(prefix="haneoka-apk-verify-") as temporary:
-        members = {item.filename for item in archive.infolist()}
-        if server == "intl":
-            if "AndroidManifest.xml" not in members:
-                raise ValueError("international download is not an APK")
-            version = _verify_apk(file, package_name, certificate, signer)
-            asset_archive = archive
-        else:
-            if "manifest.json" not in members:
-                raise ValueError("Japanese download is not an XAPK")
-            manifest = json.loads(archive.read("manifest.json"))
-            if manifest.get("package_name") != package_name:
-                raise ValueError("XAPK package name does not match Japan production")
-            apk_names = sorted(name for name in members if name.endswith(".apk"))
-            if not apk_names or "UnityDataAssetPack.apk" not in members:
-                raise ValueError("XAPK omits its Unity asset pack")
-            base_name = f"{package_name}.apk"
-            if base_name not in apk_names:
-                raise ValueError("XAPK omits its base APK")
-            versions = set()
-            for name in apk_names:
-                target = Path(temporary) / Path(name).name
-                if target.name != name:
-                    raise ValueError("XAPK contains a nested APK path")
-                with archive.open(name) as source, target.open("wb") as destination:
-                    shutil.copyfileobj(source, destination, 1024 * 1024)
-                versions.add(_verify_apk(target, package_name, certificate, signer))
-            if len(versions) != 1:
-                raise ValueError("XAPK split APK version codes disagree")
-            version = versions.pop()
-            if int(manifest.get("version_code", 0)) != version:
-                raise ValueError("XAPK manifest version code disagrees with signed APKs")
-            asset_archive = zipfile.ZipFile(Path(temporary) / "UnityDataAssetPack.apk")
-        if expected_version and version != expected_version:
-            raise ValueError("mirror page version code disagrees with signed APK")
-        try:
-            names = asset_archive.namelist()
-            if not any(name.startswith("assets/Master/") and name.endswith(".bin") for name in names):
-                raise ValueError("package omits encrypted Master tables")
-            if "assets/aa/catalog.bin" not in names and "assets/aa/Android/catalog_main.bin" not in names:
-                raise ValueError("package omits its embedded Addressables catalog")
-        finally:
-            if asset_archive is not archive:
-                asset_archive.close()
-    return version
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", choices=sorted(PACKAGE_NAMES_AND_SIGNING_CERT_SHA256), required=True)
+    parser.add_argument("--server", choices=SERVERS, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    url, provenance, hosts, expected_version = _discover_intl() if args.server == "intl" else _discover_jp()
+    url, provenance, hosts = _discover_intl() if args.server == "intl" else _discover_jp()
     size, digest = _download(url, hosts, args.output)
-    try:
-        version = _validate_package(args.output, args.server, expected_version)
-    except BaseException:
-        args.output.unlink(missing_ok=True)
-        raise
     print(json.dumps({
         "server": args.server,
         "provenance": provenance,
-        "versionCode": version,
         "bytes": size,
         "sha256": digest,
         "casKey": cas_key(digest),

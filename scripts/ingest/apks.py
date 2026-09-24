@@ -686,8 +686,6 @@ def ingest_package(
                     )
                     package_metadata["unityVersion"] = _apk_unity_version(base)
         unity_version = package_metadata.get("unityVersion") or config.unity_version
-        if package_metadata["packageName"] and package_metadata["packageName"] != config.package_name:
-            raise ValueError(f"package name mismatch: {package_metadata['packageName']} != {config.package_name}")
         asset_pack = _asset_pack(package, scratch)
 
         # Parse locale:path pairs from HANEOKA_SOURCE_CATALOGS (or single path from
