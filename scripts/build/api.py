@@ -2851,6 +2851,19 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
         result.update(type="lensflare", textures=textures, referenceWidth=1920, referenceHeight=1080)
     else:
         result.update(_authored_frame_fallback(data, target_asset, source_path, objects, game_objects))
+    if result.get("type") == "authored-layout" and any(
+        record.get("type") == "ParticleSystem" for record in objects.values()
+    ):
+        # The shared opcode-54 Unity runtime serializer already carries the
+        # whole ParticleSystem graph; attach it (plus per-system GameObject
+        # paths and layout anchors) so the renderer can replay the authored
+        # particles instead of the static layout approximation.
+        try:
+            _frame_particles(data, source_path, result)
+        except (KeyError, ValueError, OSError):
+            # Frames whose particle graph cannot be serialized keep the static
+            # approximation; story playback must not fail on one overlay.
+            result.setdefault("particleRuntimeErrors", []).append("serialize-failed")
     animation = _frame_animation(data, target_asset, objects)
     if animation and isinstance(result.get("layout"), dict):
         result["animation"] = animation
@@ -2859,6 +2872,46 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
         result["approximation"] = "static-frame-layout" if unsupported else "none"
     data._adv_frame_cache[target_asset] = result
     return result
+
+
+def _frame_transform_tree(
+    objects: dict[str, dict[str, Any]], root: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """GameObject records of the frame root's RectTransform subtree, in walk order.
+
+    Duplicate GameObject names are common in authored frames (key_open stacks
+    several "EfFukidash" emitters), so the name-keyed lookup used elsewhere
+    cannot drive the layout; walk the transform hierarchy instead.
+    """
+    transforms = {
+        object_id: record
+        for object_id, record in objects.items()
+        if record.get("type") in {"Transform", "RectTransform"}
+    }
+    root_rect = _frame_component(objects, root, "RectTransform") or _frame_component(
+        objects, root, "Transform"
+    )
+    if root_rect is None:
+        return []
+    ordered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    pending = [str(root_rect["pathId"])]
+    while pending:
+        transform_id = pending.pop()
+        if transform_id in seen or transform_id not in transforms:
+            continue
+        seen.add(transform_id)
+        game_object_id = _unity_pointer_id(
+            transforms[transform_id].get("data", {}).get("m_GameObject")
+        )
+        game_object = objects.get(game_object_id or "")
+        if game_object and game_object.get("type") == "GameObject":
+            ordered.append(game_object)
+        pending.extend(
+            _unity_pointer_id(child)
+            for child in transforms[transform_id].get("data", {}).get("m_Children", [])
+        )
+    return ordered
 
 
 def _authored_frame_fallback(
@@ -2870,9 +2923,8 @@ def _authored_frame_fallback(
 ) -> dict[str, Any]:
     """Preserve static Image/RectTransform composition of newer ADV frames.
 
-    Animated particle and shader behaviour needs a dedicated renderer. This
-    fallback records that limitation while keeping stories with new frame
-    prefabs playable and showing their authored static images where possible.
+    ParticleSystem graphs are attached separately by ``_frame_particles``; the
+    static Image composition stays for frames that author both.
     """
     group = PurePosixPath(target_asset).parts[0]
     group_prefix = f"{ADV_FRAME_ROOT}/{group}/"
@@ -2893,14 +2945,23 @@ def _authored_frame_fallback(
             candidates = [path for path in available_pngs if PurePosixPath(path).stem.casefold() in names]
         return data.asset(candidates[0]) if len(candidates) == 1 else None
 
+    root_ids = [
+        str(int(value))
+        for value in (data.source_descriptor(source_path).get("rootObjects") or [])
+    ]
+    tree_game_objects = (
+        _frame_transform_tree(objects, objects[root_ids[0]])
+        if len(root_ids) == 1 and root_ids[0] in objects
+        else [record for _, record in game_objects.values()]
+    )
     rect_ids = {
         str(rect["pathId"])
-        for _, game_object in game_objects.values()
+        for game_object in tree_game_objects
         if (rect := _frame_component(objects, game_object, "RectTransform")) is not None
     }
     nodes: list[dict[str, Any]] = []
     textures: dict[str, str] = {}
-    for _, game_object in game_objects.values():
+    for game_object in tree_game_objects:
         rect = _frame_component(objects, game_object, "RectTransform")
         if rect is None:
             continue
@@ -2951,7 +3012,11 @@ def _authored_frame_fallback(
     image_nodes = [node for node in nodes if "image" in node]
     if image_nodes and not any(node["active"] for node in image_nodes):
         image_nodes[0]["active"] = True
-    if not image_nodes and group_pngs:
+    has_particle_systems = any(
+        record.get("type") == "ParticleSystem" for record in objects.values()
+    )
+    if not image_nodes and group_pngs and not has_particle_systems:
+        # Live particle systems replace the static texture preview.
         texture = data.asset(group_pngs[0])
         if texture:
             textures[PurePosixPath(group_pngs[0]).stem] = texture
@@ -2962,7 +3027,7 @@ def _authored_frame_fallback(
                 "rotation": 0, "opacity": 0.35, "active": True,
                 "image": {"texture": texture, "color": [1, 1, 1, 1], "blend": "additive", "preserveAspect": False},
             })
-    if not any("image" in node for node in nodes):
+    if not any("image" in node for node in nodes) and not has_particle_systems:
         raise ValueError(f"ADV frame has no renderable image or texture: {source_path}")
     unsupported = sorted({
         record["type"] for record in objects.values()
@@ -2975,6 +3040,67 @@ def _authored_frame_fallback(
         "approximation": "static-frame-layout" if unsupported else "none",
         "unsupportedFeatures": unsupported,
     }
+
+
+def _frame_particles(
+    data: BuildData, source_path: str, result: dict[str, Any]
+) -> None:
+    """Attach the frame prefab's ParticleSystem graph for the canvas runtime.
+
+    The graph reuses the exact effect serializer (modules, renderers and
+    materials with resolved texture URLs), while ``particles`` maps each system
+    to its GameObject path and to the layout node carrying its RectTransform so
+    the canvas overlay can place it. Serialized ParticleSystems stop being
+    unsupported features.
+    """
+    runtime = serialize_unity_effect(data, source_path)
+    children: dict[str, list[dict[str, Any]]] = {}
+    for node in runtime["nodes"]:
+        children.setdefault(str(node.get("parentId") or ""), []).append(node)
+    paths: dict[str, str] = {}
+    root = next(
+        (node for node in runtime["nodes"] if node["id"] == runtime["rootNodeId"]),
+        None,
+    )
+    if root is None:
+        raise ValueError(f"ADV frame particle runtime has no root node: {source_path}")
+
+    def visit(node: dict[str, Any], prefix: str) -> None:
+        path = f"{prefix}/{node['name']}" if prefix else str(node["name"])
+        paths[str(node["id"])] = path
+        for child in children.get(str(node["id"]), []):
+            visit(child, path)
+
+    visit(root, "")
+    renderers = {str(entry["nodeId"]): entry for entry in runtime["particleRenderers"]}
+    transform_ids = {
+        str(node["id"]): str(node["transformId"]) for node in runtime["nodes"]
+    }
+    particles: list[dict[str, Any]] = []
+    for system in runtime["particleSystems"]:
+        renderer = renderers.get(str(system["nodeId"]))
+        if renderer is None:
+            continue
+        particles.append(
+            {
+                "path": paths.get(str(system["nodeId"]), str(system["nodeId"])),
+                "node": str(system["nodeId"]),
+                "system": str(system["id"]),
+                "renderer": str(renderer["id"]),
+                "layoutNode": transform_ids.get(str(system["nodeId"]), "0"),
+            }
+        )
+    if not particles:
+        raise ValueError(f"ADV frame has ParticleSystems without renderers: {source_path}")
+    result["particles"] = particles
+    result["particleRuntime"] = runtime
+    unsupported = [
+        value
+        for value in result.get("unsupportedFeatures", [])
+        if value not in {"ParticleSystem", "ParticleSystemRenderer"}
+    ]
+    result["unsupportedFeatures"] = unsupported
+    result["approximation"] = "static-frame-layout" if unsupported else "none"
 
 
 def _effect_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
