@@ -2529,6 +2529,12 @@ def _frame_animation(
     group = PurePosixPath(target_asset).parts[0]
     leaf = PurePosixPath(target_asset).name.casefold()
     animation_root = f"{ADV_FRAME_ROOT}/{group}/data/Animation/"
+    # Variant prefabs (adv_frame_lightleak_black) share their group's
+    # AnimatorController, so clip names fall back to progressively shorter
+    # stems: exact, exact_loop, stem, stem_loop, ...
+    stems = [leaf]
+    while "_" in stems[-1]:
+        stems.append(stems[-1].rsplit("_", 1)[0])
     candidates: list[tuple[int, dict[str, Any]]] = []
     for source in data.source_paths:
         if not source.startswith(animation_root) or not source.endswith(".anim"):
@@ -2540,10 +2546,11 @@ def _frame_animation(
                 continue
             raw = clip.get("data", {})
             name = str(raw.get("m_Name") or "").casefold()
-            if name == leaf:
-                candidates.append((0, raw))
-            elif name == f"{leaf}_loop":
-                candidates.append((1, raw))
+            for rank, stem in enumerate(stems):
+                if name == stem:
+                    candidates.append((rank * 2, raw))
+                elif name == f"{stem}_loop":
+                    candidates.append((rank * 2 + 1, raw))
     if not candidates:
         return None
     candidates.sort(key=lambda entry: entry[0])
