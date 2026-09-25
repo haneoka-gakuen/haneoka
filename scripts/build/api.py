@@ -2507,6 +2507,14 @@ def _frame_color(value: Any) -> str:
     return "#" + "".join(f"{max(0, min(255, round(channel * 255))):02x}" for channel in channels)
 
 
+# Custom MonoBehaviour UI properties (typeID 114) fail closed and would
+# reject whole otherwise-usable clips. They are serialized per-component
+# constants the native component reads (progress values and similar) with no
+# visual binding of their own; count each as one constant curve and let the
+# strict total-count check below catch any mismatch loudly.
+_FRAME_ANIMATION_IGNORED_TYPE = 114
+_FRAME_ANIMATION_IGNORED_COMPONENTS = 1
+
 _FRAME_ANIMATION_PROPERTIES = {
     (225, zlib.crc32(b"m_Alpha")): ("opacity", 1),
     (224, zlib.crc32(b"m_AnchoredPosition.x")): ("positionX", 1),
@@ -2608,10 +2616,12 @@ def _frame_animation(
     projected = []
     curve_start = 0
     for binding in bindings:
-        property_info = _FRAME_ANIMATION_PROPERTIES.get(
-            (int(binding.get("typeID") or 0), int(binding.get("attribute") or 0))
-        )
+        type_attribute = (int(binding.get("typeID") or 0), int(binding.get("attribute") or 0))
+        property_info = _FRAME_ANIMATION_PROPERTIES.get(type_attribute)
         node = path_nodes.get(int(binding.get("path") or 0))
+        if property_info is None and node is not None and type_attribute[0] == _FRAME_ANIMATION_IGNORED_TYPE:
+            curve_start += _FRAME_ANIMATION_IGNORED_COMPONENTS
+            continue
         if property_info is None or node is None:
             return None
         property_name, components = property_info
@@ -2851,15 +2861,25 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
         result.update(type="lensflare", textures=textures, referenceWidth=1920, referenceHeight=1080)
     else:
         result.update(_authored_frame_fallback(data, target_asset, source_path, objects, game_objects))
+    group = PurePosixPath(target_asset).parts[0]
+    leaf = PurePosixPath(target_asset).name.casefold()
+    animation_root = f"{ADV_FRAME_ROOT}/{group}/data/Animation/"
+    clip_sources = (
+        _frame_animation_clip_sources(data, animation_root, leaf)
+        if result.get("type") == "authored-layout"
+        else []
+    )
     if result.get("type") == "authored-layout" and any(
         record.get("type") == "ParticleSystem" for record in objects.values()
     ):
         # The shared opcode-54 Unity runtime serializer already carries the
         # whole ParticleSystem graph; attach it (plus per-system GameObject
         # paths and layout anchors) so the renderer can replay the authored
-        # particles instead of the static layout approximation.
+        # particles instead of the static layout approximation. Animator
+        # clips that drive ParticleSystem module curves ship as separate
+        # sources and are merged in so the runtime animates the modules.
         try:
-            _frame_particles(data, source_path, result)
+            _frame_particles(data, source_path, result, clip_sources)
         except (KeyError, ValueError, OSError):
             # Frames whose particle graph cannot be serialized keep the static
             # approximation; story playback must not fail on one overlay.
@@ -2870,6 +2890,21 @@ def _frame_runtime(data: BuildData, target_asset: str) -> dict[str, Any]:
         unsupported = [value for value in result.get("unsupportedFeatures", []) if value != "Animator"]
         result["unsupportedFeatures"] = unsupported
         result["approximation"] = "static-frame-layout" if unsupported else "none"
+    if isinstance(result.get("layout"), dict):
+        # Authored state variants (params[1] of opcode 44) carry their own
+        # clips; key them by full clip name so command resolution is exact.
+        states: dict[str, Any] = {}
+        if animation:
+            states[leaf] = animation
+        for clip_source in clip_sources:
+            state_name = PurePosixPath(clip_source).stem.casefold()
+            if state_name == leaf:
+                continue
+            state_animation = _frame_animation(data, f"{group}/{state_name}", objects)
+            if state_animation:
+                states[state_name] = state_animation
+        if states:
+            result["animationStates"] = dict(sorted(states.items()))
     data._adv_frame_cache[target_asset] = result
     return result
 
@@ -3042,8 +3077,30 @@ def _authored_frame_fallback(
     }
 
 
+def _frame_animation_clip_sources(
+    data: BuildData, animation_root: str, leaf: str
+) -> list[str]:
+    """Animation-folder sources whose clips match the frame leaf or its variants.
+
+    Animator clips are matched exactly (``leaf``/``leaf_loop``) or as authored
+    state variants (``leaf_<state>.anim``, e.g. videosite progress ``_20`` or
+    slander ``pattern01``); commands select the variant through params[1].
+    """
+    sources: list[str] = []
+    for source in data.source_paths:
+        if not source.startswith(animation_root) or not source.endswith(".anim"):
+            continue
+        stem = PurePosixPath(source).stem.casefold()
+        if stem == leaf or stem == f"{leaf}_loop" or stem.startswith(f"{leaf}_"):
+            sources.append(source)
+    return sources
+
+
 def _frame_particles(
-    data: BuildData, source_path: str, result: dict[str, Any]
+    data: BuildData,
+    source_path: str,
+    result: dict[str, Any],
+    clip_sources: list[str] | None = None,
 ) -> None:
     """Attach the frame prefab's ParticleSystem graph for the canvas runtime.
 
@@ -3053,7 +3110,7 @@ def _frame_particles(
     the canvas overlay can place it. Serialized ParticleSystems stop being
     unsupported features.
     """
-    runtime = serialize_unity_effect(data, source_path)
+    runtime = serialize_unity_effect(data, source_path, clip_sources)
     children: dict[str, list[dict[str, Any]]] = {}
     for node in runtime["nodes"]:
         children.setdefault(str(node.get("parentId") or ""), []).append(node)

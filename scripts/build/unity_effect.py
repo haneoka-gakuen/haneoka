@@ -562,9 +562,21 @@ class _TextureResolver:
         return self._output_url(pointer, owner, "Sprite"), texture_reference
 
 
-def serialize_unity_effect(data: Any, source_path: str) -> dict[str, Any]:
-    """Return the exact runtime graph for one canonical effect prefab source."""
+def serialize_unity_effect(
+    data: Any,
+    source_path: str,
+    extra_clip_sources: list[str] | None = None,
+) -> dict[str, Any]:
+    """Return the exact runtime graph for one canonical effect prefab source.
+
+    ``extra_clip_sources`` merges additional AnimationClip source paths into
+    the serialized clip list; frame prefabs ship their authored Animator clips
+    as separate sources next to the prefab instead of inside its bundle.
+    """
     descriptor, objects = data.source_objects(source_path)
+    for clip_source in extra_clip_sources or ():
+        clip_objects = data.source_objects(clip_source)[1]
+        objects = {**clip_objects, **objects}
     root_ids = [str(int(value)) for value in descriptor.get("rootObjects", [])]
     if len(root_ids) != 1 or objects.get(root_ids[0], {}).get("type") != "GameObject":
         raise ValueError(f"ADV effect must have exactly one GameObject root: {source_path}")
