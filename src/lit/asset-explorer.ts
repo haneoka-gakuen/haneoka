@@ -1,6 +1,7 @@
 import { LitElement, html, nothing } from "lit";
 import { errorState, loadingState } from "./ui/state";
-import { catalogUrl, fetchJson, currentReleaseServer } from "./shared/catalog";
+import { catalogUrl, fetchJson, currentReleaseServer, preferredLocale } from "./shared/catalog";
+import { localizedFallbacks } from "../lib/localized-text";
 interface Branch {
   [key: string]: AssetNode;
 }
@@ -49,17 +50,82 @@ export class AssetExplorer extends LitElement {
         columns.scrollTo({ left: columns.scrollWidth, behavior: "smooth" });
     });
   }
+  /** Original path → the variant the interface language resolves to. */
+  private variants = new Map<string, string>();
+  private static readonly VARIANT_MARKS = new Set(["en", "ko", "zh-Hans", "zh-Hant", "zh-CN", "zh-TW"]);
+  private static parseVariant(file: string): { base: string; mark: string; ext: string } | null {
+    const match = /\(([^)]+)\)(\.[^.]+)$/u.exec(file);
+    const mark = match?.[1] ?? "";
+    return match && AssetExplorer.VARIANT_MARKS.has(mark)
+      ? { base: file.slice(0, match.index), mark, ext: match[2] ?? "" }
+      : null;
+  }
+  /**
+   * The release stores one file per language, stitched in at build time
+   * (`kadan.png` plus `kadan(zh-Hans).png`, ...). The listing keeps only the
+   * source file; opening it resolves to the visitor language's variant
+   * through the usual zh fallback order, under the source filename.
+   */
+  private rebuildVariants(siblings: readonly string[]) {
+    this.variants = new Map();
+    const byBase = new Map<string, Map<string, string>>();
+    for (const file of siblings) {
+      const variant = AssetExplorer.parseVariant(file);
+      if (!variant) continue;
+      // Key by the full source path (extension included): that is the name
+      // the listing shows and the name lookups arrive with.
+      const original = `${variant.base}${variant.ext ?? ""}`;
+      let marks = byBase.get(original);
+      if (!marks) byBase.set(original, (marks = new Map()));
+      marks.set(variant.mark, file);
+    }
+    if (!byBase.size) return;
+    for (const [base, marks] of byBase) {
+      for (const language of localizedFallbacks(preferredLocale())) {
+        // ja resolves to the source file itself: no mapping, listing name.
+        if (language === "ja") break;
+        const hit = marks.get(language);
+        if (hit) {
+          this.variants.set(base, hit);
+          break;
+        }
+      }
+    }
+  }
+  private localized(file: string) {
+    return this.variants.get(file) ?? file;
+  }
+  /** Variants display under the source filename in the listing. */
+  private displayName(file: string) {
+    for (const [original, variant] of this.variants) {
+      if (variant === file) return original;
+    }
+    return file;
+  }
+  private onLocale = () => {
+    this.rebuildVariants(this.siblingNames());
+    this.sync();
+    if (this.selected) void this.prepareSelected(this.selected);
+  };
   connectedCallback() {
     super.connectedCallback();
+    addEventListener("haneoka:locale-ready", this.onLocale);
     void import("@material/web/progress/circular-progress.js");
     const params = new URLSearchParams(location.search);
-    const routePath = location.pathname.replace(/^\/catalog\/assets\/?/u, "");
+    const routePath = location.pathname.replace(/^\/(?:ja|en|zh-TW|zh-CN|ko)?\/catalog\/assets\/?/u, "");
     this.path = (routePath || params.get("path") || "")
       .split("/")
       .filter(Boolean)
       .map((part) => decodeURIComponent(part));
     this.selected = params.get("file") || "";
     void this.loadTree();
+  }
+  private siblingNames(): string[] {
+    const folderNode = this.node(this.path.slice(0, -1));
+    const folder = this.path.slice(0, -1).join("/");
+    return folderNode && typeof folderNode === "object"
+      ? Object.keys(folderNode).map((name) => `${folder}/${name}`)
+      : [];
   }
   private node(parts = this.path): AssetNode | undefined {
     let current: AssetNode = this.tree;
@@ -73,6 +139,7 @@ export class AssetExplorer extends LitElement {
     const node = this.node(parts);
     return node && typeof node === "object"
       ? Object.entries(node)
+          .filter(([name]) => !AssetExplorer.parseVariant(name))
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }))
       : [];
@@ -81,6 +148,7 @@ export class AssetExplorer extends LitElement {
     try {
       this.tree = await fetchJson<Record<string, AssetNode>>(catalogUrl("sources/tree"));
       this.phase = "ready";
+      this.rebuildVariants(this.siblingNames());
       if (typeof this.node() === "number") await this.loadFiles();
       if (this.selected) await this.prepareSelected(this.selected);
     } catch (error) {
@@ -104,7 +172,8 @@ export class AssetExplorer extends LitElement {
   }
   private async loadFiles() {
     try {
-      const descriptor = await fetchJson<Descriptor>(catalogUrl(`sources/${this.path.join("/")}`));
+      this.rebuildVariants(this.siblingNames());
+      const descriptor = await fetchJson<Descriptor>(catalogUrl(`sources/${this.localized(this.path.join("/"))}`));
       this.files = [
         ...(descriptor.outputs || []).map((value) => String(value.path || "")).filter(Boolean),
         ...(descriptor.objectArchive?.path ? [descriptor.objectArchive.path] : []),
@@ -114,7 +183,7 @@ export class AssetExplorer extends LitElement {
     }
   }
   private url(file: string) {
-    const [root, ...parts] = file.split("/").filter(Boolean);
+    const [root, ...parts] = this.localized(file).split("/").filter(Boolean);
     return ["assets", "runtime", "objects"].includes(root || "")
       ? `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}`
       : "";
@@ -222,7 +291,7 @@ export class AssetExplorer extends LitElement {
                                         href=${`/icons.svg#${this.kind(file) === "image" ? "image" : this.kind(file) === "audio" ? "graphic_eq" : this.kind(file) === "video" ? "movie" : this.kind(file) === "model" ? "view_in_ar" : this.kind(file) === "text" ? "data_object" : "draft"}`}
                                       ></use>
                                     </svg>
-                                    <span>${file.split("/").at(-1)}</span>
+                                    <span>${this.displayName(file).split("/").at(-1)}</span>
                                   </button>
                                 `,
                               )}
