@@ -1,0 +1,10 @@
+---
+import StoryDocument from "../../../components/StoryDocument.astro";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+}
+const { locale } = Astro.props as { locale: Locale };
+---
+<StoryDocument locale={locale} mode="band" />
