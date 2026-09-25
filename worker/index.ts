@@ -2266,13 +2266,23 @@ async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
   const response = await env.ASSETS.fetch(request);
   if (response.status !== 404) return response;
   const url = new URL(request.url);
+  // SPA sub-routes of the two tools are served through their entry page.
+  // The entry now lives under a locale prefix; probe each language.
+  const tryEntry = async (entryPath: string): Promise<Response | null> => {
+    for (const locale of ["ja", "en", "zh-TW", "zh-CN", "ko"]) {
+      const candidate = new URL(`/${locale}${entryPath}`, url);
+      const hit = await env.ASSETS.fetch(new Request(candidate, request));
+      if (hit.status !== 404) return hit;
+    }
+    return null;
+  };
   if (url.pathname.startsWith("/catalog/assets/")) {
-    const fallback = new URL("/catalog/assets/index.html", url);
-    return env.ASSETS.fetch(new Request(fallback, request));
+    const entry = await tryEntry("/catalog/assets/index.html");
+    if (entry) return entry;
   }
   if (url.pathname.startsWith("/community/")) {
-    const fallback = new URL("/community/index.html", url);
-    return env.ASSETS.fetch(new Request(fallback, request));
+    const entry = await tryEntry("/community/index.html");
+    if (entry) return entry;
   }
   return response;
 }
@@ -2307,7 +2317,6 @@ function negotiateLocale(request: Request): "ja" | "en" | "zh-TW" | "zh-CN" | "k
 
 const WORKER_FIRST_PREFIXES = [
   "/api/",
-  "/admin",
   "/artifacts/",
   "/assets/",
   "/catalog/assets/",

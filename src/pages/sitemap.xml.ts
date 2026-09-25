@@ -9,7 +9,7 @@ import { searchableStoryUrls } from "../lib/searchable-stories";
 
 const XML_ROUTES = ROUTES.filter(
   ({ route }) =>
-    !shouldNoindex(route) && (route === "/" || (route.startsWith("/catalog/") && !route.startsWith("/catalog/assets"))),
+    !shouldNoindex(route) && (route === "/" || route.startsWith("/catalog/")),
 );
 
 export const GET: APIRoute = async () => {

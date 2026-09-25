@@ -25,7 +25,7 @@ const formatTitle = (value: string) => (value === "haneoka" ? value : `${value} 
 // Locale-prefixed pages are built for the archive sections only; app areas
 // (community, the asset explorer, account) stay at the root and keep their
 // own addresses as canonical.
-const isLocalizedRoute = route === "/" || (route.startsWith("/catalog/") && !route.startsWith("/catalog/assets"));
+const isLocalizedRoute = route === "/" || route.startsWith("/catalog/");
 // Catalogue pages spell out where they sit: "楽曲 · カタログ · haneoka".
 const withCatalogHierarchy = (target: Locale, value: string) => {
   if (!route.startsWith("/catalog/") || route === "/catalog") return value;

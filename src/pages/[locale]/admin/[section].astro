@@ -1,0 +1,15 @@
+---
+import AdminDocument from "../../../components/AdminDocument.astro";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    ["users", "posts", "reports", "appeals", "operations"].map((section) => ({
+      params: { locale, section },
+      props: { locale, section },
+    })),
+  );
+}
+const { locale, section } = Astro.props as { locale: Locale; section: string };
+---
+<AdminDocument locale={locale} section={section} />

@@ -889,13 +889,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     "/artifacts/",
     "/assets/",
     "/assets",
-    "/catalog/assets",
+    "/catalog/assets/",
     "/game-client/",
     "/objects/",
     "/runtime/",
     "/sonolus/",
     "/auth",
-    "/admin",
   ];
   if (
     !localePattern.test(url.pathname) &&
@@ -1157,18 +1156,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
   }
-  if (url.pathname.startsWith("/catalog/assets/")) {
-    const assetsEntry = safeFile(DIST, "catalog/assets/index.html");
-    if (assetsEntry) {
-      sendFile(req, res, assetsEntry, "no-cache");
-      return;
-    }
-  }
-  if (url.pathname.startsWith("/community/")) {
-    const communityEntry = safeFile(DIST, "community/index.html");
-    if (communityEntry) {
-      sendFile(req, res, communityEntry, "no-cache");
-      return;
+  if (url.pathname.startsWith("/catalog/assets/") || url.pathname.startsWith("/community/")) {
+    for (const locale of ["ja", "en", "zh-TW", "zh-CN", "ko"]) {
+      const entryPath = url.pathname.startsWith("/catalog/assets/")
+        ? `${locale}/catalog/assets/index.html`
+        : `${locale}/community/index.html`;
+      const entry = safeFile(DIST, entryPath);
+      if (entry) {
+        sendFile(req, res, entry, "no-cache");
+        return;
+      }
     }
   }
   const notFound = safeFile(DIST, "404.html");
