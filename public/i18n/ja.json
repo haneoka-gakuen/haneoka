@@ -1500,14 +1500,15 @@
     "hideModule": "モジュールを非表示",
     "moveUp": "上へ移動",
     "moveDown": "下へ移動",
-    "resetLayout": "既定のレイアウトに戻す"
+    "resetLayout": "既定のレイアウトに戻す",
+    "daysAwayOne": "{count}日"
   },
   "liveMusicTypes": {
-    "red": "レッド",
-    "blue": "ブルー",
-    "green": "グリーン",
-    "yellow": "イエロー",
-    "purple": "パープル"
+    "red": "紅赤タイプ",
+    "blue": "紺碧タイプ",
+    "green": "翡翠タイプ",
+    "yellow": "山吹タイプ",
+    "purple": "紫苑タイプ"
   },
   "songTypes": {
     "original": "オリジナル",

@@ -56,12 +56,30 @@ CATALOG_RESOURCES = (
     "live-tools",
     "provenance",
     "feature-status",
+    "events",
+    "real-lives",
+    "home-banners",
+    "gacha",
+    "login-campaigns",
+    "shop",
+    "exchange",
+    "circle",
+    "challenge",
+    "missions",
+    "passes",
+    "stickers",
+    "backgrounds",
+    "tgw-card",
 )
 
 # Storage manifests created before additive feature read models shipped do not
 # contain them. Consumers may keep reading those releases; every newly
 # compiled catalog still uses the complete CATALOG_RESOURCES tuple.
-CATALOG_OPTIONAL_RESOURCES = ("story-assets", "anon-tokyo", "spine")
+CATALOG_OPTIONAL_RESOURCES = (
+    "story-assets", "anon-tokyo", "spine", "events", "real-lives", "home-banners", "gacha",
+    "login-campaigns", "shop", "exchange", "circle", "challenge",
+    "missions", "passes", "stickers", "backgrounds", "tgw-card",
+)
 CATALOG_REQUIRED_RESOURCES = tuple(
     resource for resource in CATALOG_RESOURCES if resource not in CATALOG_OPTIONAL_RESOURCES
 )

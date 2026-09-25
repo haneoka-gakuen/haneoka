@@ -1500,14 +1500,15 @@
     "hideModule": "隐藏模块",
     "moveUp": "上移",
     "moveDown": "下移",
-    "resetLayout": "恢复默认布局"
+    "resetLayout": "恢复默认布局",
+    "daysAwayOne": "{count}天"
   },
   "liveMusicTypes": {
-    "red": "红",
-    "blue": "蓝",
-    "green": "绿",
-    "yellow": "黄",
-    "purple": "紫"
+    "red": "绯红属性",
+    "blue": "绀碧属性",
+    "green": "翡翠属性",
+    "yellow": "琉金属性",
+    "purple": "紫苑属性"
   },
   "songTypes": {
     "original": "原创",

@@ -77,10 +77,7 @@ const bundle = buildSync({
   // materialized checkouts so bundling works without a linked node_modules.
   alias: {
     "@haneoka/cassiopeia": path.join(repositoryRoot, ".dependencies/cassiopeia/src"),
-    "@haneoka/cassiopeia-plugin-our-notes": path.join(
-      repositoryRoot,
-      ".dependencies/cassiopeia-plugin-our-notes/src",
-    ),
+    "@haneoka/cassiopeia-plugin-our-notes": path.join(repositoryRoot, ".dependencies/cassiopeia-plugin-our-notes/src"),
   },
 });
 const source = bundle.outputFiles?.[0]?.text;

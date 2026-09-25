@@ -86,6 +86,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("characters", "entity", "characters"),
     column("release", "text", "release"),
   ],
+  background: [column("title", "entity", "title", true)],
   song: [
     column("title", "entity", "title", true),
     column("play", "action"),
@@ -118,6 +119,12 @@ const COLUMNS: Record<string, Column[]> = {
     column("type", "text", "itemTypeName"),
     column("maximum", "numeric", "max"),
     column("value", "numeric"),
+  ],
+  system: [
+    column("title", "entity", "title", true),
+    column("status", "text"),
+    column("category", "text"),
+    column("release", "text", "release"),
   ],
 };
 
@@ -415,6 +422,7 @@ export class CatalogTable extends LitElement {
           : c.displayValue(item.type || item.category);
       return wrap(value ? c.label(value, value) : "—");
     }
+    if (key === "status") return wrap(c.systemStatusLabel(item) || "—");
     if (["time", "score", "eff", "bpm", "n", "nps", "sr"].includes(key)) return wrap(c.songListMeta(item, key));
     if (key === "release") return wrap(c.release(item.releasedAt || item.publishedAt || item.publicStartAt) || "—");
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");

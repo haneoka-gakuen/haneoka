@@ -1,0 +1,172 @@
+/* ==========================================================================
+   T.G.W CARD — membership benefits ladder
+   A single list: one rung per rank, hairline-separated, every value a design
+   token — surfaces, typescale, shape, and system colours. No custom colour,
+   no gradients, no imagery: the tiers speak for themselves.
+   ========================================================================== */
+
+@layer pages {
+  .tgw-card {
+    display: grid;
+    width: min(100%, var(--content-max));
+    margin-inline: auto;
+    align-content: start;
+    padding: 8px var(--md-comp-page-inline-space) 24px;
+  }
+
+  .tgw-ladder {
+    display: grid;
+    margin: 0;
+    padding: 8px 0;
+    list-style: none;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+
+  .tgw-rung {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 4px 16px;
+    padding: 16px 20px 16px 12px;
+  }
+  .tgw-rung + .tgw-rung {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  /* Rank numeral: the ladder's axis. */
+  .tgw-rung__rank {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    margin-inline: auto;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+
+  .tgw-rung__body {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .tgw-rung__head {
+    display: flex;
+    min-height: 48px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 16px;
+  }
+  .tgw-rung__title {
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    color: var(--md-sys-color-on-surface);
+  }
+  .tgw-rung__points {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+
+  /* Benefits: leading check, value trailing. */
+  .tgw-rung__benefits {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .tgw-rung__benefits li {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
+  .tgw-rung__mark {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--md-sys-color-primary);
+  }
+  .tgw-rung__benefits b {
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+
+  .tgw-rung__grants {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: 8px 20px;
+    margin: 0;
+  }
+  .tgw-rung__grants > div {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+  }
+  .tgw-rung__grants dt {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .tgw-rung__grants dd {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+  }
+
+  /* Grant chip: the same anatomy as an assist chip, tonal surface. */
+  .tgw-chip {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 12px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    text-decoration: none;
+  }
+  a.tgw-chip:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container));
+  }
+  .tgw-chip img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+  }
+  .tgw-chip b {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  @media (max-width: 599px) {
+    .tgw-rung {
+      grid-template-columns: 48px minmax(0, 1fr);
+      gap: 4px 12px;
+      padding: 12px 12px 12px 8px;
+    }
+    .tgw-rung__rank {
+      width: 40px;
+      height: 40px;
+    }
+    .tgw-rung__benefits {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

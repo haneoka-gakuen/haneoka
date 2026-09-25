@@ -536,6 +536,15 @@ export class StoryWorkspace extends LitElement {
         ? "extraStory"
         : "bandStory";
   }
+  /** The game's own Image/Spot thumbnail first; the rendered preview backs it up. */
+  private spotPreview(spot: JsonRecord | undefined | null) {
+    if (!spot) return "";
+    return (
+      String(spot.thumbnail || "") ||
+      String((spot.spine as JsonRecord | undefined)?.backgroundPreview || "") ||
+      String(spot.backgroundPreview || "")
+    );
+  }
   private episodeSpot(episode: JsonRecord) {
     return this.spots.find((spot) =>
       (Array.isArray(spot.talks) ? (spot.talks as JsonRecord[]) : []).some(
@@ -575,7 +584,7 @@ export class StoryWorkspace extends LitElement {
       `;
     if (!["home", "afterlive"].includes(this.mode)) return undefined;
     const spot = this.episodeSpot(episode);
-    const image = String((spot?.spine as JsonRecord | undefined)?.backgroundPreview || spot?.backgroundPreview || "");
+    const image = this.spotPreview(spot);
     const ids = this.characterIds(episode);
     return storyCastMedia(
       ids.map((id) => {
@@ -592,7 +601,7 @@ export class StoryWorkspace extends LitElement {
   private episodeImage(item: JsonRecord) {
     if (this.origin === "release" && this.mode === "home") {
       const spot = this.episodeSpot(item);
-      return String((spot?.spine as JsonRecord | undefined)?.backgroundPreview || spot?.backgroundPreview || "");
+      return this.spotPreview(spot);
     }
     if (this.mode === "afterlive") return "";
     return String(
@@ -749,7 +758,7 @@ export class StoryWorkspace extends LitElement {
       return this.spots.map((spot) => ({
         value: String(spot.spotId),
         label: this.text(spot.name) || this.text(spot.spotName) || String(spot.assetName || ""),
-        image: String((spot.spine as JsonRecord)?.backgroundPreview || spot.backgroundPreview || ""),
+        image: this.spotPreview(spot),
         meta: this.text(spot.bandName) || this.bandName(Number(spot.bandId)),
       }));
     if (this.mode === "link")
@@ -1498,13 +1507,18 @@ export class StoryWorkspace extends LitElement {
   private renderHomeScene() {
     const spot = this.activeSpots()[0];
     if (!spot) return nothing;
-    const preview = String((spot.spine as JsonRecord | undefined)?.backgroundPreview || "");
+    const preview = this.spotPreview(spot);
     return html`
-      <section class=${`story-scene ${preview ? "media-loading" : ""}`}>
+      <section
+        class=${`story-scene ${preview ? "media-loading" : ""}`}
+        @pointermove=${(event: PointerEvent) => this.scenePointerMove(event)}
+        @pointerleave=${() => this.scenePointerLeave()}
+      >
         ${
           preview
             ? html`
                 <img
+                  class="story-scene__tilt"
                   src=${this.imageForLocale(preview)}
                   alt=${this.text(spot.name)}
                   @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
@@ -1529,6 +1543,27 @@ export class StoryWorkspace extends LitElement {
         </div>
       </section>
     `;
+  }
+  /** The scene follows the pointer: the Spine runtime turns its camera, and
+   the flat preview tilts the same way while the runtime loads. */
+  private scenePointerMove(event: PointerEvent) {
+    this.homeStage?.pointerMove(event.clientX, event.clientY);
+    const scene = event.currentTarget as HTMLElement;
+    const image = scene.querySelector<HTMLElement>(".story-scene__tilt");
+    if (!image) return;
+    const rect = scene.getBoundingClientRect();
+    const x = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1));
+    const y = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1));
+    image.style.setProperty("--tilt-x", `${(-y * 3).toFixed(2)}deg`);
+    image.style.setProperty("--tilt-y", `${(x * 3).toFixed(2)}deg`);
+  }
+  private scenePointerLeave() {
+    this.homeStage?.pointerLeave();
+    const image = this.querySelector<HTMLElement>(".story-scene__tilt");
+    if (image) {
+      image.style.removeProperty("--tilt-x");
+      image.style.removeProperty("--tilt-y");
+    }
   }
   private async syncHomeStage() {
     if (!(this.origin === "release" && this.mode === "home" && this.phase === "ready")) return;

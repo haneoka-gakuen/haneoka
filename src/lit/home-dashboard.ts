@@ -2,6 +2,7 @@ import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import {
   catalogUrl,
+  currentReleaseServer,
   fetchJson,
   localizedText,
   preferredLocale,
@@ -9,34 +10,43 @@ import {
   uiText,
   type JsonRecord,
 } from "./shared/catalog";
+import { CATALOG_HUB } from "../config/navigation";
+import { tile } from "./ui/tile";
+import { liveMusicTypeMark, songTile } from "./shared/song-tile";
+import { LazyImages, localizedAssetUrl } from "./ui/lazy-images";
 
-type ModuleId = "band" | "hub" | "birthdays" | "community" | "news";
+type ModuleId = "songs" | "birthdays" | "community" | "news";
 type Birthday = {
   color: string;
   href: string;
   image: string;
   kind: "character" | "cast";
   name: string;
+  /** For cast birthdays: the characters this person voices. */
+  voices: string;
   nextAt: number;
   external: boolean;
 };
-type Band = { id: number; name: string; image: string; songs: JsonRecord[] };
+/** A rotating window (gacha banner, event, live) the game is showing right now. */
+type Spotlight = {
+  id: string;
+  title: string;
+  image: string;
+  href: string;
+  startAt: number;
+  endAt: number;
+};
+/** One slide of the home carousel: the game's own MasterHomeBanner rows. */
+type Banner = {
+  id: string;
+  image: string;
+  href: string;
+  endAt: number;
+};
 
-const MODULES: ModuleId[] = ["band", "hub", "birthdays", "community", "news"];
+const MODULES: ModuleId[] = ["songs", "birthdays", "community", "news"];
 const PROFILE_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"];
-const STORAGE_KEY = "haneoka:home-layout:v2";
-const HUB = [
-  ["songs", "library_music", "/catalog/songs", "songs"],
-  ["memberCards", "style", "/catalog/member-cards", "cards"],
-  ["supportCards", "collections", "/catalog/support-cards", "support-cards"],
-  ["characters", "group", "/catalog/characters", "characters"],
-  ["stories", "auto_stories", "/catalog/stories", "stories"],
-  ["stamps", "emoji_emotions", "/catalog/stamps", "stamps"],
-  ["comics", "menu_book", "/catalog/comics", "comics"],
-  ["items", "inventory_2", "/catalog/items", "items"],
-  ["bandItems", "piano", "/catalog/band-items", "band-items"],
-  ["help", "help", "/catalog/help", "help"],
-] as const;
+const STORAGE_KEY = "haneoka:home-layout:v3";
 /* MasterBand colours for the character-profile fallback (profiles use slugs, not ids). */
 const PROFILE_BAND_SEED: Record<string, string> = {
   mygo: "var(--md-ref-band-1)",
@@ -45,6 +55,32 @@ const PROFILE_BAND_SEED: Record<string, string> = {
   millsage: "var(--md-ref-band-4)",
   "ikka-dumb-rock": "var(--md-ref-band-5)",
 };
+/** Fixed in-repo avatars: the birthday list never depends on release assets. */
+const CHARACTER_AVATAR = (id: unknown) => `/images/avatars/characters/${String(id || "")}.png`;
+const CAST_AVATAR = (id: string) => `/images/avatars/cast/${id}.jpg`;
+/**
+ * The bottom directory is the catalogue landing page itself, grouped: the
+ * same CATALOG_HUB entries in the same order, sliced into the sections the
+ * navigation uses. One source of truth — no hand-maintained copy to drift.
+ */
+const DIRECTORY_BOUNDS: ReadonlyArray<readonly [group: string, firstRoute: string]> = [
+  ["library", "/catalog/songs"],
+  ["gameSystems", "/catalog/events"],
+  ["collection", "/catalog/shop"],
+  ["tools", "/catalog/live2d"],
+  ["anonTokyo", "/catalog/anon-tokyo/characters"],
+];
+const directoryGroups = (): ReadonlyArray<readonly [string, typeof CATALOG_HUB]> =>
+  DIRECTORY_BOUNDS.map(([group, first], index) => {
+    const next = DIRECTORY_BOUNDS[index + 1]?.[1];
+    const start = CATALOG_HUB.findIndex((item) => item.route === first);
+    const end = next ? CATALOG_HUB.findIndex((item) => item.route === next) : CATALOG_HUB.length;
+    return [group, CATALOG_HUB.slice(Math.max(0, start), Math.max(0, end))] as const;
+  });
+/**
+ * The bottom directory mirrors the catalogue's own sections, so every entry
+ * point sits one group away from its neighbours.
+ */
 
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size} aria-hidden="true">
@@ -57,16 +93,6 @@ const timestamp = (value: unknown) =>
   Array.isArray(value)
     ? Math.max(0, ...value.map(Number).filter((entry) => Number.isFinite(entry) && entry > 0))
     : Number(value) || 0;
-const expertRow = (song: JsonRecord) => {
-  const rows = Array.isArray(song.difficulty) ? (song.difficulty as JsonRecord[]) : [];
-  return rows.find((row) => row.difficultyName === "expert") ?? rows.at(-1);
-};
-/** The level players see in game (an integer). */
-const expertDisplayLevel = (song: JsonRecord) => {
-  const expert = expertRow(song);
-  const level = Number(expert?.displayLevel ?? expert?.playLevel);
-  return Number.isFinite(level) && level > 0 ? level : 0;
-};
 const hideBrokenImage = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement;
   image.hidden = true;
@@ -79,28 +105,41 @@ export class HomeDashboard extends LitElement {
     phase: { state: true },
     songs: { state: true },
     characters: { state: true },
-    bandRecords: { state: true },
+    banners: { state: true },
+    events: { state: true },
     counts: { state: true },
     posts: { state: true },
     order: { state: true },
     hiddenModules: { state: true },
-    selectedBand: { state: true },
+    slide: { state: true },
+    songLimit: { state: true },
   };
   declare locale: string;
   declare labels: string;
   declare phase: "loading" | "ready" | "error";
   declare songs: JsonRecord[];
   declare characters: JsonRecord[];
-  declare bandRecords: JsonRecord[];
+  declare bands: JsonRecord[];
+  private marks = new Map<string, string>();
+  declare banners: Banner[];
+  declare events: Spotlight[];
   declare counts: Record<string, number>;
   declare posts: JsonRecord[];
   declare order: ModuleId[];
   declare hiddenModules: Record<string, boolean>;
-  declare selectedBand: number;
+  declare slide: number;
+  /** How many songs fill exactly two grid rows; measured, clamped 8–14. */
+  declare songLimit: number;
   private copies: Record<string, Record<string, string>> = {};
   private action?: HTMLButtonElement;
   private characterProfiles: JsonRecord[] = [];
   private castProfiles: JsonRecord[] = [];
+  /** Song tiles defer their artwork as data-src; this promotes them. */
+  private lazyImages = new LazyImages({ candidates: (source) => [localizedAssetUrl(source, this.locale)] });
+  private songsResize?: ResizeObserver;
+  private slideTimer?: number;
+  /** False only for the invisible wrap jump between the clone and slide 0. */
+  private slideAnimated = true;
   private localeListener = (event: Event) => {
     this.locale = String((event as CustomEvent).detail || preferredLocale());
     this.syncAction();
@@ -112,12 +151,14 @@ export class HomeDashboard extends LitElement {
     this.phase = "loading";
     this.songs = [];
     this.characters = [];
-    this.bandRecords = [];
+    this.banners = [];
+    this.events = [];
     this.counts = {};
     this.posts = [];
     this.order = [...MODULES];
     this.hiddenModules = {};
-    this.selectedBand = 0;
+    this.slide = 0;
+    this.songLimit = 12;
   }
   createRenderRoot() {
     return this;
@@ -128,23 +169,47 @@ export class HomeDashboard extends LitElement {
     this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.copies = JSON.parse(this.labels || "{}");
     this.locale = preferredLocale(this.locale);
-    try {
-      this.selectedBand = Math.max(0, Number(sessionStorage.getItem("haneoka.home.band")) || 0);
-    } catch {}
     this.restoreLayout();
     addEventListener("haneoka:locale-ready", this.localeListener);
     void this.load();
     void this.loadProfiles();
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) this.startAuto();
     queueMicrotask(() => this.mountAction());
   }
   disconnectedCallback() {
     this.disposeSongDisplay?.();
+    if (this.slideTimer) window.clearInterval(this.slideTimer);
     removeEventListener("haneoka:locale-ready", this.localeListener);
     this.action?.remove();
+    this.lazyImages.disconnect();
+    this.songsResize?.disconnect();
     super.disconnectedCallback();
   }
   protected updated(changed: PropertyValues) {
     if (changed.has("locale")) this.syncAction();
+    this.lazyImages.observe(this);
+    this.measureSongs();
+  }
+  /** The live music-type emblem, from the same ui-marks the catalogue reads. */
+  private attributeMark(musicType: unknown) {
+    return liveMusicTypeMark(this.marks, musicType);
+  }
+  /** Exactly two full rows of songs: the column count is chosen by width —
+   four per row at least, seven at most — and the grid renders twice that
+   many songs. 8–14 songs at every size, never a partial row. */
+  private measureSongs() {
+    const grid = this.querySelector<HTMLElement>(".home-songs__grid");
+    if (!grid || typeof ResizeObserver === "undefined") return;
+    if (!this.songsResize) {
+      this.songsResize = new ResizeObserver(() => this.measureSongs());
+      this.songsResize.observe(grid);
+    }
+    const width = grid.clientWidth;
+    if (!width) return;
+    const columns = Math.min(7, Math.max(4, Math.floor(width / 140)));
+    grid.style.setProperty("--song-columns", String(columns));
+    const limit = columns * 2;
+    if (limit !== this.songLimit) this.songLimit = limit;
   }
 
   /* ---------- copy ---------- */
@@ -181,11 +246,22 @@ export class HomeDashboard extends LitElement {
   /* ---------- data ---------- */
   private async load() {
     this.phase = "loading";
-    const [summary, songs, characters, bands, posts] = await Promise.allSettled([
+    const now = Date.now();
+    const active = (value: unknown) =>
+      values(value, "entries")
+        .map((entry) => this.spotlightOf(entry, ""))
+        .filter(
+          (entry) => entry.image && (!entry.startAt || entry.startAt <= now) && (!entry.endAt || entry.endAt >= now),
+        )
+        .sort((a, b) => (a.endAt || Infinity) - (b.endAt || Infinity));
+    const [summary, songs, characters, banners, events, bands, marks, posts] = await Promise.allSettled([
       fetchJson<JsonRecord>(catalogUrl("catalog/summary")),
       fetchJson<JsonRecord>(catalogUrl("songs")),
       fetchJson<JsonRecord>(catalogUrl("characters")),
+      fetchJson<JsonRecord>(catalogUrl("home-banners")),
+      fetchJson<JsonRecord>(catalogUrl("events")),
       fetchJson<JsonRecord>(catalogUrl("bands")),
+      fetchJson<JsonRecord>(catalogUrl("ui-marks")),
       fetchJson<JsonRecord>("/api/v1/community/posts?limit=5&scope=recommended"),
     ]);
     if (summary.status === "fulfilled") {
@@ -196,10 +272,77 @@ export class HomeDashboard extends LitElement {
     }
     if (songs.status === "fulfilled") this.songs = values(songs.value);
     if (characters.status === "fulfilled") this.characters = values(characters.value);
-    if (bands.status === "fulfilled") this.bandRecords = values(bands.value);
+    if (bands.status === "fulfilled") this.bands = values(bands.value);
+    if (marks.status === "fulfilled")
+      for (const [logical, path] of Object.entries(marks.value as Record<string, string>))
+        this.marks.set(logical, `/runtime/${currentReleaseServer()}/${path.slice("runtime/".length)}`);
+    if (banners.status === "fulfilled") this.banners = this.carousel(banners.value, now);
+    if (events.status === "fulfilled")
+      this.events = active(events.value).map((entry) => ({ ...entry, href: `/catalog/events?entry=${entry.id}` }));
     if (posts.status === "fulfilled")
       this.posts = Array.isArray(posts.value.posts) ? (posts.value.posts as JsonRecord[]) : [];
     this.phase = [summary, songs, characters].some((result) => result.status === "fulfilled") ? "ready" : "error";
+  }
+  private spotlightOf(entry: JsonRecord, resource: string): Spotlight {
+    return {
+      id: String(entry.id || ""),
+      title: localizedText(entry.title, this.locale) || "—",
+      image: String(entry.image || ""),
+      href: resource ? `/catalog/${resource}?entry=${String(entry.id || "")}` : "",
+      startAt: timestamp(entry.startAt),
+      endAt: timestamp(entry.endAt),
+    };
+  }
+  /** Active home banners in the game's own display order. */
+  private carousel(value: unknown, now: number): Banner[] {
+    return values(value, "entries")
+      .map<Banner>((entry) => ({
+        id: String(entry.id || ""),
+        image: String(entry.image || ""),
+        href: String(entry.href || ""),
+        endAt: timestamp(entry.endAt) || now,
+      }))
+      .filter((entry) => entry.image && entry.endAt >= now)
+      .sort((a, b) => Number(a.id) - Number(b.id))
+      .sort((a, b) => a.endAt - b.endAt);
+  }
+  /** The carousel keeps a clone of the first slide at the tail: advancing off
+   the last slide lands on it, then an unanimated jump rewrites position 0 —
+   an endless belt rather than a snap backwards. */
+  private startAuto() {
+    this.stopAuto();
+    this.slideTimer = window.setInterval(() => {
+      if (this.banners.length > 1) this.step(1);
+    }, 6000);
+  }
+  private stopAuto() {
+    if (this.slideTimer) window.clearInterval(this.slideTimer);
+    this.slideTimer = undefined;
+  }
+  private step(delta: number) {
+    const total = this.banners.length;
+    if (!total) return;
+    this.slideAnimated = true;
+    // Previous from the head: hop invisibly onto the tail clone, then step.
+    if (delta < 0 && this.slide === 0) {
+      this.slideAnimated = false;
+      this.slide = total;
+      requestAnimationFrame(() => {
+        this.slideAnimated = true;
+        this.slide = total - 1;
+      });
+      return;
+    }
+    this.slide += delta;
+  }
+  /** After any update, an arrival on the tail clone rewrites to slide 0. */
+  protected carouselWrap() {
+    if (this.slide > this.banners.length - 1) {
+      requestAnimationFrame(() => {
+        this.slideAnimated = false;
+        this.slide = 0;
+      });
+    }
   }
   private async loadProfiles() {
     const [characters, cast] = await Promise.all([import("../data/characterProfiles"), import("../data/castProfiles")]);
@@ -266,24 +409,43 @@ export class HomeDashboard extends LitElement {
   private songTitle(song: JsonRecord) {
     return songTitle(song, this.locale).text;
   }
-  private bands(): Band[] {
-    const names = new Map(this.bandRecords.map((band) => [Number(band.bandId), band]));
-    return [...names.keys()]
-      .filter((id) => id > 0)
-      .sort((a, b) => a - b)
-      .map((id) => {
-        const songs = this.songs.filter((song) =>
-          Array.isArray(song.bandIds)
-            ? (song.bandIds as unknown[]).map(Number).includes(id)
-            : Number(song.bandId) === id,
-        );
-        return {
-          id,
-          image: String(names.get(id)?.icon || names.get(id)?.logo || ""),
-          name: localizedText(names.get(id)?.bandName, this.locale) || `Band ${id}`,
-          songs,
-        };
-      });
+  /** "2天13小时"-style spans, from milliseconds. */
+  private spanText(ms: number) {
+    const minutes = Math.max(1, Math.round(ms / 60000));
+    const days = Math.floor(minutes / 1440);
+    const hours = Math.floor((minutes % 1440) / 60);
+    const day = (value: number) => this.text("spanDays", "{count}d").replace("{count}", this.count(value));
+    const hour = (value: number) => this.text("spanHours", "{count}h").replace("{count}", this.count(value));
+    if (days >= 1) return hours ? `${day(days)} ${hour(hours)}` : day(days);
+    if (hours >= 1) return hour(hours);
+    return this.text("spanMinutes", "{count}m").replace("{count}", this.count(minutes));
+  }
+  private countdown(at: number, ending: boolean) {
+    const span = this.spanText(at - Date.now());
+    return (ending ? this.text("endsIn", "Ends in {time}") : this.text("startsIn", "Starts in {time}")).replace(
+      "{time}",
+      span,
+    );
+  }
+  /** Days since/until a release, e.g. "3 天前上线". */
+  private releaseLabel(at: number) {
+    if (!at) return "";
+    const days = Math.round((at - Date.now()) / 86400000);
+    if (days === 0) return this.text("releasedToday", "Added today");
+    const span = this.text("spanDays", "{count}d").replace("{count}", this.count(Math.abs(days)));
+    return (
+      days < 0 ? this.text("releasedAgo", "Added {time} ago") : this.text("releasesIn", "Added in {time}")
+    ).replace("{time}", span);
+  }
+  /** The event card: the in-game event ending soonest, or the next to begin. */
+  private featuredEvent(): { entry: Spotlight; resource: string; ending: boolean } | null {
+    const now = Date.now();
+    const ongoing = this.events
+      .filter((entry) => entry.startAt <= now && entry.endAt && entry.endAt >= now)
+      .sort((a, b) => a.endAt - b.endAt)[0];
+    if (ongoing) return { entry: ongoing, resource: "events", ending: true };
+    const upcoming = this.events.filter((entry) => entry.startAt > now).sort((a, b) => a.startAt - b.startAt)[0];
+    return upcoming ? { entry: upcoming, resource: "events", ending: false } : null;
   }
   private characterFor(slug: string, names: readonly string[]) {
     const normalized = names.map((name) => name.replace(/[\s・]/g, "").normalize("NFKC"));
@@ -311,9 +473,7 @@ export class HomeDashboard extends LitElement {
     const index = Math.max(0, PROFILE_LOCALES.indexOf(this.locale));
     const characters = this.characterProfiles.flatMap<Birthday>((profile) => {
       const birthdays = profile.birthday as string[] | undefined,
-        names = profile.name as string[] | undefined,
-        sources = profile.sources as JsonRecord | undefined,
-        images = profile.images as string[] | undefined;
+        names = profile.name as string[] | undefined;
       const match = birthdays?.[0]?.match(/^(\d{1,2})月(\d{1,2})日$/);
       if (!match || !names) return [];
       const catalog = this.characterFor(String(profile.slug || ""), names);
@@ -322,10 +482,11 @@ export class HomeDashboard extends LitElement {
           color: String(catalog?.colorCode || PROFILE_BAND_SEED[String(profile.band)] || "var(--md-sys-color-primary)"),
           nextAt: next(Number(match[1]), Number(match[2])),
           external: !catalog,
-          href: catalog ? `/catalog/characters?character=${catalog.characterId}` : String(sources?.global || "#"),
-          image: String(catalog?.faceImage || catalog?.thumbnailImage || catalog?.profileImage || images?.[0] || ""),
+          href: catalog ? `/catalog/characters?character=${catalog.characterId}` : "#",
+          image: catalog ? CHARACTER_AVATAR(catalog.characterId) : "",
           kind: "character",
           name: names[index] || names[0],
+          voices: "",
         },
       ];
     });
@@ -333,116 +494,182 @@ export class HomeDashboard extends LitElement {
       const birthday = (person.birthday as JsonRecord | undefined)?.value as JsonRecord | undefined;
       if (!birthday) return [];
       const slugs = person.characterSlugs as string[] | undefined,
-        personNames = person.name as string[] | undefined,
-        links = person.officialLinks as JsonRecord[] | undefined,
-        birthdaySources = (person.birthday as JsonRecord | undefined)?.sourceUrls as string[] | undefined;
-      const profile = this.characterProfiles.find((entry) => slugs?.includes(String(entry.id)));
-      const names = profile?.name as string[] | undefined;
-      const catalog = profile && names ? this.characterFor(String(profile.slug || ""), names) : undefined;
-      const profileImages = profile?.images as string[] | undefined;
+        personNames = person.name as string[] | undefined;
+      const profiles = this.characterProfiles.filter((entry) => slugs?.includes(String(entry.id)));
+      const voices = profiles
+        .map((profile) => {
+          const list = profile.name as string[] | undefined;
+          return list?.[index] || list?.[0] || "";
+        })
+        .filter(Boolean)
+        .join(" / ");
+      const catalog = profiles
+        .map((profile) => this.characterFor(String(profile.slug || ""), (profile.name as string[]) || []))
+        .find(Boolean);
       return [
         {
           color: String(
             catalog?.colorCode ||
-              (profile ? PROFILE_BAND_SEED[String(profile.band)] : "") ||
+              (profiles[0] ? PROFILE_BAND_SEED[String(profiles[0].band)] : "") ||
               "var(--md-sys-color-tertiary)",
           ),
           nextAt: next(Number(birthday.month), Number(birthday.day)),
-          external: true,
-          href: String(links?.[0]?.url || birthdaySources?.[0] || "#"),
-          image: String(
-            catalog?.faceImage || catalog?.thumbnailImage || catalog?.profileImage || profileImages?.[0] || "",
-          ),
+          external: !catalog,
+          href: catalog ? `/catalog/characters?character=${catalog.characterId}` : "#",
+          image: CAST_AVATAR(String(person.id || "")),
           kind: "cast",
           name: personNames?.[index] || personNames?.[0] || "—",
+          voices: voices ? this.text("voicesRole", "Voices {name}").replace("{name}", voices) : "",
         },
       ];
     });
     return [...characters, ...cast].sort((a, b) => a.nextAt - b.nextAt || a.kind.localeCompare(b.kind)).slice(0, 6);
   }
 
-  /* ---------- tuning ---------- */
-  private selectBand(id: number) {
-    this.selectedBand = id;
-    try {
-      sessionStorage.setItem("haneoka.home.band", String(id));
-    } catch {}
-  }
-
-  /* ---------- render: hero ---------- */
-  private renderHero(bands: Band[]) {
-    const ready = this.phase !== "loading";
-    const stats = [
-      ["songs", this.counts.songs ?? this.songs.length],
-      ["memberCards", this.counts.cards],
-      ["stories", this.counts.stories],
-      ["characters", this.counts.characters ?? this.characters.length],
-    ] as const;
+  /* ---------- render: spotlight (banners + event) ---------- */
+  private renderSpotlight() {
+    const banners = this.banners;
+    const track = banners.length > 1 ? [...banners, banners[0]] : banners;
+    const slide = banners.length ? Math.min(this.slide, banners.length - 1) : 0;
+    const event = this.featuredEvent();
+    const slideBody = (banner: Banner, index: number) => {
+      const countdown = banner.endAt ? this.countdown(banner.endAt, true) : nothing;
+      // Banners ship per-locale variants beside the base art; fall back to it.
+      const localized = localizedAssetUrl(banner.image, this.locale);
+      const body = html`
+        <img
+          src=${localized}
+          alt=""
+          loading=${index === slide ? "eager" : "lazy"}
+          decoding="async"
+          @error=${(event: Event) => {
+            const image = event.currentTarget as HTMLImageElement;
+            if (!image.src.endsWith(banner.image)) image.src = banner.image;
+          }}
+        />
+        <span class="home-carousel__copy">
+          ${
+            countdown
+              ? html`
+                  <small>${countdown}</small>
+                `
+              : nothing
+          }
+        </span>
+      `;
+      return banner.href
+        ? html`
+            <a class="home-carousel__slide" href=${banner.href} aria-label=${this.text("banners", "Banner")}>${body}</a>
+          `
+        : html`
+            <div class="home-carousel__slide">${body}</div>
+          `;
+    };
+    this.carouselWrap();
     return html`
-      <section class="home-hero" aria-labelledby="home-hero-title">
-        <div class="home-hero__intro">
-          <p class="home-hero__overline">BanG Dream! Our Notes</p>
-          <h2 id="home-hero-title" class="home-hero__title">
-            ${this.text("purpose", "BanG Dream! Our Notes archive and community")}
-          </h2>
-          <dl class="home-stats" aria-label=${this.text("archiveOverview", "Archive overview")}>
-            ${stats.map(
-              ([key, value]) => html`
-                <div>
-                  <dt>${this.text(key, key)}</dt>
-                  <dd class="tabular">${ready && Number.isFinite(value) ? this.count(Number(value)) : "—"}</dd>
-                </div>
-              `,
-            )}
-          </dl>
+      <section class="home-spotlight" aria-label=${this.text("banners", "Banners")}>
+        <div
+          class="home-carousel"
+          role="group"
+          aria-roledescription="carousel"
+          aria-label=${this.text("banners", "Current banners")}
+          @pointerenter=${() => this.stopAuto()}
+          @pointerleave=${() => !matchMedia("(prefers-reduced-motion: reduce)").matches && this.startAuto()}
+        >
+          ${
+            track.length
+              ? html`
+                  <div
+                    class="home-carousel__track${this.slideAnimated ? "" : " home-carousel__track--snap"}"
+                    style=${`transform: translateX(${-(100 * Math.min(this.slide, track.length - 1))}%)`}
+                  >
+                    ${track.map((banner, index) => slideBody(banner, index))}
+                  </div>
+                  ${
+                    banners.length > 1
+                      ? html`
+                          <div class="home-carousel__dots" role="tablist">
+                            ${banners.map(
+                              (_banner, index) => html`
+                                <button
+                                  role="tab"
+                                  type="button"
+                                  aria-selected=${String(index === slide)}
+                                  aria-label=${`${this.text("banners", "Banner")} ${index + 1}`}
+                                  @click=${() => {
+                                    this.slideAnimated = true;
+                                    this.slide = index;
+                                  }}
+                                ></button>
+                              `,
+                            )}
+                          </div>
+                          <button
+                            class="icon-button home-carousel__nav home-carousel__nav--prev"
+                            type="button"
+                            aria-label=${this.text("previous", "Previous")}
+                            @click=${() => this.step(-1)}
+                          >
+                            ${icon("chevron_left", 22)}
+                          </button>
+                          <button
+                            class="icon-button home-carousel__nav home-carousel__nav--next"
+                            type="button"
+                            aria-label=${this.text("next", "Next")}
+                            @click=${() => this.step(1)}
+                          >
+                            ${icon("chevron_right", 22)}
+                          </button>
+                        `
+                      : nothing
+                  }
+                `
+              : html`
+                  <div class="home-carousel__empty" role="status">
+                    <span>${icon("redeem", 28)}</span>
+                    <p>
+                      ${
+                        this.phase === "loading"
+                          ? this.text("loading", "Loading…")
+                          : this.text("noBanner", "No banner is currently listed.")
+                      }
+                    </p>
+                  </div>
+                `
+          }
         </div>
-        <section class="home-bands" aria-labelledby="home-bands-title">
-          <header class="home-bands__header">
-            <h3 id="home-bands-title">${uiText(this.locale, "bands")}</h3>
-            <button
-              class="button button--text"
-              type="button"
-              aria-pressed=${String(this.selectedBand === 0)}
-              @click=${() => this.selectBand(0)}
-            >
-              ${uiText(this.locale, "all")}
-            </button>
-          </header>
-          <div class="home-bands__list">
-            ${bands.map((band) => {
-              const shown = band.songs.map(expertDisplayLevel).filter(Boolean);
-              const summary = this.text("songsCount", "{count} songs").replace(
-                "{count}",
-                this.count(band.songs.length),
-              );
-              return html`
-                <button
-                  class="home-bands__item state-layer"
-                  type="button"
-                  aria-pressed=${String(this.selectedBand === band.id)}
-                  @click=${() => this.selectBand(band.id)}
-                >
-                  <span class="home-bands__art">
+        <div class="home-event" aria-label=${uiText(this.locale, "events")}>
+          ${
+            event
+              ? html`
+                  <a class="home-event__card" href=${`/catalog/${event.resource}?entry=${event.entry.id}`}>
+                    <span class="home-event__overline">
+                      ${uiText(this.locale, event.resource === "events" ? "events" : "realLives")}
+                    </span>
+                    <strong class="home-event__title">${event.entry.title}</strong>
                     ${
-                      band.image
+                      event.entry.image
                         ? html`
-                            <img src=${band.image} alt="" loading="lazy" @error=${hideBrokenImage} />
+                            <img class="home-event__art" src=${event.entry.image} alt="" loading="lazy" />
                           `
-                        : icon("groups", 24)
+                        : nothing
                     }
-                  </span>
-                  <span>
-                    <strong>${band.name}</strong>
-                    <small>
-                      ${summary}${shown.length ? ` · EXPERT ${Math.min(...shown)}–${Math.max(...shown)}` : ""}
+                    <span class="home-event__countdown tabular">
+                      ${event.ending ? this.countdown(event.entry.endAt, true) : this.countdown(event.entry.startAt, false)}
+                    </span>
+                    <small class="home-event__range">
+                      ${this.formatDate(event.entry.startAt)} – ${this.formatDate(event.entry.endAt)}
                     </small>
-                  </span>
-                  ${icon(this.selectedBand === band.id ? "check" : "chevron_right", 20)}
-                </button>
-              `;
-            })}
-          </div>
-        </section>
+                  </a>
+                `
+              : html`
+                  <div class="home-event__empty" role="status">
+                    <span>${icon("event", 28)}</span>
+                    <p>${this.text("noEvent", "No event is currently listed.")}</p>
+                  </div>
+                `
+          }
+        </div>
       </section>
     `;
   }
@@ -459,107 +686,61 @@ export class HomeDashboard extends LitElement {
       </header>
     `;
   }
-  private renderBand(bands: Band[]) {
-    const band = bands.find((entry) => entry.id === this.selectedBand);
-    const songs = (band ? band.songs : this.songs)
-      .map((song) => ({ song, time: timestamp(song.publishedAt), level: expertDisplayLevel(song) }))
+  /** Latest songs, in the same grid the catalogue uses — difficulty gives way to recency. */
+  private renderSongs() {
+    const songs = this.songs
+      .map((song) => ({ song, time: timestamp(song.publishedAt) }))
+      // Release date first; same-day releases fall back to ID, both newest first.
       .sort((a, b) => b.time - a.time || Number(b.song.musicId) - Number(a.song.musicId))
-      .slice(0, 16);
-    const members = band
-      ? this.characters
-          .filter((character) => Number(character.bandId) === band.id)
-          .sort(
-            (a, b) => Number(a.displayOrder) - Number(b.displayOrder) || Number(a.characterId) - Number(b.characterId),
-          )
-      : [];
-    const title = band ? band.name : this.text("latestSongs", "Songs");
-    const allHref = band ? `/catalog/songs?band=${band.id}` : "/catalog/songs";
+      .slice(0, this.songLimit);
     return html`
-      <section class="home-card home-band" aria-labelledby="home-band-title">
+      <section class="home-card home-songs" aria-labelledby="home-songs-title">
         ${this.moduleHeader(
-          band ? icon("queue_music") : icon("library_music"),
-          title,
-          "home-band-title",
+          icon("library_music"),
+          this.text("latestSongs", "Songs"),
+          "home-songs-title",
           html`
-            <a class="button button--text" href=${allHref}>
+            <a class="button button--text" href="/catalog/songs">
               ${this.text("viewAll", "View all")}${icon("arrow_forward", 18)}
             </a>
           `,
         )}
         ${
-          members.length
-            ? html`
-                <ul class="member-row" role="list" aria-label=${this.text("members", "Members")}>
-                  ${members.map((member) => {
-                    const name = localizedText(member.characterName, this.locale);
-                    const image = String(member.faceImage || member.thumbnailImage || "");
-                    return html`
-                      <li>
-                        <a
-                          class="member-chip"
-                          href=${`/catalog/characters?character=${member.characterId}`}
-                          style=${`--member:${String(member.colorCode || "var(--band)")}`}
-                        >
-                          <span class="member-chip__avatar" aria-hidden="true">
-                            ${
-                              image
-                                ? html`
-                                    <img src=${image} alt="" loading="lazy" @error=${hideBrokenImage} />
-                                  `
-                                : nothing
-                            }
-                            <span>${Array.from(name)[0] ?? "?"}</span>
-                          </span>
-                          <span class="member-chip__name">${name}</span>
-                        </a>
-                      </li>
-                    `;
-                  })}
-                </ul>
-              `
-            : nothing
-        }
-        ${
           songs.length
             ? html`
-                <ol class="strip strip--inset" role="list">
-                  ${songs.map(({ song, level }) => {
-                    const image = String(song.jacketThumbUrl || song.jacketUrl || "");
-                    return html`
-                      <li>
-                        <a
-                          class="tile tile--interactive tile--plain tile--song"
-                          href=${`/catalog/songs?song=${song.musicId || song.id}`}
-                        >
-                          <span class="tile__media">
-                            ${icon("music_note", 28)}
-                            ${
-                              image
-                                ? html`
-                                    <img src=${image} alt="" loading="lazy" @error=${hideBrokenImage} />
-                                  `
-                                : nothing
-                            }
-                            ${
-                              level
-                                ? html`
-                                    <span class="tile__mark tile__mark--bottom-end tile__mark--accent tabular">
-                                      ${level}
-                                    </span>
-                                  `
-                                : nothing
-                            }
-                          </span>
-                          <span class="tile__identity">
-                            <strong class="tile__title" lang=${songTitle(song, this.locale).locale}>
-                              ${this.songTitle(song)}
-                            </strong>
-                          </span>
-                        </a>
-                      </li>
-                    `;
+                <div class="collection collection--song home-songs__grid">
+                  ${songs.map(({ song }) => {
+                    // The catalogue's own song tile, built by the same shared
+                    // code — identical anatomy; only the date mark is added.
+                    const release = this.releaseLabel(timestamp(song.publishedAt));
+                    return tile(
+                      songTile(
+                        song,
+                        {
+                          locale: this.locale,
+                          title: (entry) => ({
+                            text: this.songTitle(entry),
+                            locale: songTitle(entry, this.locale).locale,
+                          }),
+                          image: (entry) => String(entry.jacketThumbUrl || entry.jacketUrl || ""),
+                          artist: (entry) =>
+                            localizedText(entry.bandName, this.locale) ||
+                            localizedText(
+                              this.bands.find((band) => Number(band.bandId) === Number(entry.bandId))?.bandName,
+                              this.locale,
+                            ),
+                          bandIcon: (entry) =>
+                            String(this.bands.find((band) => Number(band.bandId) === Number(entry.bandId))?.icon || ""),
+                          imageForLocale: (source) => localizedAssetUrl(source, this.locale),
+                          attributeMark: (entry) => this.attributeMark(entry.musicType),
+                          attributeLabel: () => String(song.musicType || ""),
+                        },
+                        `/catalog/songs?song=${song.musicId || song.id}`,
+                        [release ? { at: "bottom-start" as const, text: release } : null],
+                      ),
+                    );
                   })}
-                </ol>
+                </div>
               `
             : html`
                 <p class="home-empty" role="status">
@@ -570,32 +751,34 @@ export class HomeDashboard extends LitElement {
       </section>
     `;
   }
-  private renderHub() {
+  private renderDirectory() {
     const ready = this.phase !== "loading";
     return html`
-      <section class="home-hub" aria-labelledby="home-hub-title">
-        <h2 id="home-hub-title" class="sr-only">${this.text("catalog", "Catalog")}</h2>
-        <ul class="hub-grid" role="list">
-          ${HUB.map(([key, iconName, href, resource]) => {
-            const value = this.counts[resource];
-            return html`
-              <li>
-                <a class="hub-link state-layer" href=${href}>
-                  <span class="hub-link__icon">${icon(iconName, 22)}</span>
-                  <span class="hub-link__label">${this.text(key, key)}</span>
-                  <span class="hub-link__count tabular">${ready && value !== undefined ? this.count(value) : ""}</span>
-                </a>
-              </li>
-            `;
-          })}
-          <li>
-            <a class="hub-link hub-link--more state-layer" href="/catalog">
-              <span class="hub-link__icon">${icon("apps", 22)}</span>
-              <span class="hub-link__label">${this.text("viewAll", "View all")}</span>
-              <span class="hub-link__count">${icon("arrow_forward", 18)}</span>
-            </a>
-          </li>
-        </ul>
+      <section class="home-directory" aria-labelledby="home-directory-title">
+        <h2 id="home-directory-title">${this.text("catalog", "Catalog")}</h2>
+        ${directoryGroups().map(
+          ([group, items]) => html`
+            <div class="home-directory__group">
+              <h3>${uiText(this.locale, group)}</h3>
+              <ul class="hub-grid" role="list">
+                ${items.map((item) => {
+                  const value = item.resource ? this.counts[item.resource] : undefined;
+                  return html`
+                    <li>
+                      <a class="hub-link state-layer" href=${item.route}>
+                        <span class="hub-link__icon">${icon(item.icon, 22)}</span>
+                        <span class="hub-link__label">${this.text(item.label, item.label)}</span>
+                        <span class="hub-link__count tabular">
+                          ${ready && value !== undefined ? this.count(value) : ""}
+                        </span>
+                      </a>
+                    </li>
+                  `;
+                })}
+              </ul>
+            </div>
+          `,
+        )}
       </section>
     `;
   }
@@ -628,16 +811,30 @@ export class HomeDashboard extends LitElement {
                                   `
                                 : nothing
                             }
-                            <span>${Array.from(item.name)[0] ?? "?"}</span>
+                            ${
+                              item.external
+                                ? html`
+                                    <span>${Array.from(item.name)[0] ?? "?"}</span>
+                                  `
+                                : nothing
+                            }
                           </span>
                           <span class="list-item__body">
                             <span class="list-item__headline">${item.name}</span>
                             <span class="list-item__supporting">
-                              ${this.text(item.kind, item.kind)} · ${this.formatDate(item.nextAt, true)}
+                              ${this.text(item.kind, item.kind)}${item.voices ? ` · ${item.voices}` : ""} ·
+                              ${this.formatDate(item.nextAt, true)}
                             </span>
                           </span>
                           <span class=${`list-item__meta birthday-list__days tabular${days === 0 ? " is-today" : ""}`}>
-                            ${days === 0 ? this.text("today", "Today") : this.text("daysAway", "{count} days").replace("{count}", String(days))}
+                            ${
+                              days === 0
+                                ? this.text("today", "Today")
+                                : this.text(days === 1 ? "daysAwayOne" : "daysAway", "{count} days").replace(
+                                    "{count}",
+                                    String(days),
+                                  )
+                            }
                           </span>
                         </a>
                       </li>
@@ -747,17 +944,15 @@ export class HomeDashboard extends LitElement {
       </section>
     `;
   }
-  private renderModule(id: ModuleId, bands: Band[]) {
-    if (id === "band") return this.renderBand(bands);
-    if (id === "hub") return this.renderHub();
+  private renderModule(id: ModuleId) {
+    if (id === "songs") return this.renderSongs();
     if (id === "birthdays") return this.renderBirthdays();
     if (id === "community") return this.renderCommunity();
     return this.renderNews();
   }
   private moduleLabel(id: ModuleId) {
     return {
-      band: this.text("latestSongs", "Songs"),
-      hub: this.text("catalog", "Catalog"),
+      songs: this.text("latestSongs", "Songs"),
       birthdays: this.text("birthdaysTitle", "Birthday countdown"),
       community: this.text("communityTitle", "Trending community"),
       news: this.text("newsTitle", "News"),
@@ -827,18 +1022,18 @@ export class HomeDashboard extends LitElement {
     `;
   }
   render() {
-    const bands = this.bands();
     const visible = this.order.filter((id) => !this.hiddenModules[id]);
     return html`
       <div class="home">
-        ${this.renderHero(bands)}
+        ${this.renderSpotlight()}
         <div class="home-board">
           ${visible.map(
             (id) => html`
-              <div class=${`home-board__slot home-board__slot--${id}`}>${this.renderModule(id, bands)}</div>
+              <div class=${`home-board__slot home-board__slot--${id}`}>${this.renderModule(id)}</div>
             `,
           )}
         </div>
+        ${this.renderDirectory()}
         <footer class="home-footer">
           <p>haneoka · ${this.text("fanArchive", "Unofficial archive and community")}</p>
           <nav aria-label=${this.text("legalNavigation", "Policies and project information")}>

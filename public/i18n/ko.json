@@ -1500,14 +1500,15 @@
     "hideModule": "모듈 숨기기",
     "moveUp": "위로 이동",
     "moveDown": "아래로 이동",
-    "resetLayout": "기본 레이아웃 복원"
+    "resetLayout": "기본 레이아웃 복원",
+    "daysAwayOne": "{count}일"
   },
   "liveMusicTypes": {
-    "red": "레드",
-    "blue": "블루",
-    "green": "그린",
-    "yellow": "옐로",
-    "purple": "퍼플"
+    "red": "레드 타입",
+    "blue": "블루 타입",
+    "green": "그린 타입",
+    "yellow": "옐로우 타입",
+    "purple": "퍼플 타입"
   },
   "songTypes": {
     "original": "오리지널",

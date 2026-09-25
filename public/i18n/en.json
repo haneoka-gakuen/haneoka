@@ -1500,14 +1500,15 @@
     "hideModule": "Hide module",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "resetLayout": "Restore default layout"
+    "resetLayout": "Restore default layout",
+    "daysAwayOne": "{count} day"
   },
   "liveMusicTypes": {
-    "red": "Red",
-    "blue": "Blue",
-    "green": "Green",
-    "yellow": "Yellow",
-    "purple": "Purple"
+    "red": "Ruby Type",
+    "blue": "Azure Type",
+    "green": "Jade Type",
+    "yellow": "Amber Type",
+    "purple": "Violet Type"
   },
   "songTypes": {
     "original": "Original",

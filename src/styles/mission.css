@@ -1,0 +1,117 @@
+/* ==========================================================================
+   Missions — a help-style page: grouped one-line conditions with rewards.
+   Only design tokens: surfaces, typescale, shape and hairlines.
+   ========================================================================== */
+
+@layer pages {
+  .mission-workspace {
+    display: grid;
+    width: min(100%, var(--content-max));
+    margin-inline: auto;
+    align-content: start;
+    gap: 8px;
+    padding: 8px var(--md-comp-page-inline-space) 24px;
+  }
+
+  .mission-group {
+    display: grid;
+    align-content: start;
+    gap: 4px;
+    padding: 8px 16px 16px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .mission-group__header {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 12px;
+  }
+  .mission-group__header h2 {
+    margin: 0;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+  .mission-group__header > span {
+    padding: 2px 10px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .mission-group__window {
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+
+  .mission-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .mission-row {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 8px;
+  }
+  .mission-row + .mission-row {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .mission-row__condition {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+      var(--md-sys-typescale-body-large-line-height) var(--app-font);
+  }
+  .mission-row__rewards {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .mission-chip {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 12px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    text-decoration: none;
+  }
+  a.mission-chip:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container));
+  }
+  .mission-chip img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+  }
+  .mission-chip b {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  @media (max-width: 599px) {
+    .mission-row {
+      flex-direction: column;
+      align-items: start;
+      gap: 8px;
+    }
+    .mission-row__rewards {
+      justify-content: start;
+    }
+  }
+}

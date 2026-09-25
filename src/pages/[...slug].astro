@@ -5,9 +5,12 @@ import LegalPage from "../components/pages/LegalPage.astro";
 import CatalogIndexPage from "../components/pages/CatalogIndexPage.astro";
 import NoticePage from "../components/pages/NoticePage.astro";
 import { ROUTES, titleOf, type RouteDefinition } from "../config/routes";
-import { DEFAULT_LOCALE, type Locale } from "../i18n/locales";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
 import { catalogConfig } from "../config/catalog-labels";
 import "../lit/catalog-screen";
+import "../lit/tgw-card-workspace";
+import "../lit/mission-workspace";
 import "../styles/catalog.css";
 
 export function getStaticPaths() {
@@ -39,6 +42,16 @@ const screenConfig =
   entry.kind === "catalog" && entry.resource
     ? catalogConfig({ resource: entry.resource, locale, aspectRatio: entry.resource === "cards" ? "224 / 294" : "1" })
     : "";
+const missionLabels = entry.kind === "missions"
+  ? JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, Object.fromEntries([
+      "regularMission", "limitedMission",
+    ].map((key) => [key, t(target, `system.${key}`, key)]))])))
+  : "{}";
+const tgwLabels = entry.kind === "tgw-card"
+  ? JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, Object.fromEntries([
+      "about", "dailyPoints", "consecutive", "rankRewards", "dailyRewards", "empty", "reward",
+    ].map((key) => [key, t(target, `tgw.${key}`, key)]))])))
+  : "{}";
 ---
 
 <Base locale={locale} route={entry.route} title={title} titleKey={entry.titleKey} description={title}>
@@ -49,8 +62,12 @@ const screenConfig =
       <NoticePage locale={locale} title={title} titleKey={entry.titleKey} route={entry.route} />
     )}
     {entry.kind === "catalog" && <catalog-screen config={screenConfig}></catalog-screen>}
+    {entry.kind === "tgw-card" && <tgw-card-workspace locale={locale} labels={tgwLabels}></tgw-card-workspace>}
+    {entry.kind === "missions" && <mission-workspace locale={locale} labels={missionLabels}></mission-workspace>}
   </AppShell>
 </Base>
 <script>
   import "../lit/catalog-screen";
+  import "../lit/tgw-card-workspace";
+  import "../lit/mission-workspace";
 </script>

@@ -31,6 +31,9 @@ from core.manifests import read_json, write_json
 from core.paths import build_layout
 from core.unity_objects import iter_unity_object_archive
 from build.anon_tokyo import build_anon_tokyo_catalog
+from build.collectibles import build_backgrounds, build_stickers
+from build.game_systems import build_game_systems
+from build.tgw_card import build_tgw_card
 from build.live2d_preview import PREVIEW_SCHEMA as LIVE2D_PREVIEW_SCHEMA
 from build.spine_catalog import build_spine_catalog
 from build.unity_effect import serialize_unity_effect
@@ -1872,6 +1875,10 @@ def _enrich_image_variants(data: BuildData, documents: dict[str, Any]) -> None:
         )),
         documents["items"].get("items", {}),
         documents["band-items"].get("items", {}),
+        *(documents[name].get("entries", {}) for name in (
+            "events", "real-lives", "home-banners", "gacha", "login-campaigns", "shop", "exchange", "circle", "challenge",
+            "missions", "passes", "stickers", "backgrounds", "tgw-card",
+        )),
         *(documents["stories"].get(name, {}) for name in ("chapters", "episodes", "homeSpots")),
     ]
     for collection in collections:
@@ -4344,6 +4351,11 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
             name=data.text(row.get("_nameTextId"), str(identity)),
             assetName=background_path.split("/")[1] if "/" in background_path else background_path,
             characterIds=[int(value) for value in row.get("_characterIds", [])],
+            # The game ships a ready thumbnail (Image/Spot) for every spot;
+            # prefer it over the heavier rendered preview.
+            thumbnail=data.asset(
+                f"Assets/AddressableResources/{str(row.get('_thumbnailAssetPath') or '').strip('/')}.png"
+            ),
             talks=talks,
             spine=_home_spot_spine_runtime(data, row),
         )
@@ -6638,6 +6650,20 @@ def _resource_count(name: str, document: Any) -> int:
         "options": "defaults",
         "live-tools": "scoreRanks",
         "feature-status": "features",
+        "events": "entries",
+        "real-lives": "entries",
+        "home-banners": "entries",
+        "gacha": "entries",
+        "login-campaigns": "entries",
+        "shop": "entries",
+        "exchange": "entries",
+        "circle": "entries",
+        "challenge": "entries",
+        "missions": "entries",
+        "passes": "entries",
+        "stickers": "entries",
+        "backgrounds": "entries",
+        "tgw-card": "entries",
     }.get(name)
     if collection_key and isinstance(document, dict):
         value = document.get(collection_key, {})
@@ -6745,6 +6771,10 @@ def build_api(config: ServerConfig, source_id: str, build_id: str) -> dict[str, 
         "provenance": _provenance(data, source_id),
         "feature-status": _feature_status(data),
     }
+    documents.update(build_game_systems(data, documents, RESOURCE_TYPES, _timestamp))
+    documents["stickers"] = build_stickers(data, _timestamp)
+    documents["backgrounds"] = build_backgrounds(data)
+    documents["tgw-card"] = build_tgw_card(data, documents, RESOURCE_TYPES)
     if tuple(documents) != CATALOG_RESOURCES:
         raise AssertionError("catalog resource contract and builder are out of sync")
     _enrich_image_variants(data, documents)

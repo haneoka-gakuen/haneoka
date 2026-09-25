@@ -1,7 +1,7 @@
 import type { Locale } from "../i18n/locales";
 import { group, t } from "../i18n/messages";
 
-export type PageKind = "home" | "index" | "catalog" | "legal" | "notice";
+export type PageKind = "home" | "index" | "catalog" | "tgw-card" | "missions" | "legal" | "notice";
 export interface RouteDefinition {
   route: string;
   kind: PageKind;
@@ -17,6 +17,8 @@ const catalogs: Array<[string, string, string?]> = [
   ["characters", "characters"],
   ["comics", "comics"],
   ["stamps", "stamps"],
+  ["stickers", "stickers"],
+  ["backgrounds", "backgrounds"],
   ["live2d", "live2d"],
   ["songs", "songs"],
   ["band-items", "bandItems"],
@@ -24,15 +26,17 @@ const catalogs: Array<[string, string, string?]> = [
   ["stories", "stories"],
   ["items", "items"],
   ["help", "help"],
-];
-const notices: Array<[string, string]> = [
+  // The rotating game systems are ordinary catalogue collections: same list,
+  // filter, view-switch and detail contract as every other resource.
   ["events", "events"],
+  ["real-lives", "realLives"],
   ["gacha", "gacha"],
   ["login-campaigns", "loginCampaigns"],
   ["shop", "shop"],
   ["exchange", "exchange"],
   ["circle", "circle"],
   ["challenge", "challenge"],
+  ["passes", "systemNavPasses"],
 ];
 const appPages: Array<[string, string]> = [
   ["/account", "account"],
@@ -83,7 +87,14 @@ export const ROUTES: RouteDefinition[] = [
       resource: `anon-tokyo/${key}`,
     }),
   ),
-  ...notices.map(([key, titleKey]) => ({ route: `/catalog/${key}`, kind: "notice" as const, key, titleKey })),
+  { route: "/catalog/tgw-card", kind: "tgw-card", key: "tgw-card", titleKey: "tgwCard", resource: "tgw-card" },
+  {
+    route: "/catalog/missions",
+    kind: "missions",
+    key: "missions",
+    titleKey: "systemNavMissions",
+    resource: "missions",
+  },
   { route: "/catalog/assets", kind: "notice", key: "assets", titleKey: "assets" },
   ...appPages.map(([route, titleKey]) => ({
     route,

@@ -42,6 +42,11 @@
     place-items: center;
     border-radius: var(--md-sys-shape-corner-large);
   }
+  .story-scene__tilt {
+    transform: perspective(1200px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) scale(1.06);
+    transition: transform 240ms var(--ease-standard, ease-out);
+    will-change: transform;
+  }
 
   /* ---------- Home scene: a live Cubism stage over its own backdrop ---------- */
   .story-scene {

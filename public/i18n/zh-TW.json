@@ -1500,14 +1500,15 @@
     "hideModule": "隱藏模組",
     "moveUp": "上移",
     "moveDown": "下移",
-    "resetLayout": "恢復預設版面"
+    "resetLayout": "恢復預設版面",
+    "daysAwayOne": "{count}天"
   },
   "liveMusicTypes": {
-    "red": "紅",
-    "blue": "藍",
-    "green": "綠",
-    "yellow": "黃",
-    "purple": "紫"
+    "red": "緋紅屬性",
+    "blue": "紺碧屬性",
+    "green": "翡翠屬性",
+    "yellow": "琉金屬性",
+    "purple": "紫苑屬性"
   },
   "songTypes": {
     "original": "原創",

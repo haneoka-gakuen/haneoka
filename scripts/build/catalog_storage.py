@@ -593,6 +593,69 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
     "live-tools": ResourceSpec(("scoreRanks",), (("id",), ("raw", "_id"))),
     "provenance": ResourceSpec(),
     "feature-status": ResourceSpec(("features",)),
+    **{
+        name: ResourceSpec(
+            ("entries",),
+            (("id",),),
+            projection=ProjectionSpec(
+                include=(
+                    "id", "title", "kind", "image", "description", "startAt", "endAt", "featured", "category",
+                    "limited", "recurring", "premium", "comeback", "rank", "goal", "group", "missionType",
+                    "durationDays", "displayCondition", "bands", "band", "songHref",
+                    "displayOrder", "displayType", "contentId", "href", "payment",
+                )
+            ),
+        )
+        for name in (
+            "events", "real-lives", "home-banners", "gacha", "login-campaigns", "shop", "exchange",
+            "circle", "challenge",
+        )
+    },
+    # The missions page reads the index directly; each row shows its rewards.
+    "missions": ResourceSpec(
+        ("entries",),
+        (("id",),),
+        projection=ProjectionSpec(
+            include=(
+                "id", "title", "kind", "startAt", "endAt", "goal", "group", "missionType", "rewards",
+            )
+        ),
+    ),
+    **{
+        name: ResourceSpec(
+            ("entries",),
+            (("id",),),
+            projection=ProjectionSpec(
+                include=(
+                    "id", "title", "kind", "image", "description", "startAt", "endAt", "featured", "category",
+                    "limited", "recurring", "premium", "comeback", "rank", "goal", "group", "missionType",
+                    "durationDays", "displayCondition", "bands", "band", "songHref",
+                    "displayOrder", "displayType", "contentId", "href", "payment",
+                )
+            ),
+        )
+        for name in ("passes",)
+    },
+    "stickers": ResourceSpec(
+        ("entries",),
+        (("stickerId",),),
+        projection=ProjectionSpec(
+            include=("stickerId", "name", "image", "description", "characterIds", "releasedAt", "closedAt", "degreeType")
+        ),
+        relations=(RelationSpec("character", (("characterIds",),)),),
+        dependencies=("characters",),
+    ),
+    "backgrounds": ResourceSpec(
+        ("entries",),
+        (("backgroundId",),),
+        projection=ProjectionSpec(include=("backgroundId", "name", "image", "thumbnail", "description")),
+    ),
+    "tgw-card": ResourceSpec(
+        ("entries",),
+        (("id",),),
+        projection=ProjectionSpec(include=("id", "title", "rank", "pointsRequired", "image")),
+        dependencies=("cards", "items", "stamps", "support-cards"),
+    ),
 }
 
 

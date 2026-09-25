@@ -69,6 +69,24 @@
   .tile--story .tile__media {
     aspect-ratio: 16 / 9;
   }
+  .tile--background .tile__media,
+  .tile--system .tile__media {
+    aspect-ratio: 16 / 9;
+  }
+
+  .price-inline {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .price-inline img {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    object-fit: contain;
+  }
 
   /* ==========================================================================
    Detail pane variants

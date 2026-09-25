@@ -11,136 +11,171 @@
     padding: 8px var(--md-comp-page-inline-space) 24px;
   }
 
-  /* ---------- Hero ---------- */
-  .home-hero {
+  /* ---------- Spotlight: the game's own home banners with the event card
+     beside it ---------- */
+  .home-spotlight {
     display: grid;
-    grid-template-columns: minmax(0, 5fr) minmax(0, 8fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
     align-items: stretch;
   }
-  .home-hero__intro {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 24px;
-    padding: 24px;
-    color: var(--md-sys-color-on-primary-container);
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    background: var(--md-sys-color-primary-container);
-    transition:
-      background-color var(--md-sys-motion-duration-long2) var(--ease-standard),
-      color var(--md-sys-motion-duration-long2) var(--ease-standard);
-  }
-  .home-hero__overline {
-    margin: 0;
-    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-      var(--md-sys-typescale-label-large-line-height) var(--app-font);
-    letter-spacing: 0.04em;
-    opacity: 0.8;
-  }
-  .home-hero__title {
-    max-width: 18ch;
-    margin: 8px 0 0;
-    font: 400 clamp(1.75rem, 1.1rem + 1.5vw, 2.25rem) / 1.2 var(--app-font);
-    letter-spacing: -0.01em;
-    text-wrap: balance;
-  }
-  .home-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
-    margin: 0;
-    overflow: hidden;
-    border-radius: var(--md-sys-shape-corner-large);
-    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 16%, transparent);
-  }
-  .home-stats > div {
-    display: flex;
-    min-width: 0;
-    flex-direction: column-reverse;
-    gap: 2px;
-    padding: 12px;
-    background: var(--md-sys-color-primary-container);
-    transition: background-color var(--md-sys-motion-duration-long2) var(--ease-standard);
-  }
-  .home-stats dt {
-    overflow: hidden;
-    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-    opacity: 0.8;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .home-stats dd {
-    margin: 0;
-    font: 400 var(--md-sys-typescale-headline-small-size) / var(--md-sys-typescale-headline-small-line-height)
-      var(--app-font);
-  }
 
-  .home-bands {
+  .home-carousel {
+    position: relative;
     min-width: 0;
-    padding: 12px;
+    overflow: hidden;
     border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-low);
   }
-  .home-bands__header {
+  .home-carousel__track {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding-inline: 12px 0;
+    /* The belt glides between slides; --snap drops the transition for the
+       invisible rewrite from the tail clone back to position 0. */
+    transition: transform var(--md-sys-motion-duration-long2, 500ms) var(--ease-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }
-  .home-bands__header > h3 {
-    margin: 0;
-    font: 500 18px/24px var(--app-font);
+  .home-carousel__track--snap {
+    transition: none;
   }
-  .home-bands__list {
-    display: grid;
-    gap: 4px;
-  }
-  .home-bands__item {
-    display: flex;
+  .home-carousel__slide {
+    position: relative;
+    display: block;
+    flex: 0 0 100%;
     min-width: 0;
+    /* The banners ship at 420×180; show the whole art at its own ratio. */
+    aspect-ratio: 420 / 180;
+    text-decoration: none;
+  }
+  .home-carousel__slide > img {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    min-height: 64px;
-    align-items: center;
-    gap: 16px;
-    padding: 10px 16px;
-    border-radius: var(--md-sys-shape-corner-medium);
+    height: 100%;
+    object-fit: contain;
     background: var(--md-sys-color-surface-container);
-    color: var(--md-sys-color-on-surface);
-    text-align: start;
+  }
+  .home-carousel__copy {
+    position: absolute;
+    bottom: 16px;
+    left: 20px;
+    display: flex;
+    gap: 8px;
+  }
+  .home-carousel__copy small {
+    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: rgb(0 0 0 / 50%);
+    color: #fff;
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    white-space: nowrap;
+  }
+  .home-carousel__dots {
+    position: absolute;
+    right: 20px;
+    bottom: 16px;
+    display: flex;
+    gap: 6px;
+  }
+  .home-carousel__dots button {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: none;
     cursor: pointer;
   }
-  .home-bands__item:first-child {
-    border-start-start-radius: 20px;
-    border-start-end-radius: 20px;
+  .home-carousel__dots button::after {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: auto;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 55%);
+    transition:
+      background-color var(--md-sys-motion-duration-short3) linear,
+      transform var(--md-sys-motion-duration-short3) linear;
   }
-  .home-bands__item:last-child {
-    border-end-start-radius: 20px;
-    border-end-end-radius: 20px;
+  .home-carousel__dots button[aria-selected="true"]::after {
+    background: #fff;
+    transform: scale(1.25);
   }
-  .home-bands__item[aria-pressed="true"] {
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
+  .home-carousel__nav {
+    position: absolute;
+    top: 50%;
+    translate: 0 -50%;
+    color: #fff;
+    background: rgb(0 0 0 / 32%);
   }
-  .home-bands__item > img {
-    width: 64px;
-    height: 40px;
-    object-fit: contain;
+  .home-carousel__nav--prev {
+    left: 8px;
   }
-  .home-bands__item > span {
+  .home-carousel__nav--next {
+    right: 8px;
+  }
+  .home-carousel__empty,
+  .home-event__empty {
     display: grid;
-    gap: 4px;
-    flex: 1;
+    align-content: center;
+    justify-items: center;
+    gap: 8px;
+    padding: 32px 24px;
+    color: var(--md-sys-color-on-surface-variant);
+    text-align: center;
+  }
+  .home-carousel__empty p,
+  .home-event__empty p {
+    margin: 0;
+  }
+
+  .home-event {
     min-width: 0;
   }
-  .home-bands__item strong {
-    font: 500 16px/24px var(--app-font);
+  .home-event__card {
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    gap: 12px;
+    height: 100%;
+    padding: 20px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-low);
+    color: var(--md-sys-color-on-surface);
+    text-decoration: none;
   }
-  .home-bands__item small {
+  .home-event__overline {
+    padding: 3px 10px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    white-space: nowrap;
+  }
+  .home-event__title {
+    min-width: 0;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+  .home-event__art {
+    justify-self: stretch;
+    width: min(100%, 200px);
+    max-height: 72px;
+    margin-block: auto;
+    object-fit: contain;
+  }
+  .home-event__countdown {
+    padding: 6px 14px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    font: 500 15px/20px var(--app-font);
+    white-space: nowrap;
+  }
+  .home-event__range {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/16px var(--app-font);
+    white-space: nowrap;
   }
 
   /* ---------- Board ---------- */
@@ -153,8 +188,7 @@
   .home-board__slot {
     min-width: 0;
   }
-  .home-board__slot--band,
-  .home-board__slot--hub {
+  .home-board__slot--songs {
     grid-column: 1 / -1;
   }
   .home-card {
@@ -207,40 +241,19 @@
     color: var(--md-sys-color-on-surface-variant);
   }
 
-  /* Band panel: members + song strip */
-  .member-row {
-    display: flex;
-    gap: 8px;
-    margin: 0;
-    padding: 0 24px 12px;
-    overflow-x: auto;
-    list-style: none;
-    scrollbar-width: none;
+  /* Songs: the catalogue's own tile. The column count comes from the
+     component (4–7 by width) so the grid is always two complete rows. */
+  .home-songs__grid {
+    --tile-ratio: 1;
+    --song-columns: 6;
+    grid-template-columns: repeat(var(--song-columns), minmax(0, 1fr));
+    padding: 4px 16px 12px;
   }
-  .member-chip {
-    display: inline-flex;
-    min-height: 40px;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 16px 4px 4px;
-    color: var(--md-sys-color-on-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-full);
-    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-      var(--md-sys-typescale-label-large-line-height) var(--app-font);
-    white-space: nowrap;
-    transition: background-color var(--md-sys-motion-duration-short3) linear;
-  }
-  @media (hover: hover) {
-    .member-chip:hover {
-      background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-    }
-  }
+
+  /* Birthday avatars come from the repository, at the list's own size. */
   .birthday-list .list-item__leading {
-    /* 32dp avatar, so the row's floor becomes 56dp rather than 64dp. */
     --avatar-size: 32px;
   }
-  .member-chip__avatar,
   .birthday-list .list-item__leading {
     position: relative;
     display: grid;
@@ -254,7 +267,6 @@
     background: var(--member, var(--accent, var(--md-sys-color-primary)));
     font: 500 0.875rem/1 var(--app-font);
   }
-  .member-chip__avatar img,
   .birthday-list .list-item__leading img {
     position: absolute;
     inset: 0;
@@ -263,12 +275,7 @@
     object-fit: cover;
     background: var(--md-sys-color-surface-container-high);
   }
-  /* The song rail uses the shared strip + tile unchanged. It used to re-corner
-   the jacket on hover, which meant the home page's cards had a different
-   shape from the catalogue's — and a media box with its own radius, which is
-   not the card anatomy. */
 
-  /* Catalog hub */
   /* Lists inside cards */
   .birthday-list,
   .community-hot-list,
@@ -308,6 +315,36 @@
     place-items: center;
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-surface-container-highest);
+  }
+
+  /* ---------- Directory: the whole catalogue, grouped, at the bottom ---------- */
+  .home-directory {
+    display: grid;
+    gap: 12px;
+    padding: 20px 8px 8px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .home-directory > h2 {
+    margin: 0 0 4px;
+    padding-inline: 16px;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+  .home-directory__group {
+    display: grid;
+    gap: 4px;
+  }
+  .home-directory__group > h3 {
+    margin: 0;
+    padding-inline: 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .home-directory__group .hub-grid {
+    margin: 0;
+    padding: 0;
   }
 
   /* Footer */
@@ -363,11 +400,8 @@
 
   /* ---------- Responsive ---------- */
   @media (max-width: 1099px) {
-    .home-hero {
+    .home-spotlight {
       grid-template-columns: minmax(0, 1fr);
-    }
-    .home-hero__title {
-      max-width: 28ch;
     }
     .home-board {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -377,13 +411,8 @@
     .home-board {
       grid-template-columns: minmax(0, 1fr);
     }
-  }
-  @media (pointer: coarse) {
-    .member-row {
-      scrollbar-width: none;
-    }
-    .member-row::-webkit-scrollbar {
-      display: none;
+    .home-event__card {
+      padding: 12px 16px;
     }
   }
   @media (max-width: 599px) {
@@ -391,53 +420,16 @@
       gap: 12px;
       padding: 4px 12px 24px;
     }
-    .home-hero {
-      gap: 12px;
-    }
-    .home-hero__intro {
-      gap: 16px;
-      padding: 16px 16px 12px;
-      border-radius: var(--md-sys-shape-corner-extra-large);
-    }
-    .home-hero__title {
-      margin-top: 4px;
-      font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
-        var(--md-sys-typescale-headline-small-line-height) var(--app-font);
-    }
-    .home-stats {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      border-radius: var(--md-sys-shape-corner-medium);
-    }
-    .home-stats > div {
-      padding: 8px;
-    }
-    .home-stats dd {
-      font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
-        var(--md-sys-typescale-title-large-line-height) var(--app-font);
-    }
     .home-card__header {
       padding-left: 16px;
     }
-    .member-row {
-      padding-inline: 16px;
-      scroll-padding-inline: 16px;
+    .home-songs__grid {
+      padding: 4px 12px 8px;
     }
     .birthday-list .list-item,
     .community-hot-list .list-item,
     .news-list .list-item {
       padding-inline: 16px 12px;
     }
-  }
-  .home-bands__item > .home-bands__art {
-    display: grid;
-    width: 64px;
-    height: 40px;
-    flex: 0 0 64px;
-    place-items: center;
-  }
-  .home-bands__art img {
-    width: 64px;
-    height: 40px;
-    object-fit: contain;
   }
 }
