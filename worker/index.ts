@@ -2266,21 +2266,29 @@ async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
   const response = await env.ASSETS.fetch(request);
   if (response.status !== 404) return response;
   const url = new URL(request.url);
-  // SPA sub-routes of the two tools are served through their entry page.
-  // The entry now lives under a locale prefix; probe each language.
+  // SPA sub-routes of the tools are served through their entry page. The
+  // entry lives under a locale prefix and so do the addresses that reach this
+  // fallback (unprefixed ones were redirected earlier), so match the segment
+  // anywhere in the path — not only at the root.
+  const preferredLocale = (() => {
+    const first = url.pathname.replace(/^\/+/, "").split("/")[0] || "";
+    return /^(ja|en|zh-TW|zh-CN|ko)$/u.test(first) ? first : null;
+  })();
+  const locales = ["ja", "en", "zh-TW", "zh-CN", "ko"];
   const tryEntry = async (entryPath: string): Promise<Response | null> => {
-    for (const locale of ["ja", "en", "zh-TW", "zh-CN", "ko"]) {
+    const order = preferredLocale ? [preferredLocale, ...locales.filter((l) => l !== preferredLocale)] : locales;
+    for (const locale of order) {
       const candidate = new URL(`/${locale}${entryPath}`, url);
       const hit = await env.ASSETS.fetch(new Request(candidate, request));
       if (hit.status !== 404) return hit;
     }
     return null;
   };
-  if (url.pathname.startsWith("/catalog/assets/")) {
+  if (url.pathname.includes("/catalog/assets/")) {
     const entry = await tryEntry("/catalog/assets/index.html");
     if (entry) return entry;
   }
-  if (url.pathname.startsWith("/community/")) {
+  if (url.pathname.includes("/community/")) {
     const entry = await tryEntry("/community/index.html");
     if (entry) return entry;
   }

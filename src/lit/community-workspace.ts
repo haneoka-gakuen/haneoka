@@ -255,16 +255,21 @@ export class CommunityWorkspace extends LitElement {
       import("@material/web/select/select-option.js"),
     ]);
     window.setTimeout(() => {
+      // Detail routes are SPA paths served through the community shell, which
+      // the worker hands out at the visitor's locale prefix — anchor on the
+      // "community" segment rather than absolute path indexes.
       const parts = location.pathname.split("/").filter(Boolean);
-      if (parts[1] === "posts" && parts[2] === "new") this.routeKind = "post-new";
-      else if (parts[1] === "posts" && parts[2]) {
-        this.entityId = parts[2];
-        this.routeKind = parts[3] === "edit" ? "post-edit" : "post-detail";
-      } else if (parts[1] === "users" && parts[2]) {
-        this.entityId = parts[2];
+      const communityAt = parts.indexOf("community");
+      const [section, value, extra] = communityAt >= 0 ? parts.slice(communityAt + 1) : [];
+      if (section === "posts" && value === "new") this.routeKind = "post-new";
+      else if (section === "posts" && value) {
+        this.entityId = value;
+        this.routeKind = extra === "edit" ? "post-edit" : "post-detail";
+      } else if (section === "users" && value) {
+        this.entityId = value;
         this.routeKind = "user-detail";
-      } else if (parts[1] === "playlists" && parts[2]) {
-        this.entityId = decodeURIComponent(parts[2]);
+      } else if (section === "playlists" && value) {
+        this.entityId = decodeURIComponent(value);
         this.routeKind = "playlist-detail";
         this.mode = "playlists";
       }
@@ -337,14 +342,14 @@ export class CommunityWorkspace extends LitElement {
     const session = await this.request("/api/auth/get-session").catch(() => null);
     this.session = session && session.user ? session : null;
     if ((this.routeKind === "post-new" || this.routeKind === "post-edit") && !this.session) {
-      location.replace(`/account?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+      location.replace(`${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
       return;
     }
     await this.load(false);
   }
   private requireSession() {
     if (this.session) return true;
-    location.assign(`/account?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+    location.assign(`${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
     return false;
   }
   private async load(append: boolean, refresh = false) {
@@ -519,8 +524,14 @@ export class CommunityWorkspace extends LitElement {
         )
       : "";
   }
+  /**
+   * Internal routes are emitted with the visitor's locale prefix: the worker
+   * serves community pages there, so every link skips the unprefixed→
+   * locale-prefixed redirect round trip (a full extra RTT on a slow link).
+   */
   private path(route: string) {
-    return route;
+    const clean = route.replace(/^\/+|\/+$/g, "");
+    return `/${this.locale}/${clean}/`;
   }
   private label(path: string, fallback: string) {
     const value = path
@@ -634,7 +645,7 @@ export class CommunityWorkspace extends LitElement {
         method: "DELETE",
         body: JSON.stringify({ version: post.version }),
       });
-      location.assign("/community/mine?deleted=1");
+      location.assign(`${this.path("/community/mine")}?deleted=1`);
     });
   }
   private toggleCommentReaction(comment: Value) {
@@ -1039,7 +1050,9 @@ export class CommunityWorkspace extends LitElement {
   private cancelEditor() {
     void this.discardUploads().finally(() =>
       location.assign(
-        this.routeKind === "post-edit" ? `/community/posts/${encodeURIComponent(this.entityId)}` : "/community/feeds",
+        this.routeKind === "post-edit"
+          ? this.path(`/community/posts/${encodeURIComponent(this.entityId)}`)
+          : this.path("/community/feeds"),
       ),
     );
   }
@@ -1091,7 +1104,7 @@ export class CommunityWorkspace extends LitElement {
       const id = String((result.post as Value | undefined)?.id || result.id || this.entityId);
       this.published = true;
       if (!editing) localStorage.removeItem(this.draftKey());
-      location.href = `/community/posts/${encodeURIComponent(id)}`;
+      location.href = this.path(`/community/posts/${encodeURIComponent(id)}`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
     } finally {
@@ -1433,7 +1446,7 @@ export class CommunityWorkspace extends LitElement {
               ${
                 viewer.canEdit
                   ? html`
-                      <a class="button button--text" href=${`/community/posts/${this.entityId}/edit`}>
+                      <a class="button button--text" href=${this.path(`/community/posts/${this.entityId}/edit`)}>
                         ${this.label("editPost", "Edit post")}
                       </a>
                     `
@@ -2187,7 +2200,7 @@ ${String(comment.body || "")}</textarea>
                       <li>
                         <a
                           class="list-item list-item--two-line list-item--interactive"
-                          href=${`/community/playlists/?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                          href=${`${this.path("/community/playlists")}?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
                           @click=${(event: MouseEvent) => {
                             if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
                               return;
@@ -2405,7 +2418,7 @@ ${String(comment.body || "")}</textarea>
                   class="menu-item"
                   type="button"
                   role="menuitem"
-                  @click=${run(() => location.assign(`/community/users/${authorUid}`))}
+                  @click=${run(() => location.assign(this.path(`/community/users/${authorUid}`)))}
                 >
                   ${icon("person", 20)}
                   <span>${this.label("viewAuthor", "View author")}</span>
@@ -2713,7 +2726,7 @@ ${String(comment.body || "")}</textarea>
                   <p>${String(comment.body || "")}</p>
                 </span>
                 <footer>
-                  <a class="button button--text" href=${`/community/posts/${comment.postId}#comment-${comment.id}`}>
+                  <a class="button button--text" href=${`${this.path(`/community/posts/${comment.postId}`)}#comment-${comment.id}`}>
                     ${this.label("activityPost", "Open post")}
                   </a>
                   ${
