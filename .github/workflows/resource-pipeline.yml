@@ -61,9 +61,11 @@ jobs:
       server: ${{ matrix.server }}
       package_r2_key: ${{ inputs.package_r2_key }}
       source_id: ${{ inputs.source_id }}
-      ktx2: ${{ inputs.ktx2 }}
-      force: ${{ inputs.force }}
-      no_reuse: ${{ inputs.no_reuse }}
+      # On schedule events the inputs context is empty, which would feed ''
+      # into boolean-typed callee inputs and fail input validation.
+      ktx2: ${{ inputs.ktx2 || false }}
+      force: ${{ inputs.force || false }}
+      no_reuse: ${{ inputs.no_reuse || false }}
     secrets:
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
