@@ -603,30 +603,6 @@ BEGIN
   SELECT RAISE(ABORT, 'reaction post_id is immutable');
 END;
 
-CREATE TRIGGER community_reaction_no_self_like_before_insert
-BEFORE INSERT ON community_reaction
-WHEN NEW.kind = 'like'
-  AND EXISTS (
-    SELECT 1 FROM community_post
-    WHERE community_post.id = NEW.post_id
-      AND community_post.author_id = NEW.user_id
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'post authors cannot like their own posts');
-END;
-
-CREATE TRIGGER community_reaction_no_self_like_before_update
-BEFORE UPDATE OF post_id, user_id, kind ON community_reaction
-WHEN NEW.kind = 'like'
-  AND EXISTS (
-    SELECT 1 FROM community_post
-    WHERE community_post.id = NEW.post_id
-      AND community_post.author_id = NEW.user_id
-  )
-BEGIN
-  SELECT RAISE(ABORT, 'post authors cannot like their own posts');
-END;
-
 CREATE TRIGGER community_reaction_after_insert
 AFTER INSERT ON community_reaction
 WHEN NEW.kind = 'like'

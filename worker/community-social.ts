@@ -480,9 +480,12 @@ const putUserRelationship = async (
   if (action === "follow" && active && relationship.following !== 1) {
     return error(request, 409, "relationship_blocked", "Blocked users cannot follow each other");
   }
+  // `viewer` mirrors `relationship` so clients that track the acting user's
+  // state (like the post detail envelope's viewer) update in one read.
   return json(request, {
     user: { uid: target.uid, name: target.name, image: target.image },
     relationship: relationshipValue(relationship),
+    viewer: relationshipValue(relationship),
   });
 };
 
@@ -713,13 +716,9 @@ const putTagPreference = async (request: Request, env: Env, normalizedNameValue:
       .run();
   }
   return json(request, {
-    preference:
-      preference === null
-        ? null
-        : {
-            kind: preference,
-            createdAt: now,
-          },
+    // The list endpoints serialize a preference as its kind string; the same
+    // shape here keeps toggle state consistent for clients reading both.
+    preference,
     tag: {
       id: tag.id,
       normalizedName: tag.normalizedName,
@@ -768,6 +767,11 @@ const putPostFeedback = async (request: Request, env: Env, postId: string): Prom
   }
   const post = await accessiblePostForViewer(env, postId, access.session.user.id);
   if (!post) return error(request, 404, "post_not_found", "Post not found");
+  // Feedback curates the viewer's own discovery feed; accepting it on the
+  // viewer's own post would silently hide their content from themselves.
+  if (feedback !== null && post.authorId === access.session.user.id) {
+    return error(request, 422, "own_post_feedback_forbidden", "Your own posts cannot be hidden from your feed");
+  }
   const now = Date.now();
   if (feedback === null) {
     await env.DB.prepare("DELETE FROM community_post_feedback WHERE user_id = ? AND post_id = ?")
@@ -786,6 +790,18 @@ const putPostFeedback = async (request: Request, env: Env, postId: string): Prom
   return json(request, {
     feedback: feedback === null ? null : { kind: feedback, reasonCode: reasonValue, createdAt: now },
   });
+};
+
+/** Clears every not-interested/hide marker the viewer has placed, returning
+ * those posts to their discovery feeds. The recovery path for feedback that
+ * was given by mistake. */
+const clearPostFeedback = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireMutationAccess(request, env, "Sign in to reset feed feedback");
+  if (!access.ok) return access.response;
+  const result = await env.DB.prepare("DELETE FROM community_post_feedback WHERE user_id = ?")
+    .bind(access.session.user.id)
+    .run();
+  return json(request, { cleared: Number(result.meta.changes || 0) });
 };
 
 const isReportReason = (value: JsonValue | undefined): value is ReportReason =>
@@ -1320,9 +1336,9 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
     return error(request, 422, "invalid_reaction", "The active boolean is required");
   }
   const viewerId = access.session.user.id;
+  const active = payload.value.active;
   const target = await accessibleCommentReactionTarget(env, commentId, viewerId);
   if (!target) return error(request, 404, "comment_not_found", "Comment not found");
-  const active = payload.value.active;
   const now = Date.now();
   const activationId = crypto.randomUUID();
   const write = active
@@ -1440,6 +1456,11 @@ export const handleCommunitySocialRequest = async (request: Request, env: Env): 
     if (method !== "PUT") return methodNotAllowed(request, "PUT, OPTIONS");
     if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
     return mutation(request, () => putPostFeedback(request, env, postId));
+  }
+  if (path.length === 2 && path[0] === "me" && path[1] === "post-feedback") {
+    if (method !== "DELETE") return methodNotAllowed(request, "DELETE, OPTIONS");
+    if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
+    return mutation(request, () => clearPostFeedback(request, env));
   }
   if (path.length === 1 && path[0] === "reports") {
     if (method !== "POST") return methodNotAllowed(request, "POST, OPTIONS");

@@ -15,5 +15,18 @@
 /fonts/*
   Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
 
+# The Cubism/Live2D core scripts, the haneoka cubism runtime build and the
+# Basis transcoder come from locked dependencies behind stable paths, like the
+# fonts: a month of freshness, then serve stale while one request refreshes.
+/Core/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+/cubism-runtime/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+/basis/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
+
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
 /*.html
   Cache-Control: public, max-age=0, must-revalidate

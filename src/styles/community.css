@@ -5,69 +5,214 @@
     min-height: 100%;
   }
   .community-page {
-    width: min(100%, 960px);
-    margin-inline: auto;
-  }
-  .community-toolbar {
-    position: sticky;
-    z-index: 3;
-    top: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-    padding: 8px 0 12px;
-    background: color-mix(in srgb, var(--md-sys-color-surface) 94%, transparent);
-    backdrop-filter: blur(12px);
-  }
-  .community-search {
-    max-width: 520px;
-    flex: 1;
-  }
-  .community-feed {
     display: grid;
-    width: min(100%, 760px);
+    align-content: start;
+    gap: 4px;
+  }
+  /* Management lists (notifications, tags, activity) are rows, not pins:
+   * they keep a reading measure instead of the masonry's full bleed. */
+  .community-page > .list,
+  .community-page > .community-stack,
+  .community-page > .community-list-actions,
+  .community-page > .state,
+  .community-page > .load-more {
+    width: min(100%, 860px);
     margin-inline: auto;
-    gap: 16px;
   }
-  /* A feed post is a Material outlined card: author row, optional media, body,
-   then a footer of stats and tags. Geometry comes from .card. */
-  .community-post {
-    overflow: hidden;
-    border-radius: var(--md-sys-shape-corner-large);
-    transition: border-color var(--md-sys-motion-duration-short2) var(--ease-standard);
-  }
-  @media (hover: hover) {
-    .community-post:hover {
-      border-color: var(--md-sys-color-outline);
-    }
-  }
-  .community-post__author {
-    min-height: 56px;
-    padding-block: 8px;
-  }
-  /* The card's clickable region: title + excerpt. */
-  .community-post__link {
-    color: inherit;
-    gap: 6px;
-    padding-block: 4px 12px;
-  }
-  .community-post__footer {
+  /* Feed scope rides in the top app bar as a segmented switch: the page
+   * itself is nothing but the waterfall. */
+  .community-bar-scopes {
     display: flex;
     min-width: 0;
-    flex-wrap: wrap;
+  }
+  /* The waterfall. Cards are unknown-height compositions (a photo, a note),
+   * so balanced columns — not rows — are the layout; each pin refuses to
+   * fragment so a card never splits across columns. */
+  .community-masonry {
+    columns: 2;
+    column-gap: var(--pane-gap);
+    margin-block: 8px;
+  }
+  @media (min-width: 600px) {
+    .community-masonry {
+      columns: 3;
+    }
+  }
+  @media (min-width: 904px) {
+    .community-masonry {
+      columns: 4;
+    }
+  }
+  @media (min-width: 1240px) {
+    .community-masonry {
+      columns: 5;
+    }
+  }
+  .community-masonry--profile {
+    columns: 2;
+    column-gap: var(--pane-gap);
+  }
+  @media (min-width: 600px) {
+    .community-masonry--profile {
+      columns: 3;
+    }
+  }
+  @media (min-width: 904px) {
+    .community-masonry--profile {
+      columns: 4;
+    }
+  }
+  /* A pin follows the collection tile anatomy: one container radius, a
+   * full-bleed cover, and a text block that carries the padding. */
+  .community-pin {
+    position: relative;
+    display: block;
+    break-inside: avoid;
+    margin: 0 0 var(--pane-gap);
+  }
+  .community-pin__link {
+    position: relative;
+    display: grid;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  @media (hover: hover) {
+    .community-pin__link:hover {
+      background: var(--md-sys-color-surface-container-high);
+    }
+  }
+  /* Covers reserve a 4/5 box until the image reports its true ratio
+   * (the component clamps it), so loading cards do not reflow wildly. The
+   * fade-in and spinner come from the shared .media-loading pattern. */
+  .community-pin__media {
+    position: relative;
+    display: grid;
+    aspect-ratio: 4 / 5;
+    width: 100%;
+    place-items: center;
+    overflow: hidden;
+    background: var(--md-sys-color-surface-container-highest);
+  }
+  .community-pin__media img {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .community-pin__media img.is-error {
+    visibility: hidden;
+  }
+  .community-pin__count {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 16px 12px;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-surface) 78%, transparent);
+    backdrop-filter: blur(8px);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+      var(--md-sys-typescale-label-small-line-height) var(--app-font);
+  }
+  /* A text-only post shows its excerpt on a tonal block instead of a photo —
+   * the same slot in the card, a different medium. */
+  .community-pin__media--text {
+    padding: 16px;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    align-content: start;
+  }
+  .community-pin__note {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 7;
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    overflow-wrap: anywhere;
+  }
+  .community-pin__body {
+    display: grid;
+    padding: 12px 12px 6px;
+  }
+  .community-pin__title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+    overflow-wrap: anywhere;
+  }
+  /* The author/likes row sits outside the card link so its like button and
+   * overflow menu are real buttons, not links-inside-links. */
+  .community-pin__meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 6px 6px 12px;
     color: var(--md-sys-color-on-surface-variant);
   }
-  .community-post__stat {
+  .community-pin__author {
     display: inline-flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .community-pin__avatar {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    place-items: center;
+    overflow: hidden;
+    color: var(--md-sys-color-on-secondary-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .community-pin__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .community-pin__author > .clamp-1 {
+    min-width: 0;
+  }
+  /* The card's like toggle: a quiet pill that only colours when liked. */
+  .community-pin__like {
+    display: inline-flex;
+    min-height: 32px;
     flex: 0 0 auto;
     align-items: center;
     gap: 4px;
+    padding: 0 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
     font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
       var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    cursor: pointer;
+  }
+  @media (hover: hover) {
+    .community-pin__like:hover {
+      background: var(--md-sys-color-surface-container-high);
+    }
+  }
+  .community-pin__like.is-liked {
+    color: var(--md-sys-color-error);
   }
   .community-avatar {
     display: grid;
@@ -83,49 +228,6 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-  }
-  .community-post h2 {
-    margin: 16px 0 8px;
-    font-size: var(--md-sys-typescale-title-large-size);
-    font-weight: 500;
-  }
-  .community-post p {
-    margin: 0;
-    color: var(--md-sys-color-on-surface-variant);
-    line-height: 1.6;
-  }
-  .community-post__media {
-    position: relative;
-    display: grid;
-    width: 100%;
-    max-height: 420px;
-    place-items: center;
-    overflow: hidden;
-    background: var(--md-sys-color-surface-container-high);
-  }
-  .community-post__media img {
-    width: 100%;
-    height: auto;
-    max-height: 520px;
-    object-fit: contain;
-  }
-  .community-post footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 16px;
-    padding-top: 16px;
-    margin-top: 16px;
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-    font-size: var(--md-sys-typescale-body-small-size);
-  }
-  .community-post footer a {
-    color: var(--md-sys-color-primary);
-  }
-  .community-post footer > span {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
   }
   .community-editor-page,
   .community-detail-page,
@@ -649,10 +751,6 @@
     justify-content: flex-end;
     margin-bottom: 8px;
   }
-  .community-feed-scope {
-    width: fit-content;
-    margin: 12px auto 0;
-  }
   .community-activity-row > footer {
     display: flex;
     flex-wrap: wrap;
@@ -685,24 +783,6 @@
     border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container-low);
   }
-  /* A five-track fixed grid could not fit below ~700px, so the selects and the
-   view switch collided. It wraps instead: the search bar takes the row it
-   needs and the controls flow after it. */
-  .playlist-toolbar {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-block: 12px;
-  }
-  .playlist-toolbar > .search-bar {
-    min-width: min(100%, 240px);
-    flex: 1 1 240px;
-  }
-  .playlist-toolbar > md-outlined-select {
-    flex: 0 1 180px;
-  }
   .playlist-group {
     display: grid;
     gap: 10px;
@@ -725,6 +805,74 @@
     background: var(--md-sys-color-secondary-container);
     text-align: center;
   }
+  /* The filter side sheet: search first, then whatever this collection can
+   * filter by. Same geometry as every browse screen's sheet. */
+  .community-filters__body {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 20px;
+    padding: 4px 16px 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .community-filters__search {
+    display: grid;
+    gap: 8px;
+  }
+  .community-filters__search .search-bar {
+    height: var(--search-height, 48px);
+  }
+  /* Applied filters live in the sheet, as removable chips. */
+  .community-filters__applied {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .community-filters__search md-outlined-select,
+  .community-filters__body md-outlined-select {
+    width: 100%;
+  }
+  .community-filters__shuffle,
+  .community-filters__reset {
+    justify-self: start;
+  }
+  .community-filters__hint {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  /* A transient, snackbar-shaped strip: the dismissal happened, and it stays
+   * reversible for the few seconds it is on screen. */
+  .community-undo {
+    display: flex;
+    width: fit-content;
+    max-width: 100%;
+    align-items: center;
+    gap: 2px;
+    margin-block: 8px 0;
+    padding: 4px 8px 4px 16px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-high);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
+  .community-undo > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .community-dialog__warning {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
   @media (max-width: 599px) {
     .community-page,
     .community-editor-page,
@@ -734,38 +882,22 @@
     .bestdori-community-catalog {
       padding: 12px;
     }
-    .community-toolbar {
-      position: static;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 48px;
-      gap: 8px;
-      margin-top: 8px;
-      padding-bottom: 12px;
-      backdrop-filter: none;
+    /* The compose action lives in the app bar; below medium its label
+     * yields so the bar keeps room for the page title. */
+    .community-compose__label {
+      display: none;
     }
-    .community-search {
-      width: 100%;
-      min-width: 0;
+    .community-bar-scopes .segmented {
+      height: var(--control-height-compact);
     }
-    .community-toolbar .button {
-      grid-column: 1 / -1;
-      width: 100%;
+    .community-bar-scopes .segmented > button {
+      padding-inline: 10px;
     }
-    .community-feed {
-      gap: 12px;
+    .community-masonry {
+      column-gap: 12px;
     }
-    .community-post {
-      padding: 16px;
-      border-radius: var(--md-sys-shape-corner-medium);
-    }
-    .community-post h2 {
-      margin-top: 12px;
-      font-size: var(--md-sys-typescale-title-medium-size);
-    }
-    .community-post footer {
-      gap: 10px;
-      padding-top: 12px;
-      margin-top: 12px;
+    .community-pin {
+      margin-bottom: 12px;
     }
     .community-editor {
       padding: 16px;
@@ -802,16 +934,6 @@
     .playlist-detail > header > img {
       width: 72px;
       height: 72px;
-    }
-    .playlist-toolbar {
-      grid-template-columns: minmax(0, 1fr) 48px;
-    }
-    .playlist-toolbar > md-outlined-select {
-      grid-column: span 1;
-    }
-    .playlist-toolbar > .field,
-    .playlist-toolbar > .segmented {
-      grid-column: 1 / -1;
     }
     .community-user-actions {
       width: 100%;

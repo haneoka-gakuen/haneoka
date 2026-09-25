@@ -1048,6 +1048,42 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   }));
 };
 
+/** The viewer's like/bookmark state for a page of posts, read as one batched
+ * pair of queries instead of per-card subqueries in the feed select. */
+const loadViewerPostFlags = async (
+  env: Env,
+  postIds: readonly string[],
+  userId: string | null,
+): Promise<Map<string, { bookmarked: boolean; liked: boolean }>> => {
+  const flags = new Map<string, { bookmarked: boolean; liked: boolean }>(
+    postIds.map((id) => [id, { bookmarked: false, liked: false }]),
+  );
+  if (!userId || !postIds.length) return flags;
+  const placeholders = postIds.map(() => "?").join(", ");
+  const [reactionResult, bookmarkResult] = await Promise.all([
+    env.DB.prepare(
+      `SELECT post_id AS postId FROM community_reaction
+       WHERE user_id = ? AND kind = 'like' AND post_id IN (${placeholders})`,
+    )
+      .bind(userId, ...postIds)
+      .all<{ postId: string }>(),
+    env.DB.prepare(
+      `SELECT post_id AS postId FROM community_bookmark WHERE user_id = ? AND post_id IN (${placeholders})`,
+    )
+      .bind(userId, ...postIds)
+      .all<{ postId: string }>(),
+  ]);
+  for (const row of reactionResult.results) {
+    const entry = flags.get(row.postId);
+    if (entry) entry.liked = true;
+  }
+  for (const row of bookmarkResult.results) {
+    const entry = flags.get(row.postId);
+    if (entry) entry.bookmarked = true;
+  }
+  return flags;
+};
+
 const findAccessiblePostRow = async (env: Env, id: string, userId: string | null): Promise<PostRow | null> => {
   const access = readablePostCondition(userId);
   const moderation = moderationReadableCondition(userId);
@@ -1137,6 +1173,11 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   const pinFirst = options.scope === "all" || options.scope === "latest" || options.scope === "following";
   if (pinFirst && options.cursor && options.cursor.pinnedAt === undefined) {
     return error(request, 400, "invalid_cursor", "The feed cursor is invalid");
+  }
+  // refresh=1 asks for a new page of recommendations: the viewer's impressions
+  // are dropped so already-seen posts compete again and a fresh seed is drawn.
+  if (options.refresh && userId && options.scope === "recommended") {
+    await env.DB.prepare("DELETE FROM community_feed_impression WHERE user_id = ?").bind(userId).run();
   }
 
   const where = [activePostWhere];
@@ -1371,15 +1412,26 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   const hasMore = result.results.length > options.limit;
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
   const taggedRows = await attachPostMetadata(env, rows);
+  const viewerFlags = await loadViewerPostFlags(
+    env,
+    taggedRows.map((row) => row.id),
+    userId,
+  );
   const posts = taggedRows.map(({ body, rankScore, ...post }) => {
     void rankScore;
     const value = publicAuthoredContent<PostListWithTags>({
       ...post,
       excerpt: deriveExcerpt(body),
     });
+    const flags = viewerFlags.get(post.id);
     return {
       ...value,
-      viewer: { canGiveFeedback: Boolean(userId) },
+      viewer: {
+        canGiveFeedback: Boolean(userId),
+        canEdit: Boolean(userId && userId === post.authorId),
+        liked: flags?.liked ?? false,
+        bookmarked: flags?.bookmarked ?? false,
+      },
     };
   });
   if (userId && options.scope === "recommended" && taggedRows.length) {
@@ -2067,7 +2119,7 @@ const setPinned = async (request: Request, env: Env, id: string): Promise<Respon
     const denied = await ownershipError(request, env, id, session.user.id);
     if (denied) return denied;
     const existing = await readPostOwnership(env, id);
-    if (active && existing?.archivedAt !== null) {
+    if (active && existing && existing.archivedAt !== null) {
       return error(request, 409, "post_archived", "Restore the post before pinning it");
     }
     return error(request, 409, "version_conflict", "The post changed; refresh and try again");
@@ -2596,9 +2648,33 @@ const preferences = async (request: Request, env: Env): Promise<Response> => {
   const { session } = access;
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
-  const locale = typeof payload.value.locale === "string" ? payload.value.locale : null;
-  const releaseServer = typeof payload.value.releaseServer === "string" ? payload.value.releaseServer.trim() : null;
-  const settings = payload.value.settings == null ? null : JSON.stringify(payload.value.settings);
+  // Absent keys keep their stored value; only an explicit null (or a new
+  // value) is written. Treating both the same used to wipe every field a
+  // caller did not resend.
+  const stored = await env.DB.prepare(
+    `SELECT locale, release_server AS releaseServer, settings_json AS settingsJson
+     FROM user_preference WHERE user_id = ?`,
+  )
+    .bind(session.user.id)
+    .first<{ locale: string | null; releaseServer: string | null; settingsJson: string | null }>();
+  const locale =
+    payload.value.locale === undefined
+      ? (stored?.locale ?? null)
+      : typeof payload.value.locale === "string"
+        ? payload.value.locale
+        : null;
+  const releaseServer =
+    payload.value.releaseServer === undefined
+      ? (stored?.releaseServer ?? null)
+      : typeof payload.value.releaseServer === "string"
+        ? payload.value.releaseServer.trim()
+        : null;
+  const settings =
+    payload.value.settings === undefined
+      ? (stored?.settingsJson ?? null)
+      : payload.value.settings == null
+        ? null
+        : JSON.stringify(payload.value.settings);
   if (locale && !ALLOWED_LOCALES.has(locale)) return error(request, 422, "invalid_locale", "Unsupported locale");
   if (releaseServer && !/^[a-z0-9][a-z0-9-]{0,31}$/i.test(releaseServer)) {
     return error(request, 422, "invalid_release_server", "Invalid release server identifier");

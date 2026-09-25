@@ -810,7 +810,11 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   }
   const headers = new Headers({
     "Accept-Ranges": "bytes",
-    "Cache-Control": "private, no-store",
+    // Attachment bytes are immutable per id (the sha256 is re-verified against
+    // R2 above), so the browser may reuse them instead of re-downloading every
+    // feed view. `private` keeps access-controlled bytes out of shared caches;
+    // the id-scoped ETag still revalidates anything older than the hour.
+    "Cache-Control": "private, max-age=3600, immutable",
     "Content-Disposition": contentDisposition(row.fileName, row.mediaType),
     "Content-Type": row.mediaType,
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -954,16 +958,22 @@ const linkAttachments = async (request: Request, env: Env, postId: string): Prom
       return error(request, 409, "attachment_not_ready", "Every attachment must be owned by you, ready, and allowed");
     }
     const now = Date.now();
+    // Positions must continue past the current maximum, not the row count:
+    // unlinking a middle attachment leaves gaps, so COUNT-based positions can
+    // collide with a surviving row under UNIQUE(post_id, position).
     const inputRows = additions.map(() => "(?, ?)").join(", ");
-    const inputValues = additions.flatMap((id, index) => [id, existing.results.length + index]);
+    const inputValues = additions.flatMap((id, index) => [id, index]);
     await env.DB.prepare(
-      `WITH input(attachment_id, position) AS (VALUES ${inputRows})
+      `WITH input(attachment_id, offset) AS (VALUES ${inputRows})
        INSERT INTO community_post_attachment (post_id, attachment_id, position, created_at)
-       SELECT ?, input.attachment_id, input.position, ?
+       SELECT ?, input.attachment_id,
+              (SELECT COALESCE(MAX(link.position) + 1, 0)
+               FROM community_post_attachment AS link WHERE link.post_id = ?) + input.offset,
+              ?
        FROM input
-       ORDER BY input.position`,
+       ORDER BY input.offset`,
     )
-      .bind(...inputValues, postId, now)
+      .bind(...inputValues, postId, postId, now)
       .run();
   }
   const linked = await env.DB.prepare(

@@ -1,13 +1,14 @@
 import { resolvePlaylistTracks } from "../lib/playlist-tracks";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
+import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus, renderPane } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, currentReleaseServer, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
-import { iconButton, segmented } from "./ui/controls";
+import { iconButton, inputChip, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
 type Value = Record<string, unknown>;
 type UploadEntry = {
@@ -19,6 +20,8 @@ type UploadEntry = {
   progress: number;
   error: string;
 };
+/** app-bar.ts owner id for the community workspace's page controls. */
+const COMMUNITY_BAR_OWNER = "community";
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size}><use href=${`/icons.svg#${name}`}></use></svg>
 `;
@@ -63,6 +66,12 @@ export class CommunityWorkspace extends LitElement {
     message: { state: true },
     feedScope: { state: true },
     dialog: { state: true },
+    filtersOpen: { state: true },
+    tagFilter: { state: true },
+    unreadOnly: { state: true },
+    postState: { state: true },
+    cardMenu: { state: true },
+    toast: { state: true },
     replyTo: { state: true },
     commentSort: { state: true },
     uploads: { state: true },
@@ -91,11 +100,18 @@ export class CommunityWorkspace extends LitElement {
   declare message: string;
   declare feedScope: "recommended" | "latest" | "following";
   declare dialog: {
-    kind: "report" | "appeal";
+    kind: "report" | "appeal" | "confirm";
     targetKind: "post" | "comment" | "user";
     targetId: string;
     label: string;
+    confirm?: { title: string; body: string; confirmLabel: string; action: () => void };
   } | null;
+  declare filtersOpen: boolean;
+  declare tagFilter: string;
+  declare unreadOnly: boolean;
+  declare postState: "active" | "archived";
+  declare cardMenu: { post: Value; x: number; y: number } | null;
+  declare toast: { text: string; undo?: () => void } | null;
   declare replyTo: string;
   declare commentSort: "hot" | "latest";
   declare uploads: UploadEntry[];
@@ -133,6 +149,12 @@ export class CommunityWorkspace extends LitElement {
     this.message = "";
     this.feedScope = "recommended";
     this.dialog = null;
+    this.filtersOpen = false;
+    this.tagFilter = "";
+    this.unreadOnly = false;
+    this.postState = "active";
+    this.cardMenu = null;
+    this.toast = null;
     this.replyTo = "";
     this.commentSort = "hot";
     this.uploads = [];
@@ -147,6 +169,7 @@ export class CommunityWorkspace extends LitElement {
     this.session = null;
   }
   private paneFocus = new PaneFocus();
+  private undoTimer = 0;
   private disposeSongDisplay?: () => void;
   private releaseLocation?: () => void;
   private playlistSequence = 0;
@@ -197,10 +220,13 @@ export class CommunityWorkspace extends LitElement {
     return this;
   }
   updated() {
-    // The dialog is modal: focus stays inside it and Escape closes it.
+    // The open overlay is modal: focus stays inside it and Escape closes it.
     this.paneFocus.sync(
-      this.querySelector<HTMLElement>(this.dialog ? "[data-overlay-pane]" : "[data-detail-pane]"),
-      () => (this.dialog ? (this.dialog = null) : this.closePlaylist()),
+      this.querySelector<HTMLElement>(
+        this.dialog ? "[data-overlay-pane]" : this.filtersOpen ? "[data-filter-sheet]" : "[data-detail-pane]",
+      ),
+      () =>
+        this.dialog ? (this.dialog = null) : this.filtersOpen ? (this.filtersOpen = false) : this.closePlaylist(),
     );
   }
   disconnectedCallback() {
@@ -209,6 +235,8 @@ export class CommunityWorkspace extends LitElement {
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.playlistSequence++;
     this.paneFocus.detach();
+    window.clearTimeout(this.undoTimer);
+    clearAppBarActions(COMMUNITY_BAR_OWNER);
     if (this.routeKind === "post-new" && !this.published && this.uploads.length) void this.discardUploads();
     super.disconnectedCallback();
   }
@@ -248,6 +276,9 @@ export class CommunityWorkspace extends LitElement {
       this.query = query.get("q") || "";
       const scope = query.get("scope");
       if (scope === "latest" || scope === "following" || scope === "recommended") this.feedScope = scope;
+      this.tagFilter = query.get("tag") || "";
+      this.unreadOnly = query.get("unread") === "true";
+      if (query.get("state") === "archived") this.postState = "archived";
       this.playlistSort = query.get("sort") || "order";
       this.playlistOrder = query.get("order") === "desc" ? "desc" : "asc";
       this.playlistBand = query.get("band") || "";
@@ -269,17 +300,24 @@ export class CommunityWorkspace extends LitElement {
     if (heading) heading.textContent = value;
     document.title = `${value} · haneoka`;
   }
-  private endpoint(append: boolean) {
+  private endpoint(append: boolean, refresh = false) {
     const query = new URLSearchParams();
     if (this.query) query.set("q", this.query);
     if (append && this.cursor) query.set("cursor", this.cursor);
     query.set("limit", "20");
+    if (refresh) query.set("refresh", "1");
     if (this.mode === "tags") return `/api/v1/community/tags?${query}`;
-    if (this.mode === "notifications") return `/api/v1/community/notifications?${query}`;
+    if (this.mode === "notifications") {
+      if (this.unreadOnly) query.set("unread", "true");
+      return `/api/v1/community/notifications?${query}`;
+    }
     if (this.mode === "activity") return `/api/v1/community/me/comments?${query}`;
     const scope = this.mode === "mine" ? "mine" : this.mode === "bookmarks" ? "bookmarked" : this.feedScope;
     query.set("scope", scope);
-    query.set("state", "active");
+    // Archived posts are only legal with scope=mine; everywhere else the feed
+    // is always the active one.
+    query.set("state", this.mode === "mine" ? this.postState : "active");
+    if (this.tagFilter) query.set("tag", this.tagFilter);
     return `/api/v1/community/posts?${query}`;
   }
   private bestdoriBase() {
@@ -309,7 +347,7 @@ export class CommunityWorkspace extends LitElement {
     location.assign(`/account?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
     return false;
   }
-  private async load(append: boolean) {
+  private async load(append: boolean, refresh = false) {
     this.phase = append ? this.phase : "loading";
     this.error = "";
     try {
@@ -325,6 +363,9 @@ export class CommunityWorkspace extends LitElement {
           {
             headers: { accept: "application/json" },
             credentials: "same-origin",
+            // Community data is never cacheable; say so at the call site too,
+            // not only in the worker's response headers.
+            cache: "no-store",
           },
         );
         if (!response.ok)
@@ -346,6 +387,7 @@ export class CommunityWorkspace extends LitElement {
         const response = await fetch(`/api/v1/community/users/${encodeURIComponent(this.entityId)}`, {
           headers: { accept: "application/json" },
           credentials: "same-origin",
+          cache: "no-store",
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         this.document = (await response.json()) as Value;
@@ -405,9 +447,10 @@ export class CommunityWorkspace extends LitElement {
         if (this.routeKind === "playlist-detail") await this.openPlaylist(this.entityId, false);
         return;
       }
-      const response = await fetch(this.endpoint(append), {
+      const response = await fetch(this.endpoint(append, refresh), {
         headers: { accept: "application/json" },
         credentials: "same-origin",
+        cache: "no-store",
       });
       if (!response.ok)
         throw new Error(response.status === 401 ? "Sign in to view this feed" : `HTTP ${response.status}`);
@@ -431,9 +474,41 @@ export class CommunityWorkspace extends LitElement {
   }
   private submit(event: Event) {
     event.preventDefault();
+    this.filtersOpen = false;
+    if (this.mode === "playlists") {
+      this.syncPlaylist();
+      return;
+    }
+    this.syncCollectionUrl();
+    void this.load(false);
+  }
+  /** Mirror the collection's filters into the address bar so reloading or
+   * sharing the URL reproduces the same view. */
+  private syncCollectionUrl() {
     const params = new URLSearchParams(location.search);
-    this.query ? params.set("q", this.query) : params.delete("q");
+    const set = (key: string, value: string) => (value ? params.set(key, value) : params.delete(key));
+    set("q", this.query.trim());
+    set("tag", this.tagFilter);
+    if (this.mode === "feeds") set("scope", this.feedScope === "recommended" ? "" : this.feedScope);
+    if (this.mode === "notifications") set("unread", this.unreadOnly ? "true" : "");
+    if (this.mode === "mine") set("state", this.postState === "archived" ? "archived" : "");
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+  private setFeedScope(scope: "recommended" | "latest" | "following") {
+    if (this.feedScope === scope) return;
+    this.feedScope = scope;
+    this.syncCollectionUrl();
+    void this.load(false);
+  }
+  /** Ask the worker for a fresh page of recommendations (refresh=1 drops the
+   * viewer's impressions server-side). */
+  private refreshFeed() {
+    this.filtersOpen = false;
+    void this.load(false, true);
+  }
+  private clearTag() {
+    this.tagFilter = "";
+    this.syncCollectionUrl();
     void this.load(false);
   }
   private date(value: unknown) {
@@ -535,7 +610,24 @@ export class CommunityWorkspace extends LitElement {
       this.updatePost((result.post as Value) || post, viewer);
     });
   }
+  /** Deleting is destructive and irreversible from the community pages, so it
+   * goes through a confirmation dialog instead of firing on the first tap. */
   private deletePost() {
+    const { post } = this.postEnvelope();
+    this.dialog = {
+      kind: "confirm",
+      targetKind: "post",
+      targetId: this.entityId,
+      label: String(post.title || this.label("emptyTitle", "Untitled")),
+      confirm: {
+        title: this.label("deletePost", "Delete"),
+        body: this.label("deletePostConfirm", "This post will be removed for everyone and cannot be restored."),
+        confirmLabel: this.label("deletePost", "Delete"),
+        action: () => this.reallyDeletePost(),
+      },
+    };
+  }
+  private reallyDeletePost() {
     void this.mutate(async () => {
       const { post } = this.postEnvelope();
       await this.request(`/api/v1/community/posts/${encodeURIComponent(this.entityId)}`, {
@@ -582,13 +674,25 @@ export class CommunityWorkspace extends LitElement {
     });
   }
   private deleteComment(comment: Value) {
-    void this.mutate(async () => {
-      await this.request(`/api/v1/community/comments/${encodeURIComponent(String(comment.id))}`, {
-        method: "DELETE",
-        body: JSON.stringify({ version: comment.version }),
-      });
-      this.patchComment(String(comment.id));
-    });
+    this.dialog = {
+      kind: "confirm",
+      targetKind: "comment",
+      targetId: String(comment.id),
+      label: String(comment.body || "").slice(0, 80),
+      confirm: {
+        title: this.label("delete", "Delete"),
+        body: this.label("deleteCommentConfirm", "This comment will be removed and cannot be restored."),
+        confirmLabel: this.label("delete", "Delete"),
+        action: () =>
+          void this.mutate(async () => {
+            await this.request(`/api/v1/community/comments/${encodeURIComponent(String(comment.id))}`, {
+              method: "DELETE",
+              body: JSON.stringify({ version: comment.version }),
+            });
+            this.patchComment(String(comment.id));
+          }),
+      },
+    };
   }
   private openDialog(
     kind: "report" | "appeal",
@@ -603,6 +707,11 @@ export class CommunityWorkspace extends LitElement {
     event.preventDefault();
     const dialog = this.dialog;
     if (!dialog) return;
+    if (dialog.kind === "confirm") {
+      this.dialog = null;
+      dialog.confirm?.action();
+      return;
+    }
     const data = new FormData(event.currentTarget as HTMLFormElement);
     void this.mutate(async () => {
       if (dialog.kind === "report")
@@ -680,6 +789,65 @@ export class CommunityWorkspace extends LitElement {
       this.items = this.items.map((item) => ({ ...item, readAt: item.readAt || Date.now() }));
     });
   }
+  private showToast(text: string, undo?: () => void, timeoutMs = 8000) {
+    this.toast = { text, undo };
+    window.clearTimeout(this.undoTimer);
+    this.undoTimer = window.setTimeout(() => (this.toast = null), timeoutMs);
+  }
+  /** Update one pin in the feed list in place: post fields and viewer flags. */
+  private patchPin(post: Value, patch: Value, viewerPatch?: Value) {
+    this.items = this.items.map((entry) =>
+      entry === post
+        ? {
+            ...entry,
+            ...patch,
+            viewer: { ...((entry.viewer as Value | undefined) || {}), ...(viewerPatch || {}) },
+          }
+        : entry,
+    );
+  }
+  private togglePinReaction(post: Value) {
+    if (!this.requireSession()) return;
+    const viewer = (post.viewer as Value | undefined) || {};
+    void this.mutate(async () => {
+      const result = await this.request(`/api/v1/community/posts/${encodeURIComponent(String(post.id))}/reaction`, {
+        method: "PUT",
+        body: JSON.stringify({ active: !viewer.liked }),
+      });
+      this.patchPin(post, { likeCount: result.likeCount }, { liked: result.active });
+    });
+  }
+  private togglePinBookmark(post: Value) {
+    if (!this.requireSession()) return;
+    const viewer = (post.viewer as Value | undefined) || {};
+    void this.mutate(async () => {
+      const result = await this.request(`/api/v1/community/posts/${encodeURIComponent(String(post.id))}/bookmark`, {
+        method: "PUT",
+        body: JSON.stringify({ active: !viewer.bookmarked }),
+      });
+      this.patchPin(post, {}, { bookmarked: result.active });
+      this.showToast(
+        result.active ? this.label("addBookmark", "Bookmark") : this.label("removeBookmark", "Remove bookmark"),
+      );
+    });
+  }
+  private async copyPinLink(post: Value) {
+    const url = new URL(this.path(`/community/posts/${post.id}`), location.origin).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.showToast(this.label("linkCopied", "Link copied"));
+    } catch {
+      this.showToast(url, undefined, 12000);
+    }
+  }
+  private openCardMenu(post: Value, event: MouseEvent) {
+    this.cardMenu = {
+      post,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 232)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 328)),
+    };
+    requestAnimationFrame(() => this.querySelector<HTMLElement>(".community-card-menu")?.focus());
+  }
   private recommendationFeedback(post: Value) {
     if (!this.requireSession()) return;
     void this.mutate(async () => {
@@ -688,6 +856,29 @@ export class CommunityWorkspace extends LitElement {
         body: JSON.stringify({ feedback: "not_interested" }),
       });
       this.items = this.items.filter((entry) => entry !== post);
+      // The card is gone, but the action stays reversible for a few seconds.
+      this.showToast(this.label("notInterestedDone", "Hidden from your recommendations"), () =>
+        this.undoRecommendationFeedback(String(post.id)),
+      );
+    });
+  }
+  private undoRecommendationFeedback(postId: string) {
+    this.toast = null;
+    window.clearTimeout(this.undoTimer);
+    void this.mutate(async () => {
+      await this.request(`/api/v1/community/posts/${encodeURIComponent(postId)}/feedback`, {
+        method: "PUT",
+        body: JSON.stringify({ feedback: null }),
+      });
+      await this.load(false);
+    });
+  }
+  /** Returns every hidden recommendation to the viewer's feeds. */
+  private resetRecommendationFeedback() {
+    this.filtersOpen = false;
+    void this.mutate(async () => {
+      await this.request("/api/v1/community/me/post-feedback", { method: "DELETE" });
+      await this.load(false);
     });
   }
   private draftKey() {
@@ -1298,12 +1489,16 @@ export class CommunityWorkspace extends LitElement {
             }
           </footer>
           <div class="community-engagement" role="toolbar">
-            <button class=${viewer.liked ? "selected" : ""} ?disabled=${this.busy} @click=${this.togglePostReaction}>
+            <button
+              class=${viewer.liked ? "selected" : ""}
+              ?disabled=${this.busy}
+              @click=${this.togglePostReaction}
+            >
               ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 20)}
               <span>${Number(post.likeCount || 0)}</span>
             </button>
             <button class=${viewer.bookmarked ? "selected" : ""} ?disabled=${this.busy} @click=${this.toggleBookmark}>
-              ${icon(viewer.bookmarked ? "bookmark-filled" : "bookmark_border", 20)}
+              ${icon(viewer.bookmarked ? "bookmark_border-filled" : "bookmark_border", 20)}
               <span>
                 ${viewer.bookmarked ? this.label("removeBookmark", "Remove bookmark") : this.label("addBookmark", "Bookmark")}
               </span>
@@ -1482,6 +1677,13 @@ ${String(comment.body || "")}</textarea>
       "misinformation",
       "other",
     ];
+    const dialogTitle =
+      dialog.kind === "report"
+        ? this.label("reportDialog.title", "Report")
+        : dialog.kind === "appeal"
+          ? this.label("appeal", "Appeal")
+          : dialog.confirm?.title || this.label("delete", "Delete");
+    const confirmMode = dialog.kind === "confirm";
     return html`
       <div
         class="dialog-host community-dialog-scrim"
@@ -1495,15 +1697,13 @@ ${String(comment.body || "")}</textarea>
           data-overlay-pane
           role="dialog"
           aria-modal="true"
-          aria-label=${dialog.kind === "report" ? this.label("reportDialog.title", "Report") : this.label("appeal", "Appeal")}
+          aria-label=${dialogTitle}
           @click=${(event: Event) => event.stopPropagation()}
         >
           <header>
-            <span>${icon(dialog.kind === "report" ? "flag" : "gavel", 22)}</span>
+            <span>${icon(dialog.kind === "report" ? "flag" : dialog.kind === "appeal" ? "gavel" : "delete", 22)}</span>
             <div>
-              <h2>
-                ${dialog.kind === "report" ? this.label("reportDialog.title", "Report") : this.label("appeal", "Appeal")}
-              </h2>
+              <h2>${dialogTitle}</h2>
               <small>${dialog.label}</small>
             </div>
             <button
@@ -1516,27 +1716,35 @@ ${String(comment.body || "")}</textarea>
           </header>
           <form @submit=${this.submitDialog}>
             ${
-              dialog.kind === "report"
+              confirmMode
                 ? html`
-                    <md-outlined-select name="reason" label=${this.label("reportDialog.reason", "Reason")} required>
-                      ${reasons.map(
-                        (reason) => html`
-                          <md-select-option value=${reason}>
-                            <div slot="headline">${this.label(`reportDialog.reasons.${reason}`, reason)}</div>
-                          </md-select-option>
-                        `,
-                      )}
-                    </md-outlined-select>
+                    <p class="community-dialog__warning">${dialog.confirm?.body}</p>
                   `
-                : nothing
+                : html`
+                    ${
+                      dialog.kind === "report"
+                        ? html`
+                            <md-outlined-select name="reason" label=${this.label("reportDialog.reason", "Reason")} required>
+                              ${reasons.map(
+                                (reason) => html`
+                                  <md-select-option value=${reason}>
+                                    <div slot="headline">${this.label(`reportDialog.reasons.${reason}`, reason)}</div>
+                                  </md-select-option>
+                                `,
+                              )}
+                            </md-outlined-select>
+                          `
+                        : nothing
+                    }
+                    <md-outlined-text-field
+                      type="textarea"
+                      rows="5"
+                      name="details"
+                      label=${dialog.kind === "report" ? this.label("reportDialog.details", "Details") : this.label("appealStatement", "Appeal statement")}
+                      ?required=${dialog.kind === "appeal"}
+                    ></md-outlined-text-field>
+                  `
             }
-            <md-outlined-text-field
-              type="textarea"
-              rows="5"
-              name="details"
-              label=${dialog.kind === "report" ? this.label("reportDialog.details", "Details") : this.label("appealStatement", "Appeal statement")}
-              ?required=${dialog.kind === "appeal"}
-            ></md-outlined-text-field>
             ${
               this.error
                 ? html`
@@ -1548,8 +1756,14 @@ ${String(comment.body || "")}</textarea>
               <button class="button button--text" type="button" @click=${() => (this.dialog = null)}>
                 ${this.label("cancel", "Cancel")}
               </button>
-              <button class="button" ?disabled=${this.busy}>
-                ${dialog.kind === "report" ? this.label("reportDialog.submit", "Submit report") : this.label("submitAppeal", "Submit appeal")}
+              <button class=${confirmMode ? "button button--danger" : "button"} ?disabled=${this.busy}>
+                ${
+                  confirmMode
+                    ? dialog.confirm?.confirmLabel || this.label("delete", "Delete")
+                    : dialog.kind === "report"
+                      ? this.label("reportDialog.submit", "Submit report")
+                      : this.label("submitAppeal", "Submit appeal")
+                }
               </button>
             </footer>
           </form>
@@ -1627,16 +1841,13 @@ ${String(comment.body || "")}</textarea>
             `,
           )}
         </dl>
-        <div class="community-feed">
-          ${posts.map(
-            (post) => html`
-              <article class="community-post surface surface--outlined">
-                <a href=${`/community/posts/${post.id}`}>
-                  <h2>${String(post.title || this.label("emptyTitle", "Untitled"))}</h2>
-                  <p>${String(post.excerpt || post.body || "")}</p>
-                </a>
-              </article>
-            `,
+        <div class="community-masonry community-masonry--profile">
+          ${posts.map((post) =>
+            this.renderPin({
+              ...post,
+              authorName: post.authorName || profile.displayName || profile.handle,
+              authorImage: post.authorImage || profile.avatarUrl,
+            }),
           )}
         </div>
         ${
@@ -1799,7 +2010,55 @@ ${String(comment.body || "")}</textarea>
     const first = (startId && queue.find((entry) => entry.id === startId)) || queue[0]!;
     await dock.playTrack(first, queue);
   }
+  private renderPlaylistBandSelect() {
+    const bands = orderFacetOptions(
+      [...new Set(this.items.map((item) => String(item.bandId || item.band || "")).filter(Boolean))].map((value) => ({
+        value,
+      })),
+    ).map((option) => option.value);
+    if (!bands.length) return nothing;
+    return html`
+      <md-outlined-select
+        label=${this.label("playlistPage.bands", "Band")}
+        value=${this.playlistBand}
+        @change=${(event: Event) => {
+          this.playlistBand = String((event.target as HTMLElement & { value?: string }).value || "");
+          this.syncPlaylist();
+        }}
+      >
+        <md-select-option value="">
+          <div slot="headline">${this.label("all", "All")}</div>
+        </md-select-option>
+        ${bands.map(
+          (band) => html`
+            <md-select-option value=${band}><div slot="headline">${band}</div></md-select-option>
+          `,
+        )}
+      </md-outlined-select>
+    `;
+  }
+  private renderPlaylistSortSelect() {
+    return html`
+      <md-outlined-select
+        label=${this.label("sort", "Sort")}
+        value=${this.playlistSort}
+        @change=${(event: Event) => {
+          this.playlistSort = String((event.target as HTMLElement & { value?: string }).value || "order");
+          this.syncPlaylist();
+        }}
+      >
+        ${["order", "id", "title", "type", "songs", "release"].map(
+          (sort) => html`
+            <md-select-option value=${sort}>
+              <div slot="headline">${this.label(sort === "songs" ? "playlistPage.tracks" : sort, sort)}</div>
+            </md-select-option>
+          `,
+        )}
+      </md-outlined-select>
+    `;
+  }
   private renderPlaylists(collectionOnly = false): TemplateResult {
+    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
     const playlist = this.document;
     if (!collectionOnly && this.routeKind === "playlist-detail") {
       const tracks = playlist ? this.playlistTracks(playlist) : [];
@@ -1883,11 +2142,6 @@ ${String(comment.body || "")}</textarea>
       `;
     }
     const items = this.playlistItems();
-    const bands = orderFacetOptions(
-      [...new Set(this.items.map((item) => String(item.bandId || item.band || "")).filter(Boolean))].map((value) => ({
-        value,
-      })),
-    ).map((option) => option.value);
     const groups = [
       ["band", items.filter((item) => String(item.source || item.type || "band") === "band")],
       ["stage-challenge", items.filter((item) => String(item.source || item.type || "") === "stage-challenge")],
@@ -1897,70 +2151,19 @@ ${String(comment.body || "")}</textarea>
       ],
     ] as const;
     return html`
-      <section class="page" ?inert=${this.routeKind === "playlist-detail"}>
-        <header class="playlist-toolbar">
-          <label class="search-bar">
-            ${icon("search", 20)}
-            <input
-              type="search"
-              .value=${this.query}
-              placeholder=${this.label("playlistPage.search", "Search playlists")}
-              aria-label=${this.label("playlistPage.search", "Search playlists")}
-              @input=${(event: Event) => {
-                this.query = (event.target as HTMLInputElement).value;
-                this.syncPlaylist();
-              }}
-            />
-          </label>
-          ${
-            bands.length
-              ? html`
-                  <md-outlined-select
-                    label=${this.label("playlistPage.bands", "Band")}
-                    value=${this.playlistBand}
-                    @change=${(event: Event) => {
-                      this.playlistBand = String((event.target as HTMLElement & { value?: string }).value || "");
-                      this.syncPlaylist();
-                    }}
-                  >
-                    <md-select-option value="">
-                      <div slot="headline">${this.label("all", "All")}</div>
-                    </md-select-option>
-                    ${bands.map(
-                      (band) => html`
-                        <md-select-option value=${band}><div slot="headline">${band}</div></md-select-option>
-                      `,
-                    )}
-                  </md-outlined-select>
-                `
-              : nothing
-          }
-          <md-outlined-select
-            label=${this.label("sort", "Sort")}
-            value=${this.playlistSort}
-            @change=${(event: Event) => {
-              this.playlistSort = String((event.target as HTMLElement & { value?: string }).value || "order");
-              this.syncPlaylist();
-            }}
-          >
-            ${["order", "id", "title", "type", "songs", "release"].map(
-              (sort) => html`
-                <md-select-option value=${sort}>
-                  <div slot="headline">${this.label(sort === "songs" ? "playlistPage.tracks" : sort, sort)}</div>
-                </md-select-option>
-              `,
-            )}
-          </md-outlined-select>
-          ${iconButton({
-            label: this.label(this.playlistOrder === "asc" ? "ascending" : "descending", this.playlistOrder),
-            icon: this.playlistOrder === "asc" ? "arrow_upward" : "arrow_downward",
-            variant: "outlined",
-            onClick: () => {
-              this.playlistOrder = this.playlistOrder === "asc" ? "desc" : "asc";
-              this.syncPlaylist();
-            },
-          })}
-        </header>
+      <section class="page community-page" ?inert=${this.routeKind === "playlist-detail"}>
+        ${
+          this.query.trim()
+            ? html`
+                <div class="community-applied">
+                  ${inputChip(this.query.trim(), this.label("clearSearch", "Clear search"), () => {
+                    this.query = "";
+                    this.syncPlaylist();
+                  })}
+                </div>
+              `
+            : nothing
+        }
         ${groups
           .filter(([, entries]) => entries.length)
           .map(
@@ -2010,102 +2213,491 @@ ${String(comment.body || "")}</textarea>
               </section>
             `,
           )}
+        ${this.renderFilters()}
+        ${
+          this.filtersOpen
+            ? html`
+                <button
+                  class="scrim sheet-scrim"
+                  type="button"
+                  aria-label=${this.label("filters", "Filters")}
+                  @click=${() => (this.filtersOpen = false)}
+                ></button>
+              `
+            : nothing
+        }
       </section>
     `;
   }
   render() {
-    if (this.routeKind === "post-new" || this.routeKind === "post-edit") return this.renderPostEditor();
-    if (this.phase === "ready" && this.routeKind === "post-detail") return this.renderPostDetail();
-    if (this.phase === "ready" && this.routeKind === "user-detail") return this.renderUserDetail();
+    if (this.routeKind === "post-new" || this.routeKind === "post-edit") {
+      clearAppBarActions(COMMUNITY_BAR_OWNER);
+      return this.renderPostEditor();
+    }
+    if (this.phase === "ready" && this.routeKind === "post-detail") {
+      clearAppBarActions(COMMUNITY_BAR_OWNER);
+      return this.renderPostDetail();
+    }
+    if (this.phase === "ready" && this.routeKind === "user-detail") {
+      clearAppBarActions(COMMUNITY_BAR_OWNER);
+      return this.renderUserDetail();
+    }
     if (this.phase === "ready" && this.mode === "playlists") return this.renderPlaylists();
+    return this.renderCollection();
+  }
+  private feedScopeOptions() {
+    return (["recommended", "latest", "following"] as const).map((scope) => ({
+      value: scope,
+      label: this.label(`feed${scope.charAt(0).toUpperCase()}${scope.slice(1)}`, scope),
+    }));
+  }
+  /**
+   * The feed's own controls, rendered into the shell's top app bar — the same
+   * slot every browse screen uses. The page itself carries no toolbar: the
+   * shell's navigation drawer already owns the routes, so a second row of
+   * buttons under the app bar would only duplicate it. The scope switch rides
+   * in the bar too, which leaves the page nothing but the waterfall.
+   */
+  private collectionBar() {
+    const composer = this.mode === "feeds" || this.mode === "mine" || this.mode === "bookmarks" || this.mode === "tags";
+    const filterable = this.mode !== "activity";
+    const applied = this.appliedFilterCount();
+    return html`
+      ${
+        this.mode === "feeds"
+          ? html`
+              <div class="community-bar-scopes">
+                ${segmented({
+                  label: this.label("feed", "Feed"),
+                  value: this.feedScope,
+                  options: this.feedScopeOptions(),
+                  onSelect: (scope) => this.setFeedScope(scope),
+                })}
+              </div>
+            `
+          : nothing
+      }
+      ${
+        composer
+          ? html`
+              <a class="button button--tonal button--small community-compose" href=${this.path("/community/posts/new")}>
+                ${icon("edit", 18)}<span class="community-compose__label">${this.label("newPost", "New post")}</span>
+              </a>
+            `
+          : nothing
+      }
+      ${
+        filterable
+          ? iconButton({
+              label: this.label("filters", "Filters"),
+              icon: "tune",
+              onClick: () => (this.filtersOpen = !this.filtersOpen),
+              pressed: this.filtersOpen,
+              toggle: true,
+              badge: applied || undefined,
+              className: "community-filter-toggle",
+            })
+          : nothing
+      }
+    `;
+  }
+  /** How many non-default filters this collection currently carries. */
+  private appliedFilterCount() {
+    return (
+      (this.query.trim() ? 1 : 0) +
+      (this.tagFilter && this.mode !== "tags" && this.mode !== "playlists" ? 1 : 0) +
+      (this.mode === "notifications" && this.unreadOnly ? 1 : 0) +
+      (this.mode === "mine" && this.postState === "archived" ? 1 : 0) +
+      (this.mode === "playlists" && (this.playlistBand || this.playlistSort !== "order" || this.playlistOrder !== "asc")
+        ? 1
+        : 0)
+    );
+  }
+  private renderCollection() {
+    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
     return html`
       <section class="community-page page">
         ${
-          this.mode === "feeds"
+          this.toast
             ? html`
-                <div class="community-feed-scope">
-                  ${segmented({
-                    label: this.label("feed", "Feed"),
-                    value: this.feedScope,
-                    options: (["recommended", "latest", "following"] as const).map((scope) => ({
-                      value: scope,
-                      label: this.label(scope, scope),
-                    })),
-                    onSelect: (scope) => {
-                      this.feedScope = scope;
-                      const params = new URLSearchParams(location.search);
-                      params.set("scope", scope);
-                      history.replaceState(history.state, "", `${location.pathname}?${params}`);
-                      void this.load(false);
-                    },
-                  })}
+                <div class="community-undo" role="status">
+                  <span>${this.toast.text}</span>
+                  ${
+                    this.toast.undo
+                      ? html`
+                          <button class="button button--text" type="button" @click=${this.toast.undo}>
+                            ${this.label("undo", "Undo")}
+                          </button>
+                        `
+                      : nothing
+                  }
+                  <button
+                    class="icon-button icon-button--small"
+                    type="button"
+                    aria-label=${this.label("close", "Close")}
+                    @click=${() => (this.toast = null)}
+                  >
+                    ${icon("close", 18)}
+                  </button>
                 </div>
               `
             : nothing
         }
-        <header class="community-toolbar">
-          <form class="search-bar community-search" role="search" @submit=${this.submit}>
-            <svg class="material-icon" width="20" height="20" aria-hidden="true">
-              <use href="/icons.svg#search"></use>
-            </svg>
-            <input
-              type="search"
-              .value=${this.query}
-              @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
-              placeholder=${this.label("search", "Search community")}
-              aria-label=${this.label("search", "Search community")}
-            />
-            ${
-              this.query
-                ? html`
-                    <button
-                      class="icon-button icon-button--small"
-                      type="button"
-                      aria-label=${this.label("clear", "Clear")}
-                      @click=${() => {
-                        this.query = "";
-                        void this.load(false);
-                      }}
-                    >
-                      <svg class="material-icon" width="20" height="20" aria-hidden="true">
-                        <use href="/icons.svg#close"></use>
-                      </svg>
-                    </button>
-                  `
-                : nothing
-            }
-          </form>
-          <button class="icon-button" @click=${() => this.load(false)} aria-label=${this.label("refresh", "Refresh")}>
-            <svg class="material-icon" width="22" height="22"><use href="/icons.svg#refresh"></use></svg>
-          </button>
-          <a class="button" href=${this.path("/community/posts/new")}>
-            <svg class="material-icon" width="18" height="18"><use href="/icons.svg#edit"></use></svg>
-            ${this.label("newPost", "New post")}
-          </a>
-        </header>
+        ${this.renderPhase()}
+        ${this.renderCardMenu()}
+        ${this.renderFilters()}
+        ${this.renderDialog()}
         ${
-          this.phase === "loading"
+          this.filtersOpen
             ? html`
-                ${loadingState(this.label("loading", "Loading"))}
+                <button
+                  class="scrim sheet-scrim"
+                  type="button"
+                  aria-label=${this.label("filters", "Filters")}
+                  @click=${() => (this.filtersOpen = false)}
+                ></button>
               `
-            : this.phase === "error"
-              ? errorState(
-                  this.label("unavailable", "Unavailable"),
-                  this.label("retry", "Retry"),
-                  () => void this.load(false),
-                  this.error,
-                )
-              : this.renderItems()
+            : nothing
         }
       </section>
     `;
   }
+  /** The pin overflow menu — Xiaohongshu-style: ⋯ opens the card's actions
+   * instead of one bare icon firing "not interested" immediately. */
+  private renderCardMenu() {
+    const menu = this.cardMenu;
+    if (!menu) return nothing;
+    const post = menu.post;
+    const viewer = (post.viewer as Value | undefined) || {};
+    const authorUid = Number(post.authorUid || 0);
+    const close = () => (this.cardMenu = null);
+    const run = (action: () => void) => () => {
+      close();
+      action();
+    };
+    return html`
+      <div
+        class="menu community-card-menu"
+        role="menu"
+        tabindex="-1"
+        aria-label=${this.label("moreActions", "More actions")}
+        style=${`top: ${menu.y}px; left: ${menu.x}px;`}
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === "Escape") close();
+        }}
+      >
+        <button class="menu-item" type="button" role="menuitem" @click=${run(() => this.togglePinBookmark(post))}>
+          ${icon("bookmark_border", 20)}
+          <span>
+            ${viewer.bookmarked
+              ? this.label("removeBookmark", "Remove bookmark")
+              : this.label("addBookmark", "Bookmark")}
+          </span>
+        </button>
+        <button class="menu-item" type="button" role="menuitem" @click=${run(() => void this.copyPinLink(post))}>
+          ${icon("link", 20)}
+          <span>${this.label("copyLink", "Copy link")}</span>
+        </button>
+        ${
+          authorUid
+            ? html`
+                <button
+                  class="menu-item"
+                  type="button"
+                  role="menuitem"
+                  @click=${run(() => location.assign(`/community/users/${authorUid}`))}
+                >
+                  ${icon("person", 20)}
+                  <span>${this.label("viewAuthor", "View author")}</span>
+                </button>
+              `
+            : nothing
+        }
+        ${
+          viewer.canGiveFeedback && !viewer.canEdit && this.mode === "feeds" && this.feedScope === "recommended"
+            ? html`
+                <button
+                  class="menu-item"
+                  type="button"
+                  role="menuitem"
+                  @click=${run(() => this.recommendationFeedback(post))}
+                >
+                  ${icon("visibility_off", 20)}
+                  <span>${this.label("notInterested", "Not interested")}</span>
+                </button>
+              `
+            : nothing
+        }
+        ${
+          !viewer.canEdit
+            ? html`
+                <button
+                  class="menu-item"
+                  type="button"
+                  role="menuitem"
+                  @click=${run(() => this.openDialog("report", "post", post.id, post.title))}
+                >
+                  ${icon("flag", 20)}
+                  <span>${this.label("report", "Report")}</span>
+                </button>
+              `
+            : nothing
+        }
+      </div>
+      <button
+        class="scrim community-menu-scrim"
+        type="button"
+        aria-label=${this.label("close", "Close")}
+        @click=${close}
+      ></button>
+    `;
+  }
+  private renderPhase() {
+    if (this.phase === "loading") return loadingState(this.label("loading", "Loading"));
+    if (this.phase === "error")
+      return errorState(
+        this.label("unavailable", "Unavailable"),
+        this.label("retry", "Retry"),
+        () => void this.load(false),
+        this.error,
+      );
+    return this.renderItems();
+  }
+  /**
+   * The filter panel: a modal side sheet at every size, like every browse
+   * screen. The search field lives here — not in a page toolbar — so the feed
+   * itself is nothing but tabs and cards.
+   */
+  private renderFilters() {
+    const filterable = this.mode !== "activity";
+    if (!filterable) return nothing;
+    const searching = this.mode !== "notifications";
+    return html`
+      <aside
+        class=${`community-filters sheet sheet--side ${this.filtersOpen ? "is-open" : ""}`}
+        data-filter-sheet
+        role="dialog"
+        aria-modal="true"
+        aria-label=${this.label("filters", "Filters")}
+        ?inert=${!this.filtersOpen}
+        tabindex="-1"
+      >
+        <header class="sheet__header">
+          <span class="detail-section-title__icon">${icon("tune", 20)}</span>
+          <span class="sheet__title"><strong>${this.label("filters", "Filters")}</strong></span>
+          <span class="sheet__actions">
+            ${iconButton({
+              label: this.label("cancel", "Close"),
+              icon: "close",
+              onClick: () => (this.filtersOpen = false),
+              className: "community-filters-close",
+            })}
+          </span>
+        </header>
+        <div class="community-filters__body">
+          ${
+            searching
+              ? html`
+                  <form class="community-filters__search" role="search" @submit=${this.submit}>
+                    <label class="search-bar">
+                      ${icon("search", 20)}
+                      <input
+                        type="search"
+                        .value=${this.query}
+                        placeholder=${this.label("search", "Search community")}
+                        aria-label=${this.label("search", "Search community")}
+                        @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
+                      />
+                      ${
+                        this.query
+                          ? iconButton({
+                              label: this.label("clear", "Clear"),
+                              icon: "close",
+                              onClick: () => {
+                                this.query = "";
+                                this.syncCollectionUrl();
+                                void this.load(false);
+                              },
+                              size: 20,
+                            })
+                          : nothing
+                      }
+                    </label>
+                    <button class="button" type="submit">${this.label("search", "Search")}</button>
+                  </form>
+                `
+              : nothing
+          }
+          ${
+            this.appliedFilterCount() && this.mode !== "playlists"
+              ? html`
+                  <section class="browse__filter-group">
+                    <h3>${this.label("appliedFilters", "Applied filters")}</h3>
+                    <div class="community-filters__applied">
+                      ${
+                        this.query.trim()
+                          ? inputChip(
+                              this.query.trim(),
+                              this.label("clearSearch", "Clear search"),
+                              () => {
+                                this.query = "";
+                                this.syncCollectionUrl();
+                                void this.load(false);
+                              },
+                            )
+                          : nothing
+                      }
+                      ${
+                        this.tagFilter && this.mode !== "tags"
+                          ? inputChip(
+                              `#${this.tagFilter}`,
+                              this.label("clearTagFilter", "Clear tag"),
+                              () => this.clearTag(),
+                            )
+                          : nothing
+                      }
+                      ${
+                        this.mode === "notifications" && this.unreadOnly
+                          ? inputChip(
+                              this.label("unreadNotifications", "Unread"),
+                              this.label("clear", "Clear"),
+                              () => {
+                                this.unreadOnly = false;
+                                this.syncCollectionUrl();
+                                void this.load(false);
+                              },
+                            )
+                          : nothing
+                      }
+                      ${
+                        this.mode === "mine" && this.postState === "archived"
+                          ? inputChip(
+                              this.label("stateArchived", "Archived"),
+                              this.label("clear", "Clear"),
+                              () => {
+                                this.postState = "active";
+                                this.syncCollectionUrl();
+                                void this.load(false);
+                              },
+                            )
+                          : nothing
+                      }
+                    </div>
+                  </section>
+                `
+              : nothing
+          }
+          ${
+            this.mode === "feeds"
+              ? html`
+                  <section class="browse__filter-group">
+                    <h3>${this.label("feed", "Feed")}</h3>
+                    ${
+                      this.feedScope === "recommended"
+                        ? html`
+                            <button
+                              class="button button--tonal community-filters__shuffle"
+                              type="button"
+                              @click=${this.refreshFeed}
+                            >
+                              ${icon("refresh", 18)}${this.label("refreshFeed", "Shuffle recommendations")}
+                            </button>
+                          `
+                        : nothing
+                    }
+                    <button
+                      class="button button--outlined community-filters__reset"
+                      type="button"
+                      @click=${this.resetRecommendationFeedback}
+                    >
+                      ${icon("restart_alt", 18)}${this.label("resetFeedback", "Reset hidden recommendations")}
+                    </button>
+                  </section>
+                `
+              : nothing
+          }
+          ${
+            this.mode === "mine"
+              ? html`
+                  <section class="browse__filter-group">
+                    <h3>${this.label("postState", "Post state")}</h3>
+                    ${segmented({
+                      label: this.label("postState", "Post state"),
+                      value: this.postState,
+                      options: [
+                        { value: "active", label: this.label("stateActive", "Active") },
+                        { value: "archived", label: this.label("stateArchived", "Archived") },
+                      ],
+                      onSelect: (value) => {
+                        this.postState = value;
+                        this.syncCollectionUrl();
+                        void this.load(false);
+                      },
+                    })}
+                    <p class="community-filters__hint">${this.label("archivedHint", "Archived posts are hidden from everyone. Open one and choose Restore to publish it again.")}</p>
+                  </section>
+                `
+              : nothing
+          }
+          ${
+            this.mode === "notifications"
+              ? html`
+                  <section class="browse__filter-group">
+                    <h3>${this.label("notifications", "Notifications")}</h3>
+                    ${segmented({
+                      label: this.label("notifications", "Notifications"),
+                      value: this.unreadOnly ? "unread" : "all",
+                      options: [
+                        { value: "all", label: this.label("allNotifications", "All") },
+                        { value: "unread", label: this.label("unreadNotifications", "Unread") },
+                      ],
+                      onSelect: (value) => {
+                        this.unreadOnly = value === "unread";
+                        this.syncCollectionUrl();
+                        void this.load(false);
+                      },
+                    })}
+                  </section>
+                `
+              : nothing
+          }
+          ${
+            this.mode === "playlists"
+              ? html`
+                  <section class="browse__filter-group">
+                    <h3>${this.label("playlistPage.bands", "Band")}</h3>
+                    ${this.renderPlaylistBandSelect()}
+                  </section>
+                  <section class="browse__filter-group">
+                    <h3>${this.label("sort", "Sort")}</h3>
+                    ${this.renderPlaylistSortSelect()}
+                    ${iconButton({
+                      label: this.label(this.playlistOrder === "asc" ? "ascending" : "descending", this.playlistOrder),
+                      icon: this.playlistOrder === "asc" ? "arrow_upward" : "arrow_downward",
+                      variant: "outlined",
+                      onClick: () => {
+                        this.playlistOrder = this.playlistOrder === "asc" ? "desc" : "asc";
+                        this.syncPlaylist();
+                      },
+                    })}
+                  </section>
+                `
+              : nothing
+          }
+        </div>
+      </aside>
+    `;
+  }
   private renderItems() {
-    if (!this.items.length)
-      return emptyState({
-        title: this.label("emptyTitle", "No community content yet."),
-        icon: "forum",
-      });
+    if (!this.items.length) {
+      const emptyKeys: Record<string, [string, string]> = {
+        mine: ["emptyMine", "You have not posted yet"],
+        bookmarks: ["emptyBookmarks", "No bookmarks yet"],
+        notifications: ["emptyNotifications", "No notifications yet"],
+      };
+      const [key, fallback] = emptyKeys[this.mode] || ["emptyTitle", "No community content yet."];
+      return emptyState({ title: this.label(key, fallback), icon: "forum" });
+    }
     if (this.mode === "activity")
       return html`
         <div class="community-stack">
@@ -2176,14 +2768,14 @@ ${String(comment.body || "")}</textarea>
                   <span class="list-item__trailing">
                     ${iconButton({
                       label: this.label("follow", "Follow"),
-                      icon: tag.preference === "follow" ? "notifications_active-filled" : "notifications_active",
+                      icon: "notifications",
                       toggle: true,
                       pressed: tag.preference === "follow",
                       onClick: () => this.tagPreference(tag, tag.preference === "follow" ? null : "follow"),
                     })}
                     ${iconButton({
                       label: this.label("mute", "Mute"),
-                      icon: tag.preference === "mute" ? "volume_off-filled" : "volume_off",
+                      icon: "volume_off",
                       toggle: true,
                       pressed: tag.preference === "mute",
                       onClick: () => this.tagPreference(tag, tag.preference === "mute" ? null : "mute"),
@@ -2228,98 +2820,7 @@ ${String(comment.body || "")}</textarea>
         </ul>
       `;
     return html`
-      <div class="community-feed">
-        ${this.items.map(
-          (post) => html`
-            <article class="card card--outlined community-post">
-              <!-- The author line is a Material list item: 40dp avatar,
-                   headline, supporting text. The same anatomy as every other
-                   row on the site rather than a bespoke header. -->
-              <div class="list-item community-post__author">
-                <span class="list-item__leading">
-                  <span class="list-item__avatar">
-                    ${
-                      post.authorImage
-                        ? html`
-                            <img src=${String(post.authorImage)} alt="" loading="lazy" />
-                          `
-                        : html`
-                            ${String(post.authorName || "?").slice(0, 1)}
-                          `
-                    }
-                  </span>
-                </span>
-                <span class="list-item__body">
-                  <span class="list-item__headline">${post.authorName || this.label("member", "Member")}</span>
-                  <span class="list-item__supporting">${this.date(post.createdAt)}</span>
-                </span>
-              </div>
-              ${
-                Array.isArray(post.attachments) && post.attachments[0]
-                  ? html`
-                      <a class="community-post__media media-loading" href=${this.path(`/community/posts/${post.id}`)}>
-                        <img
-                          src=${String((post.attachments[0] as Value).contentUrl || "")}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          @load=${(event: Event) =>
-                            (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                          @error=${(event: Event) =>
-                            (event.currentTarget as HTMLImageElement).classList.add("is-error")}
-                        />
-                      </a>
-                    `
-                  : nothing
-              }
-              <a class="card__body community-post__link" href=${this.path(`/community/posts/${post.id}`)}>
-                <span class="card__headline">${post.title || this.label("emptyTitle", "Untitled")}</span>
-                <span class="card__supporting clamp-3">${post.excerpt || post.body || ""}</span>
-              </a>
-              <footer class="community-post__footer">
-                <span class="community-post__stat">
-                  ${icon("favorite_border", 18)}
-                  <span class="tabular">${post.likeCount || 0}</span>
-                </span>
-                <span class="community-post__stat">
-                  ${icon("comment", 18)}
-                  <span class="tabular">${post.commentCount || 0}</span>
-                </span>
-                <span class="row__spacer"></span>
-                ${
-                  Array.isArray(post.tags)
-                    ? post.tags.slice(0, 3).map(
-                        (tag) => html`
-                          <a
-                            class="chip chip--assist"
-                            style="--chip-height:28px"
-                            href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}
-                          >
-                            <span class="chip__label">#${tag}</span>
-                          </a>
-                        `,
-                      )
-                    : nothing
-                }
-                ${
-                  (post.viewer as Value | undefined)?.canGiveFeedback && this.feedScope === "recommended"
-                    ? html`
-                        <button
-                          class="icon-button icon-button--small"
-                          type="button"
-                          aria-label=${this.label("notInterested", "Not interested")}
-                          @click=${() => this.recommendationFeedback(post)}
-                        >
-                          ${icon("more_vert", 18)}
-                        </button>
-                      `
-                    : nothing
-                }
-              </footer>
-            </article>
-          `,
-        )}
-      </div>
+      ${this.renderPins()}
       ${
         this.cursor
           ? html`
@@ -2331,6 +2832,115 @@ ${String(comment.body || "")}</textarea>
             `
           : nothing
       }
+    `;
+  }
+  /**
+   * The feed itself: a masonry of Xiaohongshu-style pins. Each pin is one
+   * full-bleed cover (image when the post has one, an excerpt block when it
+   * does not) with a two-line title and an author/likes row — the card
+   * anatomy the site's collection tiles use, stacked in balanced columns.
+   */
+  private renderPins() {
+    return html`
+      <div class="community-masonry">
+        ${this.items.map((post) => this.renderPin(post))}
+      </div>
+    `;
+  }
+  /** Pins keep a 4/5 cover until their image loads, then adopt its true
+   * ratio (clamped so panoramas do not collapse and portraits do not tower). */
+  private pinMediaLoaded(event: Event) {
+    const image = event.currentTarget as HTMLImageElement;
+    image.classList.add("is-loaded");
+    const media = image.closest<HTMLElement>(".community-pin__media");
+    if (!media || !image.naturalWidth || !image.naturalHeight) return;
+    const ratio = image.naturalWidth / image.naturalHeight;
+    const bounded = Math.min(Math.max(ratio, 0.62), 1.9);
+    media.style.aspectRatio = `${bounded}`;
+  }
+  private renderPin(post: Value) {
+    const href = this.path(`/community/posts/${post.id}`);
+    const viewer = (post.viewer as Value | undefined) || {};
+    const images = Array.isArray(post.attachments)
+      ? (post.attachments as Value[]).filter((attachment) => String(attachment.mediaType).startsWith("image/"))
+      : post.coverUrl
+        ? [{ contentUrl: post.coverUrl }]
+        : [];
+    const excerpt = String(post.excerpt || post.body || "");
+    return html`
+      <article class="community-pin">
+        <a
+          class="community-pin__link tile--interactive"
+          href=${href}
+          aria-label=${String(post.title || this.label("emptyTitle", "Untitled"))}
+        >
+          ${
+            images.length
+              ? html`
+                  <span class="community-pin__media media-loading">
+                    <img
+                      src=${String(images[0]?.contentUrl || "")}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      @load=${this.pinMediaLoaded}
+                      @error=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-error")}
+                    />
+                    ${
+                      images.length > 1
+                        ? html`
+                            <span class="community-pin__count" aria-hidden="true">
+                              ${icon("image", 14)}<span class="tabular">${images.length}</span>
+                            </span>
+                          `
+                        : nothing
+                    }
+                  </span>
+                `
+              : html`
+                  <span class="community-pin__media community-pin__media--text">
+                    <span class="community-pin__note">${excerpt || this.label("postBody", "What would you like to share?")}</span>
+                  </span>
+                `
+          }
+          <span class="community-pin__body">
+            <span class="community-pin__title">${String(post.title || this.label("emptyTitle", "Untitled"))}</span>
+          </span>
+        </a>
+        <div class="community-pin__meta">
+          <span class="community-pin__author">
+            <span class="community-pin__avatar">
+              ${
+                post.authorImage
+                  ? html`
+                      <img src=${String(post.authorImage)} alt="" loading="lazy" />
+                    `
+                  : String(post.authorName || "?").slice(0, 1)
+              }
+            </span>
+            <span class="clamp-1">${String(post.authorName || this.label("member", "Member"))}</span>
+          </span>
+          <button
+            class=${`community-pin__like${viewer.liked ? " is-liked" : ""}`}
+            type="button"
+            aria-label=${viewer.liked ? this.label("unlike", "Unlike") : this.label("like", "Like")}
+            aria-pressed=${String(Boolean(viewer.liked))}
+            ?disabled=${this.busy}
+            @click=${() => this.togglePinReaction(post)}
+          >
+            ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 16)}
+            <span class="tabular">${Number(post.likeCount || 0)}</span>
+          </button>
+          <button
+            class="icon-button icon-button--small community-pin__more"
+            type="button"
+            aria-label=${this.label("moreActions", "More actions")}
+            @click=${(event: MouseEvent) => this.openCardMenu(post, event)}
+          >
+            ${icon("more_vert", 18)}
+          </button>
+        </div>
+      </article>
     `;
   }
 }
