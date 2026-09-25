@@ -10,6 +10,8 @@ import {
 } from "@haneoka/cassiopeia/plugin";
 import {
   OUR_NOTES_RULES,
+  OUR_NOTES_NOTE_EFFECT_SKINS,
+  OUR_NOTES_NOTE_EFFECT_SKIN_NAMES,
   OUR_NOTES_NOTE_SKINS,
   OUR_NOTES_NOTE_SKIN_NAMES,
   DEFAULT_RENDER_SETTINGS,
@@ -18,6 +20,7 @@ import {
   type RenderSettings,
   type OurNotesAssetManifest,
   type OurNotesRuntimeMediaManifest,
+  type OurNotesNoteEffectSkin,
   type OurNotesNoteSkin,
 } from "@haneoka/cassiopeia-plugin-our-notes";
 import { THREE_RENDERER, createThreeRendererPlugin, type OurNotesRenderer } from "@haneoka/cassiopeia-renderer-three";
@@ -54,6 +57,7 @@ type ChartUiKey =
   | "noteSpeed"
   | "noteSize"
   | "noteSkin"
+  | "noteEffectSkin"
   | "longOpacity"
   | "guideOpacity"
   | "mirror"
@@ -99,6 +103,7 @@ export class ChartSimulator extends LitElement {
     settingsOpen: { state: true },
     playerSettings: { state: true },
     noteSkin: { state: true },
+    noteEffectSkin: { state: true },
     stageBackground: { state: true },
     playbackRate: { state: true },
     volume: { state: true },
@@ -119,6 +124,7 @@ export class ChartSimulator extends LitElement {
   declare settingsOpen: boolean;
   declare playerSettings: RenderSettings;
   declare noteSkin: OurNotesNoteSkin;
+  declare noteEffectSkin: OurNotesNoteEffectSkin;
   declare stageBackground: StageBackground;
   declare playbackRate: number;
   declare volume: number;
@@ -144,6 +150,7 @@ export class ChartSimulator extends LitElement {
   private animationFrame = 0;
   private loadedKey = "";
   private availableNoteSkins: readonly OurNotesNoteSkin[] = ["skin001"];
+  private availableNoteEffectSkins: readonly OurNotesNoteEffectSkin[] = ["effect001"];
   private sourceFilesCache?: { server: string; promise: Promise<Set<string>> };
   private resumeAfterScrub = false;
 
@@ -165,6 +172,7 @@ export class ChartSimulator extends LitElement {
     this.settingsOpen = false;
     this.playerSettings = { ...DEFAULT_RENDER_SETTINGS };
     this.noteSkin = "skin001";
+    this.noteEffectSkin = "effect001";
     this.stageBackground = "auto";
     this.playbackRate = 1;
     this.volume = 0.8;
@@ -249,6 +257,13 @@ export class ChartSimulator extends LitElement {
     );
     const selectedSkin = this.availableNoteSkins.includes(this.noteSkin) ? this.noteSkin : "skin001";
     this.noteSkin = selectedSkin;
+    this.availableNoteEffectSkins = OUR_NOTES_NOTE_EFFECT_SKINS.filter((skin) =>
+      files.has(`Assets/AddressableResources/Effect/Live/NoteEffect/${skin}/LiveNoteEffectAssetSettings.asset`),
+    );
+    const selectedEffectSkin = this.availableNoteEffectSkins.includes(this.noteEffectSkin)
+      ? this.noteEffectSkin
+      : "effect001";
+    this.noteEffectSkin = selectedEffectSkin;
     const noteSkinSource = `Assets/AddressableResources/Live/Note/${selectedSkin}/LiveNoteSkinAsset.asset`;
     const [note, judgement, live, combo, font, noteSkin] = await Promise.all([
       this.descriptor(source(`${selectedSkin}.spriteatlasv2`)),
@@ -329,6 +344,7 @@ export class ChartSimulator extends LitElement {
     };
     const media: OurNotesRuntimeMediaManifest = {
       noteSkin: selectedSkin,
+      noteEffectSkin: selectedEffectSkin,
       noteAtlasTextureUrl: this.output(note, "Texture2D"),
       ...(font ? { fontAtlasTextureUrl: this.output(font, "Texture2D") } : {}),
       hud: {
@@ -405,6 +421,7 @@ export class ChartSimulator extends LitElement {
         playbackRate?: number;
         volume?: number;
         noteSkin?: OurNotesNoteSkin;
+        noteEffectSkin?: OurNotesNoteEffectSkin;
       } | null;
       if (!saved) return;
       const number = (value: unknown, minimum: number, maximum: number, fallback: number) => {
@@ -438,6 +455,8 @@ export class ChartSimulator extends LitElement {
       this.playbackRate = number(saved.playbackRate, 0.5, 2, 1);
       this.volume = number(saved.volume, 0, 1, 0.8);
       if (OUR_NOTES_NOTE_SKINS.includes(saved.noteSkin as OurNotesNoteSkin)) this.noteSkin = saved.noteSkin!;
+      if (OUR_NOTES_NOTE_EFFECT_SKINS.includes(saved.noteEffectSkin as OurNotesNoteEffectSkin))
+        this.noteEffectSkin = saved.noteEffectSkin!;
     } catch {
       localStorage.removeItem(SETTINGS_KEY);
     }
@@ -452,6 +471,7 @@ export class ChartSimulator extends LitElement {
           playbackRate: this.playbackRate,
           volume: this.volume,
           noteSkin: this.noteSkin,
+          noteEffectSkin: this.noteEffectSkin,
         }),
       );
     } catch {
@@ -675,6 +695,7 @@ export class ChartSimulator extends LitElement {
       noteSpeed: ["ノーツ速度", "Note speed", "音符速度", "音符速度", "노트 속도"],
       noteSize: ["ノーツ幅", "Note width", "音符寬度", "音符宽度", "노트 너비"],
       noteSkin: ["ノーツデザイン", "Note design", "音符樣式", "音符样式", "노트 디자인"],
+      noteEffectSkin: ["判定エフェクト", "Judgement effect", "判定特效", "判定特效", "판정 이펙트"],
       longOpacity: ["ロング透明度", "Long-note opacity", "長條透明度", "长条透明度", "롱 노트 투명도"],
       guideOpacity: ["ガイド透明度", "Guide-note opacity", "引導音符透明度", "引导音符透明度", "가이드 노트 투명도"],
       mirror: ["ミラー", "Mirror", "鏡像", "镜像", "미러"],
@@ -810,6 +831,32 @@ export class ChartSimulator extends LitElement {
                   (skin) => html`
                     <option value=${skin} ?selected=${this.noteSkin === skin}>
                       ${OUR_NOTES_NOTE_SKIN_NAMES[skin][this.locale] || OUR_NOTES_NOTE_SKIN_NAMES[skin].en}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
+            <label class="chart-runtime__setting chart-runtime__setting--select">
+              <span>${this.ui("noteEffectSkin")}</span>
+              <select
+                @change=${(event: Event) => {
+                  const position = this.currentTime;
+                  const resume = this.playing;
+                  this.noteEffectSkin = (event.currentTarget as HTMLSelectElement)
+                    .value as OurNotesNoteEffectSkin;
+                  this.persistSettings();
+                  void this.load().then(async () => {
+                    if (this.phase !== "ready") return;
+                    this.seek(position);
+                    if (resume) await this.toggle();
+                  });
+                }}
+              >
+                ${this.availableNoteEffectSkins.map(
+                  (skin) => html`
+                    <option value=${skin} ?selected=${this.noteEffectSkin === skin}>
+                      ${OUR_NOTES_NOTE_EFFECT_SKIN_NAMES[skin][this.locale] ||
+                      OUR_NOTES_NOTE_EFFECT_SKIN_NAMES[skin].en}
                     </option>
                   `,
                 )}
