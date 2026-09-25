@@ -6,7 +6,7 @@
       "name": "vega",
       "url": "https://github.com/haneoka-gakuen/vega.git",
       "branch": "main",
-      "commit": "93fa6bb211cb404f3a971218620750974c256a7b",
+      "commit": "9bb33b237f2b742bfa18aa853c6301dc9f6bb30f",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -14,7 +14,7 @@
       "name": "vega-renderer-three",
       "url": "https://github.com/haneoka-gakuen/vega-renderer-three.git",
       "branch": "main",
-      "commit": "05d72842beb139889f0765421999fbc17607b287",
+      "commit": "0bcc7a6f2541f5da35a734963f94a5f666ca7776",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -54,7 +54,7 @@
       "name": "vega-plugin-cubism",
       "url": "https://github.com/haneoka-gakuen/vega-plugin-cubism.git",
       "branch": "main",
-      "commit": "47ae78dfac9e9c4732d70d60c23cb21096a309c2",
+      "commit": "5daf858ff9b128c0494875aba334f33b3effcbb6",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -70,7 +70,7 @@
       "name": "cassiopeia",
       "url": "https://github.com/haneoka-gakuen/cassiopeia.git",
       "branch": "main",
-      "commit": "204d8d53475442905c7998a704bc2380ecb05972",
+      "commit": "f4f58b8e8390e86e49c970051be466fc051d9d77",
       "version": "0.1.0",
       "kind": "node"
     },
