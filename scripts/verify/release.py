@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -48,7 +49,7 @@ SHA256 = re.compile(r"^[a-f0-9]{64}$")
 
 
 def release_entries(root: Path) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any]] = []
+    jobs: list[tuple[str, str, Path]] = []
     for tree in RELEASE_TREES:
         tree_root = root / tree
         for file in walk_files(tree_root):
@@ -60,16 +61,23 @@ def release_entries(root: Path) -> list[dict[str, Any]]:
                 raise ValueError(
                     f"active content is forbidden in public release media: {relative}"
                 )
-            digest = sha256_file(file)
-            entries.append(
-                {
-                    "path": relative,
-                    "role": tree,
-                    "bytes": file.stat().st_size,
-                    "sha256": digest,
-                    "mediaType": media_type(file),
-                }
-            )
+            jobs.append((relative, tree, file))
+
+    def entry(job: tuple[str, str, Path]) -> dict[str, Any]:
+        relative, tree, file = job
+        return {
+            "path": relative,
+            "role": tree,
+            "bytes": file.stat().st_size,
+            "sha256": sha256_file(file),
+            "mediaType": media_type(file),
+        }
+
+    # Hashing is IO-bound per file (hashlib releases the GIL between chunks);
+    # a release carries six figures of small objects, so a serial pass here
+    # used to dominate build-release.
+    with ThreadPoolExecutor(max_workers=max(1, min(16, len(jobs) or 1))) as executor:
+        entries = list(executor.map(entry, jobs))
     return sorted(entries, key=lambda item: item["path"])
 
 

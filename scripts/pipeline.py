@@ -241,10 +241,61 @@ def command_extract_cri(args: argparse.Namespace) -> None:
     )
 
 
+def _preview_restore(store: R2Store, snapshot: dict) -> object:
+    """Build the preview-restore callable shared by the Live2D and Spine stages."""
+
+    entries = snapshot.get("entries")
+
+    def restore(path: str, sha256: str, target: Path) -> None:
+        if not isinstance(entries, dict):
+            raise ValueError("current release snapshot has no path entries")
+        entry = entries.get(path)
+        if not isinstance(entry, dict) or str(entry.get("sha256") or "") != sha256:
+            raise ValueError(f"current release does not declare the reusable preview: {path}")
+        restore_release_object(
+            store,
+            snapshot,
+            {"path": path, "sha256": sha256, "bytes": int(entry.get("bytes") or -1)},
+            target,
+        )
+
+    return restore
+
+
+def _preview_reuse_inputs(
+    config: ServerConfig, document_path: str, reuse_concurrency: int
+) -> tuple[dict | None, object | None]:
+    """Load the current release's stage document for preview reuse, best effort."""
+
+    try:
+        store = R2Store(config, reuse_concurrency)
+        snapshot = current_release_document(store, config, document_path)
+    except Exception as error:
+        sys.stderr.write(
+            f"{document_path} current-release reuse is unavailable; rendering all previews: {error}\n"
+        )
+        return None, None
+    if not isinstance(snapshot, dict):
+        return None, None
+    return snapshot.get("document"), _preview_restore(store, snapshot)
+
+
 def command_build_live2d(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
-    result = build_live2d(config, args.source, identity)
+    reuse_manifest, restore_output = (None, None)
+    if args.reuse_current:
+        reuse_manifest, restore_output = _preview_reuse_inputs(
+            config, "metadata/live2d.json", args.reuse_concurrency
+        )
+    result = build_live2d(
+        config,
+        args.source,
+        identity,
+        reuse_manifest=reuse_manifest,
+        restore_output=restore_output,
+        reuse_concurrency=args.reuse_concurrency,
+    )
     _print(
         _fields(
             result,
@@ -254,6 +305,8 @@ def command_build_live2d(args: argparse.Namespace) -> None:
             "buildId",
             "modelCount",
             "skippedModelCount",
+            "previewReusedCount",
+            "previewReuseRestoreFailureCount",
         )
     )
 
@@ -261,7 +314,19 @@ def command_build_live2d(args: argparse.Namespace) -> None:
 def command_build_spine(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
-    result = build_spine(config, args.source, identity)
+    reuse_manifest, restore_output = (None, None)
+    if args.reuse_current:
+        reuse_manifest, restore_output = _preview_reuse_inputs(
+            config, "metadata/spine.json", args.reuse_concurrency
+        )
+    result = build_spine(
+        config,
+        args.source,
+        identity,
+        reuse_manifest=reuse_manifest,
+        restore_output=restore_output,
+        reuse_concurrency=args.reuse_concurrency,
+    )
     _print(
         _fields(
             result,
@@ -272,6 +337,8 @@ def command_build_spine(args: argparse.Namespace) -> None:
             "playableModelCount",
             "unavailableModelCount",
             "previewRenderedCount",
+            "previewReusedCount",
+            "previewReuseRestoreFailureCount",
             "renderRecipePreviewRenderedCount",
             "renderRecipeCount",
             "unavailableRenderRecipeCount",
@@ -607,6 +674,12 @@ def parser() -> argparse.ArgumentParser:
     live2d = commands.add_parser("build-live2d", help="build Live2D catalog/runtime derivatives")
     live2d.add_argument("--source", required=True)
     live2d.add_argument("--build")
+    live2d.add_argument(
+        "--reuse-current",
+        action="store_true",
+        help="restore unchanged models' previews from the selected R2 release CAS",
+    )
+    live2d.add_argument("--reuse-concurrency", type=int, default=32)
     live2d.set_defaults(run=command_build_live2d)
 
     spine = commands.add_parser(
@@ -615,6 +688,12 @@ def parser() -> argparse.ArgumentParser:
     )
     spine.add_argument("--source", required=True)
     spine.add_argument("--build")
+    spine.add_argument(
+        "--reuse-current",
+        action="store_true",
+        help="restore unchanged models' previews from the selected R2 release CAS",
+    )
+    spine.add_argument("--reuse-concurrency", type=int, default=32)
     spine.set_defaults(run=command_build_spine)
 
     home_spots = commands.add_parser(

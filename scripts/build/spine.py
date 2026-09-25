@@ -35,16 +35,18 @@ import time
 import urllib.parse
 import urllib.request
 from collections import OrderedDict, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
 from core.config import PROJECT_ROOT, ServerConfig
 from core.contracts import UNITY_INDEX_SCHEMA
-from core.hashes import sha256_file
-from core.manifests import atomic_write, read_json, write_json
+from core.hashes import sha256_bytes, sha256_file
+from core.manifests import atomic_write, read_json, stable_json, write_json
 from core.paths import build_layout, normalize_release_path, validate_unity_path
 from core.unity_objects import UnityObjectStore
+from build.preview_image import count_visible_png_pixels, supersample_png
 
 
 # v3 changes the public model identifier from a source-path-derived label to
@@ -59,7 +61,10 @@ SCHEMA = "haneoka-spine-build-v3"
 # transform and an opportunity for edge-alpha values to be re-encoded.  v5
 # replaces default-depth slot batching with the source Spine draw order, so a
 # rendered v4 PNG must not be reused after this transparency-policy change.
-PREVIEW_SCHEMA = "haneoka-spine-preview-v5"
+# v6 renders at 2x the publish size and Lanczos-filters the render back down:
+# the supersampled result replaces the aliased v5 edges, so v5 PNGs are not
+# reusable either.
+PREVIEW_SCHEMA = "haneoka-spine-preview-v6"
 BROWSER_RUNTIME_PACKAGE = "@esotericsoftware/spine-threejs"
 BROWSER_RUNTIME_VERSION = "4.2.119"
 BROWSER_RUNTIME_SERIES = "4.2"
@@ -69,6 +74,11 @@ BROWSER_LOADER = "TextureAtlas + AtlasAttachmentLoader + SkeletonJson (explicit 
 PREVIEW_RENDERER = "headless-chrome-webgl-spine-threejs"
 PREVIEW_WIDTH = 512
 PREVIEW_HEIGHT = 512
+# Spine silhouettes come from texture alpha, which MSAA cannot smooth. The
+# renderer draws this multiple of the publish size; _preview_output filters
+# the render back down to PREVIEW_WIDTH/PREVIEW_HEIGHT.
+PREVIEW_RENDER_WIDTH = PREVIEW_WIDTH * 2
+PREVIEW_RENDER_HEIGHT = PREVIEW_HEIGHT * 2
 PREVIEW_POSE_KIND = "setup"
 PREVIEW_OUTPUT_PREFIX = "runtime/spine-previews"
 
@@ -1400,8 +1410,8 @@ def _model_preview_job(model: dict[str, Any]) -> dict[str, Any] | None:
         "kind": "model",
         "components": [component],
         "scale": 1,
-        "width": PREVIEW_WIDTH,
-        "height": PREVIEW_HEIGHT,
+        "width": PREVIEW_RENDER_WIDTH,
+        "height": PREVIEW_RENDER_HEIGHT,
     }
     if component.get("facing") == "front":
         job["facing"] = "front"
@@ -1430,8 +1440,8 @@ def _recipe_preview_job(
         "kind": "recipe",
         "components": components,
         "scale": _positive_number(recipe.get("scale"), 1),
-        "width": PREVIEW_WIDTH,
-        "height": PREVIEW_HEIGHT,
+        "width": PREVIEW_RENDER_WIDTH,
+        "height": PREVIEW_RENDER_HEIGHT,
     }
     if all(component.get("facing") == "front" for component in components):
         job["facing"] = "front"
@@ -1490,7 +1500,9 @@ def _preview_output(
         payload = base64.b64decode(value.removeprefix(prefix), validate=True)
     except ValueError as error:
         raise _PreviewError("headless-preview-returned-invalid-base64") from error
-    width, height = _png_dimensions(payload)
+    render_width, render_height = _png_dimensions(payload)
+    if (render_width, render_height) != (PREVIEW_RENDER_WIDTH, PREVIEW_RENDER_HEIGHT):
+        raise _PreviewError("headless-preview-returned-unexpected-size")
     kind = str(job.get("kind") or "")
     identifier = str(job.get("id") or "")
     if kind not in {"model", "recipe"} or not identifier:
@@ -1499,13 +1511,19 @@ def _preview_output(
     if normalize_release_path(relative) != relative:
         raise _PreviewError("headless-preview-output-path-invalid")
     output = layout.root / Path(*PurePosixPath(relative).parts)
-    visible_pixel_count = _integer(result.get("visiblePixelCount"))
+    renderer_visible_pixel_count = _integer(result.get("visiblePixelCount"))
+    if renderer_visible_pixel_count <= 0:
+        raise _PreviewError("headless-preview-returned-empty-image")
+    # The browser renders at 2x the publish size because MSAA cannot smooth
+    # texture-alpha silhouettes. Filter the supersampled render back down with
+    # premultiplied Lanczos: that is the antialiasing, and unlike a naive
+    # re-encode it never invents edge colours. The published file keeps the
+    # full transparent viewport; only its scale changes.
+    payload = supersample_png(payload, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+    width, height = _png_dimensions(payload)
+    visible_pixel_count = count_visible_png_pixels(payload)
     if visible_pixel_count <= 0:
         raise _PreviewError("headless-preview-returned-empty-image")
-    # Do not decode, alpha-crop, resize, or re-encode the browser's PNG. The
-    # fixed transparent canvas is part of the renderer result: it preserves
-    # all authored geometry and lets consumers compose its antialiased edge
-    # alpha exactly as WebGL emitted it.
     atomic_write(output, payload)
     return {
         "status": "rendered",
@@ -1668,12 +1686,127 @@ def _recipe_runtime_preview_reason(recipe: dict[str, Any]) -> dict[str, str]:
     return _preview_reason("render-recipe-unavailable", detail)
 
 
+def _preview_identity(layout: Any, job: dict[str, Any]) -> str:
+    """Fingerprint every input one preview render of this job depends on.
+
+    The job itself pins the render configuration (components, pose, scale,
+    render size); the referenced skeleton/atlas/page files pin the content.
+    A job whose fingerprint matches the previous build's produces a
+    byte-identical PNG, which is what lets the preview be restored instead of
+    rendered.
+    """
+
+    files: set[str] = set()
+    for component in job.get("components") or []:
+        if not isinstance(component, dict):
+            continue
+        for holder in (component.get("json"), component.get("atlas")):
+            path = str((holder or {}).get("path") or "") if isinstance(holder, dict) else ""
+            if path:
+                files.add(path)
+        for page in component.get("pages") or []:
+            path = str(page.get("path") or "") if isinstance(page, dict) else ""
+            if path:
+                files.add(path)
+    inputs = []
+    for path in sorted(files):
+        file = layout.root.joinpath(*PurePosixPath(path).parts)
+        inputs.append([path, sha256_file(file) if file.is_file() else ""])
+    return sha256_bytes(stable_json({"schema": PREVIEW_SCHEMA, "job": job, "files": inputs}))
+
+
+def _reusable_previews(
+    layout: Any,
+    pending: list[tuple[dict[str, Any], dict[str, Any], str]],
+    reuse_manifest: dict[str, Any] | None,
+    restore_output: Any,
+    reuse_concurrency: int,
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any], str]], dict[str, int]]:
+    """Restore unchanged documents' preview PNGs from the current R2 release.
+
+    Documents whose previous previewInputSha256 matches are restored (and
+    re-hashed) instead of rendered; everything else stays pending for the
+    browser renderer.
+    """
+
+    summary = {"restoredModels": 0, "restoredRecipes": 0, "failed": 0}
+    if reuse_manifest is None or restore_output is None or not pending:
+        return pending, summary
+    if reuse_manifest.get("previewSchema") != PREVIEW_SCHEMA:
+        return pending, summary
+    previous: dict[str, dict[str, Any]] = {}
+    for collection in ("models", "renderRecipes"):
+        value = reuse_manifest.get(collection)
+        if isinstance(value, dict):
+            previous.update(value)
+    if not previous:
+        return pending, summary
+
+    candidates: list[tuple[dict[str, Any], dict[str, Any], str, str, str, Path, dict[str, Any]]] = []
+    deferred: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+    for document, job, kind in pending:
+        identity = _preview_identity(layout, job)
+        document["previewInputSha256"] = identity
+        record = previous.get(str(job.get("id") or ""))
+        preview = record.get("preview") if isinstance(record, dict) else None
+        relative = f"{PREVIEW_OUTPUT_PREFIX}/{kind}s/{job.get('id')}.png"
+        if (
+            isinstance(preview, dict)
+            and preview.get("status") == "rendered"
+            and preview.get("schema") == PREVIEW_SCHEMA
+            and preview.get("path") == relative
+            and isinstance(preview.get("sha256"), str)
+            and isinstance(record.get("previewInputSha256"), str)
+            and record["previewInputSha256"] == identity
+        ):
+            target = layout.root / Path(*PurePosixPath(relative).parts)
+            candidates.append((document, job, kind, relative, str(preview["sha256"]), target, dict(preview)))
+        else:
+            deferred.append((document, job, kind))
+    if not candidates:
+        return pending, summary
+
+    def restore(
+        item: tuple[dict[str, Any], dict[str, Any], str, str, str, Path, dict[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, Any] | None]:
+        document, job, kind, relative, sha_value, target, preview = item
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            restore_output(relative, sha_value, target)
+            if not target.is_file() or sha256_file(target) != sha_value:
+                raise ValueError(f"restored Spine preview does not match its identity: {relative}")
+            return document, job, kind, preview
+        except Exception:
+            target.unlink(missing_ok=True)
+            return document, job, kind, None
+
+    with ThreadPoolExecutor(max_workers=max(1, min(int(reuse_concurrency), 32, len(candidates)))) as executor:
+        outcomes = list(executor.map(restore, candidates))
+    for document, _job, kind, preview in outcomes:
+        if preview is None:
+            summary["failed"] += 1
+        else:
+            document["preview"] = preview
+            if kind == "model":
+                summary["restoredModels"] += 1
+            else:
+                summary["restoredRecipes"] += 1
+    remaining = deferred + [
+        (document, job, kind) for document, job, kind, preview in outcomes if preview is None
+    ]
+    return remaining, summary
+
+
 def _render_previews(
     config: ServerConfig,
     layout: Any,
     models: list[dict[str, Any]],
     recipes: list[dict[str, Any]],
-) -> tuple[int, int]:
+    *,
+    reuse_manifest: dict[str, Any] | None = None,
+    restore_output: Any = None,
+    reuse_concurrency: int = 32,
+) -> tuple[int, int, dict[str, int]]:
     """Attempt real WebGL output, retaining an explicit failure for every miss."""
 
     _clear_spine_preview_outputs(layout)
@@ -1703,15 +1836,23 @@ def _render_previews(
             model["preview"] = _preview_document(model, environment_reason)
         for recipe, _ in recipe_jobs:
             recipe["preview"] = {"status": "unavailable", "reason": environment_reason}
-        return 0, 0
+        return 0, 0, {"restoredModels": 0, "restoredRecipes": 0, "failed": 0}
 
+    reuse_summary = {"restoredModels": 0, "restoredRecipes": 0, "failed": 0}
     rendered_models = 0
     rendered_recipes = 0
     pending: list[tuple[dict[str, Any], dict[str, Any], str]] = [
         *( (model, job, "model") for model, job in model_jobs ),
         *( (recipe, job, "recipe") for recipe, job in recipe_jobs ),
     ]
+    pending, reuse_summary = _reusable_previews(
+        layout, pending, reuse_manifest, restore_output, reuse_concurrency
+    )
+    rendered_models += reuse_summary["restoredModels"]
+    rendered_recipes += reuse_summary["restoredRecipes"]
     try:
+        if not pending:
+            return rendered_models, rendered_recipes, reuse_summary
         with _SpinePreviewRenderer(layout) as renderer:
             for document, job, kind in pending:
                 try:
@@ -1744,7 +1885,7 @@ def _render_previews(
                 if kind == "model"
                 else {"status": "unavailable", "reason": reason}
             )
-    return rendered_models, rendered_recipes
+    return rendered_models, rendered_recipes, reuse_summary
 
 
 def _model_document(
@@ -2411,7 +2552,15 @@ def _anon_tokyo_appearance_recipes(layout: Any, models: list[dict[str, Any]]) ->
     return recipes
 
 
-def build_spine(config: ServerConfig, source_id: str, build_id: str) -> dict[str, Any]:
+def build_spine(
+    config: ServerConfig,
+    source_id: str,
+    build_id: str,
+    *,
+    reuse_manifest: dict[str, Any] | None = None,
+    restore_output: Any = None,
+    reuse_concurrency: int = 32,
+) -> dict[str, Any]:
     """Build ``metadata/spine.json`` from one merged Unity build.
 
     This stage deliberately succeeds when a build contains no Spine assets;
@@ -2483,8 +2632,14 @@ def build_spine(config: ServerConfig, source_id: str, build_id: str) -> dict[str
     recipes.extend(_anon_tokyo_outfit_recipes(layout, models, recipes))
     recipes.extend(_anon_tokyo_appearance_recipes(layout, models))
     recipes.sort(key=lambda value: str(value["id"]))
-    rendered_model_previews, rendered_recipe_previews = _render_previews(
-        config, layout, models, recipes
+    rendered_model_previews, rendered_recipe_previews, preview_reuse = _render_previews(
+        config,
+        layout,
+        models,
+        recipes,
+        reuse_manifest=reuse_manifest,
+        restore_output=restore_output,
+        reuse_concurrency=reuse_concurrency,
     )
     models_by_id = {str(model["id"]): model for model in models}
     recipes_by_id = {str(recipe["id"]): recipe for recipe in recipes}
@@ -2520,6 +2675,9 @@ def build_spine(config: ServerConfig, source_id: str, build_id: str) -> dict[str
         "unavailableModelCount": len(unavailable_models),
         "previewRenderedCount": rendered_model_previews,
         "previewUnavailableCount": len(models) - rendered_model_previews,
+        "previewReusedCount": preview_reuse.get("restoredModels", 0)
+        + preview_reuse.get("restoredRecipes", 0),
+        "previewReuseRestoreFailureCount": preview_reuse.get("failed", 0),
         "skippedSourceCount": len(skipped),
         "renderRecipeCount": len(recipes),
         "renderRecipePreviewRenderedCount": rendered_recipe_previews,

@@ -14,8 +14,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from core.config import ServerConfig
-from core.manifests import atomic_write, read_json, write_json
-from core.paths import build_layout
+from core.hashes import sha256_bytes, sha256_file
+from core.manifests import atomic_write, read_json, stable_json, write_json
+from core.paths import PROJECT_ROOT, build_layout
 from core.unity_objects import UnityObjectStore
 from build.live2d_preview import PREVIEW_SCHEMA, build_live2d_previews
 
@@ -490,6 +491,78 @@ def _runtime_url(server: str, key: str, relative: str) -> str:
     return f"/runtime/{server}/live2d/{key}/{relative}"
 
 
+def _texture_identity_paths(server: str, model: dict[str, Any]) -> list[str]:
+    """Recover the on-disk identity of every texture the preview page loads."""
+
+    runtime = model.get("runtime") if isinstance(model.get("runtime"), dict) else {}
+    paths: list[str] = []
+    for value in runtime.get("textures") or []:
+        url = str(value or "")
+        if url.startswith(f"/assets/{server}/"):
+            # Unity source paths index into the bundle identities directly.
+            paths.append(url[len(f"/assets/{server}/"):])
+        elif url.startswith(f"/runtime/{server}/"):
+            # Packed-model texture outputs live under the release runtime tree;
+            # the URL strips the leading "runtime/" segment.
+            paths.append("runtime/" + url[len(f"/runtime/{server}/"):])
+    return paths
+
+
+def _preview_input_identity(
+    sources_index: dict[str, Any],
+    layout: Any,
+    server: str,
+    model: dict[str, Any],
+    provision_sha256: str,
+) -> str:
+    """Fingerprint every input a preview render of this model depends on.
+
+    Indexed source paths are identified by their owning bundle's content hash
+    (and the extraction descriptor's hash), so an unchanged model in a new
+    source is recognized without reading any media bytes. Non-indexed files
+    (packed-model texture outputs) are hashed directly; they are few and small.
+    """
+
+    paths: set[str] = set()
+
+    def add(value: Any) -> None:
+        if isinstance(value, str) and value:
+            paths.add(value)
+
+    add(model.get("sourcePath"))
+    add(model.get("mocSourcePath"))
+    for motion in model.get("motions") or []:
+        add(motion.get("sourcePath") if isinstance(motion, dict) else None)
+    for expression in model.get("expressions") or []:
+        add(expression.get("sourcePath") if isinstance(expression, dict) else None)
+    paths.update(_texture_identity_paths(server, model))
+
+    inputs: list[list[str]] = []
+    for path in sorted(paths):
+        entry = sources_index.get(path)
+        if isinstance(entry, dict):
+            descriptor = str(entry.get("descriptor") or "")
+            descriptor_file = layout.metadata / descriptor if descriptor else None
+            descriptor_sha = (
+                sha256_file(descriptor_file)
+                if descriptor_file is not None and descriptor_file.is_file()
+                else ""
+            )
+            inputs.append([path, str(entry.get("selectedBundle") or ""), descriptor_sha])
+            continue
+        file = layout.root.joinpath(*PurePosixPath(path).parts)
+        inputs.append([path, "file", sha256_file(file) if file.is_file() else ""])
+    return sha256_bytes(
+        stable_json(
+            {
+                "schema": PREVIEW_SCHEMA,
+                "provisionSha256": provision_sha256,
+                "inputs": inputs,
+            }
+        )
+    )
+
+
 def _packed_moc_payload(records: dict[str, dict[str, Any]]) -> bytes:
     candidates = []
     for record in records.values():
@@ -503,7 +576,15 @@ def _packed_moc_payload(records: dict[str, dict[str, Any]]) -> bytes:
     return candidates[0]
 
 
-def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[str, Any]:
+def build_live2d(
+    config: ServerConfig,
+    source_id: str,
+    build_id: str,
+    *,
+    reuse_manifest: dict[str, Any] | None = None,
+    restore_output: Any = None,
+    reuse_concurrency: int = 32,
+) -> dict[str, Any]:
     layout = build_layout(config.id, build_id)
     index = read_json(layout.metadata / "source-index.json")
     paths = sorted(index.get("sources", {}))
@@ -753,7 +834,29 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
         if normal_motion_sync is not None:
             runtime["motionSync"] = copy.deepcopy(normal_motion_sync)
 
-    previews = build_live2d_previews(layout, config.id, source_id, models)
+    provision_file = PROJECT_ROOT / "public" / "cubism-runtime" / "vega-cubism-web-runtime.mjs"
+    provision_sha = (
+        sha256_file(provision_file) if provision_file.is_file() else ""
+    )
+    identities = {
+        key: _preview_input_identity(
+            index.get("sources", {}), layout, config.id, model, provision_sha
+        )
+        for key, model in models.items()
+    }
+    for key, model in models.items():
+        model["previewInputSha256"] = identities[key]
+
+    previews, reuse_summary = build_live2d_previews(
+        layout,
+        config.id,
+        source_id,
+        models,
+        identities=identities,
+        reuse_manifest=reuse_manifest,
+        restore_output=restore_output,
+        reuse_concurrency=reuse_concurrency,
+    )
     for key, model in models.items():
         model["preview"] = previews[key]
 
@@ -765,6 +868,8 @@ def build_live2d(config: ServerConfig, source_id: str, build_id: str) -> dict[st
         "previewSchema": PREVIEW_SCHEMA,
         "previewRenderedCount": sum(1 for preview in previews.values() if preview.get("status") == "rendered"),
         "previewUnavailableCount": sum(1 for preview in previews.values() if preview.get("status") != "rendered"),
+        "previewReusedCount": reuse_summary.get("restored", 0),
+        "previewReuseRestoreFailureCount": reuse_summary.get("failed", 0),
         "skippedModelCount": len(skipped_models),
         "models": models,
         "skippedModels": skipped_models,

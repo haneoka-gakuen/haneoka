@@ -262,15 +262,22 @@ class _GlbBuilder:
 
         settings = getattr(texture, "m_TextureSettings", None)
         filter_mode = int(getattr(settings, "m_FilterMode", 1))
-        filters = {0: (9728, 9728), 1: (9729, 9985), 2: (9729, 9987)}
-        if filter_mode not in filters:
+        if filter_mode not in {0, 1, 2}:
             raise ValueError(f"unsupported Unity texture filter mode: {filter_mode}")
+        # The Unity client displays these textures at native scale, so its
+        # Point/Bilinear settings describe 1:1 sampling. The web scene instead
+        # minifies a whole room into a few hundred CSS pixels, and Point or
+        # mipmap-less sampling there reads as heavy background crawl that MSAA
+        # cannot touch. Publish trilinear samplers for every background
+        # texture: three.js generates the mipmaps as soon as minFilter asks
+        # for them. The authored filter mode stays validated above as
+        # provenance, but it no longer selects the web sampler.
+        mag_filter, min_filter = 9729, 9987
         wraps = {0: 10497, 1: 33071, 2: 33648}
         wrap_u = int(getattr(settings, "m_WrapU", 0))
         wrap_v = int(getattr(settings, "m_WrapV", 0))
         if wrap_u not in wraps or wrap_v not in wraps:
             raise ValueError(f"unsupported Unity texture wrapping: {wrap_u}/{wrap_v}")
-        mag_filter, min_filter = filters[filter_mode]
         sampler_index = len(self.document["samplers"])
         self.document["samplers"].append(
             {

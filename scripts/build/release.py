@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,9 +16,21 @@ from extract.master import ENCRYPTED_DIRECTORY
 from verify.release import promote_directory
 
 
-def _copy_tree(source: Path, target: Path) -> None:
-    for file in walk_files(source):
+def _link_files(source: Path, target: Path, files: list[Path]) -> None:
+    """Materialize ``files`` under ``target`` with hard links, off the main thread's IO queue."""
+
+    if not files:
+        return
+
+    def link(file: Path) -> None:
         hardlink_or_copy(file, target / file.relative_to(source))
+
+    with ThreadPoolExecutor(max_workers=max(1, min(16, len(files)))) as executor:
+        list(executor.map(link, files))
+
+
+def _copy_tree(source: Path, target: Path) -> None:
+    _link_files(source, target, list(walk_files(source)))
 
 
 def _strip_build_identity(value: object) -> bool:
@@ -50,10 +63,11 @@ def _copy_release_metadata(
 ) -> None:
     """Copy public metadata while removing build-local identity fields."""
 
-    for file in walk_files(source):
-        if file == source / "source-index.json":
-            continue
-        hardlink_or_copy(file, target / file.relative_to(source))
+    _link_files(
+        source,
+        target,
+        [file for file in walk_files(source) if file != source / "source-index.json"],
+    )
     for name in ("cri.json", "live2d.json"):
         _remove_build_identity(target / name)
     compile_source_index_storage(
@@ -76,11 +90,16 @@ def _copy_release_api(
 def _copy_decoded_master(source: Path, target: Path) -> None:
     """Keep the raw client blobs out of the browser-facing decoded Master tree."""
 
-    for file in walk_files(source):
-        relative = file.relative_to(source)
-        if relative.parts and relative.parts[0] == ENCRYPTED_DIRECTORY:
-            continue
-        hardlink_or_copy(file, target / relative)
+    _link_files(
+        source,
+        target,
+        [
+            file
+            for file in walk_files(source)
+            if not (relative := file.relative_to(source)).parts
+            or relative.parts[0] != ENCRYPTED_DIRECTORY
+        ],
+    )
 
 
 def assemble_release(server: str, source_id: str, build_id: str) -> dict:

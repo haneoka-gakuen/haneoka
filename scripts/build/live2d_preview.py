@@ -31,12 +31,17 @@ from urllib.parse import unquote, urlencode, urlsplit
 
 from PIL import Image, UnidentifiedImageError
 
-from build.preview_image import crop_transparent_png
+from build.preview_image import crop_transparent_png, supersample_png
+from core.hashes import sha256_file
 from core.paths import PROJECT_ROOT
 
 
-PREVIEW_SCHEMA = "haneoka-live2d-preview-v3"
+PREVIEW_SCHEMA = "haneoka-live2d-preview-v4"
 PREVIEW_SIZE = 512
+# Cubism silhouettes come from texture alpha, which MSAA cannot smooth. The
+# canvas renders at 2x the publish size and is Lanczos-filtered back down:
+# that supersampling is what removes the jagged model edges.
+PREVIEW_RENDER_SIZE = PREVIEW_SIZE * 2
 PREVIEW_TIMEOUT_SECONDS = 30
 PREVIEW_ATTEMPTS = 2
 # Without a screenshot task, headless Chrome exits after the initial document
@@ -95,7 +100,7 @@ def _decode_preview_png(value: object) -> bytes:
     return payload
 
 
-def _validate_preview_canvas(payload: bytes) -> None:
+def _validate_preview_canvas(payload: bytes, expected_size: int) -> None:
     """Reject browser failures before they can become a rendered preview.
 
     A real Cubism canvas is deliberately transparent around its 93%-framed
@@ -114,13 +119,13 @@ def _validate_preview_canvas(payload: bytes) -> None:
     except (OSError, UnidentifiedImageError) as error:
         raise ValueError("preview page returned an unreadable PNG") from error
 
-    if image.size != (PREVIEW_SIZE, PREVIEW_SIZE):
+    if image.size != (expected_size, expected_size):
         raise ValueError("preview page returned an unexpected canvas size")
     alpha = image.getchannel("A")
     bounds = alpha.getbbox()
     if bounds is None:
         raise ValueError("preview page returned no visible model pixels")
-    if alpha.getextrema()[0] != 0 or bounds == (0, 0, PREVIEW_SIZE, PREVIEW_SIZE):
+    if alpha.getextrema()[0] != 0 or bounds == (0, 0, expected_size, expected_size):
         raise ValueError("preview page returned an opaque full-canvas image")
 
 
@@ -291,10 +296,10 @@ class _PreviewServer:
 _PREVIEW_PAGE = f"""<!doctype html>
 <meta charset="utf-8">
 <style>
-  html, body, canvas {{ width: {PREVIEW_SIZE}px; height: {PREVIEW_SIZE}px; margin: 0; padding: 0; overflow: hidden; background: transparent; }}
+  html, body, canvas {{ width: {PREVIEW_RENDER_SIZE}px; height: {PREVIEW_RENDER_SIZE}px; margin: 0; padding: 0; overflow: hidden; background: transparent; }}
   canvas {{ display: block; }}
 </style>
-<canvas id="preview" width="{PREVIEW_SIZE}" height="{PREVIEW_SIZE}"></canvas>
+<canvas id="preview" width="{PREVIEW_RENDER_SIZE}" height="{PREVIEW_RENDER_SIZE}"></canvas>
 <script src="/Core/live2dcubismcore.js"></script>
 <script type="module">
   import {{ CubismModelViewer }} from "/cubism-runtime/vega-cubism-web-runtime.mjs";
@@ -312,7 +317,7 @@ _PREVIEW_PAGE = f"""<!doctype html>
   try {{
     const canvas = document.querySelector("#preview");
     const viewer = new CubismModelViewer({{ canvas, onError: (error) => report("error", String(error)) }});
-    viewer.setSize({PREVIEW_SIZE}, {PREVIEW_SIZE});
+    viewer.setSize({PREVIEW_RENDER_SIZE}, {PREVIEW_RENDER_SIZE});
     // Freeze before loading, then explicitly clear the possible playback
     // channels after model creation. Do not supply a default motion or
     // expression: the captured frame is the authored time-zero pose only.
@@ -450,7 +455,7 @@ def _preview_model(
         "--use-angle=swiftshader",
         "--force-color-profile=srgb",
         "--default-background-color=00000000",
-        f"--window-size={PREVIEW_SIZE},{PREVIEW_SIZE}",
+        f"--window-size={PREVIEW_RENDER_SIZE},{PREVIEW_RENDER_SIZE}",
         f"--virtual-time-budget={PREVIEW_VIRTUAL_TIME_BUDGET_MS}",
         f"--user-data-dir={profile}",
         url,
@@ -496,8 +501,9 @@ def _preview_model(
     payload = state.get("png") if state and state.get("status") == "ready" else None
     if isinstance(payload, bytes):
         try:
-            _validate_preview_canvas(payload)
-            cropped = crop_transparent_png(payload)
+            _validate_preview_canvas(payload, PREVIEW_RENDER_SIZE)
+            publish = supersample_png(payload, PREVIEW_SIZE, PREVIEW_SIZE)
+            cropped = crop_transparent_png(publish)
         except ValueError as error:
             return key, {
                 "status": "unavailable",
@@ -607,12 +613,87 @@ def _prune_preview_outputs(preview_root: Path, keep: set[str]) -> None:
             candidate.unlink()
 
 
+PreviewRestore = Any  # Callable[[path: str, sha256: str, target: Path], None]
+
+
+def _reusable_previews(
+    layout: Any,
+    server: str,
+    models: dict[str, dict[str, Any]],
+    identities: dict[str, str] | None,
+    reuse_manifest: dict[str, Any] | None,
+    restore_output: PreviewRestore | None,
+    reuse_concurrency: int,
+) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    """Restore unchanged models' preview PNGs from the current R2 release.
+
+    A preview is a deterministic function of its model's inputs, so when the
+    recorded input fingerprint matches the previous build exactly, the previous
+    PNG is byte-identical by construction. Each restored file is re-hashed
+    against its recorded identity; any miss simply falls back to rendering.
+    """
+
+    summary = {"restored": 0, "failed": 0}
+    if (
+        reuse_manifest is None
+        or restore_output is None
+        or not identities
+        or reuse_manifest.get("previewSchema") != PREVIEW_SCHEMA
+    ):
+        return {}, summary
+    previous = reuse_manifest.get("models")
+    if not isinstance(previous, dict):
+        return {}, summary
+
+    jobs: list[tuple[str, dict[str, Any], Path]] = []
+    for key in sorted(models):
+        record = previous.get(key)
+        preview = record.get("preview") if isinstance(record, dict) else None
+        if (
+            not isinstance(preview, dict)
+            or preview.get("status") != "rendered"
+            or preview.get("renderer") != "cubism-web-runtime"
+            or preview.get("state") != "initial"
+            or preview.get("runtime") != f"/runtime/{server}/previews/live2d/{key}.png"
+            or not isinstance(preview.get("sha256"), str)
+            or not isinstance(record.get("previewInputSha256"), str)
+            or record["previewInputSha256"] != identities.get(key)
+        ):
+            continue
+        jobs.append((key, preview, layout.runtime / "previews" / "live2d" / f"{key}.png"))
+    if not jobs:
+        return {}, summary
+
+    def restore(job: tuple[str, dict[str, Any], Path]) -> tuple[str, dict[str, Any]] | None:
+        key, preview, target = job
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            restore_output(f"runtime/previews/live2d/{key}.png", preview["sha256"], target)
+            if not target.is_file() or sha256_file(target) != preview["sha256"]:
+                raise ValueError(f"restored Live2D preview does not match its identity: {key}")
+            return key, dict(preview)
+        except Exception:
+            target.unlink(missing_ok=True)
+            return None
+
+    with ThreadPoolExecutor(max_workers=max(1, min(int(reuse_concurrency), 32, len(jobs)))) as executor:
+        outcomes = list(executor.map(restore, jobs))
+    restored = {key: preview for key, preview in outcomes if key is not None}
+    summary["restored"] = len(restored)
+    summary["failed"] = len(outcomes) - len(restored)
+    return restored, summary
+
+
 def build_live2d_previews(
     layout: Any,
     server: str,
     source_id: str,
     models: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
+    identities: dict[str, str] | None = None,
+    reuse_manifest: dict[str, Any] | None = None,
+    restore_output: PreviewRestore | None = None,
+    reuse_concurrency: int = 32,
+) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
     """Attach real preview metadata to each model, without pretending on failure."""
 
     policy = os.environ.get(PREVIEW_POLICY_ENV, "optional").strip().casefold()
@@ -622,7 +703,7 @@ def build_live2d_previews(
     preview_root = layout.runtime / "previews" / "live2d"
     if policy == "off":
         _prune_preview_outputs(preview_root, set())
-        return unavailable
+        return unavailable, {"restored": 0, "failed": 0}
     chrome = _chrome_binary()
     provision = PROJECT_ROOT / "public" / "cubism-runtime" / "vega-cubism-web-runtime.mjs"
     if not chrome or not provision.is_file():
@@ -631,11 +712,19 @@ def build_live2d_previews(
             missing = "Chrome" if not chrome else "Cubism web runtime provision"
             raise RuntimeError(f"Live2D preview rendering requires {missing}")
         reason = "headless-chrome-unavailable" if not chrome else "cubism-runtime-unavailable"
-        return {key: {"status": "unavailable", "reason": reason} for key in models}
+        return {key: {"status": "unavailable", "reason": reason} for key in models}, {
+            "restored": 0,
+            "failed": 0,
+        }
 
     workers = max(1, min(4, int(os.environ.get(PREVIEW_WORKERS_ENV, "3") or "3")))
     preview_root.mkdir(parents=True, exist_ok=True)
     result = _cached_previews(layout, server, source_id, models)
+    restored, reuse_summary = _reusable_previews(
+        layout, server, models, identities, reuse_manifest, restore_output, reuse_concurrency
+    )
+    for key, preview in restored.items():
+        result.setdefault(key, preview)
     _prune_preview_outputs(preview_root, set(models))
     with tempfile.TemporaryDirectory(prefix="haneoka-live2d-preview-") as temp_dir, _PreviewServer(
         layout.root, PROJECT_ROOT / "public", server
@@ -667,4 +756,4 @@ def build_live2d_previews(
             )
             suffix = f" and {len(failed) - 10} more" if len(failed) > 10 else ""
             raise RuntimeError(f"Live2D preview rendering failed for {summary}{suffix}")
-    return ordered
+    return ordered, reuse_summary

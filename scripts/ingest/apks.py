@@ -984,15 +984,25 @@ def ingest_package(
 
         # Embedded and remote catalogs may point to the same filename. Rebuild a
         # deterministic record list from disk so every source object appears once.
+        # Content hashing releases the GIL, so records are gathered in parallel
+        # while preserving the sorted order the manifest contract requires.
+        def _role_records(directory: Path, role: str) -> list[dict[str, Any]]:
+            files = sorted(directory.iterdir())
+            if not files:
+                return []
+            with ThreadPoolExecutor(max_workers=max(1, min(8, len(files)))) as executor:
+                return list(
+                    executor.map(
+                        lambda file: _file_record(
+                            layout.root, file, role, addressables_by_file.get(file)
+                        ),
+                        files,
+                    )
+                )
+
         downloaded = [
-            *(
-                _file_record(layout.root, file, "unity-bundle", addressables_by_file.get(file))
-                for file in sorted(layout.bundles.iterdir())
-            ),
-            *(
-                _file_record(layout.root, file, "cri-payload", addressables_by_file.get(file))
-                for file in sorted(layout.cri.iterdir())
-            ),
+            *_role_records(layout.bundles, "unity-bundle"),
+            *_role_records(layout.cri, "cri-payload"),
         ]
         source_files = [
             _file_record(layout.root, package_target, "package"),

@@ -118,7 +118,7 @@ jobs:
             # Prefer the live CDN catalog; fall back to the package's embedded
             # assets/aa/catalog.bin only when the remote ingest cannot resolve one.
             if ! python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
-              --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"; then
+              --input "$RUNNER_TEMP/package-input" --concurrency 32 > "$RUNNER_TEMP/source.json"; then
               if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
                 echo "remote catalog ingest failed; retrying with the embedded catalog" >&2
                 unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
@@ -135,7 +135,7 @@ jobs:
               if [[ -s "$RUNNER_TEMP/embedded-catalog.bin" ]]; then
                 export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
                 python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
-                  --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source.json"
+                  --input "$RUNNER_TEMP/package-input" --concurrency 32 > "$RUNNER_TEMP/source.json"
               else
                 exit 1
               fi
@@ -289,6 +289,7 @@ jobs:
       contents: read
     env:
       HANEOKA_MODEL_PREVIEW_POLICY: required
+      HANEOKA_MODEL_PREVIEW_WORKERS: "4"
     steps:
       - uses: actions/checkout@v7
       - name: Reclaim unused hosted-runner SDK space
@@ -415,10 +416,10 @@ jobs:
             echo "Expected $expected Unity shard archives, found ${#archives[@]}" >&2
             exit 1
           fi
-          for archive in "${archives[@]}"; do
-            tar --extract --gzip --file "$archive" --directory "$build_root"
-            rm -f "$archive"
-          done
+          # Download with --recursive is already concurrent; spread the gzip
+          # decode across cores too instead of one archive at a time.
+          printf '%s\n' "${archives[@]}" | xargs -P "$(nproc)" -I '{}' \
+            sh -c 'tar --extract --gzip --file "$1" --directory "$2" && rm -f "$1"' _ '{}' "$build_root"
       - name: Fetch original CRI payloads
         run: >-
           python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source
@@ -450,10 +451,10 @@ jobs:
           run_stage cri python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-cri --source "$SOURCE_ID" --build "$BUILD_ID" --concurrency 2 --reuse-current --reuse-concurrency 64 &
           names+=(cri)
           pids+=("$!")
-          run_stage live2d python scripts/pipeline.py --server "$RESOURCE_SERVER" build-live2d --source "$SOURCE_ID" --build "$BUILD_ID" &
+          run_stage live2d python scripts/pipeline.py --server "$RESOURCE_SERVER" build-live2d --source "$SOURCE_ID" --build "$BUILD_ID" --reuse-current --reuse-concurrency 64 &
           names+=(live2d)
           pids+=("$!")
-          run_stage spine python scripts/pipeline.py --server "$RESOURCE_SERVER" build-spine --source "$SOURCE_ID" --build "$BUILD_ID" &
+          run_stage spine python scripts/pipeline.py --server "$RESOURCE_SERVER" build-spine --source "$SOURCE_ID" --build "$BUILD_ID" --reuse-current --reuse-concurrency 64 &
           names+=(spine)
           pids+=("$!")
           run_stage home-spots python scripts/pipeline.py --server "$RESOURCE_SERVER" build-home-spots --source "$SOURCE_ID" --build "$BUILD_ID" &

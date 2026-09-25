@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +40,38 @@ def _bundle_metadata(file: Path) -> dict[str, list[str]]:
     return {"cabFiles": cab_files, "externalCabs": external_cabs}
 
 
+def _bundle_metadata_task(payload: tuple[str, str]) -> tuple[str, dict[str, list[str]]]:
+    """Worker entry point: read one bundle and return its CAB identity."""
+
+    relative, path = payload
+    return relative, _bundle_metadata(Path(path))
+
+
+def _gather_bundle_metadata(
+    source_root: Path, bundles: list[dict[str, Any]]
+) -> dict[str, dict[str, list[str]]]:
+    """Parse every bundle's CAB structure, spreading CPU work across processes.
+
+    Each bundle is parsed independently, and a full-corpus UnityPy pass is the
+    dominant ingest cost after the CDN download. Forked workers inherit the
+    already-imported modules, so this stays cheap to start.
+    """
+
+    tasks = [
+        (str(record["path"]), str(source_root / str(record["path"])))
+        for record in bundles
+    ]
+    workers = max(1, min(4, os.cpu_count() or 1, len(tasks) or 1))
+    if workers == 1:
+        return dict(_bundle_metadata_task(task) for task in tasks)
+    try:
+        context = multiprocessing.get_context("fork")
+    except ValueError:  # pragma: no cover - non-POSIX fallback
+        context = None
+    with ProcessPoolExecutor(max_workers=workers, mp_context=context) as executor:
+        return dict(executor.map(_bundle_metadata_task, tasks))
+
+
 def index_unity_dependencies(source_root: Path, records: list[dict[str, Any]]) -> dict[str, int]:
     """Attach deterministic CAB ownership and dependency paths to bundle records."""
 
@@ -54,19 +89,18 @@ def index_unity_dependencies(source_root: Path, records: list[dict[str, Any]]) -
             raise ValueError(
                 f"Unity bundle declares an invalid size: {record.get('path', '')} ({declared_bytes})"
             )
-    metadata: dict[str, dict[str, list[str]]] = {}
+    metadata = _gather_bundle_metadata(source_root, bundles)
     owners: dict[str, dict[str, Any]] = {}
     for record in bundles:
         relative = str(record["path"])
         file = source_root / relative
-        value = _bundle_metadata(file)
         actual_bytes = file.stat().st_size
         if actual_bytes != record["bytes"]:
             raise ValueError(
                 f"Unity bundle size mismatch: expected {record['bytes']}, "
                 f"got {actual_bytes}: {relative}"
             )
-        metadata[relative] = value
+        value = metadata[relative]
         for cab in value["cabFiles"]:
             existing = owners.get(cab)
             if existing and existing["sha256"] != record["sha256"]:
