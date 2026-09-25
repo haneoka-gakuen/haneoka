@@ -17,8 +17,9 @@ interface Props {
   description?: string;
   route: string;
   seoTitleValues?: Partial<Record<Locale, string>>;
+  seoDescriptionValues?: Partial<Record<Locale, string>>;
 }
-const { locale, title, titleKey, description, route, seoTitleValues } = Astro.props;
+const { locale, title, titleKey, description, route, seoTitleValues, seoDescriptionValues } = Astro.props;
 const origin = Astro.site?.origin ?? "https://haneoka.org";
 const formatTitle = (value: string) => (value === "haneoka" ? value : `${value} · haneoka`);
 const fullTitle = formatTitle(seoTitleValues?.[locale] ?? title);
@@ -36,7 +37,7 @@ const descriptionValues = Object.fromEntries(
   LOCALES.map((target) => {
     const localizedTitle = titleKey ? t(target, titleKey, title) : title;
     const customDescription = description?.trim() && description.trim() !== title.trim() ? description : undefined;
-    return [target, customDescription ?? pageDescription(target, route, localizedTitle)];
+    return [target, seoDescriptionValues?.[target] ?? customDescription ?? pageDescription(target, route, localizedTitle)];
   }),
 );
 const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE))}`;

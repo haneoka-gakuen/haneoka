@@ -54,3 +54,17 @@ jobs:
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+
+  rebuild-static-catalog:
+    name: Rebuild static catalog pages
+    needs: pipeline
+    # The searchable routes use the intl catalog as their build-time data source.
+    if: ${{ github.event_name == 'schedule' || inputs.server == 'intl' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch site build after the release is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main
