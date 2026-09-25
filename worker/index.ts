@@ -2275,21 +2275,36 @@ async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
     return /^(ja|en|zh-TW|zh-CN|ko)$/u.test(first) ? first : null;
   })();
   const locales = ["ja", "en", "zh-TW", "zh-CN", "ko"];
-  const tryEntry = async (entryPath: string): Promise<Response | null> => {
+  // Ask for the entry's directory, not its /index.html: the asset layer
+  // answers an exact /index.html request with a pretty-URL redirect, which
+  // would send the visitor to the entry page instead of the SPA route. A
+  // redirect that still slips through is followed once, defensively.
+  const tryEntry = async (entryDirectory: string): Promise<Response | null> => {
     const order = preferredLocale ? [preferredLocale, ...locales.filter((l) => l !== preferredLocale)] : locales;
     for (const locale of order) {
-      const candidate = new URL(`/${locale}${entryPath}`, url);
+      const candidate = new URL(`/${locale}${entryDirectory}`, url);
       const hit = await env.ASSETS.fetch(new Request(candidate, request));
-      if (hit.status !== 404) return hit;
+      if (hit.status === 404) continue;
+      if (hit.status >= 300 && hit.status < 400) {
+        const location = hit.headers.get("Location");
+        const resolved = location ? new URL(location, candidate) : null;
+        const direct =
+          resolved && resolved.origin === url.origin
+            ? await env.ASSETS.fetch(new Request(resolved, request))
+            : null;
+        if (direct && direct.status !== 404 && direct.status < 300) return direct;
+        continue;
+      }
+      return hit;
     }
     return null;
   };
   if (url.pathname.includes("/catalog/assets/")) {
-    const entry = await tryEntry("/catalog/assets/index.html");
+    const entry = await tryEntry("/catalog/assets/");
     if (entry) return entry;
   }
   if (url.pathname.includes("/community/")) {
-    const entry = await tryEntry("/community/index.html");
+    const entry = await tryEntry("/community/");
     if (entry) return entry;
   }
   return response;
