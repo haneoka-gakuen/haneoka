@@ -92,7 +92,7 @@ export class Live2DWorkspace extends LitElement {
   declare metaFilters: Record<string, string>;
   declare docked: boolean;
   declare bandFilter: number;
-  declare characterFilter: number;
+  declare characterFilter: string;
   declare typeFilter: string;
   declare parameters: Parameter[];
   declare parameterOverrides: Record<string, number>;
@@ -132,7 +132,7 @@ export class Live2DWorkspace extends LitElement {
     this.metaFilters = {};
     this.docked = matches(EXPANDED);
     this.bandFilter = 0;
-    this.characterFilter = 0;
+    this.characterFilter = "";
     this.typeFilter = "";
     this.parameters = [];
     this.parameterOverrides = {};
@@ -171,7 +171,10 @@ export class Live2DWorkspace extends LitElement {
       ) as typeof this.sort;
       this.order = params.get("order") === "desc" ? "desc" : "asc";
       this.bandFilter = Number(params.get("band") || 0);
-      this.characterFilter = Number(params.get("character") || 0);
+      const characterParam = params.get("character") || "";
+      this.characterFilter = /^\d+$/.test(characterParam) || characterParam.startsWith("key:")
+        ? characterParam
+        : "";
       this.typeFilter = params.get("type") || "";
       void this.loadCatalog();
     }, 0);
@@ -433,7 +436,7 @@ export class Live2DWorkspace extends LitElement {
     if (this.sort !== "id") params.set("sort", this.sort);
     if (this.order !== "asc") params.set("order", this.order);
     if (this.bandFilter) params.set("band", String(this.bandFilter));
-    if (this.characterFilter) params.set("character", String(this.characterFilter));
+    if (this.characterFilter) params.set("character", this.characterFilter);
     if (this.typeFilter) params.set("type", this.typeFilter);
     for (const [key, value] of Object.entries(this.metaFilters)) {
       if (value) params.set(key, value);
@@ -470,6 +473,32 @@ export class Live2DWorkspace extends LitElement {
       );
     });
   }
+  private static subCharacterLabel(key: string): string {
+    return key
+      .replace(/^sub_/, "")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  private characterFacetItems() {
+    const items = this.characters.map((item) => ({
+      value: String(Number(item.characterId) || 0),
+      label: this.text(item.characterName) || String(item.characterKey || ""),
+      image: String(item.faceImage || ""),
+      count: this.models.filter((model) => Number(model.characterId) === Number(item.characterId)).length,
+    }));
+    const subs = new Map<string, number>();
+    for (const model of this.models) {
+      if (Number(model.characterId) > 0) continue;
+      const key = String(model.characterKey || "");
+      if (key) subs.set(key, (subs.get(key) || 0) + 1);
+    }
+    for (const [key, count] of [...subs.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
+      items.push({ value: `key:${key}`, label: Live2DWorkspace.subCharacterLabel(key), image: "", count });
+    }
+    return items.filter((item) => item.count > 0);
+  }
   private filteredModels() {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
@@ -479,7 +508,11 @@ export class Live2DWorkspace extends LitElement {
       )
       .filter((model) => {
         if (this.bandFilter && Number(model.bandId) !== this.bandFilter) return false;
-        if (this.characterFilter && Number(model.characterId) !== this.characterFilter) return false;
+        if (this.characterFilter) {
+          if (this.characterFilter.startsWith("key:")) {
+            if (String(model.characterKey || "") !== this.characterFilter.slice(4)) return false;
+          } else if (Number(model.characterId) !== Number(this.characterFilter)) return false;
+        }
         if (this.typeFilter && String(model.modelType || "") !== this.typeFilter) return false;
         return (
           !needle ||
@@ -586,7 +619,7 @@ export class Live2DWorkspace extends LitElement {
             this.query = "";
             this.metaFilters = {};
             this.bandFilter = 0;
-            this.characterFilter = 0;
+            this.characterFilter = "";
             this.typeFilter = "";
             this.sync();
           },
@@ -616,14 +649,15 @@ export class Live2DWorkspace extends LitElement {
               (item) => String(item.icon || item.logo || ""),
               (value) => (this.bandFilter = Number(value)),
             )}
-            ${this.renderModelFacets(
+            ${facet(
               uiText(this.locale, "character"),
-              this.characters,
-              this.characterFilter,
-              (item) => Number(item.characterId),
-              (item) => this.text(item.characterName),
-              (item) => String(item.faceImage || ""),
-              (value) => (this.characterFilter = Number(value)),
+              this.locale,
+              this.characterFacetItems(),
+              this.characterFilter ? [this.characterFilter] : [],
+              (value) => {
+                this.characterFilter = this.characterFilter === value ? "" : value;
+                this.sync();
+              },
             )}
             ${facet(
               uiText(this.locale, "type"),
