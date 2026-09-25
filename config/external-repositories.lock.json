@@ -86,7 +86,7 @@
       "name": "cassiopeia-renderer-three",
       "url": "https://github.com/haneoka-gakuen/cassiopeia-renderer-three.git",
       "branch": "main",
-      "commit": "ee0e65e92e64ae3b0b2a17089818b2475b8db921",
+      "commit": "c1a93c5d892d8a8dd49b8cabc06423783987f619",
       "version": "0.1.0",
       "kind": "node"
     },
