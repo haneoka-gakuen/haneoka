@@ -475,9 +475,15 @@ importers:
       '@haneoka/vega':
         specifier: ^0.1.0
         version: link:../vega
+      prettier:
+        specifier: 3.7.4
+        version: 3.7.4
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vite:
+        specifier: ^7.3.6
+        version: 7.3.6(@types/node@26.1.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(yaml@2.9.0)
 
   .dependencies/vega-plugin-haneoka:
     devDependencies:
