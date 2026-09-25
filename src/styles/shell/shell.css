@@ -145,6 +145,9 @@
   .app-shell__main {
     margin-right: max(16px, env(safe-area-inset-right));
     border-radius: var(--md-sys-shape-corner-extra-large);
+    /* Scrollbars draw at the border box and ignore border-radius; the clip
+       crops them — and everything else — to the pane's rounded corners. */
+    clip-path: inset(0 round var(--md-sys-shape-corner-extra-large));
   }
   .app-shell__body {
     grid-template-rows: var(--top-bar-height) minmax(0, 1fr) var(--shell-pane-gap);

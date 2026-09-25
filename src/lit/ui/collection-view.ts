@@ -35,7 +35,7 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
       ${entries.map(
         (entry) => html`
           <li>
-            <button class="list-item list-item--two-line list-item--interactive" type="button" @click=${entry.onOpen}>
+            <button class="list-item list-item--two-line list-item--interactive" type="button" data-open-item=${entry.id} @click=${entry.onOpen}>
               <span class="list-item__leading">
                 ${
                   entry.media ??

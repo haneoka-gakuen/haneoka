@@ -59,6 +59,8 @@ export interface TileOptions {
    */
   selected?: boolean;
   onOpen?: () => void;
+  /** Entity id for the catalogue screen's delegated opening fallback. */
+  itemId?: string;
   onImageError?: (event: Event) => void;
   style?: string;
   /** `contain` for logos and items that must not be cropped. */
@@ -154,6 +156,7 @@ export function tile(options: TileOptions): TemplateResult {
       <a
         class=${classes}
         href=${options.href}
+        data-open-item=${options.itemId ?? nothing}
         role=${options.role ?? nothing}
         aria-controls=${options.controls ?? nothing}
         tabindex=${options.tabIndex ?? nothing}
@@ -168,6 +171,7 @@ export function tile(options: TileOptions): TemplateResult {
     <button
       class=${classes}
       type="button"
+      data-open-item=${options.itemId ?? nothing}
       aria-label=${options.label}
       role=${options.role ?? nothing}
       aria-controls=${options.controls ?? nothing}

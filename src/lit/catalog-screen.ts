@@ -565,6 +565,10 @@ export class CatalogScreen extends LitElement {
     window.addEventListener(DENSITY_EVENT, this.onDensity);
     window.addEventListener("keydown", this.onKeydown);
     window.addEventListener("haneoka-audio-state", this.onAudioState);
+    // Delegated opening: lit's template-registered listeners have been
+    // observed to go silent on some production chunk splits, so the host
+    // carries its own imperative listener as the durable path.
+    this.addEventListener("click", this.onScreenClick);
     window.setTimeout(() => {
       this.settings = JSON.parse(this.config || "{}") as Config;
       this.settings.locale = preferredLocale(this.settings.locale);
@@ -607,6 +611,7 @@ export class CatalogScreen extends LitElement {
   }
   disconnectedCallback() {
     this.disposeSongDisplay?.();
+    this.removeEventListener("click", this.onScreenClick);
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.detailRequests.cancel();
     this.releaseLocation?.();
@@ -622,6 +627,14 @@ export class CatalogScreen extends LitElement {
     super.disconnectedCallback();
   }
   private onDensity = () => (this.density = currentDensity());
+  private onScreenClick = (event: Event) => {
+    const target = event.target as Element | null;
+    const holder = target?.closest?.("[data-open-item]");
+    if (!holder) return;
+    const id = holder.getAttribute("data-open-item");
+    const item = (this.items || []).find((it) => this.itemId(it) === id);
+    if (item) this.open(item);
+  };
   updated() {
     // Focus containment follows whichever overlay is on top: the detail pane
     // wins over the filter panel, and a docked filter panel is not an overlay
@@ -1596,6 +1609,7 @@ export class CatalogScreen extends LitElement {
     return nothing;
   }
   private open(item: Item) {
+    if (this.selected === item && this.selectedId === this.itemId(item) && this.selected) return;
     this.selected = item;
     this.selectedId = this.itemId(item);
     this.detailAux = {};
@@ -2230,6 +2244,7 @@ export class CatalogScreen extends LitElement {
                 subtitle: this.tileDescriptionContent(item),
                 image: this.image(item),
                 onOpen: () => this.open(item),
+                itemId: this.itemId(item),
               })),
             )
           : html`
@@ -2254,14 +2269,15 @@ export class CatalogScreen extends LitElement {
         image,
         placeholder: icon("person", 32),
         onOpen: () => this.open(item),
+        itemId: this.itemId(item),
         onImageError: this.imageError,
         style: `--entity-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`,
       });
     const ids = this.itemCharacterIds(item);
     if (kind === "song") {
       // The song tile is shared with the home page; one construction, two pages.
-      return tile(
-        songTile(
+      return tile({
+        ...songTile(
           item,
           {
             locale: this.settings.locale,
@@ -2280,7 +2296,9 @@ export class CatalogScreen extends LitElement {
               : null,
           ],
         ),
-      );
+        onOpen: () => this.open(item),
+        itemId: this.itemId(item),
+      });
     }
     const attribute = this.attributeMark(item.cardType);
     return tile({
@@ -2295,6 +2313,7 @@ export class CatalogScreen extends LitElement {
       placeholder: kind === "band-item" ? icon("piano", 32) : icon("image", 32),
       fit: ["band", "item", "band-item", "stamp"].includes(kind) ? "contain" : "cover",
       onOpen: () => this.open(item),
+      itemId: this.itemId(item),
       onImageError: this.imageError,
       style: kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : undefined,
       marks: [

@@ -236,7 +236,7 @@ export class CatalogTable extends LitElement {
       // so the table is operable without relying on the row click.
       return html`
         <th scope="row" class=${classes || nothing} style=${CELL_MAX.title ? `--cell-max:${CELL_MAX.title}` : nothing}>
-          <button class="table-entity state-layer" type="button" @click=${() => c.open(item)}>
+          <button class="table-entity state-layer" type="button" data-open-item=${c.itemId(item)} @click=${() => c.open(item)}>
             ${
               image
                 ? html`

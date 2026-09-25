@@ -9,7 +9,7 @@
 // - Images: cache-first with an entry cap, evicting the oldest first.
 // - Everything else (API, auth, worker routes): network only.
 
-const VERSION = "v4";
+const VERSION = "v5";
 const PAGES_CACHE = `haneoka.pages.${VERSION}`;
 const ASSETS_CACHE = `haneoka.assets.${VERSION}`;
 const IMAGES_CACHE = `haneoka.images.${VERSION}`;
