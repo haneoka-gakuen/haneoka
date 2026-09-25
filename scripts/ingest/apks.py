@@ -494,8 +494,9 @@ def _download(
                 break
         except urllib.error.HTTPError as error:
             failure = error
-            if error.code in {403, 404} and missing_ok:
-                # Some CDNs return 403 instead of 404 for non-existent objects.
+            if error.code in {400, 403, 404} and missing_ok:
+                # Some CDNs answer absent objects with 400 (malformed-version
+                # gate), 403, or 404; a probe treats all three as a miss.
                 temporary.unlink(missing_ok=True)
                 if not quiet:
                     sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
