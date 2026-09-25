@@ -2307,10 +2307,10 @@ function negotiateLocale(request: Request): "ja" | "en" | "zh-TW" | "zh-CN" | "k
 
 const WORKER_FIRST_PREFIXES = [
   "/api/",
+  "/admin",
   "/artifacts/",
   "/assets/",
   "/catalog/assets/",
-  "/community/",
   "/game-client/",
   "/objects/",
   "/runtime/",

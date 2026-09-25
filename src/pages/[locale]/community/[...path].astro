@@ -1,0 +1,15 @@
+---
+import CommunityDocument from "../../../components/CommunityDocument.astro";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    [undefined, "feeds", "mine", "bookmarks", "notifications", "activity", "tags", "playlists"].map((path) => ({
+      params: { locale, path },
+      props: { locale, path },
+    })),
+  );
+}
+const { locale, path } = Astro.props as { locale: Locale; path?: string };
+---
+<CommunityDocument locale={locale} path={path} />

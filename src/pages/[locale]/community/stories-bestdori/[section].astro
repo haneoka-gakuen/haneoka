@@ -1,0 +1,30 @@
+---
+import Base from "../../../../layouts/Base.astro";
+import AppShell from "../../../../components/AppShell.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { t } from "../../../../i18n/messages";
+import "../../../../lit/story-workspace";
+import "../../../../styles/catalog.css";
+import "../../../../styles/story.css";
+
+export const BESTDORI_STORY_SECTIONS = ["event", "band", "main", "afterlive", "card"] as const;
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    BESTDORI_STORY_SECTIONS.map((section) => ({ params: { locale, section }, props: { locale, section } })),
+  );
+}
+const { locale, section } = Astro.props as { locale: Locale; section: string };
+const route = `/community/stories-bestdori/${section}`;
+const titleKey = `storyNavigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`;
+const title = t(locale, titleKey, section);
+---
+
+<Base locale={locale} route={route} title={title} titleKey={titleKey}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+    <story-workspace locale={locale} mode={section} origin="bestdori"></story-workspace>
+  </AppShell>
+</Base>
+<script>
+  import "../../../../lit/story-workspace";
+</script>

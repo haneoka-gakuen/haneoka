@@ -232,7 +232,11 @@ const japaneseLabels = JSON.stringify(
         } else if (name === "density" && isDensity(value)) {
           applyDensity(value);
         } else if (name === "locale") {
-          (window as SettingsWindow).__haneokaApplyLocale?.(value);
+          // The URL prefix is the language's address: a change of language is
+          // a change of page, not an in-place retexting.
+          const route = location.pathname.replace(/^\/(?:ja|en|zh-TW|zh-CN|ko)(?=\/|$)/u, "") || "/";
+          location.assign(`/${value}${route}${location.search}`);
+          return;
         } else if (name === "release") {
           writeReleaseServer(value);
         }

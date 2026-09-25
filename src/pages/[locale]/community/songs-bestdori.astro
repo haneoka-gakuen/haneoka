@@ -1,0 +1,27 @@
+---
+import Base from "../../../layouts/Base.astro";
+import AppShell from "../../../components/AppShell.astro";
+import { catalogConfig } from "../../../config/catalog-labels";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+import { t } from "../../../i18n/messages";
+import "../../../lit/catalog-screen";
+import "../../../styles/catalog.css";
+
+export function getStaticPaths() {
+  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+}
+const { locale } = Astro.props as { locale: Locale };
+const route = "/community/songs-bestdori";
+const titleKey = "communityPage.songsBestDori";
+const title = t(locale, titleKey, "GBP songs");
+const config = catalogConfig({ resource: "songs", locale, origin: "bestdori" });
+---
+
+<Base locale={locale} route={route} title={title} titleKey={titleKey} description={title}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+    <catalog-screen config={config}></catalog-screen>
+  </AppShell>
+</Base>
+<script>
+  import "../../../lit/catalog-screen";
+</script>

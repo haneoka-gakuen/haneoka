@@ -28,10 +28,10 @@ interface Props {
   titleKey: string;
   /** Fallback title when the key is missing. */
   fallback: string;
+  locale?: Locale;
 }
 
-const { mode, route, titleKey, fallback } = Astro.props as Props;
-const locale = DEFAULT_LOCALE as Locale;
+const { mode, route, titleKey, fallback, locale = DEFAULT_LOCALE } = Astro.props as Props;
 const title = t(locale, titleKey, fallback);
 const labels = JSON.stringify(Object.fromEntries(LOCALES.map((target) => [target, group(target, "communityPage")])));
 ---

@@ -890,14 +890,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     "/assets/",
     "/assets",
     "/catalog/assets",
-    "/community",
     "/game-client/",
     "/objects/",
     "/runtime/",
     "/sonolus/",
     "/auth",
-    "/account",
-    "/settings",
     "/admin",
   ];
   if (
