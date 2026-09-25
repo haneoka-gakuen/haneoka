@@ -47,7 +47,7 @@ const screenConfig = catalogConfig({
   seoDescriptionValues={page.descriptions}
 >
   <AppShell locale={locale} route={page.route} title={sectionTitle} titleKey={collectionRoute.titleKey}>
-    <catalog-screen transition:persist config={screenConfig}></catalog-screen>
+    <catalog-screen config={screenConfig}></catalog-screen>
     <aside
       class:list={["sheet", "sheet--detail", `sheet--detail-${page.kind}`, "is-open", "static-detail"]}
       role="dialog"

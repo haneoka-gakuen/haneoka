@@ -99,7 +99,7 @@ const structuredValues = Object.fromEntries(
         );
       }
     </script>
-    <ClientRouter />
+    <ClientRouter fallback="none" />
     <script is:inline>
       (() => {
         const ok = /^(ja|en|zh-TW|zh-CN|ko)$/;
@@ -279,21 +279,8 @@ const structuredValues = Object.fromEntries(
       import { SEED_KEY, isSeed, syncThemeColor } from "../lib/tuning";
       import { installRipple } from "../lib/ripple";
       installRipple();
-      // Material "fade through" for page navigation, scoped to the content pane. The
-      // view-transition-name is only present while a navigation runs: a permanent one
-      // would make the pane a stacking context and trap the pages' fixed overlays.
-      type SwapEvent = Event & { newDocument: Document; viewTransition?: { finished: Promise<void> } };
-      document.addEventListener("astro:after-preparation", () => {
-        document.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
-      });
-      document.addEventListener("astro:before-swap", (event) => {
-        const swap = event as SwapEvent;
-        swap.newDocument.querySelector<HTMLElement>("#main-content")?.style.setProperty("view-transition-name", "page");
-        const clear = () =>
-          document.querySelector<HTMLElement>("#main-content")?.style.removeProperty("view-transition-name");
-        if (swap.viewTransition) swap.viewTransition.finished.finally(clear);
-        else queueMicrotask(clear);
-      });
+      // Page changes swap instantly: no view-transition name is projected onto
+      // the content pane, so there is no cross-fade to watch between routes.
       type ThemeWindow = Window & { __haneokaApplyTheme?: () => void };
       const themeMedia = matchMedia("(prefers-color-scheme: dark)");
       const applyTheme = () => {

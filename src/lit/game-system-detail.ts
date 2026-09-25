@@ -108,17 +108,48 @@ function rewardSection(
       ${rewards.map((reward) => rewardRow(c, reward, options.trailing ? options.trailing(reward) : nothing))}
     </ul>
   `;
-  if (options.collapsible)
-    return html`
-      <details>
-        <summary class="detail-section-title detail-section-title--h3">${title}</summary>
-        ${list}
-      </details>
-    `;
+  if (options.collapsible) return fold(title, list);
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(title, options.kind || "rewards", { count: rewards.length })} ${list}
     </section>
+  `;
+}
+
+/**
+ * A disclosure in the house style: one Material summary row (title, optional
+ * trailing meta, chevron) over an indented body, mirroring the manual's
+ * entries. Summaries stay inside the section rhythm instead of looking like
+ * bare unstyled <details>.
+ */
+function fold(title: unknown, content: unknown, meta: unknown = nothing) {
+  return html`
+    <details class="detail-fold">
+      <summary>
+        <span class="detail-fold__title">${title}</span>
+        ${meta ? html`<span class="detail-fold__meta">${meta}</span>` : nothing}
+        <svg class="material-icon detail-fold__chevron" width="20" height="20" aria-hidden="true">
+          <use href="/icons.svg#expand_more"></use>
+        </svg>
+      </summary>
+      <div class="detail-fold__body">${content}</div>
+    </details>
+  `;
+}
+
+/** Currency-or-plain cost line with the emblem leading the figure. */
+function costLine(amount: string, image: unknown) {
+  if (!amount) return "";
+  const emblem =
+    typeof image === "string" && image
+      ? html`
+          <img src=${image} alt="" width="18" height="18" class="detail-cost__emblem" />
+        `
+      : nothing;
+  return html`
+    <span class="detail-cost"
+      >${emblem}<span>${amount}</span></span
+    >
   `;
 }
 
@@ -151,7 +182,7 @@ function featuredGrid(c: Controller, featured: Item[]) {
   `;
 }
 
-/** The game's own ratio table: one summary row per slot, prizes grouped below. */
+/** The game's own ratio table: one collapsible group per slot, prizes inside. */
 function renderRates(c: Controller, item: Item) {
   const rates = Array.isArray(item.rates) ? (item.rates as Item[]) : [];
   if (!rates.length) return nothing;
@@ -162,38 +193,29 @@ function renderRates(c: Controller, item: Item) {
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(c.label("rates", "Rates"), "works", { count: rates.length })}
-      <dl class="spec-list spec-list--split">
-        ${rates.map(
-          (row) => html`
-            <div>
-              <dt>${slotLabel(row)}</dt>
-              <dd>${rateText(row.rate)}</dd>
-            </div>
-          `,
-        )}
-      </dl>
-      ${rates.map((row) => {
-        const prizes = (Array.isArray(row.prizes) ? row.prizes : []) as Item[];
-        if (!prizes.length) return nothing;
-        return html`
-          <details>
-            <summary class="detail-section-title detail-section-title--h3">
-              ${slotLabel(row)} · ${rateText(row.rate)}
-            </summary>
-            <ul class="detail-object-list" role="list">
-              ${prizes.map((prize) =>
-                rewardRow(
-                  c,
-                  prize,
-                  html`
-                    <strong>${rateText(prize.rate)}</strong>
-                  `,
-                ),
-              )}
-            </ul>
-          </details>
-        `;
-      })}
+      <div class="detail-fold-stack">
+        ${rates.map((row) => {
+          const prizes = (Array.isArray(row.prizes) ? row.prizes : []) as Item[];
+          if (!prizes.length) return nothing;
+          return fold(
+            slotLabel(row),
+            html`
+              <ul class="detail-object-list" role="list">
+                ${prizes.map((prize) =>
+                  rewardRow(
+                    c,
+                    prize,
+                    html`
+                      <strong>${rateText(prize.rate)}</strong>
+                    `,
+                  ),
+                )}
+              </ul>
+            `,
+            rateText(row.rate),
+          );
+        })}
+      </div>
       ${
         c.localized(item.warning)
           ? html`
@@ -220,18 +242,10 @@ function renderDrawOptions(c: Controller, item: Item) {
           const ensuredCount = Number(option.guaranteedCount || 0);
           const limit = Number(option.limitCount || 0);
           const currency = c.localized(option.currency);
-          const priceText = price
-            ? html`
-                ${price.toLocaleString(c.settings.locale)} ${currency}
-                ${
-                  String(option.currencyImage || "")
-                    ? html`
-                        <img src=${String(option.currencyImage)} alt="" width="18" height="18" />
-                      `
-                    : nothing
-                }
-              `
-            : c.label("free", "Free");
+          const priceText =
+            price > 0
+              ? costLine(`${price.toLocaleString(c.settings.locale)} ${currency}`, option.currencyImage)
+              : c.label("free", "Free");
           return html`
             <div>
               <dt>
@@ -384,16 +398,7 @@ function renderSimulator(c: Controller, item: Item) {
                 </div>
                 <div>
                   <dt>${c.label("spent", "Spent")}</dt>
-                  <dd>
-                    ${sim.spent.toLocaleString(c.settings.locale)} ${sim.currency}
-                    ${
-                      sim.currencyImage
-                        ? html`
-                            <img src=${sim.currencyImage} alt="" width="18" height="18" />
-                          `
-                        : nothing
-                    }
-                  </dd>
+                  <dd>${costLine(`${sim.spent.toLocaleString(c.settings.locale)} ${sim.currency}`, sim.currencyImage)}</dd>
                 </div>
                 ${
                   sim.points
@@ -444,7 +449,6 @@ function renderSimulator(c: Controller, item: Item) {
             `
           : nothing
       }
-      <p class="detail-copy">${c.label("simulatorNote", "")}</p>
     </section>
   `;
 }
@@ -495,14 +499,7 @@ function renderExchangeGoods(c: Controller, item: Item) {
             (product.reward || {}) as Item,
             html`
               <strong>
-                ${cost.toLocaleString(c.settings.locale)} ${c.localized(currency.name)}
-                ${
-                  String(currency.image || "")
-                    ? html`
-                        <img src=${String(currency.image)} alt="" width="18" height="18" />
-                      `
-                    : nothing
-                }
+                ${costLine(`${cost.toLocaleString(c.settings.locale)} ${c.localized(currency.name)}`, currency.image)}
               </strong>
             `,
           );
@@ -521,16 +518,7 @@ function renderShopFacts(c: Controller, item: Item) {
   else if (Number(payment.price || 0))
     rows.push([
       "price",
-      html`
-        ${Number(payment.price).toLocaleString(c.settings.locale)} ${c.localized(payment.currency)}
-        ${
-          String(payment.currencyImage || "")
-            ? html`
-                <img src=${String(payment.currencyImage)} alt="" width="18" height="18" />
-              `
-            : nothing
-        }
-      `,
+      costLine(`${Number(payment.price).toLocaleString(c.settings.locale)} ${c.localized(payment.currency)}`, payment.currencyImage),
     ]);
   if (Number(item.limit || 0)) rows.push(["limit", Number(item.limit).toLocaleString(c.settings.locale)]);
   if (Number(item.vipRank || 0))
@@ -600,11 +588,9 @@ function renderPassLevels(c: Controller, levels: Item[]) {
 
 function renderPassMissions(c: Controller, tasks: Item[]) {
   if (!tasks.length) return nothing;
-  return html`
-    <details>
-      <summary class="detail-section-title detail-section-title--h3">
-        ${c.label("passMissions", "Pass missions")}
-      </summary>
+  return fold(
+    c.label("passMissions", "Pass missions"),
+    html`
       <ul class="detail-object-list" role="list">
         ${tasks.map(
           (task) => html`
@@ -622,8 +608,8 @@ function renderPassMissions(c: Controller, tasks: Item[]) {
           `,
         )}
       </ul>
-    </details>
-  `;
+    `,
+  );
 }
 
 function renderEventBands(c: Controller, bands: Item[]) {

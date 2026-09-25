@@ -425,8 +425,6 @@ export class CatalogScreen extends LitElement {
   private filterFocus = new PaneFocus();
   private disposeMedia: Array<() => void> = [];
   private settings: Config = { resource: "", locale: "ja", labels: {} };
-  /** Whether the current collection's list is already in memory. */
-  private loaded = false;
   private profile = fallbackProfile;
   private characters: Item[] = [];
   private bands: Item[] = [];
@@ -546,6 +544,10 @@ export class CatalogScreen extends LitElement {
       this.resultCache = undefined;
       this.requestUpdate();
     });
+    // A swap-persisted element keeps its OLD attributes: the new document's
+    // screen (holding the destination collection's config) is discarded, so
+    // without this copy the persisted screen would re-render the previous
+    // collection forever. Copy the incoming config before the swap moves us.
     addEventListener("haneoka:locale-ready", this.onLocale);
     this.releaseLocation = observeDetailLocation(this.restoreLocation, this);
     void Promise.all([
@@ -564,16 +566,9 @@ export class CatalogScreen extends LitElement {
     window.addEventListener("keydown", this.onKeydown);
     window.addEventListener("haneoka-audio-state", this.onAudioState);
     window.setTimeout(() => {
-      const next = JSON.parse(this.config || "{}") as Config;
-      const nextLocale = preferredLocale(next.locale);
-      // A persisted element that survived a ClientRouter swap already holds
-      // this collection's data; refresh only the URL-derived state instead of
-      // tearing the list down and re-fetching it (the return-to-list flash).
-      const sameCollection =
-        this.loaded && next.resource === this.settings.resource && nextLocale === this.settings.locale;
-      next.locale = nextLocale;
-      next.labels = next.labelsByLocale?.[nextLocale] || next.labels;
-      this.settings = next;
+      this.settings = JSON.parse(this.config || "{}") as Config;
+      this.settings.locale = preferredLocale(this.settings.locale);
+      this.settings.labels = this.settings.labelsByLocale?.[this.settings.locale] || this.settings.labels;
       this.profile = profiles[this.settings.resource] ?? fallbackProfile;
       const params = new URLSearchParams(location.search);
       this.query = params.get("q") ?? "";
@@ -607,12 +602,6 @@ export class CatalogScreen extends LitElement {
         ...Object.fromEntries(EXTRA_FILTERS.map((key) => [key, params.getAll(key)])),
       };
       this.ensureSongMeta();
-      if (sameCollection) {
-        this.selected = this.items.find((item) => this.itemId(item) === this.selectedId) ?? null;
-        this.requestUpdate();
-        return;
-      }
-      this.loaded = true;
       void this.load();
     }, 0);
   }

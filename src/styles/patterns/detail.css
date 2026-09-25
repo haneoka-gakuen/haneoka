@@ -302,3 +302,81 @@ a.detail-object:hover {
 .related-grid--wide {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 168px), 1fr));
 }
+
+/* ---------- Folded groups inside a pane ----------
+   Collapsible sub-sections (gacha rate groups, prize pools, pass missions).
+   One Material row per fold: title, trailing meta, chevron; the body indents
+   beneath. Same interaction surface as the manual's entries. */
+.detail-fold-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.detail-fold {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface);
+  overflow: hidden;
+}
+
+.detail-fold summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 24px;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 16px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: inherit;
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--app-font);
+}
+
+.detail-fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-fold summary:hover {
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.detail-fold__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-fold__meta {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--app-font);
+}
+
+.detail-fold__chevron {
+  color: var(--md-sys-color-on-surface-variant);
+  transition: transform var(--md-sys-motion-duration-short3);
+}
+
+.detail-fold[open] summary .detail-fold__chevron {
+  transform: rotate(180deg);
+}
+
+.detail-fold__body {
+  padding: 0 16px 12px;
+}
+
+/* ---------- Cost figures ----------
+   An amount with its currency emblem leading, reading as one unit. */
+.detail-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.detail-cost__emblem {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
