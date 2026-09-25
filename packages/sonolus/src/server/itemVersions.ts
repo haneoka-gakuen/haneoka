@@ -6,7 +6,7 @@ export const SONOLUS_ITEM_VERSIONS = {
   skin: 4,
   background: 2,
   effect: 5,
-  particle: 3,
+  particle: 4,
   engine: 13,
 } as const;
 

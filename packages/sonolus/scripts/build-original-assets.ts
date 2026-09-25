@@ -569,11 +569,11 @@ const baked = requireJsonObject(
   parseJson(readFileSync(resolve(bakedRoot, "particle.json"), "utf8"), "baked particles"),
   "baked particles",
 );
-if (baked.width !== 4096 || baked.height !== 4096 || !Array.isArray(baked.sprites) || !Array.isArray(baked.effects)) {
+if (baked.width !== 8192 || baked.height !== 8192 || !Array.isArray(baked.sprites) || !Array.isArray(baked.effects)) {
   throw new Error("Invalid baked particle atlas; run Cassiopeia's effect capture first");
 }
 const bakedTexture = decodeRgba8Png(readFileSync(resolve(bakedRoot, "particle.texture.png")), "baked atlas");
-if (bakedTexture.width !== 4096 || bakedTexture.height !== 4096) throw new Error("Baked texture dimensions disagree");
+if (bakedTexture.width !== 8192 || bakedTexture.height !== 8192) throw new Error("Baked texture dimensions disagree");
 const baseNoteNames = [
   ...["Normal", "Slide", "Flick", "Flick Left", "Flick Right", "Connect"].flatMap((name) =>
     ["", " Great", " Good", " Bad"].map((judgement) => `Our Notes Native ${name}${judgement}`),
@@ -599,7 +599,7 @@ for (const value of baked.sprites) {
     y = requireFiniteNumber(sprite.y, "sprite.y");
   const w = requireFiniteNumber(sprite.w, "sprite.w"),
     h = requireFiniteNumber(sprite.h, "sprite.h");
-  if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 4096 || y + h > 4096)
+  if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 8192 || y + h > 8192)
     throw new Error("Baked sprite is outside the atlas");
 }
 const budget = baked.effects.map((value) => {
@@ -640,7 +640,7 @@ writeFileSync(
       profile: "baked-3d-30fps",
       referenceValidated: capture.referenceValidated === true,
       maxFrames: 32,
-      textureBytes: 4096 * 4096 * 4,
+      textureBytes: 8192 * 8192 * 4,
       effects: budget,
     },
     null,
