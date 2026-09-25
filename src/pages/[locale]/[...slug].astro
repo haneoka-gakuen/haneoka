@@ -1,0 +1,36 @@
+---
+import RouteDocument from "../../components/RouteDocument.astro";
+import { ROUTES, titleOf, type RouteDefinition } from "../../config/routes";
+import { LOCALES, type Locale } from "../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    ROUTES.filter(
+      (entry) =>
+        ![
+          "/",
+          "/account",
+          "/account/reset-password",
+          "/settings",
+          "/catalog/assets",
+          "/catalog/help",
+          "/catalog/live2d",
+          "/catalog/spine",
+        ].includes(entry.route) &&
+        !entry.route.startsWith("/community") &&
+        !entry.route.startsWith("/catalog/anon-tokyo") &&
+        !entry.route.startsWith("/catalog/stories"),
+    ).map((entry) => {
+      const slug = entry.route.replace(/^\/+/, "") || undefined;
+      // ANON TOKYO reuses several catalogue section names (shop, characters);
+      // prefix its titles so the pages stay distinct in search results.
+      const title = entry.route.startsWith("/catalog/anon-tokyo")
+        ? `ANON TOKYO · ${titleOf(entry, locale)}`
+        : titleOf(entry, locale);
+      return { params: { locale, slug }, props: { locale, entry, title } };
+    }),
+  );
+}
+const { locale, entry, title } = Astro.props as { locale: Locale; entry: RouteDefinition; title: string };
+---
+<RouteDocument locale={locale} entry={entry} title={title} />

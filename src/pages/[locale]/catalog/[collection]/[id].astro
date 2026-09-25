@@ -1,0 +1,17 @@
+---
+import CatalogEntityPage from "../../../../components/entities/CatalogEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { searchableCatalogPages, type SearchableCatalogPage } from "../../../../lib/searchable-catalog";
+
+export async function getStaticPaths() {
+  const pages = await searchableCatalogPages();
+  return LOCALES.flatMap((locale) =>
+    pages.map((page) => ({
+      params: { locale, collection: page.collection, id: page.id },
+      props: { page, locale },
+    })),
+  );
+}
+const { page, locale } = Astro.props as { page: SearchableCatalogPage; locale: Locale };
+---
+<CatalogEntityPage page={page} locale={locale} />

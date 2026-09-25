@@ -1,35 +1,32 @@
 ---
-import Base from "../../../layouts/Base.astro";
-import AppShell from "../../../components/AppShell.astro";
-import Icon from "../../../components/Icon.astro";
-import { catalogConfig } from "../../../config/catalog-labels";
-import { findRoute, titleOf } from "../../../config/routes";
-import { DEFAULT_LOCALE, LOCALES, type Locale } from "../../../i18n/locales";
-import { t } from "../../../i18n/messages";
-import { searchableCatalogPages, type SearchableCatalogPage } from "../../../lib/searchable-catalog";
-import "../../../lit/catalog-screen";
-import "../../../styles/catalog.css";
+import Base from "../../layouts/Base.astro";
+import AppShell from "../AppShell.astro";
+import Icon from "../Icon.astro";
+import { catalogConfig } from "../../config/catalog-labels";
+import { findRoute, titleOf } from "../../config/routes";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import type { SearchableCatalogPage } from "../../lib/searchable-catalog";
+import "../../lit/catalog-screen";
+import "../../styles/catalog.css";
 
-export async function getStaticPaths() {
-  const pages = await searchableCatalogPages();
-  return pages.map((page) => ({
-    params: { collection: page.collection, id: page.id },
-    props: { page },
-  }));
+interface Props {
+  page: SearchableCatalogPage;
+  locale: Locale;
 }
-
-const { page } = Astro.props as { page: SearchableCatalogPage };
-const locale: Locale = DEFAULT_LOCALE;
+const { page, locale } = Astro.props;
 const collectionRoute = findRoute(page.route);
 if (!collectionRoute) throw new Error(`Missing route definition for ${page.route}`);
 const sectionTitle = titleOf(collectionRoute, locale);
 const route = `${page.route}/${page.id}`;
 const seoTitleValues = Object.fromEntries(
   LOCALES.map((target) => {
-    const localizedRoute = findRoute(page.route);
-    const localizedSection = localizedRoute ? titleOf(localizedRoute, target) : sectionTitle;
+    const localizedSection = titleOf(collectionRoute, target);
     const subtitle = page.subtitles[target];
-    return [target, `${page.titles[target]}${subtitle && subtitle !== page.titles[target] ? ` · ${subtitle}` : ""} · ${localizedSection}`];
+    return [
+      target,
+      `${page.titles[target]}${subtitle && subtitle !== page.titles[target] ? ` · ${subtitle}` : ""} · ${localizedSection}`,
+    ];
   }),
 ) as Record<Locale, string>;
 const sectionHeading = t(locale, "details", "Details");
@@ -63,7 +60,7 @@ const screenConfig = catalogConfig({
             <Icon name="arrow_back" />
           </a>
           <span class="sheet__title" id={`static-detail-${page.id}-title`}>
-            <strong lang="ja">{page.title}</strong>
+            <strong lang={page.titles[locale] === page.title ? "ja" : undefined}>{page.titles[locale]}</strong>
             {page.subtitles[locale] && <small>{page.subtitles[locale]}</small>}
           </span>
           <span class="sheet__actions"></span>
@@ -74,13 +71,13 @@ const screenConfig = catalogConfig({
               {page.image && (
                 <div class="image-gallery">
                   <div class="image-gallery__stage">
-                    <img src={page.image} alt={page.title} decoding="async" />
+                    <img src={page.image} alt={page.titles[locale]} decoding="async" />
                   </div>
                 </div>
               )}
             </div>
             <div class="detail-layout__content pane-sections">
-              {page.bodies[locale] && <p class="detail-description" lang="ja">{page.bodies[locale]}</p>}
+              {page.bodies[locale] && <p class="detail-description">{page.bodies[locale]}</p>}
               {page.facts[locale].length > 0 && (
                 <section class="detail-section detail-section--facts">
                   <h2 class="detail-section-title detail-section-title--h2">{sectionHeading}</h2>
@@ -109,5 +106,5 @@ const screenConfig = catalogConfig({
   }
 </script>
 <script>
-  import "../../../lit/catalog-screen";
+  import "../../lit/catalog-screen";
 </script>

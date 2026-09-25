@@ -1,0 +1,14 @@
+---
+import HelpEntityPage from "../../../../components/entities/HelpEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { searchableHelpPages, type SearchableHelpTopic } from "../../../../lib/searchable-help";
+
+export async function getStaticPaths() {
+  const topics = await searchableHelpPages();
+  return LOCALES.flatMap((locale) =>
+    topics.map((topic) => ({ params: { locale, id: topic.id }, props: { topic, locale } })),
+  );
+}
+const { topic, locale } = Astro.props as { topic: SearchableHelpTopic; locale: Locale };
+---
+<HelpEntityPage topic={topic} locale={locale} />

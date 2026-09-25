@@ -22,17 +22,27 @@ interface Props {
 const { locale, title, titleKey, description, route, seoTitleValues, seoDescriptionValues } = Astro.props;
 const origin = Astro.site?.origin ?? "https://haneoka.org";
 const formatTitle = (value: string) => (value === "haneoka" ? value : `${value} · haneoka`);
-const fullTitle = formatTitle(seoTitleValues?.[locale] ?? title);
-const titleValues = seoTitleValues
-  ? Object.fromEntries(LOCALES.map((target) => [target, formatTitle(seoTitleValues[target] ?? title)]))
-  : titleKey
-    ? Object.fromEntries(
-        LOCALES.map((target) => {
-          const value = t(target, titleKey, title);
-          return [target, formatTitle(value)];
-        }),
-      )
-    : Object.fromEntries(LOCALES.map((target) => [target, formatTitle(title)]));
+// Locale-prefixed pages are built for the archive sections only; app areas
+// (community, the asset explorer, account) stay at the root and keep their
+// own addresses as canonical.
+const isLocalizedRoute = route === "/" || (route.startsWith("/catalog/") && !route.startsWith("/catalog/assets"));
+// Catalogue pages spell out where they sit: "楽曲 · カタログ · haneoka".
+const withCatalogHierarchy = (target: Locale, value: string) => {
+  if (!route.startsWith("/catalog/") || route === "/catalog") return value;
+  const hub = t(target, "catalog", "Catalog");
+  return value.includes(` · ${hub} ·`) || value.endsWith(` · ${hub}`) ? value : `${value} · ${hub}`;
+};
+const titleValues = Object.fromEntries(
+  LOCALES.map((target) => {
+    const raw = seoTitleValues
+      ? (seoTitleValues[target] ?? title)
+      : titleKey
+        ? t(target, titleKey, title)
+        : title;
+    return [target, formatTitle(withCatalogHierarchy(target, raw))];
+  }),
+);
+const fullTitle = titleValues[locale] ?? formatTitle(title);
 const descriptionValues = Object.fromEntries(
   LOCALES.map((target) => {
     const localizedTitle = titleKey ? t(target, titleKey, title) : title;
@@ -40,12 +50,28 @@ const descriptionValues = Object.fromEntries(
     return [target, seoDescriptionValues?.[target] ?? customDescription ?? pageDescription(target, route, localizedTitle)];
   }),
 );
-const canonicalHref = `${origin}${canonicalPath(localePath(route, DEFAULT_LOCALE))}`;
+// Each locale's page canonicalizes to itself and points at its language
+// siblings, so every language can rank on its own URL.
+const canonicalHref = isLocalizedRoute
+  ? `${origin}${canonicalPath(localePath(route, locale))}`
+  : `${origin}${canonicalPath(route)}`;
+const languageAlternates = isLocalizedRoute
+  ? LOCALES.map((target) => ({
+      locale: target,
+      href: `${origin}${canonicalPath(localePath(route, target))}`,
+    }))
+  : [];
 const structuredValues = Object.fromEntries(
   LOCALES.map((target) => [
     target,
     JSON.stringify(
-      pageStructuredData(origin, route, target, titleValues[target], descriptionValues[target]),
+      pageStructuredData(
+        origin,
+        isLocalizedRoute ? localePath(route, target) : route,
+        target,
+        titleValues[target],
+        descriptionValues[target],
+      ),
     ).replaceAll("<", "\\u003c"),
   ]),
 );
@@ -96,7 +122,11 @@ const structuredValues = Object.fromEntries(
           const s = localStorage.getItem("haneoka.locale");
           l = ok.test(s || "") ? s : "";
         } catch {}
-        if (!l) l = (navigator.languages || [navigator.language]).map(match).find(Boolean) || "ja";
+        // A language-prefixed URL is an explicit locale choice: it wins over
+        // stored and browser preferences for this page.
+        const prefix = location.pathname.replace(/^\/+/, "").split("/")[0];
+        if (ok.test(prefix)) l = prefix;
+        if (!l) l = (navigator.languages || [navigator.language]).map(match).find(Boolean) || "en";
         const d = document.documentElement,
           t = { ja: "ja-JP", en: "en-US", "zh-TW": "zh-TW", "zh-CN": "zh-CN", ko: "ko-KR" };
         d.lang = t[l];
@@ -151,6 +181,17 @@ const structuredValues = Object.fromEntries(
     <meta name="color-scheme" content="light dark" />
     {shouldNoindex(route) && <meta name="robots" content="noindex,follow" />}
     <link rel="canonical" href={canonicalHref} />
+    {!shouldNoindex(route) &&
+      languageAlternates.map((alternate) => (
+        <link rel="alternate" hreflang={localeTag(alternate.locale)} href={alternate.href} />
+      ))}
+    {!shouldNoindex(route) && (
+      <link
+        rel="alternate"
+        hreflang="x-default"
+        href={languageAlternates.find((alternate) => alternate.locale === "en")?.href}
+      />
+    )}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/site.webmanifest" />
     {!shouldNoindex(route) && (

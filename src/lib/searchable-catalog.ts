@@ -1,10 +1,8 @@
 import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resolveLocalizedText } from "./localized-text";
-
-const API_ORIGIN = "https://haneoka.org";
-const API_PREFIX = "/api/v1/servers/intl";
-const BUILD_CACHE_KEY = String(Date.now());
+import { disambiguateTitles } from "./title-disambiguation";
+import { asRecord, fetchStaticCatalog, type RecordValue } from "./static-catalog-source";
 
 export interface SearchableCatalogFact {
   key: string;
@@ -248,14 +246,10 @@ const COLLECTIONS: CollectionDefinition[] = [
   },
 ];
 
-type RecordValue = Record<string, unknown>;
 interface LoadedCollection {
   definition: CollectionDefinition;
   records: Array<[string, RecordValue]>;
 }
-
-const asRecord = (value: unknown): RecordValue | undefined =>
-  value && typeof value === "object" && !Array.isArray(value) ? (value as RecordValue) : undefined;
 
 function text(value: unknown, locale: Locale): string {
   return resolveLocalizedText(value, locale).text.trim();
@@ -513,17 +507,13 @@ export function searchableCatalogPages(): Promise<SearchableCatalogPage[]> {
 }
 
 async function fetchCollection(definition: CollectionDefinition): Promise<LoadedCollection> {
-  const url = new URL(`${API_ORIGIN}${API_PREFIX}/${definition.resource}`);
-  if (definition.resource === "songs") url.searchParams.set("projection", "4");
-  url.searchParams.set("__static_catalog_build", BUILD_CACHE_KEY);
-  const response = await fetch(url);
-  // Resources the current release does not publish yet: skip them and let the
-  // next post-release rebuild pick them up instead of failing the whole build.
-  if (response.status === 404) return { definition, records: [] };
-  if (!response.ok)
-    throw new Error(`Could not load ${definition.resource} for static catalog routes (${response.status})`);
-  const document = asRecord(await response.json());
-  if (!document) throw new Error(`Invalid ${definition.resource} catalog response`);
+  // Resources the current release does not publish yet (or that the edge
+  // blocks from build runners): skip them and let the next post-release
+  // rebuild pick them up instead of failing the whole build.
+  const document = asRecord(
+    await fetchStaticCatalog(definition.resource === "songs" ? "songs?projection=4" : definition.resource),
+  );
+  if (!document) return { definition, records: [] };
   const entries = definition.document ? asRecord(document[definition.document]) ?? {} : document;
   return {
     definition,
@@ -535,12 +525,10 @@ async function fetchCollection(definition: CollectionDefinition): Promise<Loaded
 }
 
 async function buildSearchableCatalogPages(): Promise<SearchableCatalogPage[]> {
-  const [collections, bandsResponse] = await Promise.all([
+  const [collections, bandsDocument] = await Promise.all([
     Promise.all(COLLECTIONS.map(fetchCollection)),
-    fetch(`${API_ORIGIN}${API_PREFIX}/bands?__static_catalog_build=${BUILD_CACHE_KEY}`),
+    fetchStaticCatalog("bands"),
   ]);
-  if (!bandsResponse.ok) throw new Error(`Could not load bands for static catalog routes (${bandsResponse.status})`);
-  const bandsDocument = asRecord(await bandsResponse.json());
   if (!bandsDocument) throw new Error("Invalid bands catalog response");
 
   const records = new Map(collections.map(({ definition, records: entries }) => [definition.collection, entries]));
@@ -548,7 +536,7 @@ async function buildSearchableCatalogPages(): Promise<SearchableCatalogPage[]> {
     (records.get("characters") || []).map(([key, value]) => [Number(recordId(value, key, "characters")), value]),
   );
   const bands = new Map(
-    Object.entries(bandsDocument).flatMap(([key, raw]) => {
+    Object.entries(asRecord(bandsDocument) ?? {}).flatMap(([key, raw]) => {
       const value = asRecord(raw);
       return value ? [[Number(value.bandId ?? key), value] as [number, RecordValue]] : [];
     }),
@@ -559,7 +547,7 @@ async function buildSearchableCatalogPages(): Promise<SearchableCatalogPage[]> {
     .map(({ definition }) => definition.resource);
   if (skipped.length) console.warn(`Static catalog: release does not publish ${skipped.join(", ")} yet`);
 
-  return collections.flatMap(({ definition, records: entries }) =>
+  const built = collections.flatMap(({ definition, records: entries }) =>
     entries.flatMap(([key, value]) => {
       const id = recordId(value, key, definition.resource);
       if (!/^\d+$/u.test(id)) return [];
@@ -589,9 +577,7 @@ async function buildSearchableCatalogPages(): Promise<SearchableCatalogPage[]> {
           const body =
             definition.kind === "character"
               ? text(value.description, locale)
-              : ["background", "band-item", "item", "stamp"].includes(definition.kind)
-                ? plainGameText(value.description, locale)
-                : "";
+              : plainGameText(value.description, locale);
           return [locale, body];
         }),
       ) as Record<Locale, string>;
@@ -628,6 +614,19 @@ async function buildSearchableCatalogPages(): Promise<SearchableCatalogPage[]> {
       ];
     }),
   );
+
+  // Shop packs and rotated systems repeat the same title across entities;
+  // suffix the colliding groups with their ids so every page stays distinct.
+  disambiguateTitles(
+    built,
+    (page, locale) => page.titles[locale],
+    (page, locale, title) => {
+      page.titles[locale] = title;
+    },
+    [],
+    (page) => `#${page.id}`,
+  );
+  return built;
 }
 
 export async function searchableCatalogUrls(): Promise<string[]> {

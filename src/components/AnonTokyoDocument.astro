@@ -6,7 +6,7 @@ import zhTW from "../../public/i18n/zh-TW.json";
 import ko from "../../public/i18n/ko.json";
 import Base from "../layouts/Base.astro";
 import AppShell from "./AppShell.astro";
-import type { Locale } from "../i18n/locales";
+import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import "../lit/anon-tokyo-workspace";
 import "../styles/catalog.css";
@@ -14,10 +14,15 @@ import "../styles/anon-tokyo.css";
 const { locale, mode = "characters" } = Astro.props as { locale: Locale; mode?: string };
 const route = `/catalog/anon-tokyo/${mode}`;
 const key = mode === "outfits" ? "anonTokyoPage.dressingRoom" : `anonTokyoPage.${mode}`;
-const title = t(locale, key, mode);
+const title = `ANON TOKYO · ${t(locale, key, mode)}`;
+// The <title> prefers explicit values over the titleKey translation, so the
+// brand prefix survives into the document head in every language.
+const seoTitleValues = Object.fromEntries(
+  LOCALES.map((target) => [target, `ANON TOKYO · ${t(target, key, mode)}`]),
+) as Record<Locale, string>;
 ---
 
-<Base locale={locale} route={route} title={title} titleKey={key}>
+<Base locale={locale} route={route} title={title} titleKey={key} seoTitleValues={seoTitleValues}>
   <AppShell locale={locale} route={route} title={title} titleKey={key}>
     <anon-tokyo-workspace
       locale={locale}

@@ -1,0 +1,73 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../../components/AppShell.astro";
+import { findRoute, titleOf } from "../../config/routes";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import type { SearchableHelpTopic } from "../../lib/searchable-help";
+import "../../lit/help-workspace";
+import "../../styles/catalog.css";
+import "../../styles/help.css";
+import "../../styles/static-detail.css";
+
+interface Props {
+  topic: SearchableHelpTopic;
+  locale: Locale;
+}
+const { topic, locale } = Astro.props;
+const sectionRoute = "/catalog/help";
+const sectionRouteDefinition = findRoute(sectionRoute);
+if (!sectionRouteDefinition) throw new Error(`Missing route definition for ${sectionRoute}`);
+const sectionTitle = titleOf(sectionRouteDefinition, locale);
+const route = `${sectionRoute}/${topic.id}`;
+const seoTitleValues = Object.fromEntries(
+  LOCALES.map((target) => {
+    const category = topic.categoryTitles[target];
+    return [
+      target,
+      [topic.titles[target], category && category !== topic.titles[target] ? category : "", sectionTitle]
+        .filter(Boolean)
+        .join(" · "),
+    ];
+  }),
+) as Record<Locale, string>;
+---
+
+<Base
+  locale={locale}
+  route={route}
+  title={sectionTitle}
+  titleKey={sectionRouteDefinition.titleKey}
+  description={topic.descriptions[locale]}
+  seoTitleValues={seoTitleValues}
+  seoDescriptionValues={topic.descriptions}
+>
+  <AppShell locale={locale} route={sectionRoute} title={sectionTitle} titleKey={sectionRouteDefinition.titleKey}>
+    <help-workspace locale={locale}></help-workspace>
+    <article class="static-detail" data-static-detail>
+      <header class="static-detail__header">
+        <a class="static-detail__back" href={`${sectionRoute}/`}>{sectionTitle}</a>
+        <h1>{topic.titles[locale]}</h1>
+        {topic.categoryTitles[locale] && topic.categoryTitles[locale] !== topic.titles[locale] && (
+          <p class="static-detail__subtitle">{topic.categoryTitles[locale]}</p>
+        )}
+      </header>
+      <p class="static-detail__body">{topic.descriptions[locale]}</p>
+    </article>
+  </AppShell>
+</Base>
+<script is:inline define:vars={{ id: topic.id }}>
+  const params = new URLSearchParams(location.search);
+  if (!params.has("topic")) {
+    params.set("topic", id);
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+  }
+</script>
+<script>
+  import "../../lit/help-workspace";
+</script>
+<style is:global>
+  help-workspace:not(:empty) ~ [data-static-detail] {
+    display: none;
+  }
+</style>

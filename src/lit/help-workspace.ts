@@ -20,6 +20,7 @@ export class HelpWorkspace extends LitElement {
     tips: { state: true },
     mode: { state: true },
     selectedCategory: { state: true },
+    selectedTopic: { state: true },
     error: { state: true },
   };
   declare locale: string;
@@ -28,6 +29,7 @@ export class HelpWorkspace extends LitElement {
   declare tips: JsonRecord[];
   declare mode: "manual" | "tips";
   declare selectedCategory: number;
+  declare selectedTopic: string;
   declare error: string;
   constructor() {
     super();
@@ -37,6 +39,7 @@ export class HelpWorkspace extends LitElement {
     this.tips = [];
     this.mode = "manual";
     this.selectedCategory = 0;
+    this.selectedTopic = "";
     this.error = "";
   }
   createRenderRoot() {
@@ -48,6 +51,7 @@ export class HelpWorkspace extends LitElement {
     void Promise.all([import("@material/web/progress/circular-progress.js")]);
     const p = new URLSearchParams(location.search);
     this.mode = p.get("mode") === "tips" ? "tips" : "manual";
+    this.selectedTopic = p.get("topic") || "";
     void this.load();
   }
   disconnectedCallback() {
@@ -62,7 +66,19 @@ export class HelpWorkspace extends LitElement {
       const d = await fetchJson<JsonRecord>(catalogUrl("help"));
       this.categories = recordValues(d.categories).sort((a, b) => Number(a.order) - Number(b.order));
       this.tips = recordValues(d.loadingTips).sort((a, b) => Number(a.tipId) - Number(b.tipId));
-      this.selectedCategory = Number(this.categories[0]?.categoryId || 0);
+      // A deep-linked topic (?topic=) opens the category that contains it.
+      const linked = this.selectedTopic
+        ? this.categories.find((category) =>
+            Array.isArray(category.subcategories)
+              ? (category.subcategories as JsonRecord[]).some(
+                  (topic) => String(topic.helpSubcategoryId ?? "") === this.selectedTopic,
+                )
+              : false,
+          )
+        : undefined;
+      this.selectedCategory = Number(
+        linked?.categoryId ?? this.categories[0]?.categoryId ?? 0,
+      );
       this.phase = "ready";
     } catch (e) {
       this.phase = "error";
@@ -138,7 +154,13 @@ export class HelpWorkspace extends LitElement {
                   <main class="help-entries">
                     ${entries.map(
                       (item, index) => html`
-                        <details class="help-entry" ?open=${index === 0 && entries.length < 8}>
+                        <details
+                          class="help-entry ${String(item.helpSubcategoryId ?? "") === this.selectedTopic
+                            ? "selected"
+                            : ""}"
+                          ?open=${String(item.helpSubcategoryId ?? "") === this.selectedTopic ||
+                          (index === 0 && entries.length < 8)}
+                        >
                           <summary>
                             <span>${this.text(item.title) || "—"}</span>
                             <svg class="material-icon" width="20" height="20">

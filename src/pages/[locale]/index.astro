@@ -1,0 +1,10 @@
+---
+import HomeDocument from "../../components/HomeDocument.astro";
+import { LOCALES, DEFAULT_LOCALE, type Locale } from "../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+}
+const { locale } = Astro.props as { locale: Locale };
+---
+<HomeDocument locale={locale} />

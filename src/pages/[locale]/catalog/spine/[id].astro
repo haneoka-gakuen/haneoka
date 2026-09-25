@@ -1,0 +1,14 @@
+---
+import SpineEntityPage from "../../../../components/entities/SpineEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { searchableModelPages, type SearchableModelPage } from "../../../../lib/searchable-models";
+
+export async function getStaticPaths() {
+  const pages = (await searchableModelPages()).filter((page) => page.kind === "spine");
+  return LOCALES.flatMap((locale) =>
+    pages.map((page) => ({ params: { locale, id: page.id }, props: { page, locale } })),
+  );
+}
+const { page, locale } = Astro.props as { page: SearchableModelPage; locale: Locale };
+---
+<SpineEntityPage page={page} locale={locale} />

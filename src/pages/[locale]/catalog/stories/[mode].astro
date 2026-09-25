@@ -1,0 +1,15 @@
+---
+import StoryDocument from "../../../../components/StoryDocument.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    ["band", "link", "home", "afterlive", "tutorial"].map((mode) => ({
+      params: { locale, mode },
+      props: { locale, mode },
+    })),
+  );
+}
+const { locale, mode } = Astro.props as { locale: Locale; mode: "band" | "link" | "home" | "afterlive" | "tutorial" };
+---
+<StoryDocument locale={locale} mode={mode} />

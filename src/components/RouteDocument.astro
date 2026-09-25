@@ -1,0 +1,61 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import CatalogIndexPage from "./pages/CatalogIndexPage.astro";
+import LegalPage from "./pages/LegalPage.astro";
+import NoticePage from "./pages/NoticePage.astro";
+import { catalogConfig } from "../config/catalog-labels";
+import type { RouteDefinition } from "../config/routes";
+import { LOCALES, type Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+import "../lit/catalog-screen";
+import "../lit/tgw-card-workspace";
+import "../lit/mission-workspace";
+import "../styles/catalog.css";
+
+interface Props {
+  locale: Locale;
+  entry: RouteDefinition;
+  title: string;
+}
+const { locale, entry, title } = Astro.props;
+const screenConfig =
+  entry.kind === "catalog" && entry.resource
+    ? catalogConfig({ resource: entry.resource, locale, aspectRatio: entry.resource === "cards" ? "224 / 294" : "1" })
+    : "";
+const workspaceLabels = (keys: readonly string[], path: (key: string) => string) =>
+  JSON.stringify(
+    Object.fromEntries(
+      LOCALES.map((target) => [
+        target,
+        Object.fromEntries(keys.map((key) => [key, t(target, path(key), key)])),
+      ]),
+    ),
+  );
+const missionLabels = entry.kind === "missions" ? workspaceLabels(["regularMission", "limitedMission"], (key) => `system.${key}`) : "{}";
+const tgwLabels =
+  entry.kind === "tgw-card"
+    ? workspaceLabels(
+        ["about", "dailyPoints", "consecutive", "rankRewards", "dailyRewards", "empty", "reward"],
+        (key) => `tgw.${key}`,
+      )
+    : "{}";
+---
+
+<Base locale={locale} route={entry.route} title={title} titleKey={entry.titleKey} description={title}>
+  <AppShell locale={locale} route={entry.route} title={title} titleKey={entry.titleKey}>
+    {entry.kind === "index" && <CatalogIndexPage locale={locale} />}
+    {entry.kind === "legal" && entry.page && <LegalPage locale={locale} page={entry.page} />}
+    {entry.kind === "notice" && (
+      <NoticePage locale={locale} title={title} titleKey={entry.titleKey} route={entry.route} />
+    )}
+    {entry.kind === "catalog" && <catalog-screen config={screenConfig}></catalog-screen>}
+    {entry.kind === "tgw-card" && <tgw-card-workspace locale={locale} labels={tgwLabels}></tgw-card-workspace>}
+    {entry.kind === "missions" && <mission-workspace locale={locale} labels={missionLabels}></mission-workspace>}
+  </AppShell>
+</Base>
+<script>
+  import "../lit/catalog-screen";
+  import "../lit/tgw-card-workspace";
+  import "../lit/mission-workspace";
+</script>

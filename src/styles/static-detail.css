@@ -1,0 +1,119 @@
+/*
+ * Server-rendered entity detail fallbacks.
+ *
+ * The static pages render the entity's content as plain markup next to the
+ * interactive workspace. The workspaces render into the light DOM, so once
+ * one hydrates it fills its own element and each page's `:not(:empty)`
+ * sibling rule hides this block — crawlers and no-JS visitors read the
+ * markup below, everyone else sees the live viewer.
+ */
+.static-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.static-detail__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.static-detail__back {
+  width: fit-content;
+  color: var(--md-sys-color-primary);
+  text-decoration: none;
+}
+
+.static-detail__header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+
+.static-detail__subtitle {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.static-detail__meta {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.static-detail__image {
+  width: min(100%, 24rem);
+  height: auto;
+  border-radius: 0.75rem;
+  align-self: center;
+  background: var(--md-sys-color-surface-container);
+}
+
+.static-detail__facts {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem 1.25rem;
+}
+
+.static-detail__facts > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.75rem;
+}
+
+.static-detail__facts dt {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.85rem;
+}
+
+.static-detail__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.static-detail__body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+/* Story transcripts */
+.static-story__chapter {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1rem;
+  color: var(--md-sys-color-primary);
+}
+
+.static-story__line {
+  margin: 0 0 0.6rem;
+  line-height: 1.7;
+}
+
+.static-story__line b {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.static-story__line span {
+  white-space: pre-wrap;
+}
+
+.static-story__choices {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 0.75rem;
+}
+
+.static-story__choices small {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.static-story__choices ul {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}

@@ -1,0 +1,14 @@
+---
+import AnonTokyoDocument from "../../../../components/AnonTokyoDocument.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+
+export function getStaticPaths() {
+  return LOCALES.flatMap((locale) =>
+    ["characters", "outfits", "shop", "goods", "decorations", "staff", "customers", "tasks", "guide", "fever"].map(
+      (mode) => ({ params: { locale, mode }, props: { locale, mode } }),
+    ),
+  );
+}
+const { locale, mode } = Astro.props as { locale: Locale; mode: string };
+---
+<AnonTokyoDocument locale={locale} mode={mode} />

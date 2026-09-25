@@ -2277,13 +2277,62 @@ async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
   return response;
 }
 
+/**
+ * Locale-prefixed paths are the canonical, built pages. Anything else that
+ * still reaches the worker is a legacy unprefixed page address: send the
+ * visitor to their language's copy — cookie first (the site persists the
+ * detected locale there), then Accept-Language, then English.
+ */
+function negotiateLocale(request: Request): "ja" | "en" | "zh-TW" | "zh-CN" | "ko" {
+  const localePattern = /^(ja|en|zh-TW|zh-CN|ko)$/u;
+  const cookie = /(?:^|;\s*)haneoka\.locale=([^;]+)/u.exec(request.headers.get("cookie") || "")?.[1];
+  if (cookie) {
+    const value = decodeURIComponent(cookie);
+    if (localePattern.test(value)) return value as "ja" | "en" | "zh-TW" | "zh-CN" | "ko";
+  }
+  const tags = (request.headers.get("accept-language") || "").split(",");
+  for (const part of tags) {
+    const tag = (part.split(";")[0] || "").trim().replaceAll("_", "-").toLowerCase();
+    if (!tag) continue;
+    if (tag === "ja") return "ja";
+    if (tag === "en") return "en";
+    if (tag === "ko") return "ko";
+    if (tag.startsWith("zh")) {
+      if (/^(?:zh-hant|zh-tw|zh-hk|zh-mo)/u.test(tag)) return "zh-TW";
+      return "zh-CN";
+    }
+  }
+  return "en";
+}
+
+const WORKER_FIRST_PREFIXES = [
+  "/api/",
+  "/artifacts/",
+  "/assets/",
+  "/catalog/assets/",
+  "/community/",
+  "/game-client/",
+  "/objects/",
+  "/runtime/",
+  "/sonolus/",
+];
+
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
-  const legacyLocale = /^\/(?:ja|en|zh-TW|zh-CN|ko)(\/.*)?$/u.exec(url.pathname);
-  if (legacyLocale) {
+  const hasLocalePrefix = /^\/(?:ja|en|zh-TW|zh-CN|ko)(?:\/|$)/u.test(url.pathname);
+  const lastSegment = url.pathname.split("/").pop() || "";
+  if (
+    !hasLocalePrefix &&
+    (request.method === "GET" || request.method === "HEAD") &&
+    !lastSegment.includes(".") &&
+    !WORKER_FIRST_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  ) {
     const target = new URL(url);
-    target.pathname = legacyLocale[1] || "/";
-    return Response.redirect(target.toString(), 308);
+    target.pathname = `/${negotiateLocale(request)}${url.pathname === "/" ? "/" : `${url.pathname.replace(/\/+$/, "")}/`}`;
+    return new Response(null, {
+      status: 302,
+      headers: { Location: target.toString(), "Cache-Control": "no-store", Vary: "Cookie, Accept-Language" },
+    });
   }
   if (url.hostname === CANONICAL_HOST && url.protocol !== "https:") return redirectToCanonical(url);
   const dynamicHost =

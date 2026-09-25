@@ -1,0 +1,17 @@
+---
+import StoryEntityPage from "../../../../../components/entities/StoryEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../../i18n/locales";
+import { searchableStoryPages, type SearchableStoryPage } from "../../../../../lib/searchable-stories";
+
+export async function getStaticPaths() {
+  const pages = await searchableStoryPages();
+  return LOCALES.flatMap((locale) =>
+    pages.map((page) => ({
+      params: { locale, mode: page.mode, id: page.storyId },
+      props: { page, locale },
+    })),
+  );
+}
+const { page, locale } = Astro.props as { page: SearchableStoryPage; locale: Locale };
+---
+<StoryEntityPage page={page} locale={locale} />

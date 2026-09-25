@@ -1,0 +1,86 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../../components/AppShell.astro";
+import { findRoute, titleOf } from "../../config/routes";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import type { SearchableStoryPage, StaticStoryLine } from "../../lib/searchable-stories";
+import "../../lit/story-workspace";
+import "../../styles/story.css";
+import "../../styles/static-detail.css";
+
+interface Props {
+  page: SearchableStoryPage;
+  locale: Locale;
+}
+const { page, locale } = Astro.props;
+const modeLabel = (target: Locale) => t(target, `storyNavigation.${page.mode}`, page.mode);
+const sectionRoute = `/catalog/stories/${page.mode}`;
+const sectionRouteDefinition = findRoute(sectionRoute);
+if (!sectionRouteDefinition) throw new Error(`Missing route definition for ${sectionRoute}`);
+const sectionTitle = titleOf(sectionRouteDefinition, locale);
+const route = `${sectionRoute}/${page.storyId}`;
+const seoTitleValues = Object.fromEntries(
+  LOCALES.map((target) => {
+    const chapter = page.chapterNames[target];
+    const parts = [page.titles[target], chapter && chapter !== page.titles[target] ? chapter : "", modeLabel(target)];
+    return [target, parts.filter(Boolean).join(" · ")];
+  }),
+) as Record<Locale, string>;
+const choicesLabel = t(locale, "choices", "Choices");
+const line = (entry: StaticStoryLine) =>
+  entry.kind === "chapter"
+    ? `<h2 class="static-story__chapter">${entry.text}</h2>`
+    : entry.kind === "choices"
+      ? `<div class="static-story__choices"><small>${choicesLabel}</small><ul>${entry.choices
+          .map((choice) => `<li>${choice}</li>`)
+          .join("")}</ul></div>`
+      : `<p class="static-story__line">${entry.name ? `<b>${entry.name}</b>` : ""}<span>${entry.text}</span></p>`;
+---
+
+<Base
+  locale={locale}
+  route={route}
+  title={sectionTitle}
+  titleKey={sectionRouteDefinition.titleKey}
+  description={page.descriptions[locale]}
+  seoTitleValues={seoTitleValues}
+  seoDescriptionValues={page.descriptions}
+>
+  <AppShell locale={locale} route={sectionRoute} title={sectionTitle} titleKey={sectionRouteDefinition.titleKey}>
+    <story-workspace locale={locale} mode={page.mode}></story-workspace>
+    <article class="static-detail" data-static-detail>
+      <header class="static-detail__header">
+        <a class="static-detail__back" href={`${sectionRoute}/`}>{sectionTitle}</a>
+        <h1>{page.titles[locale]}</h1>
+        {page.chapterNames[locale] && page.chapterNames[locale] !== page.titles[locale] && (
+          <p class="static-detail__subtitle">{page.chapterNames[locale]}</p>
+        )}
+        {page.characterNames[locale] && (
+          <p class="static-detail__meta">
+            {t(locale, "character", "Character")}: {page.characterNames[locale]}
+          </p>
+        )}
+      </header>
+      <div class="story-transcript">
+        <h2>{t(locale, "storyText", "Text")}</h2>
+        <Fragment set:html={page.lines[locale].map(line).join("")} />
+      </div>
+    </article>
+  </AppShell>
+</Base>
+<script is:inline define:vars={{ storyId: page.storyId }}>
+  const params = new URLSearchParams(location.search);
+  if (!params.has("story")) {
+    params.set("story", storyId);
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+  }
+</script>
+<script>
+  import "../../lit/story-workspace";
+</script>
+<style is:global>
+  story-workspace:not(:empty) ~ [data-static-detail] {
+    display: none;
+  }
+</style>

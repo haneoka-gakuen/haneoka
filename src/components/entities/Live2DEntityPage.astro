@@ -1,0 +1,78 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../../components/AppShell.astro";
+import { findRoute, titleOf } from "../../config/routes";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import type { SearchableModelPage } from "../../lib/searchable-models";
+import "../../lit/live2d-workspace";
+import "../../styles/catalog.css";
+import "../../styles/viewer.css";
+import "../../styles/static-detail.css";
+
+interface Props {
+  page: SearchableModelPage;
+  locale: Locale;
+}
+const { page, locale } = Astro.props;
+const sectionRoute = "/catalog/live2d";
+const sectionRouteDefinition = findRoute(sectionRoute);
+if (!sectionRouteDefinition) throw new Error(`Missing route definition for ${sectionRoute}`);
+const sectionTitle = titleOf(sectionRouteDefinition, locale);
+const route = `${sectionRoute}/${page.id}`;
+const seoTitleValues = Object.fromEntries(
+  LOCALES.map((target) => {
+    const subtitle = page.subtitles[target];
+    return [
+      target,
+      [page.titles[target], subtitle && subtitle !== page.titles[target] ? subtitle : "", sectionTitle]
+        .filter(Boolean)
+        .join(" · "),
+    ];
+  }),
+) as Record<Locale, string>;
+---
+
+<Base
+  locale={locale}
+  route={route}
+  title={sectionTitle}
+  titleKey={sectionRouteDefinition.titleKey}
+  description={page.descriptions[locale]}
+  seoTitleValues={seoTitleValues}
+  seoDescriptionValues={page.descriptions}
+>
+  <AppShell locale={locale} route={sectionRoute} title={sectionTitle} titleKey={sectionRouteDefinition.titleKey}>
+    <live2d-workspace locale={locale}></live2d-workspace>
+    <article class="static-detail" data-static-detail>
+      <header class="static-detail__header">
+        <a class="static-detail__back" href={`${sectionRoute}/`}>{sectionTitle}</a>
+        <h1>{page.titles[locale]}</h1>
+        {page.image && <img class="static-detail__image" src={page.image} alt={page.titles[locale]} decoding="async" />}
+      </header>
+      <dl class="static-detail__facts">
+        {page.facts[locale].map((fact) => (
+          <div>
+            <dt>{t(locale, fact.key, fact.key)}</dt>
+            <dd>{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
+  </AppShell>
+</Base>
+<script is:inline define:vars={{ id: page.id }}>
+  const params = new URLSearchParams(location.search);
+  if (!params.has("model")) {
+    params.set("model", id);
+    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+  }
+</script>
+<script>
+  import "../../lit/live2d-workspace";
+</script>
+<style is:global>
+  live2d-workspace:not(:empty) ~ [data-static-detail] {
+    display: none;
+  }
+</style>

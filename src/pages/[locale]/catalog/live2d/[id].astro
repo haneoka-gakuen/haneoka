@@ -1,0 +1,14 @@
+---
+import Live2DEntityPage from "../../../../components/entities/Live2DEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { searchableModelPages, type SearchableModelPage } from "../../../../lib/searchable-models";
+
+export async function getStaticPaths() {
+  const pages = (await searchableModelPages()).filter((page) => page.kind === "live2d");
+  return LOCALES.flatMap((locale) =>
+    pages.map((page) => ({ params: { locale, id: page.id }, props: { page, locale } })),
+  );
+}
+const { page, locale } = Astro.props as { page: SearchableModelPage; locale: Locale };
+---
+<Live2DEntityPage page={page} locale={locale} />
