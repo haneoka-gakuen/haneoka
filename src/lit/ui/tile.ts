@@ -1,5 +1,4 @@
 import { html, nothing, type TemplateResult } from "lit";
-import { html as staticHtml, literal } from "lit/static-html.js";
 import { icon } from "./icon";
 
 /**
@@ -84,7 +83,6 @@ const markClass = (mark: TileMark) =>
     .join(" ");
 
 export function tile(options: TileOptions): TemplateResult {
-  const tag = options.href ? literal`a` : literal`button`;
   const natural = options.natural ?? !["rail", "story", "model", "live2d", "spine"].includes(options.kind || "");
   const classes = [
     "tile",
@@ -94,70 +92,91 @@ export function tile(options: TileOptions): TemplateResult {
   ]
     .filter(Boolean)
     .join(" ");
-  return staticHtml`
-    <${tag}
+  // Rendered as two plain templates rather than one static-html template with
+  // a literal tag name: static templates lose their event-part wiring when the
+  // bundler splits the lit modules across chunks in a different order, which
+  // silently left every tile unclickable in production builds.
+  const media = html`
+    <span class=${`tile__media ${natural ? "tile__media--natural" : ""} ${options.fit ? `tile__media--${options.fit}` : ""}`}>
+      ${
+        options.media ??
+        (options.image
+          ? html`
+              <img
+                data-src=${options.image}
+                data-fallback=${options.imageFallback || nothing}
+                data-fallbacks=${options.imageCandidates ? JSON.stringify(options.imageCandidates) : nothing}
+                alt=""
+                decoding="async"
+                @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
+                @error=${options.onImageError}
+              />
+            `
+          : (options.placeholder ?? icon("image", 32)))
+      }
+      ${(options.marks || []).map((mark) =>
+        mark
+          ? html`
+              <span
+                class=${markClass(mark)}
+                title=${mark.label || nothing}
+                style=${mark.accent ? `--mark:${mark.accent}` : nothing}
+              >
+                ${
+                  mark.image
+                    ? html`
+                        <img src=${mark.image} alt="" width="16" height="16" />
+                      `
+                    : nothing
+                }
+                ${mark.text ?? nothing}
+              </span>
+            `
+          : nothing,
+      )}
+    </span>
+    <span class="tile__identity">
+      <strong class="tile__title" lang=${options.titleLanguage || nothing}>${options.title}</strong>
+      ${
+        options.subtitle === null || options.subtitle === undefined
+          ? nothing
+          : html`
+              <small class="tile__subtitle">
+                ${options.adornment ?? nothing}
+                <span>${options.subtitle || " "}</span>
+              </small>
+            `
+      }
+    </span>
+  `;
+  if (options.href)
+    return html`
+      <a
+        class=${classes}
+        href=${options.href}
+        role=${options.role ?? nothing}
+        aria-controls=${options.controls ?? nothing}
+        tabindex=${options.tabIndex ?? nothing}
+        aria-selected=${options.selected === undefined ? nothing : String(options.selected)}
+        aria-label=${options.label}
+        style=${options.style || nothing}
+        @click=${options.onOpen ?? nothing}
+        >${media}</a
+      >
+    `;
+  return html`
+    <button
       class=${classes}
-      type=${options.href ? nothing : "button"}
-      href=${options.href || nothing}
+      type="button"
+      aria-label=${options.label}
       role=${options.role ?? nothing}
       aria-controls=${options.controls ?? nothing}
       tabindex=${options.tabIndex ?? nothing}
-      aria-label=${options.label}
       aria-selected=${options.selected === undefined ? nothing : String(options.selected)}
       style=${options.style || nothing}
       @click=${options.onOpen ?? nothing}
     >
-      <span class=${`tile__media ${natural ? "tile__media--natural" : ""} ${options.fit ? `tile__media--${options.fit}` : ""}`}>
-        ${
-          options.media ??
-          (options.image
-            ? html`
-                <img
-                  data-src=${options.image}
-                  data-fallback=${options.imageFallback || nothing}
-                  data-fallbacks=${options.imageCandidates ? JSON.stringify(options.imageCandidates) : nothing}
-                  alt=""
-                  decoding="async"
-                  @load=${(event: Event) => (event.currentTarget as HTMLImageElement).classList.add("is-loaded")}
-                  @error=${options.onImageError}
-                />
-              `
-            : (options.placeholder ?? icon("image", 32)))
-        }
-        ${(options.marks || []).map((mark) =>
-          mark
-            ? html`
-                <span
-                  class=${markClass(mark)}
-                  title=${mark.label || nothing}
-                  style=${mark.accent ? `--mark:${mark.accent}` : nothing}
-                >
-                  ${
-                    mark.image
-                      ? html`
-                          <img src=${mark.image} alt="" width="16" height="16" />
-                        `
-                      : nothing
-                  }
-                  ${mark.text ?? nothing}
-                </span>
-              `
-            : nothing,
-        )}
-      </span>
-      <span class="tile__identity">
-        <strong class="tile__title" lang=${options.titleLanguage || nothing}>${options.title}</strong>
-        ${
-          options.subtitle === null || options.subtitle === undefined
-            ? nothing
-            : html`
-                <small class="tile__subtitle">
-                  ${options.adornment ?? nothing}
-                  <span>${options.subtitle || " "}</span>
-                </small>
-              `
-        }
-      </span>
-    </${tag}>
+      ${media}
+    </button>
   `;
 }

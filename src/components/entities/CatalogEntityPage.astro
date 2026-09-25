@@ -47,55 +47,54 @@ const screenConfig = catalogConfig({
   seoDescriptionValues={page.descriptions}
 >
   <AppShell locale={locale} route={page.route} title={sectionTitle} titleKey={collectionRoute.titleKey}>
-    <catalog-screen config={screenConfig}>
-      <aside
-        class:list={["sheet", "sheet--detail", `sheet--detail-${page.kind}`, "is-open"]}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`static-detail-${page.id}-title`}
-        style={page.accent ? `--entity-accent:${page.accent}` : undefined}
-      >
-        <header class="sheet__header">
-          <a class="icon-button" href={`${page.route}/`} aria-label={t(locale, "close", "Close")}>
-            <Icon name="arrow_back" />
-          </a>
-          <span class="sheet__title" id={`static-detail-${page.id}-title`}>
-            <strong lang={page.titles[locale] === page.title ? "ja" : undefined}>{page.titles[locale]}</strong>
-            {page.subtitles[locale] && <small>{page.subtitles[locale]}</small>}
-          </span>
-          <span class="sheet__actions"></span>
-        </header>
-        <div class="sheet__body">
-          <div class="detail-layout">
-            <div class="detail-layout__media">
-              {page.image && (
-                <div class="image-gallery">
-                  <div class="image-gallery__stage">
-                    <img src={page.image} alt={page.titles[locale]} decoding="async" />
-                  </div>
+    <catalog-screen transition:persist config={screenConfig}></catalog-screen>
+    <aside
+      class:list={["sheet", "sheet--detail", `sheet--detail-${page.kind}`, "is-open", "static-detail"]}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={`static-detail-${page.id}-title`}
+      style={page.accent ? `--entity-accent:${page.accent}` : undefined}
+    >
+      <header class="sheet__header">
+        <a class="icon-button" href={`/${locale}${page.route}/`} aria-label={t(locale, "close", "Close")}>
+          <Icon name="arrow_back" />
+        </a>
+        <span class="sheet__title" id={`static-detail-${page.id}-title`}>
+          <strong lang={page.titles[locale] === page.title ? "ja" : undefined}>{page.titles[locale]}</strong>
+          {page.subtitles[locale] && <small>{page.subtitles[locale]}</small>}
+        </span>
+        <span class="sheet__actions"></span>
+      </header>
+      <div class="sheet__body">
+        <div class="detail-layout">
+          <div class="detail-layout__media">
+            {page.image && (
+              <div class="image-gallery">
+                <div class="image-gallery__stage">
+                  <img src={page.image} alt={page.titles[locale]} decoding="async" />
                 </div>
-              )}
-            </div>
-            <div class="detail-layout__content pane-sections">
-              {page.bodies[locale] && <p class="detail-description">{page.bodies[locale]}</p>}
-              {page.facts[locale].length > 0 && (
-                <section class="detail-section detail-section--facts">
-                  <h2 class="detail-section-title detail-section-title--h2">{sectionHeading}</h2>
-                  <dl class="spec-list spec-list--split">
-                    {page.facts[locale].map((fact) => (
-                      <div>
-                        <dt>{t(locale, fact.key, fact.key)}</dt>
-                        <dd>{fact.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </section>
-              )}
-            </div>
+              </div>
+            )}
+          </div>
+          <div class="detail-layout__content pane-sections">
+            {page.bodies[locale] && <p class="detail-description">{page.bodies[locale]}</p>}
+            {page.facts[locale].length > 0 && (
+              <section class="detail-section detail-section--facts">
+                <h2 class="detail-section-title detail-section-title--h2">{sectionHeading}</h2>
+                <dl class="spec-list spec-list--split">
+                  {page.facts[locale].map((fact) => (
+                    <div>
+                      <dt>{t(locale, fact.key, fact.key)}</dt>
+                      <dd>{fact.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            )}
           </div>
         </div>
-      </aside>
-    </catalog-screen>
+      </div>
+    </aside>
   </AppShell>
 </Base>
 <script is:inline define:vars={{ selectionParam: page.selectionParam, id: page.id }}>
@@ -108,3 +107,8 @@ const screenConfig = catalogConfig({
 <script>
   import "../../lit/catalog-screen";
 </script>
+<style is:global>
+  catalog-screen:not(:empty) ~ .static-detail {
+    display: none;
+  }
+</style>

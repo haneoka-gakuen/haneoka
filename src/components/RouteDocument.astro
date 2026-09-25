@@ -49,7 +49,7 @@ const tgwLabels =
     {entry.kind === "notice" && (
       <NoticePage locale={locale} title={title} titleKey={entry.titleKey} route={entry.route} />
     )}
-    {entry.kind === "catalog" && <catalog-screen config={screenConfig}></catalog-screen>}
+    {entry.kind === "catalog" && <catalog-screen transition:persist config={screenConfig}></catalog-screen>}
     {entry.kind === "tgw-card" && <tgw-card-workspace locale={locale} labels={tgwLabels}></tgw-card-workspace>}
     {entry.kind === "missions" && <mission-workspace locale={locale} labels={missionLabels}></mission-workspace>}
   </AppShell>

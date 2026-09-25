@@ -879,11 +879,54 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     json(res, 405, { error: { code: "method_not_allowed", message: "Method not allowed" } });
     return;
   }
-  const legacyLocale = /^\/(?:ja|en|zh-TW|zh-CN|ko)(\/.*)?$/u.exec(url.pathname);
-  if (legacyLocale) {
-    const target = new URL(url);
-    target.pathname = legacyLocale[1] || "/";
-    res.writeHead(308, { Location: `${target.pathname}${target.search}${target.hash}` });
+  // Locale-prefixed paths are the built pages; anything else that looks like
+  // a page address moves to the visitor's locale — the same negotiation the
+  // production worker performs (cookie, then Accept-Language, then English).
+  const localePattern = /^\/(?:ja|en|zh-TW|zh-CN|ko)(?:\/|$)/u;
+  const lastSegment = url.pathname.split("/").pop() ?? "";
+  const unprefixedAppPrefixes = [
+    "/api/",
+    "/artifacts/",
+    "/assets/",
+    "/assets",
+    "/catalog/assets",
+    "/community",
+    "/game-client/",
+    "/objects/",
+    "/runtime/",
+    "/sonolus/",
+    "/auth",
+    "/account",
+    "/settings",
+    "/admin",
+  ];
+  if (
+    !localePattern.test(url.pathname) &&
+    ((req.method ?? "GET") === "GET" || req.method === "HEAD") &&
+    !lastSegment.includes(".") &&
+    !unprefixedAppPrefixes.some((prefix) => url.pathname.startsWith(prefix))
+  ) {
+    const cookieLocale = /(?:^|;\s*)haneoka\.locale=([^;]+)/u.exec(req.headers.cookie ?? "")?.[1];
+    const languageTag = (tag: string): string | null => {
+      const value = tag.trim().replaceAll("_", "-").toLowerCase();
+      if (!value) return null;
+      if (value === "ja" || value === "en" || value === "ko") return value;
+      if (value.startsWith("zh")) return /^(?:zh-hant|zh-tw|zh-hk|zh-mo)/u.test(value) ? "zh-TW" : "zh-CN";
+      return null;
+    };
+    let locale: string | null = null;
+    if (cookieLocale && localePattern.test(`/${decodeURIComponent(cookieLocale)}/`))
+      locale = decodeURIComponent(cookieLocale);
+    for (const part of (req.headers["accept-language"] ?? "").split(",")) {
+      locale = languageTag(part.split(";")[0] ?? "");
+      if (locale) break;
+    }
+    const resolved = locale ?? "en";
+    res.writeHead(302, {
+      Location: `/${resolved}${url.pathname === "/" ? "/" : `${url.pathname.replace(/\/+$/, "")}/`}${url.search}${url.hash}`,
+      "Cache-Control": "no-store",
+      Vary: "Cookie, Accept-Language",
+    });
     res.end();
     return;
   }
