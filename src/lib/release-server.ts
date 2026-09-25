@@ -1,4 +1,4 @@
-export const RELEASE_SERVERS = ["intl", "jp-cbt", "intl-cbt"] as const;
+export const RELEASE_SERVERS = ["jp", "intl", "jp-cbt", "intl-cbt"] as const;
 export type ReleaseServer = (typeof RELEASE_SERVERS)[number];
 const KEY = "haneoka.release-server";
 

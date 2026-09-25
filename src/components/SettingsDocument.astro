@@ -13,7 +13,6 @@ import hkFlag from "circle-flags/flags/hk.svg?url";
 import jpFlag from "circle-flags/flags/jp.svg?url";
 import krFlag from "circle-flags/flags/kr.svg?url";
 import bushimo from "../assets/icons/bushimo-circle.svg?url";
-import intlIcon from "../assets/icons/intl.png?url";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 
 const { locale } = Astro.props as { locale: Locale };
@@ -101,7 +100,8 @@ const groups: Group[] = [
     icon: "dns",
     initial: "intl",
     options: [
-      { value: "intl", image: intlIcon, label: "Our Notes" },
+      { value: "jp", image: bushimo, keyName: "settingsJapan", label: "Japan" },
+      { value: "intl", image: bilibili, keyName: "settingsGlobal", label: "Global" },
       { value: "jp-cbt", image: bushimo, beta: true, keyName: "settingsJapanCbt", label: "Japan CBT" },
       { value: "intl-cbt", image: bilibili, beta: true, keyName: "settingsGlobalCbt", label: "Global CBT" },
     ],
