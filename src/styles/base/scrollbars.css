@@ -1,0 +1,72 @@
+/*
+ * Scrollbars and native progress, in Material 3 dress.
+ *
+ * Browsers draw scrollbars outside the container's rounded corners and in a
+ * weight that fights the panes, so every scroller gets a slim overlay-style
+ * bar instead: a pill thumb in surface-container-highest on a transparent
+ * track, hiked to outline on hover. The two-pixel transparent rim keeps the
+ * pill inside the container's rounded clip instead of touching its edge.
+ * Standard properties cover Firefox; the webkit pseudo-elements cover
+ * Chromium and Safari.
+ *
+ * Native <progress> (upload meters) is drawn as an MD3 linear progress
+ * indicator: a full-round 4dp track in surface-container-highest with a
+ * primary indicator.
+ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-surface-container-highest) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: var(--md-sys-color-surface-container-highest);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-outline);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  margin: 4px 0;
+  border: none;
+  border-radius: 9999px;
+  background: var(--md-sys-color-surface-container-highest);
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+progress::-webkit-progress-value {
+  border-radius: 9999px;
+  background: var(--md-sys-color-primary);
+  transition: inline-size var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+}
+
+progress::-moz-progress-bar {
+  border-radius: 9999px;
+  background: var(--md-sys-color-primary);
+}

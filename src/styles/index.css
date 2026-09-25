@@ -7,6 +7,7 @@
 /* 2 — base */
 @import "./base/reset.css" layer(reset);
 @import "./base/typography.css" layer(base);
+@import "./base/scrollbars.css" layer(base);
 
 /* 3 — system */
 @import "./system/layout.css" layer(layout);
