@@ -841,6 +841,7 @@
     "relationshipFailed": "无法更新用户关系"
   },
   "communityPage": {
+    "writeComment": "写评论",
     "copyLink": "复制链接",
     "linkCopied": "链接已复制",
     "moreActions": "更多操作",

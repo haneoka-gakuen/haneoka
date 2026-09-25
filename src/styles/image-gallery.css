@@ -29,6 +29,83 @@
     max-height: 100%;
     object-fit: contain;
   }
+  /* The still-stage wrapper positions the animate button against the stage
+     box (the stage itself is an <a>, which cannot contain the button). */
+  .image-gallery__stagewrap {
+    position: relative;
+  }
+  .image-gallery__stage--cinema {
+    cursor: default;
+  }
+  /* Card clips and the card background share the exact 3:4 frame, so a
+     transparent clip lands on the scene where the game composites it. */
+  .image-gallery__cinema-frame {
+    position: relative;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
+    isolation: isolate;
+  }
+  .image-gallery__cinema-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .image-gallery__cinema-bg.is-visible {
+    opacity: 1;
+  }
+  .image-gallery__clip {
+    position: absolute;
+    inset: 0;
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .image-gallery__clip.is-current {
+    display: block;
+  }
+  .image-gallery__replay,
+  .image-gallery__animate {
+    position: absolute;
+    bottom: 12px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .image-gallery__replay {
+    left: 12px;
+  }
+  /* Sits directly beside the zoom (expand) control in the stage corner. */
+  .image-gallery__animate {
+    right: 56px;
+  }
+  .image-gallery__stage--cinema .image-gallery__animate {
+    right: 12px;
+  }
+  .image-gallery__thumb--video::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgb(11 15 20 / 0.72);
+    box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / 0.85);
+    clip-path: polygon(38% 26%, 76% 50%, 38% 74%);
+  }
   .image-gallery__expand {
     position: absolute;
     bottom: 12px;
@@ -71,6 +148,7 @@
     overflow: auto;
   }
   .image-gallery__thumbnails button {
+    position: relative;
     display: grid;
     place-items: center;
     width: 64px;

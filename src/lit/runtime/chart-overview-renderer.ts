@@ -65,6 +65,19 @@ const directionOf = (note: ChartNote): RenderDirection => {
   return "up";
 };
 
+/** Per-kind totals over the judged notes shown in the simple overview. */
+export const countNoteKinds = (chart: ChartDocument): { tap: number; flick: number; slide: number } => {
+  const counts = { tap: 0, flick: 0, slide: 0 };
+  for (const note of chart.notes) {
+    if (!note.visible || !note.judged) continue;
+    const kind = kindOf(note);
+    if (kind === "tap") counts.tap += 1;
+    else if (kind === "flick" || kind === "flick-left" || kind === "flick-right") counts.flick += 1;
+    else counts.slide += 1;
+  }
+  return counts;
+};
+
 export function drawDetailedChartOverview(
   canvas: HTMLCanvasElement,
   chart: ChartDocument,

@@ -31,7 +31,13 @@ import {
   type NoteSoundPlayer,
   type OurNotesInput,
 } from "@haneoka/cassiopeia-host-web";
-import { drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
+import { countNoteKinds, drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
+import {
+  chartImageFileName,
+  composeChartOverviewImage,
+  downloadChartOverviewImage,
+  type ChartOverviewExportMeta,
+} from "./chart-image-export";
 
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
 type RuntimeDescriptor = {
@@ -71,7 +77,10 @@ type ChartUiKey =
   | "backgroundBrightness"
   | "laneOpacity"
   | "guidelineOpacity"
-  | "guidelineCount";
+  | "guidelineCount"
+  | "noteTap"
+  | "noteFlick"
+  | "noteSlide";
 
 const SETTINGS_KEY = "haneoka:chart-player:v1";
 
@@ -601,6 +610,48 @@ export class ChartSimulator extends LitElement {
     if (!host || !canvas || !this.chart || !this.overviewSkin) return;
     drawDetailedChartOverview(canvas, this.chart, this.overviewSkin, host.clientHeight || 720);
   }
+  /** Renders the simple overview and downloads it as a framed PNG. */
+  async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
+    const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
+    if (!canvas || this.phase !== "ready" || !this.chart) return;
+    this.drawOverview();
+    const localize = (value: number) => value.toLocaleString(this.locale || undefined);
+    const stats = meta.stats.map((stat) => {
+      if (stat.value !== "—" || !stat.id) return stat;
+      // Older releases ship song-meta without the canonical metrics; the
+      // loaded chart still carries duration, BPM and density.
+      if (stat.id === "time") {
+        const seconds = this.chart.durationMs / 1000;
+        return { ...stat, value: `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}` };
+      }
+      if (stat.id === "bpm") {
+        const values = this.chart.bpmChanges.map((change) => change.bpm).filter((value) => value > 0);
+        if (!values.length) return stat;
+        const first = Math.round(values[0]!);
+        const max = Math.round(Math.max(...values));
+        return { ...stat, value: max !== first ? `${first}–${max}` : `${first}` };
+      }
+      if (stat.id === "nps" && this.chart.durationMs > 0) {
+        const judged = this.chart.notes.filter((note) => note.judged && note.visible).length;
+        return { ...stat, value: (judged / (this.chart.durationMs / 1000)).toFixed(2) };
+      }
+      return stat;
+    });
+    if (stats.length) {
+      // The per-kind breakdown follows the total note count (stats[0]).
+      const kinds = countNoteKinds(this.chart);
+      stats.splice(
+        1,
+        0,
+        { label: this.ui("noteTap"), value: localize(kinds.tap) },
+        { label: this.ui("noteFlick"), value: localize(kinds.flick) },
+        { label: this.ui("noteSlide"), value: localize(kinds.slide) },
+      );
+    }
+    const payload: ChartOverviewExportMeta = { ...meta, stats, locale: this.locale };
+    const blob = await composeChartOverviewImage(canvas, payload);
+    if (blob) downloadChartOverviewImage(blob, chartImageFileName(payload));
+  }
   private draw() {
     if (!this.renderer || !this.session || !this.frames) return;
     const time = this.clock?.timeMs || this.currentTime * 1000;
@@ -716,6 +767,9 @@ export class ChartSimulator extends LitElement {
         "가이드라인 투명도",
       ],
       guidelineCount: ["ガイドライン数", "Guideline count", "分隔線數量", "分隔线数量", "가이드라인 수"],
+      noteTap: ["タップ", "Tap", "單擊", "单击", "탭"],
+      noteFlick: ["フリック", "Flick", "上滑", "上滑", "플릭"],
+      noteSlide: ["スライド", "Slide", "滑鍵", "滑键", "슬라이드"],
     } as const;
     const index = Math.max(0, ["ja", "en", "zh-TW", "zh-CN", "ko"].indexOf(this.locale));
     return copy[key][index] || copy[key][1];

@@ -21,6 +21,7 @@ const LABEL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ["ascending", "ascending"],
   ["descending", "descending"],
   ["view", "view"],
+  ["downloadChart", "downloadChart"],
   ["grid", "grid"],
   ["list", "list"],
   ["loading", "loading"],

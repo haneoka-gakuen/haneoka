@@ -841,6 +841,7 @@
     "relationshipFailed": "사용자 관계를 변경할 수 없습니다"
   },
   "communityPage": {
+    "writeComment": "댓글 작성",
     "copyLink": "링크 복사",
     "linkCopied": "링크를 복사했습니다",
     "moreActions": "더보기",

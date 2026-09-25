@@ -841,6 +841,7 @@
     "relationshipFailed": "Could not update this relationship"
   },
   "communityPage": {
+    "writeComment": "Write a comment",
     "copyLink": "Copy link",
     "linkCopied": "Link copied",
     "moreActions": "More actions",

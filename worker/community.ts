@@ -5,6 +5,7 @@ import { handleCommunitySocialRequest } from "./community-social";
 import { requestIpMetadata } from "./ip-address";
 import { communityPostModerationText, inspectCommunityText, scheduleEntityModeration } from "./moderation";
 import { requestClientMetadata, type BrowserFamily, type OsFamily } from "./user-agent";
+import { avatarUrlSelect } from "./avatar-url";
 
 const COMMUNITY_PREFIX = "/api/v1/community";
 const MAX_JSON_BYTES = 256 * 1024;
@@ -756,7 +757,7 @@ const postSelect = `
     author.id AS authorId,
     author_identity.uid AS authorUid,
     author_profile.display_name AS authorName,
-    author.image AS authorImage
+    ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
   JOIN community_identity AS author_identity ON author_identity.user_id = post.author_id
@@ -806,7 +807,7 @@ const postListSelect = `
     author.id AS authorId,
     author_identity.uid AS authorUid,
     author_profile.display_name AS authorName,
-    author.image AS authorImage
+    ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
   JOIN community_identity AS author_identity ON author_identity.user_id = post.author_id
@@ -1632,7 +1633,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
        author.id AS authorId,
        author_identity.uid AS authorUid,
        author_profile.display_name AS authorName,
-       author.image AS authorImage
+       ${avatarUrlSelect("author")} AS authorImage
      FROM community_comment AS comment
      JOIN "user" AS author ON author.id = comment.author_id
      JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
@@ -2301,7 +2302,7 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
        author.id AS authorId,
        author_identity.uid AS authorUid,
        author_profile.display_name AS authorName,
-       author.image AS authorImage
+       ${avatarUrlSelect("author")} AS authorImage
      FROM community_comment AS comment
      JOIN "user" AS author ON author.id = comment.author_id
      JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
@@ -2539,7 +2540,7 @@ const listNotifications = async (request: Request, env: Env, url: URL): Promise<
        actor.id AS actorId,
        actor_identity.uid AS actorUid,
        actor_profile.display_name AS actorName,
-       actor.image AS actorImage
+       ${avatarUrlSelect("actor")} AS actorImage
      FROM community_notification AS notification
      LEFT JOIN "user" AS actor ON actor.id = notification.actor_user_id
      LEFT JOIN community_identity AS actor_identity ON actor_identity.user_id = notification.actor_user_id

@@ -1,4 +1,5 @@
 import { getAuthSession } from "./auth";
+import { avatarUrlSelect } from "./avatar-url";
 import { requestIpMetadata } from "./ip-address";
 import { resolveModerationAppeal } from "./moderation";
 
@@ -50,6 +51,7 @@ type PackageStatus =
   "expired" | "failed" | "processing" | "ready" | "reserved" | "succeeded" | "uploaded" | "uploading" | "verifying";
 
 interface AccessRow {
+  avatarUrl: string | null;
   emailVerified: number;
   role: AdminRole;
   signInRestricted: number;
@@ -650,6 +652,7 @@ const requireStaff = async (
   const now = Date.now();
   const profile = await env.DB.prepare(
     `SELECT profile.role, profile.status, profile.version, account.emailVerified AS emailVerified,
+            ${avatarUrlSelect("account")} AS avatarUrl,
             EXISTS(
               SELECT 1
               FROM community_user_restriction AS restriction
@@ -679,7 +682,7 @@ const requireStaff = async (
   }
   return {
     avatarSeed: session.user.id,
-    avatarUrl: session.user.image || null,
+    avatarUrl: profile.avatarUrl ?? session.user.image ?? null,
     email: session.user.email,
     name: session.user.name,
     profileVersion: profile.version,
@@ -805,7 +808,7 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
   values.push(now, now, now, limit);
   const result = await env.DB.prepare(
     `SELECT account.id, account.name AS accountName, account.email, account.emailVerified AS emailVerified,
-            account.image,
+            ${avatarUrlSelect("account")} AS image,
             account.createdAt AS createdAt, account.updatedAt AS updatedAt,
             profile.display_name AS publicDisplayName,
             profile.pending_display_name AS candidateDisplayName,

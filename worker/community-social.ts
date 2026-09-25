@@ -4,6 +4,7 @@ import { COMMENT_LAST_EDITED_AT_SELECT } from "./community-revision";
 import { requestIpMetadata } from "./ip-address";
 import { inspectCommunityText, scheduleEntityModeration } from "./moderation";
 import { requestClientMetadata, type BrowserFamily, type OsFamily } from "./user-agent";
+import { avatarUrlSelect } from "./avatar-url";
 
 const COMMUNITY_PREFIX = "/api/v1/community";
 const MAX_JSON_BYTES = 32 * 1024;
@@ -1074,7 +1075,7 @@ const readCommentResponse = async (env: Env, commentId: string, viewerId: string
             comment.ip_region_name AS ipRegionName,
             comment.browser_family AS browserFamily, comment.os_family AS osFamily,
             account.id AS authorId, identity.uid AS authorUid,
-            profile.display_name AS authorName, account.image AS authorImage,
+            profile.display_name AS authorName, ${avatarUrlSelect("account")} AS authorImage,
             EXISTS(
               SELECT 1 FROM community_comment_reaction AS reaction
               WHERE reaction.comment_id = comment.id AND reaction.user_id = ? AND reaction.kind = 'like'

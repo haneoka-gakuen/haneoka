@@ -841,6 +841,7 @@
     "relationshipFailed": "ユーザー関係を更新できませんでした"
   },
   "communityPage": {
+    "writeComment": "コメントを書く",
     "copyLink": "リンクをコピー",
     "linkCopied": "リンクをコピーしました",
     "moreActions": "その他の操作",

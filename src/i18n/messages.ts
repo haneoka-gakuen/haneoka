@@ -172,6 +172,7 @@ const supplemental: Record<string, readonly [string, string, string, string, str
   visual: ["ビジュアル", "Visual", "視覺", "视觉", "비주얼"],
   simple: ["シンプル", "Simple", "簡約", "简约", "간단"],
   watch: ["観賞", "Watch", "觀看", "观看", "감상"],
+  downloadChart: ["譜面画像をダウンロード", "Download chart image", "下載譜面圖片", "下载谱面图片", "악보 이미지 다운로드"],
   time: ["時間", "Time", "時間", "时间", "시간"],
   score: ["スコア", "Score", "分數", "分数", "점수"],
   eff: ["効率", "Efficiency", "效率", "效率", "효율"],

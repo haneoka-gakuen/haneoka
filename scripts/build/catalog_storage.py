@@ -415,6 +415,7 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
                 "memberCardAwakeResourceGroup",
                 "memberCardLevelGroup",
                 "memberCardRankGroup",
+                "movies",
                 "prefix",
                 "rankUpItemId",
                 "rarity",

@@ -1,4 +1,5 @@
 import { getAuthSession } from "./auth";
+import { avatarUrlSelect } from "./avatar-url";
 
 const PUBLIC_PROFILE_PREFIX = "/api/v1/community/users/";
 const POST_LIMIT = 24;
@@ -184,7 +185,7 @@ const readProfile = (env: Env, uid: number): Promise<PublicProfileRow | null> =>
   env.DB.prepare(
     `SELECT identity.uid, identity.user_id AS userId, identity.created_at AS joinedAt,
             profile.display_name AS displayName, profile.handle, profile.bio, profile.role,
-            account.image AS avatarUrl,
+            ${avatarUrlSelect("account")} AS avatarUrl,
             (
               SELECT COUNT(*)
               FROM community_user_follow AS follower

@@ -4,7 +4,7 @@ import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "
 import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
-import { PaneFocus, renderPane } from "./ui/pane";
+import { PaneFocus, paneSection, renderPane } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { catalogUrl, currentReleaseServer, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
@@ -71,6 +71,7 @@ export class CommunityWorkspace extends LitElement {
     unreadOnly: { state: true },
     postState: { state: true },
     cardMenu: { state: true },
+    commentDraftOpen: { state: true },
     toast: { state: true },
     replyTo: { state: true },
     commentSort: { state: true },
@@ -111,6 +112,7 @@ export class CommunityWorkspace extends LitElement {
   declare unreadOnly: boolean;
   declare postState: "active" | "archived";
   declare cardMenu: { post: Value; x: number; y: number } | null;
+  declare commentDraftOpen: boolean;
   declare toast: { text: string; undo?: () => void } | null;
   declare replyTo: string;
   declare commentSort: "hot" | "latest";
@@ -154,6 +156,7 @@ export class CommunityWorkspace extends LitElement {
     this.unreadOnly = false;
     this.postState = "active";
     this.cardMenu = null;
+    this.commentDraftOpen = false;
     this.toast = null;
     this.replyTo = "";
     this.commentSort = "hot";
@@ -287,7 +290,7 @@ export class CommunityWorkspace extends LitElement {
       this.playlistSort = query.get("sort") || "order";
       this.playlistOrder = query.get("order") === "desc" ? "desc" : "asc";
       this.playlistBand = query.get("band") || "";
-      this.setPageTitle(
+      this.setDocumentTitle(
         this.routeKind === "post-new"
           ? this.label("newPost", "New post")
           : this.routeKind === "post-edit"
@@ -299,10 +302,10 @@ export class CommunityWorkspace extends LitElement {
       void this.initialize();
     }, 0);
   }
-  private setPageTitle(value: string) {
+  /** The tab title follows the content; the app bar's heading stays the
+   * section name, exactly as the catalog's entity pages keep "图鉴". */
+  private setDocumentTitle(value: string) {
     if (!value) return;
-    const heading = document.querySelector<HTMLElement>(".top-app-bar h1");
-    if (heading) heading.textContent = value;
     document.title = `${value} · haneoka`;
   }
   private endpoint(append: boolean, refresh = false) {
@@ -377,7 +380,7 @@ export class CommunityWorkspace extends LitElement {
           throw new Error(response.status === 401 ? "Sign in to view this post" : `HTTP ${response.status}`);
         this.document = (await response.json()) as Value;
         const currentPost = ((this.document.post as Value | undefined) || this.document) as Value;
-        this.setPageTitle(String(currentPost.title || this.label("community", "Community")));
+        this.setDocumentTitle(String(currentPost.title || this.label("community", "Community")));
         if (this.routeKind === "post-edit") {
           const post = currentPost;
           this.editorTitle = String(post.title || "");
@@ -386,6 +389,9 @@ export class CommunityWorkspace extends LitElement {
           this.editorReady = true;
         }
         this.phase = "ready";
+        // The detail pane overlays the feed, as an entity page overlays its
+        // collection — fetch the page behind the pane when arriving directly.
+        if (!this.items.length) void this.loadBehindDetail();
         return;
       }
       if (this.routeKind === "user-detail") {
@@ -397,7 +403,7 @@ export class CommunityWorkspace extends LitElement {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         this.document = (await response.json()) as Value;
         const profile = ((this.document.profile as Value | undefined) || this.document) as Value;
-        this.setPageTitle(String(profile.displayName || profile.accountName || this.label("member", "Member")));
+        this.setDocumentTitle(String(profile.displayName || profile.accountName || this.label("member", "Member")));
         this.phase = "ready";
         return;
       }
@@ -475,6 +481,26 @@ export class CommunityWorkspace extends LitElement {
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
       this.phase = "error";
+    }
+  }
+  /** The collection shown behind an opened detail pane. Best effort: an
+   * empty or failing background fetch never blocks the detail itself. */
+  private async loadBehindDetail() {
+    try {
+      const response = await fetch(this.endpoint(false), {
+        headers: { accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = (await response.json()) as Value;
+      const posts = Array.isArray(data.posts) ? (data.posts as Value[]) : [];
+      if (posts.length) {
+        this.items = posts;
+        this.cursor = String(data.nextCursor || "");
+      }
+    } catch {
+      /* The pane stands alone when the feed cannot be loaded. */
     }
   }
   private submit(event: Event) {
@@ -1128,6 +1154,7 @@ export class CommunityWorkspace extends LitElement {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
       this.replyTo = "";
+      this.commentDraftOpen = false;
       await this.load(false);
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -1414,266 +1441,387 @@ export class CommunityWorkspace extends LitElement {
       </section>
     `;
   }
+  /** The detail pane's back action: an in-app arrival steps back through
+   * history; a direct entry (a shared link) lands on the feed. */
+  private leaveDetail() {
+    const referrer = document.referrer;
+    const sameOrigin = referrer && new URL(referrer).origin === location.origin;
+    if (sameOrigin && window.history.length > 1) history.back();
+    else location.assign(this.path("/community/feeds"));
+  }
+  /** One avatar, everywhere: the moderated avatar URL when there is one,
+   * the member's initial when there is not. Sizes are CSS modifiers. */
+  private avatar(url: unknown, name: unknown, size: 20 | 28 | 40 = 40) {
+    const initial = String(name || "?").slice(0, 1);
+    return html`
+      <span class=${`community-avatar community-avatar--${size}`} aria-hidden="true">
+        ${url ? html`<img src=${String(url)} alt="" loading="lazy" decoding="async" />` : initial}
+      </span>
+    `;
+  }
+  /**
+   * The post detail, as the archive presents an entity: the feed behind a
+   * full-pane detail sheet — back action, title, sections with headings and
+   * spec lists — the same anatomy a song or card detail uses.
+   */
   private renderPostDetail() {
     const post = ((this.document?.post as Value | undefined) || this.document || {}) as Value;
     const comments = Array.isArray(this.document?.comments) ? (this.document.comments as Value[]) : [];
     const viewer = ((this.document?.viewer as Value | undefined) || {}) as Value;
+    const authorName = String(
+      (post.author as Value | undefined)?.displayName || post.authorName || this.label("member", "Member"),
+    );
+    const authorUid = Number(post.authorUid || 0);
+    const attachments = Array.isArray(post.attachments) ? (post.attachments as Value[]) : [];
+    const images = attachments.filter((attachment) => String(attachment.mediaType).startsWith("image/"));
+    const files = attachments.filter((attachment) => !String(attachment.mediaType).startsWith("image/"));
     return html`
-      <section class="page page--compact community-detail-page">
-        ${
-          this.error
-            ? html`
-                <div class="inline-message error" role="alert">${this.error}</div>
-              `
-            : nothing
-        }
-        ${
-          this.message
-            ? html`
-                <div class="inline-message" role="status">${this.message}</div>
-              `
-            : nothing
-        }
-        <article class="surface surface--outlined community-post-detail">
-          <header>
-            <div>
-              <strong>
-                ${String((post.author as Value | undefined)?.displayName || post.authorName || this.label("member", "Member"))}
-              </strong>
-              <small>${this.date(post.createdAt)}</small>
-            </div>
-            <div class="community-post-actions">
-              ${
-                viewer.canEdit
-                  ? html`
-                      <a class="button button--text" href=${this.path(`/community/posts/${this.entityId}/edit`)}>
-                        ${this.label("editPost", "Edit post")}
-                      </a>
-                    `
-                  : nothing
-              }
-              <button
-                class="icon-button"
-                ?disabled=${this.busy}
-                aria-label=${this.label("report", "Report")}
-                @click=${() => this.openDialog("report", "post", post.id, post.title)}
-              >
-                ${icon("flag", 20)}
-              </button>
-            </div>
-          </header>
-          <h2>${String(post.title || this.label("emptyTitle", "Untitled"))}</h2>
-          <div class="community-rich-body community-bbcode">${unsafeHTML(bbcodeMarkup(String(post.body || "")))}</div>
+      ${this.renderCollection()}
+      ${renderPane({
+        id: "community-post-detail",
+        kind: "community-post",
+        open: true,
+        title: String(post.title || this.label("emptyTitle", "Untitled")),
+        subtitle: html`${authorName} · ${this.date(post.createdAt)}`,
+        backLabel: this.label("back", "Back"),
+        onClose: () => this.leaveDetail(),
+        actions: html`
           ${
-            Array.isArray(post.attachments) && post.attachments.length
-              ? html`
-                  <div class="community-attachment-grid">
-                    ${(post.attachments as Value[]).map((attachment) =>
-                      String(attachment.mediaType).startsWith("image/")
-                        ? html`
-                            <a href=${String(attachment.contentUrl)} target="_blank" rel="noopener">
-                              <img src=${String(attachment.contentUrl)} alt=${String(attachment.fileName || "")} />
-                            </a>
-                          `
-                        : html`
-                            <a
-                              class="button button--tonal"
-                              href=${String(attachment.contentUrl)}
-                              target="_blank"
-                              rel="noopener"
-                            >
-                              ${icon("description", 18)}${String(attachment.fileName || this.label("attachments", "Attachment"))}
-                            </a>
-                          `,
-                    )}
-                  </div>
-                `
+            viewer.canEdit
+              ? iconButton({
+                  label: this.label("editPost", "Edit post"),
+                  icon: "edit",
+                  onClick: () => location.assign(this.path(`/community/posts/${this.entityId}/edit`)),
+                })
               : nothing
           }
-          <footer>
+          ${iconButton({
+            label: this.label("report", "Report"),
+            icon: "flag",
+            disabled: this.busy,
+            onClick: () => this.openDialog("report", "post", post.id, post.title),
+          })}
+        `,
+        body: html`
+          <div class="community-post-pane">
             ${
-              Array.isArray(post.tags)
-                ? post.tags.map(
-                    (tag) => html`
-                      <span class="chip">#${String(tag)}</span>
-                    `,
-                  )
-                : nothing
-            }
-          </footer>
-          <div class="community-engagement" role="toolbar">
-            <button
-              class=${viewer.liked ? "selected" : ""}
-              ?disabled=${this.busy}
-              @click=${this.togglePostReaction}
-            >
-              ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 20)}
-              <span>${Number(post.likeCount || 0)}</span>
-            </button>
-            <button class=${viewer.bookmarked ? "selected" : ""} ?disabled=${this.busy} @click=${this.toggleBookmark}>
-              ${icon(viewer.bookmarked ? "bookmark_border-filled" : "bookmark_border", 20)}
-              <span>
-                ${viewer.bookmarked ? this.label("removeBookmark", "Remove bookmark") : this.label("addBookmark", "Bookmark")}
-              </span>
-            </button>
-            ${
-              viewer.canEdit
+              this.error
                 ? html`
-                    <button ?disabled=${this.busy} @click=${() => this.setPinned(!post.pinnedAt)}>
-                      ${icon(post.pinnedAt ? "keep_off" : "keep", 20)}
-                      <span>${post.pinnedAt ? this.label("unpinPost", "Unpin") : this.label("pinPost", "Pin")}</span>
-                    </button>
-                    <button ?disabled=${this.busy} @click=${() => this.setArchived(post.state !== "archived")}>
-                      ${icon(post.state === "archived" ? "unarchive" : "archive", 20)}
-                      <span>
-                        ${post.state === "archived" ? this.label("restorePost", "Restore") : this.label("archivePost", "Archive")}
-                      </span>
-                    </button>
-                    <button class="danger" ?disabled=${this.busy} @click=${this.deletePost}>
-                      ${icon("delete", 20)}
-                      <span>${this.label("deletePost", "Delete")}</span>
-                    </button>
+                    <div class="inline-message error" role="alert">${this.error}</div>
                   `
                 : nothing
             }
             ${
-              post.moderationStatus === "block" && viewer.canEdit
+              this.message
                 ? html`
-                    <button @click=${() => this.openDialog("appeal", "post", post.id, post.title)}>
-                      ${icon("gavel", 20)}
-                      <span>${this.label("appeal", "Appeal")}</span>
-                    </button>
+                    <div class="inline-message" role="status">${this.message}</div>
                   `
                 : nothing
             }
-          </div>
-        </article>
-        <section class="community-comments">
-          <header>
-            ${renderDetailSectionHeading(this.label("comments", "Comments"), "comments", {
-              count: comments.length,
-              level: 2,
-            })}
-            <div class="segmented">
-              <button
-                aria-pressed=${this.commentSort === "hot"}
-                @click=${() => {
-                  this.commentSort = "hot";
-                  void this.load(false);
-                }}
-              >
-                ${this.label("commentsHot", "Hot")}
-              </button>
-              <button
-                aria-pressed=${this.commentSort === "latest"}
-                @click=${() => {
-                  this.commentSort = "latest";
-                  void this.load(false);
-                }}
-              >
-                ${this.label("commentsLatest", "Latest")}
-              </button>
-            </div>
-          </header>
-          <form class="community-comment-form" @submit=${this.submitComment}>
             ${
-              this.replyTo
+              images.length
                 ? html`
-                    <div class="community-reply-banner">
-                      <span>${this.label("replying", "Replying")}</span>
-                      <button class="icon-button" type="button" @click=${() => (this.replyTo = "")}>
-                        ${icon("close", 18)}
-                      </button>
+                    <div class="community-post-pane__media">
+                      ${images.map(
+                        (attachment) => html`
+                          <a href=${String(attachment.contentUrl)} target="_blank" rel="noopener">
+                            <img
+                              src=${String(attachment.contentUrl)}
+                              alt=${String(attachment.fileName || "")}
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          </a>
+                        `,
+                      )}
                     </div>
                   `
                 : nothing
             }
-            <md-outlined-text-field
-              type="textarea"
-              rows="4"
-              label=${this.label("comment", "Comment")}
-              name="body"
-              required
-            ></md-outlined-text-field>
-            <button class="button" ?disabled=${this.busy}>${this.label("comment", "Comment")}</button>
-          </form>
-          ${comments.map((comment) => {
-            const commentViewer = ((comment.viewer as Value | undefined) || {}) as Value;
-            return html`
-              <article class="community-comment" id=${`comment-${comment.id}`}>
-                <span>
-                  <strong>
-                    ${String((comment.author as Value | undefined)?.displayName || comment.authorName || this.label("member", "Member"))}
-                  </strong>
-                  <small>${this.date(comment.createdAt)}</small>
-                  <div class="community-bbcode community-comment__body">
-                    ${unsafeHTML(bbcodeMarkup(String(comment.body || "")))}
-                  </div>
+            <div class="community-post-pane__content">
+              <section class="detail-section community-post-pane__author">
+                ${this.avatar(post.authorImage, authorName)}
+                <span class="community-post-pane__identity">
                   ${
-                    commentViewer.canEdit
+                    authorUid
                       ? html`
-                          <details class="community-comment-edit">
-                            <summary>${this.label("edit", "Edit")}</summary>
-                            <textarea class="text-area" data-comment-edit=${String(comment.id)}>
-${String(comment.body || "")}</textarea>
-                            <button class="button button--tonal" @click=${() => this.saveComment(comment)}>
-                              ${this.label("save", "Save")}
-                            </button>
-                          </details>
+                          <a class="community-post-pane__name" href=${this.path(`/community/users/${authorUid}`)}>
+                            ${authorName}
+                          </a>
                         `
-                      : nothing
+                      : html`
+                          <span class="community-post-pane__name">${authorName}</span>
+                        `
                   }
+                  <small>
+                    ${this.date(post.createdAt)}${
+                      post.lastEditedAt
+                        ? ` · ${this.label("lastEdited", "Last edited")} ${this.date(post.lastEditedAt)}`
+                        : ""
+                    }
+                  </small>
                 </span>
-                <footer>
-                  <button
-                    class=${commentViewer.liked ? "selected" : ""}
-                    @click=${() => this.toggleCommentReaction(comment)}
-                  >
-                    ${icon(commentViewer.liked ? "favorite-filled" : "favorite_border", 18)}${Number(comment.likeCount || 0)}
-                  </button>
-                  <button @click=${() => (this.replyTo = String(comment.id))}>
-                    ${icon("reply", 18)}${this.label("reply", "Reply")}
-                  </button>
-                  <button
-                    @click=${() => this.openDialog("report", "comment", comment.id, String(comment.body || "").slice(0, 80))}
-                  >
-                    ${icon("flag", 18)}${this.label("report", "Report")}
-                  </button>
-                  ${
-                    comment.moderationStatus === "block" && commentViewer.canEdit
-                      ? html`
-                          <button
-                            @click=${() => this.openDialog("appeal", "comment", comment.id, String(comment.body || "").slice(0, 80))}
-                          >
-                            ${icon("gavel", 18)}${this.label("appeal", "Appeal")}
-                          </button>
-                        `
-                      : nothing
-                  }${
-                    commentViewer.canDelete
-                      ? html`
-                          <button class="danger" @click=${() => this.deleteComment(comment)}>
-                            ${icon("delete", 18)}${this.label("delete", "Delete")}
-                          </button>
-                        `
-                      : nothing
-                  }
-                </footer>
-              </article>
-            `;
-          })}
+              </section>
+              <section class="detail-section">
+                <div class="community-bbcode detail-primary-copy">
+                  ${unsafeHTML(bbcodeMarkup(String(post.body || "")))}
+                </div>
+                ${
+                  Array.isArray(post.tags) && post.tags.length
+                    ? html`
+                        <footer class="community-post-pane__tags">
+                          ${post.tags.map(
+                            (tag) => html`
+                              <a
+                                class="chip chip--assist"
+                                href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}
+                              >
+                                <span class="chip__label">#${String(tag)}</span>
+                              </a>
+                            `,
+                          )}
+                        </footer>
+                      `
+                    : nothing
+                }
+                ${
+                  files.length
+                    ? html`
+                        <div class="community-post-pane__files">
+                          ${files.map(
+                            (attachment) => html`
+                              <a
+                                class="button button--tonal"
+                                href=${String(attachment.contentUrl)}
+                                target="_blank"
+                                rel="noopener"
+                              >
+                                ${icon("description", 18)}${String(attachment.fileName || this.label("attachments", "Attachment"))}
+                              </a>
+                            `,
+                          )}
+                        </div>
+                      `
+                    : nothing
+                }
+              </section>
+            ${paneSection(
+              this.label("comments", "Comments"),
+              icon("comment", 20),
+              html`
+                <div class="community-comments__bar">
+                  ${segmented({
+                    label: this.label("comments", "Comments"),
+                    value: this.commentSort,
+                    options: [
+                      { value: "hot", label: this.label("commentsHot", "Hot") },
+                      { value: "latest", label: this.label("commentsLatest", "Latest") },
+                    ],
+                    onSelect: (sort) => {
+                      this.commentSort = sort;
+                      void this.load(false);
+                    },
+                  })}
+                </div>
+                ${comments.map((comment) => this.renderComment(comment))}
+                ${
+                  this.document?.commentsNextCursor
+                    ? html`
+                        <button class="button button--tonal" ?disabled=${this.busy} @click=${this.loadMoreComments}>
+                          ${this.label("loadMoreComments", "Load more comments")}
+                        </button>
+                      `
+                    : nothing
+                }
+              `,
+              comments.length,
+            )}
+            </div>
+          </div>
+        `,
+        footer: html`
+          <div class=${`community-comment-bar${this.commentDraftOpen ? " is-open" : ""}`}>
+            <form
+              class="community-comment-bar__form"
+              @submit=${this.submitComment}
+              ?inert=${!this.commentDraftOpen}
+            >
+              ${this.replyTo ? html`<div class="community-reply-banner"><span>${this.label("replying", "Replying")}</span></div>` : nothing}
+              <md-outlined-text-field
+                type="textarea"
+                rows=${this.commentDraftOpen ? 3 : 1}
+                label=${this.replyTo ? this.label("reply", "Reply") : this.label("writeComment", "Write a comment")}
+                name="body"
+                ?disabled=${!this.commentDraftOpen}
+              ></md-outlined-text-field>
+            </form>
+            <div class="community-engagement" role="toolbar">
+              ${
+                this.commentDraftOpen
+                  ? html`
+                      <button class="button button--text" ?disabled=${this.busy} @click=${() => (this.commentDraftOpen = false)}>
+                        ${this.label("cancel", "Cancel")}
+                      </button>
+                      <button class="button" ?disabled=${this.busy} @click=${() => {
+                        const bar = this.querySelector(".community-comment-bar__form");
+                        const field = bar?.querySelector("md-outlined-text-field");
+                        (bar?.querySelector("button[type=submit]") ?? null)?.dispatchEvent(new Event("click", { bubbles: true }));
+                        void this.submitCommentBar(field);
+                      }}>
+                        ${this.label("comment", "Comment")}
+                      </button>
+                    `
+                  : html`
+                      <button
+                        class="icon-button"
+                        ?disabled=${this.busy}
+                        aria-label=${this.replyTo ? this.label("reply", "Reply") : this.label("writeComment", "Write a comment")}
+                        title=${this.replyTo ? this.label("reply", "Reply") : this.label("writeComment", "Write a comment")}
+                        @click=${() => (this.commentDraftOpen = true)}
+                      >
+                        ${icon("edit", 20)}
+                      </button>
+                    `
+              }
+              <span class="community-engagement__spacer"></span>
+              <button class=${viewer.liked ? "selected" : ""} ?disabled=${this.busy} @click=${this.togglePostReaction}>
+                ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 20)}
+                <span class="tabular">${Number(post.likeCount || 0)}</span>
+              </button>
+              <button
+                class=${viewer.bookmarked ? "selected" : ""}
+                ?disabled=${this.busy}
+                @click=${this.toggleBookmark}
+              >
+                ${icon(viewer.bookmarked ? "bookmark_border-filled" : "bookmark_border", 20)}
+                <span>
+                  ${viewer.bookmarked ? this.label("removeBookmark", "Remove bookmark") : this.label("addBookmark", "Bookmark")}
+                </span>
+              </button>
+              ${
+                viewer.canEdit
+                  ? html`
+                      <button ?disabled=${this.busy} @click=${() => this.setPinned(!post.pinnedAt)}>
+                        ${icon(post.pinnedAt ? "keep_off" : "keep", 20)}
+                        <span>${post.pinnedAt ? this.label("unpinPost", "Unpin") : this.label("pinPost", "Pin")}</span>
+                      </button>
+                      <button ?disabled=${this.busy} @click=${() => this.setArchived(post.state !== "archived")}>
+                        ${icon(post.state === "archived" ? "unarchive" : "archive", 20)}
+                        <span>
+                          ${post.state === "archived" ? this.label("restorePost", "Restore") : this.label("archivePost", "Archive")}
+                        </span>
+                      </button>
+                      <button class="danger" ?disabled=${this.busy} @click=${this.deletePost}>
+                        ${icon("delete", 20)}
+                        <span>${this.label("deletePost", "Delete")}</span>
+                      </button>
+                    `
+                  : nothing
+              }
+              ${
+                post.moderationStatus === "block" && viewer.canEdit
+                  ? html`
+                      <button @click=${() => this.openDialog("appeal", "post", post.id, post.title)}>
+                        ${icon("gavel", 20)}
+                        <span>${this.label("appeal", "Appeal")}</span>
+                      </button>
+                    `
+                  : nothing
+              }
+            </div>
+          </div>
+        `,
+      })}
+    `;
+  }
+  /** Submits the bottom-bar comment form. The field is a Material web
+   * component whose value lives on the host, not a DOM value property. */
+  private async submitCommentBar(field: HTMLElement & { value?: string } | null) {
+    const body = String(field?.value || "").trim();
+    if (!body) return;
+    await this.mutate(async () => {
+      const response = await fetch(`/api/v1/community/posts/${encodeURIComponent(this.entityId)}/comments`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ body, ...(this.replyTo ? { parentId: this.replyTo } : {}) }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      this.replyTo = "";
+      this.commentDraftOpen = false;
+      await this.load(false);
+    });
+  }
+  /** A comment row: avatar, author, body, then a footer of actions. */
+  private renderComment(comment: Value) {
+    const commentViewer = ((comment.viewer as Value | undefined) || {}) as Value;
+    const authorName = String(
+      (comment.author as Value | undefined)?.displayName || comment.authorName || this.label("member", "Member"),
+    );
+    return html`
+      <article class="community-comment" id=${`comment-${comment.id}`}>
+        ${this.avatar(comment.authorImage, authorName, 28)}
+        <div class="community-comment__main">
+          <header>
+            <strong>${authorName}</strong>
+            <small>${this.date(comment.createdAt)}</small>
+          </header>
+          <div class="community-bbcode community-comment__body">
+            ${unsafeHTML(bbcodeMarkup(String(comment.body || "")))}
+          </div>
           ${
-            this.document?.commentsNextCursor
+            commentViewer.canEdit
               ? html`
-                  <button class="button button--tonal" ?disabled=${this.busy} @click=${this.loadMoreComments}>
-                    ${this.label("loadMoreComments", "Load more comments")}
-                  </button>
+                  <details class="community-comment-edit">
+                    <summary>${this.label("edit", "Edit")}</summary>
+                    <textarea class="text-area" data-comment-edit=${String(comment.id)}>
+${String(comment.body || "")}</textarea>
+                    <button class="button button--tonal" @click=${() => this.saveComment(comment)}>
+                      ${this.label("save", "Save")}
+                    </button>
+                  </details>
                 `
               : nothing
           }
-        </section>
-        ${this.renderDialog()}
-      </section>
+          <footer>
+            <button class=${commentViewer.liked ? "selected" : ""} @click=${() => this.toggleCommentReaction(comment)}>
+              ${icon(commentViewer.liked ? "favorite-filled" : "favorite_border", 18)}${Number(comment.likeCount || 0)}
+            </button>
+            <button
+              @click=${() => {
+                this.replyTo = String(comment.id);
+                this.commentDraftOpen = true;
+              }}
+            >
+              ${icon("reply", 18)}${this.label("reply", "Reply")}
+            </button>
+            <button
+              @click=${() => this.openDialog("report", "comment", comment.id, String(comment.body || "").slice(0, 80))}
+            >
+              ${icon("flag", 18)}${this.label("report", "Report")}
+            </button>
+            ${
+              comment.moderationStatus === "block" && commentViewer.canEdit
+                ? html`
+                    <button
+                      @click=${() => this.openDialog("appeal", "comment", comment.id, String(comment.body || "").slice(0, 80))}
+                    >
+                      ${icon("gavel", 18)}${this.label("appeal", "Appeal")}
+                    </button>
+                  `
+                : nothing
+            }${
+              commentViewer.canDelete
+                ? html`
+                    <button class="danger" @click=${() => this.deleteComment(comment)}>
+                      ${icon("delete", 18)}${this.label("delete", "Delete")}
+                    </button>
+                  `
+                : nothing
+            }
+          </footer>
+        </div>
+      </article>
     `;
   }
   private renderDialog() {
@@ -2248,6 +2396,8 @@ ${String(comment.body || "")}</textarea>
       return this.renderPostEditor();
     }
     if (this.phase === "ready" && this.routeKind === "post-detail") {
+      // The detail pane owns the screen, the way an entity page does: the
+      // collection's bar controls would only act on the hidden feed behind.
       clearAppBarActions(COMMUNITY_BAR_OWNER);
       return this.renderPostDetail();
     }
@@ -2820,7 +2970,15 @@ ${String(comment.body || "")}</textarea>
                   href=${item.postId ? this.path(`/community/posts/${item.postId}`) : "#"}
                   @click=${() => this.markNotification(item)}
                 >
-                  <span class="list-item__avatar">${icon("notifications", 20)}</span>
+                  <span class="list-item__avatar">
+                    ${
+                      item.actorImage
+                        ? html`
+                            <img src=${String(item.actorImage)} alt="" loading="lazy" />
+                          `
+                        : String(item.actorName || "haneoka").slice(0, 1)
+                    }
+                  </span>
                   <span class="list-item__body">
                     <span class="list-item__headline">${item.actorName || "haneoka"}</span>
                     <span class="list-item__supporting">${item.kind || "notification"}</span>
@@ -2910,14 +3068,19 @@ ${String(comment.body || "")}</textarea>
                     }
                   </span>
                 `
-              : html`
-                  <span class="community-pin__media community-pin__media--text">
-                    <span class="community-pin__note">${excerpt || this.label("postBody", "What would you like to share?")}</span>
-                  </span>
-                `
+              : nothing
+              /* A text-only pin is exactly that: no cover block, no reserved
+                 ratio — the body is the full text, at its natural height. */
           }
           <span class="community-pin__body">
             <span class="community-pin__title">${String(post.title || this.label("emptyTitle", "Untitled"))}</span>
+            ${
+              images.length
+                ? nothing
+                : html`
+                    <span class="community-pin__note">${excerpt || this.label("postBody", "What would you like to share?")}</span>
+                  `
+            }
           </span>
         </a>
         <div class="community-pin__meta">

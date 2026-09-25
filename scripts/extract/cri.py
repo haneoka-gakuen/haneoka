@@ -259,6 +259,7 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
             usm = Usm.open(str(payload), key=int(key), encoding="cp932")
             encoding = "cp932"
         video_files = []
+        alpha_files: dict[int, Path] = {}
         for index, _ in enumerate(usm.videos):
             selected = None
             # CRI streams in production are mixed: most require the USM video
@@ -298,6 +299,24 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
             if selected is None:
                 raise ValueError(f"USM video stream {index} is neither a supported encrypted nor plain video")
             video_files.append(selected)
+            # Sofdec2 carries per-stream transparency as a parallel alpha
+            # mask stream (MPEG-1 grayscale here); pair it with the color
+            # stream so the runtime video keeps its transparency.
+            alpha_stream = usm.alphas[index] if index < len(usm.alphas) else None
+            if alpha_stream is None:
+                continue
+            alpha_candidate = scratch / f"alpha-{index}.bin"
+            with alpha_candidate.open("wb") as file:
+                for packet in alpha_stream.stream(mode, active_usm.video_key):
+                    file.write(packet[0] if isinstance(packet, tuple) else packet)
+            with alpha_candidate.open("rb") as input_stream:
+                alpha_header = input_stream.read(12)
+            if alpha_header[:4] == b"DKIF" or alpha_header[:4] == b"\x00\x00\x01\xb3":
+                alpha_target = alpha_candidate.with_suffix(".ivf" if alpha_header[:4] == b"DKIF" else ".m2v")
+                os.replace(alpha_candidate, alpha_target)
+                alpha_files[index] = alpha_target
+            else:
+                alpha_candidate.unlink()
         audio = None
         for index, stream in enumerate(usm.audios[:1]):
             raw_audio = scratch / f"audio-{index}.bin"
@@ -318,6 +337,7 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
             name = f"video{suffix}" if len(video_files) == 1 else f"video-{index + 1}{suffix}"
             target = output / name
             temporary = target.with_name(f".{target.stem}.{os.getpid()}.tmp{suffix}")
+            alpha = alpha_files.get(index)
             command = [
                 _tool("ffmpeg"),
                 "-y",
@@ -327,18 +347,58 @@ def _decode_usm(payload: Path, output: Path, key: str) -> list[dict[str, Any]]:
                 "-i",
                 str(video),
             ]
-            if audio:
-                command.extend(["-i", str(audio)])
-            command.extend(["-map", "0:v:0"])
-            if audio:
-                command.extend(["-map", "1:a:0"])
-            command.extend(["-map_metadata", "-1", *video_codec])
-            if audio:
-                command.extend(audio_codec)
-            if suffix == ".webm":
-                command.extend(["-fflags", "+bitexact"])
-            if suffix == ".mp4":
-                command.extend(["-movflags", "+faststart"])
+            if alpha is not None:
+                # Re-encode color+mask into one VP9 stream with real
+                # transparency (WebM alpha_mode); the opaque copy path cannot
+                # carry the mask. Gray keeps the mask's Y plane untouched.
+                command.extend(["-i", str(alpha)])
+                if audio:
+                    command.extend(["-i", str(audio)])
+                command.extend(
+                    [
+                        "-filter_complex",
+                        "[1:v]format=gray,setsar=1[a];[0:v]setsar=1[c];[c][a]mergeplanes=0x00010210:yuva420p[v]",
+                        "-map",
+                        "[v]",
+                    ]
+                )
+                if audio:
+                    command.extend(["-map", "2:a:0", *audio_codec])
+                command.extend(
+                    [
+                        "-map_metadata",
+                        "-1",
+                        "-c:v",
+                        "libvpx-vp9",
+                        "-pix_fmt",
+                        "yuva420p",
+                        "-crf",
+                        "30",
+                        "-b:v",
+                        "0",
+                        "-row-mt",
+                        "1",
+                        "-threads",
+                        "8",
+                        "-auto-alt-ref",
+                        "0",
+                        "-fflags",
+                        "+bitexact",
+                    ]
+                )
+            else:
+                if audio:
+                    command.extend(["-i", str(audio)])
+                command.extend(["-map", "0:v:0"])
+                if audio:
+                    command.extend(["-map", "1:a:0"])
+                command.extend(["-map_metadata", "-1", *video_codec])
+                if audio:
+                    command.extend(audio_codec)
+                if suffix == ".webm":
+                    command.extend(["-fflags", "+bitexact"])
+                if suffix == ".mp4":
+                    command.extend(["-movflags", "+faststart"])
             command.append(str(temporary))
             _run(command)
             os.replace(temporary, target)
@@ -370,6 +430,11 @@ def _remote_runtime_path(artifact: dict[str, Any]) -> PurePosixPath:
     if namespace.startswith("cri_assets_"):
         namespace = namespace.removeprefix("cri_assets_")
     namespace_parts = PurePosixPath(namespace).parts
+    # Card payloads are namespaced through their addressable collection
+    # (membercard_assets_membercard/51); drop the collection segment so the
+    # runtime path stays cri/<card>/... like every other card movie.
+    if namespace_parts and namespace_parts[0].startswith("membercard_assets_"):
+        namespace_parts = namespace_parts[1:]
     if namespace_parts[:1] != ("cri",):
         namespace_parts = ("cri", *namespace_parts)
     return PurePosixPath(*namespace_parts, stem)
@@ -729,7 +794,7 @@ def _probe_streams(path: Path) -> dict[str, Any]:
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,codec_name",
+            "stream=codec_type,codec_name:stream_tags=alpha_mode",
             "-of",
             "json",
             str(path),
@@ -741,6 +806,7 @@ def _probe_streams(path: Path) -> dict[str, Any]:
     return {
         "videoCount": len(videos),
         "videoCodec": videos[0].get("codec_name") if len(videos) == 1 else None,
+        "videoAlpha": (videos[0].get("tags", {}) or {}).get("alpha_mode") == "1" if len(videos) == 1 else False,
         "audioCount": len(audios),
         "audioCodec": audios[0].get("codec_name") if len(audios) == 1 else None,
     }
@@ -870,6 +936,7 @@ def _annotate_video_outputs(build_root: Path, entries: list[dict[str, Any]]) -> 
                 raise RuntimeError(f"CRI video output has unexpected video stream count: {path}: {probe}")
             output["hasAudio"] = probe["audioCount"] > 0
             output["videoCodec"] = probe["videoCodec"]
+            output["hasAlpha"] = bool(probe.get("videoAlpha"))
             if probe["audioCount"]:
                 output["audioCodec"] = probe["audioCodec"]
             else:

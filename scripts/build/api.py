@@ -49,7 +49,6 @@ LOCALE_FIELDS = (
 JST = timezone(timedelta(hours=9))
 DIFFICULTIES = ("easy", "normal", "hard", "expert", "special")
 META_REFERENCE_DOWNTIME_SECONDS = 30.0
-META_REFERENCE_SKILL_SECONDS = 7.0
 FIX_UI_SPRITE_ATLAS_SOURCE = (
     "Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2"
 )
@@ -738,10 +737,39 @@ class BuildData:
             outputPath=output.get("path"),
             playableUrl=self.runtime_output_url(str(output.get("path") or "")),
             hasAudio=bool(output.get("hasAudio")),
+            hasAlpha=bool(output.get("hasAlpha")),
             videoCodec=output.get("videoCodec"),
             audioCodec=output.get("audioCodec"),
             musicVideoAudioBinding=output.get("musicVideoAudioBinding"),
         )
+
+    def card_movies(self, identity: int) -> dict[str, Any] | None:
+        """Bind an animated member card's movies to exact CRI outputs.
+
+        Animated cards ship four decoded clips under ``cri/<id>/movie/``: the
+        gacha cut-in anime (``anime_part1``) with its Live2D intro
+        (``live2d_in``), and the card showcase anime (``anime_part2``) with
+        its Live2D loop (``live2d_loop``). The gacha flow also has a card
+        reveal clip (``cri/<id>/member_preview_movie``) between the cut-in
+        and the Live2D performance. Every clip resolves independently;
+        cards without the movie bundle publish no field at all.
+        """
+        card = int(identity or 0)
+        if not card:
+            return None
+        definitions = (
+            ("showcase", f"{card}/movie/anime_part2", True),
+            ("gacha", f"{card}/movie/anime_part1", False),
+            ("showcaseLoop", f"{card}/movie/live2d_loop", True),
+            ("gachaIntro", f"{card}/movie/live2d_in", False),
+            ("gachaPreview", f"{card}/member_preview_movie", False),
+        )
+        movies: dict[str, Any] = {}
+        for key, name, loop in definitions:
+            media = self.video_media(name)
+            if media:
+                movies[key] = {**media, "loop": loop}
+        return movies or None
 
     def music_sound(self, identity: int) -> dict[str, Any] | None:
         """Resolve the live-song sound through the exact Master/CRI MusicScore chain."""
@@ -1236,6 +1264,7 @@ def _cards(data: BuildData, table: str, support: bool = False) -> dict[str, Any]
             }.items()
         }
         images = {key: value for key, value in images.items() if value}
+        movies = None if support else data.card_movies(identity)
         character_ids = [int(value) for value in row.get("_characterIDs", []) if int(value)] if support else []
         skill_id = int(row.get("_supportSkillId01" if support else "_liveSkillID") or 0)
         support_skill_ids = [
@@ -1312,6 +1341,7 @@ def _cards(data: BuildData, table: str, support: bool = False) -> dict[str, Any]
             bestMusicTagIds=[int(value) for value in row.get("_bestMusicTagIDs", [])],
             resolvedSkills=resolved_skills,
             images=images,
+            movies=movies,
             stat={
                 "performance": int(row.get("_performancePowerMax") or 0),
                 "technique": int(row.get("_technicPowerMax") or 0),
@@ -1406,6 +1436,73 @@ def _canonical_score_charts(files: dict[str, Path]) -> dict[str, dict[str, Any]]
     return charts
 
 
+# The reference deck mirrors the ideal-case convention used by the community
+# meta sites: five 4★ member cards with the strongest SL5 live skill
+# (+150%, the 判定 PERFECT-or-higher family — equivalent to unconditional on
+# a 100% PERFECT play), each equipped with a matched 留影 card whose
+# conditional branch adds the largest live-skill duration extension
+# (MasterSupportSkillEffect type 15000, +5.0s at SL5 on top of the 5.0s
+# activation). Fever (x2 via fever_bonus_percent=100) and the 30-second
+# between-songs gap follow the shared Bestdori efficiency convention.
+META_DEFAULT_SCORE_UP_MULTIPLIER = 2.5
+META_DEFAULT_SKILL_SECONDS = 10.0
+META_DEFAULT_SUPPORT_EXTENSION_SECONDS = 5.0
+# The intl 1.0.1 master set predates `fever_bonus_percent` (jp ships 100, i.e.
+# a x2 fever multiplier) while every other scoring input is present. Fall back
+# to the jp value instead of dropping the whole song-meta document.
+META_DEFAULT_FEVER_BONUS_PERCENT = 100.0
+META_DEFAULT_SCORE_ADJUSTMENT = 3.0
+# MasterSupportSkillEffect._skillEffectType 15000 = extend the equipped
+# member's live-skill activation time (value in milliseconds).
+SUPPORT_EFFECT_LIVE_SKILL_EXTENSION = 15000
+
+
+def _reference_skill_profile(data: BuildData) -> tuple[float, float, float]:
+    """Read the ideal reference deck from the card master tables.
+
+    Returns ``(activation seconds, 1 + best SL5 score-up / 10000, support
+    extension seconds)``: the strongest member live skill at its maximum
+    level, plus the largest matched 留影-card extension of that skill's
+    duration. Fallback constants are used when the tables are absent.
+    """
+    live_levels: dict[int, list[dict[str, Any]]] = {}
+    for row in data.rows("MasterLiveSkillEffect"):
+        live_levels.setdefault(int(row.get("_liveSkillID") or 0), []).append(row)
+    activation = 0.0
+    multiplier = 0.0
+    # Only burst skills fit the window model; whole-song effects (for example
+    # the 300-second CBT skill) must never stretch the reference window.
+    max_burst_seconds = 15.0
+    for levels in live_levels.values():
+        top_level = max(int(row.get("_level") or 0) for row in levels)
+        for row in levels:
+            if int(row.get("_level") or 0) != top_level:
+                continue
+            seconds = float(row.get("_activationTimeSecond") or 0)
+            value = float(row.get("_effectValue") or 0)
+            if seconds <= 0 or seconds > max_burst_seconds:
+                continue
+            if value > (multiplier - 1) * 10000 or (value == (multiplier - 1) * 10000 and seconds > activation):
+                activation = seconds
+                multiplier = 1 + value / 10000
+    support_rows = data.rows("MasterSupportSkillEffect")
+    support_top_level: dict[int, int] = {}
+    for row in support_rows:
+        skill_id = int(row.get("_supportSkillID") or 0)
+        support_top_level[skill_id] = max(support_top_level.get(skill_id, 0), int(row.get("_level") or 0))
+    extension = 0.0
+    for row in support_rows:
+        if int(row.get("_skillEffectType") or 0) != SUPPORT_EFFECT_LIVE_SKILL_EXTENSION:
+            continue
+        if int(row.get("_level") or 0) != support_top_level.get(int(row.get("_supportSkillID") or 0), 0):
+            continue
+        # The conditional (matched-member) branch carries the ideal value.
+        extension = max(extension, float(row.get("_effectValue") or 0) / 1000)
+    if activation <= 0 or multiplier <= 1:
+        return META_DEFAULT_SKILL_SECONDS, META_DEFAULT_SCORE_UP_MULTIPLIER, META_DEFAULT_SUPPORT_EXTENSION_SECONDS
+    return activation, multiplier, extension
+
+
 def _score_model(data: BuildData) -> dict[str, Any] | None:
     note_score_percents = {
         int(row.get("_noteOperateType") or 0): float(row.get("_scorePercent") or 0)
@@ -1419,7 +1516,7 @@ def _score_model(data: BuildData) -> dict[str, Any] | None:
         ),
         key=lambda value: value[0],
     )
-    numeric_setting_keys = {"note_score_adjustment_factor", "fever_bonus_percent"}
+    numeric_setting_keys = ("note_score_adjustment_factor", "fever_bonus_percent")
     settings = {
         str(row.get("_key") or ""): float(row.get("_value") or 0)
         for row in data.rows("MasterLiveSettings")
@@ -1429,23 +1526,40 @@ def _score_model(data: BuildData) -> dict[str, Any] | None:
         int(row.get("_noteSimulateJudgement") or 0): float(row.get("_scorePercent") or 0)
         for row in data.rows("MasterLiveJudgementParameter")
     }
-    missing_settings = sorted(numeric_setting_keys - set(settings))
-    if not note_score_percents or not combo_bonuses or missing_settings or 5 not in judgement_percents:
+    setting_defaults = {}
+    if "note_score_adjustment_factor" not in settings:
+        setting_defaults["note_score_adjustment_factor"] = META_DEFAULT_SCORE_ADJUSTMENT
+        settings["note_score_adjustment_factor"] = META_DEFAULT_SCORE_ADJUSTMENT
+    if "fever_bonus_percent" not in settings:
+        setting_defaults["fever_bonus_percent"] = META_DEFAULT_FEVER_BONUS_PERCENT
+        settings["fever_bonus_percent"] = META_DEFAULT_FEVER_BONUS_PERCENT
+    if setting_defaults:
+        sys.stderr.write(
+            "warning: MasterLiveSettings is missing "
+            + ", ".join(f"{key} (defaulted to {value:g})" for key, value in setting_defaults.items())
+            + "; song meta uses those reference values\n"
+        )
+    if not note_score_percents or not combo_bonuses or 5 not in judgement_percents:
         # Pre-launch packages embed a partial master set; the complete scoring
         # parameters arrive from MasterdataService after release.
         sys.stderr.write(
             "warning: native score Master inputs are incomplete "
             f"(noteParameters={len(note_score_percents)}, comboBonuses={len(combo_bonuses)}, "
-            f"missingSettings={missing_settings}, perfectJudgement={5 in judgement_percents}); "
+            f"perfectJudgement={5 in judgement_percents}); "
             "canonical chart metrics are disabled for this build\n"
         )
         return None
+    skill_seconds, skill_multiplier, support_extension = _reference_skill_profile(data)
     return {
         "noteScorePercents": note_score_percents,
         "comboBonuses": combo_bonuses,
         "scoreAdjustment": settings["note_score_adjustment_factor"],
         "feverMultiplier": 1 + settings["fever_bonus_percent"] / 100,
         "perfectFactor": judgement_percents[5] / 100,
+        "skillDurationSeconds": skill_seconds + support_extension,
+        "supportExtensionSeconds": support_extension,
+        "skillScoreMultiplier": skill_multiplier,
+        "settingDefaults": setting_defaults,
     }
 
 
@@ -1543,7 +1657,7 @@ def _score_metrics(
             contribution *= model["feverMultiplier"]
         time_ms = float(note.get("timeMs") or 0)
         if any(
-            start <= time_ms <= start + META_REFERENCE_SKILL_SECONDS * 1000
+            start <= time_ms <= start + model["skillDurationSeconds"] * 1000
             for start in skill_starts
         ):
             inside_skill += contribution
@@ -1553,10 +1667,18 @@ def _score_metrics(
     inside_skill = round(inside_skill, 8)
     outside_skill = round(outside_skill, 8)
     total = inside_skill + outside_skill
-    relative_score = round(model["perfectFactor"] * total, 8)
+    # The ideal reference deck (strongest SL5 live skill extended by a matched
+    # 留影 card) boosts only the skill-covered portion; `sr` keeps the
+    # unboosted coverage ratio exactly like bestdori's
+    # `skill / (base + skill)` tuple.
+    relative_score = round(
+        model["perfectFactor"] * (outside_skill + model["skillScoreMultiplier"] * inside_skill), 8
+    )
     warnings = []
     if note_count and canonical_note_count != note_count:
         warnings.append("canonical-full-combo-mismatch")
+    for key, value in model.get("settingDefaults", {}).items():
+        warnings.append(f"setting-defaulted:{key}={value:g}")
     metrics.update(
         score=relative_score,
         sr=round(inside_skill / total, 8) if total else 0,
@@ -1569,8 +1691,8 @@ def _score_metrics(
         reference={
             "fever": True,
             "perfectRate": 1,
-            "scoreUpMultiplier": 1,
-            "skillDurationSeconds": META_REFERENCE_SKILL_SECONDS,
+            "scoreUpMultiplier": model["skillScoreMultiplier"],
+            "skillDurationSeconds": model["skillDurationSeconds"],
             "downtimeSeconds": META_REFERENCE_DOWNTIME_SECONDS,
             "intervalEndInclusive": True,
         },
@@ -1581,10 +1703,13 @@ def _score_metrics(
     metrics["metricSources"].update({
         "score": (
             "canonical judged-note order + MasterLiveNoteParameter + MasterLiveComboScoreBonus + "
-            "MasterLiveSettings + level factor + CalcNoteScoreCore"
+            "MasterLiveSettings + level factor + CalcNoteScoreCore + ideal reference deck "
+            "(strongest SL5 live skill + matched live-skill-extension support card; "
+            "MasterLiveSkill/MasterLiveSkillEffect + MasterSupportSkillEffect type 15000)"
         ),
         "sr": (
-            "7-second closed skill intervals; SkillEffectUpdater.UpdateExecuting"
+            "closed ideal-deck skill intervals (live-skill activation + support extension); "
+            "SkillEffectUpdater.UpdateExecuting"
         ),
         "convertedNoteCount": (
             "ceil(sum(note score percent) / 100); LiveMusicScore.GetConvertedNoteCount"

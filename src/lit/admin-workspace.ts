@@ -462,7 +462,15 @@ export class AdminWorkspace extends LitElement {
     return html`
       <div class="admin-overview">
         <header class="staff-strip">
-          <span class="admin-avatar">${String(user.name || "?").slice(0, 1)}</span>
+          <span class="admin-avatar">
+              ${
+                user.avatarUrl
+                  ? html`
+                      <img src=${String(user.avatarUrl)} alt="" loading="lazy" />
+                    `
+                  : String(user.name || "?").slice(0, 1)
+              }
+            </span>
           <span>
             <strong>${String(user.name || "")}</strong>
             <small>${String(user.email || "")}</small>
@@ -554,7 +562,15 @@ export class AdminWorkspace extends LitElement {
     if (this.section === "users")
       return html`
         <article class="admin-record">
-          <span class="admin-avatar">${String(record.publicDisplayName || record.accountName || "?").slice(0, 1)}</span>
+          <span class="admin-avatar">
+            ${
+              record.image
+                ? html`
+                    <img src=${String(record.image)} alt="" loading="lazy" />
+                  `
+                : String(record.publicDisplayName || record.accountName || "?").slice(0, 1)
+            }
+          </span>
           <span>
             <strong>${String(record.publicDisplayName || "—")}</strong>
             <small>${String(record.accountName || "")} · ${String(record.email || "")}</small>

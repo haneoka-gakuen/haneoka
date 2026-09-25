@@ -999,7 +999,7 @@ export class CatalogScreen extends LitElement {
       const seconds = Math.max(0, Math.round(value));
       return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     }
-    if (["eff", "nps", "sr"].includes(key)) return value.toFixed(2);
+    if (["eff", "nps", "sr", "score"].includes(key)) return value.toFixed(2);
     return Math.round(value).toLocaleString();
   }
   private sortValue(item: Item): unknown {
@@ -2374,10 +2374,24 @@ export class CatalogScreen extends LitElement {
         label: `${uiText(this.settings.locale, "portrait")} ${String(index + 1).padStart(2, "0")}`,
       }));
     const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
-    const candidates: Array<{ id: string; label: string; source: unknown }> =
+    const candidates: Array<{
+      id: string;
+      label: string;
+      source: unknown;
+      videoSequence?: { clips: Array<{ url: string; loop?: boolean }>; background?: string };
+      animatedOverlay?: { url: string; background?: string };
+    }> =
       this.profile.presentation === "member"
         ? [
-            { id: "full", label: this.label("details", "Full"), source: images.full || images.thumbnail },
+            // The animated card's gacha movie is one gallery entry directly
+            // left of the default full-art still; the still stays default.
+            ...this.cardMovieGalleryEntries(item),
+            {
+              id: "full",
+              label: this.label("details", "Full"),
+              source: images.full || images.thumbnail,
+              animatedOverlay: this.cardAnimatedOverlay(item),
+            },
             { id: "character", label: this.label("character", "Character"), source: images.character },
             { id: "background", label: this.label("stage", "Background"), source: images.background },
             { id: "skill", label: this.label("skills", "Skill"), source: images.skill },
@@ -2403,6 +2417,10 @@ export class CatalogScreen extends LitElement {
     const languages = ["ja", "en", "zh-Hant", "zh-Hans", "ko"];
     const languageNames = new Intl.DisplayNames([this.settings.locale], { type: "language" });
     return candidates.flatMap((entry) => {
+      // The gacha-movie entry uses the card thumbnail as its poster; that
+      // same URL may legitimately be another entry's still, so it never joins
+      // the source de-duplication and never takes image locale variants.
+      if (entry.videoSequence) return [entry];
       const source = typeof entry.source === "string" ? entry.source : "";
       if (!source || seen.has(source)) return [];
       seen.add(source);
@@ -2413,6 +2431,7 @@ export class CatalogScreen extends LitElement {
           return variant
             ? [
                 {
+                  ...entry,
                   id: `${entry.id}:${language}`,
                   label: `${entry.label} · ${languageNames.of(language) || language}`,
                   source: variant,
@@ -2511,6 +2530,69 @@ export class CatalogScreen extends LitElement {
     await import("./runtime/chart-simulator");
     this.chartOpen = true;
   }
+  private async downloadChartImage(item: Item) {
+    const simulator = this.querySelector<HTMLElement & { downloadOverview: (meta: unknown) => Promise<void> }>(
+      "chart-simulator",
+    );
+    if (!simulator) return;
+    const chart = this.chartRow(item);
+    const chartMeta = this.songChartMeta(item);
+    const number = (value: unknown) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    };
+    const duration = (seconds: unknown) => {
+      const value = number(seconds);
+      if (!value) return undefined;
+      return `${Math.floor(value / 60)}:${String(Math.round(value % 60)).padStart(2, "0")}`;
+    };
+    const bpm = (() => {
+      const first = number(chartMeta.firstBpm) ?? number(chartMeta.minBpm);
+      const max = number(chartMeta.maxBpm);
+      if (!first) return undefined;
+      return max && max !== first ? `${Math.round(first)}–${Math.round(max)}` : `${Math.round(first)}`;
+    })();
+    const percent = (value: unknown) => {
+      const parsed = number(value);
+      return parsed === undefined ? undefined : `${Math.round(parsed * 100)}%`;
+    };
+    const stat = (id: "time" | "bpm" | "nps" | undefined, label: string, value: string | undefined) => ({
+      id,
+      label,
+      value: value && value !== "—" ? value : "—",
+    });
+    const stats = [
+      stat(undefined, this.label("n", "Notes"), number(chart.noteCount)?.toLocaleString()),
+      stat("time", this.label("time", "Time"), duration(chartMeta.time)),
+      stat("bpm", this.label("bpm", "BPM"), bpm),
+      stat("nps", this.label("nps", "NPS"), number(chartMeta.nps)?.toFixed(2)),
+      stat(undefined, this.label("score", "Score"), number(chartMeta.score)?.toFixed(2)),
+      stat(undefined, this.label("eff", "Efficiency"), number(chartMeta.eff)?.toFixed(2)),
+      stat(undefined, this.label("sr", "Skill ratio"), percent(chartMeta.sr)),
+    ];
+    const bandId = Number(item.bandId || 0);
+    const credits = [
+      { label: this.label("composer", "Composer"), value: this.localized(item.composer) },
+      { label: this.label("lyricist", "Lyricist"), value: this.localized(item.lyricist) },
+      { label: this.label("arranger", "Arranger"), value: this.localized(item.arranger) },
+      { label: this.label("release", "Release"), value: this.fieldValue(item, "publishedAt") },
+    ].filter((credit) => credit.value);
+    await simulator.downloadOverview({
+      title: this.itemTitle(item),
+      // Text resolution, not itemArtistContent: the canvas needs a string,
+      // and a Lit template would serialize as "[object Object]".
+      artist: this.itemArtist(item) !== "—" ? this.itemArtist(item) : undefined,
+      jacketUrl: typeof item.jacketUrl === "string" ? item.jacketUrl : undefined,
+      attributeIconUrl: this.attributeMark(item.musicType, true) || undefined,
+      bandIconUrl: this.bandIcon(bandId) || undefined,
+      bandName: this.bandName(bandId) || undefined,
+      credits,
+      difficultyName: String(chart.difficultyName || ""),
+      displayLevel: chart.displayLevel ?? "",
+      songId: item.musicId,
+      stats,
+    });
+  }
   private renderDetailActions(item: Item) {
     if (this.profile.presentation !== "song") return nothing;
     const id = this.itemId(item);
@@ -2566,7 +2648,14 @@ export class CatalogScreen extends LitElement {
       <image-gallery
         .images=${media.map((entry) => ({
           ...entry,
-          candidates: entry.id.includes(":") ? [entry.source] : this.localizedImageCandidates(entry.source),
+          // detailMediaItems widened source to unknown for the still entries;
+          // every entry it emits has verified the source is a string.
+          source: entry.source as string,
+          candidates: (entry as { videoSequence?: unknown }).videoSequence
+            ? undefined
+            : entry.id.includes(":")
+              ? [entry.source as string]
+              : this.localizedImageCandidates(entry.source as string),
         }))}
         .active=${active}
         .locale=${this.settings.locale}
@@ -2577,6 +2666,47 @@ export class CatalogScreen extends LitElement {
         }}
       ></image-gallery>
     `;
+  }
+  /** Animated member cards: the gacha movie as one seamless gallery entry. */
+  private cardMovieGalleryEntries(item: Item) {
+    if (this.profile.presentation !== "member") return [];
+    const movies = item.movies && typeof item.movies === "object" ? (item.movies as Item) : {};
+    const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
+    const background = typeof images.background === "string" ? images.background : undefined;
+    const poster =
+      typeof images.thumbnail === "string" ? images.thumbnail : typeof images.full === "string" ? images.full : "";
+    const url = (key: string) => {
+      const value = movies[key] as Item | undefined;
+      return typeof value?.playableUrl === "string" ? value.playableUrl : "";
+    };
+    // The gacha sequence mirrors the in-game pull: the eye cut-in anime flows
+    // into the Live2D performance and parks on the showcase loop. Only the
+    // transparent Live2D segments composite over the card background; the
+    // opaque cut-in carries its own full picture.
+    const clips = [
+      { url: url("gacha") },
+      { url: url("gachaIntro"), backdrop: true },
+      { url: url("showcaseLoop"), loop: true, backdrop: true },
+    ].filter((clip) => clip.url);
+    if (clips.length < 2 || !poster) return [];
+    return [
+      {
+        id: "movie:gacha",
+        label: this.label("cardMovieGacha", "Gacha movie"),
+        source: poster,
+        videoSequence: { clips, background },
+      },
+    ];
+  }
+  /** The still's own animated mode: the showcase loop over the card background. */
+  private cardAnimatedOverlay(item: Item) {
+    if (this.profile.presentation !== "member") return undefined;
+    const movies = item.movies && typeof item.movies === "object" ? (item.movies as Item) : {};
+    const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
+    const loop = movies.showcaseLoop as Item | undefined;
+    const url = typeof loop?.playableUrl === "string" ? loop.playableUrl : "";
+    const background = typeof images.background === "string" ? images.background : undefined;
+    return url ? { url, background } : undefined;
   }
   progressionRows(key: string) {
     const document = (this.detailAux.progression as Item | undefined) || {};
@@ -3074,6 +3204,14 @@ export class CatalogScreen extends LitElement {
                       ${this.label("watch", "Watch")}
                     </button>
                   </div>
+                  <button
+                    class="icon-button chart-detail-download"
+                    @click=${() => void this.downloadChartImage(item)}
+                    aria-label=${this.label("downloadChart", "Download chart image")}
+                    title=${this.label("downloadChart", "Download chart image")}
+                  >
+                    <svg class="material-icon" width="20" height="20"><use href="/icons.svg#download"></use></svg>
+                  </button>
                 </header>
                 <chart-simulator
                   source=${String(chart.file)}
