@@ -56,6 +56,7 @@ EMBEDDED_ONLY_CATALOG_PREFIXES = (
     "embbuildtempanchor_assets_",
     "embfont_assets_",
     "embthirdparty_assets_",
+    "initialbgm_",
     "shared_monoscripts_",
 )
 
@@ -501,6 +502,13 @@ def _download(
                 if not quiet:
                     sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
                 return False
+            if error.code == 400:
+                # This CDN intermittently answers a perfectly valid object
+                # with 400 under load; retry before believing the error.
+                temporary.unlink(missing_ok=True)
+                if attempt < 4:
+                    time.sleep(2**attempt)
+                continue
             if error.code in {401, 403, 404} or error.code < 500:
                 hint = f"; configure {AUTHORIZATION_ENVIRONMENT}" if error.code == 401 else ""
                 temporary.unlink(missing_ok=True)
