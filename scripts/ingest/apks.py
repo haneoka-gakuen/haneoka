@@ -56,7 +56,7 @@ EMBEDDED_ONLY_CATALOG_PREFIXES = (
     "embbuildtempanchor_assets_",
     "embfont_assets_",
     "embthirdparty_assets_",
-    "initialbgm_",
+    "initial",
     "shared_monoscripts_",
 )
 
