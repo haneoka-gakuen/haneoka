@@ -16,45 +16,146 @@
     "masterCrypto"
   ],
   "anyOf": [
-    { "required": ["remoteRoot"] },
-    { "properties": { "offline": { "const": true } }, "required": ["offline"] }
+    {
+      "required": [
+        "remoteRoot"
+      ]
+    },
+    {
+      "properties": {
+        "offline": {
+          "const": true
+        }
+      },
+      "required": [
+        "offline"
+      ]
+    }
   ],
   "properties": {
-    "$schema": { "type": "string" },
-    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-    "packageName": { "type": "string", "minLength": 1 },
-    "platform": { "enum": ["Android"] },
-    "unityVersion": { "type": "string", "minLength": 1 },
-    "extractionShards": { "type": "integer", "minimum": 1, "maximum": 128 },
-    "r2Bucket": { "type": "string", "minLength": 1 },
-    "releaseRetention": { "type": "integer", "minimum": 2, "maximum": 10 },
-    "authorizationRequired": { "type": "boolean" },
-    "offline": { "type": "boolean" },
-    "skipPublicResolutionCheck": { "type": "boolean" },
-    "remoteRoot": { "type": "string", "format": "uri" },
-    "criHcaKey": { "type": "string", "pattern": "^[0-9]+$" },
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "packageName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "enum": [
+        "Android"
+      ]
+    },
+    "unityVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extractionShards": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "r2Bucket": {
+      "type": "string",
+      "minLength": 1
+    },
+    "releaseRetention": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 10
+    },
+    "authorizationRequired": {
+      "type": "boolean"
+    },
+    "offline": {
+      "type": "boolean"
+    },
+    "skipPublicResolutionCheck": {
+      "type": "boolean"
+    },
+    "remoteRoot": {
+      "type": "string",
+      "format": "uri"
+    },
+    "assetVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogPath",
+        "basicUser"
+      ],
+      "description": "Live version discovery against the game service. The endpoint is supplied via the HANEOKA_VERSION_ENDPOINT variable when omitted here.",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "description": "Optional explicit service endpoint; prefer HANEOKA_VERSION_ENDPOINT to keep it out of the repository."
+        },
+        "catalogPath": {
+          "type": "string",
+          "pattern": "^/.*\\{version\\}.*\\{hash\\}.*$",
+          "description": "Absolute CDN path of the platform catalog with {version} and {hash} placeholders."
+        },
+        "basicUser": {
+          "type": "string",
+          "minLength": 1,
+          "description": "CDN basic-auth user name paired with the server-delivered password."
+        }
+      }
+    },
+    "criHcaKey": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
     "masterCrypto": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["salt", "key", "iv"],
+      "required": [
+        "salt",
+        "key",
+        "iv"
+      ],
       "properties": {
-        "salt": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "iv": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        "salt": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "iv": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
       }
     },
     "catalog": {
       "type": "object",
       "additionalProperties": false,
       "description": "Versioned, per-locale Addressables catalog scheme (e.g. intl-cbt). The CDN publishes catalog_{version}[_{locale}].{hash,bin} with no discoverable version pointer, so the resource version is supplied here.",
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "properties": {
-        "version": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
         "locales": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9-]+$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]+$"
+          }
         }
       }
+    },
+    "closed": {
+      "type": "boolean",
+      "description": "The server has shut down. Network ingestion is refused; retained R2 snapshots stay rebuildable via fetch-source + run --offline."
     }
   }
 }

@@ -19,6 +19,14 @@ on:
         required: false
         default: false
         type: boolean
+      force:
+        required: false
+        default: false
+        type: boolean
+      no_reuse:
+        required: false
+        default: false
+        type: boolean
     secrets:
       cloudflare_account_id:
         required: true
@@ -27,6 +35,10 @@ on:
       r2_secret_access_key:
         required: true
       resource_cdn_authorization:
+        required: false
+      secret_writer_gh_token:
+        required: false
+      haneoka_version_endpoint:
         required: false
 
 env:
@@ -59,6 +71,7 @@ jobs:
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
       SOURCE_ID_INPUT: ${{ inputs.source_id }}
       RESOURCE_CDN_AUTHORIZATION: ${{ secrets.RESOURCE_CDN_AUTHORIZATION || secrets.resource_cdn_authorization }}
+      HANEOKA_VERSION_ENDPOINT: ${{ secrets.HANEOKA_VERSION_ENDPOINT || secrets.haneoka_version_endpoint }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
@@ -69,6 +82,59 @@ jobs:
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source \
               --source "$SOURCE_ID_INPUT" --role package > "$RUNNER_TEMP/source.json"
           else
+            if [[ -z "$PACKAGE_R2_KEY" && "${{ inputs.no_reuse }}" != "true" ]]; then
+              # Reuse the stored package when the publisher fingerprint is
+              # unchanged; only a real update pays the publisher download.
+              current_json="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" current-package || true)"
+              probe_json="$(python scripts/acquire_package.py --server "$RESOURCE_SERVER" --probe || true)"
+              probe_fp="{}"
+              if [[ -n "$probe_json" ]]; then
+                probe_fp="$(printf '%s' "$probe_json" | jq -c 'with_entries(select(.value | type == "string")) | del(.server, .provenance)')"
+                export HANEOKA_PACKAGE_FINGERPRINT="$probe_fp"
+              fi
+              reuse_key=""
+              if [[ -n "$current_json" && -n "$probe_json" ]]; then
+                reuse_key="$(printf '%s' "$current_json" | jq -r --arg fp "$probe_fp" '
+                  . as $c | ($fp | fromjson) as $p |
+                  select($c.available == true) |
+                  (if (($c.publisher // {}) | length) > 0 then
+                     ($c.publisher == $p)
+                   else
+                     (($p.versionCode // "") != "" or ($p.versionName // "") != "") and
+                     (($p.versionCode // "") == "" or $c.versionCode == "" or $p.versionCode == $c.versionCode) and
+                     (($p.versionName // "") == "" or $c.versionName == "" or $p.versionName == $c.versionName)
+                   end) |
+                  select(.) | $c.casKey
+                ' || true)"
+              fi
+              if [[ -n "$reuse_key" ]]; then
+                echo "Publisher package unchanged; reusing R2 package $reuse_key"
+                PACKAGE_R2_KEY="$reuse_key"
+                # With the package known unchanged, the fresh catalogs alone
+                # decide the source identity; skip without any package bytes.
+                identity_json=""
+                if [[ "${{ inputs.force }}" != "true" ]]; then
+                  identity_json="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-identity || true)"
+                fi
+                if [[ -n "$identity_json" ]]; then
+                  probed_source="$(printf '%s' "$identity_json" | jq -r .sourceId)"
+                  wanted_build="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" build-id --source "$probed_source" | jq -r .buildId)"
+                  wanted_fingerprint="${wanted_build: -16}"
+                  stage_endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+                  if aws s3 cp                       "s3://$PIPELINE_STAGE_BUCKET/servers/$RESOURCE_SERVER/current.json"                       "$RUNNER_TEMP/current-pointer.json"                       --endpoint-url "$stage_endpoint" --region auto --no-progress 2>/dev/null; then
+                    current_source="$(jq -r .sourceId "$RUNNER_TEMP/current-pointer.json")"
+                    current_fingerprint="$(jq -r '.pipelineFingerprint // empty' "$RUNNER_TEMP/current-pointer.json")"
+                    if [[ "$current_source" == "$probed_source" && "$current_fingerprint" == "$wanted_fingerprint" ]]; then
+                      echo "Source identity unchanged without any package transfer; skipping this build"
+                      printf '%s\n' "$identity_json" > "$RUNNER_TEMP/source-probe.json"
+                      cp "$RUNNER_TEMP/source-probe.json" "$RUNNER_TEMP/source.json"
+                      echo "skip=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                    fi
+                  fi
+                fi
+              fi
+            fi
             if [[ -z "$PACKAGE_R2_KEY" ]]; then
               python scripts/acquire_package.py --server "$RESOURCE_SERVER" \
                 --output "$RUNNER_TEMP/discovered-package" > "$RUNNER_TEMP/discovered-package.json"
@@ -108,7 +174,7 @@ jobs:
               --region auto --no-progress 2>/dev/null; then
               current_source="$(jq -r .sourceId "$RUNNER_TEMP/current-pointer.json")"
               current_fingerprint="$(jq -r '.pipelineFingerprint // empty' "$RUNNER_TEMP/current-pointer.json")"
-              if [[ "$current_source" == "$probed_source" && "$current_fingerprint" == "$wanted_fingerprint" ]]; then
+              if [[ "$current_source" == "$probed_source" && "$current_fingerprint" == "$wanted_fingerprint" && "${{ inputs.force }}" != "true" ]]; then
                 echo "Source and pipeline fingerprint are unchanged; skipping this build"
                 cp "$RUNNER_TEMP/source-probe.json" "$RUNNER_TEMP/source.json"
                 echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -117,8 +183,10 @@ jobs:
             fi
             # Prefer the live CDN catalog; fall back to the package's embedded
             # assets/aa/catalog.bin only when the remote ingest cannot resolve one.
+            ingest_extra=(--reuse)
+            if [[ "${{ inputs.no_reuse }}" == "true" ]]; then ingest_extra=(); fi
             if ! python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
-              --input "$RUNNER_TEMP/package-input" --concurrency 32 > "$RUNNER_TEMP/source.json"; then
+              --input "$RUNNER_TEMP/package-input" --concurrency 32 "${ingest_extra[@]}" > "$RUNNER_TEMP/source.json"; then
               if unzip -l "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" > /dev/null 2>&1; then
                 echo "remote catalog ingest failed; retrying with the embedded catalog" >&2
                 unzip -p "$RUNNER_TEMP/package-input" "assets/aa/catalog.bin" \
@@ -135,12 +203,34 @@ jobs:
               if [[ -s "$RUNNER_TEMP/embedded-catalog.bin" ]]; then
                 export HANEOKA_SOURCE_CATALOG="$RUNNER_TEMP/embedded-catalog.bin"
                 python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
-                  --input "$RUNNER_TEMP/package-input" --concurrency 32 > "$RUNNER_TEMP/source.json"
+                  --input "$RUNNER_TEMP/package-input" --concurrency 32 "${ingest_extra[@]}" > "$RUNNER_TEMP/source.json"
               else
                 exit 1
               fi
             fi
           fi
+      - name: Refresh shared CDN credential secret
+        env:
+          GH_TOKEN: ${{ secrets.secret_writer_gh_token }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "secret_writer_gh_token is not configured; skipping CDN credential refresh" >&2
+            exit 0
+          fi
+          report="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" cdn-credential)"
+          auth="$(printf '%s' "$report" | jq -r .authorization)"
+          origin="$(printf '%s' "$report" | jq -r .origin)"
+          if [[ "$origin" != "server" || -z "$auth" || "$auth" == "null" ]]; then
+            echo "No server-issued CDN credential to store (origin: $origin)"
+            exit 0
+          fi
+          echo "::add-mask::$auth"
+          if [[ "$auth" == "$RESOURCE_CDN_AUTHORIZATION" ]]; then
+            echo "Stored CDN credential secret is already current"
+            exit 0
+          fi
+          printf '%s' "$auth" | gh secret set RESOURCE_CDN_AUTHORIZATION
+          echo "Refreshed RESOURCE_CDN_AUTHORIZATION from the $RESOURCE_SERVER server lookup"
       - name: Export build identity
         id: identity
         run: |
@@ -204,6 +294,22 @@ jobs:
           else
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Prepare Unity bundle reuse
+        id: unity_reuse
+        if: steps.source_input.outputs.skip != 'true' && inputs.source_id == '' && inputs.no_reuse != true
+        continue-on-error: true
+        run: |
+          SOURCE_ID="${{ steps.identity.outputs.source_id }}"
+          SHARDS="${{ steps.identity.outputs.shard_count }}"
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" prepare-unity-reuse \
+            --source "$SOURCE_ID" --shard-count "$SHARDS" \
+            --output-dir "$RUNNER_TEMP/unity-reuse"
+          endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          for ((shard=0; shard<SHARDS; shard++)); do
+            aws s3 cp "$RUNNER_TEMP/unity-reuse/unity-reuse-$(printf '%03d' "$shard").json" \
+              "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-reuse-$(printf '%03d' "$shard").json" \
+              --endpoint-url "$endpoint" --region auto --no-progress
+          done
       - name: Extract Master
         if: steps.source_input.outputs.skip != 'true'
         run: >-
@@ -261,13 +367,33 @@ jobs:
           --role unity-bundle
           --shard-index "${{ matrix.shard }}"
           --shard-count "${{ needs.prepare.outputs.shard_count }}"
+      - name: Fetch Unity reuse manifest
+        id: unity_reuse
+        if: inputs.no_reuse != true
+        continue-on-error: true
+        run: |
+          shard="$(printf '%03d' "${{ matrix.shard }}")"
+          endpoint="https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          if aws s3 cp \
+              "s3://$PIPELINE_STAGE_BUCKET/$PIPELINE_STAGE_PREFIX/unity-reuse-$shard.json" \
+              "$RUNNER_TEMP/unity-reuse.json" \
+              --endpoint-url "$endpoint" --region auto --no-progress; then
+            echo "path=$RUNNER_TEMP/unity-reuse.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Extract Unity shard
-        run: >-
-          python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-unity
-          --source "${{ needs.prepare.outputs.source_id }}"
-          --build "${{ needs.prepare.outputs.build_id }}"
-          --shard-index "${{ matrix.shard }}"
-          --shard-count "${{ needs.prepare.outputs.shard_count }}"
+        run: |
+          extra=()
+          if [[ -n "${{ steps.unity_reuse.outputs.path }}" ]]; then
+            extra+=(--reuse-manifest "${{ steps.unity_reuse.outputs.path }}")
+          fi
+          python scripts/pipeline.py --server "$RESOURCE_SERVER" extract-unity \
+            --source "${{ needs.prepare.outputs.source_id }}" \
+            --build "${{ needs.prepare.outputs.build_id }}" \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count "${{ needs.prepare.outputs.shard_count }}" \
+            "${extra[@]}"
       - name: Preserve deterministic shard in private R2
         run: |
           build_root="data/servers/$RESOURCE_SERVER/builds/${{ needs.prepare.outputs.build_id }}"

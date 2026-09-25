@@ -1,16 +1,14 @@
 """Discover production Android packages before staging them in R2.
 
 The international publisher serves a direct APK from its own website. The
-Japanese publisher links only to Google Play, so the JP transport is a Play
-split-package mirror. Package bytes receive a fresh SHA-256 CAS key each run.
+Japanese publisher links only to Google Play, so the JP transport is an APKPure
+XAPK mirror whose direct-download link embeds the Play versionCode.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
-import html
 import json
 import os
 import re
@@ -24,8 +22,9 @@ from core.storage import cas_key
 
 USER_AGENT = "HaneokaResourcePipeline/1.0"
 INTL_SITE = "https://bdon.biligames.com/"
-JP_MIRROR = "https://apkcombo.com/bang-dream-our-notes/com.bushiroad.sirius/download/apk"
-SERVERS = ("intl", "jp")
+JP_MIRROR = "https://apkpure.com/bang-dream-our-notes/com.bushiroad.sirius/download"
+JP_XAPK_LINK = re.compile(r"https://d\.apkpure\.com/b/XAPK/com\.bushiroad\.sirius\?versionCode=(\d+)")
+SERVERS = ("jp", "intl")
 
 
 def _host(url: str) -> str:
@@ -65,7 +64,7 @@ def _read_small(url: str, hosts: set[str], limit: int = 2_000_000) -> str:
     return data.decode("utf-8")
 
 
-def _discover_intl() -> tuple[str, str, set[str]]:
+def _discover_intl() -> tuple[str, str, set[str], dict[str, str]]:
     page = _read_small(INTL_SITE, {"bdon.biligames.com"})
     scripts = re.findall(
         r"(?:https?:)?//s1\.biligames\.com/fe-static/game-global-bangdreamon/gw/js/chunk-common\.[a-f0-9]+\.js",
@@ -80,31 +79,32 @@ def _discover_intl() -> tuple[str, str, set[str]]:
         raise ValueError("international official site did not expose one APK URL")
     url = urls.pop()
     host = _host(url)
-    return url, "publisher-website", {host}
+    filename = url.rsplit("/", 1)[-1]
+    version = re.search(r"(\d+\.\d+\.\d+)", filename)
+    fingerprint = {"file": filename}
+    if version:
+        fingerprint["versionName"] = version.group(1)
+    return url, "publisher-website", {host}, fingerprint
 
 
-def _discover_jp() -> tuple[str, str, set[str]]:
-    page = _read_small(JP_MIRROR, {"apkcombo.com"})
-    variants = []
-    for match in re.finditer(r'<a\s+href="([^"]+)"\s+class="variant"[^>]*>(.*?)</a>', page, re.S):
-        body = match.group(2)
-        code_match = re.search(r'class="vercode">\((\d+)\)', body)
-        if not code_match or "type-xapk" not in body:
-            continue
-        wrapper = urllib.parse.urlsplit(html.unescape(match.group(1)))
-        if wrapper.scheme != "https" or wrapper.hostname != "apkcombo.com" or wrapper.path != "/d":
-            continue
-        values = urllib.parse.parse_qs(wrapper.query).get("u", [])
-        if len(values) != 1:
-            continue
-        url = base64.b64decode(values[0], validate=True).decode("utf-8")
-        if _host(url) != "download.pureapk.com":
-            continue
-        variants.append((int(code_match.group(1)), url))
-    if not variants:
-        raise ValueError("Japanese mirror has no verifiable XAPK variant")
-    _, url = max(variants)
-    return url, "play-package-mirror", {"download.pureapk.com", "data.winudf.com"}
+def _discover_jp() -> tuple[str, str, set[str], dict[str, str]]:
+    page = _read_small(JP_MIRROR, {"apkpure.com"})
+    # The download page embeds the direct XAPK link once per variant; the
+    # versionCode query parameter is the authoritative Play versionCode.
+    codes = set(JP_XAPK_LINK.findall(page))
+    if not codes:
+        raise ValueError("Japanese mirror exposed no XAPK download variant")
+    code = max(int(value) for value in codes)
+    version = re.search(r'data-dt-version="([^"]+)"', page)
+    fingerprint = {"versionCode": str(code)}
+    if version:
+        fingerprint["versionName"] = version.group(1)
+    return (
+        f"https://d.apkpure.com/b/XAPK/com.bushiroad.sirius?versionCode={code}",
+        "apkpure-mirror",
+        {"d.apkpure.com", "data.winudf.com"},
+        fingerprint,
+    )
 
 
 def _download(url: str, hosts: set[str], output: Path) -> tuple[int, str]:
@@ -136,13 +136,20 @@ def _download(url: str, hosts: set[str], output: Path) -> tuple[int, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", choices=SERVERS, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--probe", action="store_true", help="discover the publisher fingerprint without downloading")
     args = parser.parse_args()
-    url, provenance, hosts = _discover_intl() if args.server == "intl" else _discover_jp()
+    url, provenance, hosts, fingerprint = _discover_intl() if args.server == "intl" else _discover_jp()
+    if args.probe:
+        print(json.dumps({"server": args.server, "provenance": provenance, **fingerprint}, sort_keys=True))
+        return 0
+    if not args.output:
+        parser.error("--output is required unless --probe is given")
     size, digest = _download(url, hosts, args.output)
     print(json.dumps({
         "server": args.server,
         "provenance": provenance,
+        **fingerprint,
         "bytes": size,
         "sha256": digest,
         "casKey": cas_key(digest),

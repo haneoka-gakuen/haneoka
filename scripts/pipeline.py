@@ -22,10 +22,19 @@ from core.contracts import SOURCE_SCHEMA
 from core.fingerprints import build_fingerprint
 from core.manifests import read_json, stable_json, write_json
 from core.paths import build_layout, source_layout
+from core.storage import cas_key
 from extract.master import extract_master
+from extract.unity_reuse import (
+    extractor_identity,
+    load_reuse_manifest,
+    make_restore,
+    prepare_unity_reuse,
+)
 from extract.cri import extract_cri
 from extract.unity import extract_shard
-from ingest.apks import ingest_package
+from ingest.apks import ingest_package, probe_source_identity
+from ingest.version_api import cdn_authorization, discover_asset_version, resolve_version_endpoint
+from ingest.reuse import build_reuse_index
 from ingest.unity import index_unity_dependencies
 from publish.r2 import (
     R2Store,
@@ -137,8 +146,24 @@ def _require_local_offline_source(config: ServerConfig, source_id: str) -> dict:
 
 def command_ingest(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
+    reuse_index = None
+    store = None
+    if args.reuse:
+        try:
+            store = R2Store(config, args.concurrency)
+            reuse_index = build_reuse_index(store, config)
+            sys.stderr.write(
+                f"catalog: reuse index covers {len(reuse_index)} artifacts from prior sources\n"
+            )
+        except Exception as error:  # noqa: BLE001 - reuse is best effort
+            sys.stderr.write(f"warning: artifact reuse unavailable: {error}\n")
     manifest = ingest_package(
-        Path(args.input), config, Path(args.cache) if args.cache else None, args.concurrency
+        Path(args.input),
+        config,
+        Path(args.cache) if args.cache else None,
+        args.concurrency,
+        reuse_index=reuse_index,
+        reuse_store=store,
     )
     _print(_source_summary(manifest))
 
@@ -146,6 +171,96 @@ def command_ingest(args: argparse.Namespace) -> None:
 def command_probe_source(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     _print(ingest_package(Path(args.input), config, probe_only=True))
+
+
+def _current_package_document(config, concurrency: int) -> dict:
+    store = R2Store(config, concurrency)
+    pointer = store.get_json(f"servers/{config.id}/current.json")
+    source_id = str((pointer or {}).get("sourceId") or "")
+    manifest = (
+        store.get_json(f"servers/{config.id}/sources/{source_id}/source.json") if source_id else None
+    )
+    package = (manifest or {}).get("package") or {}
+    digest = next(
+        (
+            str(item["sha256"])
+            for item in (manifest or {}).get("files", [])
+            if isinstance(item, dict) and item.get("role") == "package"
+        ),
+        "",
+    )
+    publisher = package.get("publisher")
+    publisher = publisher if isinstance(publisher, dict) else {}
+    return {
+        "available": bool(digest and (package.get("versionCode") or package.get("versionName"))),
+        "sourceId": source_id,
+        "versionCode": str(package.get("versionCode") or ""),
+        "versionName": str(package.get("versionName") or ""),
+        "sha256": digest,
+        "casKey": cas_key(digest) if digest else "",
+        "publisher": {str(k): str(v) for k, v in publisher.items() if isinstance(k, str) and isinstance(v, str)},
+    }
+
+
+def command_current_package(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    try:
+        document = _current_package_document(config, args.concurrency)
+    except Exception as error:  # noqa: BLE001 - callers treat unavailability as "no reuse"
+        sys.stderr.write(f"warning: current package lookup failed: {error}\n")
+        _print({"server": config.id, "available": False})
+        return
+    _print({"server": config.id, **document})
+
+
+def command_probe_identity(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    if args.package_sha and args.version_code:
+        document = {
+            "available": True,
+            "sha256": args.package_sha,
+            "versionCode": args.version_code,
+        }
+    else:
+        document = _current_package_document(config, args.concurrency)
+    if not document.get("available"):
+        raise ValueError(f"no published package identity available for {config.id}")
+    _print(
+        probe_source_identity(
+            config,
+            str(document["versionCode"]),
+            str(document["sha256"]),
+        )
+    )
+
+
+def command_cdn_credential(args: argparse.Namespace) -> None:
+    """Report the effective CDN Authorization value and its source."""
+    config = load_server_config(args.server)
+    value = ""
+    origin = "environment"
+    discovered: dict[str, str] = {}
+    if config.version_endpoint or config.version_catalog_path:
+        try:
+            info = discover_asset_version(
+                resolve_version_endpoint(config.version_endpoint),
+                config.platform,
+                skip_resolution_check=config.skip_public_resolution_check,
+            )
+        except Exception as error:  # noqa: BLE001 - reported, then fall back
+            sys.stderr.write(f"warning: server version discovery failed: {error}\n")
+        else:
+            discovered = {"version": info.version, "platformHash": info.platform_hash}
+            if info.cdn_password:
+                value = cdn_authorization(config.version_basic_user, info.cdn_password)
+                origin = "server"
+    if not value:
+        from ingest.apks import AUTHORIZATION_ENVIRONMENT
+
+        raw = os.environ.get(AUTHORIZATION_ENVIRONMENT, "").strip()
+        if raw:
+            value = f"Basic {raw}" if " " not in raw else raw
+    _print({"server": config.id, "origin": origin, "authorization": value, **discovered})
 
 
 def command_verify_source(args: argparse.Namespace) -> None:
@@ -159,6 +274,34 @@ def command_index_source(args: argparse.Namespace) -> None:
     manifest["unityIndex"] = index_unity_dependencies(layout.root, manifest.get("files", []))
     write_json(layout.manifest, manifest, pretty=True)
     _print(_source_summary(verify_source(args.server, args.source, not args.fast)))
+
+
+def command_prepare_unity_reuse(args: argparse.Namespace) -> None:
+    config = load_server_config(args.server)
+    layout = source_layout(config.id, args.source)
+    shards, stats = prepare_unity_reuse(
+        R2Store(config, args.concurrency),
+        config.id,
+        read_json(layout.manifest),
+        args.shard_count,
+        args.concurrency,
+    )
+    output = Path(args.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    for index, bundles in enumerate(shards):
+        write_json(
+            output / f"unity-reuse-{index:03d}.json",
+            {
+                "schema": "haneoka-unity-reuse-v1",
+                "server": config.id,
+                "sourceId": args.source,
+                "shardIndex": index,
+                "shardCount": args.shard_count,
+                "extractor": extractor_identity(),
+                "bundles": bundles,
+            },
+        )
+    _print({"server": config.id, "sourceId": args.source, **stats})
 
 
 def command_extract_master(args: argparse.Namespace) -> None:
@@ -178,7 +321,15 @@ def command_extract_unity(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
     count = args.shard_count or config.extraction_shards
-    result = extract_shard(config.id, args.source, identity, args.shard_index, count)
+    reuse_restore = None
+    if args.reuse_manifest:
+        try:
+            entries = load_reuse_manifest(Path(args.reuse_manifest))
+            reuse_restore = make_restore(R2Store(config, 8), entries)
+            sys.stderr.write(f"unity: reuse manifest covers {len(entries)} bundles\n")
+        except Exception as error:  # noqa: BLE001 - extraction must proceed without reuse
+            sys.stderr.write(f"warning: Unity reuse unavailable: {error}\n")
+    result = extract_shard(config.id, args.source, identity, args.shard_index, count, reuse_restore)
     _print(
         _fields(
             result,
@@ -619,8 +770,32 @@ def parser() -> argparse.ArgumentParser:
     ingest.add_argument("--input", required=True)
     ingest.add_argument("--cache", help="flat cache of exact original download filenames")
     ingest.add_argument("--concurrency", type=int, default=12)
+    ingest.add_argument(
+        "--reuse",
+        action="store_true",
+        help="restore unchanged bundle names from prior sources in R2 instead of downloading",
+    )
     ingest.set_defaults(run=command_ingest)
 
+    probe_identity = commands.add_parser(
+        "probe-identity",
+        help="compute the live source identity from stored package identity and fresh catalogs",
+    )
+    probe_identity.add_argument("--package-sha")
+    probe_identity.add_argument("--version-code")
+    probe_identity.add_argument("--concurrency", type=int, default=8)
+    probe_identity.set_defaults(run=command_probe_identity)
+    current_package = commands.add_parser(
+        "current-package",
+        help="report the published source's package fingerprint and CAS key",
+    )
+    current_package.add_argument("--concurrency", type=int, default=8)
+    current_package.set_defaults(run=command_current_package)
+    credential = commands.add_parser(
+        "cdn-credential",
+        help="report the effective CDN authorization and its source (server or secret)",
+    )
+    credential.set_defaults(run=command_cdn_credential)
     probe = commands.add_parser("probe-source", help="identify package and live catalog without downloading bundles")
     probe.add_argument("--input", required=True)
     probe.set_defaults(run=command_probe_source)
@@ -651,7 +826,21 @@ def parser() -> argparse.ArgumentParser:
     unity.add_argument("--build")
     unity.add_argument("--shard-index", type=int, required=True)
     unity.add_argument("--shard-count", type=int)
+    unity.add_argument(
+        "--reuse-manifest",
+        help="reuse manifest from prepare-unity-reuse; restores unchanged bundles from the current release",
+    )
     unity.set_defaults(run=command_extract_unity)
+
+    reuse_parser = commands.add_parser(
+        "prepare-unity-reuse",
+        help="list per-shard Unity bundles reusable from the current release",
+    )
+    reuse_parser.add_argument("--source", required=True)
+    reuse_parser.add_argument("--shard-count", type=int, required=True)
+    reuse_parser.add_argument("--output-dir", required=True)
+    reuse_parser.add_argument("--concurrency", type=int, default=32)
+    reuse_parser.set_defaults(run=command_prepare_unity_reuse)
 
     merge = commands.add_parser("merge-unity", help="merge and index all Unity shards")
     merge.add_argument("--source", required=True)

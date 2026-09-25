@@ -24,23 +24,66 @@ complete split-APK set.
 
 ## Production package discovery
 
-The scheduled GitHub Actions run currently checks the international production
-server once a day. `scripts/acquire_package.py` reads the Android APK URL from
-the publisher's `bdon.biligames.com` application script, downloads the current
-file and stores it under a SHA-256 content-addressed R2 key. The **APK file hash is
-calculated anew on every run**; it is not pinned, so normal APK updates create
-new keys. `aws s3 cp` uploads large packages through the S3 multipart API.
+The scheduled GitHub Actions run checks the jp and intl production servers at
+00:05, 06:05, 12:05 and 18:05 Asia/Tokyo. When the publisher fingerprint
+(versionCode/versionName from the mirror page) still matches the published
+source's package, the run reuses the stored R2 package instead of
+re-downloading from the publisher; only a real update pays that transfer. `scripts/acquire_package.py` reads the Android APK URL from
+the publisher's `bdon.biligames.com` application script (international) or the
+APKPure XAPK mirror whose direct link embeds the Play versionCode (Japanese),
+downloads the current file and stores it under a SHA-256 content-addressed R2
+key. The **APK file hash is calculated anew on every run**; it is not pinned,
+so normal APK updates create new keys. `aws s3 cp` uploads large packages
+through the S3 multipart API.
 
 `probe-source` downloads only the current Addressables catalog and computes the
 source identity before the expensive bundle download. A scheduled run skips the
 build when both this identity and the pipeline fingerprint equal the published
 release. An APK update or catalog hot update starts a new build automatically.
+With `ingest --reuse`, a new source first restores every bundle name already
+present in a prior published source from the R2 CAS (verified by size and
+SHA-256, CDN download as fallback), so hot updates only fetch what actually
+changed.
 
-The Japanese publisher currently offers only a Google Play link. A Japanese
-XAPK mirror acquisition path is implemented, but scheduled Japanese builds
-remain disabled until the Android catalog URL and its versioned CDN root can be discovered and validated without
-manual packet capture. The Japanese package transport is independent of that
-catalog discovery work.
+### Live server version discovery (jp)
+
+Japanese production catalogs live behind a per-platform directory that only
+the game service hands out at runtime. The `jp` configuration therefore asks
+the service directly, resolves the live resource
+version, and anchors every catalog and bundle download under `remoteRoot`. The
+lookup needs HTTP/2 (`curl --http2-prior-knowledge`) and its endpoint is
+operational knowledge: supply it through the `HANEOKA_VERSION_ENDPOINT`
+environment variable (a repo secret in CI), never in committed files.
+
+The international server keeps its flat `catalog_{version}.bin` layout, so it
+still discovers new versions by probing. The CBT CDNs remain reachable: the
+international CBT CDN currently serves without authorization, while the
+Japanese CBT CDN requires its original credential (the
+`RESOURCE_CDN_AUTHORIZATION` secret) — its API host answers
+`UNDER_MAINTENANCE`, so the password can no longer be re-derived there.
+
+### Credential fallback and secret refresh
+
+The server-issued CDN password is short-lived, so it is fetched fresh on every
+run and never persisted by the pipeline. When a server stops delivering one
+(maintenance, shutdown), the pipeline falls back to the
+`RESOURCE_CDN_AUTHORIZATION` secret, which is exactly how the CBT servers keep
+building. To keep that shared secret young, the reusable workflow's
+*Refresh shared CDN credential secret* step stores the credential from a
+successful server lookup back into the `RESOURCE_CDN_AUTHORIZATION` repo
+secret — this requires a classic PAT (or fine-grained token with **Secrets:
+write**) stored as the `SECRET_WRITER_GH_TOKEN` repo secret; without it the
+step just logs a notice and the pipeline proceeds with the credentials it
+already resolved. `python scripts/pipeline.py --server jp cdn-credential`
+prints the same report locally (set `HANEOKA_VERSION_ENDPOINT` first).
+
+### Closed servers and data retention
+
+When a server eventually shuts down, set `"closed": true` in its
+`scripts/config/servers/*.json`. Network ingestion then refuses to run with a
+pointer to the retained snapshots, while `fetch-source` and
+`run --offline` keep rebuilding every release ever published — R2 sources and
+releases are immutable, so closed servers lose nothing.
 
 ## Build a local release
 

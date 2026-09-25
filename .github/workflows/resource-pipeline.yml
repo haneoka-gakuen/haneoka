@@ -2,8 +2,11 @@ name: Resource pipeline
 
 on:
   schedule:
-    # Daily at 11:24 Asia/Shanghai. Japan joins after its Android catalog feed is verified.
-    - cron: "24 3 * * *"
+    # 00:05, 06:05, 12:05, 18:05 Asia/Tokyo (UTC+9) for jp and intl.
+    - cron: "5 3 * * *"
+    - cron: "5 9 * * *"
+    - cron: "5 15 * * *"
+    - cron: "5 21 * * *"
   workflow_dispatch:
     inputs:
       server:
@@ -29,6 +32,16 @@ on:
         required: false
         default: false
         type: boolean
+      force:
+        description: Rebuild even when the source identity is unchanged
+        required: false
+        default: false
+        type: boolean
+      no_reuse:
+        description: Disable cross-source and cross-build artifact reuse
+        required: false
+        default: false
+        type: boolean
 concurrency:
   group: resource-pipeline-${{ github.event_name == 'schedule' && 'production-daily' || inputs.server }}
   cancel-in-progress: false
@@ -39,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        server: ${{ fromJSON(github.event_name == 'schedule' && '["intl"]' || format('["{0}"]', inputs.server)) }}
+        server: ${{ fromJSON(github.event_name == 'schedule' && '["jp", "intl"]' || format('["{0}"]', inputs.server)) }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
@@ -49,11 +62,15 @@ jobs:
       package_r2_key: ${{ inputs.package_r2_key }}
       source_id: ${{ inputs.source_id }}
       ktx2: ${{ inputs.ktx2 }}
+      force: ${{ inputs.force }}
+      no_reuse: ${{ inputs.no_reuse }}
     secrets:
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+      secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
+      haneoka_version_endpoint: ${{ secrets.HANEOKA_VERSION_ENDPOINT }}
 
   rebuild-static-catalog:
     name: Rebuild static catalog pages

@@ -12,7 +12,13 @@
   "remoteRoot": "https://l12-prod-hk-patch-sirius.gamerfusiontech.com/cbt/hk/asset/Android",
   "catalog": {
     "version": "0.3.1.5",
-    "locales": ["ja", "en", "zh-Hant", "zh-Hans", "ko"]
+    "locales": [
+      "ja",
+      "en",
+      "zh-Hant",
+      "zh-Hans",
+      "ko"
+    ]
   },
   "criHcaKey": "8594927479",
   "masterCrypto": {

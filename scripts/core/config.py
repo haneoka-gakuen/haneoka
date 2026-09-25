@@ -25,8 +25,12 @@ class ServerConfig:
     release_retention: int
     authorization_required: bool
     offline: bool
+    closed: bool
     skip_public_resolution_check: bool
     remote_root: str
+    version_endpoint: str
+    version_catalog_path: str
+    version_basic_user: str
     cri_hca_key: str
     master_crypto: dict[str, str]
     catalog_version: str
@@ -57,8 +61,10 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "releaseRetention",
         "authorizationRequired",
         "offline",
+        "closed",
         "skipPublicResolutionCheck",
         "remoteRoot",
+        "assetVersion",
         "criHcaKey",
         "masterCrypto",
         "catalog",
@@ -78,6 +84,9 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     skip_public_resolution_check = value.get("skipPublicResolutionCheck", False)
     if not isinstance(skip_public_resolution_check, bool):
         raise ValueError(f"invalid skipPublicResolutionCheck: {file}")
+    closed = value.get("closed", False)
+    if not isinstance(closed, bool):
+        raise ValueError(f"invalid closed: {file}")
     required_strings = ("packageName", "unityVersion", "r2Bucket", "criHcaKey")
     if any(not isinstance(value.get(key), str) or not value[key] for key in required_strings):
         raise ValueError(f"required server configuration string is missing: {file}")
@@ -125,6 +134,63 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         not isinstance(item, str) or not HEX_64.fullmatch(item) for item in crypto.values()
     ):
         raise ValueError(f"invalid masterCrypto: {file}")
+    asset_version = value.get("assetVersion", {})
+    if not isinstance(asset_version, dict):
+        raise ValueError(f"invalid assetVersion block: {file}")
+    unknown_asset_version = sorted(set(asset_version) - {"endpoint", "catalogPath", "basicUser"})
+    if unknown_asset_version:
+        raise ValueError(f"unknown assetVersion fields in {file}: {unknown_asset_version}")
+    version_endpoint = str(asset_version.get("endpoint", "")).strip()
+    if not version_endpoint and asset_version.get("endpoint") is not None:
+        raise ValueError(f"assetVersion.endpoint must be a non-empty string when present: {file}")
+    if version_endpoint:
+        endpoint = urlsplit(version_endpoint)
+        endpoint_hostname = (endpoint.hostname or "").lower().rstrip(".")
+        try:
+            endpoint_port = endpoint.port
+        except ValueError as error:
+            raise ValueError(f"invalid assetVersion endpoint port: {file}") from error
+        if (
+            endpoint.scheme.lower() != "https"
+            or not endpoint_hostname
+            or endpoint.username is not None
+            or endpoint.password is not None
+            or endpoint_port not in {None, 443}
+            or endpoint.query
+            or endpoint.fragment
+            or "\\" in endpoint.path
+            or ".." in endpoint.path.split("/")
+        ):
+            raise ValueError(f"invalid assetVersion endpoint: {file}")
+        try:
+            endpoint_address = ipaddress.ip_address(endpoint_hostname)
+        except ValueError:
+            if endpoint_hostname == "localhost" or endpoint_hostname.endswith((".localhost", ".local")):
+                raise ValueError(f"assetVersion endpoint must use a public host: {file}")
+        else:
+            if not endpoint_address.is_global:
+                raise ValueError(f"assetVersion endpoint must use a public address: {file}")
+    if asset_version and "endpoint" not in asset_version and not (
+        asset_version.get("catalogPath") and asset_version.get("basicUser")
+    ):
+        raise ValueError(f"assetVersion block requires catalogPath and basicUser at minimum: {file}")
+    version_catalog_path = str(asset_version.get("catalogPath", "")).strip()
+    if version_endpoint or asset_version:
+        if (
+            not version_catalog_path.startswith("/")
+            or "{version}" not in version_catalog_path
+            or "{hash}" not in version_catalog_path
+            or "\\" in version_catalog_path
+            or ".." in version_catalog_path.split("/")
+            or any(part in {".", ".."} for part in unquote(version_catalog_path).split("/"))
+            or unquote(unquote(version_catalog_path)) != unquote(version_catalog_path)
+        ):
+            raise ValueError(
+                f"assetVersion.catalogPath must be an absolute path with {{version}} and {{hash}}: {file}"
+            )
+    version_basic_user = str(asset_version.get("basicUser", "")).strip()
+    if asset_version and (not version_basic_user or ":" in version_basic_user):
+        raise ValueError(f"assetVersion.basicUser must be a non-empty user name without ':' : {file}")
     catalog = value.get("catalog", {})
     if not isinstance(catalog, dict):
         raise ValueError(f"invalid catalog block: {file}")
@@ -149,8 +215,12 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         release_retention=retention,
         authorization_required=authorization_required,
         offline=offline,
+        closed=closed,
         skip_public_resolution_check=skip_public_resolution_check,
         remote_root=value.get("remoteRoot", "").rstrip("/"),
+        version_endpoint=version_endpoint,
+        version_catalog_path=version_catalog_path,
+        version_basic_user=version_basic_user,
         cri_hca_key=str(value.get("criHcaKey", "")),
         master_crypto=crypto,
         catalog_version=catalog_version,

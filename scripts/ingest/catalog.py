@@ -32,7 +32,10 @@ def _http_safe_url(url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, query, parsed.fragment))
 
 
-def _remote_url(parts: list[str], remote_root: str = "") -> str:
+REMOTE_ASSET_DIR_TOKEN = "Fwk.Resource.RemoteAssetDir}"
+
+
+def _remote_url(parts: list[str], remote_root: str = "", asset_dir: str = "") -> str:
     if parts and urlsplit(parts[-1]).scheme.lower() in {"http", "https"}:
         values = list(reversed(parts))
         url = _http_safe_url(f"{values[0]}/{'/'.join(values[1:])}")
@@ -45,6 +48,11 @@ def _remote_url(parts: list[str], remote_root: str = "") -> str:
             tail = segments[3] if len(segments) == 4 else parsed.path.lstrip("/")
             return _http_safe_url(f"{remote_root.rstrip('/')}/{tail}")
         return url
+    if asset_dir and parts and REMOTE_ASSET_DIR_TOKEN in parts[-1]:
+        values = list(reversed(parts))
+        tail = values[0][values[0].index("}") + 1 :]
+        remainder = "/".join([part for part in [tail, *values[1:]] if part])
+        return _http_safe_url(f"{asset_dir.rstrip('/')}/{remainder}")
     # Unity Addressables stores remote bundle paths as
     # "<bundle>/{UnityEngine.AddressableAssets.Addressables.RuntimePath}/Android";
     # the {RuntimePath} token resolves to the CDN RemoteLoadPath at runtime. With no
@@ -68,9 +76,10 @@ def _remote_url(parts: list[str], remote_root: str = "") -> str:
 
 
 class CatalogReader:
-    def __init__(self, data: bytes, remote_root: str = ""):
+    def __init__(self, data: bytes, remote_root: str = "", asset_dir: str = ""):
         self.data = data
         self._remote_root = remote_root
+        self._asset_dir = asset_dir
         self._keys: list[dict[str, Any]] | None = None
 
     def require_range(self, offset: int, size: int) -> None:
@@ -177,7 +186,7 @@ class CatalogReader:
             "primaryParts": self.string_parts(self.u32(offset)),
             "internalId": self.string(self.u32(offset + 4), "/"),
             "internalParts": internal_parts,
-            "remoteUrl": _remote_url(internal_parts, self._remote_root),
+            "remoteUrl": _remote_url(internal_parts, self._remote_root, self._asset_dir),
             "providerId": self.string(self.u32(offset + 8), "."),
             "data": self.object(self.u32(offset + 20)) if self.u32(offset + 20) != UINT32_MAX else None,
             "resourceType": self.type_name(self.u32(offset + 24)),
@@ -212,14 +221,14 @@ class CatalogReader:
         return [found[key] for key in sorted(found)]
 
 
-def read_catalog(file: Path, remote_root: str = "") -> CatalogReader:
-    return CatalogReader(file.read_bytes(), remote_root)
+def read_catalog(file: Path, remote_root: str = "", asset_dir: str = "") -> CatalogReader:
+    return CatalogReader(file.read_bytes(), remote_root, asset_dir)
 
 
-def downloadable_locations(file: Path, remote_root: str = "") -> list[dict[str, Any]]:
+def downloadable_locations(file: Path, remote_root: str = "", asset_dir: str = "") -> list[dict[str, Any]]:
     return [
         value
-        for value in read_catalog(file, remote_root).unique_locations()
+        for value in read_catalog(file, remote_root, asset_dir).unique_locations()
         if isinstance(value.get("data"), dict)
         and value["data"].get("bundleName")
         and urlsplit(str(value.get("remoteUrl", ""))).scheme.lower() == "https"

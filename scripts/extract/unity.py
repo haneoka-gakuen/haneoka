@@ -10,9 +10,10 @@ import gzip
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Callable, Any
 
 from UnityPy.classes.PPtr import PPtr
 
@@ -641,7 +642,14 @@ def _dependency_paths(artifact: dict[str, Any], artifacts_by_path: dict[str, dic
     return sorted(found - {root_path})
 
 
-def extract_shard(server: str, source_id: str, build_id: str, shard_index: int, shard_count: int) -> dict[str, Any]:
+def extract_shard(
+    server: str,
+    source_id: str,
+    build_id: str,
+    shard_index: int,
+    shard_count: int,
+    reuse_restore: Callable[[str, Path], dict[str, Any] | None] | None = None,
+) -> dict[str, Any]:
     source = source_layout(server, source_id)
     build = build_layout(server, build_id)
     manifest = read_json(source.manifest)
@@ -653,13 +661,20 @@ def extract_shard(server: str, source_id: str, build_id: str, shard_index: int, 
     selected = shard_artifacts(manifest, shard_index, shard_count)
     artifacts_by_path = {str(item["path"]): item for item in records}
     reports = []
+    reused = 0
     for artifact in selected:
-        dependencies = [
-            source.root / relative
-            for relative in _dependency_paths(artifact, artifacts_by_path)
-        ]
-        report = extract_bundle(source.root / artifact["path"], artifact, shard_root, dependencies)
+        report = reuse_restore(str(artifact["sha256"]), shard_root) if reuse_restore else None
+        if report is None:
+            dependencies = [
+                source.root / relative
+                for relative in _dependency_paths(artifact, artifacts_by_path)
+            ]
+            report = extract_bundle(source.root / artifact["path"], artifact, shard_root, dependencies)
+        else:
+            reused += 1
         reports.append(report)
+    if reuse_restore:
+        sys.stderr.write(f"unity: reused {reused}/{len(reports)} bundles in shard {shard_index}\n")
     result = {
         "schema": "haneoka-unity-shard-v1",
         "server": server,
