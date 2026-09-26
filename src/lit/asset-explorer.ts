@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { errorState, loadingState } from "./ui/state";
 import { catalogUrl, fetchJson, currentReleaseServer, preferredLocale } from "./shared/catalog";
 import { localizedFallbacks } from "../lib/localized-text";
+import { localeFromPath } from "../i18n/locales";
 interface Branch {
   [key: string]: AssetNode;
 }
@@ -159,7 +160,13 @@ export class AssetExplorer extends LitElement {
   private sync() {
     const params = new URLSearchParams();
     if (this.selected) params.set("file", this.selected);
-    const pathname = `/catalog/assets${this.path.length ? `/${this.path.map(encodeURIComponent).join("/")}` : ""}`;
+    // Explorer addresses are locale-prefixed deep links: rewriting the URL
+    // without the prefix would strand the visitor on an unprefixed address
+    // that no built page answers and whose fallback shell ignores their
+    // language.
+    const locale = localeFromPath(location.pathname);
+    const prefix = locale ? `/${locale}` : "";
+    const pathname = `${prefix}/catalog/assets${this.path.length ? `/${this.path.map(encodeURIComponent).join("/")}` : ""}`;
     history.replaceState(history.state, "", `${pathname}${params.size ? `?${params}` : ""}`);
   }
   private async choose(parts: string[]) {

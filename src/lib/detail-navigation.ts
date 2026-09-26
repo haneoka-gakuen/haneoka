@@ -2,9 +2,11 @@ type Listener = { path: string; update: () => void };
 const listeners = new Set<Listener>();
 let listening = false;
 const routePath = (path: string) => path.replace(/\/+$/, "") || "/";
+/** Built pages live under a locale prefix; the shell's data-route does not. */
+const barePath = (path: string) => routePath(path.replace(/^\/(?:ja|en|zh-TW|zh-CN|ko)(?=\/)/u, ""));
 export function observeDetailLocation(update: () => void, owner?: Element): () => void {
   const listener = {
-    path: routePath(owner?.closest("[data-route]")?.getAttribute("data-route") || location.pathname),
+    path: barePath(owner?.closest("[data-route]")?.getAttribute("data-route") || location.pathname),
     update,
   };
   listeners.add(listener);
@@ -13,7 +15,7 @@ export function observeDetailLocation(update: () => void, owner?: Element): () =
     window.addEventListener(
       "haneoka:detail-popstate",
       (event) => {
-        const active = [...listeners].filter((entry) => entry.path === routePath(location.pathname));
+        const active = [...listeners].filter((entry) => entry.path === barePath(location.pathname));
         if (!active.length) return;
         event.preventDefault();
         active.forEach((entry) => entry.update());

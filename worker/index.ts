@@ -2353,11 +2353,16 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const url = new URL(request.url);
   const hasLocalePrefix = /^\/(?:ja|en|zh-TW|zh-CN|ko)(?:\/|$)/u.test(url.pathname);
   const lastSegment = url.pathname.split("/").pop() || "";
+  // The asset explorer's SPA sub-routes are the one worker-first prefix whose
+  // unprefixed document addresses still negotiate: no unprefixed page is
+  // built, and the shell fallback's fixed locale order cannot honour the
+  // visitor's language (nor stay cache-consistent if it tried).
+  const assetExplorerRoute = /^\/catalog\/assets(?:\/|$)/u.test(url.pathname);
   if (
     !hasLocalePrefix &&
     (request.method === "GET" || request.method === "HEAD") &&
     !lastSegment.includes(".") &&
-    !WORKER_FIRST_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+    (!WORKER_FIRST_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) || assetExplorerRoute)
   ) {
     const target = new URL(url);
     target.pathname = `/${negotiateLocale(request)}${url.pathname === "/" ? "/" : `${url.pathname.replace(/\/+$/, "")}/`}`;

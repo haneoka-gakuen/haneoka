@@ -882,6 +882,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // Locale-prefixed paths are the built pages; anything else that looks like
   // a page address moves to the visitor's locale — the same negotiation the
   // production worker performs (cookie, then Accept-Language, then English).
+  // The asset explorer's SPA sub-routes are the one worker-first prefix whose
+  // unprefixed document addresses still negotiate, matching the worker.
   const localePattern = /^\/(?:ja|en|zh-TW|zh-CN|ko)(?:\/|$)/u;
   const lastSegment = url.pathname.split("/").pop() ?? "";
   const unprefixedAppPrefixes = [
@@ -889,7 +891,6 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     "/artifacts/",
     "/assets/",
     "/assets",
-    "/catalog/assets/",
     "/game-client/",
     "/objects/",
     "/runtime/",
@@ -913,10 +914,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let locale: string | null = null;
     if (cookieLocale && localePattern.test(`/${decodeURIComponent(cookieLocale)}/`))
       locale = decodeURIComponent(cookieLocale);
-    for (const part of (req.headers["accept-language"] ?? "").split(",")) {
-      locale = languageTag(part.split(";")[0] ?? "");
-      if (locale) break;
-    }
+    // A stored locale wins outright, as it does in the worker; the header is
+    // only consulted when no cookie is present.
+    if (!locale)
+      for (const part of (req.headers["accept-language"] ?? "").split(",")) {
+        locale = languageTag(part.split(";")[0] ?? "");
+        if (locale) break;
+      }
     const resolved = locale ?? "en";
     res.writeHead(302, {
       Location: `/${resolved}${url.pathname === "/" ? "/" : `${url.pathname.replace(/\/+$/, "")}/`}${url.search}${url.hash}`,
@@ -1156,9 +1160,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return;
     }
   }
-  if (url.pathname.startsWith("/catalog/assets/") || url.pathname.startsWith("/community/")) {
-    for (const locale of ["ja", "en", "zh-TW", "zh-CN", "ko"]) {
-      const entryPath = url.pathname.startsWith("/catalog/assets/")
+  // SPA sub-routes of the tools are served through their locale-prefixed entry
+  // page. The address reaching this fallback carries the visitor's locale
+  // prefix, so try that entry first instead of a fixed order.
+  const prefixLocale = url.pathname.replace(/^\/+/, "").split("/")[0] ?? "";
+  if (
+    localePattern.test(url.pathname) &&
+    (url.pathname.includes("/catalog/assets/") || url.pathname.includes("/community/"))
+  ) {
+    const locales = ["ja", "en", "zh-TW", "zh-CN", "ko"].filter((locale) => locale !== prefixLocale);
+    for (const locale of [prefixLocale, ...locales]) {
+      const entryPath = url.pathname.includes("/catalog/assets/")
         ? `${locale}/catalog/assets/index.html`
         : `${locale}/community/index.html`;
       const entry = safeFile(DIST, entryPath);
