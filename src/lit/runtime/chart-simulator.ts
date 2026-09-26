@@ -706,6 +706,18 @@ export class ChartSimulator extends LitElement {
     if (this.clock) this.clock.audio.loop = this.loop;
   }
   private async toggleFullscreen() {
+    // iOS WebKit has no element fullscreen API; expand the detail pane
+    // over the whole viewport instead (same fallback as the story player).
+    if (typeof document.documentElement.requestFullscreen !== "function") {
+      if (this.fullscreen) {
+        this.closest<HTMLElement>(".pane-layer")?.removeAttribute("data-story-fullscreen");
+        this.fullscreen = false;
+      } else {
+        this.closest<HTMLElement>(".pane-layer")?.setAttribute("data-story-fullscreen", "true");
+        this.fullscreen = true;
+      }
+      return;
+    }
     if (document.fullscreenElement) await document.exitFullscreen();
     else await this.requestFullscreen();
   }

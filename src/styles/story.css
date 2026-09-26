@@ -213,7 +213,8 @@
     inset: 0;
     border-radius: 0;
   }
-  .pane-layer[data-story-fullscreen="true"] .chart-runtime__controls {
+  .pane-layer[data-story-fullscreen="true"] .chart-runtime__controls,
+  .pane-layer[data-story-fullscreen="true"] .haneoka-progress {
     padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
