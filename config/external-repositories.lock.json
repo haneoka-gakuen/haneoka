@@ -6,7 +6,7 @@
       "name": "vega",
       "url": "https://github.com/haneoka-gakuen/vega.git",
       "branch": "main",
-      "commit": "cb3858ff2821135379b6afe169e6bb854f4d98f7",
+      "commit": "4c65cf0ecf868516e7bf0b8493af6b2b47416924",
       "version": "0.1.0",
       "kind": "node"
     },
