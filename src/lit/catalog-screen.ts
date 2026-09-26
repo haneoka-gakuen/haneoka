@@ -16,7 +16,6 @@ import {
   catalogUrl,
   currentReleaseServer,
   formatList as formatLocalizedList,
-  type JsonRecord,
   localizedText,
   preferredLocale,
   readPath,
@@ -1187,35 +1186,35 @@ export class CatalogScreen extends LitElement {
     const values = Array.isArray(value) ? value : [value];
     return String(values.find((entry) => typeof entry === "string" && entry.trim()) || "").normalize("NFKC");
   }
-  /** The credit line's source string: the Japanese slot when present. */
-  private creditSource(value: unknown): string {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value))
-      return String(value.find((entry) => typeof entry === "string" && entry.trim()) || "");
-    if (value && typeof value === "object") {
-      const record = value as JsonRecord;
-      return String(
-        record.ja || Object.values(record).find((entry) => typeof entry === "string" && entry.trim()) || "",
-      );
-    }
-    return "";
-  }
   /**
-   * One facet value per credited person. A joint credit is one line —
-   * "A・B（…）", "A / B", "A × B", "A feat. B" — so the composer, lyricist and
-   * arranger filters split it on the separators those lines actually use and
-   * drop the parenthesised affiliation, making each writer selectable on
-   * their own. Whitespace alone never splits: "BUMP OF CHICKEN" stays whole.
+   * One facet value per credited person, read from the current language's
+   * slot. A joint credit is one line — "A・B（…）", "A / B", "A × B",
+   * "Lady Gaga,Andrew Watt" — so the composer, lyricist and arranger filters
+   * split it on the separators those lines actually use and drop the
+   * parenthesised affiliation, making each writer selectable on their own.
+   * Whitespace alone never splits: "BUMP OF CHICKEN" stays whole. A middle
+   * dot between katakana-only segments is a transliterated artist's own name
+   * ("アイナ・ジ・エンド"), not a join, and stays whole too.
    */
   private creditMembers(value: unknown): string[] {
-    const text = this.creditSource(value).normalize("NFKC");
+    const text = resolveLocalizedText(value, this.settings.locale).text.normalize("NFKC");
     if (!text) return [];
-    const members = text
+    const members: string[] = [];
+    const push = (part: string) => {
+      const member = part.trim();
+      if (member && !members.includes(member)) members.push(member);
+    };
+    const lines = text
       .replace(/([（(])[^（）()]*[)）]/g, "")
-      .split(/\s*[、・，,;；/／×＋+&＆]\s*|\s+(?:x|feat\.?|with|from)\s+/giu)
-      .map((member) => member.trim())
-      .filter(Boolean);
-    return [...new Set(members)];
+      .split(/\s*[、，,;；/／×＋+&＆]\s*|\s+(?:x|feat\.?|with|from)\s+/giu);
+    for (const line of lines) {
+      if (!line) continue;
+      // Katakana with dots is one transliterated name; anything else joins
+      // writers on the middle dot.
+      if (/^[\u30A1-\u30FC・]+$/u.test(line)) push(line);
+      else for (const part of line.split(/\s*・\s*/u)) push(part);
+    }
+    return members;
   }
   itemArtistContent(item: Item) {
     for (const value of [item.artistName, item.bandName])
@@ -1498,6 +1497,12 @@ export class CatalogScreen extends LitElement {
           }
         }
       }
+      // Person names have no natural order; the most credited writer leads.
+      const members = [...counts.keys()].filter(Boolean);
+      if (key === "composer" || key === "lyrics" || key === "arrangement")
+        members.sort(
+          (a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b, this.settings.locale),
+        );
       groups.push({
         key,
         label:
@@ -1506,7 +1511,7 @@ export class CatalogScreen extends LitElement {
             : key === "artwork"
               ? uiText(this.settings.locale, "availableImage")
               : this.detailLabel(key),
-        options: [...counts.keys()].filter(Boolean).map((value) => ({
+        options: members.map((value) => ({
           value,
           id: ids.get(value),
           label: ["yes", "no"].includes(value) ? uiText(this.settings.locale, value) : this.label(value, value),

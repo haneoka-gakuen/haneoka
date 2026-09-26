@@ -140,6 +140,11 @@ button.table-entity {
   height: 100%;
   object-fit: contain;
 }
+/* The Sonolus action shares the 20dp icon rhythm of its neighbours. */
+.data-table .icon-button .sonolus-icon {
+  width: 20px;
+  height: 20px;
+}
 .table-entity__copy {
   display: grid;
   min-width: 0;

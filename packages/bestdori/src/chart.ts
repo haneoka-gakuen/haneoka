@@ -109,9 +109,12 @@ export function repairBestdoriChart(input: unknown): BestdoriChartNote[] {
 }
 
 const PPQ = 480;
-const LANE_POS_BASE = -2;
+// Lane centres are 4 SS units apart; every note extends one SS unit past its
+// outermost lane centre on each side, so adjacent keys overlap by 2 units.
 const LANE_POS_SCALE = 4;
-const NOTE_SIZE = 4;
+const NOTE_OVERHANG = 1;
+const LANE_POS_BASE = NOTE_OVERHANG - LANE_POS_SCALE;
+const NOTE_SIZE = LANE_POS_SCALE + NOTE_OVERHANG * 2;
 
 const finiteNumber = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const toTick = (beat: number): number => Math.round(beat * PPQ);
@@ -136,7 +139,7 @@ export function bestdoriDirectionalGeometry(
   const leftmostLane = direction === "Left" ? anchorLane - (width - 1) : anchorLane;
   return {
     pos: laneToPos(leftmostLane),
-    size: NOTE_SIZE * width,
+    size: LANE_POS_SCALE * width + NOTE_OVERHANG * 2,
   };
 }
 
