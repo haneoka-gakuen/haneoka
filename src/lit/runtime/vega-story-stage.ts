@@ -161,11 +161,13 @@ export class VegaStoryStage extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    addEventListener("haneoka:locale-ready", this.onDocumentLocale);
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
     void import("@material/web/slider/slider.js");
     this.requestUpdate();
   }
   disconnectedCallback() {
+    removeEventListener("haneoka:locale-ready", this.onDocumentLocale);
     this.loadController?.abort();
     this.loadedKey = "";
     document.removeEventListener("fullscreenchange", this.fullscreenChanged);
@@ -186,14 +188,6 @@ export class VegaStoryStage extends LitElement {
     const known = ["ja", "en", "zh-TW", "zh-CN", "ko"];
     if (next && known.includes(next) && next !== this.locale) this.locale = next;
   };
-  connectedCallback() {
-    super.connectedCallback();
-    addEventListener("haneoka:locale-ready", this.onDocumentLocale);
-  }
-  disconnectedCallback() {
-    removeEventListener("haneoka:locale-ready", this.onDocumentLocale);
-    super.disconnectedCallback();
-  }
   private async json(url: string, signal: AbortSignal) {
     const response = await fetch(url, { signal, headers: { accept: "application/json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
