@@ -67,6 +67,7 @@ const sections: NavSection[] = [
     label: "library",
     items: [
       { route: "/catalog/songs", icon: "library_music", label: "songs" },
+      { route: "/catalog/song-meta", icon: "monitoring", label: "songMeta" },
       { route: "/catalog/characters", icon: "group", label: "characters" },
       { route: "/catalog/member-cards", icon: "style", label: "memberCards" },
       { route: "/catalog/support-cards", icon: "collections", label: "supportCards" },

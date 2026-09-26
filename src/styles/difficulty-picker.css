@@ -45,6 +45,27 @@
     padding: 4px 6px;
     border-radius: 12px;
   }
+  /* The static variant reads like a compact chip but is not a control: the
+     meta table's difficulty column, one row per chart, nothing to pick. */
+  .difficulty-picker--static > span {
+    display: grid;
+    place-content: center;
+    min-width: 48px;
+    min-height: 44px;
+    padding: 4px 8px;
+    gap: 2px;
+    border: 1px solid color-mix(in srgb, var(--chart-color) 70%, var(--md-sys-color-outline));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--chart-color) 18%, var(--md-sys-color-surface));
+    color: var(--md-sys-color-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+  .difficulty-picker--static small {
+    font: 500 9px/12px var(--app-font);
+  }
+  .difficulty-picker--static b {
+    font: 700 14px/20px var(--app-font);
+  }
   @media (prefers-reduced-motion: no-preference) {
     .difficulty-picker > button {
       transition:

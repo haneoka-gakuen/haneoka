@@ -16,6 +16,7 @@ import {
   catalogUrl,
   currentReleaseServer,
   formatList as formatLocalizedList,
+  type JsonRecord,
   localizedText,
   preferredLocale,
   readPath,
@@ -104,6 +105,10 @@ interface Profile {
   presentation: Presentation;
   defaultSort: string;
   defaultOrder: "asc" | "desc";
+  /** Fetch this resource when the route's own resource is a derived view. */
+  collection?: string;
+  /** One row per song difficulty, each with its own chart metrics. */
+  perDifficulty?: boolean;
 }
 
 const profiles: Record<string, Profile> = {
@@ -198,6 +203,32 @@ const profiles: Record<string, Profile> = {
     ],
     presentation: "song",
     defaultSort: "release",
+    defaultOrder: "desc",
+  },
+  /**
+   * The songs table flattened by difficulty: one row per chart, so the
+   * efficiency ranking reads across difficulties without a picker. It browses
+   * the songs projection and joins song-meta for the per-chart metrics;
+   * detail navigation still targets the song itself (?song=<musicId>).
+   */
+  "song-meta": {
+    id: ["metaId", "musicId", "songId", "id"],
+    title: ["musicTitle", "title", "name"],
+    image: ["jacketUrl", "jacketThumbUrl", "jacket", "thumbnail", "image"],
+    detail: [
+      "bandId",
+      "vocalCharacterIds",
+      "musicType",
+      "musicCategories",
+      "composer",
+      "lyricist",
+      "arranger",
+      "publishedAt",
+    ],
+    presentation: "song",
+    collection: "songs",
+    perDifficulty: true,
+    defaultSort: "eff",
     defaultOrder: "desc",
   },
   bands: {
@@ -440,7 +471,7 @@ export class CatalogScreen extends LitElement {
   private releaseLocation?: () => void;
   private restoreLocation = () => {
     const params = new URLSearchParams(location.search);
-    this.view = collectionView(params.get("view"));
+    this.view = this.profile.perDifficulty ? "table" : collectionView(params.get("view"));
     this.selectedSongDifficulty = params.get("chartDifficulty") || "expert";
     const id = params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
@@ -454,6 +485,10 @@ export class CatalogScreen extends LitElement {
     this.sim = null;
     this.chartOpen = false;
     if (this.selected) {
+      if (this.profile.perDifficulty) {
+        const index = Number(this.selected.__difficultyIndex);
+        if (Number.isFinite(index) && index >= 0) this.detailDifficulty = index;
+      }
       this.restoreDetailQuery();
       void this.loadEntityDetail(this.selected);
     }
@@ -470,6 +505,7 @@ export class CatalogScreen extends LitElement {
           stickers: "sticker",
           backgrounds: "background",
           songs: "song",
+          "song-meta": "song",
           events: "entry",
           "real-lives": "entry",
           gacha: "entry",
@@ -582,7 +618,7 @@ export class CatalogScreen extends LitElement {
       this.selectedSongDifficulty = params.get("chartDifficulty") || "expert";
       this.sort = this.normalizeSort(params.get("sort") ?? this.profile.defaultSort);
       this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
-      this.view = collectionView(params.get("view"));
+      this.view = this.profile.perDifficulty ? "table" : collectionView(params.get("view"));
       const bandRail = this.hasBandRail();
       this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
       this.selectedId = params.get(this.selectionParam()) || "";
@@ -781,7 +817,9 @@ export class CatalogScreen extends LitElement {
       const needsGameMarks = ["member", "support", "song", "character"].includes(this.profile.presentation);
       const needsItems = ["member", "support"].includes(this.profile.presentation);
       const [response, characters, bands, marks, gameItems] = await Promise.all([
-        fetch(this.sourceUrl(this.settings.resource), { headers: { accept: "application/json" } }),
+        fetch(this.sourceUrl(this.profile.collection || this.settings.resource), {
+          headers: { accept: "application/json" },
+        }),
         needsRelations ? fetch(this.sourceUrl("characters"), { headers: { accept: "application/json" } }) : null,
         needsRelations ? fetch(this.sourceUrl("bands"), { headers: { accept: "application/json" } }) : null,
         // Game-sprite marks and item tables are release-only projections.
@@ -828,7 +866,7 @@ export class CatalogScreen extends LitElement {
     set("q", this.query);
     set("sort", this.sort, this.profile.defaultSort);
     set("order", this.order, this.profile.defaultOrder);
-    set("view", this.view, "grid");
+    set("view", this.view, this.profile.perDifficulty ? "table" : "grid");
     const bandRail = this.hasBandRail();
     if (bandRail) set("band", String(this.activeBand), "0");
     else params.delete("band");
@@ -879,13 +917,44 @@ export class CatalogScreen extends LitElement {
       this.selectedSongDifficulty,
       JSON.stringify(this.facets),
     ].join("\u0000");
-    if (this.resultCache?.key === key && this.resultCache.items.length <= this.items.length) return this.resultCache;
+    if (this.resultCache?.key === key && this.resultCache.items.length <= this.expandedItems().length)
+      return this.resultCache;
     const value = this.computeResults();
     this.resultCache = { key, ...value };
     return this.resultCache;
   }
   private filtered() {
     return this.results().items;
+  }
+  /**
+   * The browse population: songs themselves, or one row per difficulty for
+   * the meta table. Each row narrows `difficulty` to its own chart and carries
+   * the meta id (`<musicId>-<difficulty>`) and the row's difficulty index, so
+   * sorting, filters and song-meta lookups resolve per row. Rows share one
+   * search haystack per song by reference — stringifying every row whole would
+   * serialise the collection once per difficulty.
+   */
+  private expandedCache?: { source: Item[]; rows: Item[] };
+  private expandedItems(): Item[] {
+    if (!this.profile.perDifficulty) return this.items;
+    if (this.expandedCache?.source === this.items) return this.expandedCache.rows;
+    const rows: Item[] = [];
+    for (const song of this.items) {
+      const difficulties = Array.isArray(song.difficulty) ? (song.difficulty as Item[]) : [];
+      if (!difficulties.length) continue;
+      const haystack = `${this.itemId(song)} ${this.itemTitle(song)} ${this.secondary(song)} ${JSON.stringify(song)}`;
+      difficulties.forEach((row, index) => {
+        rows.push({
+          ...song,
+          difficulty: [row],
+          metaId: `${this.itemId(song)}-${difficultyKey(row, index)}`,
+          __difficultyIndex: index,
+          __haystack: haystack,
+        });
+      });
+    }
+    this.expandedCache = { source: this.items, rows };
+    return rows;
   }
   private computeResults() {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
@@ -894,11 +963,14 @@ export class CatalogScreen extends LitElement {
     const source =
       this.hasBandRail() && this.activeBand
         ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
-        : this.items;
+        : this.expandedItems();
     const faceted = source.filter((item) => this.matchesFacets(item));
     const items = needle
       ? faceted.filter((item) =>
-          `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
+          (typeof item.__haystack === "string" && item.__haystack
+            ? item.__haystack
+            : `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
+          )
             .toLocaleLowerCase(this.settings.locale)
             .includes(needle),
         )
@@ -992,7 +1064,9 @@ export class CatalogScreen extends LitElement {
   private songMetaValue(item: Item, key: string) {
     const song = this.songMeta[String(item.musicId || "")] as Item | undefined;
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
-    const index = rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
+    const index = this.profile.perDifficulty
+      ? Math.max(0, Number(item.__difficultyIndex ?? 0))
+      : rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
     const difficulty = song?.[String(index)] as Item | undefined;
     const chart = difficulty?.chart as Item | undefined;
     if (!chart) return Number.NaN;
@@ -1007,7 +1081,11 @@ export class CatalogScreen extends LitElement {
       const seconds = Math.max(0, Math.round(value));
       return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     }
-    if (["eff", "nps", "sr", "score"].includes(key)) return value.toFixed(2);
+    // Score factor and efficiency are fractions; the table reads them the same
+    // way the song detail does, as whole percent.
+    if (key === "score" || key === "eff")
+      return `${(value * 100).toLocaleString(this.settings.locale, { maximumFractionDigits: 0 })}%`;
+    if (["nps", "sr"].includes(key)) return value.toFixed(2);
     return Math.round(value).toLocaleString();
   }
   private sortValue(item: Item): unknown {
@@ -1045,18 +1123,23 @@ export class CatalogScreen extends LitElement {
       return this.songMetaValue(item, this.sort);
     if (this.sort === "level") {
       const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
-      return Number(rows[3]?.sortLevel ?? rows[3]?.displayLevel ?? rows[3]?.playLevel ?? -1);
+      const row = this.profile.perDifficulty ? rows[0] : rows[3];
+      return Number(row?.sortLevel ?? row?.displayLevel ?? row?.playLevel ?? -1);
     }
     if (this.sort === "levels") return Array.isArray(item.levels) ? item.levels.length : 0;
     if (this.sort === "order") return Number(item.displayOrder ?? item.order ?? 0);
     return this.displayValue(readPath(item, this.sort));
   }
   private ensureSongMeta() {
+    if (this.profile.presentation !== "song") return;
+    // The meta table reads per-chart metrics on every row, so it always needs
+    // the join; the songs table only needs it for the table view, filters, or
+    // a metric sort.
     if (
-      this.profile.presentation !== "song" ||
-      (this.view !== "table" &&
-        !this.filtersOpen &&
-        !["time", "score", "eff", "bpm", "n", "nps", "sr"].includes(this.sort))
+      !this.profile.perDifficulty &&
+      this.view !== "table" &&
+      !this.filtersOpen &&
+      !["time", "score", "eff", "bpm", "n", "nps", "sr"].includes(this.sort)
     )
       return;
     this.songMetaProvision ??= fetch(this.sourceUrl("song-meta"), { headers: { accept: "application/json" } }).then(
@@ -1103,6 +1186,36 @@ export class CatalogScreen extends LitElement {
   private creditKey(value: unknown) {
     const values = Array.isArray(value) ? value : [value];
     return String(values.find((entry) => typeof entry === "string" && entry.trim()) || "").normalize("NFKC");
+  }
+  /** The credit line's source string: the Japanese slot when present. */
+  private creditSource(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value))
+      return String(value.find((entry) => typeof entry === "string" && entry.trim()) || "");
+    if (value && typeof value === "object") {
+      const record = value as JsonRecord;
+      return String(
+        record.ja || Object.values(record).find((entry) => typeof entry === "string" && entry.trim()) || "",
+      );
+    }
+    return "";
+  }
+  /**
+   * One facet value per credited person. A joint credit is one line —
+   * "A・B（…）", "A / B", "A × B", "A feat. B" — so the composer, lyricist and
+   * arranger filters split it on the separators those lines actually use and
+   * drop the parenthesised affiliation, making each writer selectable on
+   * their own. Whitespace alone never splits: "BUMP OF CHICKEN" stays whole.
+   */
+  private creditMembers(value: unknown): string[] {
+    const text = this.creditSource(value).normalize("NFKC");
+    if (!text) return [];
+    const members = text
+      .replace(/([（(])[^（）()]*[)）]/g, "")
+      .split(/\s*[、・，,;；/／×＋+&＆]\s*|\s+(?:x|feat\.?|with|from)\s+/giu)
+      .map((member) => member.trim())
+      .filter(Boolean);
+    return [...new Set(members)];
   }
   itemArtistContent(item: Item) {
     for (const value of [item.artistName, item.bandName])
@@ -1151,8 +1264,8 @@ export class CatalogScreen extends LitElement {
         .map(([role]) => role);
     if (key === "birthdayMonth") return [String((item.birthday as Item | undefined)?.month || "")].filter(Boolean);
     const field = key === "lyrics" ? "lyricist" : key === "arrangement" ? "arranger" : key;
-    if (["composer", "lyrics", "arrangement", "school", "part"].includes(key))
-      return [this.creditKey(item[field])].filter(Boolean);
+    if (key === "composer" || key === "lyrics" || key === "arrangement") return this.creditMembers(item[field]);
+    if (["school", "part"].includes(key)) return [this.creditKey(item[field])].filter(Boolean);
     return item[key] == null ? [] : [String(item[key])];
   }
   private rangeValues(item: Item, key: string): number[] {
@@ -1216,17 +1329,18 @@ export class CatalogScreen extends LitElement {
   }
   private facetCache?: { items: Item[]; locale: string; groups: ReturnType<CatalogScreen["computeFacetGroups"]> };
   private facetGroups() {
+    const population = this.expandedItems();
     let groups =
-      this.facetCache?.items === this.items && this.facetCache.locale === this.settings.locale
+      this.facetCache?.items === population && this.facetCache.locale === this.settings.locale
         ? this.facetCache.groups
         : undefined;
     if (!groups) {
       groups = this.computeFacetGroups();
-      this.facetCache = { items: this.items, locale: this.settings.locale, groups };
+      this.facetCache = { items: population, locale: this.settings.locale, groups };
     }
     return groups.map((group) => {
       const counts = new Map<string, number>();
-      for (const item of this.items) {
+      for (const item of population) {
         if (
           !this.matchesFacets(item, group.key) ||
           (this.hasBandRail() && this.activeBand && Number(item.bandId) !== this.activeBand)
@@ -1250,7 +1364,7 @@ export class CatalogScreen extends LitElement {
     /** How many entries each facet value would leave. Shown on every chip. */
     const tally = (values: (item: Item) => unknown[]) => {
       const counts = new Map<string, number>();
-      for (const item of this.items)
+      for (const item of this.expandedItems())
         for (const value of new Set(values(item).map(String))) counts.set(value, (counts.get(value) || 0) + 1);
       return counts;
     };
@@ -1626,6 +1740,11 @@ export class CatalogScreen extends LitElement {
     const difficulties = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
     const preferred = difficulties.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
     this.detailDifficulty = preferred >= 0 ? preferred : Math.min(3, Math.max(0, difficulties.length - 1));
+    // A meta row opens the song it belongs to, on that row's own difficulty.
+    if (this.profile.perDifficulty) {
+      const index = Number(item.__difficultyIndex);
+      if (Number.isFinite(index) && index >= 0) this.detailDifficulty = index;
+    }
     this.detailLevel = 1;
     this.detailTraining = 1;
     this.detailAwakening = 1;
@@ -1663,10 +1782,15 @@ export class CatalogScreen extends LitElement {
       void Promise.all([rewards, this.songMetaProvision]).then(() => this.requestUpdate());
     }
     try {
-      const response = await fetch(this.sourceUrl(this.settings.resource, id), {
-        headers: { accept: "application/json" },
-        signal,
-      });
+      // Meta rows identify as `<musicId>-<difficulty>` but fetch the song
+      // they belong to, so the detail keeps the full difficulty picker.
+      const response = await fetch(
+        this.sourceUrl(
+          this.profile.collection || this.settings.resource,
+          this.profile.perDifficulty ? String(summary.musicId || id) : id,
+        ),
+        { headers: { accept: "application/json" }, signal },
+      );
       if (response.ok) {
         const detail = (await response.json()) as Item;
         if (this.detailRequests.current(signal) && this.selectedId === id)
@@ -1906,11 +2030,16 @@ export class CatalogScreen extends LitElement {
   private renderBarControls(items: Item[]) {
     const first = this.profile.presentation === "song" ? items.find((item) => item.musicUrl) : undefined;
     return html`
-      ${viewSwitch(this.settings.locale, this.view, (view) => {
-        this.view = view;
-        this.ensureSongMeta();
-        this.syncUrl();
-      })}
+      ${
+        // The meta collection is a table by definition; there is nothing to switch.
+        this.profile.perDifficulty
+          ? nothing
+          : viewSwitch(this.settings.locale, this.view, (view) => {
+              this.view = view;
+              this.ensureSongMeta();
+              this.syncUrl();
+            })
+      }
       ${
         this.profile.presentation === "song"
           ? iconButton({
@@ -2527,7 +2656,10 @@ export class CatalogScreen extends LitElement {
   }
   private sonolusUrl(item: Item) {
     if (this.profile.presentation !== "song") return "";
-    const row = this.chartRow(item);
+    const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
+    // A table row always speaks for its own chart; the detail speaks for the
+    // difficulty the pane has open.
+    const row = this.profile.perDifficulty ? rows[0] : this.chartRow(item);
     const difficulty = String(row.difficultyName || "").toLowerCase();
     if (!row.file || !["easy", "normal", "hard", "expert", "master"].includes(difficulty)) return "";
     const server = currentReleaseServer();

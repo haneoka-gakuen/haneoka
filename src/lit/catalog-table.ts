@@ -1,4 +1,4 @@
-import { difficultyPicker } from "./ui/difficulty-picker";
+import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
 import { LitElement, html, nothing } from "lit";
 import { icon } from "./ui/icon";
 
@@ -91,6 +91,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("title", "entity", "title", true),
     column("play", "action"),
     column("chart", "action"),
+    column("sonolus", "action"),
     column("attribute", "mark", "musicType"),
     column("band", "entity", "band"),
     column("difficulty", "numeric", "level"),
@@ -105,6 +106,27 @@ const COLUMNS: Record<string, Column[]> = {
     column("composer", "text", "composer"),
     column("lyricist", "text", "lyrics"),
     column("arranger", "text", "arrangement"),
+    column("release", "text", "release"),
+  ],
+  // The meta table is the songs table flattened by difficulty. Chart metrics
+  // are the point, so the credit columns drop away and the difficulty cell is
+  // plain text — each row already is one difficulty.
+  "song-meta": [
+    column("title", "entity", "title", true),
+    column("play", "action"),
+    column("chart", "action"),
+    column("sonolus", "action"),
+    column("attribute", "mark", "musicType"),
+    column("band", "entity", "band"),
+    column("difficulty", "numeric", "level"),
+    column("time", "numeric", "time"),
+    column("score", "numeric", "score"),
+    column("eff", "numeric", "eff"),
+    column("bpm", "numeric", "bpm"),
+    column("n", "numeric", "n"),
+    column("nps", "numeric", "nps"),
+    column("sr", "numeric", "sr"),
+    column("category", "text", "category"),
     column("release", "text", "release"),
   ],
   band: [column("title", "entity", "title", true)],
@@ -157,7 +179,7 @@ export class CatalogTable extends LitElement {
   render() {
     const c = this.controller;
     if (!c) return nothing;
-    const columns = COLUMNS[c.profile.presentation] || COLUMNS.item;
+    const columns = COLUMNS[c.profile.perDifficulty ? "song-meta" : c.profile.presentation] || COLUMNS.item;
     const label = (key: string) => c.detailLabel(key);
     return html`
       <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("table", "Table")} data-scroll-region>
@@ -405,16 +427,53 @@ export class CatalogTable extends LitElement {
           : nothing,
       );
     }
-    if (key === "difficulty")
+    if (key === "difficulty") {
+      const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
+      // Meta rows are one difficulty each, so the picker would be a control
+      // with a single target; the level reads as plain text instead.
+      if (c.profile.perDifficulty) {
+        const row = rows[0] || {};
+        const name = difficultyKey(row, 0);
+        const level = row.displayLevel ?? row.playLevel ?? row.level ?? "—";
+        return wrap(html`
+          <span
+            class="difficulty-picker difficulty-picker--static"
+            style=${`--chart-color:var(--md-extended-color-difficulty-${name === "special" ? "master" : name})`}
+          >
+            <span><small>${name.toUpperCase()}</small><b>${level}</b></span>
+          </span>
+        `);
+      }
       return wrap(
         difficultyPicker({
-          rows: Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [],
+          rows,
           selected: c.selectedSongDifficulty,
           locale: c.settings.locale,
           compact: true,
           onSelect: (key) => c.selectSongDifficulty(key),
         }),
       );
+    }
+    if (key === "sonolus") {
+      const url = c.sonolusUrl(item);
+      return wrap(
+        url
+          ? html`
+              <a
+                class="icon-button icon-button--small"
+                href=${url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Sonolus"
+                title="Sonolus"
+                @click=${(event: Event) => event.stopPropagation()}
+              >
+                <img class="sonolus-icon" src="/images/sonolus-icon.png" alt="" />
+              </a>
+            `
+          : nothing,
+      );
+    }
     if (key === "category") {
       const value =
         c.profile.presentation === "song"

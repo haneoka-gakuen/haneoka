@@ -140,6 +140,7 @@ const supplemental: Record<string, readonly [string, string, string, string, str
   remove: ["削除", "Remove", "移除", "移除", "제거"],
   expertLevel: ["EXPERT レベル", "Expert level", "EXPERT 等級", "EXPERT 等级", "EXPERT 레벨"],
   songsCount: ["{count} 曲", "{count} songs", "{count} 首", "{count} 首", "{count}곡"],
+  songMeta: ["楽曲メタ", "Song meta", "樂曲Meta", "乐曲Meta", "악곡 메타"],
   members: ["メンバー", "Members", "成員", "成员", "멤버"],
   viewAll: ["すべて見る", "View all", "查看全部", "查看全部", "모두 보기"],
   latestSongs: ["楽曲", "Songs", "樂曲", "乐曲", "악곡"],

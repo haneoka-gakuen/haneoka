@@ -21,6 +21,7 @@ const catalogs: Array<[string, string, string?]> = [
   ["backgrounds", "backgrounds"],
   ["live2d", "live2d"],
   ["songs", "songs"],
+  ["song-meta", "songMeta"],
   ["band-items", "bandItems"],
   ["spine", "spine"],
   ["stories", "stories"],
