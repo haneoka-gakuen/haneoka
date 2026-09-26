@@ -22,7 +22,7 @@
       "name": "vega-theme-haneoka",
       "url": "https://github.com/haneoka-gakuen/vega-theme-haneoka.git",
       "branch": "main",
-      "commit": "d0845344cfe43a9456f28e544dcf1967374289dc",
+      "commit": "a7197325e4227a8a55182cb5248e026fb2bf91b6",
       "version": "0.1.0",
       "kind": "node"
     },
