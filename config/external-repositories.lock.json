@@ -14,7 +14,7 @@
       "name": "vega-renderer-three",
       "url": "https://github.com/haneoka-gakuen/vega-renderer-three.git",
       "branch": "main",
-      "commit": "094e0e19460e6b477b6ca1d0c22f784bfc0080ed",
+      "commit": "b9f2d4e6c60a079404cd934ad985eec97c0ee4da",
       "version": "0.1.0",
       "kind": "node"
     },
@@ -22,7 +22,7 @@
       "name": "vega-theme-haneoka",
       "url": "https://github.com/haneoka-gakuen/vega-theme-haneoka.git",
       "branch": "main",
-      "commit": "4a1a8e5270b4e88cd02466c2f6bf85ba94fe99d1",
+      "commit": "23945e227bc56df580b23c9610770c06c7632b70",
       "version": "0.1.0",
       "kind": "node"
     },
