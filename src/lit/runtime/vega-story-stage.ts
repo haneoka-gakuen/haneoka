@@ -181,6 +181,19 @@ export class VegaStoryStage extends LitElement {
       void this.load();
     }
   }
+  private onDocumentLocale = () => {
+    const next = document.documentElement.dataset.locale || "";
+    const known = ["ja", "en", "zh-TW", "zh-CN", "ko"];
+    if (next && known.includes(next) && next !== this.locale) this.locale = next;
+  };
+  connectedCallback() {
+    super.connectedCallback();
+    addEventListener("haneoka:locale-ready", this.onDocumentLocale);
+  }
+  disconnectedCallback() {
+    removeEventListener("haneoka:locale-ready", this.onDocumentLocale);
+    super.disconnectedCallback();
+  }
   private async json(url: string, signal: AbortSignal) {
     const response = await fetch(url, { signal, headers: { accept: "application/json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

@@ -1702,7 +1702,7 @@ export class StoryWorkspace extends LitElement {
                           .story=${episode}
                           .providerBase=${this.isBestdori() ? this.bestdoriBase() : ""}
                           server=${currentReleaseServer()}
-                          locale=${this.locale}
+                          .locale=${this.locale}
                           @open-text=${() => (this.detailMode = "text")}
                           @vega-story-fullscreen=${(event: CustomEvent<{ active: boolean }>) =>
                             (this.storyFullscreen = event.detail.active)}
