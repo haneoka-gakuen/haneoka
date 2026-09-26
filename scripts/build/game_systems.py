@@ -373,10 +373,86 @@ def _shop(
         for item in documents["items"]["items"].values()
         if isinstance(item, dict)
     }
-    # Cash packs live in their own table (per-region prices, no window); the
-    # game shows them in the same shop. Name and description follow the same
-    # Shop_* text ids as every other listing.
+    # Cash packs live in their own table (per-region prices, no window) and
+    # join onto the shop lineup by id: the lineup row owns the name and the
+    # _thumbnailAsset the client formats into Shop/ItemThumbnail/{0}. Shipped
+    # master snapshots can predate the current lineup, so ids without a
+    # MasterShop row are synthesized from the BiliPay row plus its grants,
+    # and their thumbnail follows the lineup's own art numbering:
+    #   1-7   gem packs, one slot per price tier (120/360/.../8000)
+    #   8-10  reserved for tiers the shipped lineup doesn't sell
+    #   11-15 first-purchase/SSR-guarantee packs, in id order
     bili_pay = {row.get("_id"): row for row in data.rows("MasterShopBiliPay")}
+    # The lineup classification reads the raw product columns; the grants
+    # above are already projected into reward shapes for rendering.
+    products_by_shop: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in data.rows("MasterShopProduct"):
+        products_by_shop[_number(row, "_shopId")].append(row)
+
+    def _is_subscription(identity: int) -> bool:
+        return any(_number(row, "_resourceType") == 6 for row in products_by_shop.get(identity, []))
+
+    def _is_plain_gem_pack(products: list[dict[str, Any]]) -> bool:
+        # Paid/free stars only — bundles that toss in passes, stamps or
+        # tickets are their own thing and stay out of the ladder.
+        return all(
+            _number(row, "_resourceType") == 1 and _number(row, "_resourceId") in (1, 2)
+            for row in products
+        )
+
+    ticket_ids = {
+        identity
+        for identity in bili_pay
+        if any(
+            _number(row, "_resourceType") == 1 and _number(row, "_resourceId") >= 2000004
+            for row in products_by_shop.get(identity, [])
+        )
+    }
+    # The gem ladder is read off the lineup itself: packs whose grants are
+    # paid/free stars only, one pack per tier.
+    gem_tiers = sorted(
+        {
+            _number(row, "_resourceCount")
+            for identity, products in products_by_shop.items()
+            if identity in bili_pay
+            and identity not in ticket_ids
+            and not _is_subscription(identity)
+            and _is_plain_gem_pack(products)
+            for row in products
+            if _number(row, "_resourceType") == 1 and _number(row, "_resourceId") == 2 and not row.get("_isBonus")
+        }
+    )
+
+    def _store_thumbnail(identity: int) -> str | None:
+        if identity in ticket_ids:
+            order = sorted(ticket_ids)
+            return f"shop_thumb_{11 + order.index(identity):05d}"
+        if _is_subscription(identity):
+            return None
+        products = products_by_shop.get(identity, [])
+        if not _is_plain_gem_pack(products):
+            return None
+        gems = [
+            row
+            for row in products
+            if _number(row, "_resourceType") == 1 and _number(row, "_resourceId") == 2 and not row.get("_isBonus")
+        ]
+        if len(gems) == 1 and gem_tiers:
+            tier = _number(gems[0], "_resourceCount")
+            if tier in gem_tiers:
+                return f"shop_thumb_{gem_tiers.index(tier) + 1:05d}"
+        return None
+
+    def _regional_prices(row: dict[str, Any]) -> dict[str, float]:
+        # Every column is minor units (cents); the US dollar price is the
+        # headline, the rest ride along for the detail pane.
+        return {
+            "usd": _number(row, "_usd") / 100,
+            "twd": _number(row, "_twd") / 100,
+            "hkd": _number(row, "_hkd") / 100,
+            "krw": _number(row, "_krw") / 100,
+        }
+
     entries = {}
     for row in data.rows("MasterShop"):
         identity = _number(row, "_id")
@@ -386,6 +462,22 @@ def _shop(
         rewards = grants[identity]
         name = data.text(row.get("_nameTextId"))
         description = data.text(row.get("_descriptionTextId"))
+        regional = bili_pay.get(identity)
+        payment = {
+            "price": _number(row, "_price"),
+            "currency": currency.get("name") if currency else [],
+            "currencyImage": currency.get("image") if currency else "",
+            "advertisement": _number(row, "_paymentType") == 15 and not _number(row, "_price"),
+            "storePurchase": bool(row.get("_googlePlayPurchaseId") or row.get("_appStorePurchaseId")),
+        }
+        if regional is not None:
+            payment.update({
+                "price": _number(regional, "_usd") / 100,
+                "currency": ["US$", "US$", "US$", "US$", "US$"],
+                "currencyImage": "",
+                "prices": _regional_prices(regional),
+                "storePurchase": True,
+            })
         entries[str(identity)] = _entry(
             str(identity),
             name if any(name) else description,
@@ -398,13 +490,7 @@ def _shop(
             start_at=stamp(row.get("_startAt")),
             end_at=stamp(row.get("_endAt")),
             rewards=rewards,
-            payment={
-                "price": _number(row, "_price"),
-                "currency": currency.get("name") if currency else [],
-                "currencyImage": currency.get("image") if currency else "",
-                "advertisement": _number(row, "_paymentType") == 15 and not _number(row, "_price"),
-                "storePurchase": bool(row.get("_googlePlayPurchaseId") or row.get("_appStorePurchaseId")),
-            },
+            payment=payment,
             limit=_number(row, "_limitConsumeCount"),
             vipRank=_number(row, "_vipRank"),
             playerRank=_number(row, "_playerRank"),
@@ -447,11 +533,15 @@ def _shop(
             ),
             None,
         )
+        lineup_thumb = _store_thumbnail(identity)
         entries[str(identity)] = _entry(
             str(identity),
             name if any(name) else description,
             kind="shop",
-            image=_asset(data, f"Shop/ItemThumbnail/shop_thumb_bili_{identity}")
+            image=(
+                lineup_thumb and _asset(data, f"Shop/ItemThumbnail/{lineup_thumb}")
+            )
+            or _asset(data, f"Shop/ItemThumbnail/shop_thumb_bili_{identity}")
             or (tier_thumb and _asset(data, f"Shop/ItemThumbnail/{tier_thumb}"))
             or _asset(data, banner or "")
             or distinctive
