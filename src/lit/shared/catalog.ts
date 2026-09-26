@@ -119,6 +119,7 @@ const UI_COPY: Record<string, readonly [string, string, string, string, string]>
   subCharacter: ["サブキャラクター", "Supporting character", "配角", "配角", "서브 캐릭터"],
   preview: ["プレビュー画像", "Preview image", "預覽圖", "预览图", "미리보기"],
   fullscreen: ["全画面", "Full screen", "全螢幕", "全屏", "전체 화면"],
+  fullscreenExit: ["全画面を終了", "Exit full screen", "退出全螢幕", "退出全屏", "전체 화면 종료"],
   table: ["表", "Table", "表格", "表格", "표"],
   bandStory: ["バンドストーリー", "Band story", "樂團故事", "乐队故事", "밴드 스토리"],
   extraStory: ["Extra", "Extra", "Extra", "Extra", "Extra"],

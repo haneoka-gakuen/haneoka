@@ -1,10 +1,10 @@
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
-import { LitElement, html } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-assets";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { uiText } from "../shared/catalog";
 import { loadingState } from "../ui/state";
-import { createVega, type AdvStory, type VegaEngine } from "@haneoka/vega/engine";
+import { createVega, type AdvStory, type VegaEngine, type VegaPlayerHandle } from "@haneoka/vega/engine";
 import type { StoryResolvedText } from "@haneoka/vega/runtime";
 import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
 import { createCubismPlugin } from "@haneoka/vega-plugin-cubism";
@@ -15,8 +15,11 @@ import { vegaDefaultShell } from "@haneoka/vega-shell-default";
 import {
   vegaHaneokaTheme,
   createHaneokaThemeAssetsPlugin,
+  createHaneokaThemeHostPlugin,
   createHaneokaStorySequencePlugin,
   HANEOKA_POST_TEXTURE_ASSETS,
+  type HaneokaThemeHost,
+  type HaneokaThemeHostSnapshot,
 } from "@haneoka/vega-theme-haneoka";
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 
@@ -84,6 +87,14 @@ const merge = (base: unknown, authored: unknown): RecordValue => {
   return result;
 };
 
+type StoryTransportKey = "auto" | "storyProgress";
+
+/** Transport copy in the locale order `ui()` indexes. */
+const TRANSPORT_TEXT: Record<StoryTransportKey, readonly [string, string, string, string, string]> = {
+  auto: ["オート", "Auto", "自動", "自动", "자동"],
+  storyProgress: ["シナリオ進行", "Story progress", "劇情進度", "剧情进度", "이야기 진행"],
+};
+
 export class VegaStoryStage extends LitElement {
   static properties = {
     story: { attribute: false },
@@ -92,6 +103,11 @@ export class VegaStoryStage extends LitElement {
     providerBase: { type: String, attribute: "provider-base" },
     phase: { state: true },
     issue: { state: true },
+    autoMode: { state: true },
+    ordinal: { state: true },
+    maximum: { state: true },
+    transportVisible: { state: true },
+    fullscreenActive: { state: true },
   };
   declare story: RecordValue;
   declare server: string;
@@ -99,13 +115,27 @@ export class VegaStoryStage extends LitElement {
   declare providerBase: string;
   declare phase: "loading" | "ready" | "error";
   declare issue: string;
+  /** AUTO advance, mirrored from the player for the transport button. */
+  declare autoMode: boolean;
+  /** Current and last reachable story line, the slider's whole range. */
+  declare ordinal: number;
+  declare maximum: number;
+  declare transportVisible: boolean;
+  declare fullscreenActive: boolean;
   private loadedKey = "";
   private engine?: VegaEngine;
+  private handle?: VegaPlayerHandle;
   private loadController?: AbortController;
   private continuousPlay = false;
   private sequenceListeners = new Set<() => void>();
   private stopCompletionObserver?: () => void;
   private completionEmitted = false;
+  private transportFrame = 0;
+  private scrubbing = false;
+  private resumeAfterScrub = false;
+  private pausedBeforeScrub = false;
+  private viewportFullscreen = false;
+  private fullscreenLayer?: HTMLElement;
 
   constructor() {
     super();
@@ -115,6 +145,11 @@ export class VegaStoryStage extends LitElement {
     this.providerBase = "";
     this.phase = "loading";
     this.issue = "";
+    this.autoMode = false;
+    this.ordinal = 0;
+    this.maximum = 0;
+    this.transportVisible = false;
+    this.fullscreenActive = false;
     try {
       this.continuousPlay = localStorage.getItem("haneoka:story-continuous") === "true";
     } catch {
@@ -126,11 +161,15 @@ export class VegaStoryStage extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    document.addEventListener("fullscreenchange", this.fullscreenChanged);
+    void import("@material/web/slider/slider.js");
     this.requestUpdate();
   }
   disconnectedCallback() {
     this.loadController?.abort();
     this.loadedKey = "";
+    document.removeEventListener("fullscreenchange", this.fullscreenChanged);
+    this.exitViewportFullscreen();
     void this.disposePlayer();
     super.disconnectedCallback();
   }
@@ -201,6 +240,7 @@ export class VegaStoryStage extends LitElement {
           createHaneokaThemeAssetsPlugin({
             resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
           }),
+          createHaneokaThemeHostPlugin(stage.themeHostAdapter()),
           createHaneokaStorySequencePlugin({
             get continuous() {
               return stage.continuousPlay;
@@ -252,9 +292,11 @@ export class VegaStoryStage extends LitElement {
         await engine.dispose();
         return;
       }
+      this.handle = player;
       player.shell?.setSetting("uiLanguage", locale);
       player.shell?.resume();
       this.completionEmitted = false;
+      this.startTransportLoop();
       const completion = () => {
         if (!active() || this.completionEmitted || !player.player.state.finished) return;
         this.completionEmitted = true;
@@ -302,11 +344,193 @@ export class VegaStoryStage extends LitElement {
     };
   }
 
+  /**
+   * The port the site owns: with `externalPlaybackControls` the Haneoka theme
+   * keeps its in-game menu but leaves the transport to this element, which
+   * renders the shared playback footer the chart player uses.
+   */
+  private themeHostAdapter(): HaneokaThemeHost {
+    const snapshot = (): HaneokaThemeHostSnapshot => {
+      const player = this.handle?.player;
+      const settings = this.handle?.shell?.snapshot().settings;
+      const timeline = player?.currentSeekProgress() ?? { ratio: 0, label: "", ordinal: 0, maximum: 0 };
+      return {
+        autoAdvance: player?.state.autoPlay ?? false,
+        autoAdvanceDisabled: !player?.state.ready,
+        instantText: settings?.instantText ?? false,
+        subtitlesEnabled: settings?.subtitlesEnabled ?? true,
+        videoVisible: player?.state.video.visible ?? false,
+        fullscreen: this.fullscreenActive,
+        bgmEnabled: settings?.bgmEnabled ?? true,
+        volume: settings?.masterVolume ?? 1,
+        bgmVolume: settings?.bgmVolume ?? 1,
+        autoPlayDelaySeconds: settings?.autoDelay ?? 0.5,
+        maximumAutoPlayDelaySeconds: 30,
+        textSize: settings?.textSize ?? 1,
+        progress: timeline.ratio,
+        progressEnabled: timeline.maximum > 0,
+        progressLabel: timeline.label || undefined,
+      };
+    };
+    return {
+      externalPlaybackControls: true,
+      snapshot,
+      subscribe: (listener) => {
+        const shell = this.handle?.shell;
+        if (!shell) return { dispose() {} };
+        const subscription = shell.subscribe(() => listener(snapshot()));
+        return {
+          dispose() {
+            if (typeof subscription === "function") void subscription();
+            else if ("dispose" in subscription) void subscription.dispose();
+            else if ("destroy" in subscription) void subscription.destroy();
+            else void subscription.close();
+          },
+        };
+      },
+      toggleAutoAdvance: () => this.handle?.player.toggleAuto(),
+      setInstantText: (value) => this.handle?.shell?.setSetting("instantText", value),
+      setSubtitlesEnabled: (value) => this.handle?.shell?.setSetting("subtitlesEnabled", value),
+      setBgmEnabled: (value) => this.handle?.shell?.setSetting("bgmEnabled", value),
+      setVolume: (value) => this.handle?.shell?.setSetting("masterVolume", value),
+      setBgmVolume: (value) => this.handle?.shell?.setSetting("bgmVolume", value),
+      setAutoPlayDelaySeconds: (value) => this.handle?.shell?.setSetting("autoDelay", value),
+      setTextSize: (value) => this.handle?.shell?.setSetting("textSize", value),
+      seekProgress: (value) => this.seekTransportRatio(value),
+      skipCurrentVideo: () => this.handle?.player.skipCurrentVideo(),
+      toggleFullscreen: () => void this.toggleFullscreen(),
+    };
+  }
+
+  private ui(key: StoryTransportKey) {
+    const index = Math.max(0, ["ja", "en", "zh-TW", "zh-CN", "ko"].indexOf(this.locale));
+    return TRANSPORT_TEXT[key][index] || TRANSPORT_TEXT[key][1]!;
+  }
+
+  private startTransportLoop() {
+    cancelAnimationFrame(this.transportFrame);
+    const paint = () => {
+      const handle = this.handle;
+      if (!handle) return;
+      const state = handle.player.state;
+      const screen = handle.shell?.snapshot().screen ?? "game";
+      const timeline = handle.player.currentSeekProgress();
+      const visible = this.phase === "ready" && screen === "game" && !state.loading && state.ready;
+      if (visible !== this.transportVisible) this.transportVisible = visible;
+      if (state.autoPlay !== this.autoMode) this.autoMode = state.autoPlay;
+      if (timeline.maximum !== this.maximum) this.maximum = timeline.maximum;
+      if (!this.scrubbing && timeline.ordinal !== this.ordinal) this.ordinal = timeline.ordinal;
+      this.transportFrame = requestAnimationFrame(paint);
+    };
+    this.transportFrame = requestAnimationFrame(paint);
+  }
+
+  private toggleAutoMode() {
+    this.handle?.player.toggleAuto();
+  }
+
+  private seekTransportRatio(ratio: number) {
+    const handle = this.handle;
+    if (!handle) return;
+    const target = handle.player.resolveSeekRatio(ratio);
+    void handle.player.seekTo(target, { resume: false }).catch(() => undefined);
+  }
+
+  private previewTransportSeek(ordinal: number) {
+    const handle = this.handle;
+    if (!handle) return;
+    const player = handle.player;
+    const maximum = Math.max(1, this.maximum);
+    const value = Math.max(0, Math.min(maximum, Math.round(ordinal)));
+    this.scrubbing = true;
+    if (!this.resumeAfterScrub) {
+      this.resumeAfterScrub = player.state.playing && !player.state.paused;
+      this.pausedBeforeScrub = player.state.paused;
+    }
+    player.pause();
+    this.ordinal = value;
+    this.seekTransportRatio(value / maximum);
+  }
+
+  private async commitTransportSeek(ordinal: number) {
+    const handle = this.handle;
+    if (!handle) return;
+    const player = handle.player;
+    const maximum = Math.max(1, this.maximum);
+    const value = Math.max(0, Math.min(maximum, Math.round(ordinal)));
+    this.scrubbing = false;
+    try {
+      await player.seekTo(player.resolveSeekRatio(value / maximum), { resume: false });
+    } catch {
+      /* A rejected target leaves the slider on the last reachable line. */
+    }
+    if (!handle.shell || handle.shell.snapshot().screen === "game") {
+      if (!this.pausedBeforeScrub) player.resume();
+      if (this.resumeAfterScrub) void player.play().catch(() => undefined);
+    }
+    this.resumeAfterScrub = false;
+    this.pausedBeforeScrub = false;
+  }
+
+  /**
+   * Native element fullscreen where WebKit allows it; on iOS Safari, which has
+   * no element fullscreen at all, the detail pane expands over the viewport
+   * instead (see [data-story-fullscreen] in story.css).
+   */
+  async toggleFullscreen() {
+    if (typeof document.documentElement.requestFullscreen !== "function") {
+      this.viewportFullscreen = !this.viewportFullscreen;
+      if (this.viewportFullscreen) {
+        this.fullscreenLayer = this.closest<HTMLElement>(".pane-layer") ?? undefined;
+        this.fullscreenLayer?.setAttribute("data-story-fullscreen", "true");
+      } else this.exitViewportFullscreen();
+      this.syncFullscreenState();
+      return;
+    }
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        await this.requestFullscreen();
+        const orientation = screen.orientation as ScreenOrientation & {
+          lock?: (mode: string) => Promise<void>;
+        };
+        await orientation.lock?.("landscape");
+      }
+    } catch {
+      /* Fullscreen and orientation support depend on the host. */
+    }
+  }
+
+  private exitViewportFullscreen() {
+    if (!this.viewportFullscreen) return;
+    this.viewportFullscreen = false;
+    // The stage can already be disconnected (mode switch), so release the
+    // pane captured on enter rather than searching the tree again.
+    this.fullscreenLayer?.removeAttribute("data-story-fullscreen");
+    this.fullscreenLayer = undefined;
+    this.syncFullscreenState();
+  }
+
+  private fullscreenChanged = () => this.syncFullscreenState();
+
+  private syncFullscreenState() {
+    const active = this.viewportFullscreen || document.fullscreenElement === this;
+    if (active === this.fullscreenActive) return;
+    this.fullscreenActive = active;
+    this.dispatchEvent(new CustomEvent("vega-story-fullscreen", { bubbles: true, detail: { active } }));
+  }
+
   private async disposePlayer() {
+    cancelAnimationFrame(this.transportFrame);
     this.stopCompletionObserver?.();
     this.stopCompletionObserver = undefined;
     const engine = this.engine;
     this.engine = undefined;
+    this.handle = undefined;
+    this.transportVisible = false;
+    this.autoMode = false;
+    this.ordinal = 0;
+    this.maximum = 0;
     await engine?.dispose().catch(() => undefined);
   }
   render() {
@@ -327,7 +551,53 @@ export class VegaStoryStage extends LitElement {
             : ""
         }
         <div class="vega-story-runtime__mount" ?hidden=${this.phase !== "ready"}></div>
+        ${this.renderTransport()}
       </section>
+    `;
+  }
+  /**
+   * The shared playback footer (`.chart-runtime__controls` from catalog.css):
+   * outside the letterboxed stage and always laid out, never scaled with the
+   * game viewport. The lead button carries the chart player's play/pause
+   * glyphs over the AUTO toggle — play while auto is off, pause while it is
+   * on — and the slider scrubs the reachable-line timeline.
+   */
+  private renderTransport() {
+    if (this.phase !== "ready") return nothing;
+    const maximum = Math.max(0, this.maximum);
+    return html`
+      <footer class="chart-runtime__controls" ?hidden=${!this.transportVisible}>
+        <button
+          class="icon-button"
+          type="button"
+          aria-pressed=${this.autoMode}
+          aria-label=${this.ui("auto")}
+          .title=${this.ui("auto")}
+          @click=${this.toggleAutoMode}
+        >
+          <svg class="material-icon" width="24" height="24">
+            <use href=${`/icons.svg#${this.autoMode ? "pause" : "play_arrow"}`}></use>
+          </svg>
+        </button>
+        <div class="chart-runtime__timeline">
+          <small>${this.ordinal}</small>
+          <md-slider
+            class="md3-slider md3-slider--runtime"
+            min="0"
+            max=${maximum || 1}
+            step="1"
+            .value=${String(this.ordinal)}
+            aria-label=${this.ui("storyProgress")}
+            aria-valuetext=${`${this.ordinal} / ${maximum}`}
+            ?disabled=${maximum < 1}
+            @input=${(event: Event) =>
+              this.previewTransportSeek(Number((event.target as HTMLElement & { value?: number }).value))}
+            @change=${(event: Event) =>
+              void this.commitTransportSeek(Number((event.target as HTMLElement & { value?: number }).value))}
+          ></md-slider>
+          <small>${maximum}</small>
+        </div>
+      </footer>
     `;
   }
 }

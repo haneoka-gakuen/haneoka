@@ -130,6 +130,7 @@ export class StoryWorkspace extends LitElement {
     detailError: { state: true },
     detailMode: { state: true },
     limit: { state: true },
+    storyFullscreen: { state: true },
   };
   declare locale: string;
   declare mode: StoryMode;
@@ -153,6 +154,8 @@ export class StoryWorkspace extends LitElement {
   declare detailError: string;
   declare detailMode: "text" | "play";
   declare limit: number;
+  /** Mirrors the stage's fullscreen state so the header button can reflect it. */
+  declare storyFullscreen: boolean;
   private detailRequests = new RequestScope();
   private homeStage?: HomeSpotStage;
   private homeStageSpot = "";
@@ -228,6 +231,7 @@ export class StoryWorkspace extends LitElement {
     this.detailMode = "text";
     this.detailError = "";
     this.limit = 120;
+    this.storyFullscreen = false;
   }
   createRenderRoot() {
     return this;
@@ -987,6 +991,8 @@ export class StoryWorkspace extends LitElement {
   private closeDetail() {
     this.detailRequests.cancel();
     this.stopStoryPlayback();
+    // The pane carrying the viewport-fullscreen flag goes away with the layer.
+    this.exitStoryFullscreen();
     const params = new URLSearchParams(location.search);
     if (this.detailEpisode) params.delete("story");
     else {
@@ -999,6 +1005,12 @@ export class StoryWorkspace extends LitElement {
     this.storyAudio?.pause();
     this.querySelectorAll<HTMLVideoElement>(".story-transcript video").forEach((video) => video.pause());
     this.requestUpdate();
+  }
+  /** Leaves the iOS viewport fallback when the player view itself goes away. */
+  private exitStoryFullscreen() {
+    if (!this.storyFullscreen) return;
+    this.storyFullscreen = false;
+    this.querySelector(".pane-layer")?.removeAttribute("data-story-fullscreen");
   }
   private playStoryAudio(url: string) {
     if (this.storyAudio?.src === new URL(url, location.href).href && !this.storyAudio.paused) {
@@ -1649,22 +1661,16 @@ export class StoryWorkspace extends LitElement {
                   <button
                     class="icon-button"
                     type="button"
-                    aria-label=${uiText(this.locale, "fullscreen")}
-                    @click=${async () => {
-                      const stage = this.querySelector<HTMLElement>("vega-story-stage");
-                      if (!stage?.requestFullscreen) return;
-                      try {
-                        await stage.requestFullscreen();
-                        const orientation = screen.orientation as ScreenOrientation & {
-                          lock?: (mode: string) => Promise<void>;
-                        };
-                        await orientation.lock?.("landscape");
-                      } catch {
-                        /* Fullscreen and orientation support depend on the host. */
-                      }
-                    }}
+                    aria-pressed=${this.storyFullscreen}
+                    aria-label=${uiText(this.locale, this.storyFullscreen ? "fullscreenExit" : "fullscreen")}
+                    @click=${() =>
+                      void (
+                        this.querySelector<HTMLElement & { toggleFullscreen?: () => Promise<void> }>(
+                          "vega-story-stage",
+                        )?.toggleFullscreen?.()
+                      )}
                   >
-                    ${icon("fullscreen", 24)}
+                    ${icon(this.storyFullscreen ? "fullscreen_exit" : "fullscreen", 24)}
                   </button>
                 `
               : nothing
@@ -1681,6 +1687,7 @@ export class StoryWorkspace extends LitElement {
               else {
                 this.detailMode = "text";
                 this.stopStoryPlayback();
+                this.exitStoryFullscreen();
               }
             },
           })}
@@ -1697,6 +1704,8 @@ export class StoryWorkspace extends LitElement {
                           server=${currentReleaseServer()}
                           locale=${this.locale}
                           @open-text=${() => (this.detailMode = "text")}
+                          @vega-story-fullscreen=${(event: CustomEvent<{ active: boolean }>) =>
+                            (this.storyFullscreen = event.detail.active)}
                           @haneoka-story-finished=${(event: CustomEvent<{ storyId: string }>) => void this.continueStory(event)}
                           @haneoka-story-interrupt=${() => this.closeDetail()}
                         ></vega-story-stage>
