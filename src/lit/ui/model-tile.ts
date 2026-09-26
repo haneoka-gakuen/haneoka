@@ -15,6 +15,14 @@ export function modelPreviewSources(model: Model): string[] {
 export function modelTitle(model: Model, locale: string) {
   return resolveLocalizedText(model.title || model.live2dName || model.characterName || model.live2dKey || "", locale);
 }
+export function subCharacterLabel(key: string) {
+  return key
+    .replace(/^sub_/, "")
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 export function modelTile(options: {
   model: Model;
   character?: Model;
@@ -32,7 +40,8 @@ export function modelTile(options: {
     titleLanguage: title.locale,
     subtitle:
       localizedText(model.characterName || character?.characterName, locale) ||
-      String(model.characterKey || model.live2dKey || ""),
+      subCharacterLabel(String(model.characterKey || "")) ||
+      String(model.live2dKey || ""),
     adornment: face
       ? html`
           <img src=${face} alt="" width="16" height="16" loading="lazy" />

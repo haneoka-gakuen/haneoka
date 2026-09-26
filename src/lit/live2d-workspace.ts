@@ -4,7 +4,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
 import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
-import { modelTile, modelTitle, modelPreviewSources } from "./ui/model-tile";
+import { modelTile, modelTitle, modelPreviewSources, subCharacterLabel } from "./ui/model-tile";
 
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { LazyImages } from "./ui/lazy-images";
@@ -172,9 +172,7 @@ export class Live2DWorkspace extends LitElement {
       this.order = params.get("order") === "desc" ? "desc" : "asc";
       this.bandFilter = Number(params.get("band") || 0);
       const characterParam = params.get("character") || "";
-      this.characterFilter = /^\d+$/.test(characterParam) || characterParam.startsWith("key:")
-        ? characterParam
-        : "";
+      this.characterFilter = /^\d+$/.test(characterParam) || characterParam.startsWith("key:") ? characterParam : "";
       this.typeFilter = params.get("type") || "";
       void this.loadCatalog();
     }, 0);
@@ -417,7 +415,11 @@ export class Live2DWorkspace extends LitElement {
   }
   private characterName(model: Value) {
     const character = this.character(Number(model.characterId || 0));
-    return this.text(model.characterName) || this.text(character?.characterName) || String(model.characterKey || "");
+    return (
+      this.text(model.characterName) ||
+      this.text(character?.characterName) ||
+      subCharacterLabel(String(model.characterKey || ""))
+    );
   }
   private bandName(model: Value) {
     return this.text(this.band(Number(model.bandId || 0))?.bandName);
@@ -473,18 +475,10 @@ export class Live2DWorkspace extends LitElement {
       );
     });
   }
-  private static subCharacterLabel(key: string): string {
-    return key
-      .replace(/^sub_/, "")
-      .split("_")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  }
   private characterFacetItems() {
     const items = this.characters.map((item) => ({
       value: String(Number(item.characterId) || 0),
-      label: this.text(item.characterName) || String(item.characterKey || ""),
+      label: this.text(item.characterName) || subCharacterLabel(String(item.characterKey || "")),
       image: String(item.faceImage || ""),
       count: this.models.filter((model) => Number(model.characterId) === Number(item.characterId)).length,
     }));
@@ -495,7 +489,7 @@ export class Live2DWorkspace extends LitElement {
       if (key) subs.set(key, (subs.get(key) || 0) + 1);
     }
     for (const [key, count] of [...subs.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
-      items.push({ value: `key:${key}`, label: Live2DWorkspace.subCharacterLabel(key), image: "", count });
+      items.push({ value: `key:${key}`, label: subCharacterLabel(key), image: "", count });
     }
     return items.filter((item) => item.count > 0);
   }
@@ -516,7 +510,7 @@ export class Live2DWorkspace extends LitElement {
         if (this.typeFilter && String(model.modelType || "") !== this.typeFilter) return false;
         return (
           !needle ||
-          `${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${this.bandName(model)}`
+          `${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${String(model.characterKey || "")} ${this.bandName(model)}`
             .normalize("NFKC")
             .toLowerCase()
             .includes(needle)
@@ -900,7 +894,7 @@ export class Live2DWorkspace extends LitElement {
             }
           </div>
           <aside class="viewer-detail__info">
-            <h2>${this.text(detail?.characterName) || this.text(character?.characterName) || "Live2D"}</h2>
+            <h2>${(detail && this.characterName(detail)) || "Live2D"}</h2>
             <dl class="spec-list">
               <div>
                 <dt>${uiText(this.locale, "motion")}</dt>
