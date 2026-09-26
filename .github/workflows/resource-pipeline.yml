@@ -2,11 +2,10 @@ name: Resource pipeline
 
 on:
   schedule:
-    # 00:05, 06:05, 12:05, 18:05 Asia/Tokyo (UTC+9) for jp and intl.
+    # 04:05, 12:05, 20:05 Asia/Tokyo (UTC+9) for jp and intl.
     - cron: "5 3 * * *"
-    - cron: "5 9 * * *"
-    - cron: "5 15 * * *"
-    - cron: "5 21 * * *"
+    - cron: "5 11 * * *"
+    - cron: "5 19 * * *"
   workflow_dispatch:
     inputs:
       server:
