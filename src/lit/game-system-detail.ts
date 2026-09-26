@@ -11,6 +11,15 @@
  */
 
 import { html, nothing } from "lit";
+import {
+  availableShopCurrencies,
+  convertShopPrice,
+  fetchShopFxRates,
+  formatMoney,
+  localeShopCurrency,
+  moneyName,
+  shopPriceEntries,
+} from "../lib/shop-currency";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -27,6 +36,12 @@ export interface GachaSimState {
   firstUsed: string[];
   tally: Record<string, number>;
   results: Array<{ prize: Item; rarity: number }>;
+}
+
+/** Real-time rate session for the open shop detail; owned by the screen like sim. */
+export interface ShopFxState {
+  status: "loading" | "ready" | "error";
+  rates?: import("../lib/shop-currency").ShopFxRates;
 }
 
 const rateText = (value: unknown) =>
@@ -511,27 +526,64 @@ function renderExchangeGoods(c: Controller, item: Item) {
 
 function renderShopFacts(c: Controller, item: Item) {
   const payment = (item.payment || {}) as Item;
-  const rows: Array<[string, unknown]> = [];
-  if (payment.advertisement) rows.push(["price", c.label("watchAd", "Watch an ad")]);
-  else if (payment.storePurchase && !Number(payment.price || 0))
-    rows.push(["price", c.label("inAppPurchase", "In-app purchase")]);
-  else if (Number(payment.price || 0))
-    rows.push([
-      "price",
-      costLine(`${Number(payment.price).toLocaleString(c.settings.locale)} ${c.localized(payment.currency)}`, payment.currencyImage),
-    ]);
-  if (Number(item.limit || 0)) rows.push(["limit", Number(item.limit).toLocaleString(c.settings.locale)]);
+  const rows: Array<{ label: string; value: unknown }> = [];
+  if (payment.advertisement) {
+    rows.push({ label: c.detailLabel("price"), value: c.label("watchAd", "Watch an ad") });
+  } else {
+    // Cash entries read like the song page's difficulty facts: one spec row
+    // per storefront currency, with the real-time conversion into the
+    // reading locale's own currency attached under the price. In-game
+    // currency rows keep the emblem figure.
+    const fx = c.fx as ShopFxState | null;
+    const target = localeShopCurrency(c.settings.locale);
+    for (const { code, amount } of shopPriceEntries(payment.prices)) {
+      const price = formatMoney(amount, code, c.settings.locale);
+      const rate = fx?.status === "ready" && code !== target ? fx.rates?.rates[code] : undefined;
+      const converted =
+        rate && Number.isFinite(convertShopPrice(amount, code, target, fx!.rates!))
+          ? html`
+              <small class="shop-fx__note">
+                ≈ ${formatMoney(convertShopPrice(amount, code, target, fx!.rates!), target, c.settings.locale)}
+              </small>
+            `
+          : nothing;
+      rows.push({
+        label: moneyName(code, c.settings.locale),
+        value: html`
+          ${price}
+          ${converted}
+        `,
+      });
+    }
+    if (!availableShopCurrencies(payment.prices).length) {
+      if (payment.storePurchase && !Number(payment.price || 0))
+        rows.push({ label: c.detailLabel("price"), value: c.label("inAppPurchase", "In-app purchase") });
+      else if (Number(payment.price || 0))
+        rows.push({
+          label: c.detailLabel("price"),
+          value: costLine(
+            `${Number(payment.price).toLocaleString(c.settings.locale)} ${c.localized(payment.currency)}`,
+            payment.currencyImage,
+          ),
+        });
+    }
+  }
+  if (Number(item.limit || 0))
+    rows.push({ label: c.detailLabel("limit"), value: Number(item.limit).toLocaleString(c.settings.locale) });
   if (Number(item.vipRank || 0))
-    rows.push(["tgwCard", c.label("requiresRank", "Rank {rank}").replace("{rank}", String(item.vipRank))]);
+    rows.push({
+      label: c.detailLabel("tgwCard"),
+      value: c.label("requiresRank", "Rank {rank}").replace("{rank}", String(item.vipRank)),
+    });
   if (!rows.length) return nothing;
   return html`
     <section class="detail-section detail-section--facts">
       ${renderDetailSectionHeading(c.label("details", "Details"), "details")}
       <dl class="spec-list spec-list--split">
         ${rows.map(
-          ([key, value]) => html`
+          ({ label, value }) => html`
             <div>
-              <dt>${c.detailLabel(key)}</dt>
+              <dt>${label}</dt>
               <dd>${value}</dd>
             </div>
           `,
@@ -539,6 +591,14 @@ function renderShopFacts(c: Controller, item: Item) {
       </dl>
     </section>
   `;
+}
+
+async function loadShopFx(c: Controller) {
+  c.fx = { status: "loading" };
+  c.requestUpdate();
+  const rates = await fetchShopFxRates();
+  c.fx = rates ? { status: "ready", rates } : { status: "error" };
+  c.requestUpdate();
 }
 
 /** Level-indexed pass rewards: one row per level, its tracks badged Free/Premium. */
@@ -684,6 +744,10 @@ export function renderGameSystemDetail(c: Controller, item: Item) {
 }
 
 export function initializeGameSystemDetail(c: Controller, item: Item) {
-  void item;
   c.sim = null;
+  c.fx = null;
+  // Cash shop entries boot the rate fetch that fills the per-currency
+  // conversions; the rates land as one shared session fetch.
+  const payment = (item.payment || {}) as Item;
+  if (availableShopCurrencies(payment.prices).length) void loadShopFx(c);
 }

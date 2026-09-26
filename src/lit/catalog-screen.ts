@@ -4,6 +4,7 @@ import "../styles/character-voices.css";
 import { difficultyKey } from "./ui/difficulty-picker";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { resolveLocalizedText } from "../lib/localized-text";
+import { shopPriceLine } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
 import { facet } from "./ui/facet";
@@ -421,6 +422,8 @@ export class CatalogScreen extends LitElement {
   declare density: Density;
   /** Gacha simulator session for the open detail; owned here so the module stays stateless. */
   declare sim: import("./game-system-detail").GachaSimState | null;
+  /** Real-time FX session for the open shop detail; owned here like sim. */
+  declare fx: import("./game-system-detail").ShopFxState | null;
   private paneFocus = new PaneFocus();
   private filterFocus = new PaneFocus();
   private disposeMedia: Array<() => void> = [];
@@ -944,6 +947,11 @@ export class CatalogScreen extends LitElement {
   private shopPriceLabel(item: Item) {
     const payment = (item.payment || {}) as Item;
     if (payment.advertisement) return this.label("watchAd", "Watch an ad");
+    // Cash listings lead with the storefront price in the visitor's region's
+    // currency (zh-Hans reads the NT$/HK$ tiers first); entries without a
+    // regional price keep the game-currency emblem row or the headline.
+    const regional = shopPriceLine(this.settings.locale, payment.prices);
+    if (regional) return regional;
     const price = Number(payment.price || 0);
     if (price) {
       const amount = price.toLocaleString(this.settings.locale, { minimumFractionDigits: price % 1 ? 2 : 0 });
@@ -2930,7 +2938,7 @@ export class CatalogScreen extends LitElement {
                   : nothing
             }
             ${
-              this.profile.presentation === "character" || this.profile.presentation === "song"
+              this.profile.presentation === "character" || this.profile.presentation === "song" || !fields.length
                 ? nothing
                 : html`
                     <section class="detail-section detail-section--facts">

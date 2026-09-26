@@ -1664,7 +1664,7 @@ export class CommunityWorkspace extends LitElement {
                       </button>
                       <button class="button" ?disabled=${this.busy} @click=${() => {
                         const bar = this.querySelector(".community-comment-bar__form");
-                        const field = bar?.querySelector("md-outlined-text-field");
+                        const field = bar?.querySelector("md-outlined-text-field") ?? null;
                         (bar?.querySelector("button[type=submit]") ?? null)?.dispatchEvent(new Event("click", { bubbles: true }));
                         void this.submitCommentBar(field);
                       }}>

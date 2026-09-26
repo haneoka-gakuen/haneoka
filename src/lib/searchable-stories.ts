@@ -163,10 +163,6 @@ async function buildSearchableStoryPages(): Promise<SearchableStoryPage[]> {
     const detail = (details.get(key) as EpisodeRecord | undefined) ?? episode;
     const titles = localizedAll(episode.title);
     const chapterNames = localizedAll(episode.chapterName);
-    const names = (Array.isArray(episode.characterIds) ? episode.characterIds : [])
-      .map(Number)
-      .map((id) => text(characters.get(id)?.characterName, "ja"))
-      .filter(Boolean);
     const characterNames = Object.fromEntries(
       LOCALES.map((locale) => [
         locale,

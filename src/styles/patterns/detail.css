@@ -380,3 +380,14 @@ a.detail-object:hover {
   height: 18px;
   object-fit: contain;
 }
+
+/* ---------- Storefront price facts ----------
+   Each storefront currency is its own spec row; the real-time conversion
+   into the reading locale's currency sits under the price. */
+.shop-fx__note {
+  display: block;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}

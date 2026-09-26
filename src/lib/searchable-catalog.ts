@@ -2,6 +2,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resolveLocalizedText } from "./localized-text";
 import { disambiguateTitles } from "./title-disambiguation";
+import { formatMoney, moneyName, shopPriceEntries } from "./shop-currency";
 import { asRecord, fetchStaticCatalog, type RecordValue } from "./static-catalog-source";
 
 export interface SearchableCatalogFact {
@@ -490,6 +491,12 @@ function factsFor(
   if (kind) facts.push({ key: "type", value: systemLabel(kind, locale) });
   const category = text(value.category, locale);
   if (category) facts.push({ key: "type", value: systemLabel(category, locale) });
+  // Cash shop entries read one spec row per storefront currency, named by
+  // the currency itself the way the screen's detail pane does.
+  if (definition.collection === "shop") {
+    for (const { code, amount } of shopPriceEntries(asRecord(value.payment)?.prices))
+      facts.push({ key: moneyName(code, locale), value: formatMoney(amount, code, locale) });
+  }
   if (value.rank != null) facts.push({ key: "rank", value: String(value.rank) });
   const starts = formatDate(value.startAt, locale);
   if (starts) facts.push({ key: "system.starts", value: starts });
