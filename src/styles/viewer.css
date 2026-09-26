@@ -310,6 +310,84 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .viewer-motion-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .viewer-motion-row .viewer-inspector-select {
+    flex: 1;
+    min-width: 0;
+  }
+  .viewer-pose-toolbar {
+    display: grid;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .viewer-pose-toolbar > span:first-child {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 500;
+  }
+  .viewer-pose-toolbar__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .viewer-pose-toolbar__row .viewer-inspector-select {
+    flex: 1;
+    min-width: 0;
+  }
+  .viewer-pose-name {
+    flex: 1;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+  }
+  .viewer-part-editor .viewer-part-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .viewer-part-row {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .viewer-part-row > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .viewer-background-color__controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .viewer-background-color input[type="color"] {
+    width: 44px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container);
+    cursor: pointer;
+  }
+  .viewer-detail__runtime canvas {
+    cursor: default;
+  }
+  .viewer-detail__runtime:has(canvas[style*="touch-action"]) canvas {
+    cursor: grab;
+  }
   .viewer-controls md-outlined-select {
     width: min(210px, 32vw);
     --md-outlined-field-container-shape: var(--md-sys-shape-corner-small);
