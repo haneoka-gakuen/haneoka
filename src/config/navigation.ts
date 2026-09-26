@@ -67,9 +67,26 @@ const sections: NavSection[] = [
     label: "library",
     items: [
       { route: "/catalog/songs", icon: "library_music", label: "songs" },
+      { route: "/catalog/characters", icon: "group", label: "characters" },
       { route: "/catalog/member-cards", icon: "style", label: "memberCards" },
       { route: "/catalog/support-cards", icon: "collections", label: "supportCards" },
-      { route: "/catalog/characters", icon: "group", label: "characters" },
+      { route: "/catalog/comics", icon: "menu_book", label: "comics" },
+      { route: "/catalog/events", icon: "event", label: "events" },
+      { route: "/catalog/real-lives", icon: "festival", label: "realLives" },
+      { route: "/catalog/gacha", icon: "redeem", label: "gacha" },
+      { route: "/catalog/login-campaigns", icon: "event_available", label: "loginCampaigns" },
+      { route: "/catalog/missions", icon: "fact_check", label: "systemNavMissions" },
+      { route: "/catalog/passes", icon: "workspace_premium", label: "systemNavPasses" },
+      { route: "/catalog/tgw-card", icon: "credit_card", label: "tgwCard" },
+      { route: "/catalog/shop", icon: "storefront", label: "shop" },
+      { route: "/catalog/exchange", icon: "swap_horiz", label: "exchange" },
+      { route: "/catalog/circle", icon: "diversity_3", label: "circle" },
+      { route: "/catalog/challenge", icon: "emoji_events", label: "challenge" },
+      { route: "/catalog/stamps", icon: "emoji_emotions", label: "stamps" },
+      { route: "/catalog/stickers", icon: "style", label: "stickers" },
+      { route: "/catalog/backgrounds", icon: "wallpaper", label: "backgrounds" },
+      { route: "/catalog/items", icon: "inventory_2", label: "items" },
+      { route: "/catalog/band-items", icon: "piano", label: "bandItems" },
     ],
   },
   {
@@ -82,18 +99,6 @@ const sections: NavSection[] = [
     })),
   },
   {
-    id: "collection",
-    label: "collection",
-    items: [
-      { route: "/catalog/stamps", icon: "emoji_emotions", label: "stamps" },
-      { route: "/catalog/stickers", icon: "style", label: "stickers" },
-      { route: "/catalog/backgrounds", icon: "wallpaper", label: "backgrounds" },
-      { route: "/catalog/comics", icon: "menu_book", label: "comics" },
-      { route: "/catalog/items", icon: "inventory_2", label: "items" },
-      { route: "/catalog/band-items", icon: "piano", label: "bandItems" },
-    ],
-  },
-  {
     id: "tools",
     label: "tools",
     items: [
@@ -101,24 +106,6 @@ const sections: NavSection[] = [
       { route: "/catalog/spine", icon: "accessibility_new", label: "spine" },
       { route: "/catalog/assets", icon: "folder_open", label: "assets" },
       { route: "/catalog/help", icon: "help", label: "help" },
-    ],
-  },
-  {
-    id: "game",
-    label: "gameSystems",
-    collapsible: true,
-    items: [
-      { route: "/catalog/events", icon: "event", label: "events" },
-      { route: "/catalog/real-lives", icon: "festival", label: "realLives" },
-      { route: "/catalog/gacha", icon: "redeem", label: "gacha" },
-      { route: "/catalog/login-campaigns", icon: "event_available", label: "loginCampaigns" },
-      { route: "/catalog/shop", icon: "storefront", label: "shop" },
-      { route: "/catalog/exchange", icon: "swap_horiz", label: "exchange" },
-      { route: "/catalog/circle", icon: "diversity_3", label: "circle" },
-      { route: "/catalog/challenge", icon: "emoji_events", label: "challenge" },
-      { route: "/catalog/missions", icon: "fact_check", label: "systemNavMissions" },
-      { route: "/catalog/passes", icon: "workspace_premium", label: "systemNavPasses" },
-      { route: "/catalog/tgw-card", icon: "credit_card", label: "tgwCard" },
     ],
   },
   {
@@ -181,42 +168,9 @@ const sections: NavSection[] = [
 
 // The library list is flat on purpose: collection and game entries are part
 // of the same catalogue, not a separate wing with its own headline. The order
-// is editorial: the archive's spine first (songs, characters, cards, story),
-// then the dated game systems, then the economies, then collectibles and
-// materials.
-const LIBRARY_ORDER = [
-  "/catalog/songs",
-  "/catalog/characters",
-  "/catalog/member-cards",
-  "/catalog/support-cards",
-  "/catalog/stories",
-  "/catalog/comics",
-  "/catalog/events",
-  "/catalog/real-lives",
-  "/catalog/gacha",
-  "/catalog/login-campaigns",
-  "/catalog/missions",
-  "/catalog/passes",
-  "/catalog/tgw-card",
-  "/catalog/shop",
-  "/catalog/exchange",
-  "/catalog/circle",
-  "/catalog/challenge",
-  "/catalog/stamps",
-  "/catalog/stickers",
-  "/catalog/backgrounds",
-  "/catalog/items",
-  "/catalog/band-items",
-];
-const library = sections.find((section) => section.id === "library")!;
-const merged = [
-  ...library.items,
-  ...sections.filter((section) => ["collection", "game"].includes(section.id)).flatMap((section) => section.items),
-];
-library.items = LIBRARY_ORDER.map((route) => merged.find((item) => item.route === route)).filter(
-  (item): item is NavItem => Boolean(item),
-);
-export const NAV_SECTIONS = sections.filter((section) => !["collection", "game"].includes(section.id));
+// is editorial: the archive's spine first (songs, characters, cards), then
+// the dated game systems, then the economies, then collectibles and materials.
+export const NAV_SECTIONS = sections;
 
 /** Catalog hub cards: every browsable collection with the catalog resource that counts it. */
 export const CATALOG_HUB: Array<NavItem & { resource?: string; countKey?: string }> = [

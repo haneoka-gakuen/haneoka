@@ -2,7 +2,7 @@
 import Base from "../layouts/Base.astro";
 import AppShell from "./AppShell.astro";
 import HomePage from "./pages/HomePage.astro";
-import { CATALOG_HUB } from "../config/navigation";
+import { CATALOG_HUB, NAV_SECTIONS } from "../config/navigation";
 import { group, t } from "../i18n/messages";
 import { LOCALES, type Locale } from "../i18n/locales";
 const { locale } = Astro.props as { locale: Locale };
@@ -42,11 +42,8 @@ const extraKeys = [
   "releasesIn",
   "voicesRole",
   "daysAwayOne",
-  "library",
-  "collection",
-  "gameSystems",
-  "tools",
-  "anonTokyo",
+  // The directory headings and entries mirror the navigation drawer.
+  ...NAV_SECTIONS.flatMap((section) => [section.label, ...section.items.map((item) => item.label)]),
 ];
 const labels = JSON.stringify(
   Object.fromEntries(

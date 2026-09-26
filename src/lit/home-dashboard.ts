@@ -10,7 +10,7 @@ import {
   uiText,
   type JsonRecord,
 } from "./shared/catalog";
-import { CATALOG_HUB } from "../config/navigation";
+import { CATALOG_HUB, NAV_SECTIONS, type NavItem } from "../config/navigation";
 import { tile } from "./ui/tile";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { LazyImages, localizedAssetUrl } from "./ui/lazy-images";
@@ -59,28 +59,18 @@ const PROFILE_BAND_SEED: Record<string, string> = {
 const CHARACTER_AVATAR = (id: unknown) => `/images/avatars/characters/${String(id || "")}.png`;
 const CAST_AVATAR = (id: string) => `/images/avatars/cast/${id}.jpg`;
 /**
- * The bottom directory is the catalogue landing page itself, grouped: the
- * same CATALOG_HUB entries in the same order, sliced into the sections the
- * navigation uses. One source of truth — no hand-maintained copy to drift.
+ * The bottom directory is the navigation drawer's own catalogue listing: the
+ * same NAV_SECTIONS, restricted to the routes the catalogue serves, with
+ * counts joined from CATALOG_HUB where the route exposes one. One source of
+ * truth — the two listings cannot drift apart again.
  */
-const DIRECTORY_BOUNDS: ReadonlyArray<readonly [group: string, firstRoute: string]> = [
-  ["library", "/catalog/songs"],
-  ["gameSystems", "/catalog/events"],
-  ["collection", "/catalog/shop"],
-  ["tools", "/catalog/live2d"],
-  ["anonTokyo", "/catalog/anon-tokyo/characters"],
-];
-const directoryGroups = (): ReadonlyArray<readonly [string, typeof CATALOG_HUB]> =>
-  DIRECTORY_BOUNDS.map(([group, first], index) => {
-    const next = DIRECTORY_BOUNDS[index + 1]?.[1];
-    const start = CATALOG_HUB.findIndex((item) => item.route === first);
-    const end = next ? CATALOG_HUB.findIndex((item) => item.route === next) : CATALOG_HUB.length;
-    return [group, CATALOG_HUB.slice(Math.max(0, start), Math.max(0, end))] as const;
-  });
-/**
- * The bottom directory mirrors the catalogue's own sections, so every entry
- * point sits one group away from its neighbours.
- */
+const directoryGroups = (): ReadonlyArray<readonly [label: string, items: NavItem[]]> =>
+  NAV_SECTIONS.map((section) => ({
+    label: section.label,
+    items: section.items.filter((item) => item.route.startsWith("/catalog/")),
+  }))
+    .filter((section) => section.items.length > 0)
+    .map(({ label, items }) => [label, items] as const);
 
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size} aria-hidden="true">
@@ -759,10 +749,11 @@ export class HomeDashboard extends LitElement {
         ${directoryGroups().map(
           ([group, items]) => html`
             <div class="home-directory__group">
-              <h3>${uiText(this.locale, group)}</h3>
+              <h3>${this.text(group, group)}</h3>
               <ul class="hub-grid" role="list">
                 ${items.map((item) => {
-                  const value = item.resource ? this.counts[item.resource] : undefined;
+                  const resource = CATALOG_HUB.find((entry) => entry.route === item.route)?.resource;
+                  const value = resource ? this.counts[resource] : undefined;
                   return html`
                     <li>
                       <a class="hub-link state-layer" href=${item.route}>
