@@ -873,17 +873,6 @@ export class CatalogScreen extends LitElement {
       // Keep the prior immutable public view when a current-pointer observation fails.
     }
   }
-  private unionDetailHref(href: string | null): string {
-    if (!href || typeof window === "undefined" || !this.isConnected) return href || "";
-    const documentUrl = navigationDocumentUrl();
-    if (!documentUrl.searchParams.has("return")) return href;
-    const returnTo = entityReturnHref();
-    if (!returnTo) return href;
-    const target = new URL(href, documentUrl);
-    if (target.origin !== documentUrl.origin || parseEntitySelection(target.pathname)?.source !== "canonical") return href;
-    target.searchParams.set("return", returnTo);
-    return `${target.pathname}${target.search}${target.hash}`;
-  }
   private viewingServerNotice() {
     const detail = this.unionDetail;
     if (!detail?.exclusive || typeof window === "undefined" || !this.isConnected) return nothing;
@@ -894,94 +883,6 @@ export class CatalogScreen extends LitElement {
       return nothing;
     const server = this.label(detail.activeServer === "jp" ? "settingsJapan" : "settingsGlobal", detail.activeServer);
     return html`<p class="detail-copy">${clientText(this.settings.locale, "catalogViewingServerData", "Viewing {server} data.", { server })}</p>`;
-  }
-  private renderUnionDetail() {
-    const detail = this.unionDetail;
-    if (!detail) return nothing;
-    const active = detail.perServer[detail.activeServer]!;
-    const supplements = detail.content.supplements.filter((s) =>
-      detail.fullSources.includes(s.fromServer) &&
-      (s.classification === "foreign-variant-content" || s.classification === "source-asset"),
-    );
-    const peers = Object.values(detail.perServer).filter((variant) =>
-      variant && variant.identity.server !== detail.activeServer && detail.fullSources.includes(variant.identity.server) &&
-      (JSON.stringify(variant.releasedAt) !== JSON.stringify(active.releasedAt) ||
-        ["stat", "resolvedSkills", "difficulty", "rewardGroups", "effects", "support", "rewards", "rankings", "startAt", "endAt", "publishedAt", "musicUrl", "mvUrl", "musicVideos", "diarySound", "movies"]
-          .some((field) => JSON.stringify(variant.row[field]) !== JSON.stringify(active.row[field]))),
-    );
-    const notice = this.viewingServerNotice();
-    if (!supplements.length && !peers.length) return notice;
-    const peerServer = peers[0]?.identity.server || supplements[0]?.fromServer;
-    const peerName = this.label(peerServer === "jp" ? "settingsJapan" : "settingsGlobal", peerServer || "");
-    return html`
-      <section class="detail-section">
-        ${renderDetailSectionHeading(clientText(this.settings.locale, "catalogServerDifferences", "{server} differences", { server: peerName }), "details")}
-        ${notice}
-        ${supplements
-          .map(
-            (s) => html`
-              ${fold(
-                this,
-                `server-supplement-${s.fromServer}-${s.field}`,
-                html`
-                    ${this.detailLabel(s.field)} ·
-                    ${this.label(s.fromServer === "jp" ? "settingsJapan" : "settingsGlobal", s.fromServer)}
-                  `,
-                html`
-                  ${
-                    s.classification === "source-asset" && typeof s.value === "string"
-                      ? html`
-                          <a href=${this.unionDetailHref(s.href || s.value)}>
-                            <img
-                              src=${this.pinnedUnionAsset(s.value, s.identity)}
-                              alt=${this.detailLabel(s.field)}
-                              loading="lazy"
-                              style="max-width:100%;max-height:320px;object-fit:contain"
-                            />
-                          </a>
-                        `
-                      : ["musicUrl", "mvUrl", "musicVideos", "diarySound", "movies"].includes(s.field)
-                        ? html`<a class="button button--text" href=${this.unionDetailHref(s.href)}>${this.label("details", "Details")}</a>`
-                        : localizedContent(s.value, this.settings.locale)
-                  }
-                `,
-              )}
-            `,
-          )}
-        ${peers
-          .map(
-            (variant) => html`
-              ${fold(
-                this,
-                `server-peer-${variant!.identity.server}`,
-                html`
-                    ${this.label(variant!.identity.server === "jp" ? "settingsJapan" : "settingsGlobal", variant!.identity.server)}
-                  `,
-                html`
-                  ${specList([
-                    ...(detail.resource === "events" ? [
-                      { label: this.label("starts", "Starts"), value: this.release(variant!.row.startAt) },
-                      { label: this.label("ends", "Ends"), value: this.release(variant!.row.endAt) },
-                    ] : [{ label: this.label("release", "Release"), value: this.release(variant!.releasedAt) }]),
-                    ...["performance", "technique", "visual"].map((key) => ({
-                      label: this.detailLabel(key),
-                      value:
-                        (variant!.row.stat as Item | undefined)?.[key] === undefined
-                          ? ""
-                          : this.displayValue((variant!.row.stat as Item)[key]),
-                    })),
-                    ...Object.entries((variant!.row.resolvedSkills as Item) || {}).map(([key, skill]) => ({
-                      label: this.detailLabel(key + "Skill"),
-                      value: this.localized((skill as Item)?.name) || this.localized((skill as Item)?.skillName),
-                    })),
-                  ])}
-                  <a class="button button--text" href=${this.unionDetailHref(variant!.href)}>${this.label("details", "Details")}</a>
-                `,
-              )}
-            `,
-          )}
-      </section>
-    `;
   }
   private async ensureUnionDetail(payload: EntityPayload): Promise<void> {
     if (!this.unionResource() || this.unionDetail || !this.isConnected || !payload.server || !payload.releaseId) return;
@@ -5144,7 +5045,7 @@ export class CatalogScreen extends LitElement {
                     </section>
                   `
                 : nothing
-            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.renderUnionDetail()}
+            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.viewingServerNotice()}
           `,
         ),
       })}
