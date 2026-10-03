@@ -137,25 +137,38 @@ export async function optimizeFixedResourcePlans(
         eventPoints: objective === "event-points" || secondaryKnown ? row.eventPoints! : 0,
         eventItems: objective === "event-items" || secondaryKnown ? row.eventItems! : 0,
       }));
+    const maximum = (rows: readonly FixedPlayRewardOutcome[], key: "challengePoints" | "eventPoints" | "eventItems") => Math.max(...rows.map(row => row[key]));
+    const mean = (rows: readonly FixedPlayRewardOutcome[], key: "eventPoints" | "eventItems") => rows.reduce((sum, row) => sum + row[key] * row.probability, 0);
+    // Scalar facts only, scoped to this objective's projection. Do not retain
+    // another formation × outcome matrix or change ordered floating reduction.
+    const challengeFacts = new WeakMap<ResourceStageCandidate, { reinvests: boolean; maxPoints: number; maxItems: number; points: number; items: number }>();
     for (const n of normal) {
       const normalLaw = law(n);
+      const normalPlays = Math.floor(parameters.boostBudget / parameters.boostPerNormalPlay);
+      const maximumCP = parameters.initialChallengePoints + normalPlays * maximum(normalLaw, "challengePoints");
+      const maximumChallengePlays = Math.floor(maximumCP / parameters.challengePointCost);
+      const normalMaxPoints = maximum(normalLaw, "eventPoints"), normalMaxItems = maximum(normalLaw, "eventItems");
+      const normalPoints = mean(normalLaw, "eventPoints"), normalItems = mean(normalLaw, "eventItems");
       for (const c of challenge) {
         if (interrupt()) break;
         attempts++;
         if (attempts % 16 === 0) { await yieldWork(); if (interrupt(false)) break; }
         const challengeLaw = law(c);
-        if (challengeLaw.some(row => row.challengePoints !== 0)) {
+        let facts = challengeFacts.get(c);
+        if (!facts) {
+          facts = { reinvests: challengeLaw.some(row => row.challengePoints !== 0),
+            maxPoints: maximum(challengeLaw, "eventPoints"), maxItems: maximum(challengeLaw, "eventItems"),
+            points: mean(challengeLaw, "eventPoints"), items: mean(challengeLaw, "eventItems") };
+          challengeFacts.set(c, facts);
+        }
+        if (facts.reinvests) {
           add([{ code: "resource-cycle-challenge-reinvestment-unresolved", source: c.key }]); continue;
         }
-        const normalPlays = Math.floor(parameters.boostBudget / parameters.boostPerNormalPlay);
-        const maximum = (rows: readonly FixedPlayRewardOutcome[], key: "challengePoints" | "eventPoints" | "eventItems") => Math.max(...rows.map(row => row[key]));
-        const maximumCP = parameters.initialChallengePoints + normalPlays * maximum(normalLaw, "challengePoints");
         if (maximumCP > 0x7fffffff) {
           add([{ code: "resource-cycle-challenge-point-domain-unresolved", source: n.key }]); continue;
         }
-        const maximumChallengePlays = Math.floor(maximumCP / parameters.challengePointCost);
-        if ((["eventPoints", "eventItems"] as const).some(key =>
-          normalPlays * maximum(normalLaw, key) + maximumChallengePlays * maximum(challengeLaw, key) > Number.MAX_SAFE_INTEGER)) {
+        if (normalPlays * normalMaxPoints + maximumChallengePlays * facts.maxPoints > Number.MAX_SAFE_INTEGER ||
+            normalPlays * normalMaxItems + maximumChallengePlays * facts.maxItems > Number.MAX_SAFE_INTEGER) {
           add([{ code: "resource-cycle-total-domain-unresolved", source: `${n.key}/${c.key}` }]); continue;
         }
         const cycle = await summaries.prepare(n, {
@@ -177,7 +190,6 @@ export async function optimizeFixedResourcePlans(
           continue;
         }
         const value = cycle.value;
-        const mean = (rows: readonly FixedPlayRewardOutcome[], key: "eventPoints" | "eventItems") => rows.reduce((sum, row) => sum + row[key] * row.probability, 0);
         const plan: ResourcePlan = { normal: n, challenge: c, totals: {
           normalPlays: value.normalPlays, expectedChallengePlays: value.expectedChallengePlays,
           boostSpent: value.boostSpent, boostRemaining: value.boostRemaining,
@@ -185,8 +197,8 @@ export async function optimizeFixedResourcePlans(
           expectedChallengePointsSpent: value.expectedChallengePointsSpent,
           expectedChallengePointsRemaining: value.expectedChallengePointsRemaining,
           remainingChallengePoints: value.remainingChallengePoints,
-          eventPoints: objective === "event-points" || secondaryKnown ? value.normalPlays * mean(normalLaw, "eventPoints") + value.expectedChallengePlays * mean(challengeLaw, "eventPoints") : null,
-          eventItems: objective === "event-items" || secondaryKnown ? value.normalPlays * mean(normalLaw, "eventItems") + value.expectedChallengePlays * mean(challengeLaw, "eventItems") : null,
+          eventPoints: objective === "event-points" || secondaryKnown ? value.normalPlays * normalPoints + value.expectedChallengePlays * facts.points : null,
+          eventItems: objective === "event-items" || secondaryKnown ? value.normalPlays * normalItems + value.expectedChallengePlays * facts.items : null,
         } };
         pairsEvaluated++; output.pairsEvaluated++;
         if (!output.best || compare(plan, output.best) < 0) output.best = plan;
