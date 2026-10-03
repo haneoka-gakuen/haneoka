@@ -919,14 +919,14 @@ export class CatalogScreen extends LitElement {
         ${supplements
           .map(
             (s) => html`
-              <details class="detail-fold">
-                <summary>
-                  <span class="detail-fold__title">
+              ${fold(
+                this,
+                `server-supplement-${s.fromServer}-${s.field}`,
+                html`
                     ${this.detailLabel(s.field)} ·
                     ${this.label(s.fromServer === "jp" ? "settingsJapan" : "settingsGlobal", s.fromServer)}
-                  </span>
-                </summary>
-                <div class="detail-fold__body">
+                  `,
+                html`
                   ${
                     s.classification === "source-asset" && typeof s.value === "string"
                       ? html`
@@ -943,20 +943,20 @@ export class CatalogScreen extends LitElement {
                         ? html`<a class="button button--text" href=${this.unionDetailHref(s.href)}>${this.label("details", "Details")}</a>`
                         : localizedContent(s.value, this.settings.locale)
                   }
-                </div>
-              </details>
+                `,
+              )}
             `,
           )}
         ${peers
           .map(
             (variant) => html`
-              <details class="detail-fold">
-                <summary>
-                  <span class="detail-fold__title">
+              ${fold(
+                this,
+                `server-peer-${variant!.identity.server}`,
+                html`
                     ${this.label(variant!.identity.server === "jp" ? "settingsJapan" : "settingsGlobal", variant!.identity.server)}
-                  </span>
-                </summary>
-                <div class="detail-fold__body">
+                  `,
+                html`
                   ${specList([
                     { label: this.label("release", "Release"), value: this.release(variant!.releasedAt) },
                     ...["performance", "technique", "visual"].map((key) => ({
@@ -972,8 +972,8 @@ export class CatalogScreen extends LitElement {
                     })),
                   ])}
                   <a class="button button--text" href=${this.unionDetailHref(variant!.href)}>${this.label("details", "Details")}</a>
-                </div>
-              </details>
+                `,
+              )}
             `,
           )}
       </section>
@@ -4627,6 +4627,8 @@ export class CatalogScreen extends LitElement {
     const step = (associations.upgrades as Item[]).find((row) => row.kind === kind && Number(row.to) === to);
     if (!step) return nothing;
     return fold(
+      this,
+      `cost-${kind}`,
       label,
       upgradeCost({
         label,
@@ -4665,6 +4667,7 @@ export class CatalogScreen extends LitElement {
       );
       return piece
         ? this.renderCostList(
+            "cost-rank",
             this.label("rank", "Rank"),
             rows.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece })),
           )
@@ -4681,19 +4684,23 @@ export class CatalogScreen extends LitElement {
     return html`
       <div class="card-costs">
         ${this.renderCostList(
+          "cost-training",
           this.label("training", "Training"),
           trainingRows.map((row) => ({ level: row.awakeCount, count: row.count, item: row.item })),
         )}${this.renderCostList(
+          "cost-awakening",
           this.label("awakening", "Awakening"),
           ranks.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece })),
         )}
       </div>
     `;
   }
-  private renderCostList(label: string, rows: Item[]) {
+  private renderCostList(key: string, label: string, rows: Item[]) {
     if (!rows.length) return nothing;
     const level = Number(rows[0].level || 1);
     return fold(
+      this,
+      key,
       label,
       upgradeCost({
         label,
@@ -4773,7 +4780,7 @@ export class CatalogScreen extends LitElement {
     const rows = asItems(this.detailAux["skill-level-resources"])
       .filter((row) => Number(row.group) === resourceGroup && Number(row.level) === level)
       .map((row) => ({ level: row.level, count: row.count, item: row.item }));
-    return this.renderCostList(this.label("required", "Required"), rows);
+    return this.renderCostList(`cost-${group}`, this.label("required", "Required"), rows);
   }
   private setCharacterSection(section: string) {
     this.characterSection = section;
@@ -5019,6 +5026,7 @@ export class CatalogScreen extends LitElement {
                           ${this.plainGameText(item.description).replace(/\{0(?::[^}]*)?\}/gu, String(Number(bandEffects.find((row) => Number(row.level) === this.detailLevel)?.effectValue || 0) / 100))}
                         </p>
                         ${this.renderCostList(
+                          "cost-band-item",
                           this.label("required", "Required"),
                           bandResourceRows.filter((row) => Number(row.level) === this.detailLevel),
                         )}

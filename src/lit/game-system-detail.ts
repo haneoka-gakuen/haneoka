@@ -12,6 +12,7 @@ import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
  */
 
 import { html, nothing } from "lit";
+import { accordion } from "./ui/accordion";
 import {
   availableShopCurrencies,
   convertShopPrice,
@@ -140,7 +141,7 @@ function rewardSection(
       )}
     </ul>
   `;
-  if (options.collapsible) return fold(title, list);
+  if (options.collapsible) return fold(c, `rewards-${options.kind || "rewards"}`, title, list);
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(title, options.kind || "rewards", { count: rewards.length })} ${list}
@@ -148,31 +149,28 @@ function rewardSection(
   `;
 }
 
-/**
- * A disclosure in the house style: one Material summary row (title, optional
- * trailing meta, chevron) over an indented body, mirroring the manual's
- * entries. Summaries stay inside the section rhythm instead of looking like
- * bare unstyled <details>.
- */
-export function fold(title: unknown, content: unknown, meta: unknown = nothing) {
-  return html`
-    <details class="detail-fold">
-      <summary>
-        <span class="detail-fold__title">${title}</span>
-        ${
-          meta
-            ? html`
-                <span class="detail-fold__meta">${meta}</span>
-              `
-            : nothing
-        }
-        <svg class="material-icon detail-fold__chevron" width="20" height="20" aria-hidden="true">
-          <use href="/icons.svg#expand_more"></use>
-        </svg>
-      </summary>
-      <div class="detail-fold__body">${content}</div>
-    </details>
-  `;
+/** Controlled detail fold; expanded state belongs to the catalogue controller. */
+export function fold(c: Controller, key: string, title: unknown, content: unknown, meta: unknown = nothing) {
+  const scope = JSON.stringify([
+    c.dataServer(),
+    c.settings.resource,
+    c.itemKey(c.selected || {}),
+  ]);
+  const state = c.detailFoldState as { scope: string; expanded: Map<string, boolean> } | undefined;
+  const current = state?.scope === scope ? state : { scope, expanded: new Map<string, boolean>() };
+  c.detailFoldState = current;
+  return accordion({
+    id: `detail-fold-${encodeURIComponent(scope)}-${encodeURIComponent(key)}`,
+    label: title,
+    metadata: meta === nothing ? undefined : meta,
+    expanded: current.expanded.get(key) ?? false,
+    onExpandedChange: (expanded) => {
+      current.expanded.set(key, expanded);
+      c.requestUpdate();
+    },
+    className: "detail-fold",
+    content: html`<div class="detail-fold__body">${content}</div>`,
+  });
 }
 
 /** Currency-or-plain cost line with the emblem leading the figure. */
@@ -289,10 +287,12 @@ function renderRates(c: Controller, item: Item) {
     <section class="detail-section">
       ${renderDetailSectionHeading(c.label("rates", "Rates"), "works", { count: rates.length })}
       <div class="detail-fold-stack">
-        ${rates.map((row) => {
+        ${rates.map((row, index) => {
           const prizes = (Array.isArray(row.prizes) ? row.prizes : []) as Item[];
           if (!prizes.length) return nothing;
           return fold(
+            c,
+            `rates-${index}`,
             slotLabel(row),
             html`
               <ul class="detail-object-list" role="list">
@@ -803,6 +803,8 @@ function renderPassLevels(c: Controller, levels: Item[]) {
 function renderPassMissions(c: Controller, tasks: Item[]) {
   if (!tasks.length) return nothing;
   return fold(
+    c,
+    "pass-missions",
     c.label("passMissions", "Pass missions"),
     html`
       <ul class="detail-object-list" role="list">
@@ -1290,7 +1292,7 @@ function renderEventRewards(c: Controller, item: Item) {
           </dl>
         `;
         return tiers.size > 12
-          ? fold(c.label(key, fallback), content, eventNumber(c, tiers.size))
+          ? fold(c, `event-rewards-${table}`, c.label(key, fallback), content, eventNumber(c, tiers.size))
           : html`
               <div class="stack stack--tight">
                 <h4 class="md-title-small md-on-surface-variant">${c.label(key, fallback)}</h4>
