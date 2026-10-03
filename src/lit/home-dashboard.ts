@@ -1406,13 +1406,13 @@ export class HomeDashboard extends LitElement {
     const today = birthdayDayStart();
     const days = Math.round((item.nextAt - today) / 86400000);
     return days === 0
-      ? this.text("today", "Today")
+      ? this.text("birthdayGreeting", "Happy birthday")
       : this.text(days === 1 ? "daysAwayOne" : "daysAway", "{count} days").replace("{count}", this.count(days));
   }
   private birthdayShortCountdown(item: Birthday) {
     const days = Math.round((item.nextAt - birthdayDayStart()) / 86400000);
     return days === 0
-      ? this.text("today", "Today")
+      ? this.text("birthdayGreeting", "Happy birthday")
       : this.text("spanDays", "{count}d").replace("{count}", this.count(days));
   }
   private birthdayRecruitment(item: Birthday) {
