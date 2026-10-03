@@ -526,6 +526,12 @@ export class AudioDock extends LitElement {
       });
   }
 
+  private collapsePlayer() {
+    this.collapsed = true;
+    if (this.queueOpen) this.closeOverlay();
+    this.persist();
+  }
+
   private renderQueue() {
     if (!this.queueOpen) return nothing;
     return html`
@@ -538,10 +544,10 @@ export class AudioDock extends LitElement {
             <small>${this.queue.length}</small>
           </span>
           <span>
-            <button class="icon-button" aria-label=${this.t("previous")} @click=${this.previous}>
+            <button class="icon-button audio-queue-panel__skip" aria-label=${this.t("previous")} @click=${this.previous}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#skip_previous"></use></svg>
             </button>
-            <button class="icon-button" aria-label=${this.t("next")} @click=${() => this.next()}>
+            <button class="icon-button audio-queue-panel__skip" aria-label=${this.t("next")} @click=${() => this.next()}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#skip_next"></use></svg>
             </button>
             <button class="icon-button" aria-label=${this.t("clearQueue")} @click=${this.clearQueue}>
@@ -552,6 +558,14 @@ export class AudioDock extends LitElement {
             </button>
           </span>
         </header>
+        <div class="audio-queue-panel__compact-actions">
+          <button class="button button--text" type="button" @click=${this.cycleMode}>
+            ${icon(this.modeIconName(), 20)}${this.modeLabel()}
+          </button>
+          <button class="button button--text" type="button" @click=${this.collapsePlayer}>
+            ${icon("expand_more", 20)}${this.t("collapse")}
+          </button>
+        </div>
         <div class="audio-queue-panel__list">
           ${this.queue.map(
             (entry, index) => html`
@@ -626,25 +640,11 @@ export class AudioDock extends LitElement {
     if (!track || this.collapsed) return nothing;
     return html`
       <aside class="player" aria-label=${this.t("musicPlayer")}>
-        <div class="player__seek">
-          <md-slider
-            class="player__scrub"
-            labeled
-            .min=${0}
-            .max=${this.duration || 1}
-            .step=${0.01}
-            .value=${this.currentTime}
-            .valueLabel=${this.format(this.currentTime)}
-            ?disabled=${this.duration <= 0}
-            aria-label=${this.t("playbackPosition")}
-            aria-valuetext=${`${this.format(this.currentTime)} / ${this.format(this.duration)}`}
-            @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value: number }).value))}
-          ></md-slider>
-        </div>
-
         <div class="player__body">
           <a
             class="player__identity state-layer"
+            aria-label=${`${track.title} · ${track.artist}`}
+            title=${track.title}
             href=${track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`}
           >
             <span class="player__cover">
@@ -685,30 +685,12 @@ export class AudioDock extends LitElement {
           <div class="player__actions">
             ${iconButton({
               label: this.modeLabel(),
+              className: "player__secondary",
               icon: this.modeIconName(),
               onClick: this.cycleMode,
               pressed: this.mode !== "sequential",
               toggle: true,
             })}
-            <label class="player__volume">
-              <button
-                class="icon-button"
-                type="button"
-                aria-label=${this.t(this.volume ? "mute" : "unmute")}
-                @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
-              >
-                ${this.volume ? icon("volume_up", 20) : icon("volume_off", 20)}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                .value=${String(this.volume)}
-                aria-label=${this.t("volume")}
-                @input=${(event: Event) => this.setVolume(Number((event.target as HTMLInputElement).value))}
-              />
-            </label>
             ${iconButton({
               label: this.t("queue"),
               icon: "queue_music",
@@ -719,20 +701,55 @@ export class AudioDock extends LitElement {
             })}
             ${iconButton({
               label: this.t("collapse"),
+              className: "player__secondary",
               icon: "expand_more",
-              onClick: () => {
-                this.collapsed = true;
-                if (this.queueOpen) this.closeOverlay();
-                this.persist();
-              },
+              onClick: () => this.collapsePlayer(),
             })}
+          </div>
+        </div>
+        <div class="player__timeline">
+          <div class="player__seek">
+            <md-slider
+              class="player__scrub md3-slider"
+              labeled
+              .min=${0}
+              .max=${this.duration || 1}
+              .step=${0.01}
+              .value=${this.currentTime}
+              .valueLabel=${this.format(this.currentTime)}
+              ?disabled=${this.duration <= 0}
+              aria-label=${this.t("playbackPosition")}
+              aria-valuetext=${`${this.format(this.currentTime)} / ${this.format(this.duration)}`}
+              @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value: number }).value))}
+            ></md-slider>
+          </div>
+          <div class="player__volume">
+            <button
+              class="icon-button"
+              type="button"
+              aria-label=${this.t(this.volume ? "mute" : "unmute")}
+              @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
+            >
+              ${this.volume ? icon("volume_up", 20) : icon("volume_off", 20)}
+            </button>
+            <md-slider
+              class="player__volume-slider md3-slider"
+              labeled
+              .min=${0}
+              .max=${1}
+              .step=${0.01}
+              .value=${this.volume}
+              .valueLabel=${`${Math.round(this.volume * 100)}%`}
+              aria-label=${this.t("volume")}
+              aria-valuetext=${`${Math.round(this.volume * 100)}%`}
+              @input=${(event: Event) => this.setVolume(Number((event.target as HTMLElement & { value: number }).value))}
+            ></md-slider>
           </div>
         </div>
       </aside>
       ${this.renderQueue()}
     `;
   }
-
   /**
    * The collapsed player's presence lives in the navigation shell instead of
    * a fixed bottom bar: the drawer shows cover, title and the play control

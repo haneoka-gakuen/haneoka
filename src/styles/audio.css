@@ -7,7 +7,9 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: 8px 16px 0;
+    max-width: 960px;
+    margin-inline: auto;
+    padding: 4px 12px;
     color: var(--md-sys-color-on-surface);
     border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-high);
@@ -16,17 +18,17 @@
   .player__body {
     display: grid;
     min-width: 0;
-    grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+    grid-template-columns: minmax(44px, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 16px;
+    gap: 8px;
     order: 0;
   }
   .player__identity {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     min-width: 0;
-    padding: 8px;
+    padding: 4px;
     color: inherit;
     border-radius: 16px;
     background: transparent;
@@ -34,9 +36,9 @@
   }
   .player__cover {
     display: grid;
-    width: 48px;
-    height: 48px;
-    flex: 0 0 48px;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
     place-items: center;
     overflow: hidden;
     border-radius: 12px;
@@ -73,12 +75,12 @@
   }
   .player__play {
     display: grid;
-    width: 56px;
-    height: 56px;
+    width: 48px;
+    height: 48px;
     flex: 0 0 auto;
     padding: 0;
     place-items: center;
-    border-radius: 20px;
+    border-radius: 16px;
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
     cursor: pointer;
@@ -101,21 +103,25 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
+  .player__timeline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 144px;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
   .player__seek {
     display: flex;
     align-items: center;
     min-width: 0;
-    order: 1;
-    height: 40px;
-    padding-inline: 8px;
+    height: 44px;
   }
   .player__scrub {
     flex: 1;
     min-width: 0;
     width: 100%;
     margin: 0;
-    --md-slider-active-track-color: var(--md-sys-color-primary);
-    --md-slider-inactive-track-color: var(--md-sys-color-surface-container-highest);
+    height: 44px;
   }
   .player__actions {
     display: flex;
@@ -130,9 +136,10 @@
     min-width: 0;
     gap: 4px;
   }
-  .player__volume > input {
-    width: 72px;
-    accent-color: var(--md-sys-color-primary);
+  .player__volume-slider {
+    flex: 1;
+    min-width: 48px;
+    height: 44px;
   }
   .player--compact {
     left: auto;
@@ -194,6 +201,9 @@
     overflow: auto;
     overscroll-behavior: contain;
     padding: 8px;
+  }
+  .audio-queue-panel__compact-actions {
+    display: none;
   }
   .audio-queue-panel__row {
     display: grid;
@@ -258,11 +268,8 @@
   }
   @media (max-width: 1100px) {
     .player__body {
-      grid-template-columns: minmax(120px, 1fr) auto auto;
+      grid-template-columns: minmax(44px, 1fr) auto auto;
       gap: 8px;
-    }
-    .player__volume > input {
-      display: none;
     }
     .player__time {
       display: none;
@@ -270,10 +277,10 @@
   }
   @media (max-width: 599px) {
     .player {
-      padding: 8px 12px 0;
+      padding: 4px 8px;
     }
     .player__body {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(44px, 1fr) auto auto;
       gap: 4px;
     }
     .player__identity {
@@ -281,18 +288,17 @@
     }
     .player__actions {
       justify-content: end;
-      grid-column: 1/-1;
     }
-    .player__transport > .icon-button {
-      --icon-button-size: 40px;
+    .player__secondary,
+    .audio-queue-panel__skip {
+      display: none;
     }
-    .player__actions > .icon-button,
-    .player__actions .icon-button {
-      --icon-button-size: 40px;
+    .player__timeline {
+      grid-template-columns: minmax(0, 1fr) 124px;
+      gap: 4px;
     }
-    .player__seek {
-      height: 40px;
-      padding: 0;
+    .player__transport {
+      gap: 0;
     }
     .player__play {
       width: 48px;
@@ -304,7 +310,29 @@
       left: 0;
       right: 0;
       width: 100%;
+      grid-template-rows: auto auto minmax(0, 1fr);
       border-radius: 28px 28px 0 0;
+    }
+    .audio-queue-panel__compact-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      padding: 4px 12px;
+      border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    }
+  }
+  @media (max-width: 479px) {
+    .player:not(.player--compact) .player__copy > small {
+      display: none;
+    }
+  }
+  @media (max-width: 359px) {
+    .player__body {
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+    }
+    .player:not(.player--compact) .player__copy {
+      display: none;
     }
   }
   @media (pointer: coarse) {

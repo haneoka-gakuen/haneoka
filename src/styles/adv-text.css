@@ -1,0 +1,10 @@
+/* A typed inherited length resolves the host's em once, before nested tags. */
+@property --adv-text-base-font-size {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 1px;
+}
+
+.adv-text {
+  --adv-text-base-font-size: 1em;
+}

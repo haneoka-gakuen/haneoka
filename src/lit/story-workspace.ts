@@ -38,6 +38,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import type { HomeSpotStage } from "./runtime/home-spot-stage";
 import { projectHaneokaTranscript, type HaneokaTranscriptEntry } from "@haneoka/vega-plugin-haneoka/transcript";
 import { advText } from "./ui/adv-text";
+import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
 import { clearBrowseBar, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
 import { inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -2263,7 +2264,7 @@ export class StoryWorkspace extends LitElement {
         avatar: this.transcriptAvatars(entry),
         speaker: names,
         speakerLanguage: speaker.lang,
-        text: advText(text),
+        text: advText(text, entry.kind === "message" ? NATIVE_CHAT_FONT_SIZE : undefined),
         textLanguage: resolved.locale,
         action: actions,
         state: entry.voices.some((voice) => {
