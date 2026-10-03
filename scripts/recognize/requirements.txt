@@ -1,0 +1,4 @@
+# CPU recognizer for Python 3.11+ (node:24-bookworm-slim apt Python is 3.11).
+opencv-python-headless==4.14.0.94
+numpy==2.3.5
+Pillow==12.2.0
