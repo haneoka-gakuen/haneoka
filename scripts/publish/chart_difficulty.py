@@ -27,7 +27,7 @@ from publish.r2 import R2Store, _validate_release_manifest_for_gc
 from verify.release import release_entries, write_release_identity_files
 
 CONVERTER_SHA = "f8b473d7e376c8a04c782587a3ba52085a6c89a53e5f82dd0d5a0aa68561d9f9"
-CALIBRATION_SHA = "10ff2e1660d02a1f0ddecc818b14b6f0742341de947f083d472553c11657aaed"
+CALIBRATION_SHA = "51e6e168905d4b9fe355a671b2802e360f7e4835b2032bef8e697b5780d14969"
 
 
 def difficulty_rows(song):
