@@ -20,6 +20,7 @@ import { inventoryOptions, type PowerResolver } from "../data/solver-input.ts";
 import type { InventoryV1 } from "../inventory.ts";
 import { addPower, calcMemberLevelOrRankPower, calcMemberTrainingPower, calcSnapshotBonusBP } from "./power.ts";
 import { createAssignmentEvaluator } from "./evaluate.ts";
+import { reuseAssignmentProfiles } from "../assignment-profile-cache.ts";
 import { createNativeNormalSlotResolver } from "./native-normal.ts";
 import { createNativeNormalScoreResolver, type NativeNormalPlayScoreLaw } from "./native-normal-score.ts";
 import { createNativeGekisoSoloEvaluator } from "./native-gekiso-solo.ts";
@@ -369,12 +370,13 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
     if (Number.isSafeInteger(initialLife) && initialLife > 0)
       input.evaluation.songContexts[song.key]!.life = initialLife;
   }
-  const evaluate = createAssignmentEvaluator(input, native.resolveSlots);
+  const profilesCache = reuseAssignmentProfiles(native.resolveSlots, request);
+  const evaluate = createAssignmentEvaluator(input, profilesCache.resolve);
   return {
     input,
-    resolveSlots: native.resolveSlots,
+    resolveSlots: profilesCache.resolve,
     evaluate: async (assignment: TeamAssignment, song: PreparedSong, controls: SearchEvaluationControls) => {
-      const profiles = native.resolveSlots(assignment, song);
+      const profiles = profilesCache.resolve(assignment, song, controls);
       let law: NativeNormalPlayScoreLaw | undefined;
       const metric = await score.score(
         assignment,

@@ -2775,15 +2775,40 @@ export class TeamBuilder extends LitElement {
       pending || criteria.length < 2,
     );
   }
+  private objectiveCapability(objective: Objective, mode = this.mode) {
+    return this.data ? getTeamBuilderCapabilities(this.data.identity).targets.find(
+      target => target.mode === mode && target.objective === objective && target.supported,
+    ) : undefined;
+  }
   private supportsObjective(objective: Objective): boolean {
-    if (!this.data) return false;
-    return getTeamBuilderCapabilities(this.data.identity).targets.some(
-      (target) =>
-        target.mode === this.mode &&
-        target.objective === objective &&
-        target.supported &&
-        target.bases.includes(this.metricBasis),
+    return this.objectiveCapability(objective)?.bases.includes(this.metricBasis) ?? false;
+  }
+  private metricBasesFor(objectives: readonly Objective[]) {
+    return (["single", "time", "consumption"] as const).filter(basis =>
+      objectives.every(objective => this.objectiveCapability(objective)?.bases.includes(basis)),
     );
+  }
+  private modeAvailable(mode: PlayMode) {
+    return Boolean(this.data && getTeamBuilderCapabilities(this.data.identity).targets.some(target => target.mode === mode && target.supported));
+  }
+  private choosePlayMode(mode: PlayMode) {
+    if (!this.modeAvailable(mode)) return;
+    this.cancelSearch(); this.optimizationInput = null; this.result = null;
+    this.mode = mode;
+    this.selectedScoreDomain = "personal-solo";
+    this.objectives = this.objectives.filter(objective => this.objectiveCapability(objective));
+    if (!this.objectives.length) this.objectives = this.objectiveCapability("score") ? ["score"] : this.objectiveCapability("base-score") ? ["base-score"] : [];
+    const bases = this.metricBasesFor(this.objectives);
+    if (!bases.includes(this.metricBasis)) this.metricBasis = bases[0] ?? "single";
+  }
+  private chooseObjective(objective: Objective, checked: boolean) {
+    if (checked && !this.objectiveCapability(objective)) return;
+    const objectives = checked ? [...new Set([...this.objectives, objective])] : this.objectives.filter(value => value !== objective);
+    const bases = this.metricBasesFor(objectives);
+    if (checked && objectives.length && !bases.length) return;
+    this.cancelSearch(); this.optimizationInput = null; this.result = null;
+    this.objectives = objectives;
+    if (!bases.includes(this.metricBasis)) this.metricBasis = bases[0] ?? "single";
   }
   private get forecastConditions(): string[] {
     if (!this.data) return [];
@@ -3296,6 +3321,7 @@ export class TeamBuilder extends LitElement {
   }
   // Builds the actual pure-library request; dispatch belongs to the typed Worker route.
   private get resourcePreparation(): ResourcePlannerPreparationInput | null {
+    if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && this.resourceItemsUnresolved) return null;
     const normalScene = this.resourceScene("normal"), challengeScene = this.resourceScene("challenge");
     const { boost, perPlay, initialCP, challengeCost } = this.resourceBudget;
     if (!this.data || !this.inventory || !this.canEdit || !normalScene || !challengeScene || boost === null || perPlay === null || initialCP === null || challengeCost === null) return null;
@@ -3321,10 +3347,10 @@ export class TeamBuilder extends LitElement {
   }
   private get resourceUnavailableHint() {
     if (!this.selectedEvent) return this.t("chooseEvent", "Choose event");
+    if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && this.resourceItemsUnresolved)
+      return this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.");
     if (!this.resourceData?.challengeMusic.choices.length) return this.t("resourceNoChallenge", "No challenge charts available for this event.");
     if (!this.resourceData.challengeConsumption.selectableCounts) return this.t("resourceCostUnavailable", "Challenge consumption options are unavailable.");
-    if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && !this.resourceData.items.selectedResource)
-      return this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.");
     if (!this.resourcePreparation) return this.t("resourceCompleteInputs", "Complete both stages and the resource budget.");
     return "";
   }
@@ -3532,18 +3558,8 @@ export class TeamBuilder extends LitElement {
           ${this.select(
             this.t("mode", "Play mode"),
             this.mode,
-            MODES.map((value) => ({ value, label: this.t(value, value) })),
-            (value) => {
-              this.cancelSearch();
-              this.optimizationInput = null;
-              this.mode = value as PlayMode;
-              this.selectedScoreDomain = "personal-solo";
-              if (this.data) {
-                this.objectives = this.objectives.filter((objective) => this.supportsObjective(objective));
-                if (!this.objectives.length) this.objectives = this.supportsObjective("score") ? ["score"] : this.supportsObjective("base-score") ? ["base-score"] : [];
-              }
-              this.result = null;
-            },
+            MODES.map(value => ({ value, label: this.modeAvailable(value) ? this.t(value, value) : `${this.t(value, value)} · ${this.t("goalUnavailable", "Unavailable")}`, disabled: !this.modeAvailable(value) })),
+            value => this.choosePlayMode(value as PlayMode), this.dataLoading || !this.sourceReady,
           )}
         ${this.disclosure("objectives", html`<span>${this.t("objectives", "Objectives to compare")}<small class="team-builder__hint">${goalNames || this.t("chooseObjective", "Choose an objective to compare.")}</small></span>`, html`
         <fieldset class="team-builder__objectives">
@@ -3551,15 +3567,10 @@ export class TeamBuilder extends LitElement {
           ${OBJECTIVES.map(
             (objective) => html`
               <div class="team-builder__target-option">
-                ${this.check(this.objectiveLabel(objective), this.objectives.includes(objective), (checked) => {
-                  this.cancelSearch();
-                  this.result = null;
-                  this.objectives = checked
-                    ? [...this.objectives, objective]
-                    : this.objectives.filter((value) => value !== objective);
-                }, !this.supportsObjective(objective) && !this.objectives.includes(objective))}
+                ${this.check(this.objectiveLabel(objective), this.objectives.includes(objective), checked => this.chooseObjective(objective, checked),
+                  !this.objectiveCapability(objective) && !this.objectives.includes(objective))}
                 ${
-                  !this.supportsObjective(objective)
+                  !this.objectiveCapability(objective)
                     ? html`
                         <small class="team-builder__hint">${this.t("goalUnavailable", "Unavailable")}</small>
                       `
@@ -3668,14 +3679,15 @@ export class TeamBuilder extends LitElement {
           this.t("metricBasis", "Compare by"),
           this.metricBasis,
           [
-            { value: "single", label: this.t("singleRun", "Single run") },
-            { value: "time", label: this.t("perTime", "Per time") },
-            { value: "consumption", label: this.t("perConsumption", "Per consumption") },
+            { value: "single", label: this.t("singleRun", "Single run"), disabled: !this.metricBasesFor(this.objectives).includes("single") },
+            { value: "time", label: this.t("perTime", "Per time"), disabled: !this.metricBasesFor(this.objectives).includes("time") },
+            { value: "consumption", label: this.t("perConsumption", "Per consumption"), disabled: !this.metricBasesFor(this.objectives).includes("consumption") },
           ],
           (value) => {
-            this.cancelSearch();
-            this.result = null;
-            this.metricBasis = value as "single" | "time" | "consumption";
+            const basis = value as "single" | "time" | "consumption";
+            if (!this.metricBasesFor(this.objectives).includes(basis)) return;
+            this.cancelSearch(); this.optimizationInput = null; this.result = null;
+            this.metricBasis = basis;
           },
         )}
 
