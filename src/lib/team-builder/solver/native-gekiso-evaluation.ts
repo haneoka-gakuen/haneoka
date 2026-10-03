@@ -10,10 +10,12 @@ import { createNativeGekisoNoLuckLiveScoreResolver, type NativeGekisoScoreRange 
 import type { NativeGekisoRuntimeFrame } from "./native-gekiso-runtime.ts";
 import { createNativeGekisoSoloEvaluator } from "./native-gekiso-solo.ts";
 import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
+import { createNativeGekisoLuckLiveScoreResolver } from "./native-gekiso-luck-live.ts";
 
 /** Same-pin playback context, supplied explicitly or produced from a qualified chart. */
 export interface NativeGekisoSongPlan {
-  producer?: "native-all-combo-ap-event-reduction-v1";
+  producer?: "native-all-combo-ap-event-reduction-v1" | "native-no-luck-ap-event-reduction-v1" |
+    "native-single-luck-ap-event-reduction-v1";
   identity: { server: string; releaseId: string; sourceId: string };
   missionPattern: number;
   frames: readonly NativeGekisoRuntimeFrame[];
@@ -73,6 +75,7 @@ export function createNativeGekisoContextEvaluation(
 ): PreparedSearchEvaluation {
   const solo = createNativeGekisoSoloEvaluator(data, normal);
   const score = createNativeGekisoNoLuckLiveScoreResolver(data, normal.input);
+  const luckScore = createNativeGekisoLuckLiveScoreResolver(data, normal.input);
   const tables = resolveNativeGekisoContextTables(data);
   const prepared = new Map(normal.input.songs.map((song) => {
     const plan = plans[song.key];
@@ -90,7 +93,7 @@ export function createNativeGekisoContextEvaluation(
   }));
   const input = { ...solo.input, scoreDomain: "personal-live" as const, evaluation: { ...solo.input.evaluation,
     gaps: [...solo.input.evaluation.gaps],
-    assumptions: [...solo.input.evaluation.assumptions, "provided-native-no-Luck-GK-context"],
+    assumptions: [...solo.input.evaluation.assumptions, "native-GK-personal-Live-context"],
   } };
   if (!normal.resolveSlots)
     input.evaluation.gaps.push({ code: "native-gekiso-slot-context-unresolved", source: "native normal slot factory" });
@@ -112,15 +115,19 @@ export function createNativeGekisoContextEvaluation(
           metric = { value: null, status: "unavailable", gaps: [...context.rules.gaps], assumptions: [] };
         if (context?.rules.value && normal.resolveSlots) {
           const profiles: readonly (ResolvedSlotProfile | undefined)[] = normal.resolveSlots(assignment, song);
-          metric = await score.score(assignment, song, profiles, context.rules.value, {
+          const singleLuck = context.plan.producer === "native-single-luck-ap-event-reduction-v1";
+          metric = await (singleLuck ? luckScore : score).score(assignment, song, profiles, context.rules.value, {
             expectedIdentity: data.identity, assignment,
             missions: song.song.segments.map((range) => range.mission) as [1 | 2 | 3, 1 | 2 | 3, 1 | 2 | 3],
             frames: context.plan.frames, randomLaw: { kind: "uniform-residue" },
             projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: 100000 },
+            requireNoPendingLots: singleLuck,
           }, context.plan.ranges, controls);
-          if (context.plan.producer === "native-all-combo-ap-event-reduction-v1")
+          if (context.plan.producer)
             metric.assumptions = [...metric.assumptions.filter((value) => value !== "complete-native-update-frame-tape"),
-              "native-all-combo-ap-event-reduction", "uninterrupted-native-perfect-playback"];
+              singleLuck ? "native-single-luck-ap-event-reduction" : context.plan.producer === "native-no-luck-ap-event-reduction-v1"
+                ? "native-no-luck-ap-event-reduction" : "native-all-combo-ap-event-reduction",
+              "uninterrupted-native-perfect-playback"];
         }
         candidate.metrics.score = applyEvaluationBasis(metric, "score", song.song.key, input.basis);
       }

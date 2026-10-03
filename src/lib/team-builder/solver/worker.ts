@@ -39,7 +39,7 @@ scope.onmessage = (event) => {
         progress: { phase: "loading", evaluated: 0, elapsedMs: 0 },
       });
       const songs = await loadSongOptions(message.request.data, message.request.selections, run.controller.signal, {
-        nativeGekisoAllComboPlan: message.request.mode === "gekiso" && message.request.scoreDomain !== "personal-solo" &&
+        nativeGekisoPerfectPlan: message.request.mode === "gekiso" && message.request.scoreDomain !== "personal-solo" &&
           message.request.objectives.includes("score") && message.request.constraints.justRate === 0 &&
           message.request.nativeGekisoPlans === undefined,
       });

@@ -33,6 +33,7 @@ export function createNativeGekisoAllComboChartPlan(
   data: TeamBuilderData,
   song: SongOption,
   timing: NativeGekisoChartTiming,
+  options?: { effectTypes: readonly number[] },
 ): GekisoResolved<NativeGekisoSongPlan> {
   const identity = data.identity;
   if (!nativeGekisoAllComboDriverSupports(identity))
@@ -65,7 +66,7 @@ export function createNativeGekisoAllComboChartPlan(
   const durations = new Set<number>();
   for (const skill of Object.values(data.skills.gekiso ?? {}))
     for (const row of dataRows(skill.effects).map(nativeRow))
-      if (row.skillTriggerType === 1 && row.skillEffectType === 12000 &&
+      if (row.skillTriggerType === 1 && (options?.effectTypes ?? [12000]).includes(Number(row.skillEffectType)) &&
         typeof row.activationTimeSecond === "number" && Number.isFinite(f(row.activationTimeSecond)) &&
         row.activationTimeSecond > 0) durations.add(Math.ceil(f(f(row.activationTimeSecond) * f(1000))));
   const pending = new Set<number>([0]);

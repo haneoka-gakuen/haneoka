@@ -3,11 +3,13 @@ import type { TeamBuilderData } from "../data.ts";
 import type { SearchEvaluationControls } from "../optimizer.ts";
 import {
   createGekisoLuckState,
+  resolveGekisoLuckCharge,
   type GekisoResolved,
   type GekisoRuleIdentity,
   type GekisoRules,
 } from "./gekiso-mission-luck.ts";
 import { evaluateGekisoLuckTimeline, type GekisoLuckTimelineInput, type GekisoLuckTimelineResult } from "./gekiso-luck-timeline.ts";
+import type { GekisoLuckLiveScorePlan } from "./gekiso-luck-live-score.ts";
 import {
   replayGekisoPerfectCounters,
   type GekisoPerfectCounters,
@@ -36,11 +38,15 @@ export interface NativeGekisoBasicRuntimeInput {
   randomLaw: GekisoLuckTimelineInput["randomLaw"];
   projection?: GekisoLuckTimelineInput["projection"];
   budget: GekisoLuckTimelineInput["budget"];
+  liveScore?: GekisoLuckLiveScorePlan;
+  /** Event reduction requires every note to generate and consume at most one lot. */
+  requireNoPendingLots?: boolean;
 }
 export interface NativeGekisoBasicRuntimeResult {
   phases: NativeGekisoBasicPhasePlan;
   counters: readonly GekisoPerfectCounters[];
   luck: GekisoLuckTimelineResult;
+  luckInput: GekisoLuckTimelineInput;
   assumptions: readonly string[];
 }
 const f = Math.fround;
@@ -155,10 +161,28 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
         return factor;
       };
       const luckIndex = runtime.missions.indexOf(2);
+      if (runtime.requireNoPendingLots) for (const frame of runtime.frames) for (const note of frame.notes) {
+        if (note.rangeIndex !== luckIndex) continue;
+        const factor = gaugeAt(frame.timeMs, note.timeMs);
+        const probe = resolveGekisoLuckCharge(rules, { ...note, gaugeUpFactor: factor, basePointDraw: null });
+        let charges: number[];
+        if (probe.value) charges = [probe.value.charge];
+        else if (probe.gaps.length === 1 && probe.gaps[0]!.code === "gekiso-base-point-random-outcome-required") {
+          const rows = rules.basePointTables[probe.gaps[0]!.source];
+          if (!rows?.length) return { value: null, gaps: probe.gaps };
+          charges = [];
+          for (const row of rows) if (row.weight > 0) {
+            const charge = resolveGekisoLuckCharge(rules, { ...note, gaugeUpFactor: factor, basePointDraw: row.value });
+            if (!charge.value) return { value: null, gaps: charge.gaps };
+            charges.push(charge.value.charge);
+          }
+        } else return { value: null, gaps: probe.gaps };
+        if (!charges.length || charges.some((charge) => charge < 0 ||
+          charge >= Math.min(rules.luckGaugeMax, rules.luckGaugeMaxRush)))
+          return fail("native-gekiso-luck-update-cadence-required", "selected maximum note charge can leave pending lots");
+      }
       const currentStates = [0, 0, 0];
-      const luck = await evaluateGekisoLuckTimeline(
-        rules,
-        {
+      const luckInput: GekisoLuckTimelineInput = {
           expectedIdentity: runtime.expectedIdentity,
           initial: { state: createGekisoLuckState(rules), minimumEntries: [], rushBonusHandleActive: false },
           frames: runtime.frames.map((frame) => {
@@ -187,15 +211,16 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
           randomLaw: runtime.randomLaw,
           projection: runtime.projection,
           budget: runtime.budget,
-        },
-        controls,
-      );
+          liveScore: runtime.liveScore,
+      };
+      const luck = await evaluateGekisoLuckTimeline(rules, luckInput, controls);
       if (!luck.value) return { value: null, gaps: luck.gaps };
       return {
         value: {
           phases: phase.value,
           counters,
           luck: luck.value,
+          luckInput,
           assumptions: [
             ...phase.value.assumptions,
             "native-admitted-perfect-history",

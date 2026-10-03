@@ -2,6 +2,7 @@ import { tickToTimeMs } from "../song-metrics.ts";
 import type { SongOption } from "../contracts.ts";
 import { dataRows, objectRow, type TeamBuilderData } from "../data.ts";
 import { createNativeGekisoAllComboChartPlan } from "./native-gekiso-chart-plan.ts";
+import { createNativeGekisoPerfectChartPlan } from "./native-gekiso-perfect-chart-plan.ts";
 
 /** The DTO observes current once; all of its chart requests keep that identity. */
 export function pinnedSongAssetUrl(identity: TeamBuilderData["identity"], file: string): string {
@@ -34,7 +35,7 @@ export async function loadSongOptions(
   data: TeamBuilderData,
   selections: readonly { songId: number; difficulty: number }[],
   signal?: AbortSignal,
-  options?: { nativeGekisoAllComboPlan?: boolean },
+  options?: { nativeGekisoAllComboPlan?: boolean; nativeGekisoPerfectPlan?: boolean },
 ): Promise<SongOption[]> {
   if (selections.length > 1000) throw new RangeError("song-selection-size");
   const { convertChartAsync } =
@@ -94,8 +95,9 @@ export async function loadSongOptions(
       })),
       gaps,
     };
-    if (options?.nativeGekisoAllComboPlan) {
-      const plan = createNativeGekisoAllComboChartPlan(data, song, {
+    if (options?.nativeGekisoAllComboPlan || options?.nativeGekisoPerfectPlan) {
+      const build = options.nativeGekisoPerfectPlan ? createNativeGekisoPerfectChartPlan : createNativeGekisoAllComboChartPlan;
+      const plan = build(data, song, {
         bpmChanges: chart.bpmChanges, fever: chart.passthrough.fever,
       });
       if (plan.value) song.nativeGekisoPlan = plan.value;

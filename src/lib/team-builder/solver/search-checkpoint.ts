@@ -1,7 +1,7 @@
 import type { SearchCheckpoint, SearchResult } from "../contracts.ts";
 
 /** Bump whenever scoring, adaptation, chart interpretation or enumeration changes. */
-export const SEARCH_ENGINE_REVISION = "native-gekiso-chart-search-v8";
+export const SEARCH_ENGINE_REVISION = "native-gekiso-luck-chart-search-v9";
 
 function canonical(value: unknown): string {
   if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))

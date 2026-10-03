@@ -16,6 +16,7 @@ interface PrefixEntry {
   factor: number;
   sums: Float64Array;
   augmentation?: NativeScoreAugmentation;
+  luckPercent: number;
 }
 /** Worker-local GK composition. Per-node combo and complete-play additions
  * are resolved by the native GK factory before shuffle outcomes aggregate. */
@@ -23,6 +24,12 @@ export interface NativeScoreAugmentation {
   gekisoComboBonuses: readonly number[];
   completePlayBonus: (timingPrefix: Float64Array) => { value: number | null; gaps: EvidenceGap[] };
   assumptions: readonly string[];
+  /** Resolve each complete native member order's joint Luck play before averaging. */
+  luckPlay?: {
+    rushFactorPercent: number;
+    resolve: (samples: readonly { timeMs: number; idleScore: number; rushScore: number }[],
+      controls: SearchEvaluationControls) => Promise<{ value: number | null; gaps: EvidenceGap[] }>;
+  };
 }
 const gap = (code: string, source: string): EvidenceGap => ({ code, source });
 const int = (value: unknown): value is number =>
@@ -107,10 +114,10 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
   let cachedNodes = 0;
   const interrupted = (controls: SearchEvaluationControls) => controls.cancelled() || controls.expired();
   async function prefix(song: PreparedSong, power: number, factor: number, controls: SearchEvaluationControls,
-    augmentation?: NativeScoreAugmentation) {
+    augmentation?: NativeScoreAugmentation, luckPercent = 100) {
     const found = prefixes.findIndex(
       (entry) => entry.song === song && entry.power === power && entry.factor === factor &&
-        entry.augmentation === augmentation,
+        entry.augmentation === augmentation && entry.luckPercent === luckPercent,
     );
     if (found >= 0) {
       const entry = prefixes.splice(found, 1)[0]!;
@@ -139,7 +146,7 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
           judgementPercent: model.perfectPercent,
           comboFactor: nativeComboFactor(node.comboBonus, 0, augmentation?.gekisoComboBonuses[index] ?? 0),
           scoreUpFactor: factor,
-          luckFactorPercent: 100,
+          luckFactorPercent: luckPercent,
           eventBonusFactor: context.eventBonusFactor,
           life: context.life,
           lifeOnusFactor: model.lifeOnusFactor,
@@ -148,7 +155,7 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
     }
     while (prefixes.length && (prefixes.length >= 48 || cachedNodes + sums.length > 200000))
       cachedNodes -= prefixes.shift()!.sums.length;
-    prefixes.push({ song, power, factor, sums, augmentation });
+    prefixes.push({ song, power, factor, sums, augmentation, luckPercent });
     cachedNodes += sums.length;
     return sums;
   }
@@ -170,6 +177,9 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
       if (augmentation && (augmentation.gekisoComboBonuses.length !== song.nodes.length ||
         augmentation.gekisoComboBonuses.some((value) => !Number.isFinite(f(value)) || value < 0)))
         local.push(gap("native-gekiso-node-combo-unresolved", song.song.key));
+      if (augmentation?.luckPlay && (!int(augmentation.luckPlay.rushFactorPercent) ||
+        augmentation.luckPlay.rushFactorPercent < 100 || augmentation.luckPlay.rushFactorPercent > 200 || onCompleteLaw))
+        local.push(gap("native-gekiso-luck-play-domain-unresolved", "complete joint law requires its own probability outcomes"));
       const times = charts.get(song.song.key);
       if (!times || times.length !== 5 || times.some((time) => !int(time)))
         local.push(gap("native-normal-chart-events-unresolved", song.song.key));
@@ -235,6 +245,7 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
       let bestSkillOrder: string[] = [],
         worstSkillOrder: string[] = [];
       const scores = onCompleteLaw ? new Map<number, number>() : null;
+      const expectedOrderScores: number[] | null = augmentation?.luckPlay ? [] : null;
       const assumptions = new Set([
         ...input.evaluation.assumptions,
         input.skillOrderCriterion === "worst-ap"
@@ -275,11 +286,16 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
         );
         let score = input.evaluation.songContexts[song.song.key]!.fixedScore;
         const timingPrefix = augmentation ? new Float64Array(song.nodes.length + 1) : null;
-        const accumulate = (sums: Float64Array, start: number, end: number) => {
+        const luckSamples: { timeMs: number; idleScore: number; rushScore: number }[] = [];
+        const accumulate = (sums: Float64Array, start: number, end: number, rush?: Float64Array) => {
           score += sums[end]! - sums[start]!;
           if (timingPrefix)
             for (let node = start; node < end; node++)
               timingPrefix[node + 1] = timingPrefix[start]! + sums[node + 1]! - sums[start]!;
+          if (rush) for (let node = start; node < end; node++) luckSamples.push({
+            timeMs: song.nodes[node]!.event.timeMs, idleScore: sums[node + 1]! - sums[node]!,
+            rushScore: rush[node + 1]! - rush[node]!,
+          });
         };
         let index = 0,
           factor = f(1),
@@ -289,7 +305,10 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
           if (end > index) {
             const sums = await prefix(song, power, f(factor + perfectExtra), controls, augmentation);
             if (!sums) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-            accumulate(sums, index, end);
+            const rush = augmentation?.luckPlay ? await prefix(song, power, f(factor + perfectExtra), controls,
+              augmentation, augmentation.luckPlay.rushFactorPercent) : undefined;
+            if (rush === null) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
+            accumulate(sums, index, end, rush);
           }
           const diff = f(f(command.diffMillPercent) / f(100000));
           if (command.judgement === undefined) factor = f(factor + diff);
@@ -299,9 +318,17 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
         if (index < song.nodes.length) {
           const sums = await prefix(song, power, f(factor + perfectExtra), controls, augmentation);
           if (!sums) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-          accumulate(sums, index, song.nodes.length);
+          const rush = augmentation?.luckPlay ? await prefix(song, power, f(factor + perfectExtra), controls,
+            augmentation, augmentation.luckPlay.rushFactorPercent) : undefined;
+          if (rush === null) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
+          accumulate(sums, index, song.nodes.length, rush);
         }
-        if (augmentation) {
+        if (augmentation?.luckPlay) {
+          const played = await augmentation.luckPlay.resolve(luckSamples, controls);
+          if (played.value === null || played.gaps.length)
+            return { value: null, status: "unavailable", assumptions: [], gaps: played.gaps };
+          score = played.value;
+        } else if (augmentation) {
           const extra = augmentation.completePlayBonus(timingPrefix!);
           if (extra.value === null || extra.gaps.length)
             return { value: null, status: "unavailable", assumptions: [], gaps: extra.gaps };
@@ -309,9 +336,10 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
             return unavailableMetric("native-gekiso-play-addition-unresolved", song.song.key);
           score += extra.value;
         }
-        if (!int(score))
+        if (augmentation?.luckPlay ? !Number.isFinite(score) || score < 0 || score > 0x7fffffff : !int(score))
           return unavailableMetric("native-normal-score-domain-unresolved", "native signed score accumulation");
         total += score;
+        expectedOrderScores?.push(score);
         scores?.set(score, (scores.get(score) ?? 0) + 1);
         if (score < minimum) {
           minimum = score;
@@ -322,6 +350,9 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
           bestSkillOrder = order.map((slot) => nativeMembers[slot]!);
         }
       }
+      // A nominal mean is independent of the member-order enumeration order.
+      // Canonical summation keeps equivalent shuffled formations tied in f64.
+      if (expectedOrderScores) total = expectedOrderScores.sort((a, b) => a - b).reduce((sum, value) => sum + value, 0);
       // Publish once after all nominal orders complete. A cancelled/budgeted
       // prefix cannot become a reward law or a resource-cycle input.
       if (scores && !interrupted(controls))

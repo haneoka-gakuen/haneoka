@@ -8,6 +8,9 @@ import {
   type GekisoRules,
 } from "./gekiso-mission-luck.ts";
 import { createGekisoLuckDistributionResolver } from "./gekiso-luck-distribution.ts";
+import { prepareGekisoLuckLiveScore, recordGekisoLuckRushCommand, advanceGekisoLuckLiveScore,
+  summarizeGekisoLuckLiveScore, completeGekisoLuckLiveScore, type GekisoLuckLiveScorePlan, type GekisoLuckLiveScoreLedger,
+  type GekisoLuckLiveScoreResult } from "./gekiso-luck-live-score.ts";
 import type {
   GekisoMinimumEntry,
   GekisoRandomLaw,
@@ -53,6 +56,8 @@ export interface GekisoLuckTimelineInput {
    * moments. Full native states remain available for a later counter driver. */
   projection?: "full-native-state" | "points-and-count-moments" | "expectations-only";
   budget: { maxStates: number; maxTransitions: number };
+  /** Fully resolved score samples for one complete native member order. */
+  liveScore?: GekisoLuckLiveScorePlan;
 }
 export interface GekisoLuckTimelineOutcome {
   probability: number;
@@ -60,6 +65,8 @@ export interface GekisoLuckTimelineOutcome {
   minimumEntries: readonly GekisoMinimumEntry[];
   rushBonusHandleActive: boolean;
   currentFrameHasLotResult: boolean;
+  /** Present only for a complete score law; stays joint with native Luck state. */
+  liveScore?: number;
 }
 export interface GekisoLuckTimelineResult {
   scope: "explicit-admitted-luck-frame-schedule";
@@ -83,6 +90,7 @@ export interface GekisoLuckTimelineResult {
   transitions: number;
   maximumStates: number;
   assumptions: readonly string[];
+  liveScore?: GekisoLuckLiveScoreResult;
 }
 const int = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0x7fffffff;
@@ -139,6 +147,9 @@ export async function evaluateGekisoLuckTimeline(
     nextDraw: null,
   });
   if (!initialProbe.value) return { value: null, gaps: initialProbe.gaps };
+  const live = input.liveScore ? prepareGekisoLuckLiveScore(rules, input.liveScore,
+    input.frames.map((frame) => frame.timeMs)) : null;
+  if (live && !live.value) return { value: null, gaps: live.gaps };
   let previousTime = -1,
     notes = 0;
   for (const frame of input.frames) {
@@ -187,6 +198,9 @@ export async function evaluateGekisoLuckTimeline(
   type InternalOutcome = GekisoLuckTimelineOutcome & {
     countMass: [number, number, number, number];
     pointMass: number;
+    liveLedger?: GekisoLuckLiveScoreLedger;
+    liveScoreMass: number;
+    liveRangeMass: [number, number, number];
   };
   // The fixed tape supplies branch-independent factors/registry changes.
   // For additive expectations these five integers and the ordered quota
@@ -200,20 +214,23 @@ export async function evaluateGekisoLuckTimeline(
     `${state.gaugeValue},${state.lotCount},${state.rushCombo},${state.next},${state.gaugeMax}|` +
     entries.map((entry) => `${entry.id},${entry.minimum},${entry.remaining}`).join(";") +
     `|${Number(rush)}${Number(frameLot)}`;
-  const key = (value: Omit<InternalOutcome, "probability" | "countMass" | "pointMass">) => {
+  let collapseLuckTail = false;
+  const lastLuckCall = input.frames.reduce((last, frame, index) => frame.notes.length || frame.pending ? index : last, -1);
+  const key = (value: Omit<InternalOutcome, "probability" | "countMass" | "pointMass" | "liveScoreMass" | "liveRangeMass">) => {
     if (meanOnly)
-      return meanStateKey(
+      return (collapseLuckTail ? "completed-luck-tail" : meanStateKey(
         value.state,
         value.minimumEntries,
         value.rushBonusHandleActive,
         value.currentFrameHasLotResult,
-      );
+      )) + (value.liveLedger ? `|${JSON.stringify(value.liveLedger)}` : "");
     const { resultCounts, ...pointState } = value.state;
     return JSON.stringify([
       projected ? pointState : value.state,
       value.minimumEntries,
       value.rushBonusHandleActive,
       value.currentFrameHasLotResult,
+      ...(value.liveLedger ? [value.liveLedger] : []),
     ]);
   };
   let states = new Map<string, InternalOutcome>();
@@ -222,12 +239,18 @@ export async function evaluateGekisoLuckTimeline(
     minimumEntries: input.initial.minimumEntries.map((entry) => ({ ...entry })),
     rushBonusHandleActive: input.initial.rushBonusHandleActive,
     currentFrameHasLotResult: false,
+    ...(live?.value ? { liveLedger: { rushAtScoredTime: input.initial.rushBonusHandleActive,
+      rushCommands: [], lastScoredMs: -1, score: input.liveScore!.projection === "score-law"
+        ? input.liveScore!.initialScore : 0,
+      rangeScores: [...(input.liveScore!.rankBaseRemainders ?? [0, 0, 0])] as [number, number, number] } } : {}),
   };
   states.set(key(initial), {
     ...initial,
     probability: 1,
     countMass: [...input.initial.state.resultCounts] as [number, number, number, number],
     pointMass: input.initial.state.totalBonusPoint,
+    liveScoreMass: input.liveScore?.initialScore ?? 0,
+    liveRangeMass: [0, 0, 0],
   });
   let transitions = 0,
     maximumStates = 1,
@@ -235,6 +258,9 @@ export async function evaluateGekisoLuckTimeline(
   const assumptions = new Set([
     "explicit-admitted-native-luck-frame-schedule",
     "resolved-skill-factor-and-registry-tape",
+    ...(live?.value ? ["native-per-note-rush-score-floors", "native-command-before-equal-time-note",
+      "native-rank-rounded-before-Luck-expectation",
+      ...(input.liveScore!.projection === "score-expectation" ? ["native-rank-score-residue-projection"] : [])] : []),
   ]);
   const interrupted = () => controls?.cancelled() || controls?.expired();
   const merge = (target: typeof states, value: InternalOutcome) => {
@@ -244,6 +270,8 @@ export async function evaluateGekisoLuckTimeline(
     if (old) {
       old.probability += value.probability;
       old.pointMass += value.pointMass;
+      old.liveScoreMass += value.liveScoreMass;
+      value.liveRangeMass.forEach((mass, index) => { old.liveRangeMass[index]! += mass; });
       value.countMass.forEach((mass, result) => {
         old.countMass[result] += mass;
       });
@@ -346,10 +374,19 @@ export async function evaluateGekisoLuckTimeline(
           const command = branch.result.rushScoreCommand;
           const weight = charge.probability * branch.probability;
           const probability = state.probability * weight;
+          let liveLedger = state.liveLedger;
+          if (liveLedger && command) {
+            const recorded = recordGekisoLuckRushCommand(liveLedger, timeMs, command.kind === "enable");
+            if (!recorded.value) return { value: null, gaps: recorded.gaps };
+            liveLedger = recorded.value;
+          }
           const pointGain = branch.result.state.totalBonusPoint - (additiveCountersSafe ? 0 : totalBonusPoint);
           merge(next, {
             probability,
             pointMass: state.pointMass * weight + pointGain * probability,
+            liveLedger,
+            liveScoreMass: state.liveScoreMass * weight,
+            liveRangeMass: state.liveRangeMass.map((mass) => mass * weight) as [number, number, number],
             // Mean-only counters are carried exclusively as probability mass.
             // Its internal scalar kernel uses zero-based additive counters and
             // exposes no representative native states or point distribution.
@@ -381,9 +418,9 @@ export async function evaluateGekisoLuckTimeline(
     states = next;
     return null;
   };
-  for (const frame of input.frames) {
+  for (const [frameIndex, frame] of input.frames.entries()) {
     if (interrupted()) return fail("gekiso-luck-timeline-interrupted", "worker cancellation/budget");
-    if (controls) {
+    if (controls && frameIndex % 16 === 0) {
       controls.progress();
       await controls.yield();
     }
@@ -408,8 +445,15 @@ export async function evaluateGekisoLuckTimeline(
         else return fail("gekiso-minimum-registry-change-unresolved", source);
         if (entries.length > 4096) return fail("gekiso-minimum-registry-invalid", source);
       }
+      let liveLedger = state.liveLedger;
+      if (liveLedger && frame.clearRushBonusBeforeNotes && state.rushBonusHandleActive) {
+        const cleared = recordGekisoLuckRushCommand(liveLedger, frame.timeMs, false);
+        if (!cleared.value) return { value: null, gaps: cleared.gaps };
+        liveLedger = cleared.value;
+      }
       merge(updated, {
         ...state,
+        liveLedger,
         countMass: [...state.countMass],
         minimumEntries: entries,
         rushBonusHandleActive: frame.clearRushBonusBeforeNotes ? false : state.rushBonusHandleActive,
@@ -436,6 +480,33 @@ export async function evaluateGekisoLuckTimeline(
       ]);
       if (failure) return failure;
     }
+    if (live?.value) {
+      const scored: typeof states = new Map();
+      let count = 0;
+      for (const state of states.values()) {
+        if (interrupted()) return fail("gekiso-luck-timeline-interrupted", "worker cancellation/budget");
+        const value = advanceGekisoLuckLiveScore(live.value, state.liveLedger!, input.liveScore!.frames[frameIndex]!);
+        merge(scored, { ...state, liveLedger: value.ledger,
+          liveScoreMass: state.liveScoreMass + value.gain * state.probability,
+          liveRangeMass: state.liveRangeMass.map((mass, index) => mass +
+            value.rangeGains[index]! * state.probability) as [number, number, number] });
+        if (controls && ++count % 1024 === 0) { controls.progress(); await controls.yield(); }
+      }
+      states = scored;
+    }
+    // No future Luck invocation can read gauge/Next/rush after this point.
+    // Preserve score residues/histories and all additive masses; endpoint
+    // pending/rush values are known zero. No native-state law is exposed.
+    if (meanOnly && additiveCountersSafe && !collapseLuckTail && frameIndex >= lastLuckCall &&
+      [...states.values()].every((state) => state.state.lotCount === 0 &&
+        !state.rushBonusHandleActive && state.minimumEntries.length === 0) &&
+      input.frames.slice(frameIndex + 1).every((frame) => frame.minimumRegistryChanges!.length === 0)) {
+      collapseLuckTail = true;
+      assumptions.add("completed-luck-tail-expectation-projection");
+      const tail: typeof states = new Map();
+      for (const state of states.values()) merge(tail, state);
+      states = tail;
+    }
   }
   if (interrupted()) return fail("gekiso-luck-timeline-interrupted", "worker cancellation/budget");
   const outcomes = [...states.values()];
@@ -454,17 +525,26 @@ export async function evaluateGekisoLuckTimeline(
     });
   }
   const pointExpectation = outcomes.reduce((sum, outcome) => sum + outcome.pointMass, 0);
+  const liveScore = live?.value ? summarizeGekisoLuckLiveScore(rules, live.value,
+    outcomes.map((outcome) => ({ probability: outcome.probability, ledger: outcome.liveLedger!,
+      scoreMass: outcome.liveScoreMass, rangeMass: outcome.liveRangeMass }))) : null;
+  if (liveScore && !liveScore.value) return { value: null, gaps: liveScore.gaps };
+  const jointScore = (ledger: GekisoLuckLiveScoreLedger | undefined) => live?.value &&
+    input.liveScore!.projection === "score-law" && ledger
+    ? { liveScore: completeGekisoLuckLiveScore(rules, live.value, ledger).value! } : {};
   return {
     value: {
       scope: "explicit-admitted-luck-frame-schedule",
       projection,
-      outcomes: projected ? null : outcomes.map(({ countMass, pointMass, ...outcome }) => outcome),
+      outcomes: projected ? null : outcomes.map(({ countMass, pointMass, liveLedger, liveScoreMass, liveRangeMass, ...outcome }) =>
+        ({ ...outcome, ...jointScore(liveLedger) })),
       pointOutcomes:
         projected && !meanOnly
-          ? outcomes.map(({ countMass, pointMass, state, ...outcome }) => {
+          ? outcomes.map(({ countMass, pointMass, liveLedger, liveScoreMass, liveRangeMass, state, ...outcome }) => {
               const { resultCounts, ...pointState } = state;
               return {
                 ...outcome,
+                ...jointScore(liveLedger),
                 state: pointState,
                 conditionalResultCountExpectations: countMass.map((value) => value / outcome.probability) as [
                   number,
@@ -493,6 +573,7 @@ export async function evaluateGekisoLuckTimeline(
       transitions,
       maximumStates,
       assumptions: [...assumptions],
+      ...(liveScore?.value ? { liveScore: liveScore.value } : {}),
     },
     gaps: [],
   };
