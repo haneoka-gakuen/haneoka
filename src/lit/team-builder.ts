@@ -110,6 +110,7 @@ type BulkPreview = {
   changes: { kind: Kind; instanceId: string; cardId: number; from: number | null; to: number }[];
   issues: InventoryIssue[];
 };
+type WorkspaceView = "plan" | "cards" | "growth" | "results" | "sync";
 const OWNER = "team-builder";
 const OBJECTIVES: Objective[] = ["base-score", "score", "ss-ratio", "event-points", "event-items", "ss-surplus"];
 const MODES: PlayMode[] = ["normal", "gekiso", "multi", "battle"];
@@ -165,8 +166,7 @@ export class TeamBuilder extends LitElement {
     bulkValue: { state: true },
     bulkOnlyMissing: { state: true },
     bulkPreview: { state: true },
-    maintenanceOpen: { state: true },
-    inventoryTab: { state: true },
+    workspaceView: { state: true },
     searchError: { state: true },
     saveState: { state: true },
     visibleLimit: { state: true },
@@ -246,8 +246,8 @@ export class TeamBuilder extends LitElement {
   declare bulkValue: number | null;
   declare bulkOnlyMissing: boolean;
   declare bulkPreview: BulkPreview | null;
-  declare maintenanceOpen: boolean;
-  declare inventoryTab: "cards" | "growth" | "sync";
+  declare workspaceView: WorkspaceView;
+  private visitedViews = new Set<WorkspaceView>(["plan"]);
   declare searchError: string;
   declare saveState: string;
   declare visibleLimit: number;
@@ -414,13 +414,13 @@ export class TeamBuilder extends LitElement {
             this.uniquenessOwner = state.ownerId;
             this.uniquenessFromStore = true;
             this.uniquenessOriginalText = "";
-            this.closePane(true);
+            this.closePane();
           } else if (this.pendingUniqueness && this.uniquenessFromStore && state.ownerId !== this.uniquenessOwner) {
             this.pendingUniqueness = null;
             this.uniquenessChoices = {};
           }
           this.saveState = state.phase;
-          if (state.phase === "loading" || state.phase === "auth-loading") this.closePane(true);
+          if (state.phase === "loading" || state.phase === "auth-loading") this.closePane();
           if (state.phase === "release-mismatch" && state.inventory && !this.pendingRebase) {
             this.pendingRebase = {
               original: structuredClone(state.inventory),
@@ -452,7 +452,7 @@ export class TeamBuilder extends LitElement {
     const previousState = sameServer ? this.storeState : null;
     const previousRebase = sameServer ? this.pendingRebase : null;
     this.cancelSearch();
-    this.closePane(server === this.server && this.maintenanceOpen);
+    this.closePane();
     this.visualsController?.abort();
     this.visuals = undefined;
     this.authController?.abort();
@@ -902,62 +902,24 @@ export class TeamBuilder extends LitElement {
       ].includes(this.saveState)
     );
   }
-  private renderMaintenance() {
-    if (!this.maintenanceOpen || this.screenshotState) return nothing;
+  private renderInventoryPanels() {
+    const ready = this.data && this.inventory && !this.pendingUniqueness && !this.pendingRebase;
     return html`
-      <dialog
-        class="selection-pane team-builder__maintenance"
-        data-inventory-maintenance
-        aria-label=${this.inventoryTab === "sync" ? this.t("inventorySyncTab", "Sync") : this.t("teamSetup", "Team setup")}
-        @cancel=${(event: Event) => {
-          event.preventDefault();
-          this.maintenanceOpen = false;
-        }}
-        @click=${(event: MouseEvent) => {
-          if (event.target === event.currentTarget) this.maintenanceOpen = false;
-        }}
-      >
-        <header class="sheet__header">
-          <strong>${this.inventoryTab === "sync" ? this.t("inventorySyncTab", "Sync") : this.t("teamSetup", "Team setup")}</strong>
-          ${iconButton({ icon: "close", label: clientText(this.locale, "close", "Close"), onClick: () => (this.maintenanceOpen = false) })}
-        </header>
-        <div class="team-builder__inventory-tabs">
-          ${segmented({
-            label: this.t("teamSetup", "Team setup"), value: this.inventoryTab, grow: true,
-            options: [
-              { value: "cards", label: this.t("inventoryCardsTab", "Cards") },
-              { value: "growth", label: this.t("inventoryGrowthTab", "Growth") },
-              { value: "sync", label: this.t("inventorySyncTab", "Sync") },
-            ],
-            onSelect: (value) => (this.inventoryTab = value),
-          })}
-        </div>
-        <div class="selection-pane__body">
-          ${
-            this.error
-              ? html`
-                  <p class="team-builder__error" role="alert">${this.error}</p>
-                `
-              : nothing
-          }
-          ${
-            !this.data || !this.sourceReady
-              ? html`
-                  <button class="button button--outlined" @click=${() => this.loadSource(readReleaseServer())}>
-                    ${clientText(this.locale, "retry", "Retry")}
-                  </button>
-                `
-              : nothing
-          }
-          ${this.inventoryTab === "sync"
-            ? html`${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}`
-            : this.data && this.inventory && !this.pendingUniqueness && !this.pendingRebase
-              ? html`<div ?inert=${!this.canEdit}>${this.inventoryTab === "cards" ? this.renderLibrary() : html`${this.renderPlayerModifiers()}${this.renderBands()}`}</div>`
-              : html`<button class="button button--outlined" @click=${() => (this.inventoryTab = "sync")}>${this.t("inventoryReadyAction", "Open inventory")}</button>`}
-
-        </div>
-      </dialog>
+      <section id="team-panel-cards" class="team-builder__panel" aria-label=${this.t("inventoryCardsTab", "Cards")} ?hidden=${this.workspaceView !== "cards"}>
+        ${!this.visitedViews.has("cards") ? nothing : ready ? html`<div ?inert=${!this.canEdit}>${this.renderLibrary()}</div>` : this.renderInventoryAccess()}
+      </section>
+      <section id="team-panel-growth" class="team-builder__panel team-builder__growth" aria-label=${this.t("inventoryGrowthTab", "Growth")} ?hidden=${this.workspaceView !== "growth"}>
+        ${!this.visitedViews.has("growth") ? nothing : ready ? html`<div ?inert=${!this.canEdit}>${this.renderPlayerModifiers()}${this.renderBands()}</div>` : this.renderInventoryAccess()}
+      </section>
+      <section id="team-panel-sync" class="team-builder__panel" aria-label=${this.t("inventorySyncTab", "Sync")} ?hidden=${this.workspaceView !== "sync"}>
+        ${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}
+      </section>
     `;
+  }
+  private renderInventoryAccess() {
+    return html`<button class="button button--outlined" @click=${() => this.openMaintenance("sync")}>
+      ${this.t("inventoryReadyAction", "Open inventory")}
+    </button>`;
   }
   private renderStorage() {
     const labels: Record<string, string> = {
@@ -1168,8 +1130,7 @@ export class TeamBuilder extends LitElement {
     this.bulkValue = null;
     this.bulkOnlyMissing = true;
     this.bulkPreview = null;
-    this.maintenanceOpen = false;
-    this.inventoryTab = "cards";
+    this.workspaceView = "plan";
     this.searchError = "";
     this.saveState = "auth-loading";
     this.visibleLimit = 30;
@@ -1254,7 +1215,7 @@ export class TeamBuilder extends LitElement {
     this.reconcileUnchangedConflict();
     this.images.observe(this);
     const selector = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
-    const modal = this.addingCards || this.selectingSong || this.selectingEvent || this.maintenanceOpen || Boolean(this.editingId) || Boolean(this.screenshotState);
+    const modal = this.addingCards || this.selectingSong || this.selectingEvent || Boolean(this.editingId) || Boolean(this.screenshotState);
     const content = this.querySelector<HTMLElement>(".team-builder__content");
     // Enable the opener before PaneFocus restores focus when the dialog closes.
     if (content && !modal) content.inert = false;
@@ -1273,13 +1234,11 @@ export class TeamBuilder extends LitElement {
         selector.querySelector<HTMLElement>('md-outlined-text-field[type="search"]')?.focus(),
       );
     } else if (!selector && this.activeSelector) {
-      const maintenanceClosed = this.activeSelector.hasAttribute("data-inventory-maintenance");
       this.activeSelector = undefined;
       if (!modal && this.selectorOpener?.isConnected) this.selectorOpener.focus({ preventScroll: true });
-      else if (!modal && maintenanceClosed)
-        document.querySelector<HTMLElement>(`[data-app-bar-owner="${OWNER}"] button`)?.focus();
+
     }
-    if (this.returnOwnedFocus && this.maintenanceOpen && this.inventoryTab === "cards") {
+    if (this.returnOwnedFocus && this.workspaceView === "cards") {
       const id = this.returnOwnedFocus; this.returnOwnedFocus = "";
       requestAnimationFrame(() => {
         const target = [...this.querySelectorAll<HTMLElement>("[data-open-item]")].find((node) => node.dataset.openItem === id);
@@ -1287,7 +1246,7 @@ export class TeamBuilder extends LitElement {
       });
     }
     if (content && modal) content.inert = true;
-    if (this.restoreScreenshotFocus && this.maintenanceOpen && !this.screenshotState) {
+    if (this.restoreScreenshotFocus && this.workspaceView === "cards" && !this.screenshotState) {
       this.restoreScreenshotFocus = false;
       requestAnimationFrame(() => this.querySelector<HTMLElement>(".team-builder__screenshot-action")?.focus({ preventScroll: true }));
     }
@@ -1295,14 +1254,6 @@ export class TeamBuilder extends LitElement {
     setAppBarActions(
       OWNER,
       html`${iconButton({
-        icon: "style",
-        label: this.t("inventoryCardsTab", "Cards"),
-        onClick: () => this.openMaintenance("cards"),
-      })}${iconButton({
-        icon: "tune",
-        label: this.t("inventoryGrowthTab", "Growth"),
-        onClick: () => this.openMaintenance("growth"),
-      })}${iconButton({
         icon: "refresh",
         label: this.t("inventorySyncTab", "Sync"),
         badge: this.maintenanceNeedsAction ? 1 : undefined,
@@ -1339,7 +1290,7 @@ export class TeamBuilder extends LitElement {
   private openScreenshotImport() {
     const context = this.screenshotContext();
     if (!this.canEdit || !context || !this.data || !this.inventory) return;
-    this.closePane(true);
+    this.closePane();
     this.screenshotScope = { ...context, inventoryText: exportInventory(this.inventory) };
     const session = createScreenshotImportSession({
       inventory: this.inventory, data: this.data, context,
@@ -1372,7 +1323,7 @@ export class TeamBuilder extends LitElement {
     if (session) {
       this.addingCards = false;
       void session.close();
-      if (returnToCards) { this.maintenanceOpen = true; this.inventoryTab = this.canEdit ? "cards" : "sync"; this.restoreScreenshotFocus = true; }
+      if (returnToCards) { this.workspaceView = this.canEdit ? "cards" : "sync"; this.restoreScreenshotFocus = true; }
     }
   }
   private correctScreenshotCard(image: number, observation: number) {
@@ -1418,10 +1369,58 @@ export class TeamBuilder extends LitElement {
     if (isUnchangedInventoryConflict(this.store.state, this.data, this.currentOwner))
       this.store.resolveConflict("remote");
   }
-  private openMaintenance(tab: "cards" | "growth" | "sync") {
+  private openMaintenance(view: "cards" | "growth" | "sync") {
+    this.openWorkspace(view);
+  }
+  private openWorkspace(view: WorkspaceView) {
+    if (view === this.workspaceView) return;
     this.closePane();
-    this.inventoryTab = tab !== "sync" && !this.canEdit ? "sync" : tab;
-    this.maintenanceOpen = true;
+    this.visitedViews.add(view);
+    this.workspaceView = view;
+    void this.updateComplete.then(() => this.querySelector<HTMLElement>(".team-builder__page-title")?.focus());
+  }
+  private get workspacePages() {
+    return [
+      { id: "plan" as const, label: this.t("teamSetup", "Team setup"), graphic: icon("tune") },
+      { id: "cards" as const, label: this.t("inventoryCardsTab", "Cards"), graphic: icon("style") },
+      { id: "growth" as const, label: this.t("inventoryGrowthTab", "Growth"), graphic: icon("trending_up") },
+      { id: "results" as const, label: this.t("results", "Candidates"), graphic: icon("leaderboard") },
+      { id: "sync" as const, label: this.t("inventorySyncTab", "Sync"), graphic: icon("refresh") },
+    ];
+  }
+  private renderWorkspaceNavigation() {
+    return html`<aside class="team-builder__sidebar">
+      <nav class="team-builder__navigation" aria-label=${this.t("teamSetup", "Team setup")}>
+        ${this.workspacePages.map(page => html`<button type="button" class="team-builder__nav-item"
+          aria-current=${this.workspaceView === page.id ? "page" : nothing}
+          aria-controls=${`team-panel-${page.id}`} @click=${() => this.openWorkspace(page.id)}>
+          ${page.graphic}<span>${page.label}</span>
+          ${page.id === "cards" && this.inventory ? html`<small>${this.inventory.members.length + this.inventory.snapshots.length}</small>` : nothing}
+          ${page.id === "sync" && this.maintenanceNeedsAction ? icon("error_outline", 18) : nothing}
+        </button>`)}
+      </nav>
+      <div class="team-builder__sidebar-status">
+        <p class="team-builder__hint">${this.t("selectedKinds", "{members} members · {snapshots} snapshots", {
+          members: this.inventory?.members.length ?? 0, snapshots: this.inventory?.snapshots.length ?? 0,
+        })}</p>
+        ${this.renderRunActions()}
+      </div>
+    </aside>`;
+  }
+  private renderRunActions() {
+    return html`<div class="team-builder__run-actions">
+      <button type="button" class="button" aria-describedby=${!this.canOptimize ? "team-builder-start-hint" : nothing}
+        ?disabled=${!this.running && !this.canOptimize || this.cancelling}
+        @click=${() => {
+          if (this.running) this.requestCancellation();
+          else { this.startOptimization(); this.openWorkspace("results"); }
+        }}>
+        ${this.running ? clientText(this.locale, "cancel", "Cancel") : this.t("optimize", "Find candidates")}
+      </button>
+      <p id="team-builder-start-hint" class="team-builder__hint team-builder__start-hint" role="status">
+        ${this.running ? this.searchProgressLabel : !this.canOptimize ? this.optimizationHint : nothing}
+      </p>
+    </div>`;
   }
   private text(value: unknown) {
     return resolveLocalizedText(value, this.locale).text;
@@ -1622,9 +1621,8 @@ export class TeamBuilder extends LitElement {
       <span class="team-builder__artwork">${tileMedia(this.cardOptions(card, kind))}</span>
     `;
   }
-  private closePane(keepMaintenance = false) {
+  private closePane() {
     this.closeScreenshotImport(false);
-    if (!keepMaintenance) this.maintenanceOpen = false;
     this.selectingSong = false;
     this.selectingEvent = false;
     this.addingCards = false;
@@ -1667,7 +1665,7 @@ export class TeamBuilder extends LitElement {
   }
   private openOwnedCard(instanceId: string, kind: Kind) {
     if (!this.canEdit || !this.inventory?.[kind].some((entry) => entry.instanceId === instanceId)) return;
-    const fromInventory = this.maintenanceOpen;
+    const fromInventory = this.workspaceView === "cards";
     this.closePane();
     this.editFromInventory = fromInventory;
     this.kind = kind;
@@ -1680,8 +1678,7 @@ export class TeamBuilder extends LitElement {
     this.closePane();
     this.editFromInventory = false;
     if (returnToInventory) {
-      this.inventoryTab = "cards";
-      this.maintenanceOpen = true;
+      this.workspaceView = "cards";
       this.returnOwnedFocus = id;
     }
   }
@@ -2189,7 +2186,7 @@ export class TeamBuilder extends LitElement {
             class="button"
             ?disabled=${!this.canEdit}
             @click=${() => {
-              this.editFromInventory = this.maintenanceOpen;
+              this.editFromInventory = this.workspaceView === "cards";
               this.closePane();
               this.addingCards = true;
               this.picker = "";
@@ -2518,7 +2515,7 @@ export class TeamBuilder extends LitElement {
   private get liveChartUnavailable(): boolean {
     if (this.scoreDomain !== "personal-live" || this.chartSelections.length !== 1) return false;
     const missions = objectRow(this.data?.songs[String(this.chartSelections[0]!.songId)]?.gekisou).missionTypes;
-    return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => value !== 1);
+    return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => ![1, 2, 3].includes(value)) || missions.filter(value => value === 2).length > 1;
   }
   private renderScoreDomain() {
     if (this.mode !== "gekiso" || !this.objectives.includes("score") || this.scoreDomains.length < 2) return nothing;
@@ -2526,7 +2523,7 @@ export class TeamBuilder extends LitElement {
       this.scoreDomains.map(value => ({ value, label: value === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score") })),
       value => { this.cancelSearch(); this.result = null; this.optimizationInput = null; this.selectedScoreDomain = value as PersonalScoreDomain;
         if (value === "personal-live") this.justRate = 0; }, this.dataLoading || !this.sourceReady)}
-      ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Three Combo missions with continuous PERFECT playback.")}</small>` : nothing}`;
+      ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported.")}</small>` : nothing}`;
   }
   private objectiveLabel(objective: Objective): string {
     if (objective === "score" && this.scoreDomain === "personal-live") return this.t("personalLiveScore", "Personal Live score");
@@ -2988,6 +2985,24 @@ export class TeamBuilder extends LitElement {
       `, true)}
     `;
   }
+  private renderCardConstraints() {
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.t("library", "Card library"), "cards", { level: 2 })}
+      <div class="team-builder__fields">
+        ${(["members", "snapshots"] as const).map(kind => {
+          const entries = this.inventory?.[kind] ?? [];
+          const locked = entries.filter(entry => entry.locked && !entry.excluded);
+          return html`<div class="team-builder__constraint-group">
+            <strong>${this.t(kind, kind === "members" ? "Members" : "Snapshots")} · ${entries.length}</strong>
+            <p class="team-builder__hint">${this.t("locked", "Locked")}: ${locked.length} · ${this.t("excluded", "Excluded")}: ${entries.filter(entry => entry.excluded).length}</p>
+            ${locked.length ? html`<div class=${`collection collection--${kind === "members" ? "member" : "support"} team-builder__team-strip`}>
+              ${locked.map(entry => this.resultCard(entry, kind))}
+            </div>` : nothing}
+          </div>`;
+        })}
+      </div>
+    </section>`;
+  }
   private renderGoals() {
     const goalNames = this.objectives.map((objective) => this.objectiveLabel(objective)).join(" · ");
     return html`
@@ -3032,9 +3047,10 @@ export class TeamBuilder extends LitElement {
               </div>
             `,
           )}
-        </fieldset>        `, false, "team-builder__options")}
+        </fieldset>        `, true, "team-builder__options")}
         ${this.renderScoreDomain()}${this.renderSkillOrderCriterion()}
       </section>
+      ${this.renderCardConstraints()}
       <section class="team-builder__section">
         ${renderDetailSectionHeading(clientText(this.locale, "songs", "Songs"), "songs", { level: 2 })}
           <button
@@ -3182,19 +3198,6 @@ export class TeamBuilder extends LitElement {
             : nothing
         }
       `, false, "team-builder__options")}
-      <div class="team-builder__run-actions">
-        <button
-          class="button"
-          aria-describedby=${!this.canOptimize ? "team-builder-start-hint" : nothing}
-          ?disabled=${!this.canOptimize || this.running}
-          @click=${() => this.startOptimization()}
-        >
-          ${this.t("optimize", "Find candidates")}
-        </button>
-        <p id="team-builder-start-hint" class="team-builder__hint team-builder__start-hint">
-          ${!this.canOptimize ? this.optimizationHint : nothing}
-        </p>
-      </div>
     `;
   }
   private get playerModifiers(): PlayerModifiers {
@@ -3360,62 +3363,54 @@ export class TeamBuilder extends LitElement {
   }
   private renderPlayerModifiers() {
     if (!this.inventory || !this.data) return nothing;
-    return html`
-      <section class="team-builder__section">
-        ${this.disclosure("player-modifiers", html`${this.t("playerModifiers", "Player bonuses")}`, html`
-          ${this.renderPlayerModifierFields()}
-        `, false)}
-      </section>
-    `;
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.t("playerModifiers", "Player bonuses"), "stats", { level: 2 })}
+      ${this.renderPlayerModifierFields()}
+    </section>`;
+  }
+  private renderGrowthField(image: unknown, control: unknown) {
+    return html`<div class="team-builder__growth-field">
+      ${typeof image === "string" && image ? html`<img src=${image} alt="" width="40" height="40" loading="lazy" />` : nothing}
+      <div>${control}</div>
+    </div>`;
   }
   private renderBands() {
     if (!this.inventory || !this.data) return nothing;
-    return html`
-      <section class="team-builder__section">
-        ${this.disclosure("bands", html`${this.t("bands", "Band upgrades")}`, html`
-          <div class="team-builder__fields">
-            ${Object.entries(this.data.bands).map(([id, band]) => {
-              const name = this.text(band.bandName ?? band.name);
-              if (!name) return nothing;
-              return this.practiceSlider(name, (this.data!.progression.bandRanks ?? []).map((row) => Number(row.rank)), this.inventory!.bandRanks[id] ?? null, (value) => {
-                if (this.inventory)
-                  this.replaceInventory({ ...this.inventory, bandRanks: { ...this.inventory.bandRanks, [id]: value } });
-              });
-            })}
-          </div>
-        `, false)}
-          ${this.disclosure("character-ranks", html`${this.t("characterRanks", "Character ranks")}`, html`
-            <div class="team-builder__fields">
-              ${Object.entries(this.data.characters).map(([id, character]) => {
-                const name = this.text(character.characterName);
-                if (!name) return nothing;
-                return this.practiceSlider(name, (this.data!.progression.characterRanks ?? []).map((row) => Number(row.rank)), this.inventory!.characterRanks[id] ?? null, (value) => {
-                  if (this.inventory)
-                    this.replaceInventory({
-                      ...this.inventory,
-                      characterRanks: { ...this.inventory.characterRanks, [id]: value },
-                    });
-                });
-              })}
-            </div>
-          `, false)}
-          ${this.disclosure("band-items", html`${clientText(this.locale, "bandItems", "Band items")}`, html`
-            <div class="team-builder__fields">
-              ${Object.entries(this.data.bandItems).map(([id, item]) => {
-                const name = this.text(item.name ?? item.itemName);
-                if (!name) return nothing;
-                return this.practiceSlider(name, dataRows(item.levels).map((row) => Number(row.level)), this.inventory!.bandItems[id] ?? null, (value) => {
-                  if (this.inventory)
-                    this.replaceInventory({
-                      ...this.inventory,
-                      bandItems: { ...this.inventory.bandItems, [id]: value },
-                    });
-                });
-              })}
-            </div>
-          `, false)}
-      </section>
-    `;
+    const data = this.data;
+    const bands = Object.entries(data.bands);
+    const ungrouped = (bandId: unknown) => !bands.some(([id]) => id === String(bandId));
+    const groups = [...bands.map(([id, band]) => ({ id, name: this.text(band.bandName ?? band.name), band })),
+      { id: "ungrouped", name: this.t("inventoryGrowthTab", "Growth"), band: null }];
+    return html`<div class="team-builder__band-groups">
+      ${groups.map(({ id, name, band }, index) => {
+        const characters = Object.entries(data.characters).filter(([, row]) => band ? String(row.bandId) === id : ungrouped(row.bandId));
+        const items = Object.entries(data.bandItems).filter(([, row]) => band ? String(row.bandId) === id : ungrouped(row.bandId));
+        if (!band && !characters.length && !items.length) return nothing;
+        return this.disclosure(`growth-band-${id}`, html`<span class="team-builder__growth-label">
+          ${band?.icon ? html`<img src=${String(band.icon)} alt="" width="32" height="32" loading="lazy" />` : nothing}<span>${name}</span>
+        </span>`, html`
+          ${band ? html`<section class="team-builder__growth-group" aria-label=${this.t("bands", "Band upgrades")}>
+            ${this.practiceSlider(this.t("bands", "Band upgrades"), (data.progression.bandRanks ?? []).map(row => Number(row.rank)), this.inventory!.bandRanks[id] ?? null,
+              value => { if (this.inventory) this.replaceInventory({ ...this.inventory, bandRanks: { ...this.inventory.bandRanks, [id]: value } }); })}
+          </section>` : nothing}
+          ${characters.length ? html`<section class="team-builder__growth-group">
+            ${renderDetailSectionHeading(this.t("characterRanks", "Character ranks"), "characters", { level: 3 })}
+            <div class="team-builder__growth-fields">${characters.map(([key, row]) => this.renderGrowthField(
+              this.visuals?.characters[key]?.faceImage ?? row.faceImage ?? row.thumbnailImage,
+              this.practiceSlider(this.text(row.characterName), (data.progression.characterRanks ?? []).map(rank => Number(rank.rank)), this.inventory!.characterRanks[key] ?? null,
+                value => { if (this.inventory) this.replaceInventory({ ...this.inventory, characterRanks: { ...this.inventory.characterRanks, [key]: value } }); }),
+            ))}</div>
+          </section>` : nothing}
+          ${items.length ? html`<section class="team-builder__growth-group">
+            ${renderDetailSectionHeading(clientText(this.locale, "bandItems", "Band items"), "rewards", { level: 3 })}
+            <div class="team-builder__growth-fields">${items.map(([key, row]) => this.renderGrowthField(row.image ?? row.icon,
+              this.practiceSlider(this.text(row.name ?? row.itemName), dataRows(row.levels).map(level => Number(level.level)), this.inventory!.bandItems[key] ?? null,
+                value => { if (this.inventory) this.replaceInventory({ ...this.inventory, bandItems: { ...this.inventory.bandItems, [key]: value } }); }),
+            ))}</div>
+          </section>` : nothing}
+        `, index === 0);
+      })}
+    </div>`;
   }
   get constraints(): SearchConstraints {
     return {
@@ -3560,7 +3555,7 @@ export class TeamBuilder extends LitElement {
     }
     if (this.wantsEventScene && !this.eventScene) return this.eventSceneHint;
     if (this.scoreDomain === "personal-live" && (!this.scoreDomains.includes("personal-live") || this.liveChartUnavailable || this.constraints.justRate !== 0))
-      return this.t("gekisoLiveScope", "Three Combo missions with continuous PERFECT playback.");
+      return this.t("gekisoLiveScope", "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported.");
     if (this.gekisoSoloForecast && this.constraints.justRate !== 0)
       return this.t("gekisoConditionsPending", "Conditions pending");
     if (!this.evaluationBasis) return this.t("basisIncomplete", "Complete these values to compare efficiency.");
@@ -4063,17 +4058,31 @@ export class TeamBuilder extends LitElement {
     `;
   }
   render(): TemplateResult {
+    const page = this.workspacePages.find(page => page.id === this.workspaceView)!;
     return html`
       <div class="team-builder">
         <div class="team-builder__content">
+          ${this.renderWorkspaceNavigation()}
           <div class="team-builder__workspace" aria-busy=${String(this.dataLoading || ["loading", "auth-loading"].includes(this.saveState))}>
-            <aside class="team-builder__controls" aria-label=${this.t("planningControls", "Team and resource conditions")}>
+            <header class="team-builder__page-header">
+              <h2 class="team-builder__page-title" tabindex="-1">${page.graphic}${page.label}</h2>
+              <div class="team-builder__actions">
+                ${this.workspaceView === "plan" ? html`<button class="button button--outlined" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button>` : nothing}
+              </div>
+            </header>
+            ${this.error ? html`<p class="team-builder__error" role="alert">${this.error}</p>` : nothing}
+            ${!this.data || !this.sourceReady ? html`<button class="button button--outlined team-builder__retry" ?disabled=${this.dataLoading}
+              @click=${() => this.loadSource(readReleaseServer())}>${clientText(this.locale, "retry", "Retry")}</button>` : nothing}
+            <section id="team-panel-plan" class="team-builder__panel team-builder__controls" aria-label=${page.id === "plan" ? page.label : this.t("planningControls", "Team and resource conditions")} ?hidden=${this.workspaceView !== "plan"}>
               ${this.renderGoals()}
-            </aside>
-            <div class="team-builder__result-area">${this.renderResults()}</div>
+            </section>
+            ${this.renderInventoryPanels()}
+            <section id="team-panel-results" class="team-builder__panel team-builder__result-area" aria-label=${this.t("results", "Candidates")} ?hidden=${this.workspaceView !== "results"}>
+              ${this.renderResults()}
+            </section>
           </div>
         </div>
-        ${this.renderCardPane()}${this.renderSongPane()}${this.renderEventPane()}${this.renderMaintenance()}${this.renderScreenshotImport()}
+        ${this.renderCardPane()}${this.renderSongPane()}${this.renderEventPane()}${this.renderScreenshotImport()}
       </div>
     `;
   }

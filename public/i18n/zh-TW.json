@@ -2839,7 +2839,7 @@
     },
     "personalLiveScore": "個人 Live 分數",
     "scoreDomain": "分數類型",
-    "gekisoLiveScope": "三段皆為 Combo，持續以 PERFECT 演奏。"
+    "gekisoLiveScope": "連續 PERFECT，最多一個 LUCK 區間；不支援自然 JUST。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

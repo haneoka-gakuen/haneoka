@@ -2839,7 +2839,7 @@
     },
     "personalLiveScore": "Personal Live score",
     "scoreDomain": "Score type",
-    "gekisoLiveScope": "Three Combo missions with continuous PERFECT playback."
+    "gekisoLiveScope": "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

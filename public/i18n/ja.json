@@ -2839,7 +2839,7 @@
     },
     "personalLiveScore": "個人Liveスコア",
     "scoreDomain": "スコアの種類",
-    "gekisoLiveScope": "3区間すべてCombo、継続したPERFECTプレイ。"
+    "gekisoLiveScope": "連続PERFECT、LUCK区間は最大1つ。自然発生のJUSTは非対応。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

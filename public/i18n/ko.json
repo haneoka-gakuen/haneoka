@@ -2839,7 +2839,7 @@
     },
     "personalLiveScore": "개인 Live 점수",
     "scoreDomain": "점수 유형",
-    "gekisoLiveScope": "세 구간 모두 Combo, 중단 없는 PERFECT 플레이."
+    "gekisoLiveScope": "연속 PERFECT, LUCK 구간 최대 1개. 자연 발생 JUST는 지원하지 않습니다."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",
