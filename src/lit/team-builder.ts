@@ -12,6 +12,9 @@ import { readReleaseServer } from "../lib/release-server";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { fetchCurrentTeamBuilderIdentity, fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
+import { resourcePlannerStageData } from "../lib/team-builder/data/resource-stage";
+import { resourcePlanInputIssues } from "../lib/team-builder/resource-plan-input";
+import type { ResourcePlannerPreparationInput, ResourcePlannerResult, ResourcePlan, ResourceStageCandidate, ResourcePlanObjective } from "../lib/team-builder/resource-plan-contract";
 import { validateNativeEventScene } from "../lib/team-builder/solver/native-event-scene";
 import { getTeamBuilderCapabilities } from "../lib/team-builder/solver/capabilities";
 import { clearAppBarActions, clearAppBarSearch, setAppBarActions } from "../lib/app-bar";
@@ -111,6 +114,12 @@ type BulkPreview = {
   changes: { kind: Kind; instanceId: string; cardId: number; from: number | null; to: number }[];
   issues: InventoryIssue[];
 };
+type ResourceRunContext = {
+  data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined;
+  signature: string; request: ResourcePlannerPreparationInput;
+};
+type ResourceStage = "normal" | "challenge";
+type ResourceSelection = { chart: string; difficulty: string; start: string; constraints: SearchConstraints | null };
 type WorkspaceView = "plan" | "cards" | "growth" | "results" | "sync";
 const OWNER = "team-builder";
 const OBJECTIVES: Objective[] = ["base-score", "score", "ss-ratio", "event-points", "event-items", "ss-surplus"];
@@ -168,6 +177,15 @@ export class TeamBuilder extends LitElement {
     bulkOnlyMissing: { state: true },
     bulkPreview: { state: true },
     workspaceView: { state: true },
+    planningKind: { state: true },
+    resourceSelection: { state: true },
+    resourceBudget: { state: true },
+    resourceObjectives: { state: true },
+    resourceCriterion: { state: true },
+    resourceSingleHeld: { state: true },
+    resourcePicker: { state: true },
+    resourceProgress: { state: true },
+    resourceCompleted: { state: true },
     searchError: { state: true },
     saveState: { state: true },
     visibleLimit: { state: true },
@@ -248,6 +266,18 @@ export class TeamBuilder extends LitElement {
   declare bulkOnlyMissing: boolean;
   declare bulkPreview: BulkPreview | null;
   declare workspaceView: WorkspaceView;
+  declare planningKind: "team" | "resource";
+  declare resourceSelection: Record<ResourceStage, ResourceSelection>;
+  declare resourceBudget: { boost: number | null; perPlay: number | null; initialCP: number | null; challengeCost: number | null };
+  declare resourceObjectives: ResourcePlanObjective[];
+  declare resourceCriterion: SkillOrderCriterion;
+  declare resourceSingleHeld: boolean;
+  declare resourcePicker: ResourceStage | null;
+  declare resourceProgress: Extract<SolverResponse, { type: "resource-progress" }>["progress"] | null;
+  declare resourceCompleted: { context: ResourceRunContext; result: ResourcePlannerResult; completedAt: string } | null;
+  private resourceActive: ResourceRunContext | null = null;
+  private resourceScope = "";
+  private resourceStageCache?: { data: TeamBuilderData; event: string; value: ReturnType<typeof resourcePlannerStageData> };
   private visitedViews = new Set<WorkspaceView>(["plan"]);
   declare searchError: string;
   declare saveState: string;
@@ -1133,6 +1163,15 @@ export class TeamBuilder extends LitElement {
     this.bulkOnlyMissing = true;
     this.bulkPreview = null;
     this.workspaceView = "plan";
+    this.planningKind = "team";
+    this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
+    this.resourceBudget = { boost: null, perPlay: null, initialCP: null, challengeCost: null };
+    this.resourceObjectives = ["event-points"];
+    this.resourceCriterion = "nominal-mean";
+    this.resourceSingleHeld = false;
+    this.resourcePicker = null;
+    this.resourceProgress = null;
+    this.resourceCompleted = null;
     this.searchError = "";
     this.saveState = "auth-loading";
     this.visibleLimit = 30;
@@ -1208,6 +1247,15 @@ export class TeamBuilder extends LitElement {
   }
   protected updated() {
     if (!this.isConnected) return;
+    const resourceScope = JSON.stringify([this.data?.identity, this.currentOwner !== undefined, this.currentOwner]);
+    if (resourceScope !== this.resourceScope) {
+      this.resourceScope = resourceScope;
+      this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
+      this.resourceBudget = { boost: null, perPlay: null, initialCP: null, challengeCost: null };
+      this.resourceSingleHeld = false;
+      this.resourcePicker = null;
+      this.resourceCompleted = null;
+    }
     if (this.screenshotSession && this.screenshotScope && (
       !this.data || this.data.identity.server !== this.screenshotScope.server ||
       this.data.identity.releaseId !== this.screenshotScope.releaseId || this.data.identity.sourceId !== this.screenshotScope.sourceId ||
@@ -1216,10 +1264,11 @@ export class TeamBuilder extends LitElement {
       !this.inventory || exportInventory(this.inventory) !== this.screenshotScope.inventoryText ||
       this.pendingRebase || this.pendingUniqueness || ["loading", "auth-loading", "conflict", "merge-required", "release-mismatch", "error"].includes(this.saveState)
     )) this.closeScreenshotImport(true);
+    if (this.running && this.resourceActive && !this.resourceContextMatches(this.resourceActive)) this.cancelSearch();
     this.reconcileUnchangedConflict();
     this.images.observe(this);
     const selector = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
-    const modal = this.addingCards || this.selectingSong || this.selectingEvent || Boolean(this.editingId) || Boolean(this.screenshotState);
+    const modal = this.addingCards || this.selectingSong || this.selectingEvent || Boolean(this.resourcePicker) || Boolean(this.editingId) || Boolean(this.screenshotState);
     const content = this.querySelector<HTMLElement>(".team-builder__content");
     // Enable the opener before PaneFocus restores focus when the dialog closes.
     if (content && !modal) content.inert = false;
@@ -1412,17 +1461,19 @@ export class TeamBuilder extends LitElement {
     </aside>`;
   }
   private renderRunActions() {
+    const resource = this.planningKind === "resource";
+    const ready = resource ? Boolean(this.resourcePreparation) : this.canOptimize;
     return html`<div class="team-builder__run-actions">
-      <button type="button" class="button" aria-describedby=${!this.canOptimize ? "team-builder-start-hint" : nothing}
-        ?disabled=${!this.running && !this.canOptimize || this.cancelling}
+      <button type="button" class="button" aria-describedby=${!ready ? "team-builder-start-hint" : nothing}
+        ?disabled=${!this.running && !ready || this.cancelling}
         @click=${() => {
           if (this.running) this.requestCancellation();
-          else { this.startOptimization(); this.openWorkspace("results"); }
+          else { if (resource) this.startResourceOptimization(); else this.startOptimization(); this.openWorkspace("results"); }
         }}>
-        ${this.running ? clientText(this.locale, "cancel", "Cancel") : this.t("optimize", "Find candidates")}
+        ${this.running ? clientText(this.locale, "cancel", "Cancel") : resource ? this.t("resourceCalculate", "Calculate event plan") : this.t("optimize", "Find candidates")}
       </button>
       <p id="team-builder-start-hint" class="team-builder__hint team-builder__start-hint" role="status">
-        ${this.running ? this.searchProgressLabel : !this.canOptimize ? this.optimizationHint : nothing}
+        ${this.running ? this.resourceActive ? this.resourceProgressLabel : this.searchProgressLabel : !ready ? resource ? this.resourceUnavailableHint : this.optimizationHint : nothing}
       </p>
     </div>`;
   }
@@ -1629,6 +1680,7 @@ export class TeamBuilder extends LitElement {
     this.closeScreenshotImport(false);
     this.selectingSong = false;
     this.selectingEvent = false;
+    this.resourcePicker = null;
     this.addingCards = false;
     this.editingId = "";
   }
@@ -2815,6 +2867,9 @@ export class TeamBuilder extends LitElement {
     return this.applyEventScene || this.objectives.includes("event-points");
   }
   private resetEventScene() {
+    this.resourceSingleHeld = false;
+    this.resourceBudget = { ...this.resourceBudget, perPlay: null, challengeCost: null };
+    this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
     this.applyEventScene = false;
     this.eventStartText = "";
     this.eventSingleHeld = false;
@@ -2988,6 +3043,304 @@ export class TeamBuilder extends LitElement {
         `, false)}
       `, true)}
     `;
+  }
+  private get resourceSignature() {
+    return JSON.stringify([this.selectedEvent, this.resourceSelection, this.resourceBudget, this.resourceObjectives, this.resourceCriterion, this.resourceSingleHeld, this.budgetSeconds]);
+  }
+  private resourceContextMatches(context: ResourceRunContext) {
+    return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.resourceSignature && this.sourceReady;
+  }
+  private get resourceProgressLabel() {
+    const progress = this.resourceProgress;
+    if (!progress || progress.phase === "loading") return this.t("searching", "Finding candidates");
+    if (progress.phase === "stage") return this.t("resourceStageProgress", `${this.resourceStageLabel(progress.kind)}: ${progress.chartsCompleted}/${progress.totalCharts} charts · ${progress.evaluated} evaluations`, {
+      stage: this.resourceStageLabel(progress.kind), done: progress.chartsCompleted, total: progress.totalCharts, count: progress.evaluated,
+    });
+    return this.t("resourcePairProgress", `${progress.pairsEvaluated}/${progress.totalPairs} stage pairs`, { done: progress.pairsEvaluated, total: progress.totalPairs });
+  }
+  private startResourceOptimization() {
+    const request = this.resourcePreparation;
+    if (!request || !this.data || !this.inventory) return;
+    this.cancelSearch();
+    const context: ResourceRunContext = { data: this.data, inventory: this.inventory, owner: this.currentOwner, signature: this.resourceSignature, request: structuredClone(request) };
+    const generation = this.requestId, runId = crypto.randomUUID();
+    this.searchError = ""; this.searchStatus = "";
+    let worker: Worker;
+    try { worker = new Worker(new URL("../lib/team-builder/solver/worker.ts", import.meta.url), { type: "module" }); }
+    catch { this.searchError = this.t("unavailable", "Required data or formula is unavailable"); return; }
+    this.worker = worker; this.resourceActive = context; this.running = true; this.searchRunId = runId;
+    this.searchLoading = beginLoading(this.t("resourceCalculate", "Calculate event plan"));
+    worker.onmessage = (event: MessageEvent<SolverResponse>) => {
+      const message = event.data;
+      if (generation !== this.requestId || message.runId !== runId || this.worker !== worker || !this.isConnected || !this.resourceContextMatches(context)) return;
+      if (message.type === "resource-progress") {
+        this.resourceProgress = message.progress;
+        this.searchLoading?.update({ stageLabel: this.resourceProgressLabel });
+        return;
+      }
+      // The shared Worker currently emits its ordinary cancelled result from the common error path.
+      const cancelled = message.type === "result" && message.result.completeness === "cancelled";
+      if (message.type !== "resource-result" && message.type !== "error" && !cancelled) return;
+      if (message.type === "resource-result") this.resourceCompleted = { context, result: message.result, completedAt: new Date().toISOString() };
+      else if (cancelled) this.searchStatus = this.t("cancelled", "Search cancelled");
+      else this.searchError = this.t("unavailable", "Required data or formula is unavailable");
+      this.clearCancellation?.(); this.clearCancellation = undefined;
+      this.searchRunId = undefined; this.searchDispatched = false; this.cancelling = false; this.running = false;
+      this.searchLoading?.finish(); this.searchLoading = undefined; this.resourceActive = null;
+      worker.terminate(); if (this.worker === worker) this.worker = undefined;
+    };
+    worker.onerror = () => {
+      if (generation !== this.requestId || !this.isConnected) return;
+      this.cancelSearch(); this.searchError = this.t("unavailable", "Required data or formula is unavailable");
+    };
+    try { this.searchDispatched = true; worker.postMessage({ type: "resource-prepare", runId, request: context.request } satisfies SolverRequest); }
+    catch { this.cancelSearch(); this.searchError = this.t("unavailable", "Required data or formula is unavailable"); }
+  }
+  private exportResourceResult() {
+    const completed = this.resourceCompleted;
+    if (!completed || this.running || !this.resourceContextMatches(completed.context) || completed.result.completeness === "cancelled") return;
+    void downloadBlob(new Blob([JSON.stringify({ schema: "haneoka-resource-plan-export-v1", request: completed.context.request, result: completed.result, completedAt: completed.completedAt }, null, 2)], { type: "application/json" }), "haneoka-event-plan.json");
+  }
+  private get resourceData() {
+    if (!this.data?.identity.sourceId || !this.selectedEvent) return null;
+    if (this.resourceStageCache?.data !== this.data || this.resourceStageCache.event !== this.selectedEvent)
+      this.resourceStageCache = { data: this.data, event: this.selectedEvent, value: resourcePlannerStageData(this.data, Number(this.selectedEvent)) };
+    return this.resourceStageCache.value;
+  }
+  private updateResourceStage(kind: ResourceStage, update: Partial<ResourceSelection>) {
+    this.resourceSelection = { ...this.resourceSelection, [kind]: { ...this.resourceSelection[kind], ...update } };
+  }
+  private resourceStageLabel(kind: ResourceStage) {
+    return kind === "normal" ? this.t("eventNormal", "Ordinary play") : this.t("eventChallenge", "Challenge play");
+  }
+  private resourceCharts(kind: ResourceStage) {
+    if (!this.data) return [];
+    if (kind === "normal") return Object.entries(this.data.songs).map(([id, song]) => ({
+      id, songId: id, difficulties: dataRows(song.difficulty).filter(row => Number.isSafeInteger(row.difficulty) && typeof row.file === "string"),
+    })).filter(row => row.difficulties.length);
+    return (this.resourceData?.challengeMusic.choices ?? []).filter(row => !row.gaps.length).map(row => ({
+      id: String(row.challengeMusicId), songId: String(row.underlyingSongId), difficulties: row.difficulties,
+    }));
+  }
+  private resourceScene(kind: ResourceStage): NativeEventScene | null {
+    const start = new Date(this.resourceSelection[kind].start).getTime();
+    const windows = this.eventWindows.filter(row => start >= row.start && (row.end === null || start < row.end));
+    const cost = kind === "normal" ? this.resourceBudget.perPlay : this.resourceBudget.challengeCost;
+    const counts: readonly number[] = (kind === "normal" ? this.resourceData?.normalConsumption.counts : this.resourceData?.challengeConsumption.selectableCounts) ?? [];
+    if (!this.data || !this.resourceSingleHeld || windows.length !== 1 || !Number.isSafeInteger(start) || cost === null || !counts.includes(cost)) return null;
+    return { eventId: Number(this.selectedEvent), kind, consumedCount: cost, heldEventIds: [Number(this.selectedEvent)], masterTimeSlot: windows[0]!.slot,
+      liveStartServerTime: { epochMilliseconds: start, source: "explicit-scenario",
+        reference: `resource-scenario:${this.data.identity.server}:${this.data.identity.releaseId}:${this.selectedEvent}:${kind}:${start}:${cost}` } };
+  }
+  // Builds the actual pure-library request; dispatch belongs to the typed Worker route.
+  private get resourcePreparation(): ResourcePlannerPreparationInput | null {
+    const normalScene = this.resourceScene("normal"), challengeScene = this.resourceScene("challenge");
+    const { boost, perPlay, initialCP, challengeCost } = this.resourceBudget;
+    if (!this.data || !this.inventory || !this.canEdit || !normalScene || !challengeScene || boost === null || perPlay === null || initialCP === null || challengeCost === null) return null;
+    const normal = this.resourceSelection.normal, challenge = this.resourceSelection.challenge;
+    if (!normal.constraints || !challenge.constraints) return null;
+    const charts = (kind: ResourceStage) => this.resourceCharts(kind).flatMap(row => {
+      const selection = this.resourceSelection[kind];
+      if (selection.chart && selection.chart !== row.id) return [];
+      return row.difficulties.filter(chart => !selection.difficulty || String(chart.difficulty) === selection.difficulty)
+        .map(chart => ({ id: Number(row.id), difficulty: Number(chart.difficulty) }));
+    });
+    const item = this.resourceData?.items.selectedResource ?? undefined;
+    const request: ResourcePlannerPreparationInput = {
+      schema: "haneoka-resource-plan-request-v1", data: this.data, inventory: this.inventory,
+      parameters: { boostBudget: boost, boostPerNormalPlay: perPlay, initialChallengePoints: initialCP, challengePointCost: challengeCost },
+      objectives: this.resourceObjectives.filter(objective => objective === "event-points" || item !== undefined), skillOrderCriterion: this.resourceCriterion,
+      ...(item ? { itemResource: item } : {}),
+      normal: { mode: "normal", scene: normalScene, constraints: structuredClone(normal.constraints), charts: charts("normal").map(row => ({ songId: row.id, difficulty: row.difficulty })) },
+      challenge: { mode: "normal", scene: challengeScene, constraints: structuredClone(challenge.constraints), charts: charts("challenge").map(row => ({ challengeMusicId: row.id, difficulty: row.difficulty })) },
+      budget: { maxPairs: 100000, maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxCycleStates: 100000, maxCycleTransitions: 2000000 },
+    };
+    return resourcePlanInputIssues(request).length ? null : request;
+  }
+  private get resourceUnavailableHint() {
+    if (!this.selectedEvent) return this.t("chooseEvent", "Choose event");
+    if (!this.resourceData?.challengeMusic.choices.length) return this.t("resourceNoChallenge", "No challenge charts available for this event.");
+    if (!this.resourceData.challengeConsumption.selectableCounts) return this.t("resourceCostUnavailable", "Challenge consumption options are unavailable.");
+    if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && !this.resourceData.items.selectedResource)
+      return this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.");
+    if (!this.resourcePreparation) return this.t("resourceCompleteInputs", "Complete both stages and the resource budget.");
+    return "";
+  }
+  private renderPlanningKind() {
+    return segmented({ label: this.t("planningControls", "Team and resource conditions"), value: this.planningKind, grow: true,
+      options: [{ value: "team", label: this.t("teamSetup", "Team setup") }, { value: "resource", label: this.t("resourcePlan", "Event resource plan") }],
+      onSelect: value => { this.planningKind = value; },
+    });
+  }
+  private get resourceItemsUnresolved() {
+    const items = this.resourceData?.items;
+    return !items?.selectedResource || items.nativeSelectionLaw.status === "unverified" || items.nativeSelectionLaw.gaps.length > 0;
+  }
+  private renderResourcePlanning() {
+    const data = this.resourceData;
+    const costOptions = (values: readonly number[] | null | undefined) => [
+      { value: "", label: this.t("notSet", "Not set") }, ...(values ?? []).map(value => ({ value: String(value), label: String(value) })),
+    ];
+    const setBudget = (key: keyof typeof this.resourceBudget, value: number | null) => { this.resourceBudget = { ...this.resourceBudget, [key]: value }; };
+    return html`<div class="team-builder__resource-plan">
+      <section class="team-builder__section">
+        <div class="team-builder__section-header">
+          ${renderDetailSectionHeading(this.t("resourcePlan", "Event resource plan"), "rewards", { level: 2 })}
+          <button class="button button--outlined" ?disabled=${!this.data} @click=${() => {
+            this.closePane(); this.selectingEvent = true; this.pickerEvent = this.selectedEvent; this.pickerEventStatus = ""; this.pickerQuery = "";
+          }}>${this.t("chooseEvent", "Choose event")}</button>
+        </div>
+        ${this.selectedEvent ? html`<strong>${this.text(this.data?.events[this.selectedEvent]?.title ?? this.data?.events[this.selectedEvent]?.name)}</strong>` : nothing}
+        <div class="team-builder__actions">
+          ${(["event-points", "event-items"] as const).map(objective => this.check(this.t(objective, objective), this.resourceObjectives.includes(objective), checked => {
+            this.resourceObjectives = checked ? [...this.resourceObjectives, objective] : this.resourceObjectives.filter(value => value !== objective);
+          }))}
+        </div>
+        ${this.resourceObjectives.includes("event-items") && this.resourceItemsUnresolved ? html`<p class="team-builder__hint">${this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.")}</p>` : nothing}
+        <p class="team-builder__hint">${this.t("normal", "Normal live")}</p>
+        ${this.select(this.t("skillOrderCriterion", "Skill order"), this.resourceCriterion,
+          (["nominal-mean", "worst-ap"] as const).map(value => ({ value, label: this.criterionLabel(value) })),
+          value => { this.resourceCriterion = value as SkillOrderCriterion; })}
+        ${this.check(this.t("eventSingleHeld", "Only this event is held in this scenario"), this.resourceSingleHeld, value => { this.resourceSingleHeld = value; })}
+      </section>
+      <section class="team-builder__section">
+        ${renderDetailSectionHeading(this.t("resourceBudget", "Resource budget"), "stats", { level: 2 })}
+        <div class="team-builder__fields">
+          ${this.numericField(this.t("resourceBoostBudget", "Available Live Boost"), this.resourceBudget.boost, value => setBudget("boost", value), { min: 0, max: 2000 })}
+          ${this.numericField(this.t("resourceInitialCP", "Current challenge points"), this.resourceBudget.initialCP, value => setBudget("initialCP", value), { min: 0 })}
+          ${this.select(this.t("resourceNormalCost", "Live Boost per ordinary play"), this.resourceBudget.perPlay === null ? "" : String(this.resourceBudget.perPlay), costOptions(data?.normalConsumption.counts), value => setBudget("perPlay", value === "" ? null : Number(value)), !data?.normalConsumption.counts?.length)}
+          ${this.select(this.t("resourceChallengeCost", "Challenge points per challenge play"), this.resourceBudget.challengeCost === null ? "" : String(this.resourceBudget.challengeCost), costOptions(data?.challengeConsumption.selectableCounts), value => setBudget("challengeCost", value === "" ? null : Number(value)), !data?.challengeConsumption.selectableCounts)}
+          ${this.numericField(this.t("budget", "Search budget (seconds)"), this.budgetSeconds, value => { this.budgetSeconds = value ?? 5; }, { min: 1, max: 60 })}
+        </div>
+      </section>
+      <div class="team-builder__resource-stages">
+        ${(["normal", "challenge"] as const).map(kind => this.renderResourceStage(kind))}
+      </div>
+      <p class="team-builder__hint" role="status">${this.resourceUnavailableHint}</p>
+    </div>`;
+  }
+  private renderResourceStage(kind: ResourceStage) {
+    const selection = this.resourceSelection[kind], choices = this.resourceCharts(kind);
+    const selected = choices.find(row => row.id === selection.chart), constraints = selection.constraints;
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.resourceStageLabel(kind), "songs", { level: 2 })}
+      ${selected ? this.songIdentity(selected.songId, selection.difficulty) : html`<p>${this.t("resourceAllSongs", "Compare all available songs")}</p>`}
+      <div class="team-builder__actions">
+        <button class="button button--outlined" ?disabled=${!choices.length} @click=${() => {
+          this.closePane(); this.resourcePicker = kind; this.pickerSong = selection.chart; this.pickerDifficulty = selection.difficulty; this.pickerQuery = ""; this.pickerLimit = 30;
+          this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = "";
+        }}>${this.t("chooseSong", "Choose song")}</button>
+        ${selection.chart ? html`<button class="button button--text" @click=${() => this.updateResourceStage(kind, { chart: "", difficulty: "" })}>${clientText(this.locale, "all", "All")}</button>` : nothing}
+      </div>
+      <md-outlined-text-field type="datetime-local" step="0.001" label=${this.t("eventStart", "Scenario start (local time)")}
+        .value=${selection.start} @input=${(event: Event) => this.updateResourceStage(kind, { start: (event.currentTarget as Control).value })}></md-outlined-text-field>
+      <div class="team-builder__actions">
+        <button class="button button--outlined" ?disabled=${!this.canEdit} @click=${() => {
+          const current = this.constraints;
+          this.updateResourceStage(kind, { constraints: { ...structuredClone(current), excludedSongKeys: [], lockedSongKey: null, justRate: 0, excludeJustMissions: false } });
+        }}>${this.t("resourceUseCards", "Use current card locks and exclusions")}</button>
+        <button class="button button--text" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button>
+      </div>
+      ${constraints ? html`<p class="team-builder__hint">${this.t("locked", "Locked")}: ${constraints.lockedMemberIds.length + constraints.lockedSnapshotIds.length} · ${this.t("excluded", "Excluded")}: ${constraints.excludedMemberIds.length + constraints.excludedSnapshotIds.length}</p>` : nothing}
+    </section>`;
+  }
+  private renderResourceSongPane() {
+    if (!this.resourcePicker) return nothing;
+    const kind = this.resourcePicker, all = this.resourceCharts(kind);
+    const rows = all.filter(row => {
+      const song = this.visualSong(row.songId);
+      return (!this.pickerBand || this.songBands(song).includes(Number(this.pickerBand))) &&
+        (!this.pickerAttribute || String(song.musicType) === this.pickerAttribute) &&
+        (!this.pickerSongDifficulty || row.difficulties.some(chart => String(chart.difficulty) === this.pickerSongDifficulty)) &&
+        songTitle(song, this.locale).text.toLocaleLowerCase().includes(this.pickerQuery.toLocaleLowerCase());
+    });
+    const chosen = all.find(row => row.id === this.pickerSong);
+    return selectionPane({ id: "team-resource-song-picker", title: this.resourceStageLabel(kind),
+      filterLabel: this.t("pickerFilters", "Filters"), filtersOpen: this.pickerFiltersOpen, toggleFilters: () => { this.pickerFiltersOpen = !this.pickerFiltersOpen; },
+      filters: html`
+        ${this.select(clientText(this.locale, "band", "Band"), this.pickerBand, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...Object.entries(this.data?.bands ?? {}).map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name) }))], value => { this.pickerBand = value; this.pickerLimit = 30; })}
+        ${this.select(clientText(this.locale, "attribute", "Attribute"), this.pickerAttribute, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...[...new Set(all.map(row => Number(this.visualSong(row.songId).musicType)))].filter(value => value >= 1 && value <= 5).map(value => ({ value: String(value), label: this.attributeName({ attribute: value }) }))], value => { this.pickerAttribute = value; this.pickerLimit = 30; })}
+        ${this.select(this.t("availableDifficulty", "Available difficulty"), this.pickerSongDifficulty, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...[...new Set(all.flatMap(row => row.difficulties.map(chart => Number(chart.difficulty))))].sort((a,b) => a-b).map(value => ({ value: String(value), label: difficultyKey({ difficulty: value }).toUpperCase() }))], value => { this.pickerSongDifficulty = value; this.pickerLimit = 30; })}
+      `,
+      closeLabel: clientText(this.locale, "close", "Close"), close: () => this.closePane(),
+      searchLabel: clientText(this.locale, "search", "Search"), query: this.pickerQuery, search: value => { this.pickerQuery = value; this.pickerLimit = 30; },
+      kind: "song", selected: this.pickerSong, select: value => { this.pickerSong = value; this.pickerDifficulty = String(all.find(row => row.id === value)?.difficulties[0]?.difficulty ?? ""); },
+      countLabel: this.t("pickerCount", "{count} matching entries", { count: rows.length }), emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
+      moreLabel: clientText(this.locale, "more", "More"), more: rows.length > this.pickerLimit ? () => { this.pickerLimit += 30; } : undefined,
+      items: rows.slice(0, this.pickerLimit).map(row => ({ ...this.songOptions(row.songId), value: row.id })),
+      preview: html`${chosen ? html`${this.songIdentity(chosen.songId, this.pickerDifficulty)}${difficultyPicker({ rows: chosen.difficulties, selected: difficultyKey({ difficulty: this.pickerDifficulty }), locale: this.locale, onSelect: (_key, index) => { this.pickerDifficulty = String(chosen.difficulties[index]?.difficulty ?? ""); } })}` : nothing}
+        <button class="button" ?disabled=${!chosen || !chosen.difficulties.some(row => String(row.difficulty) === this.pickerDifficulty)} @click=${() => {
+          this.updateResourceStage(kind, { chart: this.pickerSong, difficulty: this.pickerDifficulty }); this.closePane();
+        }}>${this.t("useSong", "Use selected song")}</button>`,
+    });
+  }
+  private resourceNumber(value: number | null) {
+    return value === null ? this.t("unavailable", "Required data or formula is unavailable") : value.toLocaleString(this.locale, { maximumFractionDigits: 2 });
+  }
+  private renderResourceStageResult(stage: ResourceStageCandidate) {
+    return html`<section class="team-builder__resource-stage-result">
+      <h3>${this.resourceStageLabel(stage.kind)}</h3>${this.songIdentity(String(stage.songId), String(stage.difficulty))}
+      <div class="collection collection--member team-builder__team-strip">${stage.assignment.memberInstanceIds.map(id => this.resultCard(this.inventory?.members.find(row => row.instanceId === id), "members", id === stage.assignment.leaderInstanceId))}</div>
+      <div class="collection collection--support team-builder__team-strip">${stage.assignment.snapshotInstanceIds.map(id => this.resultCard(this.inventory?.snapshots.find(row => row.instanceId === id), "snapshots"))}</div>
+    </section>`;
+  }
+  private renderResourcePlan(plan: ResourcePlan, key: string) {
+    return html`<article class="team-builder__candidate">
+      ${specList([
+        { label: this.t("event-points", "Event points"), value: this.resourceNumber(plan.totals.eventPoints) },
+        { label: this.t("event-items", "Event items"), value: plan.totals.eventItems === null ? this.t("resourceUnknownItems", "Shop rewards unresolved") : this.resourceNumber(plan.totals.eventItems) },
+        { label: this.t("resourceNormalPlays", "Ordinary plays"), value: this.resourceNumber(plan.totals.normalPlays) },
+        { label: this.t("resourceExpectedChallenges", "Expected challenge plays"), value: this.resourceNumber(plan.totals.expectedChallengePlays) },
+        { label: this.t("resourceBoostRemaining", "Live Boost remaining"), value: this.resourceNumber(plan.totals.boostRemaining) },
+        { label: this.t("resourceCPRemaining", "Expected challenge points remaining"), value: this.resourceNumber(plan.totals.expectedChallengePointsRemaining) },
+      ])}
+      <div class="team-builder__resource-stages">${this.renderResourceStageResult(plan.normal)}${this.renderResourceStageResult(plan.challenge)}</div>
+      ${this.disclosure(`resource-balance-${key}`, this.t("resourceBalance", "Resource balance"), specList([
+        { label: this.t("resourceBoostSpent", "Live Boost spent"), value: this.resourceNumber(plan.totals.boostSpent) },
+        { label: this.t("resourceCPGained", "Expected challenge points earned"), value: this.resourceNumber(plan.totals.expectedChallengePointsGained) },
+        { label: this.t("resourceCPSpent", "Expected challenge points spent"), value: this.resourceNumber(plan.totals.expectedChallengePointsSpent) },
+        { label: this.t("resourceRemainderDistribution", "Remaining challenge points / probability"), value: html`${plan.totals.remainingChallengePoints.map(row => html`<span>${this.resourceNumber(row.value)} · ${row.probability.toLocaleString(this.locale, { style: "percent", maximumFractionDigits: 2 })}<br /></span>`)}` },
+      ]))}
+    </article>`;
+  }
+  private renderResourceResults() {
+    const completed = this.resourceCompleted;
+    const result = completed && this.resourceContextMatches(completed.context) ? completed.result : null;
+    const status = html`${this.searchError ? html`<p class="team-builder__error" role="alert">${this.searchError}</p>` : nothing}
+      <p class="team-builder__hint" role="status">${this.resourceActive && this.running ? this.resourceProgressLabel : this.searchStatus}</p>`;
+    if (!result) return html`${status}<div class="team-builder__results-empty"><p>${this.t("resourceResultsEmpty", "Choose both stages and a resource budget to compare event plans.")}</p></div>`;
+    return html`<div class="team-builder__resource-plan">${status}
+      <div class="team-builder__section-header">
+        ${renderDetailSectionHeading(this.t("resourcePlan", "Event resource plan"), "rewards", { level: 2 })}
+        ${!this.running && result.completeness !== "cancelled" ? iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => this.exportResourceResult() }) : nothing}
+      </div>
+      <p class="team-builder__hint" role="status">${this.t(result.completeness, result.completeness)}</p>
+      ${this.renderResourceRankings(result)}
+    </div>`;
+  }
+  private renderResourceRankings(result: ResourcePlannerResult) {
+    return html`<div class="team-builder__resource-plan">
+      ${(["event-points", "event-items"] as const).map(objective => {
+        const ranking = result.byObjective[objective];
+        if (!ranking) return this.resourceObjectives.includes(objective) ? html`<section class="team-builder__resource-objective">
+          ${renderDetailSectionHeading(this.t(objective, objective), "rewards", { level: 2 })}<p>${this.t("unavailable", "Required data or formula is unavailable")}</p>
+        </section>` : nothing;
+        return html`<section class="team-builder__resource-objective">
+          ${renderDetailSectionHeading(this.t(objective, objective), "rewards", { level: 2 })}
+          <p class="team-builder__hint">${this.t({ proven: "exhaustive", candidate: "chartCandidate", unavailable: "goalUnavailable" }[ranking.status], "Unavailable")}</p>
+          ${ranking.best ? this.renderResourcePlan(ranking.best, `${objective}-best`) : html`<p>${this.t("unavailable", "Required data or formula is unavailable")}</p>`}
+          ${(["normal", "challenge"] as const).map(kind => this.disclosure(`resource-top3-${objective}-${kind}`, html`${this.resourceStageLabel(kind)} · ${this.t("resourceDifferentSongs", "Top 3 different songs")}`,
+            html`<div class="team-builder__resource-plan">${ranking.top3[kind].map((plan, index) => this.renderResourcePlan(plan, `${objective}-${kind}-${index}`))}</div>`))}
+        </section>`;
+      })}
+      ${result.difference ? specList([
+        { label: this.t("resourcePointDifference", "Event points lost with the shop plan"), value: this.resourceNumber(result.difference.eventPointsLostWithItemPlan) },
+        { label: this.t("resourceItemDifference", "Shop rewards lost with the point plan"), value: this.resourceNumber(result.difference.eventItemsLostWithPointPlan) },
+      ]) : nothing}
+    </div>`;
   }
   private renderCardConstraints() {
     return html`<section class="team-builder__section">
@@ -3445,6 +3798,8 @@ export class TeamBuilder extends LitElement {
     this.searchLoading = undefined;
     this.running = false;
     this.progress = null;
+    this.resourceProgress = null;
+    this.resourceActive = null;
     this.searchStatus = "";
     this.completedSearch = null;
     void this.checkpointCache?.flush();
@@ -4078,15 +4433,19 @@ export class TeamBuilder extends LitElement {
             ${!this.data || !this.sourceReady ? html`<button class="button button--outlined team-builder__retry" ?disabled=${this.dataLoading}
               @click=${() => this.loadSource(readReleaseServer())}>${clientText(this.locale, "retry", "Retry")}</button>` : nothing}
             <section id="team-panel-plan" class="team-builder__panel team-builder__controls" aria-label=${page.id === "plan" ? page.label : this.t("planningControls", "Team and resource conditions")} ?hidden=${this.workspaceView !== "plan"}>
-              ${this.renderGoals()}
+              ${this.renderPlanningKind()}
+              <div class="team-builder__controls" ?hidden=${this.planningKind !== "team"}>${this.renderGoals()}</div>
+              <div ?hidden=${this.planningKind !== "resource"}>${this.renderResourcePlanning()}</div>
             </section>
             ${this.renderInventoryPanels()}
             <section id="team-panel-results" class="team-builder__panel team-builder__result-area" aria-label=${this.t("results", "Candidates")} ?hidden=${this.workspaceView !== "results"}>
-              ${this.renderResults()}
+              ${this.renderPlanningKind()}
+              <div ?hidden=${this.planningKind !== "team"}>${this.renderResults()}</div>
+              <div ?hidden=${this.planningKind !== "resource"}>${this.renderResourceResults()}</div>
             </section>
           </div>
         </div>
-        ${this.renderCardPane()}${this.renderSongPane()}${this.renderEventPane()}${this.renderScreenshotImport()}
+        ${this.renderCardPane()}${this.renderSongPane()}${this.renderResourceSongPane()}${this.renderEventPane()}${this.renderScreenshotImport()}
       </div>
     `;
   }

@@ -12,6 +12,7 @@ import type { InventoryV1 } from "../inventory.ts";
 import type { PreparedSong } from "../song-metrics.ts";
 import { calculateNativeSlotPower } from "./native-slot.ts";
 import { floorPowerBP } from "./power.ts";
+import { nativeMusicTypeMatchesCard } from "./native-music-types.ts";
 
 const uniform = (value: number): PowerStats => ({ performance: value, technique: value, visual: value });
 const zero = (): PowerStats => uniform(0);
@@ -109,6 +110,8 @@ export function createNativeNormalSlotResolver(
   inventory: InventoryV1,
   input: OptimizationInput,
   eventPower?: NativeEventPowerResolver,
+  musicTypes?: ReadonlyMap<number, { parameterMusicType: number; skillTargetMusicType: number;
+    musicTypeBaseBonusBP?: number; musicTagBaseBonusBP?: number }>,
 ) {
   const sources = nativeConditionSources(data, inventory);
   const gaps: EvidenceGap[] = [];
@@ -321,6 +324,14 @@ export function createNativeNormalSlotResolver(
         leader = members.get(assignment.leaderInstanceId);
       const song = songs.get(prepared.song.songId),
         local: EvidenceGap[] = [];
+      const override = musicTypes?.get(prepared.song.songId);
+      const parameterMusicType = override?.parameterMusicType ?? song?.musicType ?? null;
+      const skillTargetMusicType = override?.skillTargetMusicType ?? song?.musicType ?? null;
+      if (override && [parameterMusicType, skillTargetMusicType].some((value) =>
+        value === null || !int(value) || !((value >= 0 && value <= 5) || value === 99)))
+        local.push(gap("native-challenge-music-type-unresolved", prepared.song.key));
+      if (override && [override.musicTypeBaseBonusBP, override.musicTagBaseBonusBP].some((value) =>
+        value !== undefined && !int(value))) local.push(gap("native-challenge-music-bonus-unresolved", prepared.song.key));
       const eventBonuses = eventPower?.resolvePower(assignment);
       if (eventBonuses) {
         local.push(...eventBonuses.gaps);
@@ -332,7 +343,7 @@ export function createNativeNormalSlotResolver(
         )
           local.push(gap("native-event-slot-bonus-unresolved", prepared.song.key));
       }
-      if (!leader || !song || song.musicType === null || song.bestMusicTagIds === null)
+      if (!leader || !song || parameterMusicType === null || skillTargetMusicType === null || song.bestMusicTagIds === null)
         local.push(gap("native-normal-formation-or-song-unresolved", prepared.song.key));
       const leaderBonuses = selected.map(zero);
       for (const effect of leader?.leaderEffects ?? []) {
@@ -342,7 +353,7 @@ export function createNativeNormalSlotResolver(
           local.push(gap("native-cumulative-leader-rule-unresolved", `effect:${effect.id}`));
           continue;
         }
-        const condition = leaderCondition(Number(effect.skillConditionGroup), selected, song?.musicType ?? null, local);
+        const condition = leaderCondition(Number(effect.skillConditionGroup), selected, skillTargetMusicType, local);
         if (condition === null) {
           local.push(gap("native-leader-target-state-unresolved", `effect:${effect.id}`));
           continue;
@@ -382,9 +393,10 @@ export function createNativeNormalSlotResolver(
           bandItemBonusBP: member.value,
           leaderSkillBonusBP: leaderBonuses[slot]!,
           typeLinkBonusBP: uniform(typeLinkBP),
-          musicTypeBonusBP: member.cardType === song.musicType ? musicTypeBaseBP + member.musicTypeBonusBP : 0,
+          musicTypeBonusBP: parameterMusicType !== null && nativeMusicTypeMatchesCard(parameterMusicType, member.cardType)
+            ? (override?.musicTypeBaseBonusBP ?? musicTypeBaseBP) + member.musicTypeBonusBP : 0,
           musicTagBonusBP: member.tags!.some((id) => song.bestMusicTagIds!.includes(id))
-            ? musicTagBaseBP + member.musicTagBonusBP
+            ? (override?.musicTagBaseBonusBP ?? musicTagBaseBP) + member.musicTagBonusBP
             : 0,
           vipBonusBP,
         });

@@ -194,7 +194,16 @@
     align-items: start;
     gap: var(--md-sys-spacing-6);
   }
-  .team-builder__panel[hidden] { display: none; }
+  .team-builder__panel[hidden],
+  .team-builder__panel > [hidden] { display: none; }
+  .team-builder__resource-plan,
+  .team-builder__resource-objective,
+  .team-builder__resource-stage-result { display: grid; min-width: 0; gap: var(--md-sys-spacing-4); align-content: start; }
+  .team-builder__resource-stages { display: grid; min-width: 0; gap: var(--md-sys-spacing-4); }
+  .team-builder__resource-stage-result h3 { margin: 0; }
+  @media (min-width: 1200px) {
+    .team-builder__resource-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .team-builder__panel { min-width: 0; }
   .team-builder__sidebar {
     display: grid;

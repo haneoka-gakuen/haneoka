@@ -5,6 +5,8 @@ import { prepareEvaluationForSearch } from "./evaluation.ts";
 import { loadSongOptions } from "./song-loader.ts";
 import { createSearchCheckpoint, restoreSearchCheckpoint, searchFingerprint } from "./search-checkpoint.ts";
 import { validateSearchBudget } from "./search-budget.ts";
+import { prepareResourcePlanStages } from "./native-challenge-stage-adapter.ts";
+import { optimizeFixedResourcePlans } from "../resource-planner.ts";
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SolverRequest>) => void) | null;
   postMessage(message: SolverResponse): void;
@@ -19,7 +21,7 @@ scope.onmessage = (event) => {
     }
     return;
   }
-  if (message.type !== "start" && message.type !== "prepare") return;
+  if (message.type !== "start" && message.type !== "prepare" && message.type !== "resource-prepare") return;
   if (active) {
     active.cancelled = true;
     active.controller.abort();
@@ -27,6 +29,27 @@ scope.onmessage = (event) => {
   const run = { runId: message.runId, cancelled: false, controller: new AbortController() };
   active = run;
   const execute = async () => {
+    if (message.type === "resource-prepare") {
+      const started = performance.now();
+      scope.postMessage({ type: "resource-progress", runId: run.runId, progress: { phase: "loading" } });
+      const stages = await prepareResourcePlanStages(message.request, {
+        cancelled: () => run.cancelled,
+        progress: (progress) => { if (active === run) scope.postMessage({ type: "resource-progress",
+          runId: run.runId, progress: { phase: "stage", ...progress } }); },
+      });
+      if (active !== run) return;
+      const remaining = Math.max(1, Math.floor(message.request.budget.maxMilliseconds - (performance.now() - started)));
+      const result = await optimizeFixedResourcePlans({ ...stages, budget: { ...stages.budget, maxMilliseconds: remaining } }, {
+        cancelled: () => run.cancelled,
+        progress: (progress) => { if (active === run) scope.postMessage({ type: "resource-progress", runId: run.runId, progress }); },
+      });
+      result.elapsedMs = performance.now() - started;
+      if (active === run) {
+        scope.postMessage({ type: "resource-result", runId: run.runId, result });
+        active = null;
+      }
+      return;
+    }
     validateSearchBudget(message.type === "prepare" ? message.request.budget : message.input.budget);
     let input: OptimizationInput | undefined;
     let preparedSongs: SongOption[] = [];
@@ -122,7 +145,12 @@ scope.onmessage = (event) => {
   };
   void execute().catch((error: unknown) => {
     if (active === run) {
-      if (run.cancelled)
+      if (run.cancelled && message.type === "resource-prepare")
+        scope.postMessage({ type: "resource-result", runId: run.runId, result: {
+          schema: "haneoka-resource-plan-result-v1", byObjective: {}, completeness: "cancelled",
+          elapsedMs: 0, pairsEvaluated: 0, difference: null, scope: "fixed-normal-challenge-pair-requested-domain",
+        } });
+      else if (run.cancelled)
         scope.postMessage({
           type: "result",
           runId: run.runId,

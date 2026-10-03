@@ -1,6 +1,8 @@
 import type { TeamBuilderData } from "./data.ts";
 import type { InventoryV1 } from "./inventory.ts";
 import type { NativeGekisoPlans, NativeGekisoSongPlan } from "./solver/native-gekiso-evaluation.ts";
+import type { ResourcePlannerPreparationInput, ResourcePlannerProgress, ResourcePlannerResult } from "./resource-plan-contract.ts";
+import type { ResourceStagePreparationProgress } from "./solver/native-challenge-stage-adapter.ts";
 /** Serializable inputs shared by the inventory adapter, solver worker and UI. */
 export interface ReleaseIdentity {
   server: string;
@@ -320,10 +322,14 @@ export interface NativeEventScene {
   };
 }
 export type SolverRequest =
+  | { type: "resource-prepare"; runId: string; request: ResourcePlannerPreparationInput }
   | { type: "prepare"; runId: string; request: WorkerPreparationInput; checkpoint?: SearchCheckpoint }
   | { type: "start"; runId: string; input: OptimizationInput; checkpoint?: SearchCheckpoint }
   | { type: "cancel"; runId: string };
 export type SolverResponse =
+  | { type: "resource-progress"; runId: string; progress:
+      { phase: "loading" } | ({ phase: "stage" } & ResourceStagePreparationProgress) | ResourcePlannerProgress }
+  | { type: "resource-result"; runId: string; result: ResourcePlannerResult }
   | { type: "progress"; runId: string; progress: SearchProgress }
   | { type: "result"; runId: string; result: SearchResult; checkpoint?: SearchCheckpoint; reusedCheckpoint?: boolean }
   | { type: "error"; runId: string; code: string };

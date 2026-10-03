@@ -1,6 +1,10 @@
 import type { EvidenceGap, NativeRuleDomain, NativeRuleEvidence, ReleaseIdentity } from "../contracts.ts";
 
 const fingerprints = {
+  "challenge-context": [{
+    methodFingerprint: "a29abed8f286a269d902d5430e99bd10cf698c6d6642c562a36e712e115011d5",
+    abiFingerprint: "1793aa00193d856dd0db4741cb2b00046eb6900df3dadcfd3676e98458966162",
+  }],
   "normal-score": [
     {
       methodFingerprint: "66aed236ebe536279fb414eb0f94974af8377b3734ebc4c500bdf258b9777861",

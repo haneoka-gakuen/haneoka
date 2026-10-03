@@ -1,5 +1,6 @@
 import type { PowerStats, ReleaseIdentity } from "./contracts";
 import { projectEventDetail } from "./data/events";
+import { adaptChallengeMusicTable, type ChallengeMusicTable } from "./data/resource-stage";
 import { adaptRuntimeRules, adaptChallengePointTable, adaptBoostTables, adaptGekisoTimelineTables, GEKISO_TIMELINE_MASTER_TABLES, type RuntimeRules, type LiveChallengePointTable } from "./data/runtime-rules";
 import { nativeRuleSupports } from "./solver/native-rule-profile";
 import { withNativeRuleEvidence } from "./data/native-rule-evidence";
@@ -63,6 +64,7 @@ export interface TeamBuilderData {
   gekisoRules: DataRow;
   runtimeRules?: RuntimeRules;
   challengePointTable?: LiveChallengePointTable;
+  challengeMusicTable?: ChallengeMusicTable;
   gaps: string[];
 }
 export const objectRow = (value: unknown): DataRow =>
@@ -223,6 +225,7 @@ export function adaptTeamBuilderData(
   };
   const growth = Object.fromEntries(growthKeys.map((key) => [key, dataRows(progression[key]).map(nativeRow)]));
   const challengePointTable = adaptChallengePointTable(identity, objectRow(documents["runtime-rules"]).challengePointTable);
+  const challengeMusicTable = adaptChallengeMusicTable(identity, objectRow(documents["runtime-rules"]).challengeMusicTable);
   const boosts = adaptBoostTables(identity, objectRow(documents["runtime-rules"]).boostTables);
   const liveTools = compactNative(
     pick(objectRow(documents["live-tools"]), [
@@ -340,6 +343,7 @@ export function adaptTeamBuilderData(
     gekisoRules,
     runtimeRules: adaptRuntimeRules(identity, documents["runtime-rules"]),
     ...(challengePointTable ? { challengePointTable } : {}),
+    ...(challengeMusicTable ? { challengeMusicTable } : {}),
     gaps: [
       "full-player-and-song-power-stacking-unresolved",
       ...(!nativeSnapshotEquipRuleKnown(identity) ? ["native-snapshot-equip-rule-unverified-for-source"] : []),

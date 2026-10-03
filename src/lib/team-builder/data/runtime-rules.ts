@@ -65,12 +65,13 @@ export async function readRuntimeRulesDocument(identity: RuntimeRulesIdentity, r
     for (const [key, table] of batch) tables[key] = table;
   }
   const challengePointTable = { ...await readTable("MasterLiveChallengePoint"), identity: { ...pin } };
+  const challengeMusicTable = { ...await readTable("MasterChallengeMusic"), identity: { ...pin } };
   const boosts = await Promise.all(Object.entries(BOOST_MASTER_TABLES).map(async ([key, table]) =>
     [key, { ...await readTable(table), identity: { ...pin } }] as const));
   const gekiso = await Promise.all(Object.entries(GEKISO_TIMELINE_MASTER_TABLES).map(async ([key, table]) =>
     [key, { ...await readTable(table), identity: { ...pin } }] as const));
   return {
-    schema: "haneoka-team-runtime-rules-v1", ...pin, tables, challengePointTable,
+    schema: "haneoka-team-runtime-rules-v1", ...pin, tables, challengePointTable, challengeMusicTable,
     boostTables: Object.fromEntries(boosts),
     gekisoTables: Object.fromEntries(gekiso),
   };
