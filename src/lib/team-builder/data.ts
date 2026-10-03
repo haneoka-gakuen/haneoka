@@ -1,6 +1,6 @@
 import type { PowerStats, ReleaseIdentity } from "./contracts";
 import { projectEventDetail } from "./data/events";
-import { adaptRuntimeRules, adaptChallengePointTable, adaptBoostTables, type RuntimeRules, type LiveChallengePointTable } from "./data/runtime-rules";
+import { adaptRuntimeRules, adaptChallengePointTable, adaptBoostTables, adaptGekisoTimelineTables, GEKISO_TIMELINE_MASTER_TABLES, type RuntimeRules, type LiveChallengePointTable } from "./data/runtime-rules";
 import { nativeRuleSupports } from "./solver/native-rule-profile";
 import { withNativeRuleEvidence } from "./data/native-rule-evidence";
 
@@ -228,8 +228,12 @@ export function adaptTeamBuilderData(
     pick(objectRow(documents["live-tools"]), [
       "liveSettings", "scoreRanks", "noteParameters", "judgementParameters", "judgementTiming",
       "comboScoreBonuses", "liveBoostBonuses", "challengeBoostBonuses", "tableAvailability", "expRewards",
+      "gekisouRankingScoreBonuses", "gekisouLuckBasePoints", "gekisouLuckBonusLots",
     ]),
   ) as DataRow;
+  const gekisoRules = compactNative(objectRow(documents.gekisou)) as DataRow;
+  const gekiso = adaptGekisoTimelineTables(identity, objectRow(documents["runtime-rules"]).gekisoTables, liveTools, gekisoRules);
+  for (const key of Object.keys(GEKISO_TIMELINE_MASTER_TABLES)) delete liveTools[key];
   return {
     schema: "haneoka-team-builder-data-v1",
     identity: { ...identity },
@@ -330,10 +334,10 @@ export function adaptTeamBuilderData(
       ]),
     ) as DataRow,
     liveTools: {
-      ...liveTools, ...boosts.rows,
-      tableAvailability: { ...objectRow(liveTools.tableAvailability), ...boosts.availability },
+      ...liveTools, ...boosts.rows, ...gekiso.rows,
+      tableAvailability: { ...objectRow(liveTools.tableAvailability), ...boosts.availability, ...gekiso.availability },
     },
-    gekisoRules: compactNative(objectRow(documents.gekisou)) as DataRow,
+    gekisoRules,
     runtimeRules: adaptRuntimeRules(identity, documents["runtime-rules"]),
     ...(challengePointTable ? { challengePointTable } : {}),
     gaps: [

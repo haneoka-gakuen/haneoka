@@ -7472,6 +7472,7 @@ def _live_tools(data: BuildData) -> dict[str, Any]:
         "MasterLiveTotalHighScoreRating", "MasterLiveSettings",
         "MasterLiveJudgementTiming", "MasterLiveJudgementParameter",
         "MasterLiveNoteParameter", "MasterSkillRating",
+        "MasterLiveGekisouRankingScoreBonus", "MasterLiveGekisouLuckBasePoint", "MasterLiveGekisouLuckBonusLot",
     ]
     return {
         "enums": {
@@ -7500,6 +7501,14 @@ def _live_tools(data: BuildData) -> dict[str, Any]:
         "challengeBoostBonuses": exact(
             "MasterChallengeMusicBoostBonus", "_consumedChallengePointCount", "_id"
         ),
+        **{
+            key: exact(table, "_id")
+            for key, table in {
+                "gekisouRankingScoreBonuses": "MasterLiveGekisouRankingScoreBonus",
+                "gekisouLuckBasePoints": "MasterLiveGekisouLuckBasePoint",
+                "gekisouLuckBonusLots": "MasterLiveGekisouLuckBonusLot",
+            }.items() if table in data.tables
+        },
         "tableAvailability": {
             key: {
                 "sourceTable": table,
@@ -7509,6 +7518,9 @@ def _live_tools(data: BuildData) -> dict[str, Any]:
             for key, table in {
                 "liveBoostBonuses": "MasterLiveMusicBoostBonus",
                 "challengeBoostBonuses": "MasterChallengeMusicBoostBonus",
+                "gekisouRankingScoreBonuses": "MasterLiveGekisouRankingScoreBonus",
+                "gekisouLuckBasePoints": "MasterLiveGekisouLuckBasePoint",
+                "gekisouLuckBonusLots": "MasterLiveGekisouLuckBonusLot",
             }.items()
         },
         "bandHighScoreRatings": exact(

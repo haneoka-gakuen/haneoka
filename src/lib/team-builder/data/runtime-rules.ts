@@ -14,10 +14,21 @@ export const BOOST_MASTER_TABLES = {
   liveBoostBonuses: "MasterLiveMusicBoostBonus",
   challengeBoostBonuses: "MasterChallengeMusicBoostBonus",
 } as const;
+export const GEKISO_TIMELINE_MASTER_TABLES = {
+  gekisouRankingScoreBonuses: "MasterLiveGekisouRankingScoreBonus",
+  gekisouLuckBasePoints: "MasterLiveGekisouLuckBasePoint",
+  gekisouLuckBonusLots: "MasterLiveGekisouLuckBonusLot",
+} as const;
 export interface RuntimeRuleTable {
   sourceTable: string;
   status: "ready" | "empty" | "missing";
   rows: DataRow[];
+}
+export interface GekisoTimelineTableAvailability {
+  identity: TeamBuilderData["identity"];
+  sourceTable: string;
+  status: RuntimeRuleTable["status"];
+  rowCount: number | null;
 }
 export interface LiveChallengePointTable extends RuntimeRuleTable {
   sourceTable: "MasterLiveChallengePoint";
@@ -56,10 +67,47 @@ export async function readRuntimeRulesDocument(identity: RuntimeRulesIdentity, r
   const challengePointTable = { ...await readTable("MasterLiveChallengePoint"), identity: { ...pin } };
   const boosts = await Promise.all(Object.entries(BOOST_MASTER_TABLES).map(async ([key, table]) =>
     [key, { ...await readTable(table), identity: { ...pin } }] as const));
+  const gekiso = await Promise.all(Object.entries(GEKISO_TIMELINE_MASTER_TABLES).map(async ([key, table]) =>
+    [key, { ...await readTable(table), identity: { ...pin } }] as const));
   return {
     schema: "haneoka-team-runtime-rules-v1", ...pin, tables, challengePointTable,
     boostTables: Object.fromEntries(boosts),
+    gekisoTables: Object.fromEntries(gekiso),
   };
+}
+
+/** Known collection rows are reusable; an unobserved empty legacy array is not an empty table. */
+export function adaptGekisoTimelineTables(identity: TeamBuilderData["identity"], value: unknown, liveTools: DataRow, legacyRules: DataRow) {
+  const input = objectRow(value), rows: Record<string, DataRow[]> = {}, availability: Record<string, GekisoTimelineTableAvailability> = {};
+  const legacy = { gekisouRankingScoreBonuses: "rankingScoreBonuses", gekisouLuckBasePoints: "luckBasePoints", gekisouLuckBonusLots: "luckBonusLots" };
+  for (const [key, sourceTable] of Object.entries(GEKISO_TIMELINE_MASTER_TABLES)) {
+    const table = objectRow(input[key]);
+    let status: RuntimeRuleTable["status"] = "missing", observed: DataRow[] | undefined;
+    if (Object.keys(table).length) {
+      const pin = objectRow(table.identity);
+      if (!identity.sourceId || pin.server !== identity.server || pin.releaseId !== identity.releaseId || pin.sourceId !== identity.sourceId)
+        throw new Error("Gekiso timeline table identity mismatch");
+      if (table.sourceTable !== sourceTable || !["ready", "empty", "missing"].includes(String(table.status)) ||
+          !Array.isArray(table.rows) || table.rows.some((row) => !row || typeof row !== "object" || Array.isArray(row)) ||
+          (table.status === "ready" ? !table.rows.length : table.rows.length !== 0))
+        throw new Error("Gekiso timeline table status or rows malformed");
+      status = table.status as RuntimeRuleTable["status"];
+      if (status !== "missing") observed = table.rows.map(nativeRow);
+    }
+    if (!observed && identity.sourceId && !Object.keys(table).length) {
+      const projected = liveTools[key], old = legacyRules[legacy[key as keyof typeof legacy]];
+      const meta = objectRow(objectRow(liveTools.tableAvailability)[key]);
+      const validRows = (value: unknown): value is DataRow[] => Array.isArray(value) && value.every((row) =>
+        !!row && typeof row === "object" && !Array.isArray(row) && (objectRow(row).sourceTable === undefined || objectRow(row).sourceTable === sourceTable));
+      if (validRows(projected) && projected.length) { observed = projected.map(nativeRow); status = "ready"; }
+      else if (Array.isArray(projected) && meta.sourceTable === sourceTable && meta.status === "empty" && meta.rowCount === 0) {
+        observed = []; status = "empty";
+      } else if (validRows(old) && old.length) { observed = old.map(nativeRow); status = "ready"; }
+    }
+    if (observed) rows[key] = observed;
+    availability[key] = { identity: { ...identity }, sourceTable, status, rowCount: observed ? observed.length : null };
+  }
+  return { rows, availability };
 }
 export function adaptRuntimeRules(identity: TeamBuilderData["identity"], value: unknown): RuntimeRules {
   const document = objectRow(value);

@@ -2374,6 +2374,9 @@ const TEAM_BUILDER_RUNTIME_MASTER_TABLES: ReadonlySet<string> = new Set([
   "MasterLiveChallengePoint",
   "MasterLiveMusicBoostBonus",
   "MasterChallengeMusicBoostBonus",
+  "MasterLiveGekisouRankingScoreBonus",
+  "MasterLiveGekisouLuckBasePoint",
+  "MasterLiveGekisouLuckBonusLot",
 ]);
 
 async function handleTeamBuilderDataApi(
