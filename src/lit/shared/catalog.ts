@@ -91,8 +91,10 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
     );
   };
   resetDeadline();
+  let failedStatus: number | undefined;
   try {
     const response = await fetch(url, { ...init, headers, signal: controller.signal });
+    if (!response.ok) failedStatus = response.status;
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     let text = "";
@@ -127,6 +129,12 @@ export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> 
     }
     return value as T;
   } catch (error) {
+    // Caller cancellation belongs to the obsolete request, not a new permission failure.
+    if (source?.aborted) throw source.reason;
+    // The received HTTP failure remains authoritative if its body or deadline fails.
+    if (failedStatus !== undefined)
+      throw error instanceof JsonResponseError && error.status === failedStatus
+        ? error : new JsonResponseError(failedStatus, null);
     // WebKit may replace the supplied abort reason with a generic fetch error.
     if (controller.signal.aborted) throw controller.signal.reason;
     throw error;
