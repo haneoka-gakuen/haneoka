@@ -1253,7 +1253,9 @@
     "followers": "Followers",
     "gameAccounts": "Game accounts",
     "uploadPolicy": "Up to {count} attachments · {size} MiB per file",
-    "uploadFileTooLarge": "Each file must be 128 MiB or smaller."
+    "uploadFileTooLarge": "Each file must be 128 MiB or smaller.",
+    "stampDraftRetained": "Stamp draft saved",
+    "leaveStampDraftBody": "Text and the stamp PNG stay on this device. Unpublished uploads will be removed."
   },
   "adminPage": {
     "title": "Admin",
@@ -2512,7 +2514,9 @@
     "frameWidth": "Text frame width",
     "frameHeight": "Text frame height",
     "frameAuto": "Fit frame to text",
-    "frameOverflow": "Text exceeds the frame."
+    "frameOverflow": "Text exceeds the frame.",
+    "communityPublish": "Post to community",
+    "communityPrepareFailed": "Could not save the image for your post. Try again."
   },
   "teamBuilder": {
     "title": "Team builder",

@@ -1,4 +1,5 @@
 import { defaultStampText, type StampText } from "./render";
+import type { StampCharacterColor } from "./colors";
 export interface StampImageTransform {
   x: number;
   y: number;
@@ -37,4 +38,21 @@ export function createStampImageLayer(): StampLayer {
     ...createStampLayer({ ...defaultStampText(), text: "", font: "auto" }),
     image: { x: 50, y: 50, scale: 100, rotation: 0 },
   };
+}
+
+/** Apply a confirmed stamp character's foreground color without changing the composition. */
+export function recolorStampTextLayers(
+  layers: readonly StampLayer[],
+  character: Pick<StampCharacterColor, "id" | "color">,
+): StampLayer[] {
+  return layers.map((layer) =>
+    layer.image
+      ? layer
+      : {
+          ...layer,
+          settings: copyStampText({ ...layer.settings, fill: character.color }),
+          colorCharacter: character.id,
+          colorWasChosen: false,
+        },
+  );
 }

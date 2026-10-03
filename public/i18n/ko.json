@@ -1253,7 +1253,9 @@
     "followers": "팔로워",
     "gameAccounts": "게임 계정",
     "uploadPolicy": "첨부 파일 최대 {count}개 · 파일당 {size} MiB",
-    "uploadFileTooLarge": "파일은 각각 128 MiB 이하여야 합니다."
+    "uploadFileTooLarge": "파일은 각각 128 MiB 이하여야 합니다.",
+    "stampDraftRetained": "스탬프 초안 저장됨",
+    "leaveStampDraftBody": "글과 스탬프 PNG는 이 기기에 남습니다. 게시하지 않은 업로드는 삭제됩니다."
   },
   "adminPage": {
     "title": "관리",
@@ -2512,7 +2514,9 @@
     "frameWidth": "텍스트 상자 너비",
     "frameHeight": "텍스트 상자 높이",
     "frameAuto": "글자에 맞게 상자 자동 조정",
-    "frameOverflow": "텍스트가 상자를 벗어납니다."
+    "frameOverflow": "텍스트가 상자를 벗어납니다.",
+    "communityPublish": "커뮤니티에 게시",
+    "communityPrepareFailed": "게시할 이미지를 저장하지 못했습니다. 다시 시도해 주세요."
   },
   "teamBuilder": {
     "title": "팀 편성",

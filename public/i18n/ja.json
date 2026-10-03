@@ -1253,7 +1253,9 @@
     "followers": "フォロワー",
     "gameAccounts": "ゲームアカウント",
     "uploadPolicy": "添付ファイル{count}個まで · 1ファイル{size} MiBまで",
-    "uploadFileTooLarge": "1ファイル128 MiB以下にしてください。"
+    "uploadFileTooLarge": "1ファイル128 MiB以下にしてください。",
+    "stampDraftRetained": "スタンプの下書きを保存しました",
+    "leaveStampDraftBody": "文章とスタンプPNGはこの端末に残ります。未公開のアップロードは削除されます。"
   },
   "adminPage": {
     "title": "管理",
@@ -2512,7 +2514,9 @@
     "frameWidth": "文字枠の幅",
     "frameHeight": "文字枠の高さ",
     "frameAuto": "文字に合わせて枠を自動調整",
-    "frameOverflow": "文字が枠からはみ出しています。"
+    "frameOverflow": "文字が枠からはみ出しています。",
+    "communityPublish": "コミュニティに投稿",
+    "communityPrepareFailed": "投稿用の画像を保存できませんでした。もう一度お試しください。"
   },
   "teamBuilder": {
     "title": "編成シミュレーター",

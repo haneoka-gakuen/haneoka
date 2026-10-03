@@ -1253,7 +1253,9 @@
     "followers": "關注者",
     "gameAccounts": "遊戲帳號",
     "uploadPolicy": "最多{count}個附件，每個檔案不超過{size} MiB",
-    "uploadFileTooLarge": "每個檔案不能超過128 MiB。"
+    "uploadFileTooLarge": "每個檔案不能超過128 MiB。",
+    "stampDraftRetained": "表情草稿已儲存",
+    "leaveStampDraftBody": "文字和表情 PNG 會保留在此裝置，未發布的上傳附件會移除。"
   },
   "adminPage": {
     "title": "管理",
@@ -2512,7 +2514,9 @@
     "frameWidth": "文字框寬度",
     "frameHeight": "文字框高度",
     "frameAuto": "依內容自動調整文字框",
-    "frameOverflow": "文字超出文字框。"
+    "frameOverflow": "文字超出文字框。",
+    "communityPublish": "發佈到社群",
+    "communityPrepareFailed": "無法儲存發文圖片，請重試。"
   },
   "teamBuilder": {
     "title": "配隊工具",

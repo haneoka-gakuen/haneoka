@@ -1,6 +1,25 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { ref } from "lit/directives/ref.js";
+import { prepareMaterialProgress } from "../../lib/loading-progress";
 import { icon } from "./icon";
 import { nextImageCandidate } from "./lazy-images";
+import "@material/web/progress/circular-progress.js";
+
+/** Native Material progress; decorative by default inside a named media frame. */
+export function mediaProgress(options: { label?: string; value?: number } = {}): TemplateResult {
+  const value = typeof options.value === "number" && Number.isFinite(options.value)
+    ? Math.min(1, Math.max(0, options.value)) : undefined;
+  return html`
+    <md-circular-progress
+      ${ref(prepareMaterialProgress)}
+      class="media-loading__progress"
+      ?indeterminate=${value === undefined}
+      .value=${value ?? 0}
+      aria-label=${options.label ?? nothing}
+      aria-hidden=${options.label ? nothing : "true"}
+    ></md-circular-progress>
+  `;
+}
 
 /**
  * Collection tile — a Material card with media.
@@ -157,6 +176,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
       <span class="tile__media-state" role="img" aria-label=${options.label} title=${options.label}>
         ${icon("broken_image", 24)}
       </span>
+      ${mediaProgress()}
       ${(options.marks || []).map((mark) =>
         mark
           ? html`

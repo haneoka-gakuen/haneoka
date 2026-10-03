@@ -73,6 +73,16 @@ export async function enqueueNativeMediaJob(env: Env, id: string): Promise<void>
   await env.MEDIA_QUEUE.send({ attachmentId: id, version: 1 });
 }
 
+export async function retryNativeMediaJob(env: Env, id: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE community_media_job SET state='queued',attempts=0,progress=0,error=NULL,updated_at=?
+    WHERE attachment_id=? AND state='failed' AND EXISTS(SELECT 1 FROM community_attachment WHERE id=? AND status='scanning' AND deleted_at IS NULL)`,
+  )
+    .bind(Date.now(), id, id)
+    .run();
+  await enqueueNativeMediaJob(env, id);
+}
+
 function presentation(id: string, job: MediaJobRow | undefined, entries: MediaVariantRow[]) {
   const media = entries.find((entry) => entry.kind === "media"),
     poster = entries.find((entry) => entry.kind === "poster"),
@@ -148,6 +158,38 @@ async function removeNative(env: Env, id: string) {
     const response = await processor(env, id).fetch(new Request(`http://media/jobs/${id}`, { method: "DELETE" }));
     await response.body?.cancel();
   } catch {}
+}
+
+// Include unpublished derivatives: a worker can lose its lease after R2 put
+// but before the variant row is inserted. Their attachment prefix is stable.
+export async function cleanupNativeMediaStorage(env: Env, id: string, originalKey: string): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE community_media_job SET state='failed',error='attachment_deleted',lease_token=NULL,lease_until=NULL,updated_at=? WHERE attachment_id=? AND state!='failed'",
+  )
+    .bind(Date.now(), id)
+    .run();
+  await removeNative(env, id);
+  await env.COMMUNITY_UPLOADS.delete(originalKey);
+  let cursor: string | undefined;
+  do {
+    const listing = await env.COMMUNITY_UPLOADS.list({ prefix: `media/v1/${id}/`, ...(cursor ? { cursor } : {}) });
+    if (listing.objects.length) await env.COMMUNITY_UPLOADS.delete(listing.objects.map((object) => object.key));
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor);
+}
+
+async function discardOutputs(env: Env, id: string, keys: string[]): Promise<void> {
+  try {
+    await env.COMMUNITY_UPLOADS.delete(keys);
+  } catch (error) {
+    // Reopen cleanup even when deletion already marked this attachment done.
+    await env.DB.prepare(
+      "UPDATE community_attachment SET object_deleted_at=NULL,updated_at=? WHERE id=? AND status='deleted'",
+    )
+      .bind(Date.now(), id)
+      .run();
+    throw error;
+  }
 }
 
 async function processMedia(env: Env, id: string): Promise<void> {
@@ -253,7 +295,7 @@ async function processMedia(env: Env, id: string): Promise<void> {
       throw new Error("Required media outputs are missing");
     source = await sourceRow(env, id);
     if (!source || source.deletedAt !== null || source.status === "deleted") {
-      await env.COMMUNITY_UPLOADS.delete(storedKeys);
+      await discardOutputs(env, id, storedKeys);
       await removeNative(env, id);
       return;
     }
@@ -283,7 +325,7 @@ async function processMedia(env: Env, id: string): Promise<void> {
     );
     const written = await env.DB.batch(statements);
     if (!written.at(-1)?.meta.changes) {
-      await env.COMMUNITY_UPLOADS.delete(storedKeys);
+      await discardOutputs(env, id, storedKeys);
       await removeNative(env, id);
       return;
     }
@@ -297,7 +339,7 @@ async function processMedia(env: Env, id: string): Promise<void> {
     );
     await removeNative(env, id);
   } catch (error) {
-    if (!published && storedKeys.length) await env.COMMUNITY_UPLOADS.delete(storedKeys).catch(() => undefined);
+    if (!published && storedKeys.length) await discardOutputs(env, id, storedKeys).catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
     await env.DB.prepare(
       "UPDATE community_media_job SET state=CASE WHEN attempts>=3 THEN 'failed' ELSE 'queued' END,error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE attachment_id=? AND lease_token=?",

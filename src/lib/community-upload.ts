@@ -63,7 +63,7 @@ function putBlob(url: string, blob: Blob, mediaType: string, options: UploadOpti
 
 export async function uploadCommunityAttachment(
   attachment: RecordValue,
-  file: File,
+  file: Blob,
   options: UploadOptions,
 ): Promise<RecordValue> {
   options.signal.throwIfAborted();
@@ -125,6 +125,20 @@ export async function uploadCommunityAttachment(
     method: "POST",
     signal: options.signal,
     body: JSON.stringify({ parts: [...uploaded.values()].sort((left, right) => left.partNumber - right.partNumber) }),
+  });
+  return (response.attachment as RecordValue | undefined) || response;
+}
+
+export async function retryCommunityAttachment(
+  attachmentId: string,
+  options: Pick<UploadOptions, "signal" | "request">,
+): Promise<RecordValue> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attachmentId))
+    throw new Error("Invalid media attachment ID");
+  options.signal.throwIfAborted();
+  const response = await options.request(`/api/v1/community/attachments/${attachmentId}/retry`, {
+    method: "POST",
+    signal: options.signal,
   });
   return (response.attachment as RecordValue | undefined) || response;
 }

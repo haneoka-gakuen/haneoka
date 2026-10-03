@@ -2,24 +2,57 @@
   stamp-maker,
   .stamp-maker-host {
     display: block;
+    height: 100%;
+    min-height: 0;
   }
   .stamp-maker {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 400px);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    align-items: stretch;
     gap: var(--pane-gap);
+    height: 100%;
+    min-height: 0;
     padding: var(--pane-gutter);
-    max-width: 1100px;
+    max-width: 1200px;
     margin-inline: auto;
+    overflow: hidden;
+  }
+  .stamp-maker__stage {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    gap: var(--md-sys-spacing-3);
   }
   .stamp-maker__source {
-    grid-column: 1 / -1;
-    position: sticky;
-    top: 0;
-    z-index: 3;
     min-width: 0;
-    padding-block: 8px;
-    background: var(--md-sys-color-surface);
+  }
+  .stamp-maker__source .stamp-maker__row {
+    flex-wrap: nowrap;
+  }
+  .stamp-maker__editor {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    min-width: 0;
+    gap: var(--md-sys-spacing-3);
+    padding: var(--md-sys-spacing-4);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .stamp-maker__inspector {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline-end: var(--md-sys-spacing-1);
+  }
+  .stamp-maker__output {
+    display: grid;
+    gap: var(--md-sys-spacing-1);
+    min-width: 0;
+  }
+  .stamp-maker__output > .field-note {
+    min-block-size: var(--md-sys-typescale-body-small-line-height);
   }
   .stamp-maker__picker-language .stamp-maker__language-options {
     display: grid;
@@ -67,11 +100,14 @@
     padding-inline-start: 0;
   }
   .stamp-maker__preview-pane {
-    position: sticky;
-    top: calc(var(--top-bar-height) + 8px);
+    display: grid;
+    place-items: center;
     min-width: 0;
+    min-height: 0;
+    container-type: size;
   }
   .stamp-maker__preview {
+    width: min(100cqw, 100cqh, 512px);
     position: relative;
     display: grid;
     place-items: center;
@@ -130,8 +166,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: var(--md-sys-typescale-body-medium-weight)
-      var(--md-sys-typescale-body-medium-size) /
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
       var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .stamp-maker__slider {
@@ -142,8 +177,7 @@
     display: flex;
     justify-content: space-between;
     color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-label-large-weight)
-      var(--md-sys-typescale-label-large-size) /
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .stamp-maker__position {
@@ -260,13 +294,24 @@
   }
   .stamp-maker__export md-outlined-select {
     min-width: 0;
-    flex: 1 1 100%;
+    flex: 0 1 136px;
+    width: 136px;
   }
   .stamp-maker__export {
-    padding-top: 8px;
+    flex-wrap: wrap;
   }
   .stamp-maker__export .button {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .stamp-maker__export .stamp-maker__community {
+    flex: 0 1 auto;
+    min-height: 44px;
+  }
+  @media (pointer: coarse) {
+    .stamp-maker__export .stamp-maker__community {
+      min-height: var(--md-comp-control-height-touch);
+    }
   }
   .stamp-maker__chooser {
     width: min(900px, calc(100vw - 24px));
@@ -276,6 +321,29 @@
     border-radius: var(--md-sys-shape-corner-extra-large);
     color: var(--md-sys-color-on-surface);
     background: var(--md-sys-color-surface-container-high);
+  }
+  .stamp-maker__chooser:modal {
+    display: flex;
+    flex-direction: column;
+    height: min(800px, calc(100dvh - 32px));
+  }
+  .stamp-maker__picker-filters {
+    flex: 0 1 auto;
+    max-height: 45dvh;
+    overflow: auto;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .stamp-maker__picker-filters[hidden] {
+    display: none;
+  }
+  .stamp-maker__facet {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-4);
+  }
+  .stamp-maker__facet > strong {
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .stamp-maker__chooser::backdrop {
     background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
@@ -292,6 +360,11 @@
     background: var(--md-sys-color-surface-container-high);
   }
   .stamp-maker__grid {
+    flex: 1;
+    min-height: 160px;
+    overflow: auto;
+    align-content: start;
+    grid-auto-rows: max-content;
     --tile-min: 132px;
     padding: 16px;
   }
@@ -299,103 +372,28 @@
     margin: 0;
   }
   @media (max-width: 959px) {
-    stamp-maker,
-    .stamp-maker-host {
-      height: 100%;
-      min-height: 0;
-    }
     .stamp-maker {
-      height: 100%;
-      min-height: 0;
-      overflow: hidden;
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto clamp(96px, 22dvh, 180px) minmax(0, 1fr);
-      align-items: stretch;
-      gap: 8px;
-      padding-block: 8px;
-    }
-    .stamp-maker__source {
-      position: static;
-      padding: 0;
-    }
-    .stamp-maker__source .stamp-maker__row {
-      flex-wrap: nowrap;
-    }
-    .stamp-maker__source .stamp-maker__chosen {
-      display: block;
-    }
-    .stamp-maker__source .segmented {
-      flex: 1;
-    }
-    .stamp-maker__picker-language .stamp-maker__language-options {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 4px;
-    }
-    .stamp-maker__picker-language .settings-option {
-      display: grid;
-      justify-items: center;
-      gap: 4px;
-      width: 100%;
-      height: auto;
-      grid-template-rows: 48px auto;
-    }
-    .stamp-maker__picker-language .settings-option__face {
-      width: 48px;
-      height: 48px;
-    }
-    .stamp-maker__variant-caption {
-      font-size: var(--md-sys-typescale-label-medium-size);
-      line-height: var(--md-sys-typescale-label-medium-line-height);
-      text-align: center;
-    }
-    @media (max-width: 599px) {
-      .stamp-maker__picker-language .stamp-maker__language-options {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        row-gap: 8px;
-      }
-    }
-    .stamp-maker__picker-language {
-      padding: 8px 16px;
-      background: var(--md-sys-color-surface-container-high);
-    }
-    .stamp-maker__language {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .stamp-maker__language-label {
-      font-size: var(--md-sys-typescale-label-medium-size);
-      flex: 1;
-    }
-    .stamp-maker__language-options {
-      flex-wrap: wrap;
-      gap: 8px;
+      grid-template-rows: minmax(260px, 55%) minmax(0, 1fr);
+      gap: var(--md-sys-spacing-3);
+      padding: var(--md-sys-spacing-3);
     }
     .stamp-maker__editor {
-      min-height: 0;
-      height: 100%;
-      align-self: stretch;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      padding-block: 8px 16px;
+      padding: var(--md-sys-spacing-3);
     }
-
-    .stamp-maker__preview-pane {
-      position: static;
-      z-index: auto;
-      min-height: 0;
-      display: grid;
-      place-items: center;
-    }
-    .stamp-maker__preview {
-      width: min(100%, 220px, clamp(96px, 22dvh, 180px));
-      margin-inline: auto;
+    .stamp-maker__stage {
+      gap: var(--md-sys-spacing-2);
     }
     .stamp-maker__grid {
       --tile-min: 112px;
       --tile-gap: 8px;
       padding: 12px;
+    }
+  }
+  @media (min-width: 600px) and (max-height: 599px) {
+    .stamp-maker {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
+      grid-template-rows: minmax(0, 1fr);
     }
   }
 }

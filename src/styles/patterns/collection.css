@@ -336,22 +336,25 @@
   position: relative;
   isolation: isolate;
 }
-.media-loading::after {
+/* Neutralize old compiled pseudo indicators during a local stylesheet swap. */
+.media-loading::after,
+.media-loading:has(img[data-src], img[data-loading])::after {
+  content: none;
   display: none;
+  animation: none;
+}
+.media-loading > .media-loading__progress {
   position: absolute;
   z-index: 0;
   top: 50%;
   left: 50%;
-  width: 22px;
-  height: 22px;
-  content: "";
-  border: 3px solid var(--md-sys-color-secondary-container);
-  border-top-color: var(--md-sys-color-primary);
-  border-radius: var(--md-sys-shape-corner-full);
+  width: 24px;
+  height: 24px;
   transform: translate(-50%, -50%);
-  animation: media-progress-spin 700ms linear infinite;
+  display: none;
+  pointer-events: none;
 }
-.media-loading:has(img[data-src], img[data-loading])::after {
+.media-loading:has(img[data-src]:not([data-cancelled]):not(.is-error), img[data-loading]) > .media-loading__progress {
   display: block;
 }
 .media-loading img.is-loaded {
@@ -359,14 +362,6 @@
   z-index: 1;
   opacity: 1;
 }
-/* Where a card's media box is not square, the page sheet moves the spinner;
- * the pattern only says what a spinner is. */
-@keyframes media-progress-spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-}
-
 /* ---------- Avatar stack ----------
    Up to five overlapping portraits, used wherever several characters share
    one row: a comic's cast, a stamp's subjects, a table cell. */

@@ -1,4 +1,9 @@
-import { uploadCommunityAttachment } from "../lib/community-upload";
+import { uploadCommunityAttachment, retryCommunityAttachment } from "../lib/community-upload";
+import {
+  communityStampDraftId,
+  readCommunityStampDraft,
+  removeCommunityStampDraft,
+} from "../lib/community-stamp-draft";
 import { COMMUNITY_UPLOAD_LIMITS } from "../config/community";
 import { clientGroup } from "../i18n/client";
 import { resolvePlaylistTracks } from "../lib/playlist-tracks";
@@ -37,6 +42,7 @@ type UploadEntry = {
   phase: string;
   progress: number;
   error: string;
+  retryProcessing?: boolean;
 };
 /** app-bar.ts owner id for the community workspace's page controls. */
 const COMMUNITY_BAR_OWNER = "community";
@@ -137,6 +143,7 @@ export class CommunityWorkspace extends LitElement {
     commentBody: { state: true },
     expandedComments: { state: true },
     replyLoading: { state: true },
+    stampDraftRetry: { state: true },
   };
   declare locale: string;
   declare mode: string;
@@ -187,6 +194,10 @@ export class CommunityWorkspace extends LitElement {
   declare commentBody: string;
   declare expandedComments: Set<string>;
   declare replyLoading: Set<string>;
+  declare stampDraftRetry: boolean;
+  private stampDraftRead = false;
+  private stampDraft?: { id: string; userId: string; uploadKey: string };
+  private stampDraftCleanup?: { id: string; userId: string };
   private columnsObserver?: ResizeObserver;
   private placements = new Map<string, number>();
   private menuTrigger?: HTMLElement;
@@ -264,6 +275,7 @@ export class CommunityWorkspace extends LitElement {
     this.commentBody = "";
     this.expandedComments = new Set();
     this.replyLoading = new Set();
+    this.stampDraftRetry = false;
   }
   private paneFocus = new PaneFocus();
   private undoTimer = 0;
@@ -565,7 +577,10 @@ export class CommunityWorkspace extends LitElement {
       if (this.routeKind === "post-new") {
         this.editorReady = true;
         this.phase = "ready";
-        void this.updateComplete.then(() => this.restoreDraft());
+        await this.updateComplete;
+        if (!this.isConnected || !this.requests.current(signal)) return;
+        this.restoreDraft();
+        await this.hydrateStampDraft();
         return;
       }
       if (this.routeKind === "post-detail" || this.routeKind === "post-edit") {
@@ -1400,6 +1415,84 @@ export class CommunityWorkspace extends LitElement {
       localStorage.removeItem(this.draftKey());
     }
   }
+  private async hydrateStampDraft() {
+    if (this.routeKind !== "post-new" || !this.isConnected || this.published || this.stampDraftRead) return;
+    const userId = this.viewerId();
+    const id = communityStampDraftId(navigationDocumentUrl());
+    if (!userId || !id) return;
+    const lifetime = this.lifetime;
+    const current = () =>
+      this.isConnected &&
+      this.lifetime === lifetime &&
+      !lifetime.signal.aborted &&
+      this.routeKind === "post-new" &&
+      this.viewerId() === userId &&
+      !this.published;
+    this.stampDraftRead = true;
+    this.stampDraftRetry = false;
+    const progress = beginLoading(this.label("loading", "Loading"), { signal: lifetime.signal });
+    try {
+      const draft = await readCommunityStampDraft(id, userId);
+      if (!current()) {
+        this.stampDraftRead = false;
+        return;
+      }
+      if (!draft) return;
+      const [uploadKey] = this.queueUploads([draft.file]);
+      if (uploadKey) this.stampDraft = { id: draft.id, userId, uploadKey };
+      else {
+        this.stampDraftRead = false;
+        this.stampDraftRetry = true;
+      }
+    } catch (error) {
+      if (current()) {
+        this.stampDraftRead = false;
+        this.stampDraftRetry = true;
+        this.error = error instanceof Error ? error.message : String(error);
+        progress.fail(error);
+      }
+    } finally {
+      progress.finish();
+    }
+  }
+  private async clearStampDraft(draft: { id: string; userId: string }) {
+    const lifetime = this.lifetime;
+    this.stampDraftCleanup = draft;
+    try {
+      await removeCommunityStampDraft(draft.id, draft.userId);
+      if (this.stampDraftCleanup === draft) this.stampDraftCleanup = undefined;
+      if (
+        this.isConnected &&
+        this.lifetime === lifetime &&
+        !lifetime.signal.aborted &&
+        this.viewerId() === draft.userId
+      )
+        this.stampDraftRetry = false;
+    } catch (error) {
+      if (
+        this.isConnected &&
+        this.lifetime === lifetime &&
+        !lifetime.signal.aborted &&
+        this.viewerId() === draft.userId
+      ) {
+        this.stampDraftRetry = true;
+        this.error = error instanceof Error ? error.message : String(error);
+      }
+    }
+  }
+  private retryStampDraft() {
+    this.error = "";
+    if (this.stampDraftCleanup) void this.clearStampDraft(this.stampDraftCleanup);
+    else void this.hydrateStampDraft();
+  }
+  private removeSelectedUpload(entry: UploadEntry) {
+    const draft = this.stampDraft;
+    this.removeUpload(entry);
+    if (draft?.uploadKey === entry.key) {
+      this.stampDraft = undefined;
+      void this.clearStampDraft(draft);
+    }
+  }
   private uploadMediaType(file: File) {
     const type = file.type.toLowerCase();
     const accepted = [
@@ -1443,9 +1536,10 @@ export class CommunityWorkspace extends LitElement {
     this.queueUploads(files);
   }
   private queueUploads(files: File[]) {
+    const keys: string[] = [];
     if (this.uploads.length + files.length > COMMUNITY_UPLOAD_LIMITS.attachmentsPerPost) {
       this.error = this.label("uploadLimit", "Up to 16 attachments are allowed per post.");
-      return;
+      return keys;
     }
     for (const file of files) {
       const mediaType = this.uploadMediaType(file);
@@ -1457,6 +1551,7 @@ export class CommunityWorkspace extends LitElement {
         continue;
       }
       const key = crypto.randomUUID();
+      keys.push(key);
       this.uploads = [
         ...this.uploads,
         {
@@ -1474,6 +1569,7 @@ export class CommunityWorkspace extends LitElement {
     }
     void this.preparePreviews();
     this.drainUploads();
+    return keys;
   }
   private async preparePreviews() {
     if (this.previewActive) return;
@@ -1528,8 +1624,12 @@ export class CommunityWorkspace extends LitElement {
     const controller = new AbortController();
     this.uploadControllers.set(key, controller);
     const progress = beginLoading(entry.file.name, { signal: controller.signal });
+    const userId = this.viewerId();
     const exists = () =>
-      this.isConnected && !controller.signal.aborted && this.uploads.some((item) => item.key === key);
+      this.isConnected &&
+      !controller.signal.aborted &&
+      this.viewerId() === userId &&
+      this.uploads.some((item) => item.key === key);
     try {
       this.updateUpload(key, { phase: "uploading", error: "" });
       let attachment = entry.attachment;
@@ -1562,6 +1662,14 @@ export class CommunityWorkspace extends LitElement {
         attachment = (status.attachment as Value | undefined) || status;
         if (attachment.multipart && Array.isArray(status.parts))
           attachment = { ...attachment, multipart: { ...(attachment.multipart as Value), parts: status.parts } };
+        if (!exists()) return;
+        if (entry.retryProcessing && this.processingRetryable(attachment)) {
+          attachment = await retryCommunityAttachment(String(attachment.id), {
+            signal: controller.signal,
+            request: (url, init) => this.request(url, init),
+          });
+        }
+        this.updateUpload(key, { attachment, retryProcessing: false });
       }
       if (String(attachment.status) === "reserved") {
         attachment = await uploadCommunityAttachment(attachment, entry.file, {
@@ -1576,6 +1684,10 @@ export class CommunityWorkspace extends LitElement {
         });
       }
       if (!exists()) return;
+      if ((attachment.processing as Value | undefined)?.state === "failed") {
+        this.updateUpload(key, { attachment, phase: "failed", error: this.label("uploadFailed", "Upload failed") });
+        return;
+      }
       this.updateUpload(key, {
         attachment,
         phase: attachment.status === "deleted" ? "failed" : String(attachment.status || "scanning"),
@@ -1608,6 +1720,10 @@ export class CommunityWorkspace extends LitElement {
         );
         attachment = (result.attachment as Value | undefined) || result;
         if (!exists()) return;
+        if ((attachment.processing as Value | undefined)?.state === "failed") {
+          this.updateUpload(key, { attachment, phase: "failed", error: this.label("uploadFailed", "Upload failed") });
+          return;
+        }
         this.updateUpload(key, { attachment, phase: String(attachment.status || "scanning") });
       }
     } catch (error) {
@@ -1620,14 +1736,40 @@ export class CommunityWorkspace extends LitElement {
       if (this.uploadControllers.get(key) === controller) this.uploadControllers.delete(key);
     }
   }
+  private processingRetryable(attachment: Value) {
+    return (
+      attachment.status === "scanning" &&
+      attachment.moderationStatus === "pending" &&
+      (attachment.processing as Value | undefined)?.state === "failed"
+    );
+  }
+  private canRetryUpload(entry: UploadEntry) {
+    return (
+      ["failed", "waiting"].includes(entry.phase) &&
+      !["review", "rejected"].includes(String(entry.attachment?.status)) &&
+      !["review", "block"].includes(String(entry.attachment?.moderationStatus))
+    );
+  }
+  private uploadReady(entry: UploadEntry) {
+    return (
+      entry.phase === "ready" && entry.attachment?.status === "ready" && entry.attachment.moderationStatus === "allow"
+    );
+  }
   private retryUpload(entry: UploadEntry) {
+    if (!this.canRetryUpload(entry)) return;
     if (this.uploadControllers.has(entry.key) || this.uploadQueue.includes(entry.key)) return;
     if (entry.attachment?.status === "deleted") {
+      const draft = this.stampDraft?.uploadKey === entry.key ? this.stampDraft : undefined;
       this.removeUpload(entry);
-      this.queueUploads([entry.file]);
+      const [uploadKey] = this.queueUploads([entry.file]);
+      if (draft && uploadKey) this.stampDraft = { ...draft, uploadKey };
       return;
     }
-    this.updateUpload(entry.key, { phase: "queued", error: "" });
+    this.updateUpload(entry.key, {
+      phase: "queued",
+      error: "",
+      retryProcessing: this.processingRetryable(entry.attachment || {}),
+    });
     this.uploadQueue.push(entry.key);
     this.drainUploads();
   }
@@ -1659,7 +1801,12 @@ export class CommunityWorkspace extends LitElement {
       label: "",
       confirm: {
         title: this.label("leaveEditor", "Leave the editor?"),
-        body: this.label("leaveDraftBody", "Your text stays in this browser. Unpublished attachments will be removed."),
+        body: this.stampDraft
+          ? this.label(
+              "leaveStampDraftBody",
+              "Text and the stamp PNG stay on this device. Unpublished uploads will be removed.",
+            )
+          : this.label("leaveDraftBody", "Your text stays in this browser. Unpublished attachments will be removed."),
         confirmLabel: this.label("keepDraft", "Keep draft and leave"),
         action: () => this.leaveEditor(),
       },
@@ -1680,7 +1827,7 @@ export class CommunityWorkspace extends LitElement {
     const data = new FormData(form);
     const current = ((this.document?.post as Value | undefined) || this.document || {}) as Value;
     const editing = this.routeKind === "post-edit";
-    if (this.busy || this.uploads.some((entry) => entry.phase !== "ready")) return;
+    if (this.busy || this.uploads.some((entry) => !this.uploadReady(entry))) return;
     const body = this.editorBody.trim();
     if (!body || body.length > 20000) {
       this.error = this.label("invalidBody", "Write between 1 and 20,000 characters.");
@@ -1711,7 +1858,7 @@ export class CommunityWorkspace extends LitElement {
             ...(!editing
               ? {
                   attachmentIds: this.uploads
-                    .filter((entry) => entry.attachment?.status === "ready")
+                    .filter((entry) => this.uploadReady(entry))
                     .map((entry) => String(entry.attachment?.id)),
                 }
               : {}),
@@ -1726,6 +1873,7 @@ export class CommunityWorkspace extends LitElement {
         throw new Error(String((result.error as Value | undefined)?.message || `HTTP ${response.status}`));
       const id = String((result.post as Value | undefined)?.id || result.id || this.entityId);
       this.published = true;
+      if (!editing && this.stampDraft) void this.clearStampDraft(this.stampDraft);
       if (!editing) localStorage.removeItem(this.draftKey());
       feedSnapshots.clear();
       void navigateDetailPage(this.path(`/community/posts/${encodeURIComponent(id)}`));
@@ -2067,8 +2215,8 @@ export class CommunityWorkspace extends LitElement {
                                       : nothing
                                   }
                                 </span>
-                                ${["failed", "waiting"].includes(entry.phase) ? iconButton({ icon: "refresh", label: this.label("retry", "Retry"), onClick: () => this.retryUpload(entry) }) : nothing}
-                                ${iconButton({ icon: "close", label: this.label("uploadRemove", "Remove"), onClick: () => this.removeUpload(entry) })}
+                                ${this.canRetryUpload(entry) ? iconButton({ icon: "refresh", label: this.label("retry", "Retry"), onClick: () => this.retryUpload(entry) }) : nothing}
+                                ${iconButton({ icon: "close", label: this.label("uploadRemove", "Remove"), onClick: () => this.removeSelectedUpload(entry) })}
                               </article>
                             `,
                           ),
@@ -2119,14 +2267,31 @@ export class CommunityWorkspace extends LitElement {
                   `
                 : nothing
             }
+            ${
+              this.stampDraftRetry
+                ? html`
+                    <div class="inline-message" role="status">
+                      <button class="button button--text" type="button" @click=${this.retryStampDraft}>
+                        ${this.label("retry", "Retry")}
+                      </button>
+                    </div>
+                  `
+                : nothing
+            }
             <footer class="composer-actions">
-              <span class="community-draft-status">${this.label("draftSaved", "Draft saved on this device")}</span>
+              <span class="community-draft-status">
+                ${
+                  this.stampDraft
+                    ? this.label("stampDraftRetained", "Stamp draft saved")
+                    : this.label("draftSaved", "Draft saved on this device")
+                }
+              </span>
               <button class="button button--text" type="button" ?disabled=${this.busy} @click=${this.cancelEditor}>
                 ${this.label("cancel", "Cancel")}
               </button>
               <button
                 class="button"
-                ?disabled=${this.busy || !this.editorBody.trim() || this.editorBody.length > 20000 || this.uploads.some((entry) => entry.phase !== "ready")}
+                ?disabled=${this.busy || !this.editorBody.trim() || this.editorBody.length > 20000 || this.uploads.some((entry) => !this.uploadReady(entry))}
               >
                 ${icon("send", 18)}${this.busy ? this.label("publishing", "Publishing…") : this.label("publish", "Publish")}
               </button>

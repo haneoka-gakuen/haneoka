@@ -1,7 +1,7 @@
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
-import { enqueueNativeMediaJob, mediaPresentation, type MediaVariantRow } from "./community-media";
+import { enqueueNativeMediaJob, retryNativeMediaJob, cleanupNativeMediaStorage, mediaPresentation, type MediaVariantRow } from "./community-media";
 import { inspectCommunityText, type TextInspection } from "./moderation";
 
 type UploadMediaType =
@@ -40,6 +40,8 @@ interface AttachmentRow {
   ownerUserId: string;
   purpose: "avatar" | "post";
   r2UploadId: string | null;
+  r2Etag: string | null;
+  r2Version: string | null;
   sha256: string | null;
   status: AttachmentStatus;
   updatedAt: number;
@@ -159,6 +161,8 @@ const attachmentColumns = `
   community_attachment.height,
   community_attachment.sha256,
   community_attachment.r2_upload_id AS r2UploadId,
+  community_attachment.r2_etag AS r2Etag,
+  community_attachment.r2_version AS r2Version,
   community_attachment.status,
   community_attachment.moderation_status AS moderationStatus,
   community_attachment.failure_code AS failureCode,
@@ -1461,33 +1465,9 @@ const boundedPartStream = (request: Request, expected: number): ReadableStream<U
   if (!request.body) return null;
   const declared = Number(request.headers.get("Content-Length") || "");
   if (!Number.isSafeInteger(declared) || declared !== expected) return null;
-  const reader = request.body.getReader();
-  let size = 0;
-  let finished = false;
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (finished) return;
-      const part = await reader.read();
-      if (part.done) {
-        finished = true;
-        if (size !== expected) controller.error(new Error("part_size_mismatch"));
-        else controller.close();
-        return;
-      }
-      size += part.value.byteLength;
-      if (size > expected) {
-        finished = true;
-        await reader.cancel();
-        controller.error(new Error("part_size_mismatch"));
-        return;
-      }
-      controller.enqueue(part.value);
-    },
-    async cancel(reason) {
-      finished = true;
-      await reader.cancel(reason);
-    },
-  });
+  // R2 requires a known-length stream. FixedLengthStream preserves that
+  // runtime marker and rejects both truncated and oversized part bodies.
+  return request.body.pipeThrough(new FixedLengthStream(expected));
 };
 
 const uploadMultipartPart = async (request: Request, env: Env, id: string, partNumber: number): Promise<Response> => {
@@ -1740,6 +1720,23 @@ const getMetadata = async (request: Request, env: Env, id: string): Promise<Resp
   });
 };
 
+const retryAttachment = async (request: Request, env: Env, id: string): Promise<Response> => {
+  const access = await requireActiveUser(request, env);
+  if ("response" in access) return access.response;
+  const attachment = await findAttachment(env, id);
+  if (
+    !attachment ||
+    attachment.ownerUserId !== access.userId ||
+    attachment.purpose !== "post" ||
+    attachment.deletedAt !== null
+  )
+    return error(request, 404, "attachment_not_found", "Attachment not found");
+  if (attachment.status !== "scanning")
+    return error(request, 409, "media_not_retryable", "Only pending media conversion can be retried");
+  await retryNativeMediaJob(env, id);
+  return json(request, { attachment: { ...attachmentValue(attachment), ...(await mediaPresentation(env, id)) } }, 202);
+};
+
 const normalizeEtag = (value: string): string => value.trim().replace(/^W\//u, "");
 
 const etagMatches = (requestValue: string | null, etag: string): boolean =>
@@ -1836,7 +1833,15 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
       return error(request, 404, "media_variant_missing", "Media is not ready");
   }
   const metadata = await env.COMMUNITY_UPLOADS.head(row.objectKey);
-  if (!metadata || metadata.size !== row.byteSize || metadata.customMetadata?.sha256 !== row.sha256) {
+  if (
+    !metadata ||
+    metadata.size !== row.byteSize ||
+    (metadata.customMetadata?.sha256
+      ? metadata.customMetadata.sha256 !== row.sha256
+      : metadata.customMetadata?.attachmentId !== row.id ||
+        metadata.etag !== row.r2Etag ||
+        metadata.version !== row.r2Version)
+  ) {
     return error(request, 404, "attachment_object_missing", "Attachment object is unavailable");
   }
   const headers = new Headers({
@@ -1931,12 +1936,7 @@ const deleteAttachment = async (request: Request, env: Env, id: string): Promise
       .catch(() => undefined);
   }
   try {
-    const variants = await env.DB.prepare(
-      "SELECT object_key AS objectKey FROM community_attachment_variant WHERE attachment_id=?",
-    )
-      .bind(id)
-      .all<{ objectKey: string }>();
-    await env.COMMUNITY_UPLOADS.delete([attachment.objectKey, ...variants.results.map((row) => row.objectKey)]);
+    await cleanupNativeMediaStorage(env, id, attachment.objectKey);
     const objectDeletedAt = Date.now();
     await env.DB.prepare(
       `UPDATE community_attachment
@@ -2117,12 +2117,7 @@ export const cleanupCommunityUploads = async (env: Env): Promise<void> => {
           .abort()
           .catch(() => undefined);
       }
-      const variants = await env.DB.prepare(
-        "SELECT object_key AS objectKey FROM community_attachment_variant WHERE attachment_id=?",
-      )
-        .bind(row.id)
-        .all<{ objectKey: string }>();
-      await env.COMMUNITY_UPLOADS.delete([row.objectKey, ...variants.results.map((variant) => variant.objectKey)]);
+      await cleanupNativeMediaStorage(env, row.id, row.objectKey);
       deletedIds.push(row.id);
     } catch (deleteError) {
       console.error(
@@ -2202,6 +2197,12 @@ export const handleUploadRequest = async (request: Request, env: Env): Promise<R
   if (uploadMatch?.[1] && UUID_PATTERN.test(uploadMatch[1])) {
     return request.method === "PUT"
       ? putContent(request, env, uploadMatch[1])
+      : error(request, 405, "method_not_allowed", "Method not allowed");
+  }
+  const retryMatch = new RegExp(`^${attachmentsPrefix}/([0-9a-f-]{36})/retry$`, "iu").exec(url.pathname);
+  if (retryMatch?.[1] && UUID_PATTERN.test(retryMatch[1])) {
+    return request.method === "POST"
+      ? retryAttachment(request, env, retryMatch[1])
       : error(request, 405, "method_not_allowed", "Method not allowed");
   }
   const contentMatch = new RegExp(`^${attachmentsPrefix}/([0-9a-f-]{36})/content$`, "iu").exec(url.pathname);

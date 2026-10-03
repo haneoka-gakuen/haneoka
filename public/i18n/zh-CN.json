@@ -1253,7 +1253,9 @@
     "followers": "关注者",
     "gameAccounts": "游戏账号",
     "uploadPolicy": "最多{count}个附件，每个文件不超过{size} MiB",
-    "uploadFileTooLarge": "每个文件不能超过128 MiB。"
+    "uploadFileTooLarge": "每个文件不能超过128 MiB。",
+    "stampDraftRetained": "表情草稿已保存",
+    "leaveStampDraftBody": "文字和表情 PNG 会保留在此设备，未发布的上传附件会移除。"
   },
   "adminPage": {
     "title": "管理",
@@ -2512,7 +2514,9 @@
     "frameWidth": "文本框宽度",
     "frameHeight": "文本框高度",
     "frameAuto": "按内容自动调整文本框",
-    "frameOverflow": "文字超出文本框。"
+    "frameOverflow": "文字超出文本框。",
+    "communityPublish": "发布到社区",
+    "communityPrepareFailed": "无法保存发帖图片，请重试。"
   },
   "teamBuilder": {
     "title": "配队工具",

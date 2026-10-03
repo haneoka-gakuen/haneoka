@@ -1,3 +1,6 @@
+import "@material/web/progress/circular-progress.js";
+import { prepareMaterialProgress } from "../../lib/loading-progress";
+
 /**
  * Deferred artwork for collections.
  *
@@ -81,6 +84,21 @@ interface PendingImage {
  */
 const pendingImageFinishes = new WeakMap<HTMLImageElement, PendingImage>();
 
+function syncMediaFrame(image: HTMLImageElement, frame = image.closest<HTMLElement>(".media-loading")) {
+  if (!frame) return;
+  const pending = [...frame.querySelectorAll<HTMLImageElement>("img")].some((item) =>
+    Boolean(item.dataset.loading || (item.dataset.src && !item.dataset.cancelled && !item.classList.contains("is-error"))),
+  );
+  frame.setAttribute("aria-busy", String(pending));
+  if (!pending || frame.querySelector(":scope > .media-loading__progress")) return;
+  const progress = document.createElement("md-circular-progress");
+  progress.className = "media-loading__progress";
+  progress.setAttribute("indeterminate", "");
+  progress.setAttribute("aria-hidden", "true");
+  frame.append(progress);
+  prepareMaterialProgress(progress);
+}
+
 function finishImage(image: HTMLImageElement, state: "loaded" | "error" | "cancelled") {
   pendingImageFinishes.get(image)?.finish(state);
 }
@@ -124,6 +142,7 @@ export class LazyImages {
         this.cancel(image);
     });
     const images = [...root.querySelectorAll<HTMLImageElement>("img[data-src]")].filter(this.filter);
+    images.forEach((image) => syncMediaFrame(image));
     if (!images.length) return;
     if (!("IntersectionObserver" in window)) {
       images.forEach((image) => this.load(image));
@@ -167,9 +186,11 @@ export class LazyImages {
       image.dataset.error = "true";
       image.classList.add("is-error");
       image.removeAttribute("data-src");
+      syncMediaFrame(image);
       return;
     }
 
+    const frame = image.closest<HTMLElement>(".media-loading");
     const controller = new AbortController();
     let request: PendingImage;
     const settle: FinishImage = (state) => {
@@ -194,6 +215,8 @@ export class LazyImages {
         delete image.dataset.error;
         image.classList.remove("is-loaded", "is-error");
       }
+      syncMediaFrame(image);
+      if (frame && frame !== image.closest(".media-loading")) syncMediaFrame(image, frame);
     };
     request = { owner: this, inputSource: source, source: candidates[0], finish: settle };
     pendingImageFinishes.set(image, request);
@@ -212,6 +235,7 @@ export class LazyImages {
     image.dataset.candidateIndex = "0";
     image.src = candidates[0];
     image.removeAttribute("data-src");
+    syncMediaFrame(image);
   }
 
   private cancel(image: HTMLImageElement, force = false) {
