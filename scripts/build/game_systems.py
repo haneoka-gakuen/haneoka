@@ -903,7 +903,7 @@ def _prize_rate_rows(
     """
     pickups = [row for row in prize_rows if _number(row, "_pickUpType") == 2]
     fixed_total = sum(_number(row, "_pickUpFixedRate") for row in pickups)
-    regular = [row for row in prize_rows if _number(row, "_pickUpType") != 2]
+    regular = [row for row in prize_rows if _number(row, "_pickUpType") != 2 or _number(row, "_pickUpFixedRate") == 0]
     regular_share = max(0, group_weight - fixed_total) // len(regular) if regular else 0
     return [
         {
