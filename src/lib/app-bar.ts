@@ -13,6 +13,7 @@
  */
 import { html, render, type TemplateResult } from "lit";
 import { icon } from "../lit/ui/icon";
+import { clientText } from "../i18n/client";
 
 const SLOT = "[data-top-app-bar-actions]";
 const IDENTITY_SLOT = "[data-top-app-bar-identity]";
@@ -23,6 +24,7 @@ export interface AppBarSearchOptions {
   label: string;
   onInput: (value: string) => void;
   onSubmit?: (value: string) => void;
+  closeLabel?: string;
 }
 
 let searchGeneration = 0;
@@ -72,13 +74,24 @@ function searchContainer(owner: string, create: boolean): HTMLElement | null {
 function renderSearch(node: HTMLElement, options: AppBarSearchOptions, forceExpanded?: boolean): void {
   const expanded = forceExpanded ?? node.dataset.searchExpanded === "true";
   node.dataset.searchExpanded = String(expanded);
-  const inputId = `app-bar-search-${++searchInputGeneration}`;
+  const inputId = (node.dataset.searchInputId ??= `app-bar-search-${++searchInputGeneration}`);
+  const close = () => {
+    const value = node.querySelector<HTMLInputElement>("input")?.value ?? options.value;
+    renderSearch(node, { ...options, value }, false);
+    node.querySelector<HTMLButtonElement>(".top-app-bar__search-toggle")?.focus();
+  };
   render(
     html`
       <form
         class="top-app-bar__search"
         role="search"
         data-search-expanded=${expanded}
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key !== "Escape" || !expanded) return;
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }}
         @submit=${(event: SubmitEvent) => {
           event.preventDefault();
           const input = (event.currentTarget as HTMLFormElement).querySelector<HTMLInputElement>("input");
@@ -111,6 +124,14 @@ function renderSearch(node: HTMLElement, options: AppBarSearchOptions, forceExpa
             @input=${(event: InputEvent) => options.onInput((event.target as HTMLInputElement).value)}
           />
         </label>
+        <button
+          class="icon-button top-app-bar__search-close"
+          type="button"
+          aria-label=${options.closeLabel ?? clientText(document.documentElement.dataset.locale || "en", "close", "Close")}
+          @click=${close}
+        >
+          ${icon("close", 24)}
+        </button>
       </form>
     `,
     node,

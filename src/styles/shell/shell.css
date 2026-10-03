@@ -173,6 +173,9 @@
 .top-app-bar__search-toggle {
   display: none;
 }
+.top-app-bar__search-close {
+  display: none;
+}
 .top-app-bar__search-field {
   position: relative;
   display: block;
@@ -336,6 +339,9 @@
   }
   .top-app-bar__search[data-search-expanded="true"] .top-app-bar__search-toggle {
     display: none;
+  }
+  .top-app-bar__search[data-search-expanded="true"] .top-app-bar__search-close {
+    display: inline-grid;
   }
 }
 
