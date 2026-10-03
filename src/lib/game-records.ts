@@ -4,6 +4,7 @@ export interface GameProfileCardPageDto {
   page: number;
   imageUrl: string | null;
   sourceUrl: string | null;
+  downloadUrl?: string | null;
 }
 
 export interface GameProfileCardDto {

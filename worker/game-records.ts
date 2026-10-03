@@ -6,6 +6,8 @@ const REGIONS = ["jp", "tw", "en", "kr"] as const;
 const MAX_UPSTREAM_BODY_BYTES = 512 * 1024;
 const UPSTREAM_TIMEOUT_MS = 4_000;
 const CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
+const MAX_CARD_IMAGE_BYTES = 8 * 1024 * 1024;
+const CARD_DOWNLOAD_TIMEOUT_MS = 12_000;
 
 import type {
   GameRecordsRegion,
@@ -23,7 +25,7 @@ type CacheableJson = { body: string };
 export interface GameRecordsBindings {
   MOENOTES_PROFILE_API_TOKEN?: string;
 }
-type FailureKind = "invalid_request" | "not_found" | "pending" | "timeout" | "upstream";
+type FailureKind = "invalid_request" | "not_found" | "pending" | "timeout" | "upstream" | "stale_version";
 
 const CORS: Readonly<Record<string, string>> = {
   "Access-Control-Allow-Origin": "*",
@@ -208,7 +210,11 @@ const normalizeProfileCard = (
       sourceUrl && region === "jp" && profileId && /^[1-9][0-9]{0,18}$/u.test(profileId)
         ? `${RANKING_ORIGIN}/api/v1/jp/ranking/profile/${profileId}/card/${page}`
         : sourceUrl;
-    return { page, sourceUrl, imageUrl };
+    const file = sourceUrl ? new URL(sourceUrl).pathname.split("/").pop() || "" : "";
+    const downloadUrl = profileId && validCardFile(file, profileId)
+      ? `${GAME_RECORDS_API_PREFIX}/${region}/players/${profileId}/cards/${page}/download?file=${encodeURIComponent(file)}`
+      : null;
+    return { page, sourceUrl, imageUrl, downloadUrl };
   });
   return {
     name: textOrNull(card.name),
@@ -552,6 +558,105 @@ const authenticatedProfile = async (region: GameRecordsRegion, profileId: string
   }
 };
 
+const validCardFile = (file: string, profileId: string): boolean =>
+  file.length > 0 && file.length <= 512 && file.startsWith(`${profileId}_`) &&
+  /^[A-Za-z0-9_.-]+$/u.test(file) && !file.includes("..");
+
+const cardImageBytes = async (response: Response, signal: AbortSignal): Promise<Uint8Array> => {
+  const length = response.headers.get("Content-Length");
+  if (length && /^[0-9]+$/u.test(length) && Number(length) > MAX_CARD_IMAGE_BYTES) {
+    await response.body?.cancel();
+    throw new RequestFailure(502, "upstream");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new RequestFailure(502, "upstream");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    signal.throwIfAborted();
+    for (;;) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > MAX_CARD_IMAGE_BYTES) {
+        await reader.cancel();
+        throw new RequestFailure(502, "upstream");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82];
+  const tail = [0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
+  if (size < 45 || signature.some((byte, i) => bytes[i] !== byte) ||
+    tail.some((byte, i) => bytes[size - tail.length + i] !== byte))
+    throw new RequestFailure(502, "upstream");
+  const view = new DataView(bytes.buffer);
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  if (width < 1 || height < 1 || width > 8192 || height > 8192)
+    throw new RequestFailure(502, "upstream");
+  return bytes;
+};
+
+const serveCardDownload = async (
+  request: Request, env: GameRecordsBindings, region: GameRecordsRegion,
+  profileId: string, page: string, file: string,
+): Promise<Response> => {
+  const token = env.MOENOTES_PROFILE_API_TOKEN?.trim();
+  if (!token) return errorResponse(request, 502, "upstream");
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CARD_DOWNLOAD_TIMEOUT_MS)]);
+  let upstreamStatus: number | null = null;
+  try {
+    const upstream = await fetch(`${MOENOTES_PROFILE_ORIGIN}/v1/${region}/profile/${profileId}/card/${page}`, {
+      method: "GET", redirect: "manual", signal,
+      headers: { Accept: "image/png", Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
+    });
+    upstreamStatus = upstream.status;
+    if (upstream.status !== 200) {
+      await upstream.body?.cancel();
+      throw new RequestFailure(upstream.status === 404 ? 404 : 502, upstream.status === 404 ? "not_found" : "upstream");
+    }
+    const returnedFile = upstream.headers.get("X-Moenotes-Card-File");
+    if (!returnedFile || returnedFile !== file) {
+      await upstream.body?.cancel();
+      throw new RequestFailure(returnedFile ? 409 : 502, returnedFile ? "stale_version" : "upstream");
+    }
+    if (upstream.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() !== "image/png") {
+      await upstream.body?.cancel();
+      throw new RequestFailure(502, "upstream");
+    }
+    const bytes = await cardImageBytes(upstream, signal);
+    return new Response(request.method === "HEAD" ? null : bytes, { headers: {
+      ...CORS, "Content-Type": "image/png", "Content-Length": String(bytes.byteLength),
+      "Content-Disposition": `attachment; filename="profilecard-${region}-${profileId}-${page}.png"`,
+      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    } });
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "moenotes-card-download", upstreamStatus, noToken: false }));
+    if (signal.aborted) return errorResponse(request, 504, "timeout");
+    if (error instanceof RequestFailure) return errorResponse(request, error.status, error.kind);
+    return errorResponse(request, 502, "upstream");
+  }
+};
+
 export async function handleGameRecordsApi(
   ctx: ExecutionContext,
   request: Request,
@@ -559,6 +664,19 @@ export async function handleGameRecordsApi(
   env: GameRecordsBindings = {},
 ): Promise<Response | null> {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const download = new RegExp(`^${GAME_RECORDS_API_PREFIX}/([^/]+)/players/([^/]+)/cards/([^/]+)/download$`).exec(url.pathname);
+  if (download) {
+    const [_, region, profileId, page] = download;
+    if (!region || !isRegion(region)) return errorResponse(request, 404, "not_found");
+    const file = url.searchParams.get("file") || "";
+    const pageNumber = safeInteger(page);
+    if (!profileId || !rankingProfileIdPattern(region).test(profileId) || !decimalId(profileId) ||
+      !page || !/^[1-9][0-9]{0,18}$/u.test(page) || pageNumber === null ||
+      !validCardFile(file, profileId) || url.searchParams.getAll("file").length !== 1 ||
+      [...url.searchParams.keys()].some((key) => key !== "file"))
+      return errorResponse(request, 400, "invalid_request");
+    return serveCardDownload(request, env, region, profileId, page, file);
+  }
   const currentEvent = new RegExp(`^${GAME_RECORDS_API_PREFIX}/([^/]+)/events/current$`).exec(url.pathname);
   const challengeRanking = new RegExp(
     `^${GAME_RECORDS_API_PREFIX}/([^/]+)/events/([^/]+)/challenges/([^/]+)/ranking$`,
