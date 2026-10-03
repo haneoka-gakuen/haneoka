@@ -82,6 +82,9 @@ import {
   type InventoryStoreState,
 } from "../lib/team-builder/storage";
 import { downloadBlob } from "../lib/canvas-capture";
+import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
+import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
+import { isUnchangedInventoryConflict } from "../lib/team-builder/sync-review";
 
 type Kind = "members" | "snapshots";
 type SearchRunRequest = Extract<SolverRequest, { type: "prepare" | "start" }>;
@@ -144,6 +147,7 @@ export class TeamBuilder extends LitElement {
     rankingLimit: { state: true },
     progress: { state: true },
     running: { state: true },
+    cancelling: { state: true },
     skillOrderCriterion: { state: true },
     searchStatus: { state: true },
     picker: { state: true },
@@ -220,6 +224,7 @@ export class TeamBuilder extends LitElement {
   declare rankingLimit: number;
   declare progress: SearchProgress | null;
   declare running: boolean;
+  declare cancelling: boolean;
   declare skillOrderCriterion: SkillOrderCriterion;
   declare searchStatus: string;
   declare picker: string;
@@ -270,6 +275,9 @@ export class TeamBuilder extends LitElement {
   private images = new LazyImages();
   private paneFocus = new PaneFocus();
   private worker?: Worker;
+  private searchRunId?: string;
+  private searchDispatched = false;
+  private clearCancellation?: () => void;
   private searchLoading?: LoadingReporter;
   private checkpointCache: SearchCheckpointStore | null = null;
   private eventPreview: { data: TeamBuilderData; inventory: InventoryV1; value: ReturnType<typeof createEventConditionPreview> | null } | null = null;
@@ -278,6 +286,7 @@ export class TeamBuilder extends LitElement {
     result: SearchResult;
     completedAt: string;
     reusedCheckpoint: boolean;
+    preparation?: SearchRequestProjection;
   } | null = null;
   private requestId = 0;
   private store?: InventoryStore;
@@ -877,7 +886,7 @@ export class TeamBuilder extends LitElement {
       <dialog
         class="selection-pane team-builder__maintenance"
         data-inventory-maintenance
-        aria-label=${this.t("teamSetup", "Team setup")}
+        aria-label=${this.inventoryTab === "sync" ? this.t("inventorySyncTab", "Sync") : this.t("teamSetup", "Team setup")}
         @cancel=${(event: Event) => {
           event.preventDefault();
           this.maintenanceOpen = false;
@@ -887,7 +896,7 @@ export class TeamBuilder extends LitElement {
         }}
       >
         <header class="sheet__header">
-          <strong>${this.t("teamSetup", "Team setup")}</strong>
+          <strong>${this.inventoryTab === "sync" ? this.t("inventorySyncTab", "Sync") : this.t("teamSetup", "Team setup")}</strong>
           ${iconButton({ icon: "close", label: clientText(this.locale, "close", "Close"), onClick: () => (this.maintenanceOpen = false) })}
         </header>
         <div class="team-builder__inventory-tabs">
@@ -1126,6 +1135,7 @@ export class TeamBuilder extends LitElement {
     this.rankingLimit = 5;
     this.progress = null;
     this.running = false;
+    this.cancelling = false;
     this.searchStatus = "";
     this.picker = "";
     this.query = "";
@@ -1206,6 +1216,7 @@ export class TeamBuilder extends LitElement {
   }
   protected updated() {
     if (!this.isConnected) return;
+    this.reconcileUnchangedConflict();
     this.images.observe(this);
     const selector = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
     const modal = this.addingCards || this.selectingSong || this.selectingEvent || this.maintenanceOpen || Boolean(this.editingId);
@@ -1244,22 +1255,36 @@ export class TeamBuilder extends LitElement {
 
     setAppBarActions(
       OWNER,
-      iconButton({
-        icon: "manage_accounts",
-        label: this.t("teamSetup", "Team setup"),
+      html`${iconButton({
+        icon: "style",
+        label: this.t("inventoryCardsTab", "Cards"),
+        onClick: () => this.openMaintenance("cards"),
+      })}${iconButton({
+        icon: "tune",
+        label: this.t("inventoryGrowthTab", "Growth"),
+        onClick: () => this.openMaintenance("growth"),
+      })}${iconButton({
+        icon: "refresh",
+        label: this.t("inventorySyncTab", "Sync"),
         badge: this.maintenanceNeedsAction ? 1 : undefined,
-        onClick: () => {
-          this.closePane();
-          this.inventoryTab = this.canEdit ? "cards" : "sync";
-          this.maintenanceOpen = true;
-        },
-      }),
+        onClick: () => this.openMaintenance("sync"),
+      })}`,
     );
     clearAppBarSearch(OWNER);
   }
 
   private t(key: string, fallback: string, params?: Record<string, string | number>) {
     return clientText(this.locale, `teamBuilder.${key}`, fallback, params);
+  }
+  private reconcileUnchangedConflict() {
+    if (!this.store || !this.data || !this.sourceReady || this.pendingRebase || this.pendingUniqueness) return;
+    if (isUnchangedInventoryConflict(this.store.state, this.data, this.currentOwner))
+      this.store.resolveConflict("remote");
+  }
+  private openMaintenance(tab: "cards" | "growth" | "sync") {
+    this.closePane();
+    this.inventoryTab = tab !== "sync" && !this.canEdit ? "sync" : tab;
+    this.maintenanceOpen = true;
   }
   private text(value: unknown) {
     return resolveLocalizedText(value, this.locale).text;
@@ -3245,6 +3270,11 @@ export class TeamBuilder extends LitElement {
   }
   cancelSearch() {
     ++this.requestId;
+    this.clearCancellation?.();
+    this.clearCancellation = undefined;
+    this.searchRunId = undefined;
+    this.searchDispatched = false;
+    this.cancelling = false;
     this.worker?.terminate();
     this.worker = undefined;
     this.searchLoading?.cancel();
@@ -3255,9 +3285,25 @@ export class TeamBuilder extends LitElement {
     this.completedSearch = null;
     void this.checkpointCache?.flush();
   }
+  private requestCancellation() {
+    if (!this.running || this.cancelling || !this.worker || !this.searchRunId) return;
+    if (!this.searchDispatched) {
+      this.cancelSearch();
+      this.searchStatus = this.t("cancelled", "Search cancelled");
+      return;
+    }
+    this.cancelling = true;
+    const generation = this.requestId;
+    this.clearCancellation = requestSearchCancellation(this.worker, this.searchRunId, () => {
+      if (generation !== this.requestId) return;
+      this.cancelSearch();
+      this.searchStatus = this.t("cancelled", "Search cancelled");
+    });
+  }
   private resultExport() {
     const completed = this.completedSearch;
-    if (this.running || !completed || this.result !== completed.result) return null;
+    if (this.running || !completed || this.result !== completed.result || completed.result.completeness === "cancelled")
+      return null;
     return { schema: "haneoka-team-search-result-v1", ...completed };
   }
   private exportResult() {
@@ -3364,6 +3410,7 @@ export class TeamBuilder extends LitElement {
     this.rankingLimit = 5;
     const runId = crypto.randomUUID();
     let runRequest: SearchRunRequest;
+    let preparation: SearchRequestProjection | undefined;
     const budget = {
       maxEvaluations: 100000,
       maxMilliseconds: Math.round(this.budgetSeconds * 1000),
@@ -3379,6 +3426,7 @@ export class TeamBuilder extends LitElement {
       return;
     }
     this.running = true;
+    this.searchRunId = runId;
     this.searchLoading = beginLoading(this.t("searching", "Finding candidates"));
     worker.onmessage = (event: MessageEvent<SolverResponse>) => {
       const message = event.data;
@@ -3388,6 +3436,11 @@ export class TeamBuilder extends LitElement {
         this.searchLoading?.update({ stageLabel: this.searchProgressLabel });
       }
       else {
+        this.clearCancellation?.();
+        this.clearCancellation = undefined;
+        this.searchRunId = undefined;
+        this.searchDispatched = false;
+        this.cancelling = false;
         if (message.type === "result") {
           this.result = message.result;
           this.completedSearch = {
@@ -3395,6 +3448,7 @@ export class TeamBuilder extends LitElement {
             result: message.result,
             completedAt: new Date().toISOString(),
             reusedCheckpoint: message.reusedCheckpoint === true,
+            ...(preparation ? { preparation } : {}),
           };
           if (message.checkpoint) void checkpointCache?.save(message.checkpoint);
           if (message.reusedCheckpoint) this.searchStatus = this.t("checkpointReused", "Reused a complete result");
@@ -3441,10 +3495,13 @@ export class TeamBuilder extends LitElement {
           budget,
           ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
         };
-        runRequest = { type: "prepare", runId, request };
+        const projected = projectPreparationRequest(request);
+        preparation = projected.projection;
+        runRequest = { type: "prepare", runId, request: projected.request };
       }
       const dispatch = () => {
         if (generation !== this.requestId || !this.isConnected || this.checkpointCache !== checkpointCache) return;
+        this.searchDispatched = true;
         worker.postMessage({
           ...runRequest,
           ...(checkpointCache?.lastComplete ? { checkpoint: checkpointCache.lastComplete } : {}),
@@ -3775,7 +3832,7 @@ export class TeamBuilder extends LitElement {
         <div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("results", "Candidates"), "stats", { level: 2 })}
           ${
-            this.completedSearch && this.result === this.completedSearch.result && !this.running
+            this.resultExport()
               ? iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => this.exportResult() })
               : nothing
           }
@@ -3791,11 +3848,8 @@ export class TeamBuilder extends LitElement {
           <span role="status">${this.running ? this.searchProgressLabel : this.searchStatus}</span>
           <button
             class="button button--outlined"
-            ?disabled=${!this.running}
-            @click=${() => {
-              this.cancelSearch();
-              this.searchStatus = this.t("cancelled", "Search cancelled");
-            }}
+            ?disabled=${!this.running || this.cancelling}
+            @click=${() => this.requestCancellation()}
           >${clientText(this.locale, "cancel", "Cancel")}</button>
         </div>
         ${this.renderCheckpointStatus()}

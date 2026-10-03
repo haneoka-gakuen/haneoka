@@ -2533,7 +2533,7 @@
     "saved": "已保存",
     "saving": "正在保存",
     "saveFailed": "保存失败，草稿已保留。",
-    "conflict": "卡库已在其他设备更新。",
+    "conflict": "请确认已保存的卡库变更。",
     "merge": "合并草稿",
     "keepCloud": "使用云端卡库",
     "signIn": "登录 Haneoka",

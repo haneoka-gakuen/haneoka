@@ -2533,7 +2533,7 @@
     "saved": "Saved",
     "saving": "Saving",
     "saveFailed": "Save failed. Your draft is retained.",
-    "conflict": "Inventory changed on another device.",
+    "conflict": "Review saved inventory changes.",
     "merge": "Merge draft",
     "keepCloud": "Use cloud inventory",
     "signIn": "Sign in to Haneoka",
