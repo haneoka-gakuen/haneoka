@@ -45,7 +45,7 @@ function estimatedDifficulty(row: Item | undefined, locale: string) {
   )
     return undefined;
   return html`
-    <small>
+    <small class="difficulty-constant">
       ${value.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
     </small>
   `;

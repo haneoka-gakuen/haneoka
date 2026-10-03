@@ -2240,9 +2240,11 @@ def _score_metrics(
     return metrics
 
 
-def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
+def _songs(data: BuildData, source_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    from build.chart_difficulty import build_difficulty_estimates
+
     score_rows = {int(row.get("_id") or 0): row for row in data.rows("MasterLiveMusicScore")}
-    canonical_charts = _canonical_score_charts({
+    chart_files = {
         str(identity): file
         for identity, file in (
             (
@@ -2256,7 +2258,9 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
             for identity, row in score_rows.items()
         )
         if file is not None
-    })
+    }
+    canonical_charts = _canonical_score_charts(chart_files)
+    difficulty_estimates = build_difficulty_estimates(data, source_id, chart_files, score_rows)
     score_model = _score_model(data)
     luck_expectations = _luck_expectations(data)
     gekisou_rank_bonuses = _gekisou_rank_bonuses(data)
@@ -2356,6 +2360,7 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
                     noteCount=note_count,
                     publishedAt=_timestamp(row.get("_startAt")),
                     file=score_file,
+                    difficultyEstimate=difficulty_estimates.get(str(score_id)),
                 )
             )
             metrics = _score_metrics(
@@ -2367,6 +2372,9 @@ def _songs(data: BuildData) -> tuple[dict[str, Any], dict[str, Any]]:
                 meta_profiles=meta_profiles,
             )
             if metrics:
+                estimate = difficulty_estimates.get(str(score_id))
+                if estimate is not None:
+                    metrics["difficultyEstimate"] = estimate
                 song_metadata[str(index)] = {"chart": metrics}
                 difficulty_metrics.append(metrics)
                 gekisou_metrics = (
@@ -7714,7 +7722,7 @@ def build_api(
     )
     live2d_raw = _live2d_models(data, source_id)
     live2d = _enrich_live2d(data, live2d_raw)
-    songs, song_metadata = _songs(data)
+    songs, song_metadata = _songs(data, source_id)
     videos = _videos(data)
     video_records = videos.get("videos", {})
     for music_id, song in songs.items():

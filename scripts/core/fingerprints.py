@@ -19,6 +19,8 @@ BUILD_INPUTS = (
     "scripts/pipeline.py",
     "scripts/build",
     "scripts/recognize/build_index.py",
+    "src/lib/chart-difficulty.ts",
+    "src/lib/chart-difficulty-calibration.ts",
     "scripts/core",
     "scripts/extract",
     "scripts/ingest",

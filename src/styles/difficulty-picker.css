@@ -38,7 +38,7 @@
   .difficulty-constant,
   .difficulty-picker .difficulty-constant {
     display: block;
-    font: 500 10px/14px var(--app-font);
+    font: 400 10px/14px var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .song-tile__difficulty {

@@ -258,7 +258,7 @@ export class CatalogTable extends LitElement {
       return undefined;
     const c = this.controller;
     return html`
-      <small>
+      <small class="difficulty-constant">
         ${value.toLocaleString(this.locale || c.settings.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
       </small>
     `;
