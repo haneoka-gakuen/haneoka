@@ -605,6 +605,9 @@ const recordDecision = async (
   modelId: string | null,
   lease: ModerationJobLease | null,
 ): Promise<void> => {
+  if (moderationCase.entityKind === "post" && decision.verdict === "allow") {
+    await requireAllowedPostAttachments(env, moderationCase.entityId);
+  }
   const now = Date.now();
   const decisionToken = crypto.randomUUID();
   const categories = JSON.stringify(normalizeCategories(decision.categories));
@@ -991,6 +994,18 @@ const recordDecision = async (
   const results = await env.DB.batch<ModerationInvariantRow>(statements);
   if (results.at(-1)?.results.at(0)?.invariantOk !== 1) {
     throw new Error("Moderation decision invariant was not confirmed");
+  }
+  if (moderationCase.entityKind === "attachment" && decision.verdict === "allow") {
+    try {
+      await wakePostAttachmentModeration(env, moderationCase.entityId);
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "moderation.post_dependency_wake_failed",
+          errorName: error instanceof Error ? error.name : "ModerationWakeError",
+        }),
+      );
+    }
   }
 };
 
@@ -1925,6 +1940,75 @@ const readR2Bytes = async (
   return new Uint8Array(await new Response(object.body).arrayBuffer());
 };
 
+export const postAttachmentsAllowedSql = `NOT EXISTS (
+  SELECT 1 FROM community_post_attachment AS publication_link
+  JOIN community_attachment AS publication_attachment ON publication_attachment.id = publication_link.attachment_id
+  WHERE publication_link.post_id = post.id
+    AND (publication_attachment.status <> 'ready' OR publication_attachment.moderation_status <> 'allow'
+         OR publication_attachment.deleted_at IS NOT NULL OR publication_attachment.purpose <> 'post'
+         OR publication_attachment.owner_user_id <> post.author_id
+         OR publication_attachment.byte_size IS NULL
+         OR publication_attachment.byte_size <> publication_attachment.declared_size
+         OR publication_attachment.sha256 IS NULL OR publication_attachment.r2_etag IS NULL
+         OR publication_attachment.r2_version IS NULL
+         OR EXISTS (
+           SELECT 1 FROM community_media_job AS publication_media
+           WHERE publication_media.attachment_id = publication_attachment.id
+             AND (publication_media.state <> 'ready' OR NOT EXISTS (
+               SELECT 1 FROM community_attachment_variant AS publication_variant
+               WHERE publication_variant.attachment_id = publication_attachment.id
+                 AND publication_variant.kind = 'moderation'
+             ))
+         ))
+)`;
+
+const requireAllowedPostAttachments = async (env: Env, postId: string): Promise<void> => {
+  const pending = await env.DB.prepare(
+    `SELECT 1 AS pending FROM community_post AS post
+     WHERE post.id = ? AND NOT (${postAttachmentsAllowedSql})
+     LIMIT 1`,
+  )
+    .bind(postId)
+    .first<{ pending: number }>();
+  if (pending) {
+    const error = new Error("Post attachments are waiting for processing or moderation");
+    error.name = "ModerationDependenciesPendingError";
+    throw error;
+  }
+};
+
+const wakePostAttachmentModeration = async (
+  env: Env,
+  attachmentId: string | null,
+  postId: string | null = null,
+): Promise<void> => {
+  const now = Date.now();
+  const jobs = await env.DB.prepare(
+    `UPDATE community_moderation_job
+     SET status = 'queued', attempts = 0, dispatch_attempts = 0,
+         lease_token = NULL, lease_until = NULL, dispatch_token = NULL,
+         dispatched_at = NULL, next_attempt_at = ?, last_error_code = NULL, updated_at = ?
+     WHERE (status IN ('queued', 'failed') OR (status = 'processing' AND lease_until < ?))
+       AND EXISTS (
+         SELECT 1 FROM community_moderation_case AS moderation_case
+         JOIN community_post AS post ON post.id = moderation_case.entity_id
+         JOIN community_post_attachment AS link ON link.post_id = post.id
+         WHERE moderation_case.id = community_moderation_job.case_id
+           AND moderation_case.entity_kind = 'post'
+           AND moderation_case.entity_revision = post.moderation_revision
+           AND moderation_case.policy_generation = ? AND moderation_case.policy_version = ?
+           AND moderation_case.status = 'pending' AND moderation_case.source NOT IN ('appeal', 'manual')
+           AND post.moderation_status = 'pending' AND post.deleted_at IS NULL
+           AND (link.attachment_id = ? OR post.id = ?)
+           AND ${postAttachmentsAllowedSql}
+       )
+     RETURNING id`,
+  )
+    .bind(now, now, now, POLICY_GENERATION, POLICY_VERSION, attachmentId, postId)
+    .all<{ id: string }>();
+  for (const job of jobs.results) await dispatchModerationJob(env, job.id, POLICY_GENERATION, POLICY_VERSION);
+};
+
 const decideEntity = async (
   env: Env,
   moderationCase: CaseRow,
@@ -1946,6 +2030,7 @@ const decideEntity = async (
     if (!content) {
       return null;
     }
+    await requireAllowedPostAttachments(env, moderationCase.entityId);
     const tags = await readPostRevisionModerationTags(env, moderationCase.entityId, moderationCase.entityRevision);
     return moderateTextWithAi(env, communityPostModerationText(content.title, content.body, tags), "post");
   }
@@ -2722,6 +2807,20 @@ const processQueueMessage = async (env: Env, message: Message<unknown>): Promise
       return;
     }
     await releaseOrRestartInfrastructureFailure(errorName);
+    if (errorName === "ModerationDependenciesPendingError" && row.entityKind === "post") {
+      // The last attachment may have completed while this job held its lease.
+      // Recheck after releasing it so that completion cannot lose its wake-up.
+      try {
+        await wakePostAttachmentModeration(env, null, row.entityId);
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            event: "moderation.post_dependency_wake_failed",
+            errorName: error instanceof Error ? error.name : "ModerationWakeError",
+          }),
+        );
+      }
+    }
     message.ack();
     return;
   }
@@ -4091,6 +4190,18 @@ export const resolveModerationAppeal = async (
           expectedCriticalStatements: batch.criticalIndexes.length,
         }),
       );
+    }
+    if (input.decision === "accepted" && state.entityKind === "attachment") {
+      try {
+        await wakePostAttachmentModeration(env, state.entityId);
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            event: "moderation.post_dependency_wake_failed",
+            errorName: error instanceof Error ? error.name : "ModerationWakeError",
+          }),
+        );
+      }
     }
     return { ok: true };
   } catch (batchFailure) {

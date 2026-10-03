@@ -5,7 +5,12 @@ import { communityAccessState } from "./access";
 import { COMMENT_LAST_EDITED_AT_SELECT, POST_LAST_EDITED_AT_SELECT } from "./community-revision";
 import { handleCommunitySocialRequest } from "./community-social";
 import { ipDetailsJson, publicIpLocation, requestIpMetadata } from "./ip-address";
-import { communityPostModerationText, inspectCommunityText, scheduleEntityModeration } from "./moderation";
+import {
+  communityPostModerationText,
+  inspectCommunityText,
+  postAttachmentsAllowedSql,
+  scheduleEntityModeration,
+} from "./moderation";
 import { requestClientMetadata, type BrowserFamily, type OsFamily } from "./user-agent";
 import { avatarUrlSelect } from "./avatar-url";
 
@@ -108,7 +113,10 @@ interface PostListRow extends PostDatabaseFields {
 }
 
 interface PostAttachment {
-  contentUrl: string;
+  contentUrl: string | null;
+  status: string;
+  moderationStatus: ModerationStatus;
+  failureCode: string | null;
   fileName: string;
   height: number | null;
   id: string;
@@ -148,6 +156,9 @@ interface PostTagWriteContext {
 }
 
 interface PostAttachmentRow {
+  status: string;
+  moderationStatus: ModerationStatus;
+  failureCode: string | null;
   fileName: string;
   height: number | null;
   id: string;
@@ -914,8 +925,11 @@ const visibleNotificationActorWhere = `(notification.actor_user_id IS NULL OR EX
 
 const moderationReadableCondition = (userId: string | null): SqlCondition =>
   userId
-    ? { sql: "(post.moderation_status = 'allow' OR post.author_id = ?)", values: [userId] }
-    : { sql: "post.moderation_status = 'allow'", values: [] };
+    ? {
+        sql: `((post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}) OR post.author_id = ?)`,
+        values: [userId],
+      }
+    : { sql: `post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}`, values: [] };
 
 const readablePostCondition = (userId: string | null): SqlCondition =>
   userId
@@ -1014,6 +1028,7 @@ const requireWritableSession = async (
 const attachPostMetadata = async <T extends PostDatabaseFields>(
   env: Env,
   rows: T[],
+  viewerUserId: string | null = null,
 ): Promise<Array<T & { attachments: PostAttachment[]; state: PostState; tags: string[] }>> => {
   if (!rows.length) return [];
   const placeholders = rows.map(() => "?").join(", ");
@@ -1031,18 +1046,20 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
     env.DB.prepare(
       `SELECT link.post_id AS postId, attachment.id, attachment.original_name AS fileName,
               attachment.media_type AS mediaType, attachment.byte_size AS size,
-              attachment.width, attachment.height, link.position
+              attachment.width, attachment.height, link.position, attachment.status,
+              attachment.moderation_status AS moderationStatus, attachment.failure_code AS failureCode
        FROM community_post_attachment AS link
        JOIN community_attachment AS attachment ON attachment.id = link.attachment_id
        JOIN community_profile AS attachment_owner_profile
          ON attachment_owner_profile.user_id = attachment.owner_user_id
         AND attachment_owner_profile.status <> 'deleted'
        WHERE link.post_id IN (${placeholders})
-         AND attachment.status = 'ready' AND attachment.moderation_status = 'allow'
+         AND ((attachment.status = 'ready' AND attachment.moderation_status = 'allow')
+              OR attachment.owner_user_id = ?)
          AND attachment.deleted_at IS NULL AND attachment.byte_size IS NOT NULL
        ORDER BY link.post_id, link.position`,
     )
-      .bind(...postIds)
+      .bind(...postIds, viewerUserId)
       .all<PostAttachmentRow>(),
   ]);
   const tagsByPost = new Map<string, string[]>();
@@ -1057,8 +1074,13 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   );
   const attachmentsByPost = new Map<string, PostAttachment[]>();
   for (const row of attachmentResult.results) {
+    const allowed = row.status === "ready" && row.moderationStatus === "allow";
+    const presentation = presentations.get(row.id);
     const attachment: PostAttachment = {
-      contentUrl: `${COMMUNITY_PREFIX}/attachments/${row.id}/content`,
+      contentUrl: allowed ? `${COMMUNITY_PREFIX}/attachments/${row.id}/content` : null,
+      status: row.status,
+      moderationStatus: row.moderationStatus,
+      failureCode: row.failureCode,
       fileName: row.fileName,
       height: row.height,
       id: row.id,
@@ -1066,7 +1088,7 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
       position: row.position,
       size: row.size,
       width: row.width,
-      ...presentations.get(row.id),
+      ...(allowed ? presentation : presentation?.processing ? { processing: presentation.processing } : {}),
     };
     const attachments = attachmentsByPost.get(row.postId);
     if (attachments) attachments.push(attachment);
@@ -1152,7 +1174,7 @@ const findAccessiblePostRow = async (env: Env, id: string, userId: string | null
 const findAccessiblePost = async (env: Env, id: string, userId: string | null): Promise<PostWithTags | null> => {
   const row = await findAccessiblePostRow(env, id, userId);
   if (!row) return null;
-  return (await attachPostMetadata(env, [row]))[0] ?? null;
+  return (await attachPostMetadata(env, [row], userId))[0] ?? null;
 };
 
 const publicAccessiblePost = async (env: Env, id: string, userId: string): Promise<PublicPost> => {
@@ -1466,7 +1488,7 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   }
   const hasMore = result.results.length > options.limit;
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
-  const taggedRows = await attachPostMetadata(env, rows);
+  const taggedRows = await attachPostMetadata(env, rows, userId);
   const viewerFlags = await loadViewerPostFlags(
     env,
     taggedRows.map((row) => row.id),
@@ -1562,7 +1584,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
   const commentsOnly = commentsOnlyValue === "true";
   const postRow = await findAccessiblePostRow(env, id, userId);
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
-  const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow]))[0] ?? null);
+  const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow], userId))[0] ?? null);
   const post = postWithTags ?? postRow;
   let liked = false;
   let bookmarked = false;
@@ -2035,12 +2057,15 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
     const candidates = await env.DB.prepare(
       `SELECT id FROM community_attachment
        WHERE id IN (${placeholders}) AND owner_user_id = ?
-         AND purpose = 'post' AND status = 'ready' AND moderation_status = 'allow' AND deleted_at IS NULL`,
+         AND purpose = 'post' AND deleted_at IS NULL
+         AND byte_size = declared_size AND sha256 IS NOT NULL AND r2_etag IS NOT NULL AND r2_version IS NOT NULL
+         AND ((status = 'ready' AND moderation_status = 'allow')
+              OR (status IN ('scanning', 'review') AND moderation_status IN ('pending', 'review')))`,
     )
       .bind(...attachmentIds, session.user.id)
       .all<AttachmentCandidateRow>();
     if (candidates.results.length !== attachmentIds.length) {
-      return error(request, 409, "attachment_not_ready", "Every attachment must be owned by you, ready, and allowed");
+      return error(request, 409, "attachment_not_ready", "Every attachment must be owned by you and fully uploaded");
     }
   }
 
@@ -2147,7 +2172,11 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
     return json(request, { moderationQueued: false, post: await publicAccessiblePost(env, id, session.user.id) }, 202);
   }
   const post = await publicAccessiblePost(env, id, session.user.id);
-  return json(request, { post }, 201);
+  return json(
+    request,
+    { moderationQueued: post.moderationStatus === "pending", post },
+    post.moderationStatus === "pending" ? 202 : 201,
+  );
 };
 
 const updatePost = async (request: Request, env: Env, id: string): Promise<Response> => {

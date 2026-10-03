@@ -1750,10 +1750,33 @@ export class CommunityWorkspace extends LitElement {
       !["review", "block"].includes(String(entry.attachment?.moderationStatus))
     );
   }
-  private uploadReady(entry: UploadEntry) {
-    return (
-      entry.phase === "ready" && entry.attachment?.status === "ready" && entry.attachment.moderationStatus === "allow"
-    );
+  private uploadSubmittable(entry: UploadEntry) {
+    const attachment = entry.attachment;
+    if (!attachment || !["ready", "scanning", "review", "waiting"].includes(entry.phase)) return false;
+    if (!["allow", "pending", "review"].includes(String(attachment.moderationStatus))) return false;
+    const processing = attachment.processing as Value | undefined;
+    if (processing && !["queued", "processing", "ready"].includes(String(processing.state))) return false;
+    return ["ready", "scanning", "review"].includes(String(attachment.status));
+  }
+  private retryPostAttachment(attachment: Value) {
+    if (!this.postEnvelope().viewer.canEdit || !this.processingRetryable(attachment)) return;
+    const lifetime = this.lifetime,
+      userId = this.viewerId(),
+      postId = this.entityId;
+    void this.mutate(async () => {
+      await retryCommunityAttachment(String(attachment.id), {
+        signal: lifetime.signal,
+        request: (url, init) => this.request(url, init),
+      });
+      if (
+        this.isConnected &&
+        this.lifetime === lifetime &&
+        !lifetime.signal.aborted &&
+        this.viewerId() === userId &&
+        this.entityId === postId
+      )
+        await this.load(false);
+    });
   }
   private retryUpload(entry: UploadEntry) {
     if (!this.canRetryUpload(entry)) return;
@@ -1827,7 +1850,7 @@ export class CommunityWorkspace extends LitElement {
     const data = new FormData(form);
     const current = ((this.document?.post as Value | undefined) || this.document || {}) as Value;
     const editing = this.routeKind === "post-edit";
-    if (this.busy || this.uploads.some((entry) => !this.uploadReady(entry))) return;
+    if (this.busy || this.uploads.some((entry) => !this.uploadSubmittable(entry))) return;
     const body = this.editorBody.trim();
     if (!body || body.length > 20000) {
       this.error = this.label("invalidBody", "Write between 1 and 20,000 characters.");
@@ -1858,7 +1881,7 @@ export class CommunityWorkspace extends LitElement {
             ...(!editing
               ? {
                   attachmentIds: this.uploads
-                    .filter((entry) => this.uploadReady(entry))
+                    .filter((entry) => this.uploadSubmittable(entry))
                     .map((entry) => String(entry.attachment?.id)),
                 }
               : {}),
@@ -2291,7 +2314,7 @@ export class CommunityWorkspace extends LitElement {
               </button>
               <button
                 class="button"
-                ?disabled=${this.busy || !this.editorBody.trim() || this.editorBody.length > 20000 || this.uploads.some((entry) => !this.uploadReady(entry))}
+                ?disabled=${this.busy || !this.editorBody.trim() || this.editorBody.length > 20000 || this.uploads.some((entry) => !this.uploadSubmittable(entry))}
               >
                 ${icon("send", 18)}${this.busy ? this.label("publishing", "Publishing…") : this.label("publish", "Publish")}
               </button>
@@ -2372,6 +2395,40 @@ export class CommunityWorkspace extends LitElement {
       (post.author as Value | undefined)?.displayName || post.authorName || this.label("member", "Member"),
     );
     const attachments = Array.isArray(post.attachments) ? (post.attachments as Value[]) : [];
+    const pendingAttachments = viewer.canEdit
+      ? attachments.filter((item) => !item.contentUrl && item.status !== "deleted")
+      : [];
+    const pendingAttachmentRows = pendingAttachments.map((item) => {
+      const processing = (item.processing as Value | undefined)?.state;
+      const status =
+        processing === "failed"
+          ? this.label("uploadFailed", "Upload failed")
+          : ["queued", "processing"].includes(String(processing))
+            ? this.label("uploadScanning", "Processing")
+            : item.moderationStatus === "block"
+              ? this.label("moderationBlocked", "Blocked")
+              : this.label("moderationPending", "Reviewing");
+      const retry = this.processingRetryable(item)
+        ? iconButton({
+            icon: "refresh",
+            label: this.label("retry", "Retry"),
+            disabled: this.busy,
+            onClick: () => this.retryPostAttachment(item),
+          })
+        : nothing;
+      return html`
+        <li class="list-item list-item--two-line">
+          <span class="list-item__avatar">${icon("description", 20)}</span>
+          <span class="list-item__body">
+            <span class="list-item__headline">
+              ${String(item.fileName || this.label("attachments", "Attachments"))}
+            </span>
+            <span class="list-item__supporting">${status}</span>
+          </span>
+          ${retry}
+        </li>
+      `;
+    });
     const images = attachments.filter((item) => /^(image|video)\//.test(String(item.mediaType)) && item.contentUrl);
     const postLocation = this.ipLocation(post.ipLocation);
     setAppBarActions(
@@ -2457,6 +2514,15 @@ export class CommunityWorkspace extends LitElement {
                   post.state === "archived"
                     ? html`
                         <p class="inline-message">${this.label("archivedHint", "Archived")}</p>
+                      `
+                    : nothing
+                }
+                ${
+                  pendingAttachments.length
+                    ? html`
+                        <ul class="list list--divided" aria-label=${this.label("attachments", "Attachments")}>
+                          ${pendingAttachmentRows}
+                        </ul>
                       `
                     : nothing
                 }
