@@ -20,6 +20,7 @@ BUILD_INPUTS = (
     "scripts/build",
     "scripts/recognize/build_index.py",
     "src/lib/chart-difficulty.ts",
+    "src/lib/chart-difficulty-reading.ts",
     "src/lib/chart-difficulty-calibration.ts",
     "scripts/core",
     "scripts/extract",

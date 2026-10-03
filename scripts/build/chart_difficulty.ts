@@ -37,10 +37,13 @@ const converterFiles = [
 ] as const;
 const algorithmFiles = [
   "src/lib/chart-difficulty.ts",
+  "src/lib/chart-difficulty-reading.ts",
   ".dependencies/cassiopeia/src/core/session.ts",
   ".dependencies/cassiopeia/src/core/geometry.ts",
   ".dependencies/cassiopeia/src/core/assist.ts",
   ".dependencies/cassiopeia/src/core/enums.ts",
+  ".dependencies/cassiopeia-plugin-our-notes/src/adapter/renderFrame.ts",
+  ".dependencies/cassiopeia-plugin-our-notes/src/index.ts",
 ] as const;
 const converter = [
   "packages/sonolus/src/convert/index.ts",

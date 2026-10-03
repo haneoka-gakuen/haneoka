@@ -70,6 +70,7 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
       "/tools",
       "/stamp-maker",
       "/team-builder",
+      "/chart-editor",
       "/community/stories-bestdori",
       "/community/songs-bestdori",
       "/community/playlists",
@@ -141,6 +142,7 @@ const sections: NavSection[] = [
       { route: "/catalog/help", icon: "help", label: "help" },
       { route: "/team-builder", icon: "groups", label: "teamBuilder.title" },
       { route: "/stamp-maker", icon: "image", label: "stampMaker.title" },
+      { route: "/chart-editor/create", icon: "edit", label: "chartEditor" },
     ],
   },
   {
