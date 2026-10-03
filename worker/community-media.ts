@@ -273,11 +273,25 @@ async function processMedia(env: Env, id: string): Promise<void> {
       if (!converted.ok || !converted.body || Number(converted.headers.get("content-length")) !== output.bytes)
         throw new Error("Media output is incomplete");
       const objectKey = `media/v1/${id}/${token}/${output.name}`;
-      const object = await env.COMMUNITY_UPLOADS.put(objectKey, converted.body, {
-        sha256: digest,
-        httpMetadata: { contentType: output.mediaType, cacheControl: "private, no-store" },
-        customMetadata: { attachmentId: id, sha256: output.sha256! },
-      });
+      // Container responses can lose the runtime known-length marker even
+      // when Content-Length is present. R2 needs the readable half of this
+      // FixedLengthStream; await both writes so truncated output cannot publish.
+      const fixedOutput = new FixedLengthStream(output.bytes);
+      const outputAbort = new AbortController();
+      const outputTransfer = converted.body.pipeTo(fixedOutput.writable, { signal: outputAbort.signal });
+      let object: R2Object | null;
+      try {
+        const storage = env.COMMUNITY_UPLOADS.put(objectKey, fixedOutput.readable, {
+          sha256: digest,
+          httpMetadata: { contentType: output.mediaType, cacheControl: "private, no-store" },
+          customMetadata: { attachmentId: id, sha256: output.sha256! },
+        });
+        [object] = await Promise.all([storage, outputTransfer]);
+      } catch (error) {
+        outputAbort.abort(error);
+        await outputTransfer.catch(() => undefined);
+        throw error;
+      }
       if (!object) throw new Error("Media output could not be stored");
       storedKeys.push(objectKey);
       variants.push({
