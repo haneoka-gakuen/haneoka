@@ -2816,7 +2816,27 @@
     "searchOptions": "搜索选项",
     "native-normal-complete-member-order-domain": "比较所有技能顺序",
     "explicit-personal-solo-score-domain": "个人 Solo 分数",
-    "previousResult": "上次结果"
+    "previousResult": "上次结果",
+    "screenshotImport": {
+      "title": "导入截图",
+      "chooseImages": "选择截图",
+      "uploading": "正在上传截图",
+      "queued": "等待识别",
+      "processing": "正在识别截图",
+      "include": "导入此卡",
+      "keepLevel": "保留已保存等级",
+      "levelUnknown": "未识别出等级",
+      "noGrid": "未识别出卡牌列表",
+      "unrecognized": "未识别出卡牌",
+      "reviewCard": "确认卡牌",
+      "candidate": "卡牌",
+      "sourceImages": "截图",
+      "chooseCard": "选择卡牌",
+      "confirm": "确认导入",
+      "failedMessage": "截图识别失败",
+      "unavailable": "当前卡牌数据暂无法用于截图识别。",
+      "invalidImages": "请选择1至8张PNG、JPEG或WebP截图，每张最多8 MiB。"
+    }
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

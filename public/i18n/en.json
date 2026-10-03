@@ -2816,7 +2816,27 @@
     "searchOptions": "Search options",
     "native-normal-complete-member-order-domain": "All skill orders compared",
     "explicit-personal-solo-score-domain": "Personal Solo score",
-    "previousResult": "Previous result"
+    "previousResult": "Previous result",
+    "screenshotImport": {
+      "title": "Import screenshots",
+      "chooseImages": "Choose screenshots",
+      "uploading": "Uploading screenshots",
+      "queued": "Waiting for recognition",
+      "processing": "Recognizing screenshots",
+      "include": "Include card",
+      "keepLevel": "Keep saved level",
+      "levelUnknown": "Level not recognized",
+      "noGrid": "No reliable card grid found",
+      "unrecognized": "Unrecognized card",
+      "reviewCard": "Review card",
+      "candidate": "Card",
+      "sourceImages": "Screenshots",
+      "chooseCard": "Choose card",
+      "confirm": "Confirm import",
+      "failedMessage": "Screenshot recognition failed",
+      "unavailable": "Screenshot recognition is unavailable for the loaded card data.",
+      "invalidImages": "Choose 1 to 8 PNG, JPEG or WebP screenshots up to 8 MiB each."
+    }
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

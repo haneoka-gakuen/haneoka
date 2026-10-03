@@ -2816,7 +2816,27 @@
     "searchOptions": "검색 옵션",
     "native-normal-complete-member-order-domain": "모든 스킬 순서 비교",
     "explicit-personal-solo-score-domain": "개인 Solo 점수",
-    "previousResult": "이전 결과"
+    "previousResult": "이전 결과",
+    "screenshotImport": {
+      "title": "스크린샷 가져오기",
+      "chooseImages": "스크린샷 선택",
+      "uploading": "스크린샷 업로드 중",
+      "queued": "인식 대기 중",
+      "processing": "스크린샷 인식 중",
+      "include": "이 카드 가져오기",
+      "keepLevel": "저장된 레벨 유지",
+      "levelUnknown": "레벨을 인식하지 못했습니다",
+      "noGrid": "카드 목록을 인식하지 못했습니다",
+      "unrecognized": "카드를 인식하지 못했습니다",
+      "reviewCard": "카드 확인",
+      "candidate": "카드",
+      "sourceImages": "스크린샷",
+      "chooseCard": "카드 선택",
+      "confirm": "가져오기 확인",
+      "failedMessage": "스크린샷 인식에 실패했습니다",
+      "unavailable": "현재 카드 데이터로는 스크린샷을 인식할 수 없습니다.",
+      "invalidImages": "PNG, JPEG 또는 WebP 스크린샷을 1~8장 선택하세요. 각 파일은 최대 8 MiB입니다."
+    }
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

@@ -23,6 +23,8 @@ import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src
 import { handleModerationQueue, reconcileModerationState } from "./moderation";
 import { handleProfileRequest } from "./profile";
 import { handleTeamInventoryRequest } from "./team-inventory";
+import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
+import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
@@ -2341,6 +2343,25 @@ async function handleMetaReferenceApi(env: Env, request: Request): Promise<Respo
   );
 }
 
+const recognitionReferenceProvider = createRecognitionReferenceProvider({
+  resolveRelease: async (env, context) => {
+    if (
+      !RESOURCE_SERVER_SLUG_PATTERN.test(context.server) ||
+      !RELEASE_ID_PATTERN.test(context.releaseId) ||
+      !SOURCE_ID_PATTERN.test(context.sourceId)
+    ) return null;
+    const server = await activeResourceServer(env, context.server);
+    if (!server) return null;
+    const release = await requestedRelease(env, server, context.releaseId);
+    return release?.server === context.server &&
+      release.releaseId === context.releaseId &&
+      release.sourceId === context.sourceId
+      ? release
+      : null;
+  },
+  releaseEntry,
+});
+
 const TEAM_BUILDER_RUNTIME_MASTER_TABLES: ReadonlySet<string> = new Set([
   "MasterParameter",
   "MasterVip",
@@ -3326,6 +3347,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (profile) return profile;
     const teamInventory = await handleTeamInventoryRequest(request, env);
     if (teamInventory) return teamInventory;
+    const screenshotRecognition = await handleScreenshotRecognitionRequest(request, env, recognitionReferenceProvider);
+    if (screenshotRecognition) return screenshotRecognition;
     const publicProfile = await handlePublicProfileRequest(request, env);
     if (publicProfile) return publicProfile;
     const avatar = await handleAvatarRequest(request, env);

@@ -1,0 +1,13 @@
+**
+!packages/
+!packages/community-media/
+!packages/community-media/package.json
+!packages/community-media/server.mjs
+!packages/community-media/recognition.mjs
+!packages/community-media/recognition/
+!packages/community-media/recognition/**
+!scripts/
+!scripts/recognize/
+!scripts/recognize/**
+**/__pycache__/**
+**/*.pyc

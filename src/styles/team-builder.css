@@ -67,6 +67,13 @@
     align-content: start;
     gap: var(--md-sys-spacing-2);
   }
+  .team-builder__screenshot-review .collection > div,
+  .team-builder__screenshot-review details > div {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: var(--md-sys-spacing-2);
+  }
   .team-builder__card-character {
     display: flex;
     align-items: center;

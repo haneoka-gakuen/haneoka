@@ -1,3 +1,4 @@
+import { createRecognitionService } from './recognition.mjs';
 import http from 'node:http';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, mkdtemp, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
@@ -31,6 +32,11 @@ let shuttingDown = false;
 
 await mkdir(TMP_ROOT, { recursive: true, mode: 0o700 });
 await removeAbandonedDirectories();
+const recognition = await createRecognitionService({
+  root: `${TMP_ROOT}-recognition`,
+  canEnqueue: () => !shuttingDown && queue.length < QUEUE_CAPACITY,
+  enqueue(job) { queue.push(job); pumpQueue(); },
+});
 const cleanupTimer = setInterval(() => { void cleanupExpiredJobs(); }, 60_000);
 cleanupTimer.unref();
 
@@ -54,12 +60,13 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.on(signal, () => {
+  process.on(signal, async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     for (const job of jobs.values()) {
       if (job.state === 'queued' || job.state === 'running') cancelJob(job, 'SERVICE_SHUTDOWN');
     }
+    await recognition.close();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 15_000).unref();
   });
@@ -73,6 +80,12 @@ async function route(request, response) {
 
   const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
   const segments = url.pathname.split('/').filter(Boolean);
+
+  if (segments[0] === 'recognition' && !SERVICE_TOKEN) {
+    sendError(response, 503, 'UNAUTHORIZED', 'Recognition service token is not configured.');
+    return;
+  }
+  if (await recognition.route(request, response, segments)) return;
 
   if (request.method === 'POST' && segments.length === 1 && segments[0] === 'jobs') {
     await createJob(request, response);
@@ -312,7 +325,7 @@ function pumpQueue() {
     const job = queue.shift();
     if (!job || job.state !== 'queued') continue;
     activeJobs += 1;
-    void processJob(job).finally(() => {
+    job.completion = (typeof job.execute === 'function' ? job.execute() : processJob(job)).finally(() => {
       activeJobs -= 1;
       pumpQueue();
     });

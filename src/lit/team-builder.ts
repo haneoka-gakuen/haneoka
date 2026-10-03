@@ -85,6 +85,9 @@ import { downloadBlob } from "../lib/canvas-capture";
 import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
 import { isUnchangedInventoryConflict } from "../lib/team-builder/sync-review";
+import { createScreenshotImportSession } from "../lib/team-builder/screenshot-import-session";
+import { renderScreenshotImportDialog, type ScreenshotImportDialogState } from "./shared/team-screenshot-import";
+import type { ScreenshotReviewContext } from "../lib/team-builder/screenshot-import";
 
 type Kind = "members" | "snapshots";
 type SearchRunRequest = Extract<SolverRequest, { type: "prepare" | "start" }>;
@@ -186,6 +189,8 @@ export class TeamBuilder extends LitElement {
     pickerGenre: { state: true },
     pendingUniqueness: { state: true },
     uniquenessChoices: { state: true },
+    screenshotState: { state: true },
+    screenshotCorrection: { state: true },
   };
   declare locale: string;
   declare server: string;
@@ -263,6 +268,13 @@ export class TeamBuilder extends LitElement {
   declare pickerGenre: string;
   declare pendingUniqueness: InventoryUniquenessPreview | null;
   declare uniquenessChoices: Record<string, string>;
+  declare private screenshotState: ScreenshotImportDialogState | null;
+  declare private screenshotCorrection: { image: number; observation: number } | null;
+  private screenshotSession?: ReturnType<typeof createScreenshotImportSession>;
+  private screenshotScope?: ScreenshotReviewContext & { inventoryText: string };
+  private screenshotLoading?: LoadingReporter;
+  private screenshotLoadingPhase = "";
+  private restoreScreenshotFocus = false;
   private uniquenessOwner: string | null | undefined;
   private uniquenessFromStore = false;
   private uniquenessOriginalText = "";
@@ -299,7 +311,10 @@ export class TeamBuilder extends LitElement {
   private verifiedData: TeamBuilderData | null = null;
   private stopSongDisplay?: () => void;
   private readonly refreshAccount = () => {
-    void this.refreshCurrentSource();
+    // The OS file chooser can refocus the window. Keep its review open while
+    // checking the account; a settings-server change still reloads the source.
+    if (this.screenshotSession && readReleaseServer() === this.server) void this.checkAccount();
+    else void this.refreshCurrentSource();
   };
   private readonly settingsStorageChanged = (event: StorageEvent) => {
     if (event.key === "haneoka.release-server" || event.key === null) this.refreshAccount();
@@ -881,7 +896,7 @@ export class TeamBuilder extends LitElement {
     );
   }
   private renderMaintenance() {
-    if (!this.maintenanceOpen) return nothing;
+    if (!this.maintenanceOpen || this.screenshotState) return nothing;
     return html`
       <dialog
         class="selection-pane team-builder__maintenance"
@@ -1173,6 +1188,8 @@ export class TeamBuilder extends LitElement {
     this.pickerGenre = "";
     this.pendingUniqueness = null;
     this.uniquenessChoices = {};
+    this.screenshotState = null;
+    this.screenshotCorrection = null;
   }
   createRenderRoot() {
     return this;
@@ -1193,6 +1210,7 @@ export class TeamBuilder extends LitElement {
     this.stopSongDisplay = observeSongDisplay(() => this.requestUpdate());
   }
   disconnectedCallback() {
+    this.closeScreenshotImport(false);
     this.cancelSearch();
     this.checkpointCache?.dispose();
     this.checkpointCache = null;
@@ -1216,10 +1234,18 @@ export class TeamBuilder extends LitElement {
   }
   protected updated() {
     if (!this.isConnected) return;
+    if (this.screenshotSession && this.screenshotScope && (
+      !this.data || this.data.identity.server !== this.screenshotScope.server ||
+      this.data.identity.releaseId !== this.screenshotScope.releaseId || this.data.identity.sourceId !== this.screenshotScope.sourceId ||
+      readReleaseServer() !== this.screenshotScope.server || this.currentOwner !== this.screenshotScope.ownerId ||
+      this.storeState?.ownerId !== this.screenshotScope.ownerId || this.storeState.revision !== this.screenshotScope.revision ||
+      !this.inventory || exportInventory(this.inventory) !== this.screenshotScope.inventoryText ||
+      this.pendingRebase || this.pendingUniqueness || ["loading", "auth-loading", "conflict", "merge-required", "release-mismatch", "error"].includes(this.saveState)
+    )) this.closeScreenshotImport(true);
     this.reconcileUnchangedConflict();
     this.images.observe(this);
     const selector = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
-    const modal = this.addingCards || this.selectingSong || this.selectingEvent || this.maintenanceOpen || Boolean(this.editingId);
+    const modal = this.addingCards || this.selectingSong || this.selectingEvent || this.maintenanceOpen || Boolean(this.editingId) || Boolean(this.screenshotState);
     const content = this.querySelector<HTMLElement>(".team-builder__content");
     // Enable the opener before PaneFocus restores focus when the dialog closes.
     if (content && !modal) content.inert = false;
@@ -1252,6 +1278,10 @@ export class TeamBuilder extends LitElement {
       });
     }
     if (content && modal) content.inert = true;
+    if (this.restoreScreenshotFocus && this.maintenanceOpen && !this.screenshotState) {
+      this.restoreScreenshotFocus = false;
+      requestAnimationFrame(() => this.querySelector<HTMLElement>(".team-builder__screenshot-action")?.focus({ preventScroll: true }));
+    }
 
     setAppBarActions(
       OWNER,
@@ -1275,6 +1305,95 @@ export class TeamBuilder extends LitElement {
 
   private t(key: string, fallback: string, params?: Record<string, string | number>) {
     return clientText(this.locale, `teamBuilder.${key}`, fallback, params);
+  }
+  private screenshotText(key: string, fallback: string): string {
+    const common: Record<string, string> = { close: "close", cancel: "cancel", level: "teamBuilder.level" };
+    if (key === "failedMessage" && this.screenshotState?.error === "recognition-unavailable")
+      return this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data.");
+    if (key === "failedMessage" && this.screenshotState?.error === "save-failed")
+      return this.t("saveFailed", "Save failed. Your draft is retained.");
+    if (key === "failedMessage" && this.screenshotState?.error === "invalid-image")
+      return this.t("screenshotImport.invalidImages", "Choose 1 to 8 PNG, JPEG or WebP screenshots up to 8 MiB each.");
+    return clientText(this.locale, common[key] ?? `teamBuilder.screenshotImport.${key}`, fallback);
+  }
+  private screenshotContext(): ScreenshotReviewContext | null {
+    if (!this.data?.identity.sourceId || !this.inventory || !this.storeState || !this.currentOwner || this.storeState.ownerId !== this.currentOwner) return null;
+    return { ownerId: this.currentOwner, revision: this.storeState.revision, server: this.data.identity.server,
+      releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId };
+  }
+  private openScreenshotImport() {
+    const context = this.screenshotContext();
+    if (!this.canEdit || !context || !this.data || !this.inventory) return;
+    this.closePane(true);
+    this.screenshotScope = { ...context, inventoryText: exportInventory(this.inventory) };
+    const session = createScreenshotImportSession({
+      inventory: this.inventory, data: this.data, context,
+      onState: (state) => {
+        if (this.screenshotSession !== session) return;
+        // T34 preserves a fixed API error message today; its typed error code
+        // can replace this exact compatibility mapping without changing UI.
+        const unavailable = ["reference_changed", "reference_invalid", "reference_unavailable", "recognition_unavailable",
+          "The loaded reference is no longer available", "Reference data is unavailable", "Reference preparation is busy", "Recognition is unavailable", "Recognition is temporarily unavailable", "HTTP 404"].includes(state.error ?? "");
+        this.screenshotState = unavailable ? { ...state, error: "recognition-unavailable" } : state;
+        const busy = ["uploading", "queued", "processing"].includes(state.phase);
+        if (busy && this.screenshotLoadingPhase !== state.phase) {
+          this.screenshotLoading?.finish();
+          this.screenshotLoading = beginLoading(this.screenshotText(state.phase, "Recognizing screenshots"));
+          this.screenshotLoadingPhase = state.phase;
+        } else if (!busy) {
+          this.screenshotLoading?.finish(); this.screenshotLoading = undefined; this.screenshotLoadingPhase = "";
+        }
+      },
+      onUploadProgress: (loadedBytes, totalBytes) => this.screenshotLoading?.update({ loadedBytes, totalBytes, byteBasis: "identity" }),
+    });
+    this.screenshotSession = session;
+    this.screenshotState = session.state();
+  }
+  private closeScreenshotImport(returnToCards = true) {
+    const session = this.screenshotSession;
+    this.screenshotSession = undefined; this.screenshotScope = undefined;
+    this.screenshotState = null; this.screenshotCorrection = null;
+    this.screenshotLoading?.cancel(); this.screenshotLoading = undefined; this.screenshotLoadingPhase = "";
+    if (session) {
+      this.addingCards = false;
+      void session.close();
+      if (returnToCards) { this.maintenanceOpen = true; this.inventoryTab = this.canEdit ? "cards" : "sync"; this.restoreScreenshotFocus = true; }
+    }
+  }
+  private correctScreenshotCard(image: number, observation: number) {
+    const row = this.screenshotState?.results?.[image]?.observations[observation];
+    if (!row || !this.screenshotSession || !this.canEdit) return;
+    this.screenshotCorrection = { image, observation };
+    this.kind = row.kind; this.picker = ""; this.pickerQuery = "";
+    this.pickerBand = ""; this.pickerRarity = ""; this.pickerAttribute = ""; this.pickerCharacter = "";
+    this.selectedCards = new Set(); this.pickerLimit = 30; this.addingCards = true;
+  }
+  private confirmScreenshotImport() {
+    const context = this.screenshotContext(), session = this.screenshotSession;
+    if (!this.canEdit || !context || !session || !this.inventory || !this.data) return;
+    try {
+      const next = session.merge(this.inventory, this.data, context);
+      if (next !== this.inventory) this.replaceInventory(next);
+      if (!this.error && this.inventory === next) this.closeScreenshotImport(true);
+      else if (this.screenshotState) this.screenshotState = { ...this.screenshotState, error: "save-failed" };
+    } catch {
+      this.closeScreenshotImport(true);
+      this.error = this.t("rebaseNeedsReview", "Review the changed training values before continuing.");
+    }
+  }
+  private renderScreenshotImport() {
+    const session = this.screenshotSession, state = this.screenshotState;
+    if (!session || !state || this.screenshotCorrection) return nothing;
+    return renderScreenshotImportDialog({ ...state, canConfirm: state.canConfirm && this.canEdit }, {
+      text: (key, fallback) => this.screenshotText(key, fallback),
+      card: (kind, id) => { const card = this.catalogEntry(id, kind); return card ? this.inventoryCardOptions(card, kind) : null; },
+      files: (files) => { void session.files(files).catch(() => { if (this.screenshotSession === session) this.screenshotState = { ...session.state(), error: "invalid-image" }; }); },
+      close: () => this.closeScreenshotImport(true), cancel: () => { void session.cancel(); },
+      correct: (image, observation) => this.correctScreenshotCard(image, observation),
+      candidate: (image, observation, id) => session.correct(image, observation, id),
+      include: (key, value) => session.include(key, value), level: (key, value) => session.level(key, value),
+      confirm: () => this.confirmScreenshotImport(),
+    });
   }
   private reconcileUnchangedConflict() {
     if (!this.store || !this.data || !this.sourceReady || this.pendingRebase || this.pendingUniqueness) return;
@@ -1486,6 +1605,7 @@ export class TeamBuilder extends LitElement {
     `;
   }
   private closePane(keepMaintenance = false) {
+    this.closeScreenshotImport(false);
     if (!keepMaintenance) this.maintenanceOpen = false;
     this.selectingSong = false;
     this.selectingEvent = false;
@@ -1536,6 +1656,7 @@ export class TeamBuilder extends LitElement {
     this.editingId = instanceId;
   }
   private closeOwnedEditor() {
+    if (this.screenshotCorrection) { this.screenshotCorrection = null; this.addingCards = false; return; }
     const returnToInventory = this.editFromInventory;
     const id = this.editingId;
     this.closePane();
@@ -1560,6 +1681,13 @@ export class TeamBuilder extends LitElement {
   }
   private addPickedCards(): void {
     if (!this.inventory || !this.canEdit) return;
+    if (this.screenshotCorrection && this.screenshotSession) {
+      const { image, observation } = this.screenshotCorrection;
+      if (!this.catalogEntry(Number(this.picker), this.kind)) return;
+      this.screenshotSession.correct(image, observation, Number(this.picker));
+      this.closeOwnedEditor();
+      return;
+    }
     const keys = this.selectedCards.size
       ? [...this.selectedCards]
       : this.picker
@@ -1824,7 +1952,7 @@ export class TeamBuilder extends LitElement {
         moreLabel: clientText(this.locale, "more", "More"),
         more: matching.length > this.pickerLimit ? () => (this.pickerLimit += 30) : undefined,
         filters: html`
-          ${this.select(
+          ${this.screenshotCorrection ? nothing : this.select(
             this.t("cardKind", "Card type"),
             this.kind,
             [
@@ -1880,7 +2008,7 @@ export class TeamBuilder extends LitElement {
             },
           )}
           ${this.select(uiText(this.locale, "character"), this.pickerCharacter, [all, ...Object.entries(this.data.characters).map(([value, row]) => ({ value, label: this.text(row.characterName) }))], (value) => (this.pickerCharacter = value))}
-          <div class="team-builder__actions team-builder__wide">
+          ${this.screenshotCorrection ? nothing : html`<div class="team-builder__actions team-builder__wide">
             <button
               class="button button--text"
               @click=${() => (this.selectedCards = new Set([...this.selectedCards, ...matching.map((card) => this.batchKey(card.id))]))}
@@ -1894,7 +2022,7 @@ export class TeamBuilder extends LitElement {
             >
               ${clientText(this.locale, "clear", "Clear")}
             </button>
-          </div>
+          </div>`}
         `,
         items: matching.slice(0, this.pickerLimit).map((card) => ({
           ...this.inventoryCardOptions(card, this.kind), value: String(card.id),
@@ -1908,7 +2036,7 @@ export class TeamBuilder extends LitElement {
                     ${this.cardOptions(chosen).adornment}${this.characterNames(chosen)} · ${this.rarityMark(chosen)} ·
                     ${this.attributeName(chosen)}
                   </span>
-                  ${this.check(
+                  ${this.screenshotCorrection ? nothing : this.check(
                     this.t("selectCard", "Select card"),
                     this.selectedCards.has(this.batchKey(chosen.id)),
                     (checked) => {
@@ -1944,7 +2072,7 @@ export class TeamBuilder extends LitElement {
             ?disabled=${(!chosen && !this.selectedCards.size) || !this.canEdit}
             @click=${() => this.addPickedCards()}
           >
-            ${this.selectedCards.size ? this.t("addSelectedCards", "Use selected cards") : chosen && this.inventory?.[this.kind].some((entry) => entry.cardId === chosen.id) ? this.t("editOwnedCard", "Edit owned card") : this.t("add", "Add card")}
+            ${this.screenshotCorrection ? this.t("selectCard", "Select card") : this.selectedCards.size ? this.t("addSelectedCards", "Use selected cards") : chosen && this.inventory?.[this.kind].some((entry) => entry.cardId === chosen.id) ? this.t("editOwnedCard", "Edit owned card") : this.t("add", "Add card")}
           </button>
         `,
       });
@@ -2030,6 +2158,10 @@ export class TeamBuilder extends LitElement {
       <section class="team-builder__section" aria-label=${this.t("library", "Card library")}>
         <div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("library", "Card library"), "cards", { count: entries.length, level: 2 })}
+          <div class="team-builder__actions">
+          ${iconButton({ icon: "image", label: !this.currentOwner ? this.t("signIn", "Sign in to Haneoka") : this.screenshotContext()
+              ? this.screenshotText("title", "Import screenshots") : this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data."),
+            disabled: !this.canEdit || !this.screenshotContext(), className: "team-builder__screenshot-action", onClick: () => this.openScreenshotImport() })}
           <button
             class="button"
             ?disabled=${!this.canEdit}
@@ -2044,6 +2176,7 @@ export class TeamBuilder extends LitElement {
           >
             ${this.t("add", "Add card")}
           </button>
+          </div>
         </div>
         ${
           entries.length
@@ -3911,7 +4044,7 @@ export class TeamBuilder extends LitElement {
             <div class="team-builder__result-area">${this.renderResults()}</div>
           </div>
         </div>
-        ${this.renderCardPane()}${this.renderSongPane()}${this.renderEventPane()}${this.renderMaintenance()}
+        ${this.renderCardPane()}${this.renderSongPane()}${this.renderEventPane()}${this.renderMaintenance()}${this.renderScreenshotImport()}
       </div>
     `;
   }

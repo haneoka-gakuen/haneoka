@@ -2816,7 +2816,27 @@
     "searchOptions": "検索オプション",
     "native-normal-complete-member-order-domain": "すべてのスキル順を比較",
     "explicit-personal-solo-score-domain": "個人Soloスコア",
-    "previousResult": "前回の結果"
+    "previousResult": "前回の結果",
+    "screenshotImport": {
+      "title": "スクリーンショットを取り込む",
+      "chooseImages": "スクリーンショットを選択",
+      "uploading": "アップロード中",
+      "queued": "認識待ち",
+      "processing": "認識中",
+      "include": "取り込む",
+      "keepLevel": "保存済みのレベルを維持",
+      "levelUnknown": "レベルを認識できませんでした",
+      "noGrid": "カードの一覧を認識できませんでした",
+      "unrecognized": "カードを認識できませんでした",
+      "reviewCard": "カードを確認",
+      "candidate": "カード",
+      "sourceImages": "スクリーンショット",
+      "chooseCard": "カードを選択",
+      "confirm": "取り込みを確定",
+      "failedMessage": "スクリーンショットの認識に失敗しました",
+      "unavailable": "現在のカードデータではスクリーンショットを認識できません。",
+      "invalidImages": "PNG・JPEG・WebP形式のスクリーンショットを1〜8枚選択してください。1枚あたり最大8 MiBです。"
+    }
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

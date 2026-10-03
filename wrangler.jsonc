@@ -76,6 +76,7 @@
   "containers": [{
     "class_name": "CommunityMediaContainer",
     "image": "./packages/community-media/Dockerfile",
+    "image_build_context": ".",
     "instance_type": {"vcpu": 1, "memory_mib": 3072, "disk_mb": 4096},
     "max_instances": 2
   }],
