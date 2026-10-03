@@ -225,14 +225,6 @@
   .stamp-maker__layer-menu {
     position: relative;
   }
-  .stamp-maker__background > summary {
-    min-height: 40px;
-    cursor: pointer;
-    padding-block: 8px;
-  }
-  .stamp-maker__background > :not(summary) {
-    margin-block: 8px;
-  }
   .stamp-maker__font-row {
     display: flex;
     align-items: center;
@@ -269,28 +261,6 @@
     height: 12px;
     border-radius: 50%;
     border: 1px solid var(--md-sys-color-outline);
-  }
-  .stamp-maker__advanced {
-    display: grid;
-    gap: 12px;
-  }
-  .stamp-maker__advanced > summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    min-height: 48px;
-    color: var(--md-sys-color-primary);
-  }
-  .stamp-maker__disclosure {
-    margin-inline-start: auto;
-    display: inline-flex;
-  }
-  .stamp-maker__advanced[open] > summary .stamp-maker__disclosure {
-    transform: rotate(180deg);
-  }
-  .stamp-maker__advanced > :not(summary) {
-    margin-block: 8px;
   }
   .stamp-maker__export md-outlined-select {
     min-width: 0;

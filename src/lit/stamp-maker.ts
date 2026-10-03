@@ -37,6 +37,7 @@ import {
 } from "../lib/stamp-maker/render";
 import { catalogUrl, fetchJson, localizedText, type JsonRecord } from "./shared/catalog";
 import { segmented, iconButton, filterChip } from "./ui/controls";
+import { accordion } from "./ui/accordion";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
 import { LazyImages } from "./ui/lazy-images";
@@ -93,6 +94,7 @@ export class StampMaker extends LitElement {
     outputWidth: { state: true },
     importedFonts: { state: true },
     fontError: { state: true },
+    expandedSections: { state: true },
     imageLanguage: { state: true },
     pickerBrowsingLocale: { state: true },
     pickerOriginal: { state: true },
@@ -132,6 +134,8 @@ export class StampMaker extends LitElement {
   declare outputWidth: string;
   declare importedFonts: StampFont[];
   declare fontError: boolean;
+  declare private expandedSections: Record<"font" | "style" | "background", boolean>;
+  private readonly sectionId = `stamp-options-${crypto.randomUUID()}`;
   declare imageLanguage: string;
   declare pickerBrowsingLocale: string;
   declare pickerOriginal: boolean;
@@ -349,6 +353,7 @@ export class StampMaker extends LitElement {
     this.outputWidth = "512";
     this.importedFonts = [];
     this.fontError = false;
+    this.expandedSections = { font: false, style: false, background: false };
     this.imageLanguage = "";
     this.pickerBrowsingLocale = "";
     this.pickerOriginal = false;
@@ -431,6 +436,8 @@ export class StampMaker extends LitElement {
   }
 
   protected updated(changed: Map<string, unknown>) {
+    if (changed.has("fontError") && this.fontError && !this.expandedSections.font)
+      this.expandedSections = { ...this.expandedSections, font: true };
     if (changed.has("locale") && !this.manualImageLanguage) this.imageLanguage = this.defaultImageLanguage;
     if (changed.has("server")) {
       void this.loadCatalog();
@@ -472,7 +479,7 @@ export class StampMaker extends LitElement {
       this.prepareGlyphs();
     if (changed.has("selected") || changed.has("characters") || changed.has("catalog")) this.defaultCharacterColor();
     this.applyPendingDraft();
-    if (![...changed.keys()].every((key) => ["textOverflow", "pickerBrowsingLocale", "pickerOriginal", "pickerFiltersOpen", "pickerBand", "pickerCharacter", "bands"].includes(String(key)))) this.schedulePaint();
+    if (![...changed.keys()].every((key) => ["textOverflow", "expandedSections", "pickerBrowsingLocale", "pickerOriginal", "pickerFiltersOpen", "pickerBand", "pickerCharacter", "bands"].includes(String(key)))) this.schedulePaint();
     if (["catalog", "textless", "mode", "locale", "imageLanguage", "pickerBrowsingLocale", "pickerOriginal", "pickerBand", "pickerCharacter", "selected"].some((key) => changed.has(key)))
       this.thumbnails.observe(this);
     if (["layers", "activeLayerId", "selected", "imageLanguage", "server"].some((key) => changed.has(key)))
@@ -1485,6 +1492,11 @@ export class StampMaker extends LitElement {
     `;
   }
 
+  private setSectionExpanded(section: "font" | "style" | "background", expanded: boolean) {
+    if (this.expandedSections[section] === expanded) return;
+    this.expandedSections = { ...this.expandedSections, [section]: expanded };
+  }
+
   private renderLayerSettings() {
     const frame = this.textFrameDimensions;
     return html`
@@ -1513,8 +1525,13 @@ export class StampMaker extends LitElement {
                         `
                       : nothing
                   }
-                  <details class="stamp-maker__advanced" ?open=${this.fontError}>
-                    <summary>${icon("text_fields", 20)}${this.t("font")}<span class="stamp-maker__disclosure">${icon("expand_more", 20)}</span></summary>
+                  ${accordion({
+                    id: `${this.sectionId}-font`,
+                    label: this.t("font"),
+                    leading: icon("text_fields", 20),
+                    expanded: this.expandedSections.font,
+                    onExpandedChange: (expanded) => this.setSectionExpanded("font", expanded),
+                    content: html`<div class="field-stack">
                   ${segmented({
                     label: this.t("writingMode"),
                     value: this.settings.writingMode,
@@ -1589,7 +1606,8 @@ export class StampMaker extends LitElement {
                         `
                       : nothing
                   }
-                  </details>
+                    </div>`,
+                  })}
                   ${this.slider("size", 3, 25, 0.5)}
                   <md-outlined-select
                     aria-label=${`${this.t("fill")} ${this.settings.fill}`}
@@ -1657,11 +1675,13 @@ export class StampMaker extends LitElement {
                         `
                       : nothing
                   }
-                  <details class="stamp-maker__advanced">
-                    <summary>
-                      ${icon("tune", 20)}${this.t("positionStyle")}
-                      <span class="stamp-maker__disclosure">${icon("expand_more", 20)}</span>
-                    </summary>
+                  ${accordion({
+                    id: `${this.sectionId}-style`,
+                    label: this.t("positionStyle"),
+                    leading: icon("tune", 20),
+                    expanded: this.expandedSections.style,
+                    onExpandedChange: (expanded) => this.setSectionExpanded("style", expanded),
+                    content: html`<div class="field-stack">
                     <div class="field-stack">
                       ${this.positionSlider("x")}${this.positionSlider("y")}
                       ${iconButton({ label: this.t("center"), icon: "center_focus_strong", onClick: () => this.changePosition({ x: 50, y: 50 }) })}
@@ -1707,8 +1727,12 @@ export class StampMaker extends LitElement {
                       </label>
                     </div>
                     ${this.slider("strokeWidth", 0, 4, 0.1)}
-                    <details class="stamp-maker__background">
-                      <summary>${this.t("background")}</summary>
+                    ${accordion({
+                      id: `${this.sectionId}-background`,
+                      label: this.t("background"),
+                      expanded: this.expandedSections.background,
+                      onExpandedChange: (expanded) => this.setSectionExpanded("background", expanded),
+                      content: html`<div class="field-stack">
                       ${segmented({
                         label: this.t("background"),
                         value: (this.settings.background?.alpha || 0) > 0 ? "on" : "off",
@@ -1772,8 +1796,10 @@ export class StampMaker extends LitElement {
                             `
                           : nothing
                       }
-                    </details>
-                  </details>
+                      </div>`,
+                    })}
+                    </div>`,
+                  })}
                 `
           }
 
