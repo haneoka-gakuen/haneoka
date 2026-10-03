@@ -2,6 +2,7 @@ import { getAuthSession } from "./auth";
 import { avatarUrlSelect } from "./avatar-url";
 import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { resolveModerationAppeal } from "./moderation";
+import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -146,6 +147,8 @@ interface PostHistoryHeadRow extends IpAuditRow {
   updatedAt: number;
   version: number;
   visibility: "private" | "protected" | "public";
+  title: string;
+  body: string;
 }
 
 interface PostRevisionHistoryRow extends IpAuditRow {
@@ -219,6 +222,7 @@ interface CommentHistoryHeadRow extends IpAuditRow {
   postId: string;
   updatedAt: number;
   version: number;
+  body: string;
 }
 
 interface CommentRevisionHistoryRow extends IpAuditRow {
@@ -732,6 +736,9 @@ const staffValue = (access: StaffAccess): JsonObject => ({
           "appeals.read",
           "appeals.write",
           "content-history.read",
+          "content.read",
+          "attachments.read",
+          "statistics.read",
           "operations.read",
           "packages.write",
           "reports.read",
@@ -994,8 +1001,8 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
             post.pinned_at AS pinnedAt, post.archived_at AS archivedAt, post.deleted_at AS deletedAt,
             post.created_at AS createdAt, post.updated_at AS updatedAt
      FROM community_post AS post
-     JOIN "user" AS account ON account.id = post.author_id
-     JOIN community_profile AS profile ON profile.user_id = post.author_id
+     LEFT JOIN "user" AS account ON account.id = post.author_id
+     LEFT JOIN community_profile AS profile ON profile.user_id = post.author_id
      ${where}
      ORDER BY post.created_at DESC, post.id DESC
      LIMIT ?`,
@@ -1010,6 +1017,8 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
     authorId: row.authorId,
     authorName: row.authorName,
     body: row.body,
+    readUrl: `${ADMIN_PREFIX}/posts/${encodeURIComponent(row.id)}`,
+    historyUrl: `${ADMIN_PREFIX}/posts/${encodeURIComponent(row.id)}/history`,
     commentCount: row.commentCount,
     createdAt: row.createdAt,
     deletedAt: row.deletedAt,
@@ -1072,6 +1081,7 @@ const postStateEventValue = (event: PostStateEventRow): JsonObject => ({
 
 const commentHistoryHeadValue = (comment: CommentHistoryHeadRow): JsonObject => ({
   id: comment.id,
+  body: comment.body,
   postId: comment.postId,
   parentId: comment.parentId,
   author: {
@@ -1204,6 +1214,7 @@ const getPostRevisionHistoryPage = async (
         byteSize: attachment.byteSize,
         sha256: attachment.sha256,
         status: attachment.status,
+        contentUrl: attachment.byteSize !== null ? `${ADMIN_PREFIX}/attachments/${encodeURIComponent(attachment.attachmentId)}/content` : null,
         position: attachment.position,
       });
       attachmentsByRevision.set(attachment.revisionNumber, attachments);
@@ -1271,7 +1282,7 @@ const getPostCommentHistoryPage = async (
   if (cursor) values.push(cursor.sort, cursor.sort, cursor.id);
   values.push(limit + 1);
   const result = await env.DB.prepare(
-    `SELECT comment.id, comment.post_id AS postId, comment.parent_id AS parentId,
+    `SELECT comment.id, comment.body, comment.post_id AS postId, comment.parent_id AS parentId,
             comment.author_id AS authorId, author.name AS authorAccountName,
             author_profile.display_name AS authorDisplayName, author_profile.handle AS authorHandle,
             comment.version, comment.moderation_status AS moderationStatus,
@@ -1285,8 +1296,8 @@ const getPostCommentHistoryPage = async (
             comment.os_family AS osFamily,
             comment.created_at AS createdAt, comment.updated_at AS updatedAt
      FROM community_comment AS comment
-     JOIN "user" AS author ON author.id = comment.author_id
-     JOIN community_profile AS author_profile ON author_profile.user_id = comment.author_id
+     LEFT JOIN "user" AS author ON author.id = comment.author_id
+     LEFT JOIN community_profile AS author_profile ON author_profile.user_id = comment.author_id
      WHERE comment.post_id = ? ${after}
      ORDER BY comment.created_at ASC, comment.id ASC
      LIMIT ?`,
@@ -1403,7 +1414,7 @@ const getPostHistory = async (request: Request, env: Env, postId: string, url: U
   const post = await env.DB.prepare(
     `SELECT post.id, post.author_id AS authorId, author.name AS authorAccountName,
             author_profile.display_name AS authorDisplayName, author_profile.handle AS authorHandle,
-            post.status, post.visibility, post.version,
+            post.title, post.body, post.status, post.visibility, post.version,
             post.moderation_status AS moderationStatus, post.moderation_revision AS moderationRevision,
             post.deleted_at AS deletedAt, post.comments_locked_at AS commentsLockedAt,
             post.pinned_at AS pinnedAt, post.archived_at AS archivedAt,
@@ -1414,8 +1425,8 @@ const getPostHistory = async (request: Request, env: Env, postId: string, url: U
             post.user_agent AS userAgent, post.browser_family AS browserFamily,
             post.os_family AS osFamily, post.created_at AS createdAt, post.updated_at AS updatedAt
      FROM community_post AS post
-     JOIN "user" AS author ON author.id = post.author_id
-     JOIN community_profile AS author_profile ON author_profile.user_id = post.author_id
+     LEFT JOIN "user" AS author ON author.id = post.author_id
+     LEFT JOIN community_profile AS author_profile ON author_profile.user_id = post.author_id
      WHERE post.id = ?
      LIMIT 1`,
   )
@@ -1434,6 +1445,8 @@ const getPostHistory = async (request: Request, env: Env, postId: string, url: U
   return json(request, {
     post: {
       id: post.id,
+      title: post.title,
+      body: post.body,
       author: {
         id: post.authorId,
         accountName: post.authorAccountName,
@@ -1476,7 +1489,7 @@ const getCommentHistory = async (request: Request, env: Env, commentId: string, 
   const cursor = historyCursor(url, section);
   if (cursor === "invalid") return error(request, 400, "invalid_cursor", "cursor is invalid");
   const comment = await env.DB.prepare(
-    `SELECT comment.id, comment.post_id AS postId, comment.parent_id AS parentId,
+    `SELECT comment.id, comment.body, comment.post_id AS postId, comment.parent_id AS parentId,
             comment.author_id AS authorId, author.name AS authorAccountName,
             author_profile.display_name AS authorDisplayName, author_profile.handle AS authorHandle,
             comment.version, comment.moderation_status AS moderationStatus,
@@ -1490,8 +1503,8 @@ const getCommentHistory = async (request: Request, env: Env, commentId: string, 
             comment.os_family AS osFamily,
             comment.created_at AS createdAt, comment.updated_at AS updatedAt
      FROM community_comment AS comment
-     JOIN "user" AS author ON author.id = comment.author_id
-     JOIN community_profile AS author_profile ON author_profile.user_id = comment.author_id
+     LEFT JOIN "user" AS author ON author.id = comment.author_id
+     LEFT JOIN community_profile AS author_profile ON author_profile.user_id = comment.author_id
      WHERE comment.id = ?
      LIMIT 1`,
   )
@@ -4122,6 +4135,19 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
   if (segments.some((segment) => segment === null))
     return error(request, 404, "route_not_found", "API route not found");
   const path = segments as string[];
+
+  if (method === "GET" && (
+    (path.length === 1 && path[0] === "statistics") ||
+    (path.length === 2 && path[0] === "posts") ||
+    (path.length === 3 && path[0] === "attachments" && path[2] === "content")
+  )) {
+    const access = await requireStaff(request, env, "admin");
+    if (access instanceof Response) return access;
+    if (path[0] === "statistics") return readAdminStatistics(request, env);
+    const id = path[1] || "";
+    if (!SAFE_ID_PATTERN.test(id)) return error(request, 400, "invalid_entity_id", "Invalid entity identifier");
+    return path[0] === "posts" ? readAdminPost(request, env, id) : readAdminAttachment(request, env, id);
+  }
 
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "overview") return getOverview(request, env);
