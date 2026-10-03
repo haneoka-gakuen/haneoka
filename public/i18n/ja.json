@@ -1997,7 +1997,8 @@
       "supportCards": "サポートカード",
       "noProfileCard": "プロフィールカードなし",
       "noSupportCard": "サポートカードなし",
-      "points": "ポイント"
+      "points": "ポイント",
+      "favoriteCard": "お気に入りメンバー"
     },
     "eventLogo": "イベントロゴ",
     "eventPoints": "{points}pt",

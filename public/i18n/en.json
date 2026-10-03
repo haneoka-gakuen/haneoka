@@ -1997,7 +1997,8 @@
       "supportCards": "Support cards",
       "noProfileCard": "No profile card",
       "noSupportCard": "No support card",
-      "points": "Points"
+      "points": "Points",
+      "favoriteCard": "Favorite member card"
     },
     "eventLogo": "Event logo",
     "eventPoints": "{points} pt",

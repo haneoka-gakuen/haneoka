@@ -1997,7 +1997,8 @@
       "supportCards": "支援卡",
       "noProfileCard": "未設定名片",
       "noSupportCard": "未設定留影卡",
-      "points": "積分"
+      "points": "積分",
+      "favoriteCard": "最愛成員卡"
     },
     "eventLogo": "活動標誌",
     "eventPoints": "{points} pt",
