@@ -1076,8 +1076,19 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   for (const row of attachmentResult.results) {
     const allowed = row.status === "ready" && row.moderationStatus === "allow";
     const presentation = presentations.get(row.id);
+    const ownerPreview = viewerUserId && !allowed &&
+      ((row.status === "scanning" && row.moderationStatus === "pending") ||
+        (row.status === "review" && row.moderationStatus === "review"));
     const attachment: PostAttachment = {
       contentUrl: allowed ? `${COMMUNITY_PREFIX}/attachments/${row.id}/content` : null,
+      ...(ownerPreview ? {
+        ownerPreviewUrl: `${COMMUNITY_PREFIX}/attachments/${row.id}/content?preview=owner`,
+        ...(presentation && "displayMediaType" in presentation ? {
+          displayMediaType: presentation.displayMediaType,
+          displayWidth: presentation.displayWidth,
+          displayHeight: presentation.displayHeight,
+        } : {}),
+      } : {}),
       status: row.status,
       moderationStatus: row.moderationStatus,
       failureCode: row.failureCode,

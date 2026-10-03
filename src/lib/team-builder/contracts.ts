@@ -1,5 +1,6 @@
 import type { TeamBuilderData } from "./data.ts";
 import type { InventoryV1 } from "./inventory.ts";
+import type { NativeGekisoPlans } from "./solver/native-gekiso-evaluation.ts";
 /** Serializable inputs shared by the inventory adapter, solver worker and UI. */
 export interface ReleaseIdentity {
   server: string;
@@ -82,7 +83,7 @@ export interface MetricValue {
   bestSkillOrder?: string[];
   worstSkillOrder?: string[];
   skillOrderCriterion?: SkillOrderCriterion;
-  scoreDomain?: "personal-solo";
+  scoreDomain?: "personal-solo" | "personal-live";
   assumptions: string[];
   gaps: EvidenceGap[];
 }
@@ -280,6 +281,8 @@ export interface OptimizationInput extends ReleaseIdentity {
   basis?: EvaluationBasisRequest;
 }
 export interface WorkerPreparationInput {
+  /** Internal explicit native playback context; public defaults do not synthesize it. */
+  nativeGekisoPlans?: NativeGekisoPlans;
   /** Default mean; worst-ap evaluates the least favorable complete AP order. */
   skillOrderCriterion?: SkillOrderCriterion;
   /** Required for Gekiso score; Live score uses a separate runtime factory. */

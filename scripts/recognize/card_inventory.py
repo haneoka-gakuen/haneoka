@@ -312,6 +312,8 @@ class Recognizer:
             duplicate_key = (body_sha, json.dumps(crop, sort_keys=True), entry.get("kind"))
             if duplicate_key in duplicate_cache:
                 found, prepared = duplicate_cache[duplicate_key]
+                if len(observations) + len(prepared) > MAX_OBSERVATIONS:
+                    raise RecognitionError("observation_limit")
             else:
                 found = grid(working)
                 boxes = found["boxes"]
@@ -319,6 +321,8 @@ class Recognizer:
                     boxes = [b for b in boxes if b["kind"] == entry["kind"]]
                 if not boxes and crop is not None and entry.get("kind") in KINDS:
                     boxes = [{"kind": entry["kind"], "bbox": [0, 0, working.shape[1], working.shape[0]]}]
+                if len(observations) + len(boxes) > MAX_OBSERVATIONS:
+                    raise RecognitionError("observation_limit")
                 prepared = []
                 for proposal in boxes:
                     x, y, w, h = proposal["bbox"]

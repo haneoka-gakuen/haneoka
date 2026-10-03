@@ -31,6 +31,7 @@ import { unavailableMetric } from "../score.ts";
 import type { PreparedSong } from "../song-metrics.ts";
 import type { SearchEvaluationControls } from "../optimizer.ts";
 import { nativeRuleGaps, nativeRuleSupports } from "./native-rule-profile.ts";
+import { createNativeGekisoContextEvaluation, type NativeGekisoPlans } from "./native-gekiso-evaluation.ts";
 const zero = (): PowerStats => ({ performance: 0, technique: 0, visual: 0 });
 const rates = (row: Record<string, unknown>): PowerStats => ({
   performance: Number(row.performanceRate),
@@ -78,6 +79,8 @@ export const nativeGrowthPowerResolver: PowerResolver = {
 };
 
 export interface EvaluationRequest {
+  /** Internal explicit native playback provider, carried in the Worker request fingerprint. */
+  nativeGekisoPlans?: NativeGekisoPlans;
   /** Internal: preserve Gekiso requirements while preparing its normal Solo ledger. */
   requireGekisoPractice?: true;
   skillOrderCriterion?: SkillOrderCriterion;
@@ -225,6 +228,7 @@ export function prepareEvaluation(request: EvaluationRequest): OptimizationInput
  */
 export interface PreparedSearchEvaluation {
   input: OptimizationInput;
+  resolveSlots?: ReturnType<typeof createNativeNormalSlotResolver>["resolveSlots"];
   evaluate: (
     assignment: TeamAssignment,
     song: PreparedSong,
@@ -232,6 +236,14 @@ export interface PreparedSearchEvaluation {
   ) => Candidate | Promise<Candidate>;
 }
 export function prepareEvaluationForSearch(request: EvaluationRequest): PreparedSearchEvaluation {
+  if (request.nativeGekisoPlans !== undefined) {
+    if (request.nativeRuntime || request.mode !== "gekiso" || request.scoreDomain !== undefined ||
+      request.constraints.justRate !== 0)
+      throw new RangeError("native-gekiso-context-domain");
+    const normal = prepareEvaluationForSearch({ ...request, nativeGekisoPlans: undefined,
+      mode: "normal", requireGekisoPractice: true });
+    return createNativeGekisoContextEvaluation(request.data, normal, request.nativeGekisoPlans);
+  }
   if (request.nativeRuntime && request.skillOrderCriterion === "worst-ap")
     throw new RangeError("worst-ap-requires-native-order-factory");
   if (request.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap"].includes(request.skillOrderCriterion))
@@ -353,6 +365,7 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
   const evaluate = createAssignmentEvaluator(input, native.resolveSlots);
   return {
     input,
+    resolveSlots: native.resolveSlots,
     evaluate: async (assignment: TeamAssignment, song: PreparedSong, controls: SearchEvaluationControls) => {
       const profiles = native.resolveSlots(assignment, song);
       let law: NativeNormalPlayScoreLaw | undefined;

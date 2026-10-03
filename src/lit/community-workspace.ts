@@ -2429,7 +2429,47 @@ export class CommunityWorkspace extends LitElement {
         </li>
       `;
     });
-    const images = attachments.filter((item) => /^(image|video)\//.test(String(item.mediaType)) && item.contentUrl);
+    const images = attachments.flatMap((item) => {
+      if (/^(image|video)\//.test(String(item.mediaType)) && item.contentUrl) return [item];
+      if (
+        !viewer.canEdit ||
+        !["pending", "review"].includes(String(post.moderationStatus)) ||
+        !["scanning", "review", "ready"].includes(String(item.status)) ||
+        !["pending", "review", "allow"].includes(String(item.moderationStatus)) ||
+        !String(item.mediaType).startsWith("image/") ||
+        !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
+          String(item.displayMediaType || item.mediaType),
+        ) ||
+        typeof item.ownerPreviewUrl !== "string"
+      )
+        return [];
+      try {
+        const url = new URL(item.ownerPreviewUrl, location.origin);
+        if (
+          url.origin !== location.origin ||
+          url.username ||
+          url.password ||
+          url.hash ||
+          url.pathname !== `/api/v1/community/attachments/${encodeURIComponent(String(item.id))}/content` ||
+          url.searchParams.get("preview") !== "owner" ||
+          (url.searchParams.has("variant") &&
+            !["thumb", "poster", "media"].includes(url.searchParams.get("variant") || ""))
+        )
+          return [];
+        return [
+          {
+            ...item,
+            contentUrl: url.href,
+            previewUrl: url.href,
+            thumbnailUrl: url.href,
+            posterUrl: undefined,
+            playbackUrl: undefined,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
     const postLocation = this.ipLocation(post.ipLocation);
     setAppBarActions(
       COMMUNITY_BAR_OWNER,

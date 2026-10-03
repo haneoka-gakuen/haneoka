@@ -1770,7 +1770,8 @@ const parseRange = (value: string | null, size: number): ByteRange | "invalid" |
 };
 
 const downloadAttachment = async (request: Request, env: Env, id: string): Promise<Response> => {
-  const session = await getAuthSession(request, env);
+  const ownerPreview = new URL(request.url).searchParams.get("preview") === "owner";
+  const session = await getAuthSession(request, env, ownerPreview ? { authoritative: true } : undefined);
   const row = await env.DB.prepare(
     `SELECT ${attachmentColumns},
        post.author_id AS postAuthorId, post.visibility AS postVisibility,
@@ -1791,8 +1792,7 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   if (
     !row ||
     row.deletedAt !== null ||
-    row.status !== "ready" ||
-    row.moderationStatus !== "allow" ||
+    (!ownerPreview && (row.status !== "ready" || row.moderationStatus !== "allow")) ||
     row.attachmentOwnerStatus === null ||
     row.attachmentOwnerStatus === "deleted" ||
     !row.byteSize ||
@@ -1802,6 +1802,18 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   }
   const userId = session?.user?.id || null;
   const owner = userId === row.ownerUserId;
+  if (
+    ownerPreview &&
+    (!owner ||
+      row.purpose !== "post" ||
+      row.attachmentOwnerStatus !== "active" ||
+      !(
+        (row.status === "scanning" && row.moderationStatus === "pending") ||
+        (row.status === "review" && row.moderationStatus === "review") ||
+        (row.status === "ready" && row.moderationStatus === "allow")
+      ))
+  )
+    return error(request, 404, "attachment_not_found", "Attachment not found");
   const publishedPost =
     row.postAuthorId !== null &&
     row.postStatus === "published" &&
@@ -1814,7 +1826,7 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
     (publishedPost && (row.postVisibility === "public" || (row.postVisibility === "protected" && userId !== null)));
   if (!readable) return error(request, userId ? 403 : 401, "attachment_not_readable", "Attachment is not readable");
 
-  const variantKind = new URL(request.url).searchParams.get("variant");
+  const variantKind = new URL(request.url).searchParams.get("variant") || (ownerPreview ? "media" : null);
   if (variantKind) {
     if (!["thumb", "poster", "media"].includes(variantKind))
       return error(request, 400, "invalid_media_variant", "Unknown media variant");
@@ -1850,7 +1862,8 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
     // R2 above), so the browser may reuse them instead of re-downloading every
     // feed view. `private` keeps access-controlled bytes out of shared caches;
     // the id-scoped ETag still revalidates anything older than the hour.
-    "Cache-Control": "private, max-age=3600, immutable",
+    "Cache-Control": ownerPreview ? "private, no-store" : "private, max-age=3600, immutable",
+    ...(ownerPreview ? { Vary: "Cookie" } : {}),
     "Content-Disposition": contentDisposition(row.fileName, row.mediaType),
     "Content-Type": row.mediaType,
     "Cross-Origin-Resource-Policy": "same-origin",
