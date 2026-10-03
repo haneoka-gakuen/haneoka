@@ -1,5 +1,5 @@
 /** Browse-only associations. Inventory, progression and scoring keep their own server identity. */
-import { eventEditionSignature, sharedEventStoryContent } from "./events";
+import { sharedEventStoryContent } from "./events";
 export const OFFICIAL_CATALOG_SERVERS = ["jp", "intl"] as const;
 export type OfficialCatalogServer = (typeof OFFICIAL_CATALOG_SERVERS)[number];
 export type CrossCatalogResource = "cards" | "support-cards" | "songs" | "characters" | "bands" | "events";
@@ -65,90 +65,24 @@ const text = (value: unknown): string | null => {
   return value.normalize("NFKC").replace(/\s+/gu, " ").trim();
 };
 const japanese = (value: unknown) => Array.isArray(value) ? text(value[0]) : null;
-/** Server-qualified URLs are compared only as authored logical resource paths. */
-function asset(value: unknown, server: OfficialCatalogServer): string | null {
-  if (typeof value !== "string" || !value) return null;
-  let pathname: string;
-  try { pathname = new URL(value, "https://haneoka.org").pathname; } catch { return null; }
-  for (const tree of ["assets", "runtime", "objects"]) {
-    const prefix = `/${tree}/${server}/`;
-    if (pathname.startsWith(prefix)) return `${tree}/${pathname.slice(prefix.length)}`;
-  }
-  return null;
-}
 type Signature = { key: string; evidence: string[] };
 const signature = (parts: unknown[], evidence: string[]): Signature => ({ key: JSON.stringify(parts), evidence });
 const rowId = (resource: CrossCatalogResource, row: CrossCatalogRow) =>
   row[{ cards: "cardId", "support-cards": "supportCardId", songs: "musicId", characters: "characterId", bands: "bandId", events: "id" }[resource]];
-function bandSignature(row: CrossCatalogRow, server: OfficialCatalogServer): Signature | null {
-  const name = japanese(row.bandName), logo = asset(row.logo, server), icon = asset(row.icon, server), color = text(row.color);
-  return name && logo && icon && color
-    ? signature(["band", name, logo, icon, color.toUpperCase()], ["authored-band-name", "native-band-logo-and-icon", "band-color"])
-    : null;
+/** Official catalogue maps use original IDs within their resource namespace. */
+function entitySignature(resource: CrossCatalogResource, row: CrossCatalogRow, id: string): Signature | null {
+  if (!/^[1-9]\d*$/u.test(id) || !Number.isSafeInteger(Number(id))) return null;
+  if (resource === "events") {
+    const raw = object(row.raw);
+    const fromMaster = row.sourceTable === "MasterEvent" ||
+      (Array.isArray(row.sourceTables) && row.sourceTables.includes("MasterEvent"));
+    if (row.kind !== "game-event" || !fromMaster ||
+        (raw._id !== undefined && String(raw._id) !== id)) return null;
+  }
+  return signature(["original-entity-id", resource, id],
+    ["original-entity-id", "resource-namespace", ...(resource === "events" ? ["native-MasterEvent-kind-and-id"] : [])]);
 }
-function characterSignature(row: CrossCatalogRow, source: CrossCatalogSnapshot): Signature | null {
-  const band = source.collections.bands?.[String(row.bandId)];
-  const bandKey = band && bandSignature(band, source.identity.server);
-  const name = japanese(row.characterName), slug = text(row.slug), face = asset(row.faceImage, source.identity.server);
-  const birthday = object(row.birthday), part = text(row.bandPart), color = text(row.colorCode);
-  if (!name || !slug || !face || !bandKey || !positive(birthday.month) || !positive(birthday.day) || !part || !color) return null;
-  return signature(["character", name, slug, face, bandKey.key, birthday.month, birthday.day, part, color.toUpperCase()],
-    ["authored-character-name-and-slug", "native-character-face", "corroborated-band", "birthday-and-instrument", "character-color"]);
-}
-function entitySignature(resource: CrossCatalogResource, row: CrossCatalogRow, source: CrossCatalogSnapshot): Signature | null {
-  const server = source.identity.server;
-  if (resource === "bands") return bandSignature(row, server);
-  if (resource === "characters") return characterSignature(row, source);
-  if (resource === "events") return eventEditionSignature(row, source, {
-    asset, japanese, band: bandSignature, character: characterSignature,
-  });
-  if (resource === "cards" || resource === "support-cards") {
-    const assetId = row.assetId, rarity = row.rarity, attribute = row.cardType, image = asset(object(row.images).full, server);
-    const prefix = japanese(row.prefix), raw = object(row.raw);
-    const nativeTextKey = text(raw[resource === "cards" ? "_subtitleTextID" : "_descriptionTextID"]);
-    const characters = resource === "cards" ? [row.characterId] : row.characterIds;
-    if (!positive(assetId) || !positive(rarity) || !positive(attribute) || !image || !prefix || !Array.isArray(characters) || !characters.length) return null;
-    const keys: string[] = [];
-    for (const id of characters) {
-      const character = source.collections.characters?.[String(id)];
-      const key = character && characterSignature(character, source);
-      if (!positive(id) || !key) return null;
-      keys.push(key.key);
-    }
-    return signature([resource, assetId, image, [...new Set(keys)].sort(), rarity, attribute, prefix],
-      ["native-card-asset-id", "native-full-art-path", "corroborated-character-set", "rarity-and-attribute", "authored-card-subtitle",
-        ...(nativeTextKey ? [`native-text-key:${nativeTextKey}`] : [])]);
-  }
-  const sound = object(row.musicSound);
-  const recordedPath = typeof sound.outputPath === "string" && sound.outputPath.startsWith("runtime/cri/sound/musicscore/") &&
-    sound.binding === "exact-master-sound-cue-sheet-to-music-score-runtime-path" ? sound.outputPath : null;
-  const recording = asset(row.musicUrl, server) ?? recordedPath;
-  const jacket = asset(row.jacketUrl ?? row.jacketThumbUrl, server), title = japanese(row.musicTitle);
-  const bands = Array.isArray(row.bandIds) ? row.bandIds : positive(row.bandId) ? [row.bandId] : [];
-  if (!recording || !jacket || !title || !positive(row.musicType)) return null;
-  const bandKeys: string[] = [];
-  for (const id of bands) {
-    const band = source.collections.bands?.[String(id)], key = band && bandSignature(band, server);
-    if (!positive(id) || !key) return null;
-    bandKeys.push(key.key);
-  }
-  if (!bandKeys.length) {
-    // External artists use an authored Master text identifier, not an invented band-id 0.
-    const artistKey = text(row.artistId), artistName = japanese(row.artistName ?? row.bandName);
-    if (!artistKey || !/^[A-Za-z][A-Za-z0-9_.-]*$/u.test(artistKey) || !artistName) return null;
-    bandKeys.push(JSON.stringify(["native-artist-text-key", artistKey, artistName]));
-  }
-  const vocals: string[] = [];
-  if (Array.isArray(row.vocalCharacterIds)) for (const id of row.vocalCharacterIds) {
-    const character = source.collections.characters?.[String(id)], key = character && characterSignature(character, source);
-    if (!positive(id) || !key) return null;
-    vocals.push(key.key);
-  }
-  const composer = japanese(row.composer), lyricist = japanese(row.lyricist);
-  if (!composer || !lyricist) return null;
-  return signature(["song", recording, jacket, title, [...new Set(bandKeys)].sort(), [...new Set(vocals)].sort(), row.musicType, composer, lyricist],
-    ["native-recording-path", "native-jacket-path", "corroborated-band-or-native-artist", "corroborated-vocal-characters", "authored-title-and-credits", "native-music-type"]);
-}
+
 const NAME_FIELDS = ["prefix", "cardName", "musicTitle", "characterName", "bandName", "title", "name"];
 function nameFallbacks(primary: CrossCatalogVariant, peer?: CrossCatalogVariant) {
   const overrides: CrossCatalogRow = {}, provenance: CrossCatalogEntry["nameFallbacks"] = [];
@@ -238,7 +172,7 @@ function assets(row: CrossCatalogRow): CrossCatalogRow {
   return result;
 }
 
-/** Full signature buckets, never numeric-id or title joins. Ambiguous buckets remain separate. */
+/** Original IDs join only within one official resource; source pins remain per-server provenance. */
 export function mergeCrossServerCatalog(
   snapshots: readonly CrossCatalogSnapshot[], resource: CrossCatalogResource,
   options: { selectedServer: OfficialCatalogServer; locale: string },
@@ -246,7 +180,6 @@ export function mergeCrossServerCatalog(
   if (!OFFICIAL_CATALOG_SERVERS.includes(options.selectedServer) || !/^[A-Za-z0-9-]+$/u.test(options.locale))
     throw new Error("Invalid cross-server view");
   const identities: CrossCatalogDTO["identities"] = {}, availability: CrossCatalogDTO["sourceAvailability"] = { jp: "unavailable", intl: "unavailable" };
-  const completeIdentityEvidence = { jp: false, intl: false };
   const buckets = new Map<string, { jp: CrossCatalogVariant[]; intl: CrossCatalogVariant[]; signature: Signature | null }>();
   for (const source of snapshots) {
     const identity = source.identity, server = identity.server;
@@ -256,12 +189,10 @@ export function mergeCrossServerCatalog(
     const collection = source.collections[resource];
     if (!collection) continue;
     availability[server] = "loaded";
-    completeIdentityEvidence[server] = true;
     for (const [id, original] of Object.entries(collection)) {
       const row = structuredClone(original), ownId = rowId(resource, row);
       if (ownId !== undefined && String(ownId) !== id) throw new Error(`Cross-server row identity mismatch:${server}/${resource}/${id}`);
-      const sig = entitySignature(resource, row, source), key = sig?.key ?? `independent:${server}:${id}`;
-      if (!sig) completeIdentityEvidence[server] = false;
+      const sig = entitySignature(resource, row, id), key = sig?.key ?? `independent:${server}:${id}`;
       const bucket = buckets.get(key) ?? { jp: [], intl: [], signature: sig };
       bucket[server].push({ identity: { ...identity }, id, row, available: true,
         releasedAt: structuredClone(row.releasedAt ?? row.publishedAt ?? null), href: href(resource, server, options.locale, id), assets: assets(row) });
@@ -277,14 +208,13 @@ export function mergeCrossServerCatalog(
     const peer = variants.find((variant) => variant.identity.server !== display.identity.server);
     const names = nameFallbacks(display, peer);
     const both = variants.length === 2;
-    // The full signature is the key, so hash collisions cannot collapse entities.
+    // Resource plus original ID is stable across independently updated server releases.
     const key = both ? `${resource}:shared:${sig!.key}` : `${resource}:${display.identity.server}:${display.id}`;
     entries.push({ key, resource, selectedServer: options.selectedServer, displayServer: display.identity.server,
       inSelectedServer: !!selected, perServer, serverAvailability: { jp: !!perServer.jp, intl: !!perServer.intl },
-      exclusive: !both && complete && sig && !ambiguous &&
-        completeIdentityEvidence[display.identity.server === "jp" ? "intl" : "jp"] ? display.identity.server : null,
+      exclusive: !both && complete && sig && !ambiguous ? display.identity.server : null,
       association: { status: both ? "verified" : ambiguous ? "ambiguous" : "independent", evidence: sig?.evidence ?? [],
-        ...(!both ? { reason: ambiguous ? "multiple-candidates-with-the-same-signature" : sig ? "no-peer-with-corroborated-signature" : "insufficient-identity-evidence" } : {}) },
+        ...(!both ? { reason: ambiguous ? "multiple-candidates-with-the-same-signature" : sig ? "original-id-not-in-peer-catalogue" : "insufficient-identity-evidence" } : {}) },
       nameOverrides: names.overrides, nameFallbacks: names.provenance, content: sharedContent(resource, display, peer) });
   }
   for (const bucket of buckets.values()) {
