@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { buildServerBanner } from "./serverBanner.ts";
 // Standalone Sonolus server for "BanG Dream! Our Notes" (Live section).
 //
 // Programmatic @sonolus/express server: loads free-pack defaults (skin/effect/
@@ -256,6 +257,7 @@ function main() {
   const bannerFile = resolve(ROOT, "packages/sonolus/assets/server-banner.png");
   if (!existsSync(bannerFile)) throw new Error(`Sonolus server banner missing: ${bannerFile}`);
   const banner = s.add(readFileSync(bannerFile));
+  const serverBanner = s.add(readFileSync(buildServerBanner(ROOT)));
 
   // The note/lane skin is generated from skin001, the note sounds come from
   // the original CRI cues, and supported effect001 ParticleSystem data is
@@ -556,7 +558,7 @@ function main() {
   s.serverInfoHandler = () => ({
     title: s.title,
     description: s.description,
-    banner,
+    banner: serverBanner,
     buttons: [
       { type: "playlist" },
       { type: "level" },
@@ -571,6 +573,7 @@ function main() {
   });
 
   const imageHashes = new Set<string>();
+  if (serverBanner.hash) imageHashes.add(serverBanner.hash);
   const resourceUrls = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     const record = value as Record<string, unknown>;
@@ -586,7 +589,7 @@ function main() {
     }
   };
   resourceUrls([
-    banner,
+    serverBanner,
     s.level.items,
     s.playlist.items,
     s.skin.items,

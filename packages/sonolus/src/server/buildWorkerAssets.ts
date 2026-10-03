@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { buildServerBanner } from "./serverBanner.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -509,6 +510,7 @@ async function main() {
   const resourceDir = resolve(pkg, "dist/our-notes");
   const engineDir = resolve(engineRoot, "dist");
   const banner = addFile(requireFile(resolve(pkg, "assets/server-banner.png")));
+  const serverBanner = addFile(buildServerBanner(root));
 
   const nativeLabels = createOurNotesSonolusItemLabels({
     noteSkins: OUR_NOTES_NOTE_SKIN_NAMES,
@@ -700,7 +702,7 @@ async function main() {
   const serverInfo = {
     title: "haneoka",
     description: "BanG Dream! Our Notes",
-    banner,
+    banner: serverBanner,
     buttons: [
       { type: "playlist" },
       { type: "level" },
