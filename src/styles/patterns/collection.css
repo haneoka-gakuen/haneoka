@@ -71,6 +71,28 @@
   --tile-min: 132px;
 }
 
+/* Keep compact windows readable; wider panes retain their preferred sizes. */
+@media (max-width: 839px) {
+  .collection:not(.collection--rail) {
+    --collection-columns: 3;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(calc((100% - (var(--collection-columns) - 1) * var(--tile-gap)) / var(--collection-columns)), 1fr)
+    );
+  }
+}
+@media (max-width: 599px) {
+  .collection:not(.collection--rail) {
+    --collection-columns: 2;
+    --tile-gap: 8px;
+  }
+}
+@media (min-width: 390px) and (max-width: 599px) {
+  .collection:is(.collection--character, .collection--stamp, .collection--item, .collection--band-item):not(.collection--rail) {
+    --collection-columns: 3;
+  }
+}
+
 /* A tile is a Material card, and a card with media has one anatomy:
  *
  *   ┌───────────────┐  ← container corner (medium)

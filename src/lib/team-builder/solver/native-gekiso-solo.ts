@@ -25,7 +25,7 @@ const liveOnlyFamilies = new Set([
  * its complete play is the shared normal engine; Gekiso fixed/rush/extra combo
  * commands target the separate Live controller. Full Live score stays unknown.
  */
-export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: NormalPrepared) {
+export function createNativeGekisoSoloAssignmentValidator(data: TeamBuilderData, input: OptimizationInput) {
   const memberGaps = new Map<string, EvidenceGap[]>();
   const snapshotGaps = new Map<string, EvidenceGap[]>();
   const skillGaps = (
@@ -47,12 +47,12 @@ export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: N
         gap("native-gekiso-solo-effect-family-unresolved", `${source}/effect:${row.id}/type:${row.skillEffectType}`),
       );
   };
-  for (const member of normal.input.members)
+  for (const member of input.members)
     memberGaps.set(
       member.instanceId,
       skillGaps("gekiso", member.gekisoSkillId, member.gekisoSkillLevel, member.instanceId),
     );
-  for (const snapshot of normal.input.snapshots)
+  for (const snapshot of input.snapshots)
     snapshotGaps.set(
       snapshot.instanceId,
       snapshot.gekisoSupportSkills
@@ -61,6 +61,15 @@ export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: N
           )
         : [gap("native-gekiso-solo-support-slots-unresolved", snapshot.instanceId)],
     );
+  return (assignment: TeamAssignment): EvidenceGap[] => [
+    ...assignment.memberInstanceIds.flatMap((id) => memberGaps.get(id) ?? [gap("native-gekiso-solo-member-unresolved", id)]),
+    ...assignment.snapshotInstanceIds.flatMap((id) => id === null ? [] :
+      (snapshotGaps.get(id) ?? [gap("native-gekiso-solo-snapshot-unresolved", id)])),
+  ];
+}
+
+export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: NormalPrepared) {
+  const validate = createNativeGekisoSoloAssignmentValidator(data, normal.input);
   const input: OptimizationInput = {
     ...normal.input,
     evaluation: {
@@ -76,14 +85,7 @@ export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: N
       song: PreparedSong,
       controls: SearchEvaluationControls,
     ): Promise<Candidate> {
-      const local = [
-        ...assignment.memberInstanceIds.flatMap(
-          (id) => memberGaps.get(id) ?? [gap("native-gekiso-solo-member-unresolved", id)],
-        ),
-        ...assignment.snapshotInstanceIds.flatMap((id) =>
-          id === null ? [] : (snapshotGaps.get(id) ?? [gap("native-gekiso-solo-snapshot-unresolved", id)]),
-        ),
-      ];
+      const local = validate(assignment);
       const candidate = await normal.evaluate(assignment, song, controls);
       const score = candidate.metrics.score;
       const threshold = normal.input.evaluation.songContexts[song.song.key]?.personalSS ?? null;

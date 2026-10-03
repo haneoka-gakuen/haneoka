@@ -13,6 +13,7 @@ import { createNativeEventPayoutResolver } from "./native-event-payout.ts";
 import { validateNativeEventScene } from "./native-event-scene.ts";
 import { createNativeNormalSlotResolver } from "./native-normal.ts";
 import { createNativeNormalScoreResolver, type NativeNormalPlayScoreLaw } from "./native-normal-score.ts";
+import { createNativeGekisoResourceScoreResolver } from "./native-gekiso-resource-score.ts";
 import { loadSongOptions } from "./song-loader.ts";
 
 const gap = (code: string, source: string): EvidenceGap => ({ code, source });
@@ -124,9 +125,6 @@ export async function prepareResourcePlanStages(
     const selection = request[kind];
     const sceneGaps = validateNativeEventScene(request.data, selection.scene);
     if (sceneGaps.length) return unavailable(kind, sceneGaps);
-    if (selection.mode !== "normal")
-      return unavailable(kind, [gap("native-resource-gekiso-joint-play-law-unresolved",
-        "Gekiso mission/Luck and native member-order joint outcomes")]);
     if (selection.constraints.justRate !== 0)
       return unavailable(kind, [gap("native-resource-perfect-play-required", kind)]);
     let evaluated = 0, chartsCompleted = 0, stopped: "cancelled" | "budget-limited" | null = null;
@@ -171,10 +169,13 @@ export async function prepareResourcePlanStages(
       if (interrupt()) break;
       const song = songs[0]!;
       song.key = songKey;
+      if (context && selection.mode === "gekiso") song.segments = song.segments.map((segment,index) =>
+        ({...segment,mission:context!.missionTypes[index]!}));
       // Normal mode consumes the parent's actual chart skill timestamps. GK
       // wrapper mission overrides are deliberately not interpreted as normal skills.
       const prepared = prepareEvaluationForSearch({ data, inventory: request.inventory, songs: [song],
-        mode: "normal", objectives: ["score"], skillOrderCriterion: request.skillOrderCriterion,
+        mode: "normal", requireGekisoPractice: selection.mode === "gekiso" ? true : undefined,
+        objectives: ["score"], skillOrderCriterion: request.skillOrderCriterion,
         constraints: selection.constraints, budget: { maxMilliseconds: Math.max(1, Math.floor(stageRemaining())),
           maxEvaluations: maxEvaluations - evaluated, maxCandidates: 1000 } });
       const input = prepared.input;
@@ -189,7 +190,8 @@ export async function prepareResourcePlanStages(
       // tags and rank stay on the original same-pin data object.
       const musicTypes = context ? new Map([[songId, context]]) : undefined;
       const slots = createNativeNormalSlotResolver(data, request.inventory, input, payout, musicTypes);
-      const scorer = createNativeNormalScoreResolver(data, input);
+      const scorer = selection.mode === "gekiso" ? createNativeGekisoResourceScoreResolver(data,input)
+        : createNativeNormalScoreResolver(data, input);
       input.evaluation.gaps.push(...payout.powerGaps, ...slots.gaps, ...scorer.gaps);
       const evaluate = createAssignmentEvaluator(input, slots.resolveSlots);
       let lawBudgetReached = false;

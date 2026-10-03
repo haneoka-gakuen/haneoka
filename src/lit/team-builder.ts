@@ -119,7 +119,7 @@ type ResourceRunContext = {
   signature: string; request: ResourcePlannerPreparationInput;
 };
 type ResourceStage = "normal" | "challenge";
-type ResourceSelection = { chart: string; difficulty: string; start: string; constraints: SearchConstraints | null };
+type ResourceSelection = { mode: "normal" | "gekiso"; chart: string; difficulty: string; start: string; constraints: SearchConstraints | null };
 type WorkspaceView = "plan" | "cards" | "growth" | "results" | "sync";
 const OWNER = "team-builder";
 const OBJECTIVES: Objective[] = ["base-score", "score", "ss-ratio", "event-points", "event-items", "ss-surplus"];
@@ -1164,7 +1164,7 @@ export class TeamBuilder extends LitElement {
     this.bulkPreview = null;
     this.workspaceView = "plan";
     this.planningKind = "team";
-    this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
+    this.resourceSelection = { normal: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null }, challenge: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null } };
     this.resourceBudget = { boost: null, perPlay: null, initialCP: null, challengeCost: null };
     this.resourceObjectives = ["event-points"];
     this.resourceCriterion = "nominal-mean";
@@ -1250,7 +1250,7 @@ export class TeamBuilder extends LitElement {
     const resourceScope = JSON.stringify([this.data?.identity, this.currentOwner !== undefined, this.currentOwner]);
     if (resourceScope !== this.resourceScope) {
       this.resourceScope = resourceScope;
-      this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
+      this.resourceSelection = { normal: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null }, challenge: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null } };
       this.resourceBudget = { boost: null, perPlay: null, initialCP: null, challengeCost: null };
       this.resourceSingleHeld = false;
       this.resourcePicker = null;
@@ -2869,7 +2869,7 @@ export class TeamBuilder extends LitElement {
   private resetEventScene() {
     this.resourceSingleHeld = false;
     this.resourceBudget = { ...this.resourceBudget, perPlay: null, challengeCost: null };
-    this.resourceSelection = { normal: { chart: "", difficulty: "", start: "", constraints: null }, challenge: { chart: "", difficulty: "", start: "", constraints: null } };
+    this.resourceSelection = { normal: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null }, challenge: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null } };
     this.applyEventScene = false;
     this.eventStartText = "";
     this.eventSingleHeld = false;
@@ -3151,8 +3151,8 @@ export class TeamBuilder extends LitElement {
       parameters: { boostBudget: boost, boostPerNormalPlay: perPlay, initialChallengePoints: initialCP, challengePointCost: challengeCost },
       objectives: this.resourceObjectives.filter(objective => objective === "event-points" || item !== undefined), skillOrderCriterion: this.resourceCriterion,
       ...(item ? { itemResource: item } : {}),
-      normal: { mode: "normal", scene: normalScene, constraints: structuredClone(normal.constraints), charts: charts("normal").map(row => ({ songId: row.id, difficulty: row.difficulty })) },
-      challenge: { mode: "normal", scene: challengeScene, constraints: structuredClone(challenge.constraints), charts: charts("challenge").map(row => ({ challengeMusicId: row.id, difficulty: row.difficulty })) },
+      normal: { mode: normal.mode, scene: normalScene, constraints: structuredClone(normal.constraints), charts: charts("normal").map(row => ({ songId: row.id, difficulty: row.difficulty })) },
+      challenge: { mode: challenge.mode, scene: challengeScene, constraints: structuredClone(challenge.constraints), charts: charts("challenge").map(row => ({ challengeMusicId: row.id, difficulty: row.difficulty })) },
       budget: { maxPairs: 100000, maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxCycleStates: 100000, maxCycleTransitions: 2000000 },
     };
     return resourcePlanInputIssues(request).length ? null : request;
@@ -3197,7 +3197,6 @@ export class TeamBuilder extends LitElement {
           }))}
         </div>
         ${this.resourceObjectives.includes("event-items") && this.resourceItemsUnresolved ? html`<p class="team-builder__hint">${this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.")}</p>` : nothing}
-        <p class="team-builder__hint">${this.t("normal", "Normal live")}</p>
         ${this.select(this.t("skillOrderCriterion", "Skill order"), this.resourceCriterion,
           (["nominal-mean", "worst-ap"] as const).map(value => ({ value, label: this.criterionLabel(value) })),
           value => { this.resourceCriterion = value as SkillOrderCriterion; })}
@@ -3224,6 +3223,9 @@ export class TeamBuilder extends LitElement {
     const selected = choices.find(row => row.id === selection.chart), constraints = selection.constraints;
     return html`<section class="team-builder__section">
       ${renderDetailSectionHeading(this.resourceStageLabel(kind), "songs", { level: 2 })}
+      ${this.select(this.t("mode", "Play mode"), selection.mode,
+        [{ value: "normal", label: this.t("normal", "Normal live") }, { value: "gekiso", label: this.t("gekiso", "GEKISO live") }],
+        value => this.updateResourceStage(kind, { mode: value as "normal" | "gekiso" }))}
       ${selected ? this.songIdentity(selected.songId, selection.difficulty) : html`<p>${this.t("resourceAllSongs", "Compare all available songs")}</p>`}
       <div class="team-builder__actions">
         <button class="button button--outlined" ?disabled=${!choices.length} @click=${() => {
