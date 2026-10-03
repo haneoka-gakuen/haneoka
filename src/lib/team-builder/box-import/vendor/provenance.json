@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/Snack-X/rijndael-js",
+  "commit": "079629b507077b0d4cbf3c1133734b2ddf87b61e",
+  "license": "MIT",
+  "adaptation": "Mechanical CJS\u2192ESM imports/default exports only; algorithm unchanged. No Buffer dependency; per-block wrapper limits memory and caches lookup/schedule.",
+  "files": [
+    {
+      "upstream": "LICENSE",
+      "sha256": "64b77040e4fd92a705e00397d321698a75dcc83bccdb80e5c87d49fa3fdc61a8",
+      "local": "LICENSE",
+      "localSha256": "64b77040e4fd92a705e00397d321698a75dcc83bccdb80e5c87d49fa3fdc61a8"
+    },
+    {
+      "upstream": "lib/rijndael.js",
+      "sha256": "88cdb91e0359bbb8514a47d3fd8d38acd0c0d45af7dfcb05c06edb93446da915",
+      "local": "rijndael.js",
+      "localSha256": "04a2f0e663552b19075b38a2ed19d56f8d91d60b5ac0e42fc86d74b28478670b"
+    },
+    {
+      "upstream": "lib/rijndael-precalculated.js",
+      "sha256": "587c17fe4d1be2acebc6a084b8505b5b2acab78b49ed9da187b6c4112164087b",
+      "local": "rijndael-precalculated.js",
+      "localSha256": "6dae04e3d12594f37db8d17cb1cb370306c03151706d0e6212a7bc5435634599"
+    },
+    {
+      "upstream": "lib/utils.js",
+      "sha256": "b9875f0b05c9d9311e5310bede22bc6b849d0b3e6bdf0d43173e42dc4cfc5662",
+      "local": "utils.js",
+      "localSha256": "9e716b96b25b9527adfbbe6990b77617798f9adbd77ee2e4283d9c94be9dfd55"
+    }
+  ]
+}
