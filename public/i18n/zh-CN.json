@@ -652,6 +652,8 @@
   "settingsJapan": "日服",
   "songTitles": "歌曲名",
   "forceJapaneseTitles": "显示日文歌曲名",
+  "showDifficultyEstimates": "开启推算难度显示",
+  "difficultyEstimateBeta": "推算难度 · Beta",
   "loading": "加载中",
   "empty": "无结果",
   "unavailable": "不可用",
@@ -2520,7 +2522,7 @@
     "communityPrepareFailed": "无法保存发帖图片，请重试。"
   },
   "teamBuilder": {
-    "title": "配队工具",
+    "title": "配队工具 · Beta",
     "library": "卡库",
     "members": "成员",
     "snapshots": "留影",

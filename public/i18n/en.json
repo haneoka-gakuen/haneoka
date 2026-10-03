@@ -652,6 +652,8 @@
   "settingsJapan": "Japan",
   "songTitles": "Song titles",
   "forceJapaneseTitles": "Show Japanese song titles",
+  "showDifficultyEstimates": "Show estimated difficulty",
+  "difficultyEstimateBeta": "Estimated difficulty · Beta",
   "loading": "Loading",
   "empty": "No results",
   "unavailable": "Unavailable",
@@ -2520,7 +2522,7 @@
     "communityPrepareFailed": "Could not save the image for your post. Try again."
   },
   "teamBuilder": {
-    "title": "Team builder",
+    "title": "Team builder · Beta",
     "library": "Card library",
     "members": "Members",
     "snapshots": "Snapshots",

@@ -10,6 +10,7 @@ import { clientText } from "../i18n/client";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { readReleaseServer } from "../lib/release-server";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
+import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { fetchCurrentTeamBuilderIdentity, fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import { validateNativeEventScene } from "../lib/team-builder/solver/native-event-scene";
 import { getTeamBuilderCapabilities } from "../lib/team-builder/solver/capabilities";
@@ -317,6 +318,7 @@ export class TeamBuilder extends LitElement {
   private identityController?: AbortController;
   private verifiedData: TeamBuilderData | null = null;
   private stopSongDisplay?: () => void;
+  private stopDifficultyDisplay?: () => void;
   private readonly refreshAccount = () => {
     // The OS file chooser can refocus the window. Keep its review open while
     // checking the account; a settings-server change still reloads the source.
@@ -1178,6 +1180,7 @@ export class TeamBuilder extends LitElement {
     window.addEventListener("storage", this.settingsStorageChanged);
     window.addEventListener("haneoka:server-change", this.refreshAccount);
     this.stopSongDisplay = observeSongDisplay(() => this.requestUpdate());
+    this.stopDifficultyDisplay = observeDifficultyDisplay(() => this.requestUpdate());
   }
   disconnectedCallback() {
     this.closeScreenshotImport(false);
@@ -1200,6 +1203,7 @@ export class TeamBuilder extends LitElement {
     window.removeEventListener("storage", this.settingsStorageChanged);
     window.removeEventListener("haneoka:server-change", this.refreshAccount);
     this.stopSongDisplay?.();
+    this.stopDifficultyDisplay?.();
     super.disconnectedCallback();
   }
   protected updated() {

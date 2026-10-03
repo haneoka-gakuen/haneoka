@@ -106,6 +106,7 @@ const groups: Group[] = [
   },
 ];
 const japaneseLabel = "forceJapaneseTitles";
+const estimatedDifficultyLabel = "showDifficultyEstimates";
 ---
 
 <Base locale={locale} route="/settings" title={title} titleKey="settings">
@@ -160,6 +161,26 @@ const japaneseLabel = "forceJapaneseTitles";
                     ></md-switch>
                   </div>
                 )}
+                {group.name === "locale" && (
+                  <div class="settings-toggle">
+                    <label for="difficulty-estimates">
+                      <Icon name="bar_chart" size={20} />
+                      <span>
+                        <I18nText keyName={estimatedDifficultyLabel} fallback="Show estimated difficulty" locale={locale} />
+                        <small id="difficulty-estimates-beta" class="md-label-small"> Beta</small>
+                      </span>
+                    </label>
+                    <md-switch
+                      id="difficulty-estimates"
+                      data-difficulty-estimates
+                      aria-describedby="difficulty-estimates-beta"
+                      icons
+                      aria-label={t(locale, estimatedDifficultyLabel, "Show estimated difficulty")}
+                      data-i18n-aria-label={estimatedDifficultyLabel}
+                      data-i18n-aria-label-fallback="Show estimated difficulty"
+                    ></md-switch>
+                  </div>
+                )}
               </section>
             ))}
           </div>
@@ -174,6 +195,7 @@ const japaneseLabel = "forceJapaneseTitles";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
   import { japaneseSongTitles, setJapaneseSongTitles } from "../lib/song-display";
+  import { difficultyEstimatesEnabled, setDifficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
   import { isReleaseServer, readReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
 
@@ -185,7 +207,11 @@ const japaneseLabel = "forceJapaneseTitles";
     if (!settings) return;
     const controller = new AbortController();
     const { signal } = controller;
-    disposeSettings = () => controller.abort();
+    let stopDifficultyDisplay: (() => void) | undefined;
+    disposeSettings = () => {
+      controller.abort();
+      stopDifficultyDisplay?.();
+    };
     const updateSummary = (group: string) => {
       const selected = settings.querySelector<HTMLInputElement>(`input[name="${group}"]:checked`);
       const output = settings.querySelector<HTMLElement>(`[data-current="${group}"]`);
@@ -245,6 +271,15 @@ const japaneseLabel = "forceJapaneseTitles";
       },
       { signal },
     );
+    const estimatedDifficulty = settings.querySelector<HTMLElement & { selected: boolean }>("[data-difficulty-estimates]");
+    const syncEstimatedDifficulty = () => {
+      if (estimatedDifficulty) estimatedDifficulty.selected = difficultyEstimatesEnabled();
+    };
+    syncEstimatedDifficulty();
+    stopDifficultyDisplay = observeDifficultyDisplay(syncEstimatedDifficulty);
+    estimatedDifficulty?.addEventListener("change", () => {
+      setDifficultyEstimatesEnabled(estimatedDifficulty.selected);
+    }, { signal });
     const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
     if (japanese) japanese.selected = japaneseSongTitles();
     japanese?.addEventListener(

@@ -652,6 +652,8 @@
   "settingsJapan": "일본판",
   "songTitles": "곡명",
   "forceJapaneseTitles": "일본어 곡명으로 표시",
+  "showDifficultyEstimates": "추정 난이도 표시",
+  "difficultyEstimateBeta": "추정 난이도 · Beta",
   "loading": "불러오는 중",
   "empty": "결과 없음",
   "unavailable": "이용 불가",
@@ -2520,7 +2522,7 @@
     "communityPrepareFailed": "게시할 이미지를 저장하지 못했습니다. 다시 시도해 주세요."
   },
   "teamBuilder": {
-    "title": "팀 편성",
+    "title": "팀 편성 · Beta",
     "library": "보유 카드",
     "members": "멤버",
     "snapshots": "스냅",

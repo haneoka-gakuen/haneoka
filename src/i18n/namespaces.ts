@@ -119,6 +119,7 @@ const COMMON_FLAT_KEYS = [
   "metaNativeScore",
   "metaScoreFactor",
   "forceJapaneseTitles",
+  "showDifficultyEstimates",
   "grid",
   "list",
   "table",
