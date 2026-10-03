@@ -1,0 +1,72 @@
+name: Publish selected current gacha rates
+on:
+  workflow_dispatch:
+    inputs:
+      producer_pin:
+        description: Reviewed full commit with zero-fixed-rate pickup fix and sparse publisher
+        required: true
+        type: string
+      projection_json:
+        description: Exact Intl current identity, selected pool IDs and three original Master hashes
+        required: true
+        type: string
+      publish:
+        description: Promote the verified immutable delta with unchanged-parent ETag
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: current-gacha-rate-projection
+  cancel-in-progress: false
+jobs:
+  gacha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: resource-intl
+    outputs:
+      release_promoted: ${{ steps.project.outputs.release_promoted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.producer_pin }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install existing locked R2 and Master decoder import closure
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/gacha-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/gacha-dependencies/requirements.txt"
+      - name: Reproject selected rates and optionally promote immutable release
+        id: project
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ inputs.producer_pin }}
+          GACHA_RATE_INPUT_JSON: ${{ inputs.projection_json }}
+          PUBLISH: ${{ inputs.publish }}
+        run: python scripts/publish/gacha_rates.py --output "$RUNNER_TEMP/gacha-output"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: gacha-rates-intl-${{ github.run_id }}
+          path: ${{ runner.temp }}/gacha-output/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+  rebuild-site:
+    name: Rebuild site pages after verified gacha promotion
+    needs: gacha
+    if: ${{ needs.gacha.outputs.release_promoted == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch normal site build after selected gacha release verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main
