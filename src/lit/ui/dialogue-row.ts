@@ -78,16 +78,9 @@ export function dialogueRow(options: DialogueRowOptions): TemplateResult {
           }
         </div>
         ${
-          options.statusMessage
+          options.statusMessage && state !== "loading"
             ? html`
                 <p class=${`dialogue-row__status dialogue-row__status--${state}`} role=${statusRole}>
-                  ${
-                    state === "loading"
-                      ? html`
-                          <span class="dialogue-row__spinner" aria-hidden="true"></span>
-                        `
-                      : nothing
-                  }
                   ${options.statusMessage}
                 </p>
               `

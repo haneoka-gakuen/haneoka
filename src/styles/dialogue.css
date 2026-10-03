@@ -123,16 +123,11 @@
     color: var(--md-sys-color-on-surface-variant);
   }
 
-  .dialogue-row__spinner {
-    display: inline-block;
+  .dialogue-row__progress {
+    --md-circular-progress-size: var(--md-sys-spacing-4);
     width: var(--md-sys-spacing-4);
     height: var(--md-sys-spacing-4);
-    box-sizing: border-box;
     flex: 0 0 var(--md-sys-spacing-4);
-    border: 2px solid currentcolor;
-    border-right-color: transparent;
-    border-radius: var(--md-sys-shape-corner-full);
-    animation: dialogue-row-spin 700ms linear infinite;
   }
 
   .dialogue-row[data-dialogue-state="playing"] .dialogue-row__bubble {
@@ -143,18 +138,6 @@
 
   .dialogue-row[data-dialogue-state="error"] .dialogue-row__bubble {
     border-color: var(--md-sys-color-error);
-  }
-
-  @keyframes dialogue-row-spin {
-    to {
-      rotate: 360deg;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dialogue-row__spinner {
-      animation-duration: 1ms;
-    }
   }
 
   @media (max-width: 599px) {

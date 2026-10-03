@@ -1,4 +1,5 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
+import "@material/web/progress/circular-progress.js";
 import { repeat } from "lit/directives/repeat.js";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { isLocale, localePath } from "../i18n/locales";
@@ -234,13 +235,18 @@ export class CharacterVoices extends LitElement {
         ?disabled=${!line.url}
         aria-label=${label}
         aria-pressed=${String(playing)}
+        aria-busy=${String(loading)}
         title=${label}
         @click=${() => void this.playLine(entry, index)}
       >
         ${
           loading
             ? html`
-                <span class="dialogue-row__spinner" aria-hidden="true"></span>
+                <md-circular-progress
+                  class="dialogue-row__progress"
+                  indeterminate
+                  aria-hidden="true"
+                ></md-circular-progress>
               `
             : icon(playing ? "stop" : status.state === "error" ? "refresh" : "play_arrow", 24)
         }
