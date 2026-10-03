@@ -178,6 +178,9 @@
 .tile__media--contain {
   --tile-fit: contain;
 }
+.tile--model .tile__media--cover {
+  --tile-fit: cover;
+}
 /* Overlay marks sit on the artwork: rarity, level, difficulty, duration.
  * They are placed at the corners so they never cover a face or a title. */
 .tile__mark {
