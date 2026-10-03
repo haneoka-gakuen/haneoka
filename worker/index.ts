@@ -15,6 +15,7 @@ import { handleGameRecordsApi } from "./game-records";
 import { handleStampFontsRequest } from "./stamp-fonts";
 import { handleChartImageRequest } from "./chart-image";
 import { rasterizeChartSvg } from "./chart-image-rasterizer";
+import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
 import { handleCommunityActivityRequest } from "./community-activity";
@@ -3238,25 +3239,7 @@ async function serveCanonicalResourceDocument(request: Request, env: Env): Promi
  * detected locale there), then Accept-Language, then English.
  */
 function negotiateLocale(request: Request): "ja" | "en" | "zh-TW" | "zh-CN" | "ko" {
-  const localePattern = /^(ja|en|zh-TW|zh-CN|ko)$/u;
-  const cookie = /(?:^|;\s*)haneoka\.locale=([^;]+)/u.exec(request.headers.get("cookie") || "")?.[1];
-  if (cookie) {
-    const value = decodeURIComponent(cookie);
-    if (localePattern.test(value)) return value as "ja" | "en" | "zh-TW" | "zh-CN" | "ko";
-  }
-  const tags = (request.headers.get("accept-language") || "").split(",");
-  for (const part of tags) {
-    const tag = (part.split(";")[0] || "").trim().replaceAll("_", "-").toLowerCase();
-    if (!tag) continue;
-    if (tag === "ja") return "ja";
-    if (tag === "en") return "en";
-    if (tag === "ko") return "ko";
-    if (tag.startsWith("zh")) {
-      if (/^(?:zh-hant|zh-tw|zh-hk|zh-mo)/u.test(tag)) return "zh-TW";
-      return "zh-CN";
-    }
-  }
-  return "en";
+  return negotiateRequestLocale(request.headers.get("cookie") || "", request.headers.get("accept-language") || "");
 }
 
 const WORKER_FIRST_PREFIXES = [

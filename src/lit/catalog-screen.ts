@@ -618,7 +618,7 @@ export class CatalogScreen extends LitElement {
   private unionResource(): CrossCatalogResource | undefined {
     return this.settings.origin !== "bestdori" &&
       ["jp", "intl"].includes(this.dataServer()) &&
-      ["cards", "support-cards", "songs", "events"].includes(this.settings.resource)
+      ["cards", "support-cards", "songs", "events", "characters"].includes(this.settings.resource)
       ? (this.settings.resource as CrossCatalogResource)
       : undefined;
   }
@@ -650,14 +650,21 @@ export class CatalogScreen extends LitElement {
   }
   private itemBand(item: Item, id: number): Item | undefined {
     const server = this.itemSourceServer(item);
+    const fromUnion = this.unionBands[server as OfficialCatalogServer]?.get(id);
+    if (this.settings.resource === "characters" && this.unionEntry(item) && this.unionBands[server as OfficialCatalogServer])
+      return fromUnion;
     return (
-      this.unionBands[server as OfficialCatalogServer]?.get(id) ||
+      fromUnion ||
       (server === this.dataServer()
         ? this.band(id)
         : Number((item.bandDetails as Item | undefined)?.bandId) === id
           ? (item.bandDetails as Item)
           : undefined)
     );
+  }
+  private itemBandName(item: Item, id = Number(item.bandId || 0)): string {
+    return this.localized(this.itemBand(item, id)?.bandName) ||
+      (id ? `${this.label("band", "Band")} ${id}` : "—");
   }
   private itemMark(item: Item, name: string): string {
     return (
@@ -782,6 +789,15 @@ export class CatalogScreen extends LitElement {
     const server = this.dataServer() as OfficialCatalogServer;
     this.characters = [...(snapshot.characters[server]?.values() || [])];
     this.bands = [...(snapshot.bands[server]?.values() || [])];
+    if (this.settings.resource === "characters") {
+      const bandIds = new Set(this.bands.map((band) => Number(band.bandId)));
+      const peer = server === "jp" ? "intl" : "jp";
+      for (const band of snapshot.bands[peer]?.values() || []) {
+        if (bandIds.has(Number(band.bandId))) continue;
+        this.bands.push(band);
+        bandIds.add(Number(band.bandId));
+      }
+    }
     this.nativeCatalogPin = snapshot.dto.identities[server];
     this.gameMarks = new Map(snapshot.marks[server] || []);
     this.facetCache = undefined;
@@ -2824,7 +2840,9 @@ export class CatalogScreen extends LitElement {
     if (key === "characterIds" || key === "characters" || key === "vocalCharacterIds")
       return this.formatList((Array.isArray(raw) ? raw : []).map(Number).map((id) => this.characterName(id)));
     if (key === "bandId")
-      return this.profile.presentation === "song" ? this.itemArtist(item) : this.bandName(Number(raw || 0));
+      return this.profile.presentation === "song" ? this.itemArtist(item)
+        : this.profile.presentation === "character" ? this.itemBandName(item, Number(raw || 0))
+        : this.bandName(Number(raw || 0));
     if (key === "rankUpItemId") {
       const gameItem = this.gameItems.find((entry) => Number(entry.itemId) === Number(raw || 0));
       return this.localized(gameItem?.name) || "—";
@@ -2873,7 +2891,7 @@ export class CatalogScreen extends LitElement {
     const kind = this.profile.presentation;
     if (["member", "support"].includes(kind))
       return this.formatList(this.itemCharacterIds(item).map((id) => this.characterName(id)));
-    if (kind === "character") return this.bandName(Number(item.bandId || 0));
+    if (kind === "character") return this.itemBandName(item);
     if (kind === "band-item") return this.bandName(Number(item.bandId || 0));
     if (kind === "song") return this.itemArtist(item);
     if (kind === "comic")
@@ -3861,22 +3879,22 @@ export class CatalogScreen extends LitElement {
         this.unionTile({ ...this.cardTileOptions(item, kind), href, onOpen, itemId: this.itemKey(item) }, item),
       );
     if (kind === "character")
-      return tile({
+      return tile(this.unionTile({
         kind: "character",
         title,
         titleLanguage: this.itemTitleLanguage(item),
         // A character's band is what tells two of them apart, and it is the
         // same subhead every other card in the archive carries.
-        subtitle: this.bandName(Number(item.bandId || 0)),
+        subtitle: this.itemBandName(item),
         label: title,
         image,
         placeholder: icon("person", 32),
         href,
         onOpen,
-        itemId: this.itemId(item),
+        itemId: this.itemKey(item),
         onImageError: this.imageError,
         style: `--entity-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`,
-      });
+      }, item));
     const ids = this.itemCharacterIds(item);
     if (kind === "song")
       return tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item));
