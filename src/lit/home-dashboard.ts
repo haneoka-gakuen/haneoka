@@ -1216,7 +1216,7 @@ export class HomeDashboard extends LitElement {
             </div>
           `,
         )}
-        <div class="collection home-cards__grid">
+        <div class="collection collection--rail home-cards__grid">
           ${
             cards.length
               ? cards.map((card) => {
@@ -1340,7 +1340,7 @@ export class HomeDashboard extends LitElement {
         ${
           songs.length
             ? html`
-                <div class="collection collection--song home-songs__grid" data-home-tiles>
+                <div class="collection collection--rail collection--song home-songs__grid">
                   ${songs.map(({ song }) => {
                     // The catalogue's own song tile, built by the same shared
                     // code — identical anatomy; only the date mark is added.
@@ -1385,7 +1385,7 @@ export class HomeDashboard extends LitElement {
                 </div>
               `
             : html`
-                <div class="collection home-songs__grid">
+                <div class="collection collection--rail home-songs__grid">
                   ${Array.from(
                     { length: 8 },
                     () => html`

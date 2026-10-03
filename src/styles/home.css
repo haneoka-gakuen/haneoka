@@ -1043,3 +1043,18 @@
     display: none !important;
   }
 }
+
+/* Give only Home's scroll rows their own final sizing and start edge. */
+.home-cards__grid.collection--rail,
+.home-songs__grid.collection--rail {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  grid-template-columns: none;
+  grid-template-rows: auto;
+  grid-auto-flow: column;
+  grid-auto-columns: clamp(132px, 15%, 176px);
+  justify-content: start;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
