@@ -910,8 +910,11 @@ export class CatalogScreen extends LitElement {
     );
     const notice = this.viewingServerNotice();
     if (!supplements.length && !peers.length) return notice;
+    const peerServer = peers[0]?.identity.server || supplements[0]?.fromServer;
+    const peerName = this.label(peerServer === "jp" ? "settingsJapan" : "settingsGlobal", peerServer || "");
     return html`
       <section class="detail-section">
+        ${renderDetailSectionHeading(clientText(this.settings.locale, "catalogServerDifferences", "{server} differences", { server: peerName }), "details")}
         ${notice}
         ${supplements
           .map(
@@ -4859,7 +4862,6 @@ export class CatalogScreen extends LitElement {
         body: detailLayout(
           this.profile.presentation === "character" ? nothing : this.renderDetailMedia(item),
           html`
-            ${this.renderUnionDetail()}
             ${
               this.profile.presentation === "character"
                 ? this.renderCharacterArchive(item, fields)
@@ -5124,7 +5126,7 @@ export class CatalogScreen extends LitElement {
                     </section>
                   `
                 : nothing
-            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}
+            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.renderUnionDetail()}
           `,
         ),
       })}

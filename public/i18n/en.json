@@ -648,6 +648,7 @@
   "server": "Server",
   "releaseServer": "Release server",
   "settingsGlobal": "International",
+  "catalogServerDifferences": "{server} differences",
   "settingsJapan": "Japan",
   "songTitles": "Song titles",
   "forceJapaneseTitles": "Show Japanese song titles",

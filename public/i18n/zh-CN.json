@@ -648,6 +648,7 @@
   "server": "服务器",
   "releaseServer": "发行服务器",
   "settingsGlobal": "国际服",
+  "catalogServerDifferences": "{server}差异",
   "settingsJapan": "日服",
   "songTitles": "歌曲名",
   "forceJapaneseTitles": "显示日文歌曲名",
