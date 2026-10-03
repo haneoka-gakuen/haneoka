@@ -184,6 +184,21 @@ interface EntityPayload {
   aux?: Item;
   deferred?: Record<string, { url: string; count: number }>;
 }
+interface UnionPresentationSnapshot {
+  scopeKey: string;
+  sourceKey: string;
+  complete: boolean;
+  dto: CrossCatalogDTO;
+  items: Item[];
+  itemEntries: WeakMap<Item, CrossCatalogEntry>;
+  characters: Partial<Record<OfficialCatalogServer, Map<number, Item>>>;
+  bands: Partial<Record<OfficialCatalogServer, Map<number, Item>>>;
+  marks: Partial<Record<OfficialCatalogServer, Map<string, string>>>;
+  facetKeys: { character: Map<string, string>; collectionBand: Map<string, string> };
+}
+// Public catalogue data only; the bounded module cache survives Astro document swaps.
+const unionPresentations = new Map<string, UnionPresentationSnapshot>();
+const unionPresentationMarks = new Map<string, Map<string, string>>();
 interface Profile {
   id: string[];
   title: string[];
@@ -697,7 +712,7 @@ export class CatalogScreen extends LitElement {
     };
     return pin(row) as Item;
   }
-  private unionPrimaryRow(entry: CrossCatalogEntry): Item {
+  private unionPrimaryRow(entry: CrossCatalogEntry, itemEntries = this.unionItems): Item {
     const variant = entry.perServer[entry.displayServer]!;
     const row = crossServerDisplayRow(entry);
     // Shared text may supplement this presentation; primary artwork remains on its own source.
@@ -708,7 +723,7 @@ export class CatalogScreen extends LitElement {
         else row[field] = structuredClone(variant.row[field]);
       }
     const pinned = this.pinUnionRow(row, variant.identity);
-    this.unionItems.set(pinned, entry);
+    itemEntries.set(pinned, entry);
     return pinned;
   }
   private unionDetailRow(detail: ReturnType<typeof crossServerDetail>): Item {
@@ -722,101 +737,140 @@ export class CatalogScreen extends LitElement {
       }
     return this.pinUnionRow(row, own.identity);
   }
-  private indexUnionFacets(characters?: CrossCatalogDTO, bands?: CrossCatalogDTO) {
+  private indexUnionFacets(characters?: CrossCatalogDTO, bands?: CrossCatalogDTO,
+    dto = this.unionCatalog, facetKeys = this.unionFacetKeys) {
     for (const [key, catalog] of [["character", characters], ["collectionBand", bands]] as const) {
-      const tokens = this.unionFacetKeys[key];
+      const tokens = facetKeys[key];
       tokens.clear();
       for (const entry of catalog?.entries || []) {
         if (entry.association.status !== "verified") continue;
         const selected = entry.perServer[this.dataServer() as OfficialCatalogServer];
         if (!selected) continue;
-        const selectedPin = this.unionCatalog?.identities[selected.identity.server];
+        const selectedPin = dto?.identities[selected.identity.server];
         if (selectedPin?.releaseId !== selected.identity.releaseId || selectedPin.sourceId !== selected.identity.sourceId)
           continue;
         for (const variant of Object.values(entry.perServer)) {
           if (!variant) continue;
-          const pin = this.unionCatalog?.identities[variant.identity.server];
+          const pin = dto?.identities[variant.identity.server];
           if (pin?.releaseId === variant.identity.releaseId && pin.sourceId === variant.identity.sourceId)
             tokens.set(`${variant.identity.server}:${variant.id}`, `${selected.identity.server}:${selected.id}`);
         }
       }
     }
   }
-  private async loadUnionCollection(signal: AbortSignal): Promise<void> {
-    const resource = this.unionResource()!;
-    const selectedServer = this.dataServer() as OfficialCatalogServer;
-    const catalogs = await fetchCrossServerCatalogs(
-      [resource, "characters", "bands"],
-      selectedServer,
-      this.settings.locale,
-      { signal },
-    );
-    if (!this.isConnected || !this.catalogRequests.current(signal)) return;
-    const dto = catalogs[resource];
-    if (!dto) throw new Error("Cross-server catalogue unavailable");
-    this.unionCatalog = dto;
-    this.indexUnionFacets(catalogs.characters, catalogs.bands);
-    this.unionItems = new WeakMap();
-    this.unionEntries.clear();
-    this.unionCharacters = {};
-    this.unionBands = {};
-    this.unionMarks = {};
-    for (const server of ["jp", "intl"] as const) {
-      const identity = dto.identities[server];
-      if (!identity) continue;
-      const characters = new Map<number, Item>(),
-        bands = new Map<number, Item>();
-      for (const entry of catalogs.characters?.entries || []) {
-        const variant = entry.perServer[server];
-        if (variant && variant.identity.releaseId === identity.releaseId && variant.identity.sourceId === identity.sourceId) {
-          const view = this.unionDetailRow(crossServerDetail(entry, server));
-          characters.set(Number(variant.id), this.pinUnionRow({ ...view, ...variant.assets }, identity));
-        }
-      }
-      for (const entry of catalogs.bands?.entries || []) {
-        const variant = entry.perServer[server];
-        if (variant && variant.identity.releaseId === identity.releaseId && variant.identity.sourceId === identity.sourceId) {
-          const view = this.unionDetailRow(crossServerDetail(entry, server));
-          bands.set(Number(variant.id), this.pinUnionRow({ ...view, ...variant.assets }, identity));
-        }
-      }
-      this.unionCharacters[server] = characters;
-      this.unionBands[server] = bands;
-      try {
-        const response = await fetch(
-          `/api/v1/servers/${server}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`,
-          { signal },
-        );
-        if (
-          response.ok &&
-          response.headers.get("x-haneoka-release-id") === identity.releaseId &&
-          response.headers.get("x-haneoka-source-id") === identity.sourceId
-        ) {
-          const marks = (await response.json()) as Record<string, string>;
-          this.unionMarks[server] = new Map(
-            Object.entries(marks)
-              .filter(([, path]) => typeof path === "string")
-              .map(([name, path]) => [name, this.pinnedUnionAsset(`/runtime/${server}/${path.replace(/^runtime\//u, "")}`, identity)]),
-          );
-        }
-      } catch {
-        if (signal.aborted) return;
-      }
-    }
-    if (!this.isConnected || !this.catalogRequests.current(signal)) return;
-    this.items = dto.entries.map((entry) => this.unionPrimaryRow(entry));
-    for (const item of this.items) this.unionEntries.set(this.itemKey(item), this.unionEntry(item)!);
-    this.characters = [...(this.unionCharacters[selectedServer]?.values() || [])];
-    this.bands = [...(this.unionBands[selectedServer]?.values() || [])];
-    this.nativeCatalogPin = dto.identities[selectedServer];
-    this.gameMarks = this.unionMarks[selectedServer] || new Map();
+  private unionPresentationScope(): string {
+    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer()]);
+  }
+  private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
+    return JSON.stringify([scopeKey, ...(["jp", "intl"] as const).map((server) => {
+      const pin = dto.identities[server];
+      return [server, pin?.releaseId || "", pin?.sourceId || "", dto.sourceAvailability[server]];
+    })]);
+  }
+  private applyUnionPresentation(snapshot: UnionPresentationSnapshot) {
+    const restoring = this.phase !== "ready";
+    this.unionCatalog = snapshot.dto;
+    this.unionItems = snapshot.itemEntries;
+    this.unionCharacters = snapshot.characters;
+    this.unionBands = snapshot.bands;
+    this.unionMarks = snapshot.marks;
+    // These controller maps are cleared by detail preparation; never alias cached mutable maps.
+    this.unionFacetKeys = { character: new Map(snapshot.facetKeys.character), collectionBand: new Map(snapshot.facetKeys.collectionBand) };
+    this.items = snapshot.items;
+    this.unionEntries = new Map(this.items.map((item) => [this.itemKey(item), this.unionEntry(item)!]));
+    const server = this.dataServer() as OfficialCatalogServer;
+    this.characters = [...(snapshot.characters[server]?.values() || [])];
+    this.bands = [...(snapshot.bands[server]?.values() || [])];
+    this.nativeCatalogPin = snapshot.dto.identities[server];
+    this.gameMarks = new Map(snapshot.marks[server] || []);
     this.facetCache = undefined;
     this.resultCache = undefined;
     this.expandedCache = undefined;
     this.phase = "ready";
-    this.restoreLocationState();
+    if (restoring) {
+      this.restoreFacets(navigationDocumentUrl().searchParams);
+      this.restoreLocationState();
+    }
     this.ensureSongMeta();
     if (this.settings.nativeMetaReference) void this.loadNativeMetaReference(this.settings.nativeMetaReference);
+    this.requestUpdate();
+  }
+  private async loadUnionCollection(signal: AbortSignal): Promise<void> {
+    const resource = this.unionResource()!;
+    const selectedServer = this.dataServer() as OfficialCatalogServer;
+    const scopeKey = this.unionPresentationScope();
+    const current = () => this.isConnected && this.catalogRequests.current(signal) && this.unionPresentationScope() === scopeKey;
+    const cached = [...unionPresentations.values()].reverse().find((snapshot) => snapshot.scopeKey === scopeKey);
+    if (cached && current()) {
+      unionPresentations.delete(cached.sourceKey);
+      unionPresentations.set(cached.sourceKey, cached);
+      this.applyUnionPresentation(cached);
+    }
+    try {
+      const catalogs = await fetchCrossServerCatalogs([resource, "characters", "bands"], selectedServer, this.settings.locale, { signal });
+      if (!current()) return;
+      const dto = catalogs[resource];
+      if (!dto || (["jp", "intl"] as const).every((server) => dto.sourceAvailability[server] !== "loaded"))
+        throw new Error("Cross-server catalogue unavailable");
+      const sourceKey = this.unionPresentationSourceKey(dto, scopeKey);
+      const samePin = unionPresentations.get(sourceKey);
+      if (samePin?.complete) {
+        if (samePin !== cached) this.applyUnionPresentation(samePin);
+        return;
+      }
+      const characters: UnionPresentationSnapshot["characters"] = {}, bands: UnionPresentationSnapshot["bands"] = {}, marks: UnionPresentationSnapshot["marks"] = {};
+      const facetKeys = { character: new Map<string, string>(), collectionBand: new Map<string, string>() };
+      this.indexUnionFacets(catalogs.characters, catalogs.bands, dto, facetKeys);
+      for (const server of ["jp", "intl"] as const) {
+        const identity = dto.identities[server];
+        if (!identity) continue;
+        const ownCharacters = new Map<number, Item>(), ownBands = new Map<number, Item>();
+        for (const entry of catalogs.characters?.entries || []) {
+          const variant = entry.perServer[server];
+          if (variant && variant.identity.releaseId === identity.releaseId && variant.identity.sourceId === identity.sourceId)
+            ownCharacters.set(Number(variant.id), this.unionDetailRow(crossServerDetail(entry, server)));
+        }
+        for (const entry of catalogs.bands?.entries || []) {
+          const variant = entry.perServer[server];
+          if (variant && variant.identity.releaseId === identity.releaseId && variant.identity.sourceId === identity.sourceId)
+            ownBands.set(Number(variant.id), this.unionDetailRow(crossServerDetail(entry, server)));
+        }
+        characters[server] = ownCharacters;
+        bands[server] = ownBands;
+        const markKey = JSON.stringify([server, identity.releaseId, identity.sourceId]);
+        const cachedMarks = unionPresentationMarks.get(markKey);
+        if (cachedMarks) { marks[server] = cachedMarks; continue; }
+        try {
+          const response = await fetch(`/api/v1/servers/${server}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`, { signal });
+          if (response.ok && response.headers.get("x-haneoka-release-id") === identity.releaseId && response.headers.get("x-haneoka-source-id") === identity.sourceId) {
+            const raw = await response.json() as Record<string, string>;
+            if (!current()) return;
+            const parsed = new Map(Object.entries(raw).filter(([, path]) => typeof path === "string")
+              .map(([name, path]) => [name, this.pinnedUnionAsset(`/runtime/${server}/${path.replace(/^runtime\//u, "")}`, identity)]));
+            marks[server] = parsed;
+            unionPresentationMarks.set(markKey, parsed);
+            while (unionPresentationMarks.size > 12) unionPresentationMarks.delete(unionPresentationMarks.keys().next().value!);
+          }
+        } catch { if (signal.aborted) return; }
+      }
+      if (!current()) return;
+      const itemEntries = new WeakMap<Item, CrossCatalogEntry>();
+      const items = dto.entries.map((entry) => this.unionPrimaryRow(entry, itemEntries));
+      const complete = (["jp", "intl"] as const).every((server) => {
+        const pin = dto.identities[server];
+        return Boolean(pin && marks[server] && [dto, catalogs.characters, catalogs.bands].every((catalog) =>
+          catalog?.sourceAvailability[server] === "loaded" && catalog.identities[server]?.releaseId === pin.releaseId &&
+          catalog.identities[server]?.sourceId === pin.sourceId));
+      });
+      const snapshot: UnionPresentationSnapshot = { scopeKey, sourceKey, complete, dto, items, itemEntries, characters, bands, marks, facetKeys };
+      for (const [key, previous] of unionPresentations) if (previous.scopeKey === scopeKey) unionPresentations.delete(key);
+      unionPresentations.set(sourceKey, snapshot);
+      while (unionPresentations.size > 6) unionPresentations.delete(unionPresentations.keys().next().value!);
+      this.applyUnionPresentation(snapshot);
+    } catch (error) {
+      if (!cached) throw error;
+      // Keep the prior immutable public view when a current-pointer observation fails.
+    }
   }
   private unionDetailHref(href: string | null): string {
     if (!href || typeof window === "undefined" || !this.isConnected) return href || "";
