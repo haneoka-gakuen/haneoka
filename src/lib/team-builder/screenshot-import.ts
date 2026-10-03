@@ -3,6 +3,7 @@ import {
   addInventoryEntries, updateInventoryEntries, upgradeInventory, validateInventory,
   type InventoryV1, type InventoryKind,
 } from "./inventory.ts";
+import { initializeNewCardPractice, maximumNewCardPractice } from "./manual-card-defaults";
 
 export interface ScreenshotRecognitionContext { server: string; releaseId: string; sourceId: string; referenceId: string }
 export interface ScreenshotObservation {
@@ -30,6 +31,8 @@ export interface ScreenshotCardProposal {
   existingInstanceId: string | null;
   existingLevel: number | null;
   observedLevels: number[];
+  /** New-card maximum preset, never OCR evidence. Null for an existing card. */
+  defaultPractice: Readonly<Record<string, number>> | null;
 }
 export interface ScreenshotImportPreview {
   context: ScreenshotReviewContext;
@@ -101,7 +104,8 @@ export function previewScreenshotImport(
     if (!proposal) {
       const owned = current[observation.kind].find(entry => entry.cardId === chosen);
       proposal = { key, kind: observation.kind, cardId: chosen, observations: [],
-        existingInstanceId: owned?.instanceId ?? null, existingLevel: owned?.level ?? null, observedLevels: [] };
+        existingInstanceId: owned?.instanceId ?? null, existingLevel: owned?.level ?? null, observedLevels: [],
+        defaultPractice: owned ? null : maximumNewCardPractice(data, observation.kind, chosen) };
       cards.set(key, proposal);
     }
     proposal.observations.push({ image: 0, index });
@@ -136,10 +140,10 @@ export function previewScreenshotImportBatch(
     cards: [...cards.values()], rejectedObservations: rejected };
 }
 
-/** Only explicit confirmation creates/changes owned cards. Levels come from
- * visible evidence or an explicit manual entry validated against native ranges.
- * Every other practice/flag/player map is
- * preserved, and a changed account/revision/source or inventory requires review again.
+/** Only explicit confirmation creates/changes owned cards. New cards get the
+ * maximum legal preset; a confirmed observed/manual level is applied last.
+ * Existing cards retain unseen practice and all flags/player maps. A changed
+ * account/revision/source or inventory requires review again.
  */
 export function applyConfirmedScreenshotImport(
   preview: ScreenshotImportPreview, current: InventoryV1, data: TeamBuilderData,
@@ -159,13 +163,18 @@ export function applyConfirmedScreenshotImport(
   let next: InventoryV1 = upgradeInventory(current);
   for (const confirmation of accepted) {
     const card = preview.cards.find(value => value.key === confirmation.key)!;
+    if (!card.existingInstanceId && card.observedLevels.length > 1 && confirmation.level === undefined)
+      throw new RangeError("screenshot-level-conflict-confirmation-required");
     if (confirmation.level !== undefined && (!int(confirmation.level, 1) ||
         (confirmation.levelSource !== "manual" && !card.observedLevels.includes(confirmation.level))))
       throw new RangeError("screenshot-level-evidence-required");
+    const beforeAdd = next;
     next = addInventoryEntries(next, card.kind, [{ cardId: card.cardId }], data);
-    if (confirmation.level !== undefined) {
+    next = initializeNewCardPractice(beforeAdd, next, data);
+    const level = confirmation.level ?? (!card.existingInstanceId && card.observedLevels.length === 1 ? card.observedLevels[0] : undefined);
+    if (level !== undefined) {
       const entry = next[card.kind].find(value => value.cardId === card.cardId)!;
-      next = updateInventoryEntries(next, card.kind, [entry.instanceId], { level: confirmation.level });
+      next = updateInventoryEntries(next, card.kind, [entry.instanceId], { level });
     }
   }
   const checked = validateInventory(next, data);

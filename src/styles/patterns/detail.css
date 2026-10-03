@@ -12,6 +12,18 @@
    pane without feeling tighter.
    ========================================================================== */
 
+/* The layout supplies the page gutter; inner sections share that edge.
+ * Keep these rules in the same layer as section padding. */
+.detail-layout {
+  min-width: 0;
+}
+.detail-layout__content > .detail-section {
+  padding-inline: 0;
+}
+.detail-layout__content > .detail-section:first-child {
+  padding-block-start: 0;
+}
+
 /* ---------- Section ---------- */
 .detail-section {
   display: grid;
