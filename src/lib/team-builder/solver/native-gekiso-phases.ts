@@ -1,5 +1,6 @@
 import type { EvidenceGap, OptimizationInput, TeamAssignment } from "../contracts.ts";
 import { dataRows, nativeRow, type TeamBuilderData } from "../data.ts";
+import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
 import {
   resolveSelectedGekisoSkills,
   resolveGekisoEffectFactorBP,
@@ -251,7 +252,7 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
                 update.mission < 1 ||
                 update.mission > 3 ||
                 !int(update.startTimeMs) ||
-                update.startTimeMs > frame.timeMs,
+                (update.simulateState >= 3 && update.startTimeMs > frame.timeMs),
             ),
         )
       )
@@ -317,7 +318,8 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
             const checkerSource = expectedIdentity.sourceId;
             const profile = checkerSource === "v25-c0b6a1541e45-3a5d2eec9935-n653c6392"
               ? "intl-formal-v25"
-              : checkerSource === "v50-e5786b7ddada-79f2f470b3cf-m73807cbb0192-n7ba0928c"
+              : checkerSource === "v50-e5786b7ddada-79f2f470b3cf-m73807cbb0192-n7ba0928c" ||
+                nativeGekisoAllComboDriverSupports(data.identity)
                 ? "intl-current-v50" : null;
             if (!profile) {
               gaps.push(gap("native-gekiso-playing-checker-source-unresolved", checkerSource ?? "sourceId"));

@@ -84,7 +84,7 @@ export interface EvaluationRequest {
   /** Internal: preserve Gekiso requirements while preparing its normal Solo ledger. */
   requireGekisoPractice?: true;
   skillOrderCriterion?: SkillOrderCriterion;
-  scoreDomain?: "personal-solo";
+  scoreDomain?: "personal-solo" | "personal-live";
   data: TeamBuilderData;
   inventory: InventoryV1;
   songs: SongOption[];
@@ -236,12 +236,19 @@ export interface PreparedSearchEvaluation {
   ) => Candidate | Promise<Candidate>;
 }
 export function prepareEvaluationForSearch(request: EvaluationRequest): PreparedSearchEvaluation {
+  if (request.scoreDomain !== undefined && !["personal-solo", "personal-live"].includes(request.scoreDomain))
+    throw new RangeError("score-domain");
+  if (!request.nativeRuntime && request.nativeGekisoPlans === undefined && request.mode === "gekiso" &&
+    request.scoreDomain !== "personal-solo" && request.objectives.includes("score") && request.constraints.justRate === 0) {
+    return prepareEvaluationForSearch({ ...request, nativeGekisoPlans: Object.fromEntries(request.songs
+      .filter((song) => song.nativeGekisoPlan).map((song) => [song.key, song.nativeGekisoPlan!])) });
+  }
   if (request.nativeGekisoPlans !== undefined) {
-    if (request.nativeRuntime || request.mode !== "gekiso" || request.scoreDomain !== undefined ||
+    if (request.nativeRuntime || request.mode !== "gekiso" || request.scoreDomain === "personal-solo" ||
       request.constraints.justRate !== 0)
       throw new RangeError("native-gekiso-context-domain");
     const normal = prepareEvaluationForSearch({ ...request, nativeGekisoPlans: undefined,
-      mode: "normal", requireGekisoPractice: true });
+      mode: "normal", scoreDomain: undefined, requireGekisoPractice: true });
     return createNativeGekisoContextEvaluation(request.data, normal, request.nativeGekisoPlans);
   }
   if (request.nativeRuntime && request.skillOrderCriterion === "worst-ap")

@@ -1,6 +1,7 @@
 import { tickToTimeMs } from "../song-metrics.ts";
 import type { SongOption } from "../contracts.ts";
 import { dataRows, objectRow, type TeamBuilderData } from "../data.ts";
+import { createNativeGekisoAllComboChartPlan } from "./native-gekiso-chart-plan.ts";
 
 /** The DTO observes current once; all of its chart requests keep that identity. */
 export function pinnedSongAssetUrl(identity: TeamBuilderData["identity"], file: string): string {
@@ -33,6 +34,7 @@ export async function loadSongOptions(
   data: TeamBuilderData,
   selections: readonly { songId: number; difficulty: number }[],
   signal?: AbortSignal,
+  options?: { nativeGekisoAllComboPlan?: boolean },
 ): Promise<SongOption[]> {
   if (selections.length > 1000) throw new RangeError("song-selection-size");
   const { convertChartAsync } =
@@ -76,7 +78,7 @@ export async function loadSongOptions(
     if (!Number.isSafeInteger(declaredCount) || declaredCount < 1)
       gaps.push({ code: "canonical-count-reference-missing", source: key });
     else if (declaredCount !== events.length) gaps.push({ code: "canonical-full-combo-mismatch", source: key });
-    songs.push({
+    const song: SongOption = {
       key,
       songId: selection.songId,
       scoreId: Number(difficulty.scoreId ?? difficulty.id),
@@ -91,7 +93,15 @@ export async function loadSongOptions(
         mission: missions[index] ?? 0,
       })),
       gaps,
-    });
+    };
+    if (options?.nativeGekisoAllComboPlan) {
+      const plan = createNativeGekisoAllComboChartPlan(data, song, {
+        bpmChanges: chart.bpmChanges, fever: chart.passthrough.fever,
+      });
+      if (plan.value) song.nativeGekisoPlan = plan.value;
+      else song.nativeGekisoPlanGaps = plan.gaps;
+    }
+    songs.push(song);
   }
   return songs;
 }

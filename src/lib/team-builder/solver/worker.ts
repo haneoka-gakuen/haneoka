@@ -38,7 +38,11 @@ scope.onmessage = (event) => {
         runId: run.runId,
         progress: { phase: "loading", evaluated: 0, elapsedMs: 0 },
       });
-      const songs = await loadSongOptions(message.request.data, message.request.selections, run.controller.signal);
+      const songs = await loadSongOptions(message.request.data, message.request.selections, run.controller.signal, {
+        nativeGekisoAllComboPlan: message.request.mode === "gekiso" && message.request.scoreDomain !== "personal-solo" &&
+          message.request.objectives.includes("score") && message.request.constraints.justRate === 0 &&
+          message.request.nativeGekisoPlans === undefined,
+      });
       if (active !== run) return;
       if (run.cancelled) {
         scope.postMessage({

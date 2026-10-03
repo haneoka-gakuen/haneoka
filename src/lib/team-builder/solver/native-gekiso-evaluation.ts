@@ -9,10 +9,11 @@ import { prepareGekisoRules } from "./gekiso-mission-luck.ts";
 import { createNativeGekisoNoLuckLiveScoreResolver, type NativeGekisoScoreRange } from "./native-gekiso-live-score.ts";
 import type { NativeGekisoRuntimeFrame } from "./native-gekiso-runtime.ts";
 import { createNativeGekisoSoloEvaluator } from "./native-gekiso-solo.ts";
+import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
 
-/** Explicit native playback context. Automatic chart/native-frame production
- * remains a separate provider; no default FPS or completion delay is invented. */
+/** Same-pin playback context, supplied explicitly or produced from a qualified chart. */
 export interface NativeGekisoSongPlan {
+  producer?: "native-all-combo-ap-event-reduction-v1";
   identity: { server: string; releaseId: string; sourceId: string };
   missionPattern: number;
   frames: readonly NativeGekisoRuntimeFrame[];
@@ -87,7 +88,7 @@ export function createNativeGekisoContextEvaluation(
       }),
     } : null] as const;
   }));
-  const input = { ...solo.input, evaluation: { ...solo.input.evaluation,
+  const input = { ...solo.input, scoreDomain: "personal-live" as const, evaluation: { ...solo.input.evaluation,
     gaps: [...solo.input.evaluation.gaps],
     assumptions: [...solo.input.evaluation.assumptions, "provided-native-no-Luck-GK-context"],
   } };
@@ -96,7 +97,7 @@ export function createNativeGekisoContextEvaluation(
   if (![
     "v25-c0b6a1541e45-3a5d2eec9935-n653c6392",
     "v50-e5786b7ddada-79f2f470b3cf-m73807cbb0192-n7ba0928c",
-  ].includes(data.identity.sourceId ?? ""))
+  ].includes(data.identity.sourceId ?? "") && !nativeGekisoAllComboDriverSupports(data.identity))
     input.evaluation.gaps.push({ code: "native-gekiso-context-source-unreviewed", source: data.identity.sourceId ?? "sourceId" });
   return {
     input,
@@ -105,6 +106,8 @@ export function createNativeGekisoContextEvaluation(
       if (input.objectives.includes("score")) {
         const context = prepared.get(song.song.key);
         let metric = unavailableMetric("native-gekiso-playback-context-missing", song.song.key);
+        if (!context && song.song.nativeGekisoPlanGaps?.length)
+          metric = { value: null, status: "unavailable", gaps: [...song.song.nativeGekisoPlanGaps], assumptions: [] };
         if (context && !context.rules.value)
           metric = { value: null, status: "unavailable", gaps: [...context.rules.gaps], assumptions: [] };
         if (context?.rules.value && normal.resolveSlots) {
@@ -115,6 +118,9 @@ export function createNativeGekisoContextEvaluation(
             frames: context.plan.frames, randomLaw: { kind: "uniform-residue" },
             projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: 100000 },
           }, context.plan.ranges, controls);
+          if (context.plan.producer === "native-all-combo-ap-event-reduction-v1")
+            metric.assumptions = [...metric.assumptions.filter((value) => value !== "complete-native-update-frame-tape"),
+              "native-all-combo-ap-event-reduction", "uninterrupted-native-perfect-playback"];
         }
         candidate.metrics.score = applyEvaluationBasis(metric, "score", song.song.key, input.basis);
       }

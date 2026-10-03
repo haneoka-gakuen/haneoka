@@ -1,6 +1,6 @@
 import type { TeamBuilderData } from "./data.ts";
 import type { InventoryV1 } from "./inventory.ts";
-import type { NativeGekisoPlans } from "./solver/native-gekiso-evaluation.ts";
+import type { NativeGekisoPlans, NativeGekisoSongPlan } from "./solver/native-gekiso-evaluation.ts";
 /** Serializable inputs shared by the inventory adapter, solver worker and UI. */
 export interface ReleaseIdentity {
   server: string;
@@ -33,6 +33,7 @@ export interface NativeRuleEvidence {
 export type Objective = "score" | "ss-ratio" | "ss-surplus" | "event-points" | "event-items" | "base-score";
 export type PlayMode = "normal" | "gekiso" | "multi" | "battle";
 export type SkillOrderCriterion = "nominal-mean" | "worst-ap";
+export type PersonalScoreDomain = "personal-solo" | "personal-live";
 export interface EvidenceGap {
   code: string;
   source: string;
@@ -64,6 +65,8 @@ export interface TargetCapability {
   conditions?: string[];
   /** Gekiso score uses the explicitly selected personal ledger. */
   scoreDomain?: "personal-solo";
+  scoreDomains?: PersonalScoreDomain[];
+  scoreDomainConditions?: Partial<Record<PersonalScoreDomain, string[]>>;
   skillOrderCriteria?: SkillOrderCriterion[];
 }
 export interface TeamBuilderCapabilities extends ReleaseIdentity {
@@ -142,6 +145,8 @@ export interface SongOption {
   events: ChartEvent[];
   skillTimesMs: number[];
   segments: { startTick: number; endTick: number; mission: number }[];
+  nativeGekisoPlan?: NativeGekisoSongPlan;
+  nativeGekisoPlanGaps?: EvidenceGap[];
   gaps: EvidenceGap[];
 }
 export interface TeamAssignment {
@@ -269,7 +274,7 @@ export interface ScoreEvaluationModel extends ReleaseIdentity {
 }
 export interface OptimizationInput extends ReleaseIdentity {
   skillOrderCriterion?: SkillOrderCriterion;
-  scoreDomain?: "personal-solo";
+  scoreDomain?: PersonalScoreDomain;
   members: MemberOption[];
   snapshots: SnapshotOption[];
   songs: SongOption[];
@@ -281,12 +286,12 @@ export interface OptimizationInput extends ReleaseIdentity {
   basis?: EvaluationBasisRequest;
 }
 export interface WorkerPreparationInput {
-  /** Internal explicit native playback context; public defaults do not synthesize it. */
+  /** Optional explicit context; the Worker otherwise produces eligible chart plans. */
   nativeGekisoPlans?: NativeGekisoPlans;
   /** Default mean; worst-ap evaluates the least favorable complete AP order. */
   skillOrderCriterion?: SkillOrderCriterion;
-  /** Required for Gekiso score; Live score uses a separate runtime factory. */
-  scoreDomain?: "personal-solo";
+  /** Gekiso personal-live selects the chart/native driver; personal-solo selects its Solo ledger. */
+  scoreDomain?: PersonalScoreDomain;
   data: TeamBuilderData;
   inventory: InventoryV1;
   /** Multiple charts compete under the same explicit objective and basis. */

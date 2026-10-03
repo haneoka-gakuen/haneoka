@@ -43,7 +43,10 @@ export function validateOptimizationInput(input: OptimizationInput): void {
     throw new RangeError("skill-order-criterion");
   if (input.skillOrderCriterion === "worst-ap" && input.constraints.justRate !== 0)
     throw new RangeError("worst-ap-requires-perfect-timing");
-  if (input.scoreDomain !== undefined && input.scoreDomain !== "personal-solo") throw new RangeError("score-domain");
+  if (input.scoreDomain !== undefined && !["personal-solo", "personal-live"].includes(input.scoreDomain))
+    throw new RangeError("score-domain");
+  if (input.scoreDomain === "personal-live" && input.evaluation.mode !== "gekiso")
+    throw new RangeError("native-gekiso-context-domain");
   if (input.server !== input.evaluation.server || input.releaseId !== input.evaluation.releaseId)
     throw new RangeError("different-evaluation-release");
   if (
@@ -115,6 +118,8 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
   validateOptimizationInput(input);
   if (input.skillOrderCriterion === "worst-ap" && !hooks.evaluate)
     throw new RangeError("worst-ap-requires-native-order-factory");
+  if (input.scoreDomain === "personal-live" && !hooks.evaluate)
+    throw new RangeError("personal-live-requires-native-context-factory");
   const now = hooks.now ?? (() => performance.now());
   const started = now();
   const elapsed = () => Math.max(0, now() - started);

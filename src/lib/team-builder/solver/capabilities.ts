@@ -1,5 +1,6 @@
 import type { Objective, PlayMode, ReleaseIdentity, TeamBuilderCapabilities } from "../contracts.ts";
 import { nativeRuleSupports } from "./native-rule-profile.ts";
+import { nativeGekisoAllComboDriverSupports, NATIVE_GEKISO_ALL_COMBO_CONDITIONS } from "./native-gekiso-driver-profile.ts";
 
 /** Factory capabilities are declared where native input paths are implemented.
  * UI reads this list instead of maintaining its own supported-target table.
@@ -10,6 +11,7 @@ export function getTeamBuilderCapabilities(identity: ReleaseIdentity & { sourceI
   const nativeSourceKnown = nativeRuleSupports(identity, "normal-score");
   const soloKnown = nativeSourceKnown && nativeRuleSupports(identity, "personal-solo");
   const eventKnown = nativeSourceKnown && nativeRuleSupports(identity, "ordinary-event-points");
+  const allComboLiveKnown = nativeGekisoAllComboDriverSupports(identity);
   return {
     ...identity,
     targets: modes.flatMap((mode) =>
@@ -44,6 +46,14 @@ export function getTeamBuilderCapabilities(identity: ReleaseIdentity & { sourceI
               : ["single" as const, "time" as const, "consumption" as const],
           gaps: supported ? [] : [{ code, source: "same-release native runtime factory" }],
           ...(gekisoSolo && objective === "score" ? { scoreDomain: "personal-solo" as const } : {}),
+          ...(supported && gekisoSolo && objective === "score" ? {
+            scoreDomains: allComboLiveKnown
+              ? ["personal-solo" as const, "personal-live" as const] : ["personal-solo" as const],
+            scoreDomainConditions: {
+              "personal-solo": ["native-gekiso-personal-solo-perfect-timing"],
+              ...(allComboLiveKnown ? { "personal-live": [...NATIVE_GEKISO_ALL_COMBO_CONDITIONS] } : {}),
+            },
+          } : {}),
           ...(supported && (normalForecast || gekisoSolo || eventPoints)
             ? { skillOrderCriteria: ["nominal-mean" as const, "worst-ap" as const] }
             : {}),
