@@ -208,7 +208,7 @@
     width: 100%;
   }
   .viewer-transform-controls,
-  .viewer-parameter-editor > div {
+  .viewer-parameter-content {
     display: grid;
     gap: 10px;
   }
@@ -251,26 +251,11 @@
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-medium);
   }
-  .viewer-parameter-editor > summary {
-    display: flex;
-    min-height: 48px;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px 4px 14px;
-    list-style: none;
-    cursor: pointer;
-  }
-  .viewer-parameter-editor > summary > span {
-    flex: 1;
-    font-weight: 500;
-  }
-  .viewer-parameter-editor > summary small,
   .viewer-parameter-editor output {
     color: var(--md-sys-color-on-surface-variant);
     font-variant-numeric: tabular-nums;
   }
-  .viewer-parameter-editor > div {
-    padding: 10px 12px 14px;
+  .viewer-parameter-editor > .md-accordion__panel {
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
   .viewer-parameter-toolbar {
@@ -451,11 +436,11 @@
       grid-template-columns: minmax(76px, 0.8fr) minmax(0, 1.6fr);
       gap: 4px;
     }
-    .viewer-parameter-editor > div > label:not(.viewer-part-row) {
+    .viewer-parameter-content > label:not(.viewer-part-row) {
       grid-template-columns: minmax(0, 1fr) 44px 48px;
       gap: 4px;
     }
-    .viewer-parameter-editor > div > label:not(.viewer-part-row) > span:first-child {
+    .viewer-parameter-content > label:not(.viewer-part-row) > span:first-child {
       grid-column: 1 / -1;
     }
   }

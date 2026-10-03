@@ -151,10 +151,6 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  .admin-user-ip-details > summary {
-    padding-block: 8px;
-    cursor: pointer;
-  }
   .admin-ip-audit dl {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
@@ -181,29 +177,15 @@
   .admin-action-panel {
     position: relative;
   }
-  .admin-action-panel > summary {
-    display: flex;
-    min-height: 40px;
-    align-items: center;
-    gap: 6px;
-    padding: 0 12px;
-    border-radius: var(--md-sys-shape-corner-full);
-    cursor: pointer;
+  .admin-action-panel--expanded {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
   }
-  .admin-action-panel[open] > summary {
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-  }
-  .admin-action-panel > div {
+  .admin-action-controls {
     display: grid;
-    width: min(620px, calc(100vw - 48px));
+    min-width: 0;
     gap: 12px;
-    padding: 12px;
-    margin-top: 8px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface-container-high);
-    box-shadow: var(--md-sys-elevation-level2);
   }
   .admin-action-panel form,
   .admin-restriction-controls {
@@ -324,10 +306,6 @@
   .resource-console h2,
   .resource-console h3 {
     margin: 0;
-  }
-  .resource-console details > summary {
-    min-height: 48px;
-    cursor: pointer;
   }
   .resource-server-list {
     display: grid;
@@ -475,9 +453,6 @@
       grid-column: 1 / -1;
       width: 100%;
       min-width: 0;
-    }
-    .admin-action-panel > div {
-      width: 100%;
     }
     .admin-action-panel md-outlined-select {
       max-width: 100%;

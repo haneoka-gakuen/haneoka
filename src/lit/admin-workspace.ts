@@ -2,6 +2,7 @@ import { clientText } from "../i18n/client";
 import { LitElement, html, nothing } from "lit";
 import { PaneFocus } from "./ui/pane";
 import { loadingState } from "./ui/state";
+import { accordion } from "./ui/accordion";
 import { fetchJson, JsonResponseError, preferredLocale } from "./shared/catalog";
 import { RequestScope } from "../lib/request-scope";
 import { beginLoading } from "../lib/loading-progress";
@@ -51,6 +52,7 @@ export class AdminWorkspace extends LitElement {
   declare loadingMore: boolean;
   declare selectedResourceServer: string;
   declare packageFileName: string;
+  private readonly expandedPanels = new Set<string>();
   private readonly listRequests = new RequestScope();
   private readonly sourceRequests = new RequestScope();
   private readonly serverRequests = new RequestScope();
@@ -197,6 +199,7 @@ export class AdminWorkspace extends LitElement {
     } catch (error) {
       if (this.isConnected) {
         if (error instanceof JsonResponseError && (error.status === 401 || error.status === 403)) {
+          this.expandedPanels.clear();
           this.staff = {};
           this.document = {};
           this.history = null;
@@ -209,6 +212,17 @@ export class AdminWorkspace extends LitElement {
     } finally {
       this.busy = "";
     }
+  }
+  private disclosure(options: Omit<Parameters<typeof accordion>[0], "expanded" | "onExpandedChange">) {
+    return accordion({
+      ...options,
+      expanded: this.expandedPanels.has(options.id),
+      onExpandedChange: (expanded) => {
+        if (expanded) this.expandedPanels.add(options.id);
+        else this.expandedPanels.delete(options.id);
+        this.requestUpdate();
+      },
+    });
   }
   private can(capability: string) {
     return Array.isArray(this.staff.capabilities) && this.staff.capabilities.includes(capability);
@@ -256,6 +270,7 @@ export class AdminWorkspace extends LitElement {
       if (!active()) return;
       this.error = error instanceof Error ? error.message : String(error);
       if (error instanceof JsonResponseError && (error.status === 401 || error.status === 403)) {
+        this.expandedPanels.clear();
         this.staff = {};
         this.document = {};
         this.history = null;
@@ -293,7 +308,7 @@ export class AdminWorkspace extends LitElement {
     });
   }
   private addRestriction(user: Value, kind: "sign_in" | "upload" | "write", event: Event) {
-    const container = (event.currentTarget as HTMLElement).closest("details");
+    const container = (event.currentTarget as HTMLElement).closest(".admin-action-panel");
     const duration = Number(
       (container?.querySelector('[name="duration"]') as (HTMLElement & { value?: string }) | null)?.value || 604800000,
     );
@@ -625,12 +640,14 @@ export class AdminWorkspace extends LitElement {
   }
   private renderUserActions(user: Value) {
     const restrictions = Array.isArray(user.activeRestrictions) ? (user.activeRestrictions as Value[]) : [];
-    return html`
-      <details class="admin-action-panel">
-        <summary>
-          ${icon("manage_accounts", 17)}${this.label("actions.manage", "Manage")}${icon("expand_more", 16)}
-        </summary>
-        <div>
+    const id = `admin-user-actions-${encodeURIComponent(String(user.id))}`;
+    return this.disclosure({
+      id,
+      label: this.label("actions.manage", "Manage"),
+      leading: icon("manage_accounts", 20),
+      className: `admin-action-panel${this.expandedPanels.has(id) ? " admin-action-panel--expanded" : ""}`,
+      content: html`
+        <div class="admin-action-controls">
           <form @submit=${(event: SubmitEvent) => this.changeRole(user, event)}>
             <md-outlined-select name="role" label=${this.label("actions.role", "Role")}>
               ${["member", "moderator", "admin"].map(
@@ -686,8 +703,8 @@ export class AdminWorkspace extends LitElement {
             ${icon("logout", 18)}${this.label("actions.revokeSessions", "Revoke sessions")}
           </button>
         </div>
-      </details>
-    `;
+      `,
+    });
   }
   private renderRecord(record: Value) {
     if (this.section === "users")
@@ -714,15 +731,17 @@ export class AdminWorkspace extends LitElement {
             ${
               record.lastVisit
                 ? html`
-                    <details class="admin-user-ip-details">
-                      <summary>
-                        ${this.country(((record.lastVisit as Value).ipLocation as Value | undefined)?.countryCode) || this.label("ip.details", "IP details")}
-                      </summary>
-                      <small>
-                        ${this.label("ip.visitSampling", "Authenticated requests are sampled once a minute; IP changes are recorded immediately.")}
-                      </small>
-                      ${this.renderIpAudit(record.lastVisit as Value, false)}
-                    </details>
+                    ${this.disclosure({
+                      id: `admin-user-ip-${encodeURIComponent(String(record.id))}`,
+                      className: "admin-user-ip-details",
+                      label: this.country(((record.lastVisit as Value).ipLocation as Value | undefined)?.countryCode) || this.label("ip.details", "IP details"),
+                      content: html`
+                        <small>
+                          ${this.label("ip.visitSampling", "Authenticated requests are sampled once a minute; IP changes are recorded immediately.")}
+                        </small>
+                        ${this.renderIpAudit(record.lastVisit as Value, false)}
+                      `,
+                    })}
                   `
                 : nothing
             }
@@ -1026,8 +1045,11 @@ export class AdminWorkspace extends LitElement {
           <h2>${this.label("resources.title", "Resource console")}</h2>
           <button class="icon-button" @click=${this.loadResourceServers}>${icon("refresh", 20)}</button>
         </header>
-        <details>
-          <summary>${this.label("resources.servers", "Resource servers")}</summary>
+        ${this.disclosure({
+          id: "admin-resource-servers",
+          className: "admin-resource-servers",
+          label: this.label("resources.servers", "Resource servers"),
+          content: html`
           <div class="resource-server-list">
             ${this.resourceServers.map(
               (server) => html`
@@ -1081,7 +1103,8 @@ export class AdminWorkspace extends LitElement {
             </md-outlined-select>
             <button class="button">${this.label("resources.create", "Create draft")}</button>
           </form>
-        </details>
+          `,
+        })}
         <div class="resource-console-grid">
           <form @submit=${this.uploadPackage}>
             <h3>${this.label("resources.upload", "Upload package")}</h3>

@@ -2,6 +2,7 @@ import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { canvasToPngBlob, downloadBlob } from "../lib/canvas-capture";
 import { facet } from "./ui/facet";
+import { accordion } from "./ui/accordion";
 import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { LitElement, html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
@@ -34,6 +35,7 @@ type PackagingProgress = {
 };
 const POSE_STORAGE_KEY = "haneoka.live2d.poses";
 const CAPTURE_PIXEL_BUDGET = 4_000_000;
+let live2dAccordionId = 0;
 interface Viewer {
   readonly ready: boolean;
   readonly isMotionPlaying: boolean;
@@ -112,6 +114,8 @@ export class Live2DWorkspace extends LitElement {
     parameters: { state: true },
     parameterOverrides: { state: true },
     parameterMode: { state: true },
+    parametersExpanded: { state: true },
+    partsExpanded: { state: true },
     parts: { state: true },
     poses: { state: true },
     poseId: { state: true },
@@ -161,6 +165,8 @@ export class Live2DWorkspace extends LitElement {
   declare parameters: Parameter[];
   declare parameterOverrides: Record<string, number>;
   declare parameterMode: "none" | "capture" | "pose";
+  declare parametersExpanded: boolean;
+  declare partsExpanded: boolean;
   declare parts: Part[];
   declare poses: Record<string, StoredPose>;
   declare poseId: string;
@@ -190,6 +196,7 @@ export class Live2DWorkspace extends LitElement {
   private dragLastY = 0;
   private initializationTimer?: number;
   private ssrStageRemoved = false;
+  private readonly editorId = `live2d-editor-${++live2dAccordionId}`;
 
   constructor() {
     super();
@@ -231,6 +238,8 @@ export class Live2DWorkspace extends LitElement {
     this.parameters = [];
     this.parameterOverrides = {};
     this.parameterMode = "none";
+    this.parametersExpanded = false;
+    this.partsExpanded = false;
     this.parts = [];
     this.poses = {};
     this.poseId = "";
@@ -471,6 +480,8 @@ export class Live2DWorkspace extends LitElement {
     this.parameters = [];
     this.parameterOverrides = {};
     this.parameterMode = "none";
+    this.parametersExpanded = false;
+    this.partsExpanded = false;
     this.pendingPoseCapture = false;
     this.loopMotion = false;
     this.selectedMotion = "";
@@ -1917,13 +1928,16 @@ export class Live2DWorkspace extends LitElement {
             }
             ${
               this.parameters.length
-                ? html`
-                    <details class="viewer-parameter-editor">
-                      <summary>
-                        <span>${uiText(this.locale, "parameters")}</span>
-                        <small>${this.parameters.length}</small>
-                      </summary>
-                      <div>
+                ? accordion({
+                    id: `${this.editorId}-parameters`,
+                    className: "viewer-parameter-editor",
+                    label: uiText(this.locale, "parameters"),
+                    metadata: this.parameters.length,
+                    headingLevel: 3,
+                    expanded: this.parametersExpanded,
+                    onExpandedChange: (expanded) => (this.parametersExpanded = expanded),
+                    content: html`
+                      <div class="viewer-parameter-content">
                         <div class="viewer-parameter-toolbar">
                           <span>${uiText(this.locale, "parameterMode")}</span>
                           <span class="viewer-parameter-actions">
@@ -2075,19 +2089,22 @@ export class Live2DWorkspace extends LitElement {
                           `,
                         )}
                       </div>
-                    </details>
-                  `
+                    `,
+                  })
                 : nothing
             }
             ${
               this.parts.length
-                ? html`
-                    <details class="viewer-parameter-editor viewer-part-editor">
-                      <summary>
-                        <span>${uiText(this.locale, "partsVisibility")}</span>
-                        <small>${this.parts.length}</small>
-                      </summary>
-                      <div>
+                ? accordion({
+                    id: `${this.editorId}-parts`,
+                    className: "viewer-parameter-editor viewer-part-editor",
+                    label: uiText(this.locale, "partsVisibility"),
+                    metadata: this.parts.length,
+                    headingLevel: 3,
+                    expanded: this.partsExpanded,
+                    onExpandedChange: (expanded) => (this.partsExpanded = expanded),
+                    content: html`
+                      <div class="viewer-parameter-content">
                         <div class="viewer-part-toolbar">
                           <button class="button button--text" @click=${this.resetParts}>
                             ${uiText(this.locale, "reset")}
@@ -2106,8 +2123,8 @@ export class Live2DWorkspace extends LitElement {
                           `,
                         )}
                       </div>
-                    </details>
-                  `
+                    `,
+                  })
                 : nothing
             }
           </aside>
