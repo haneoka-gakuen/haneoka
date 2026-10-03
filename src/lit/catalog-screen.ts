@@ -618,7 +618,7 @@ export class CatalogScreen extends LitElement {
   private unionResource(): CrossCatalogResource | undefined {
     return this.settings.origin !== "bestdori" &&
       ["jp", "intl"].includes(this.dataServer()) &&
-      ["cards", "support-cards", "songs"].includes(this.settings.resource)
+      ["cards", "support-cards", "songs", "events"].includes(this.settings.resource)
       ? (this.settings.resource as CrossCatalogResource)
       : undefined;
   }
@@ -959,7 +959,10 @@ export class CatalogScreen extends LitElement {
                   `,
                 html`
                   ${specList([
-                    { label: this.label("release", "Release"), value: this.release(variant!.releasedAt) },
+                    ...(detail.resource === "events" ? [
+                      { label: this.label("starts", "Starts"), value: this.release(variant!.row.startAt) },
+                      { label: this.label("ends", "Ends"), value: this.release(variant!.row.endAt) },
+                    ] : [{ label: this.label("release", "Release"), value: this.release(variant!.releasedAt) }]),
                     ...["performance", "technique", "visual"].map((key) => ({
                       label: this.detailLabel(key),
                       value:
@@ -3976,8 +3979,8 @@ export class CatalogScreen extends LitElement {
     const ids = this.itemCharacterIds(item);
     if (kind === "song")
       return tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item));
-    const attribute = this.attributeMark(item.cardType);
-    return tile({
+    const attribute = this.itemAttributeMark(item);
+    return tile(this.unionTile({
       kind,
       title,
       titleLanguage: this.itemTitleLanguage(item),
@@ -3999,7 +4002,7 @@ export class CatalogScreen extends LitElement {
       natural: kind === "background",
       href,
       onOpen,
-      itemId: this.itemId(item),
+      itemId: this.itemKey(item),
       onImageError: this.imageError,
       style: kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : undefined,
       marks: [
@@ -4017,7 +4020,7 @@ export class CatalogScreen extends LitElement {
           ? { at: "bottom-end" as const, text: this.label("retired", "Retired"), accent: "var(--md-sys-color-error)" }
           : null,
       ],
-    });
+    }, item));
   }
   private async toggleSong(id: string, url: string, bulk = false, clicked?: Item) {
     const item =
