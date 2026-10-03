@@ -1,7 +1,12 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
-import { resolveLocalizedText } from "../lib/localized-text";
+import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
+import { relationships as jaRelationships } from "../../public/i18n/ja.json";
+import { relationships as enRelationships } from "../../public/i18n/en.json";
+import { relationships as zhTWRelationships } from "../../public/i18n/zh-TW.json";
+import { relationships as zhCNRelationships } from "../../public/i18n/zh-CN.json";
+import { relationships as koRelationships } from "../../public/i18n/ko.json";
 import { storySourceUrl } from "../lib/story-assets";
 import { episodeArtwork, spotArtwork } from "../lib/story-artwork";
 import "../styles/bestdori-detail.css";
@@ -60,6 +65,14 @@ type BestdoriMode = "event" | "band" | "main" | "afterlive" | "card";
 type StoryMode = ReleaseMode | BestdoriMode;
 type Origin = "release" | "bestdori";
 type ViewMode = CollectionView;
+
+const nativeSpeakerNameJoiner = Object.freeze({
+  ja: jaRelationships.speakerNameSeparator,
+  en: enRelationships.speakerNameSeparator,
+  "zh-TW": zhTWRelationships.speakerNameSeparator,
+  "zh-CN": zhCNRelationships.speakerNameSeparator,
+  ko: koRelationships.speakerNameSeparator,
+});
 
 let storyWorkspaceOwnerId = 0;
 
@@ -543,7 +556,8 @@ export class StoryWorkspace extends LitElement {
     if (this.mode === "band")
       return this.chapters
         .filter(
-          (c) => Number(c.chapterId) < 900000 && !eventIds.has(String(c.chapterId)) && this.chapterEpisodes(c).length > 0,
+          (c) =>
+            Number(c.chapterId) < 900000 && !eventIds.has(String(c.chapterId)) && this.chapterEpisodes(c).length > 0,
         )
         .sort((a, b) => Number(a.chapterSort) - Number(b.chapterSort));
     if (this.mode === "birthday")
@@ -2137,27 +2151,31 @@ export class StoryWorkspace extends LitElement {
       </span>
     `;
   }
+  private transcriptSpeaker(command: JsonRecord) {
+    const body = resolveLocalizedText(command.text, this.locale);
+    const locale = !this.isBestdori() && body.text ? body.locale : this.locale;
+    const resolve = (value: unknown) => resolveLocalizedText(value, locale);
+    const authoredNames = Array.isArray(command.targetTextNames) ? command.targetTextNames : [];
+    const targetNames = (Array.isArray(command.targets) ? command.targets : []).map((target) => {
+      const value = target as JsonRecord;
+      return resolve(value.name).text ? value.name : this.character(Number(value.characterId))?.characterName;
+    });
+    const names = authoredNames.some((value) => resolve(value).text)
+      ? authoredNames
+      : targetNames.some((value) => resolve(value).text)
+        ? targetNames
+        : [command.targetName];
+    const runtime = this.detailEpisode?.runtime as JsonRecord | undefined;
+    const speaker = resolveRelationshipText(names, locale, {
+      separator: this.isBestdori() ? undefined : (runtime?.displayNameJoiner ?? nativeSpeakerNameJoiner),
+    });
+    const status = Number(command.targetStatus);
+    return status === 2 ? { ...speaker, text: "" } : status === 1 ? { ...speaker, text: "???", lang: "und" } : speaker;
+  }
   private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
     const command = entry.command;
-    const namedTargets = (Array.isArray(command.targets) ? command.targets : [])
-      .map((target) => {
-        const value = target as JsonRecord;
-        return this.text(value.name) || this.text(this.character(Number(value.characterId))?.characterName);
-      })
-      .filter(Boolean);
-    const names =
-      Number(command.targetStatus) === 2
-        ? ""
-        : Number(command.targetStatus) === 1
-          ? "???"
-          : formatList(
-              (Array.isArray(command.targetTextNames) ? command.targetTextNames : [])
-                .map((name) => this.text(name))
-                .filter(Boolean),
-              this.locale,
-            ) ||
-            formatList(namedTargets, this.locale) ||
-            this.text(command.targetName);
+    const speaker = this.transcriptSpeaker(command);
+    const names = speaker.text;
     const resolved = resolveLocalizedText(command.text, this.locale);
     const text = resolved.text || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
     if (entry.kind === "image")
@@ -2214,9 +2232,6 @@ export class StoryWorkspace extends LitElement {
     const isDialogueRow = ["dialogue", "message", "subtitle"].includes(entry.kind);
     if (isDialogueRow) {
       if (!text) return nothing;
-      const speakerSource =
-        (Array.isArray(command.targetTextNames) ? command.targetTextNames[0] : command.targetName) ||
-        (Array.isArray(command.targets) ? (command.targets[0] as JsonRecord)?.name : "");
       const actions = entry.voices.length
         ? html`
             <div class="story-transcript__voices">
@@ -2247,7 +2262,7 @@ export class StoryWorkspace extends LitElement {
         commandIndex: entry.commandIndex,
         avatar: this.transcriptAvatars(entry),
         speaker: names,
-        speakerLanguage: resolveLocalizedText(speakerSource, this.locale).locale,
+        speakerLanguage: speaker.lang,
         text: advText(text),
         textLanguage: resolved.locale,
         action: actions,
@@ -2291,13 +2306,7 @@ export class StoryWorkspace extends LitElement {
           ${
             names
               ? html`
-                  <strong
-                    class="story-transcript__speaker"
-                    lang=${resolveLocalizedText((Array.isArray(command.targetTextNames) ? command.targetTextNames[0] : command.targetName) || (Array.isArray(command.targets) ? (command.targets[0] as JsonRecord)?.name : ""), this.locale).locale}
-                    dir="auto"
-                  >
-                    ${advText(names)}
-                  </strong>
+                  <strong class="story-transcript__speaker" lang=${speaker.lang} dir="auto">${advText(names)}</strong>
                 `
               : nothing
           }
