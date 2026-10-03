@@ -106,6 +106,10 @@ type Banner = {
 const MODULES: ModuleId[] = ["birthdays", "news", "cards", "songs", "community", "fanInfo"];
 const PROFILE_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"];
 const STORAGE_KEY = "haneoka:home-layout:v6";
+const BIRTHDAY_UTC_OFFSET = 9 * 60 * 60 * 1000;
+const BIRTHDAY_DAY_MS = 24 * 60 * 60 * 1000;
+const birthdayDayStart = () =>
+  Math.floor((Date.now() + BIRTHDAY_UTC_OFFSET) / BIRTHDAY_DAY_MS) * BIRTHDAY_DAY_MS - BIRTHDAY_UTC_OFFSET;
 /* MasterBand colours for the character-profile fallback (profiles use slugs, not ids). */
 const PROFILE_BAND_SEED: Record<string, string> = {
   mygo: "var(--md-ref-band-1)",
@@ -730,13 +734,13 @@ export class HomeDashboard extends LitElement {
   }
 
   /* ---------- derived ---------- */
-  private formatDate(value: number | string, short = false) {
+  private formatDate(value: number | string, short = false, timeZone?: string) {
     const date = new Date(typeof value === "string" && /^\d+$/u.test(value) ? Number(value) : value);
     return Number.isNaN(date.getTime())
       ? "—"
       : new Intl.DateTimeFormat(
           this.locale,
-          short ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" },
+          short ? { month: "short", day: "numeric", timeZone } : { year: "numeric", month: "short", day: "numeric", timeZone },
         ).format(date);
   }
   private songTitle(song: JsonRecord) {
@@ -810,12 +814,12 @@ export class HomeDashboard extends LitElement {
     );
   }
   private birthdays(): Birthday[] {
-    const now = new Date(),
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const now = new Date(Date.now() + BIRTHDAY_UTC_OFFSET),
+      start = birthdayDayStart();
     const next = (month: number, day: number) => {
-      let date = new Date(now.getFullYear(), month - 1, day);
-      if (date.getTime() < start) date = new Date(now.getFullYear() + 1, month - 1, day);
-      return date.getTime();
+      let date = Date.UTC(now.getUTCFullYear(), month - 1, day) - BIRTHDAY_UTC_OFFSET;
+      if (date < start) date = Date.UTC(now.getUTCFullYear() + 1, month - 1, day) - BIRTHDAY_UTC_OFFSET;
+      return date;
     };
     const index = Math.max(0, PROFILE_LOCALES.indexOf(this.locale));
     const characters = this.characterProfiles.flatMap<Birthday>((profile) => {
@@ -1399,14 +1403,14 @@ export class HomeDashboard extends LitElement {
     `;
   }
   private birthdayCountdown(item: Birthday) {
-    const today = new Date().setHours(0, 0, 0, 0);
+    const today = birthdayDayStart();
     const days = Math.round((item.nextAt - today) / 86400000);
     return days === 0
       ? this.text("today", "Today")
       : this.text(days === 1 ? "daysAwayOne" : "daysAway", "{count} days").replace("{count}", this.count(days));
   }
   private birthdayShortCountdown(item: Birthday) {
-    const days = Math.round((item.nextAt - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    const days = Math.round((item.nextAt - birthdayDayStart()) / 86400000);
     return days === 0
       ? this.text("today", "Today")
       : this.text("spanDays", "{count}d").replace("{count}", this.count(days));
@@ -1487,7 +1491,7 @@ export class HomeDashboard extends LitElement {
   }
   private birthdayStory(item: Birthday) {
     if (!item.characterId) return undefined;
-    const date = new Date(item.nextAt);
+    const date = new Date(item.nextAt + BIRTHDAY_UTC_OFFSET);
     return (this.birthdayStories[String(item.characterId)] || [])
       .filter((story) => {
         const birthday = story.birthday as JsonRecord | undefined;
@@ -1495,8 +1499,8 @@ export class HomeDashboard extends LitElement {
           story.sourceServer === this.sourceServer() &&
           Number(story.characterId) === item.characterId &&
           Number(birthday?.characterId) === item.characterId &&
-          Number(birthday?.month) === date.getMonth() + 1 &&
-          Number(birthday?.day) === date.getDate() &&
+          Number(birthday?.month) === date.getUTCMonth() + 1 &&
+          Number(birthday?.day) === date.getUTCDate() &&
           Boolean(story.storyKey || story.storyId)
         );
       })
@@ -1655,8 +1659,8 @@ export class HomeDashboard extends LitElement {
                     }
                     <span class="home-birthday-due">
                       <b class="tabular">${this.birthdayCountdown(featured)}</b>
-                      <time datetime=${new Date(featured.nextAt).toISOString()}>
-                        ${this.formatDate(featured.nextAt, true)}
+                      <time datetime=${new Date(featured.nextAt + BIRTHDAY_UTC_OFFSET).toISOString().slice(0, 10)}>
+                        ${this.formatDate(featured.nextAt, true, "Asia/Tokyo")}
                       </time>
                     </span>
                     ${
@@ -1687,7 +1691,7 @@ export class HomeDashboard extends LitElement {
                                 this.locale,
                               )
                             : "",
-                          this.formatDate(item.nextAt, true),
+                          this.formatDate(item.nextAt, true, "Asia/Tokyo"),
                           this.birthdayCountdown(item),
                         ]
                           .filter(Boolean)
