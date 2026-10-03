@@ -1,0 +1,97 @@
+.md-accordion {
+  min-inline-size: 0;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.md-accordion__trigger.button {
+  display: flex;
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: auto;
+  min-block-size: 56px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 12px 16px;
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: transparent;
+  text-align: start;
+  white-space: normal;
+}
+
+.md-accordion__trigger > .md-accordion__identity {
+  display: grid;
+  min-inline-size: 0;
+  flex: 1;
+  gap: 4px;
+  overflow: visible;
+}
+
+.md-accordion__label {
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+    var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  overflow-wrap: anywhere;
+}
+
+.md-accordion__supporting {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  overflow-wrap: anywhere;
+}
+
+.md-accordion__leading,
+.md-accordion__chevron {
+  display: grid;
+  inline-size: 24px;
+  block-size: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.md-accordion__leading > img {
+  inline-size: 24px;
+  block-size: 24px;
+  object-fit: contain;
+}
+
+.md-accordion__metadata {
+  max-inline-size: 35%;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  overflow-wrap: anywhere;
+}
+
+.md-accordion__chevron {
+  transition: transform var(--md-sys-motion-duration-short3) var(--ease-standard);
+}
+
+.md-accordion__trigger[aria-expanded="true"] .md-accordion__chevron {
+  transform: rotate(180deg);
+}
+
+.md-accordion__trigger.button:disabled {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  background: transparent;
+  cursor: default;
+}
+
+.md-accordion__trigger:disabled :is(.md-accordion__supporting, .md-accordion__leading, .md-accordion__metadata, .md-accordion__chevron) {
+  color: inherit;
+}
+
+.md-accordion__panel {
+  min-inline-size: 0;
+  padding: 0 16px 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-accordion__chevron {
+    transition: none;
+  }
+}
