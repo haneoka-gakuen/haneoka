@@ -92,6 +92,12 @@ import { projectPreparationRequest, type SearchRequestProjection } from "../lib/
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
 import { isUnchangedInventoryConflict } from "../lib/team-builder/sync-review";
 import { initializeManualCardPractice } from "../lib/team-builder/manual-card-defaults";
+import { parseBoxLocally } from "../lib/team-builder/box-import/client";
+import { BoxImportError } from "../lib/team-builder/box-import/types";
+import { previewBoxImport, type BoxReviewContext } from "../lib/team-builder/box-import/preview";
+import { applyConfirmedBoxImport, type BoxConfirmation } from "../lib/team-builder/box-import/merge";
+import { buildBoxImportReview } from "../lib/team-builder/box-review-model";
+import { renderBoxImportDialog, type BoxImportDialogState } from "./shared/team-box-import";
 import { createScreenshotImportSession } from "../lib/team-builder/screenshot-import-session";
 import { renderScreenshotImportDialog, type ScreenshotImportDialogState } from "./shared/team-screenshot-import";
 import type { ScreenshotReviewContext } from "../lib/team-builder/screenshot-import";
@@ -214,6 +220,7 @@ export class TeamBuilder extends LitElement {
     pendingUniqueness: { state: true },
     uniquenessChoices: { state: true },
     screenshotState: { state: true },
+    boxState: { state: true },
     screenshotCorrection: { state: true },
   };
   declare locale: string;
@@ -306,6 +313,13 @@ export class TeamBuilder extends LitElement {
   declare pickerGenre: string;
   declare pendingUniqueness: InventoryUniquenessPreview | null;
   declare uniquenessChoices: Record<string, string>;
+  declare private boxState: BoxImportDialogState | null;
+  private boxScope?: { context: BoxReviewContext; owner: string | null; data: TeamBuilderData; inventoryText: string };
+  private boxController?: AbortController;
+  private boxLoading?: LoadingReporter;
+  private boxGeneration = 0;
+  private boxLocalOwner = "";
+  private restoreBoxFocus = false;
   declare private screenshotState: ScreenshotImportDialogState | null;
   declare private screenshotCorrection: { image: number; observation: number } | null;
   private screenshotSession?: ReturnType<typeof createScreenshotImportSession>;
@@ -352,7 +366,7 @@ export class TeamBuilder extends LitElement {
   private readonly refreshAccount = () => {
     // The OS file chooser can refocus the window. Keep its review open while
     // checking the account; a settings-server change still reloads the source.
-    if (this.screenshotSession && readReleaseServer() === this.server) void this.checkAccount();
+    if ((this.screenshotSession || this.boxState) && readReleaseServer() === this.server) void this.checkAccount();
     else void this.refreshCurrentSource();
   };
   private readonly settingsStorageChanged = (event: StorageEvent) => {
@@ -1199,6 +1213,7 @@ export class TeamBuilder extends LitElement {
     this.pickerGenre = "";
     this.pendingUniqueness = null;
     this.uniquenessChoices = {};
+    this.boxState = null;
     this.screenshotState = null;
     this.screenshotCorrection = null;
   }
@@ -1222,6 +1237,7 @@ export class TeamBuilder extends LitElement {
     this.stopDifficultyDisplay = observeDifficultyDisplay(() => this.requestUpdate());
   }
   disconnectedCallback() {
+    this.closeBoxImport(false);
     this.closeScreenshotImport(false);
     this.cancelSearch();
     this.checkpointCache?.dispose();
@@ -1256,6 +1272,10 @@ export class TeamBuilder extends LitElement {
       this.resourcePicker = null;
       this.resourceCompleted = null;
     }
+    if (this.boxState && !this.boxScopeMatches()) {
+      this.closeBoxImport(true);
+      this.error = this.boxText("changed", "Your account, data or inventory changed. Open the import again.");
+    }
     if (this.screenshotSession && this.screenshotScope && (
       !this.data || this.data.identity.server !== this.screenshotScope.server ||
       this.data.identity.releaseId !== this.screenshotScope.releaseId || this.data.identity.sourceId !== this.screenshotScope.sourceId ||
@@ -1268,7 +1288,7 @@ export class TeamBuilder extends LitElement {
     this.reconcileUnchangedConflict();
     this.images.observe(this);
     const selector = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
-    const modal = this.addingCards || this.selectingSong || this.selectingEvent || Boolean(this.resourcePicker) || Boolean(this.editingId) || Boolean(this.screenshotState);
+    const modal = this.addingCards || this.selectingSong || this.selectingEvent || Boolean(this.resourcePicker) || Boolean(this.editingId) || Boolean(this.screenshotState) || Boolean(this.boxState);
     const content = this.querySelector<HTMLElement>(".team-builder__content");
     // Enable the opener before PaneFocus restores focus when the dialog closes.
     if (content && !modal) content.inert = false;
@@ -1299,6 +1319,10 @@ export class TeamBuilder extends LitElement {
       });
     }
     if (content && modal) content.inert = true;
+    if (this.restoreBoxFocus && !this.boxState) {
+      this.restoreBoxFocus = false;
+      requestAnimationFrame(() => this.querySelector<HTMLElement>(".team-builder__box-action")?.focus({ preventScroll: true }));
+    }
     if (this.restoreScreenshotFocus && this.workspaceView === "cards" && !this.screenshotState) {
       this.restoreScreenshotFocus = false;
       requestAnimationFrame(() => this.querySelector<HTMLElement>(".team-builder__screenshot-action")?.focus({ preventScroll: true }));
@@ -1323,6 +1347,142 @@ export class TeamBuilder extends LitElement {
     return accordion({ id: `team-builder-${id}`, label, content, className,
       expanded: this.disclosureStates[id] ?? defaultExpanded,
       onExpandedChange: expanded => { this.disclosureStates = { ...this.disclosureStates, [id]: expanded }; },
+    });
+  }
+  private boxText(key: string, fallback: string, params?: Record<string, string | number>) {
+    const readableFallback = fallback.replace(/\{([^}]+)\}/g, (token, name: string) => params?.[name] === undefined ? token : String(params[name]));
+    if (["close", "cancel", "clear"].includes(key)) return clientText(this.locale, key, readableFallback, params);
+    if (key === "members" || key === "snapshots" || key === "unknown") return this.t(key, readableFallback, params);
+    return this.t(`boxImport.${key}`, readableFallback, params);
+  }
+  private boxError(code: string) {
+    if (code === "box_review_changed" || code === "box_review_context")
+      return this.boxText("changed", "Your account, data or inventory changed. Open the import again.");
+    if (code === "box_no_player") return this.boxText("empty", "No supported Box records found.");
+    if (code.endsWith("_budget")) return this.boxText("tooLarge", "This file exceeds the supported size or record limit.");
+    if (["box_conflict_required", "box_unconfirmed_value", "box_unresolved_values", "box_invalid_confirmed_inventory"].includes(code))
+      return this.boxText("reviewValues", "Review the selected training values or exclude the affected entries.");
+    if (code === "box_save_failed") return this.t("saveFailed", "Save failed. Your draft is retained.");
+    if (code === "box_timeout" || code === "box_worker_failed") return this.boxText("failed", "Local parsing failed. Check the file and try again.");
+    return this.boxText("invalidFormat", "This file is not a supported Box export.");
+  }
+  private boxContext(): BoxReviewContext | null {
+    if (!this.canEdit || !this.data?.identity.sourceId || !this.inventory || !this.storeState || this.currentOwner === undefined || this.storeState.ownerId !== this.currentOwner) return null;
+    // Anonymous imports are scoped to this component, never to a fabricated cloud account.
+    const ownerId = this.currentOwner ?? (this.boxLocalOwner ||= `local:${crypto.randomUUID()}`);
+    return { ownerId, revision: this.storeState.revision, server: this.data.identity.server, releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId };
+  }
+  private boxScopeMatches() {
+    const scope = this.boxScope, context = this.boxContext();
+    return Boolean(scope && context && this.data === scope.data && this.currentOwner === scope.owner &&
+      readReleaseServer() === scope.context.server && this.inventory && exportInventory(this.inventory) === scope.inventoryText &&
+      context.ownerId === scope.context.ownerId && context.revision === scope.context.revision && context.server === scope.context.server &&
+      context.releaseId === scope.context.releaseId && context.sourceId === scope.context.sourceId);
+  }
+  private openBoxImport() {
+    const context = this.boxContext();
+    if (!context || !this.data || !this.inventory || this.currentOwner === undefined) return;
+    this.closePane();
+    this.boxScope = { context, owner: this.currentOwner, data: this.data, inventoryText: exportInventory(this.inventory) };
+    this.boxState = { phase: "select", candidates: [], selectedCandidateId: "", preview: null,
+      confirmation: { cards: [], maps: [] }, bindingConfirmed: false, progress: null, error: null, canConfirm: false,
+      serverLabel: this.boxServerLabel() };
+  }
+  private boxServerLabel() {
+    return this.server === "jp" ? clientText(this.locale, "settingsJapan", "Japan") : clientText(this.locale, "settingsGlobal", "Global");
+  }
+  private closeBoxImport(returnToCards = true) {
+    const open = Boolean(this.boxState);
+    ++this.boxGeneration;
+    this.boxController?.abort(); this.boxController = undefined;
+    this.boxLoading?.cancel(); this.boxLoading = undefined;
+    this.boxState = null; this.boxScope = undefined;
+    if (open && returnToCards) {
+      this.workspaceView = this.canEdit ? "cards" : "sync";
+      this.restoreBoxFocus = this.workspaceView === "cards";
+    }
+  }
+  private async parseBox(input: { files: readonly File[] } | { text: string }) {
+    if (!this.boxState || !this.boxScopeMatches()) return;
+    this.boxController?.abort(); this.boxLoading?.cancel();
+    const generation = ++this.boxGeneration, controller = new AbortController();
+    this.boxController = controller;
+    this.boxState = { ...this.boxState, phase: "parsing", candidates: [], selectedCandidateId: "", preview: null,
+      confirmation: { cards: [], maps: [] }, bindingConfirmed: false, progress: null, error: null, canConfirm: false };
+    this.boxLoading = beginLoading(this.boxText("parsing", "Reading Box locally"), { signal: controller.signal, scope: "owner" });
+    try {
+      const parsed = await parseBoxLocally(input, { signal: controller.signal, progress: (completed, total) => {
+        if (generation !== this.boxGeneration || controller.signal.aborted || !this.boxState || !this.boxScopeMatches()) return;
+        this.boxState = { ...this.boxState, progress: { completed, total } };
+        this.boxLoading?.update({ processedTasks: completed, totalTasks: total });
+      } });
+      if (generation !== this.boxGeneration || controller.signal.aborted || !this.boxState || !this.boxScopeMatches()) return;
+      this.boxState = { ...this.boxState, phase: "choose", candidates: parsed.candidates, progress: null };
+      if (parsed.candidates.length === 1) this.selectBoxCandidate(parsed.candidates[0]!.id);
+    } catch (error) {
+      if (generation !== this.boxGeneration || controller.signal.aborted || !this.boxState || !this.boxScopeMatches()) return;
+      this.boxState = { ...this.boxState, phase: "select", error: error instanceof BoxImportError ? error.code : "box_worker_failed" };
+    } finally {
+      if (this.boxController === controller) {
+        this.boxController = undefined; this.boxLoading?.finish(); this.boxLoading = undefined;
+      }
+    }
+  }
+  private selectBoxCandidate(id: string) {
+    const state = this.boxState, candidate = state?.candidates.find(row => row.id === id);
+    if (!state || !candidate || !this.boxScopeMatches() || !this.boxScope || !this.inventory || !this.data) return;
+    try {
+      const preview = previewBoxImport(candidate, this.inventory, this.data, this.boxScope.context);
+      this.boxState = { ...state, phase: "review", selectedCandidateId: id, preview,
+        confirmation: { cards: preview.cards.map(row => ({ key: row.key, include: false })), maps: preview.maps.map(row => ({ key: row.key, include: false })) },
+        bindingConfirmed: false, canConfirm: false, error: null };
+    } catch (error) {
+      this.boxState = { ...state, phase: "choose", error: error instanceof BoxImportError ? error.code : "box_review_context" };
+    }
+  }
+  private updateBoxConfirmation(confirmation: BoxConfirmation, bindingConfirmed = this.boxState?.bindingConfirmed ?? false) {
+    const state = this.boxState;
+    if (!state || !state.preview || !this.boxScopeMatches() || !this.boxScope || !this.inventory || !this.data) return;
+    let canConfirm = false, error: string | null = null;
+    if (bindingConfirmed && (confirmation.cards.some(row => row.include) || confirmation.maps.some(row => row.include))) {
+      try {
+        if (!buildBoxImportReview(state.preview, confirmation).canConfirm) throw new BoxImportError("box_unresolved_values");
+        applyConfirmedBoxImport(this.inventory, state.preview, confirmation, this.data, this.boxScope.context);
+        canConfirm = true;
+      } catch (failure) { error = failure instanceof BoxImportError ? failure.code : "box_invalid_confirmed_inventory"; }
+    }
+    this.boxState = { ...state, confirmation, bindingConfirmed, canConfirm, error };
+  }
+  private confirmBoxImport() {
+    const state = this.boxState;
+    if (!state?.canConfirm || !state.bindingConfirmed || !state.preview || !this.boxScopeMatches() || !this.boxScope || !this.inventory || !this.data) return;
+    try {
+      if (!buildBoxImportReview(state.preview, state.confirmation).canConfirm) throw new BoxImportError("box_unresolved_values");
+      const next = applyConfirmedBoxImport(this.inventory, state.preview, state.confirmation, this.data, this.boxScope.context);
+      if (exportInventory(next) === this.boxScope.inventoryText) { this.closeBoxImport(true); return; }
+      this.replaceInventory(next);
+      if (!this.error && this.inventory === next) this.closeBoxImport(true);
+      else if (this.boxState) this.boxState = { ...this.boxState, error: "box_save_failed" };
+    } catch (error) {
+      if (this.boxState) this.boxState = { ...this.boxState, canConfirm: false, error: error instanceof BoxImportError ? error.code : "box_invalid_confirmed_inventory" };
+    }
+  }
+  private renderBoxImport() {
+    const state = this.boxState;
+    if (!state) return nothing;
+    return renderBoxImportDialog({ ...state, serverLabel: this.boxServerLabel(), error: state.error ? this.boxError(state.error) : null,
+      canConfirm: state.canConfirm && this.boxScopeMatches() }, {
+      text: (key, fallback, params) => this.boxText(key, fallback, params),
+      card: (kind, id) => { const card = this.catalogEntry(id, kind); return card ? this.inventoryCardOptions(card, kind) : null; },
+      mapName: (map, id) => { const row = map === "bandItems" ? this.data?.bandItems[String(id)] : this.data?.characters[String(id)];
+        return this.text(row?.name ?? row?.itemName ?? row?.characterName) || this.t("unknown", "Unknown or not entered"); },
+      fieldName: field => field === "cardId" ? this.boxText("card", "Card") : field === "id" ? this.boxText("entry", "Entry") : this.fieldName(field),
+      files: files => { if (files.length) void this.parseBox({ files }); }, parseText: text => { void this.parseBox({ text }); },
+      selectCandidate: id => this.selectBoxCandidate(id), bind: value => this.updateBoxConfirmation(state.confirmation, value),
+      confirmation: confirmation => this.updateBoxConfirmation(confirmation),
+      close: () => this.closeBoxImport(true), cancel: () => this.closeBoxImport(true), confirm: () => this.confirmBoxImport(),
+      expanded: id => this.disclosureStates[`box-${id}`] ?? false,
+      expand: (id, expanded) => { this.disclosureStates = { ...this.disclosureStates, [`box-${id}`]: expanded }; },
     });
   }
   private screenshotText(key: string, fallback: string): string {
@@ -1677,6 +1837,7 @@ export class TeamBuilder extends LitElement {
     `;
   }
   private closePane() {
+    this.closeBoxImport(false);
     this.closeScreenshotImport(false);
     this.selectingSong = false;
     this.selectingEvent = false;
@@ -2235,6 +2396,7 @@ export class TeamBuilder extends LitElement {
         <div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("library", "Card library"), "cards", { count: entries.length, level: 2 })}
           <div class="team-builder__actions">
+          <button class="button button--outlined team-builder__box-action" ?disabled=${!this.boxContext()} @click=${() => this.openBoxImport()}>${this.boxText("title", "Import Box")}</button>
           ${iconButton({ icon: "image", label: !this.currentOwner ? this.t("signIn", "Sign in to Haneoka") : this.screenshotContext()
               ? this.screenshotText("title", "Import screenshots") : this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data."),
             disabled: !this.canEdit || !this.screenshotContext(), className: "team-builder__screenshot-action", onClick: () => this.openScreenshotImport() })}
@@ -4447,7 +4609,7 @@ export class TeamBuilder extends LitElement {
             </section>
           </div>
         </div>
-        ${this.renderCardPane()}${this.renderSongPane()}${this.renderResourceSongPane()}${this.renderEventPane()}${this.renderScreenshotImport()}
+        ${this.renderCardPane()}${this.renderSongPane()}${this.renderResourceSongPane()}${this.renderEventPane()}${this.renderScreenshotImport()}${this.renderBoxImport()}
       </div>
     `;
   }
