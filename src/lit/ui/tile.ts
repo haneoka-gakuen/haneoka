@@ -116,6 +116,17 @@ export function tileMedia(options: TileOptions): TemplateResult {
   const ratio = dimensionRatio ?? options.aspectRatio ?? KIND_MEDIA_RATIOS[options.kind ?? ""];
   const mediaStyle = ratio === undefined ? undefined : `--tile-ratio:${ratio};aspect-ratio:${ratio}`;
   const onImageError = options.onImageError || nextImageCandidate;
+  const onImageLoad = (event: Event) => {
+    const square = options.aspectRatio === 1 || options.aspectRatio === "1" || options.aspectRatio === "1 / 1";
+    if (!options.natural || dimensionRatio !== undefined || square) return;
+    const image = event.currentTarget as HTMLImageElement;
+    const nativeRatio = mediaAspectRatio(image.naturalWidth, image.naturalHeight);
+    if (nativeRatio === undefined) return;
+    const frame = image.parentElement;
+    if (!frame?.classList.contains("tile__media")) return;
+    frame.style.setProperty("--tile-ratio", String(nativeRatio));
+    frame.style.aspectRatio = String(nativeRatio);
+  };
   // Rendered as two plain templates rather than one static-html template with
   // a literal tag name: static templates lose their event-part wiring when the
   // bundler splits the lit modules across chunks in a different order, which
@@ -137,6 +148,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
                 width=${Number.isFinite(width) && width > 0 ? String(width) : nothing}
                 height=${Number.isFinite(height) && height > 0 ? String(height) : nothing}
                 decoding="async"
+                @load=${onImageLoad}
                 @error=${onImageError}
               />
             `

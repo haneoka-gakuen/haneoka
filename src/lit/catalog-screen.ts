@@ -3898,7 +3898,7 @@ export class CatalogScreen extends LitElement {
       label: title,
       image,
       imageFallback: image,
-      aspectRatio: kind === "support" ? "16 / 9" : "224 / 294",
+      aspectRatio: kind === "support" ? "16 / 9" : "3 / 4",
       placeholder: icon("image", 32),
       fit: "contain",
       onImageError: this.imageError,
@@ -3985,7 +3985,8 @@ export class CatalogScreen extends LitElement {
       // Source art is heterogeneous across the catalogue. A stable media
       // box keeps the grid rhythmic, while contain preserves the source when
       // its indexed dimensions do not match the presentation fallback.
-      fit: ["song", "background"].includes(kind) ? "cover" : "contain",
+      fit: "contain",
+      natural: kind === "background",
       href,
       onOpen,
       itemId: this.itemId(item),
