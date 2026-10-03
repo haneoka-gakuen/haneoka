@@ -30,20 +30,37 @@ CONVERTER_SHA = "f8b473d7e376c8a04c782587a3ba52085a6c89a53e5f82dd0d5a0aa68561d9f
 CALIBRATION_SHA = "10ff2e1660d02a1f0ddecc818b14b6f0742341de947f083d472553c11657aaed"
 
 
+def difficulty_rows(song):
+    rows = song.get("difficulty")
+    if not isinstance(rows, list):
+        raise ValueError("current full song requires singular difficulty list")
+    for row in rows:
+        if (not isinstance(row, dict) or type(row.get("difficulty")) is not int
+                or type(row.get("scoreId")) is not int or row["scoreId"] <= 0
+                or not isinstance(row.get("difficultyName"), str)):
+            raise ValueError("current difficulty row lacks exact index/name/score FK")
+    return rows
+
+
+def patch_song_summary(original, estimates):
+    # Existing summary projections may omit this full-entity field.
+    return patch_song(original, estimates) if "difficulty" in original else copy.deepcopy(original)
+
+
 def patch_song(original, estimates):
     updated = copy.deepcopy(original)
-    for prior, row in zip(original.get("difficulties", []), updated.get("difficulties", []), strict=True):
+    for prior, row in zip(difficulty_rows(original), difficulty_rows(updated), strict=True):
         row["difficultyEstimate"] = copy.deepcopy(estimates.get(str(row["scoreId"])))
         if {k:v for k,v in row.items() if k != "difficultyEstimate"} != {k:v for k,v in prior.items() if k != "difficultyEstimate"}:
             raise ValueError("difficulty projection changed an official/score field")
-    if {k:v for k,v in original.items() if k != "difficulties"} != {k:v for k,v in updated.items() if k != "difficulties"}:
+    if {k:v for k,v in original.items() if k != "difficulty"} != {k:v for k,v in updated.items() if k != "difficulty"}:
         raise ValueError("difficulty projection changed unrelated song metadata")
     return updated
 
 
 def patch_meta(original, song, estimates):
     updated = copy.deepcopy(original)
-    for row in song.get("difficulties", []):
+    for row in difficulty_rows(song):
         key = str(row["difficulty"])
         prior = original.get(key, {}).get("chart")
         if not isinstance(prior, dict):
@@ -54,7 +71,7 @@ def patch_meta(original, song, estimates):
             raise ValueError("difficulty projection overwrote nativeMeta/score/official fields")
     stripped = copy.deepcopy(updated)
     prior_stripped = copy.deepcopy(original)
-    for row in song.get("difficulties", []):
+    for row in difficulty_rows(song):
         key = str(row["difficulty"])
         for value in (stripped, prior_stripped):
             chart = value.get(key, {}).get("chart")
@@ -95,6 +112,18 @@ def prepare(store, config, identity, staging, inputs):
         if descriptor["index"] != f"api/v1/catalog/{resource}/index.json":raise ValueError("unexpected selected song index")
     songs = read(descriptors["songs"]["index"])
     if len(songs) != descriptors["songs"]["count"]:raise ValueError("current song coverage differs")
+    # Full entities are authoritative; never infer chart coverage from a compact summary.
+    song_entities = {}
+    partition = descriptors["songs"]["entities"]
+    if partition.get("algorithm") != "fnv1a32-mod-256" or partition.get("prefix") != "api/v1/catalog/songs/entities/":
+        raise ValueError("unsupported current full song partition")
+    for song_id in songs:
+        shard = fnv1a32_shard(song_id)
+        if shard not in partition["shards"]:raise ValueError("current full song partition absent")
+        song_entities[song_id] = read(partition["prefix"] + shard + ".json")[song_id]
+        difficulty_rows(song_entities[song_id])
+    if not songs or not any(difficulty_rows(song) for song in song_entities.values()):
+        raise ValueError("current full songs have no referenced chart coverage")
     tables = {}
     for name in ("MasterLiveMusic", "MasterLiveMusicScore"):
         entry = entries[f"game-client/master/{name}.bin"]
@@ -109,9 +138,9 @@ def prepare(store, config, identity, staging, inputs):
         raise ValueError("unsupported chart source-index partitions")
     files, selected_sources, missing, referenced = {}, {}, [], set()
     chart_bytes = 0
-    for song_id, song in songs.items():
+    for song_id, song in song_entities.items():
         music = music_rows[song_id]
-        for row in song.get("difficulties", []):
+        for row in difficulty_rows(song):
             score_id = int(row["scoreId"])
             if score_id != int(music.get("_" + row["difficultyName"] + "ID") or 0):
                 raise ValueError("current score FK differs from original MasterLiveMusic")
@@ -137,6 +166,8 @@ def prepare(store, config, identity, staging, inputs):
                 target.parent.mkdir(parents=True,exist_ok=True)
                 store.download_file(cas_key(entry["sha256"]), target, expected_bytes=entry["bytes"], expected_sha256=entry["sha256"])
             files[str(score_id)] = target
+    if not referenced or not files:
+        raise ValueError("difficulty projection has no actual current chart input; not a valid noOp")
     write_json(inputs / "metadata/source-index.json", {"server":config.id,"sourceId":identity["sourceId"],"sources":selected_sources})
     # The existing chart_files producer is the sole converter/model runner; no _songs/score solver rebuild.
     estimates = build_difficulty_estimates(SimpleNamespace(root=inputs,server=config.id), identity["sourceId"], files, score_rows)
@@ -151,8 +182,9 @@ def prepare(store, config, identity, staging, inputs):
         return selected[path][1]
     updated_songs = select(descriptors["songs"]["index"])
     updated_meta = select(descriptors["song-meta"]["index"])
-    for song_id, song in songs.items():
-        updated_songs[song_id] = patch_song(song,estimates)
+    updated_song_entities, updated_meta_entities = {}, {}
+    for song_id, song in song_entities.items():
+        updated_songs[song_id] = patch_song_summary(songs[song_id],estimates)
         updated_meta[song_id] = patch_meta(updated_meta[song_id],song,estimates)
         for resource in ("songs", "song-meta"):
             partition = descriptors[resource]["entities"]
@@ -162,6 +194,7 @@ def prepare(store, config, identity, staging, inputs):
             if shard not in partition["shards"]:raise ValueError("selected current song partition absent")
             path = partition["prefix"] + shard + ".json";entity = select(path)
             entity[song_id] = patch_song(entity[song_id],estimates) if resource=="songs" else patch_meta(entity[song_id],song,estimates)
+            (updated_song_entities if resource=="songs" else updated_meta_entities)[song_id] = copy.deepcopy(entity[song_id])
     for relation in descriptors["songs"].get("relations", {}).values():
         if relation.get("valueMode","records") != "records":continue
         if relation.get("algorithm") != "fnv1a32-mod-256" or not relation.get("prefix", "").startswith("api/v1/catalog/songs/relations/"):
@@ -170,12 +203,12 @@ def prepare(store, config, identity, staging, inputs):
             value = select(relation["prefix"]+shard+".json")
             for group in value.values():
                 for song_id,summary in group.items():
-                    if song_id in songs:group[song_id]=patch_song(summary,estimates)
+                    if song_id in songs:group[song_id]=patch_song_summary(summary,estimates)
     for resource in ("songs", "song-meta"):
         legacy = f"api/{resource}.json"
         if legacy in entries:
             value = select(legacy)
-            for song_id,song in songs.items():
+            for song_id,song in song_entities.items():
                 value[song_id]=patch_song(value[song_id],estimates) if resource=="songs" else patch_meta(value[song_id],song,estimates)
     allowed = {p for p,(old,new) in selected.items() if old!=new}
     for path in allowed:write_json(staging/path,selected[path][1])
@@ -184,7 +217,7 @@ def prepare(store, config, identity, staging, inputs):
     reused = [r for r in records if r["path"] not in allowed]
     result = {"pointer":pointer,"pointerETag":head["ETag"],"sourceId":identity["sourceId"],"noOp":not changed,
               "changedEntries":changed,"reusedEntryCount":len(reused),"estimates":estimates,"songs":updated_songs,
-              "songMeta":updated_meta,"missingChartScoreIds":sorted(set(missing)),"referencedScoreCount":len(referenced),
+              "songMeta":updated_meta,"songEntities":updated_song_entities,"songMetaEntities":updated_meta_entities,"missingChartScoreIds":sorted(set(missing)),"referencedScoreCount":len(referenced),
               "materializedChartCount":len(files),"chartBytes":chart_bytes,"metadataBytes":metadata_bytes,
               "masterSHA256":{name:entries[f"game-client/master/{name}.bin"]["sha256"] for name in tables}}
     if changed:
@@ -199,9 +232,9 @@ def prepare(store, config, identity, staging, inputs):
 def verify_public(receipt,prepared,output):
     proofs=[]
     # One new valid ccac case plus explicitly unavailable rows when present; no old solver/UI matrices.
-    ids=[s for s in ("100070","100005","100012","100075") if s in prepared["songs"]]
+    ids=[s for s in ("100070","100005","100012","100075") if s in prepared["songEntities"]]
     for song_id in ids:
-        for resource,key in (("songs","songs"),("song-meta","songMeta")):
+        for resource,key in (("songs","songEntities"),("song-meta","songMetaEntities")):
             url=f"https://haneoka.org/api/v1/servers/{receipt['server']}/{resource}/{song_id}?release={receipt['releaseId']}"
             with urlopen(Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=30) as r:
                 if r.status!=200 or r.headers.get("X-Haneoka-Release-Id")!=receipt["releaseId"] or r.headers.get("X-Haneoka-Source-Id")!=receipt["sourceId"]:
