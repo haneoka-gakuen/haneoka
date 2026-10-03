@@ -1,0 +1,91 @@
+name: Publish current card recognition source
+on:
+  workflow_dispatch:
+    inputs:
+      producer_pin:
+        description: Reviewed full commit containing T37 builder and current-source publisher
+        required: true
+        type: string
+      server:
+        required: true
+        type: choice
+        options: [intl, jp]
+        default: intl
+      identity_json:
+        description: Exact observed current server, releaseId and sourceId
+        required: true
+        type: string
+      publish:
+        description: Promote the single source-artifact delta after closure verification
+        required: true
+        type: boolean
+        default: false
+      rebuild_site:
+        description: Only when no already-approved later frontend deploy will read the new reference release
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: current-recognition-source-${{ inputs.server }}
+  cancel-in-progress: false
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: resource-${{ inputs.server }}
+    outputs:
+      release_promoted: ${{ steps.project.outputs.release_promoted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.producer_pin }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install existing locked R2 and optional glyph-builder imports
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/reference-dependencies"
+          python - "$RUNNER_TEMP/reference-dependencies/requirements.txt" <<'PYTHON'
+          import re, sys
+          from pathlib import Path
+          blocks = re.split(r"(?m)(?=^[A-Za-z0-9][A-Za-z0-9_.-]*==)", Path("scripts/requirements.txt").read_text())[1:]
+          selected = {b.split("==", 1)[0].lower(): b for b in blocks}
+          with Path(sys.argv[1]).open("a") as output:
+              output.write("\n" + "\n".join(selected[name] for name in ("numpy", "pillow")))
+          PYTHON
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/reference-dependencies/requirements.txt"
+      - name: Prepare selected current source artifact and optionally promote
+        id: project
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ inputs.producer_pin }}
+          RESOURCE_SERVER: ${{ inputs.server }}
+          RECOGNITION_CURRENT_IDENTITY_JSON: ${{ inputs.identity_json }}
+          PUBLISH: ${{ inputs.publish }}
+        run: python scripts/publish/card_recognition_source.py --output "$RUNNER_TEMP/reference-output"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: card-recognition-source-${{ inputs.server }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/reference-output/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+  rebuild-site:
+    name: Rebuild site pages after reference promotion
+    needs: reference
+    if: ${{ inputs.rebuild_site && needs.reference.outputs.release_promoted == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch normal site build with the new current reference release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main

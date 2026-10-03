@@ -18,6 +18,7 @@ OPERATIONAL_INPUTS = {"scripts/build/announcements.py"}
 BUILD_INPUTS = (
     "scripts/pipeline.py",
     "scripts/build",
+    "scripts/recognize/build_index.py",
     "scripts/core",
     "scripts/extract",
     "scripts/ingest",

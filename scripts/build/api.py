@@ -7818,8 +7818,11 @@ def build_api(
     layout.api.mkdir(parents=True, exist_ok=True)
     for resource, document in documents.items():
         write_json(layout.api / f"{resource}.json", document)
+    from build.card_recognition import build_card_recognition_source
+    recognition = build_card_recognition_source(layout.root, config.id, source_id)
     result = {
         "schema": "haneoka-catalog-build-v1",
+        "cardRecognition": recognition,
         "server": config.id,
         "sourceId": source_id,
         "buildId": build_id,
