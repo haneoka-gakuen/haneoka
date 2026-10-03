@@ -1,6 +1,7 @@
 import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { html, nothing } from "lit";
+import { difficultyEstimatesEnabled } from "../lib/difficulty-display";
 import "../styles/song-gekisou.css";
 import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
@@ -33,6 +34,7 @@ export interface SongSummaryRenderOptions {
 }
 
 function estimatedDifficulty(row: Item | undefined, locale: string) {
+  if (!difficultyEstimatesEnabled()) return undefined;
   const estimate = row?.difficultyEstimate as Item | undefined;
   const quality = estimate?.quality as Item | undefined;
   const value = estimate?.estimatedConstant;
@@ -44,11 +46,7 @@ function estimatedDifficulty(row: Item | undefined, locale: string) {
     !["estimated", "low-confidence"].includes(String(quality?.status))
   )
     return undefined;
-  return html`
-    <small class="difficulty-constant">
-      ${value.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-    </small>
-  `;
+  return value.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 export function renderSongSummary(options: SongSummaryRenderOptions) {
@@ -94,7 +92,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
     difficulty[selectedDifficulty]?.displayLevel ??
     difficulty[selectedDifficulty]?.playLevel ??
     meta.r;
-  const estimateCaption = estimatedDifficulty(difficulty[selectedDifficulty], locale);
+  const estimatedLevel = estimatedDifficulty(difficulty[selectedDifficulty], locale);
   const metrics: Array<[string, string, string]> = [
     [
       "metaOfficialLevel",
@@ -103,6 +101,9 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
         ? Number(officialLevel).toLocaleString(locale, { maximumFractionDigits: 20 })
         : "—",
     ],
+    ...(estimatedLevel === undefined
+      ? []
+      : ([["difficultyEstimateBeta", "Estimated difficulty · Beta", estimatedLevel]] as Array<[string, string, string]>)),
     ["metaTime", "Song Duration", duration(meta.time)],
     ...(nativeScore === undefined
       ? []
@@ -174,20 +175,11 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
         ${metrics.map(
           ([key, fallback, value]) => html`
             <div>
-              <dt title=${label(key, fallback)}>
+              <dt title=${key === "difficultyEstimateBeta" ? nothing : label(key, fallback)}>
                 ${label(key, fallback)}
               </dt>
               <dd lang=${resolveLocalizedText(item[key], locale).locale}>
-                ${
-                  key === "metaOfficialLevel" && estimateCaption
-                    ? html`
-                        <span class="stack stack--tight">
-                          <span>${value}</span>
-                          ${estimateCaption}
-                        </span>
-                      `
-                    : value
-                }
+                ${value}
               </dd>
             </div>
           `,

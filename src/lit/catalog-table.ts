@@ -1,6 +1,7 @@
 import { rarityIcon } from "./shared/rarity-icon";
 import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
 import { LitElement, html, nothing } from "lit";
+import { difficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
 import { icon } from "./ui/icon";
 
 /**
@@ -204,6 +205,15 @@ export class CatalogTable extends LitElement {
   declare items: Item[];
   /** song-meta view state snapshot; changing it re-renders the metric cells. */
   declare meta?: { mode: string; tier: string; band: number };
+  private disposeDifficultyDisplay?: () => void;
+  connectedCallback() {
+    super.connectedCallback();
+    this.disposeDifficultyDisplay = observeDifficultyDisplay(() => this.requestUpdate());
+  }
+  disconnectedCallback() {
+    this.disposeDifficultyDisplay?.();
+    super.disconnectedCallback();
+  }
   createRenderRoot() {
     return this;
   }
@@ -245,6 +255,7 @@ export class CatalogTable extends LitElement {
   }
 
   private estimatedDifficulty(row: Item) {
+    if (!difficultyEstimatesEnabled()) return undefined;
     const estimate = row.difficultyEstimate as Item | undefined;
     const quality = estimate?.quality as Item | undefined;
     const value = estimate?.estimatedConstant;

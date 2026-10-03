@@ -34,6 +34,7 @@ import "../styles/model-tile.css";
 import "../styles/character-voices.css";
 import { difficultyKey } from "./ui/difficulty-picker";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
+import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { shopPriceLine } from "../lib/shop-currency";
 import "./catalog-table";
@@ -1352,6 +1353,7 @@ export class CatalogScreen extends LitElement {
     return this;
   }
   private disposeSongDisplay?: () => void;
+  private disposeDifficultyDisplay?: () => void;
   private onLocale = () => {
     this.settings = { ...this.settings, locale: preferredLocale() };
     this.requestUpdate();
@@ -1361,6 +1363,10 @@ export class CatalogScreen extends LitElement {
   };
   connectedCallback() {
     super.connectedCallback();
+    this.disposeDifficultyDisplay = observeDifficultyDisplay(() => {
+      this.resultCache = undefined;
+      this.requestUpdate();
+    });
     this.disposeSongDisplay = observeSongDisplay(() => {
       this.resultCache = undefined;
       this.requestUpdate();
@@ -1435,6 +1441,7 @@ export class CatalogScreen extends LitElement {
     this.nativeReferenceRequests.cancel();
     this.nativeReference = undefined;
     this.disposeSongDisplay?.();
+    this.disposeDifficultyDisplay?.();
     this.removeEventListener("click", this.onScreenClick);
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.detailRequests.cancel();
