@@ -1,0 +1,74 @@
+@layer pages {
+  chart-creation-workspace {
+    display: block;
+    min-inline-size: 0;
+    padding: var(--space-4, 16px);
+  }
+  .chart-creation__actions,
+  .chart-creation__audio {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    margin-block: var(--space-3, 12px);
+  }
+  .chart-creation__actions .segmented {
+    flex-wrap: wrap;
+    max-inline-size: 100%;
+  }
+  .chart-creation__form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: var(--space-3, 12px);
+    margin-block: var(--space-3, 12px);
+  }
+  .chart-creation__form md-outlined-text-field,
+  .chart-creation__form md-outlined-select {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+  .chart-creation__form label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+  }
+  .chart-creation__stages {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-4, 16px);
+  }
+  .chart-creation__stages section {
+    min-inline-size: 0;
+  }
+  .chart-creation__editor,
+  .chart-creation__preview {
+    display: block;
+    inline-size: 100%;
+    block-size: 360px;
+    border-radius: var(--md-sys-shape-corner-medium, 12px);
+    background: var(--md-sys-color-surface-container);
+  }
+  .chart-creation__editor {
+    touch-action: manipulation;
+    cursor: crosshair;
+  }
+  .chart-creation__stages md-slider {
+    display: block;
+    inline-size: 100%;
+  }
+  .chart-creation__audio span {
+    overflow-wrap: anywhere;
+  }
+  chart-creation-workspace [role="alert"] {
+    color: var(--md-sys-color-error);
+  }
+  @media (max-width: 600px) {
+    .chart-creation__stages {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .chart-creation__editor,
+    .chart-creation__preview {
+      block-size: 280px;
+    }
+  }
+}

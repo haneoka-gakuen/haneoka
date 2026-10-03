@@ -1,0 +1,17 @@
+---
+import Base from "../../../layouts/Base.astro";
+import AppShell from "../../../components/AppShell.astro";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+import { t } from "../../../i18n/messages";
+import "../../../styles/chart-creation.css";
+export function getStaticPaths() { return LOCALES.map(locale => ({ params: { locale }, props: { locale } })); }
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "chartEditor", "Chart Editor");
+const route = "/chart-editor/create";
+---
+<Base locale={locale} route={route} title={title} titleKey="chartEditor">
+  <AppShell locale={locale} route={route} title={title} titleKey="chartEditor">
+    <chart-creation-workspace locale={locale}></chart-creation-workspace>
+  </AppShell>
+</Base>
+<script>import "../../../lit/chart-creation-workspace";</script>
