@@ -173,8 +173,12 @@ function observedRelease(response: Response, expected?: StaticCatalogRelease): v
   }
 }
 
+function requestKey(path: string, server: string, release?: StaticCatalogRelease): string {
+  return `${server}\u0000${release?.releaseId || "current"}\u0000${release?.sourceId || ""}\u0000${path}`;
+}
+
 async function fetchJson(path: string, server: string, release?: StaticCatalogRelease): Promise<unknown> {
-  const key = `${server}\u0000${release?.releaseId || "current"}\u0000${path}`;
+  const key = requestKey(path, server, release);
   let pending = requestPromises.get(key);
   if (!pending) {
     pending = (async () => {
@@ -282,6 +286,11 @@ export async function fetchStaticCatalog(
   release?: StaticCatalogRelease,
 ): Promise<unknown> {
   const pinned = release || (await staticCatalogRelease(server));
+  if (pinned.server !== server) {
+    throw new StaticCatalogConsistencyError(
+      `Static catalog server mismatch: expected ${server}, received ${pinned.server}`,
+    );
+  }
   const local = localCatalog(server);
   if (local) {
     if (local.identity.releaseId !== pinned.releaseId || local.identity.sourceId !== pinned.sourceId) {
@@ -327,13 +336,14 @@ export async function fetchStaticCatalogBatch(
 ): Promise<Map<string, Record<string, unknown>>> {
   const items = new Map<string, Record<string, unknown>>();
   if (!ids.length) return items;
+  const pinned = release || (await staticCatalogRelease(server));
   const size = 80;
   for (let start = 0; start < ids.length; start += size) {
     const query = ids
       .slice(start, start + size)
       .map((id) => `id=${encodeURIComponent(id)}`)
       .join("&");
-    const document = asRecord(await fetchStaticCatalog(`${resource}?${query}`, server, release));
+    const document = asRecord(await fetchStaticCatalog(`${resource}?${query}`, server, pinned));
     if (!document || !asRecord(document.items)) {
       throw new Error(`Static catalog returned an invalid ${resource} batch response`);
     }
@@ -344,6 +354,14 @@ export async function fetchStaticCatalogBatch(
     const missing = ids.slice(start, start + size).filter((id) => !items.has(id));
     if (missing.length)
       throw new StaticCatalogConsistencyError(`Static catalog ${resource} batch omitted: ${missing.join(", ")}`);
+  }
+  // Cross-server page details request these same full entities after payload batches.
+  // Seed only complete batches; keep the batch caller's objects independent.
+  if (["cards", "support-cards", "songs", "events"].includes(resource)) {
+    for (const id of new Set(ids)) {
+      const key = requestKey(`${resource}/${encodeURIComponent(id)}`, server, pinned);
+      if (!requestPromises.has(key)) requestPromises.set(key, Promise.resolve(structuredClone(items.get(id)!)));
+    }
   }
   return items;
 }
