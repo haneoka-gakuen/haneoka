@@ -1,3 +1,4 @@
+import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
 import {gekisouMissionIcons} from "./gekisou";
 import {
   associatedReward,
@@ -846,6 +847,14 @@ async function buildStoryPayloads(server: ReleaseServer, modes: ReadonlyMap<stri
     const characterIds = new Set([
       ...Object.values(included).flatMap((row) => characterIdsOf(row)),
       ...numbers(spot?.characterIds),
+      ...Object.values(included).flatMap((row) =>
+        projectHaneokaTranscript(row).flatMap(({ command }) =>
+          rows(command.targets).map((target) => target.characterId).filter((character): character is number =>
+            typeof character === "number" && Number.isSafeInteger(character) && character > 0 &&
+            graph.characters.has(character),
+          ),
+        ),
+      ),
     ]);
     const bandIds = new Set([
       ...numbers(episode.bandId),
