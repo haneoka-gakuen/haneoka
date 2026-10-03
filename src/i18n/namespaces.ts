@@ -114,6 +114,7 @@ const COMMON_FLAT_KEYS = [
   "releaseServer",
   "catalogJapanOnly",
   "catalogInternationalOnly",
+  "catalogViewingServerData",
   "songTitles",
   "metaNativeScore",
   "metaScoreFactor",

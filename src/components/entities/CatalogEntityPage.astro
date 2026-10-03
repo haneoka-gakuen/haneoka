@@ -65,7 +65,7 @@ if (["jp", "intl"].includes(server) && ["cards", "support-cards", "songs"].inclu
       const detail = await loadCrossServerDetail(entry, server as OfficialCatalogServer, {
         readEntity: (resource, identity, id) => fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, identity.server, identity),
       });
-      payload.aux = { ...(payload.aux || {}), crossServer: detail };
+      payload.aux = { ...(payload.aux || {}), crossServer: { ...detail, exclusive: entry.exclusive } };
     }
   }
 }

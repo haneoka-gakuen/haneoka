@@ -2275,6 +2275,7 @@
   "initial": "初期値",
   "catalogJapanOnly": "日本版のみ",
   "catalogInternationalOnly": "グローバル版のみ",
+  "catalogViewingServerData": "{server}のデータを表示しています",
   "rankUpItem": "ランクアップ素材",
   "notes": "ノーツ数",
   "battle": "バトル",

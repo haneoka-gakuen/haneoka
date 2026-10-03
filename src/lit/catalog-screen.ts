@@ -106,7 +106,7 @@ import {
   returnStateFromLocation,
   type ResourceKind,
 } from "../lib/resource-route";
-import type { ReleaseServer } from "../lib/release-server";
+import { normalizeReleaseServer, type ReleaseServer } from "../lib/release-server";
 import { LOCALES, type Locale } from "../i18n/locales";
 
 const EXTRA_FILTERS = [
@@ -612,7 +612,7 @@ export class CatalogScreen extends LitElement {
   private unionBands: Partial<Record<OfficialCatalogServer, Map<number, Item>>> = {};
   private unionFacetKeys = { character: new Map<string, string>(), collectionBand: new Map<string, string>() };
   private unionMarks: Partial<Record<OfficialCatalogServer, Map<string, string>>> = {};
-  private unionDetail?: Awaited<ReturnType<typeof fetchCrossServerDetail>>;
+  private unionDetail?: Awaited<ReturnType<typeof fetchCrossServerDetail>> & { exclusive?: OfficialCatalogServer | null };
   private unionRequests = new RequestScope();
   private unionResource(): CrossCatalogResource | undefined {
     return this.settings.origin !== "bestdori" &&
@@ -883,29 +883,37 @@ export class CatalogScreen extends LitElement {
     target.searchParams.set("return", returnTo);
     return `${target.pathname}${target.search}${target.hash}`;
   }
+  private viewingServerNotice() {
+    const detail = this.unionDetail;
+    if (!detail?.exclusive || typeof window === "undefined" || !this.isConnected) return nothing;
+    let preference: ReleaseServer;
+    try { preference = normalizeReleaseServer(localStorage.getItem("haneoka.release-server")); }
+    catch { return nothing; }
+    if ((preference !== "jp" && preference !== "intl") || detail.perServer[preference] || detail.exclusive === preference)
+      return nothing;
+    const server = this.label(detail.activeServer === "jp" ? "settingsJapan" : "settingsGlobal", detail.activeServer);
+    return html`<p class="detail-copy">${clientText(this.settings.locale, "catalogViewingServerData", "Viewing {server} data.", { server })}</p>`;
+  }
   private renderUnionDetail() {
     const detail = this.unionDetail;
     if (!detail) return nothing;
-    const variants = Object.values(detail.perServer).filter((variant) => Boolean(variant));
+    const active = detail.perServer[detail.activeServer]!;
+    const supplements = detail.content.supplements.filter((s) =>
+      detail.fullSources.includes(s.fromServer) &&
+      (s.classification === "foreign-variant-content" || s.classification === "source-asset"),
+    );
+    const peers = Object.values(detail.perServer).filter((variant) =>
+      variant && variant.identity.server !== detail.activeServer && detail.fullSources.includes(variant.identity.server) &&
+      (JSON.stringify(variant.releasedAt) !== JSON.stringify(active.releasedAt) ||
+        ["stat", "resolvedSkills", "difficulty", "rewardGroups", "effects", "support", "rewards", "rankings", "startAt", "endAt", "publishedAt", "musicUrl", "mvUrl", "musicVideos", "diarySound", "movies"]
+          .some((field) => JSON.stringify(variant.row[field]) !== JSON.stringify(active.row[field]))),
+    );
+    const notice = this.viewingServerNotice();
+    if (!supplements.length && !peers.length) return notice;
     return html`
       <section class="detail-section">
-        ${renderDetailSectionHeading(this.label("releaseServer", "Release server"), "details")}
-        <div class="cluster">
-          ${variants.map(
-            (variant) => html`
-              <a
-                class="button button--text"
-                href=${this.unionDetailHref(variant!.href)}
-                aria-current=${variant!.identity.server === detail.activeServer ? "page" : nothing}
-              >
-                <img src=${serverAvailabilityImage(variant!.identity.server)} alt="" width="18" height="18" />
-                ${this.label(variant!.identity.server === "jp" ? "settingsJapan" : "settingsGlobal", variant!.identity.server === "jp" ? "Japan" : "International")}
-              </a>
-            `,
-          )}
-        </div>
-        ${detail.content.supplements
-          .filter((s) => detail.fullSources.includes(s.fromServer) && (s.classification === "foreign-variant-content" || s.classification === "source-asset"))
+        ${notice}
+        ${supplements
           .map(
             (s) => html`
               <details class="detail-fold">
@@ -936,8 +944,7 @@ export class CatalogScreen extends LitElement {
               </details>
             `,
           )}
-        ${variants
-          .filter((variant) => variant!.identity.server !== detail.activeServer && detail.fullSources.includes(variant!.identity.server))
+        ${peers
           .map(
             (variant) => html`
               <details class="detail-fold">
@@ -982,7 +989,7 @@ export class CatalogScreen extends LitElement {
       if (!entry) return;
       const detail = await fetchCrossServerDetail(entry, pin.server, { signal });
       if (!this.unionRequests.current(signal) || !this.isConnected || this.payload !== payload || !detail.fullSources.includes(pin.server)) return;
-      this.unionDetail = detail;
+      this.unionDetail = { ...detail, exclusive: entry.exclusive };
       this.items = [{ ...payload.item, ...this.unionDetailRow(detail) }];
       this.selected = this.items[0];
       this.resultCache = undefined; this.requestUpdate();
@@ -1812,7 +1819,7 @@ export class CatalogScreen extends LitElement {
     this.songMetaProvision = Promise.resolve();
     this.detailAux = { ...(payload.aux || {}) };
     this.unionDetail = undefined;
-    const cross = this.detailAux.crossServer as Awaited<ReturnType<typeof fetchCrossServerDetail>> | undefined;
+    const cross = this.detailAux.crossServer as (Awaited<ReturnType<typeof fetchCrossServerDetail>> & { exclusive?: OfficialCatalogServer | null }) | undefined;
     if (
       cross?.schema === "haneoka-cross-server-detail-v1" &&
       cross.activeServer === payload.server &&
@@ -3891,6 +3898,7 @@ export class CatalogScreen extends LitElement {
       label: title,
       image,
       imageFallback: image,
+      aspectRatio: kind === "support" ? "16 / 9" : "224 / 294",
       placeholder: icon("image", 32),
       fit: "contain",
       onImageError: this.imageError,
