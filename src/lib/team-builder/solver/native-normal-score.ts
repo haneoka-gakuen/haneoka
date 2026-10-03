@@ -8,6 +8,7 @@ import { normalSkillOrders, resolveNormalSkillEffects, type NormalSkillPlan } fr
 import { addPower, floorPowerBP } from "./power.ts";
 import { createNativeNormalSupportResolver } from "./native-normal-support.ts";
 import { createNormalPreparationCache } from "./normal-preparation-cache.ts";
+import { createNormalCommandPlanCache } from "./normal-command-plans.ts";
 
 const f = Math.fround;
 interface PrefixEntry {
@@ -41,16 +42,6 @@ export interface NativeNormalPlayScoreLaw {
   /** Integer complete-play scores, grouped by identical outcome. */
   outcomes: readonly { score: number; multiplicity: number }[];
 }
-function lowerBound(song: PreparedSong, timeMs: number): number {
-  let low = 0,
-    high = song.nodes.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (song.nodes[middle]!.event.timeMs < timeMs) low = middle + 1;
-    else high = middle;
-  }
-  return low;
-}
 
 /** Prepare immutable live effects and chart event identities once. Per-order
  * commands retain the chart's original index even when their times are unsorted.
@@ -59,6 +50,7 @@ function lowerBound(song: PreparedSong, timeMs: number): number {
  */
 export function createNativeNormalScoreResolver(data: TeamBuilderData, input: OptimizationInput) {
   const preparation = createNormalPreparationCache();
+  const commandPlans = createNormalCommandPlanCache();
   const gaps: EvidenceGap[] = [];
   const phaseRows = dataRows(data.skillReference.effectSettings).map(nativeRow);
   const phase = phaseRows.filter((row) => row.skillEffectType === 2000);
@@ -266,24 +258,8 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
         // actual audio duration >= the last valid judged node gives the same commands.
         if (skills.gaps.length) return { value: null, status: "unavailable", assumptions: [], gaps: [...skills.gaps] };
         skills.assumptions.forEach((assumption) => assumptions.add(assumption));
-        const commands = [...skills.factorCommands];
-        // The native comparator uses owner ID before insertion order at equal time.
-        const sameTime = new Map<string, (typeof commands)[number]>();
-        for (const command of commands) {
-          const key = `${command.timeMs}:${command.judgement ?? "general"}`;
-          const previous = sameTime.get(key);
-          if (
-            previous &&
-            (previous.factorOwnerId === undefined || command.factorOwnerId === undefined) &&
-            previous.handleId !== command.handleId &&
-            (previous.memberSkillIndex !== command.memberSkillIndex || previous.effectId !== command.effectId)
-          )
-            return unavailableMetric("native-normal-factor-owner-order-unresolved", song.song.key);
-          sameTime.set(key, command);
-        }
-        commands.sort(
-          (a, b) => a.timeMs - b.timeMs || (a.factorOwnerId ?? 0) - (b.factorOwnerId ?? 0) || a.sequence - b.sequence,
-        );
+        const intervals = await commandPlans.resolve(song, skills, controls);
+        if (!intervals.value) return { value: null, status: "unavailable", assumptions: [], gaps: intervals.gaps };
         let score = input.evaluation.songContexts[song.song.key]!.fixedScore;
         const timingPrefix = augmentation ? new Float64Array(song.nodes.length + 1) : null;
         const luckSamples: { timeMs: number; idleScore: number; rushScore: number }[] = [];
@@ -297,31 +273,13 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
             rushScore: rush[node + 1]! - rush[node]!,
           });
         };
-        let index = 0,
-          factor = f(1),
-          perfectExtra = f(0);
-        for (const command of commands) {
-          const end = lowerBound(song, command.timeMs);
-          if (end > index) {
-            const sums = await prefix(song, power, f(factor + perfectExtra), controls, augmentation);
-            if (!sums) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-            const rush = augmentation?.luckPlay ? await prefix(song, power, f(factor + perfectExtra), controls,
-              augmentation, augmentation.luckPlay.rushFactorPercent) : undefined;
-            if (rush === null) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-            accumulate(sums, index, end, rush);
-          }
-          const diff = f(f(command.diffMillPercent) / f(100000));
-          if (command.judgement === undefined) factor = f(factor + diff);
-          else if (command.judgement === 5) perfectExtra = f(perfectExtra + diff);
-          index = end;
-        }
-        if (index < song.nodes.length) {
-          const sums = await prefix(song, power, f(factor + perfectExtra), controls, augmentation);
+        for (const interval of intervals.value) {
+          const sums = await prefix(song, power, interval.factor, controls, augmentation);
           if (!sums) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-          const rush = augmentation?.luckPlay ? await prefix(song, power, f(factor + perfectExtra), controls,
+          const rush = augmentation?.luckPlay ? await prefix(song, power, interval.factor, controls,
             augmentation, augmentation.luckPlay.rushFactorPercent) : undefined;
           if (rush === null) return unavailableMetric("native-normal-shuffle-interrupted", "search cancellation/budget");
-          accumulate(sums, index, song.nodes.length, rush);
+          accumulate(sums, interval.start, interval.end, rush);
         }
         if (augmentation?.luckPlay) {
           const played = await augmentation.luckPlay.resolve(luckSamples, controls);
