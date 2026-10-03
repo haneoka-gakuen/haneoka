@@ -17,6 +17,10 @@ export interface LoadingMetrics {
   loadedBytes?: number;
   totalBytes?: number;
   byteBasis?: LoadingByteBasis;
+  /** Processed preparation tasks include failed work; they are not successful files. */
+  processedTasks?: number;
+  totalTasks?: number;
+  countLabel?: string;
 }
 
 export interface LoadingReporter {
@@ -63,6 +67,9 @@ interface ProgressState {
   byteBasis?: LoadingByteBasis;
   completedFiles?: number;
   totalFiles?: number;
+  processedTasks?: number;
+  totalTasks?: number;
+  countLabel?: string;
 }
 
 type ProgressDocumentEvent = Event & {
@@ -92,6 +99,9 @@ function cleanMetrics(metrics: LoadingMetrics): LoadingMetrics {
   if (finite(metrics.loadedBytes)) clean.loadedBytes = metrics.loadedBytes;
   if (finite(metrics.totalBytes)) clean.totalBytes = metrics.totalBytes;
   if (metrics.byteBasis === "decoded" || metrics.byteBasis === "identity") clean.byteBasis = metrics.byteBasis;
+  if (finite(metrics.processedTasks)) clean.processedTasks = metrics.processedTasks;
+  if (finite(metrics.totalTasks)) clean.totalTasks = metrics.totalTasks;
+  if (typeof metrics.countLabel === "string" && metrics.countLabel.trim()) clean.countLabel = metrics.countLabel;
   return clean;
 }
 
@@ -330,7 +340,21 @@ class LoadingCoordinator {
     const filesComplete =
       active.length > 0 &&
       active.every((task) => finite(task.metrics.completedFiles) && finite(task.metrics.totalFiles));
-    const canDetermine = bytesComplete || filesComplete;
+    const taskLabels = new Set(
+      active.filter((task) => finite(task.metrics.processedTasks)).map((task) => task.metrics.countLabel),
+    );
+    const tasksComplete =
+      active.length > 0 &&
+      taskLabels.size === 1 &&
+      active.every((task) =>
+        finite(task.metrics.processedTasks) && finite(task.metrics.totalTasks) &&
+        task.metrics.totalTasks > 0 && task.metrics.processedTasks <= task.metrics.totalTasks);
+    const processedTasks = taskLabels.size === 1
+      ? active.reduce((sum, task) => sum + (task.metrics.processedTasks || 0), 0)
+      : undefined;
+    const totalTasks = tasksComplete ? active.reduce((sum, task) => sum + task.metrics.totalTasks!, 0) : undefined;
+    const countLabel = taskLabels.size === 1 ? [...taskLabels][0] : undefined;
+    const canDetermine = bytesComplete || filesComplete || tasksComplete;
     const loadedBytes =
       byteBases.size === 1
         ? active.reduce(
@@ -348,13 +372,15 @@ class LoadingCoordinator {
       ? active.reduce((sum, task) => sum + (task.metrics.totalFiles || 0), 0)
       : undefined;
     const determinateValue = canDetermine
-      ? bytesComplete
-        ? totalBytes
-          ? Math.min(1, loadedBytes! / totalBytes)
-          : 0
-        : totalFiles
-          ? Math.min(1, completedFiles! / totalFiles)
-          : 0
+      ? tasksComplete
+        ? processedTasks! / totalTasks!
+        : bytesComplete
+          ? totalBytes
+            ? Math.min(1, loadedBytes! / totalBytes)
+            : 0
+          : totalFiles
+            ? Math.min(1, completedFiles! / totalFiles)
+            : 0
       : undefined;
     const stageLabel = active.find((task) => task.metrics.stageLabel)?.metrics.stageLabel;
     return {
@@ -369,6 +395,9 @@ class LoadingCoordinator {
       byteBasis: byteBases.size === 1 ? [...byteBases][0] : undefined,
       completedFiles,
       totalFiles,
+      processedTasks,
+      totalTasks,
+      countLabel,
     };
   }
 
@@ -377,6 +406,11 @@ class LoadingCoordinator {
     if (state.failed.length && !state.active.length)
       return `${state.label} · ${clientText(locale, "loading.failed", "Loading failed")}`;
     const label = state.stageLabel || state.label;
+    if (state.processedTasks !== undefined) {
+      const count = state.totalTasks === undefined
+        ? String(state.processedTasks) : `${state.processedTasks} / ${state.totalTasks}`;
+      return `${label} · ${count} ${state.countLabel || clientText(locale, "story.preparationTasks", "preparation tasks")}`;
+    }
     if (state.loadedBytes !== undefined) {
       const bytes =
         state.totalBytes === undefined

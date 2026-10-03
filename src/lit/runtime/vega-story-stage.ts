@@ -1,14 +1,15 @@
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { LitElement, html, nothing } from "lit";
+import { ref } from "lit/directives/ref.js";
 import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-assets";
 import { resolveLocalizedText } from "../../lib/localized-text";
-import { beginLoading } from "../../lib/loading-progress";
+import { beginLoading, prepareMaterialProgress, type LoadingMetrics } from "../../lib/loading-progress";
 import { clientText } from "../../i18n/client";
 import { CUBISM_CORE_URLS, CUBISM_WEB_RUNTIME_URL } from "../../lib/cubism-runtime";
 import { fetchJson, uiText } from "../shared/catalog";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
-import { loadingState } from "../ui/state";
+import "@material/web/progress/linear-progress.js";
 import {
   createVega,
   createVegaPlayerState,
@@ -235,7 +236,8 @@ export class VegaStoryStage extends LitElement {
     const active = () => !signal.aborted && this.isConnected && this.loadController === controller;
     const url = (resource: string, id = "") =>
       `/api/v1/servers/${encodeURIComponent(server)}/${resource}${id ? `/${encodeURIComponent(id)}` : ""}`;
-    const loadingReporter = beginLoading(uiText(this.locale, "loading"), { signal });
+    let loadingReporter = beginLoading(uiText(this.locale, "loading"), { signal });
+    let hadCountedProgress = false;
     loadingReporter.update({ stageLabel: this.ui("resources") });
     this.phase = "loading";
     this.issue = "";
@@ -344,7 +346,24 @@ export class VegaStoryStage extends LitElement {
       );
       const playerState = this.playerState;
       if (!playerState) throw new Error("Vega player state is unavailable");
-      this.startBootStateObserver(playerState, active, loadingReporter);
+      const updateBootProgress = () => {
+        const { done, total, determinate, stageLabel } = this.bootProgress();
+        // A new CPU-only phase has no resource denominator. Retire the old
+        // reporter so its completed counters cannot leave a false 100%.
+        if (!determinate && hadCountedProgress) {
+          loadingReporter.cancel();
+          loadingReporter = beginLoading(uiText(this.locale, "loading"), { signal });
+        }
+        hadCountedProgress = determinate;
+        const metrics: LoadingMetrics = {
+          stageLabel,
+          countLabel: this.ui("preparationTasks"),
+          processedTasks: done,
+          ...(determinate ? { totalTasks: total } : {}),
+        };
+        loadingReporter.update(metrics);
+      };
+      this.startBootStateObserver(playerState, active, updateBootProgress);
       const player = await engine.createPlayer({
         mount,
         story: hydrated,
@@ -442,7 +461,7 @@ export class VegaStoryStage extends LitElement {
   private startBootStateObserver(
     state: ReturnType<typeof createVegaPlayerState>,
     active: () => boolean,
-    loadingReporter: ReturnType<typeof beginLoading>,
+    updateProgress: () => void,
   ) {
     this.stopBootStateObserver();
     this.playerState = state;
@@ -454,7 +473,7 @@ export class VegaStoryStage extends LitElement {
       // The state object is created by this host and passed through the public
       // engine option; this observes owned preload state, not engine internals.
       this.requestUpdate();
-      loadingReporter.update({ stageLabel: this.bootStageLabel() });
+      updateProgress();
       this.bootStateTimer = window.setTimeout(update, 100);
     };
     this.bootStateTimer = window.setTimeout(update, 0);
@@ -469,20 +488,31 @@ export class VegaStoryStage extends LitElement {
     return [uiText(this.locale, "loading"), this.bootStageLabel()].filter(Boolean).join(" · ");
   }
 
-  private bootStageLabel() {
+  private bootProgress() {
     const preload = this.playerState?.preload;
-    if (!preload) return this.ui("preparing");
-    const stage = String(preload.label || "").trim();
-    const stageLabel = stage === "scene index" ? this.ui("sceneIndex") : stage;
-    const done = Number(preload.done);
-    const total = Number(preload.total);
+    const rawDone = Number(preload?.done);
+    const rawTotal = Number(preload?.total);
+    const done = Number.isFinite(rawDone) && rawDone >= 0 ? Math.floor(rawDone) : 0;
+    const total = Number.isFinite(rawTotal) && rawTotal > 0 ? Math.floor(rawTotal) : 0;
+    const stage = String(preload?.label || "").trim();
+    const stageLabel = stage === "scene index" ? this.ui("sceneIndex") : stage ? this.ui("resources") : "";
+    return {
+      done,
+      total,
+      determinate: total > 0 && done <= total,
+      stageLabel: [this.ui("preparing"), stageLabel].filter(Boolean).join(" · "),
+    };
+  }
+
+  private bootStageLabel() {
+    const { done, total, stageLabel } = this.bootProgress();
     const count =
-      Number.isFinite(total) && total > 0
+      total > 0
         ? `${done}/${total} ${this.ui("preparationTasks")}`
-        : Number.isFinite(done) && done > 0
+        : done > 0
           ? `${done} ${this.ui("preparationTasks")}`
           : "";
-    return [this.ui("preparing"), stageLabel, count].filter(Boolean).join(" · ");
+    return [stageLabel, count].filter(Boolean).join(" · ");
   }
 
   /**
@@ -785,6 +815,8 @@ export class VegaStoryStage extends LitElement {
   };
 
   render() {
+    const { done, total, determinate } = this.bootProgress();
+    const loadingLabel = this.bootLoadingLabel();
     return html`
       <section
         class="vega-story-runtime"
@@ -794,7 +826,19 @@ export class VegaStoryStage extends LitElement {
         ${
           this.phase === "loading" || this.phase === "booting"
             ? html`
-                <div class="vega-story-runtime__loading">${loadingState(this.bootLoadingLabel())}</div>
+                <div class="vega-story-runtime__loading">
+                  <div class="state">
+                    <md-linear-progress
+                      style="inline-size: 100%"
+                      ${ref(prepareMaterialProgress)}
+                      ?indeterminate=${!determinate}
+                      value=${determinate ? done / total : nothing}
+                      aria-label=${loadingLabel}
+                      aria-valuetext=${loadingLabel}
+                    ></md-linear-progress>
+                    <span class="state__body" role="status">${loadingLabel}</span>
+                  </div>
+                </div>
               `
             : ""
         }
