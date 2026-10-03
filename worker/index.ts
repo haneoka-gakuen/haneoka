@@ -2786,7 +2786,7 @@ function bestdoriSonolusDataProvider(upstreamBase: string | undefined): RuntimeC
   });
 }
 
-const sonolusBannerCache = new RevisionCache<JsonObject | undefined>(3);
+const sonolusThumbnailCache = new RevisionCache<JsonObject | undefined>(3);
 
 function sonolusThumbnailDocument(value: JsonValue, fallback: JsonObject | undefined): JsonValue {
   if (Array.isArray(value)) return value.map((entry) => sonolusThumbnailDocument(entry, fallback));
@@ -2811,6 +2811,13 @@ function sonolusServerBanner(value: unknown): JsonObject | undefined {
     ...(typeof hash === "string" ? { hash } : {}),
     ...(typeof url === "string" ? { url } : {}),
   };
+}
+
+function sonolusFallbackThumbnail(value: JsonValue | null): JsonObject | undefined {
+  if (!isJsonObject(value) || !isJsonObject(value.thumbnail)) return undefined;
+  const { hash, url } = value.thumbnail;
+  if (typeof hash !== "string" || !/^[a-f0-9]{40}$/u.test(hash) || typeof url !== "string" || url !== `/sonolus/repository/${hash}`) return undefined;
+  return { hash, url: new URL(url, `https://${CANONICAL_HOST}`).href };
 }
 
 // The engine + presentation payload is a server-agnostic global asset published
@@ -2923,7 +2930,7 @@ async function handleSonolus(
     /^[a-f0-9]{64}$/u.test(payloadState.revision)
       ? payloadState.revision
       : "unversioned";
-  const ourNotesRevision = `identity-text-v3-search-thumbnails:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const ourNotesRevision = `identity-text-v4-search-square-thumbnails:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const revision = isBestdoriCatalog
     ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
     : ourNotesRevision;
@@ -2935,15 +2942,13 @@ async function handleSonolus(
     // data itself remains pinned to the exact release encoded in each data ID.
     const readRawJson = async (releasePath: string) =>
       (await readGlobalSonolusJson(env, releasePath)) ?? readReleaseJson(env, canonicalRelease, releasePath);
-    const banner = await sonolusBannerCache.getOrCreate(ourNotesRevision, async () => {
-      const value = sonolusServerBanner(await readRawJson("runtime/sonolus/info"));
-      if (!value || typeof value.url !== "string" || !value.url) return undefined;
-      return { ...value, url: new URL(value.url, `https://${CANONICAL_HOST}`).href };
-    });
-    fallbackThumbnail = banner;
+    const thumbnail = await sonolusThumbnailCache.getOrCreate(ourNotesRevision, async () =>
+      sonolusFallbackThumbnail(await readRawJson("runtime/sonolus/thumbnail-fallback")),
+    );
+    fallbackThumbnail = thumbnail;
     const readJson = async (releasePath: string) => {
       const value = await readRawJson(releasePath);
-      return value === null ? null : sonolusThumbnailDocument(value, banner);
+      return value === null ? null : sonolusThumbnailDocument(value, thumbnail);
     };
     const catalogProvider = isBestdoriCatalog
       ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
@@ -2966,7 +2971,7 @@ async function handleSonolus(
         : {}),
       levelTemplateProvider: new ReleaseLevelTemplateProvider({
         readJson,
-        ...(banner ? { fallbackCover: banner } : {}),
+        ...(thumbnail ? { fallbackCover: thumbnail } : {}),
       }),
       pathname: assetUrl.pathname,
       randomIndex: (length) => {

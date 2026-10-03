@@ -6,9 +6,10 @@
 // Run: node packages/sonolus/scripts/build-background.ts   (requires `magick`).
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildSquareThumbnail } from "./presentation-thumbnails.ts";
 import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +46,7 @@ for (const background of BACKGROUNDS) {
   // Keep the authored alpha and colors intact. Sonolus applies the native
   // BackgroundBrightness=.7 through a separate 30% black mask.
   magick([background.source, "-resize", "1920x", resolve(target, "image.png")]);
-  magick([background.source, "-resize", "256x192", resolve(target, "thumbnail.png")]);
+  writeFileSync(resolve(target, "thumbnail.png"), buildSquareThumbnail(readFileSync(background.source), background.source));
 }
 
 console.log(`background built → ${OUT}`);

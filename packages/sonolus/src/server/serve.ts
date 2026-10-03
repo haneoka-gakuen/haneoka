@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { buildServerBanner } from "./serverBanner.ts";
+import { buildSquareThumbnail } from "../../scripts/presentation-thumbnails.ts";
 // Standalone Sonolus server for "BanG Dream! Our Notes" (Live section).
 //
 // Programmatic @sonolus/express server: loads free-pack defaults (skin/effect/
@@ -258,6 +259,7 @@ function main() {
   if (!existsSync(bannerFile)) throw new Error(`Sonolus server banner missing: ${bannerFile}`);
   const banner = s.add(readFileSync(bannerFile));
   const serverBanner = s.add(readFileSync(buildServerBanner(ROOT)));
+  const itemThumbnail = s.add(buildSquareThumbnail(readFileSync(bannerFile), bannerFile));
 
   // The note/lane skin is generated from skin001, the note sounds come from
   // the original CRI cues, and supported effect001 ParticleSystem data is
@@ -338,7 +340,7 @@ function main() {
       subtitle: { ja: "オリジナルノートSE", en: "Original note sounds" },
       author: { en: "haneoka" },
       tags: [],
-      thumbnail: banner,
+      thumbnail: itemThumbnail,
       data: s.add(readFileSync(resolve(effectResourceDir, "effect.data"))),
       audio: s.add(readFileSync(resolve(effectResourceDir, "effect.audio"))),
     };
@@ -367,6 +369,7 @@ function main() {
       [5, "ourNotesBgIkkaDumbRock", "ikka-dumb-rock", null],
     ] as const
   ).map(([bandId, name, directory, fallback]) => ({
+    bandId,
     name,
     directory,
     title: fallback ?? localizedText(bandNameById.get(bandId) ?? ""),
@@ -378,6 +381,11 @@ function main() {
     if (!existsSync(bgImageFile) || !existsSync(bgThumbFile)) {
       throw new Error(`Our Notes background artifact missing under ${resolve(bgDir, background.directory)}`);
     }
+    const thumbnailSource = resolve(
+      workspace.assetsRoot,
+      `Assets/AddressableResources/Band/${background.bandId}/live_stage/lightweight_background.png`,
+    );
+    if (!existsSync(thumbnailSource)) throw new Error(`Background thumbnail source missing: ${thumbnailSource}`);
     const item: BackgroundItemModel = {
       name: background.name,
       version: SONOLUS_ITEM_VERSIONS.background,
@@ -385,7 +393,7 @@ function main() {
       subtitle: { ja: "バンドリ！", en: "BanG Dream!" },
       author: { ja: "haneoka", en: "haneoka" },
       tags: [],
-      thumbnail: s.add(readFileSync(bgThumbFile)),
+      thumbnail: s.add(buildSquareThumbnail(readFileSync(thumbnailSource), thumbnailSource)),
       data: s.add(gzipSync(Buffer.from(JSON.stringify({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" })))),
       image: s.add(readFileSync(bgImageFile)),
       // Match the native BackgroundBrightness=.7 with a separate black layer.
@@ -423,7 +431,7 @@ function main() {
     background: engineBg,
     effect: engineEffect,
     particle: engineParticle,
-    thumbnail: banner,
+    thumbnail: itemThumbnail,
     playData: s.add(readFileSync(playFile)), // already gzipped by sonolus-cli
     watchData: s.add(readFileSync(watchFile)),
     previewData: s.add(readFileSync(previewFile)),
@@ -454,7 +462,7 @@ function main() {
       continue;
     }
     const jp = jacketPath(meta.jacketAsset);
-    const cover: Srl = jp ? s.add(readFileSync(jp)) : banner;
+    const cover: Srl = jp ? s.add(readFileSync(jp)) : itemThumbnail;
     // BGM (per-song, cached): resolve the cue name → mp3 → SRL.
     const cueName = cueByMsid.get(meta.musicSoundId);
     let bgm: Srl = EMPTY_SRL;

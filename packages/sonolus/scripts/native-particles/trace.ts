@@ -250,6 +250,14 @@ export interface EffectTrace {
   meshes: Map<string, QuadSample[]>;
 }
 
+/** Unclipped lane surface; keep world positions paired with the original UVs. */
+export interface LaneSurfaceSample {
+  t: number;
+  quad: NativeWorldQuad;
+  file: string;
+  emission: readonly [number, number, number];
+}
+
 /** Draw offsets used by the renderer's sampleParticle/shapePosition. */
 const DRAW_OFFSETS = [3, 5, 7, 11, 17, 23, 29, 37] as const;
 
@@ -583,6 +591,41 @@ export class EffectTracer {
     this.layer.setTraceSink(undefined);
     this.layer.updateLaneInput(undefined);
     return samples;
+  }
+
+  /** Lane-only compiler input, before the old clipped bounding-rectangle fit. */
+  traceLaneSurfaces(kind: RenderParticleEffect["kind"], width: number, times: readonly number[]): LaneSurfaceSample[] {
+    const surfaces: LaneSurfaceSample[] = [];
+    const meshes: NativeMeshTrace[] = [];
+    this.layer.setTraceSink({ billboard: () => {}, mesh: (entry) => meshes.push(entry) });
+    try {
+      for (const t of times) {
+        meshes.length = 0;
+        this.layer.updateLaneInput([{ id: "lane-surface", kind, direction: "none", judgement: "perfect",
+          age: t, lane: 12 - width / 2, width, seed: 1 } as RenderParticleEffect]);
+        for (const mesh of meshes)
+          for (const quad of nativeMeshQuads(mesh))
+            surfaces.push({ t, quad, file: this.textureFile("laneEffect"), emission: materialEmission("laneEffect", mesh.color) });
+      }
+    } finally {
+      this.layer.setTraceSink(undefined);
+      this.layer.updateLaneInput(undefined);
+    }
+    return surfaces;
+  }
+
+  /** Original source UV -> ground-rectified particle units and real camera depth. */
+  projectLaneUV(quad: NativeWorldQuad, u: number, v: number, size: number) {
+    const nu = (u - quad.uv[0]) / (quad.uv[2] - quad.uv[0]);
+    const nv = (v - quad.uv[1]) / (quad.uv[3] - quad.uv[1]);
+    const point = quad.corners[0].clone().lerp(quad.corners[1], nu)
+      .lerp(quad.corners[3].clone().lerp(quad.corners[2], nu), nv);
+    const depth = -point.clone().applyMatrix4(this.camera.matrixWorldInverse).z;
+    return { ...this.toUnit(point, size, 3), depth, near: this.camera.near };
+  }
+
+  dispose(): void {
+    this.layer.dispose();
   }
 
   /** alpha(sy) of the plane through `point` with normal `normal` (Three world). */

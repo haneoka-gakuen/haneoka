@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { buildServerBanner } from "./serverBanner.ts";
+import { buildSquareThumbnail } from "../../scripts/presentation-thumbnails.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -278,6 +279,19 @@ function addFile(path: string): Srl {
   return addRaw(readFileSync(path));
 }
 
+async function addSquareThumbnail(url: string): Promise<Srl> {
+  const pathname = new URL(url, haneokaBase).pathname;
+  const local = resolveLocalReleaseFile(workspace, pathname);
+  let bytes: Buffer;
+  if (local && existsSync(local)) bytes = readFileSync(local);
+  else {
+    const response = await fetch(new URL(url, haneokaBase), { signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) throw new Error(`Sonolus thumbnail source HTTP ${response.status}: ${url}`);
+    bytes = Buffer.from(await response.arrayBuffer());
+  }
+  return addRaw(buildSquareThumbnail(bytes, url));
+}
+
 function text(value: LocalizedValue | null | undefined, fallback = ""): string {
   if (Array.isArray(value)) {
     return String(value[0] || value[1] || fallback);
@@ -509,8 +523,10 @@ async function main() {
 
   const resourceDir = resolve(pkg, "dist/our-notes");
   const engineDir = resolve(engineRoot, "dist");
-  const banner = addFile(requireFile(resolve(pkg, "assets/server-banner.png")));
+  const bannerFile = requireFile(resolve(pkg, "assets/server-banner.png"));
+  const banner = addFile(bannerFile);
   const serverBanner = addFile(buildServerBanner(root));
+  const itemThumbnail = addRaw(buildSquareThumbnail(readFileSync(bannerFile), bannerFile));
 
   const nativeLabels = createOurNotesSonolusItemLabels({
     noteSkins: OUR_NOTES_NOTE_SKIN_NAMES,
@@ -549,26 +565,27 @@ async function main() {
     const effectResourceDir = resolve(resourceDir, "effects", String(group));
     return {
       ...itemBase(name, SONOLUS_ITEM_VERSIONS.effect, nativeTitle(nativeLabels, name), "Our Notes", "haneoka"),
-      thumbnail: banner,
+      thumbnail: itemThumbnail,
       data: addFile(requireFile(resolve(effectResourceDir, "effect.data"))),
       audio: addFile(requireFile(resolve(effectResourceDir, "effect.audio"))),
     };
   });
   const effect = effectItems[0];
   if (!effect) throw new Error("Native effect item list is empty");
-  const backgroundItems: BackgroundItem[] = ([0, 1, 2, 3, 4, 5] as const).map((stageId) => {
+  const backgroundItems: BackgroundItem[] = [];
+  for (const stageId of [0, 1, 2, 3, 4, 5] as const) {
     const name = OUR_NOTES_SONOLUS_ITEM_NAMES.stages[stageId];
     const image = `/assets/${releaseServer}/Assets/AddressableResources/Band/${stageId}/live_stage/lightweight_background.png`;
-    return {
+    backgroundItems.push({
       ...itemBase(name, SONOLUS_ITEM_VERSIONS.background, nativeTitle(nativeLabels, name), "BanG Dream!", "haneoka"),
-      thumbnail: externalSrl(image),
+      thumbnail: await addSquareThumbnail(image),
       data: addJson({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" }),
       image: externalSrl(image),
       // 0x4d is the closest 8-bit alpha to the native .3 black overlay,
       // preserving MasterOptionDefault BackgroundBrightness=.7.
       configuration: addJson({ blur: 0, mask: "#0000004d" }),
-    };
-  });
+    });
+  }
   const backgroundMyGO = backgroundItems[1];
   if (!backgroundMyGO) throw new Error("Native background item list is missing stage 1");
   const engine: EngineItem = {
@@ -577,7 +594,7 @@ async function main() {
     background: backgroundMyGO,
     effect,
     particle,
-    thumbnail: banner,
+    thumbnail: itemThumbnail,
     playData: addFile(requireFile(resolve(engineDir, "EnginePlayData"))),
     watchData: addFile(requireFile(resolve(engineDir, "EngineWatchData"))),
     previewData: addFile(requireFile(resolve(engineDir, "EnginePreviewData"))),
@@ -716,6 +733,7 @@ async function main() {
     configuration: { options: [] },
   } satisfies ServerInfo;
   writeJson("sonolus/info", serverInfo);
+  writeJson("sonolus/thumbnail-fallback", { thumbnail: itemThumbnail });
 
   if (!engineOnly) {
     const randomLevels = playlists.flatMap((playlist) => {

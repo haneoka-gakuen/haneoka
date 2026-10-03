@@ -280,6 +280,19 @@ function writeThumbnail(path: string, source: DecodedRgbaPng, pixels: Buffer): v
   writeFileSync(path, encodeThumbnail(source, pixels));
 }
 
+/** Fit an image into a square Sonolus thumbnail without stretching or cropping. */
+export function buildSquareThumbnail(input: Buffer, sourceName: string): Buffer {
+  const texture = decodeRgba8Png(input, sourceName);
+  assertTextureBudget(texture, sourceName);
+  const canvas = createCanvas();
+  drawFittedCrop(
+    canvas, texture, { x: 0, y: 0, w: texture.width, h: texture.height },
+    THUMBNAIL_SIZE / 2, THUMBNAIL_SIZE / 2, THUMBNAIL_SIZE, THUMBNAIL_SIZE,
+    false, false,
+  );
+  return encodeThumbnail(texture, canvas);
+}
+
 function spriteByName(data: SkinData, name: string, sourceName: string): SkinSprite {
   const sprite = data.sprites.find((candidate) => candidate.name === name);
   if (!sprite) throw new Error(`${sourceName} is missing published sprite ${name}`);
