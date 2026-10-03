@@ -227,11 +227,11 @@ function drawFittedCrop(
     throw new Error(`Thumbnail sprite composition would be cropped at ${left},${top},${width},${height}`);
   }
   for (let targetY = 0; targetY < height; targetY += 1) {
-    const sourceY = Math.max(crop.y, Math.min(crop.y + crop.h - 1, crop.y + ((targetY + 0.5) / height) * crop.h - 0.5));
+    const sourceY = Math.max(crop.y, Math.min(crop.y + crop.h - 1, crop.y + (stretch ? ((targetY + 0.5) / height) * crop.h : (targetY + 0.5) / scale) - 0.5));
     for (let targetX = 0; targetX < width; targetX += 1) {
       const sourceX = Math.max(
         crop.x,
-        Math.min(crop.x + crop.w - 1, crop.x + ((targetX + 0.5) / width) * crop.w - 0.5),
+        Math.min(crop.x + crop.w - 1, crop.x + (stretch ? ((targetX + 0.5) / width) * crop.w : (targetX + 0.5) / scale) - 0.5),
       );
       blend(canvas, left + targetX, top + targetY, sampleBilinear(texture, sourceX, sourceY));
     }

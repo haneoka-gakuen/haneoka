@@ -526,7 +526,8 @@ async function main() {
   const bannerFile = requireFile(resolve(pkg, "assets/server-banner.png"));
   const banner = addFile(bannerFile);
   const serverBanner = addFile(buildServerBanner(root));
-  const itemThumbnail = addRaw(buildSquareThumbnail(readFileSync(bannerFile), bannerFile));
+  const iconFile = requireFile(resolve(pkg, "assets/engine-icon.png"));
+  const itemThumbnail = addFile(iconFile);
 
   const nativeLabels = createOurNotesSonolusItemLabels({
     noteSkins: OUR_NOTES_NOTE_SKIN_NAMES,

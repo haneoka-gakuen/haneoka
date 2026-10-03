@@ -259,7 +259,9 @@ function main() {
   if (!existsSync(bannerFile)) throw new Error(`Sonolus server banner missing: ${bannerFile}`);
   const banner = s.add(readFileSync(bannerFile));
   const serverBanner = s.add(readFileSync(buildServerBanner(ROOT)));
-  const itemThumbnail = s.add(buildSquareThumbnail(readFileSync(bannerFile), bannerFile));
+  const iconFile = resolve(ROOT, "packages/sonolus/assets/engine-icon.png");
+  if (!existsSync(iconFile)) throw new Error(`Sonolus application icon missing: ${iconFile}`);
+  const itemThumbnail = s.add(readFileSync(iconFile));
 
   // The note/lane skin is generated from skin001, the note sounds come from
   // the original CRI cues, and supported effect001 ParticleSystem data is
