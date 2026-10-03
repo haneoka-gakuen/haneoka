@@ -137,7 +137,8 @@ export class CrossServerPublicCache {
       return value;
     }
     return this.observe(key, async (sharedSignal) => {
-      const response = await this.fetcher(`${path}?release=${encodeURIComponent(identity.releaseId)}`, {
+      const fetcher = this.fetcher;
+      const response = await fetcher(`${path}?release=${encodeURIComponent(identity.releaseId)}`, {
         signal: sharedSignal, cache: "no-store",
       });
       if (!response.ok) throw new Error(`Cross-server data unavailable:${path}/${response.status}`);
