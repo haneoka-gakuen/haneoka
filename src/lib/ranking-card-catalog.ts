@@ -21,7 +21,7 @@ export async function rankingCardCatalog(server: ReleaseServer): Promise<Ranking
             name: card.prefix || card.cardName,
             image: String(asRecord(card.images)?.thumbnail || ""),
             rarity: Number(card.rarity),
-            avatar: String(graph.characters.get(Number(card.characterId))?.faceImage || ""),
+            avatar: String(asRecord(card.images)?.thumbnail || ""),
             attributeIcon: mark(`CardType-${attributeColors[Number(card.cardType)]}.png`),
             rarityIcon: mark(`RarityIconCenter_${rarityNames[Number(card.rarity)]}.png`),
             rankGroup: Number(card.supportCardRankGroup || 0),

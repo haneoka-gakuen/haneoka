@@ -200,19 +200,21 @@ const normalizeProfileCard = (
   profileId: string | null,
 ): GameProfileCardDto | null => {
   const card = asObject(value);
-  if (!Object.keys(card).length) return null;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const pages = asArray(card.thumbnailUrl).map((value, index) => {
+    const sourceUrl = httpUrlOrNull(value);
+    const page = index + 1;
+    const imageUrl =
+      sourceUrl && region === "jp" && profileId && /^[1-9][0-9]{0,18}$/u.test(profileId)
+        ? `${RANKING_ORIGIN}/api/v1/jp/ranking/profile/${profileId}/card/${page}`
+        : sourceUrl;
+    return { page, sourceUrl, imageUrl };
+  });
   return {
     name: textOrNull(card.name),
     slot: safeInteger(card.slot),
-    thumbnailUrls: asArray(card.thumbnailUrl).flatMap((value, index) => {
-      const url = httpUrlOrNull(value);
-      if (!url) return [];
-      return [
-        region === "jp" && profileId && /^[1-9][0-9]{0,18}$/u.test(profileId)
-          ? `${RANKING_ORIGIN}/api/v1/jp/ranking/profile/${profileId}/card/${index + 1}`
-          : url,
-      ];
-    }),
+    thumbnailUrls: pages.flatMap((page) => (page.imageUrl ? [page.imageUrl] : [])),
+    pages,
   };
 };
 
@@ -407,27 +409,44 @@ const normalizeProfile = (
   if (root.playerProfile && !Object.keys(profile).length) throw new RequestFailure(404, "not_found");
   const brief = asObject(root.brief);
   const favorites = asObject(root.favorites);
+  const protobufProfile = root.playerProfile !== undefined && root.playerProfile !== null;
+  const profileNumber = (value: unknown) => value === undefined && protobufProfile ? 0 : finiteNumber(value);
+  const profileInteger = (value: unknown) => value === undefined && protobufProfile ? 0 : safeInteger(value);
+  const totalFavoriteExact =
+    typeof favorites.totalFavorite === "string" && /^[0-9]{1,19}$/u.test(favorites.totalFavorite)
+      ? favorites.totalFavorite
+      : typeof favorites.totalFavorite === "number" &&
+          Number.isSafeInteger(favorites.totalFavorite) && favorites.totalFavorite >= 0
+        ? String(favorites.totalFavorite)
+        : null;
   const favoriteMemberCard = asObject(profile.favoriteMemberCard);
   const favorite = Object.keys(favoriteMemberCard).length
     ? {
         cardId: safeInteger(favoriteMemberCard.cardId),
-        awakeCount: safeInteger(favoriteMemberCard.awakeCount),
-        cardRank: safeInteger(favoriteMemberCard.cardRank),
-        liveSkillLevel: safeInteger(favoriteMemberCard.liveSkillLevel),
-        performanceSkillLevel: safeInteger(favoriteMemberCard.performanceSkillLevel),
+        exp: profileNumber(favoriteMemberCard.exp),
+        awakeCount: profileInteger(favoriteMemberCard.awakeCount),
+        cardRank: profileInteger(favoriteMemberCard.cardRank),
+        liveSkillLevel: profileInteger(favoriteMemberCard.liveSkillLevel),
+        performanceSkillLevel: profileInteger(favoriteMemberCard.performanceSkillLevel),
       }
     : null;
   return {
     region,
-    profileId,
-    fetchedAtMs: headerEpochMillis(response.headers, "X-Fetched-At") ?? epochMillis(root.fetchedAt),
+    profileId: decimalId(profile.profileId) ?? profileId,
+    fetchedAtMs:
+      headerEpochMillis(response.headers, "X-Moenotes-Fetched-At") ??
+      headerEpochMillis(response.headers, "X-Fetched-At") ??
+      epochMillis(root.fetchedAt),
     serverTimeMs: headerEpochMillis(response.headers, "X-Server-Time"),
     stale: response.headers.get("X-Stale") === "1" || response.headers.get("X-Refreshing") === "1",
     profile: {
+      playerId: textOrNull(profile.id),
       name: textOrNull(profile.name),
       level: finiteNumber(brief.level),
-      rankExp: finiteNumber(profile.rankExp),
-      totalFavorite: finiteNumber(favorites.totalFavorite),
+      rankExp: profileNumber(profile.rankExp),
+      totalFavorite: safeInteger(totalFavoriteExact),
+      totalFavoriteExact,
+      favoriteMemberCardMasterId: decimalId(profile.favoriteMemberCardMasterId),
       favoriteMemberCard: favorite,
       profileCard: normalizeProfileCard(profile.profileCard, region, profileId),
       lastUpdatedAtMs: epochMillis(profile.lastUpdatedAt, true),
@@ -505,11 +524,33 @@ const rankingUrl = (region: GameRecordsRegion, musicId: string): string =>
 const profileUrl = (region: GameRecordsRegion, profileId: string): string =>
   `${PROFILE_ORIGIN}/api/players/${region}/${profileId}`;
 
-const authenticatedProfile = (region: GameRecordsRegion, profileId: string, token: string) =>
-  upstreamJson(`${MOENOTES_PROFILE_ORIGIN}/v1/${region}/profile/${profileId}`, {
+const authenticatedProfile = async (region: GameRecordsRegion, profileId: string, token: string) => {
+  const headers = {
     Authorization: `Bearer ${token}`,
     "User-Agent": "Mozilla/5.0",
-  });
+  };
+  const profile = await upstreamJson(`${MOENOTES_PROFILE_ORIGIN}/v1/${region}/profile/${profileId}`, headers);
+  const playerId = textOrNull(asObject(asObject(profile.value).playerProfile).id);
+  if (!playerId || playerId.length > 256) return profile;
+  const favoritesUrl = new URL(`${MOENOTES_PROFILE_ORIGIN}/v1/${region}/profile/favorites`);
+  favoritesUrl.searchParams.set("playerId", playerId);
+  try {
+    const favorites = await upstreamJson(favoritesUrl.href, headers);
+    const value = asObject(favorites.value);
+    if (
+      favorites.value === null || typeof favorites.value !== "object" ||
+      Array.isArray(favorites.value) || value.error
+    )
+      return profile;
+    return {
+      ...profile,
+      value: { ...asObject(profile.value), favorites: { totalFavorite: value.totalFavorite ?? 0 } },
+    };
+  } catch {
+    // Optional public favorites must not make an otherwise readable profile fail.
+    return profile;
+  }
+};
 
 export async function handleGameRecordsApi(
   ctx: ExecutionContext,

@@ -1,9 +1,17 @@
 export type GameRecordsRegion = "jp" | "tw" | "en" | "kr";
 
+export interface GameProfileCardPageDto {
+  page: number;
+  imageUrl: string | null;
+  sourceUrl: string | null;
+}
+
 export interface GameProfileCardDto {
   name: string | null;
   slot: number | null;
   thumbnailUrls: string[];
+  /** Original 1-based positions, including empty pages; optional for older cached DTOs. */
+  pages?: GameProfileCardPageDto[];
 }
 
 export interface SongRankingCardDto {
@@ -84,12 +92,16 @@ export interface PlayerProfileDto {
   serverTimeMs: number | null;
   stale: boolean;
   profile: {
+    playerId?: string | null;
     name: string | null;
     level: number | null;
     rankExp: number | null;
     totalFavorite: number | null;
+    totalFavoriteExact?: string | null;
+    favoriteMemberCardMasterId?: string | null;
     favoriteMemberCard: {
       cardId: number | null;
+      exp?: number | null;
       awakeCount: number | null;
       cardRank: number | null;
       liveSkillLevel: number | null;
