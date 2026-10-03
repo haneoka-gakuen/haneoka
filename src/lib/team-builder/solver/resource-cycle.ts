@@ -110,7 +110,20 @@ export async function resolveFixedResourceCycle(
   let expectedChallengePlays = Math.floor(input.initialChallengePoints / input.challengePointCost),
     transitions = 0;
   const interrupted = () => controls?.cancelled() || controls?.expired();
-  for (let play = 0; play < normalPlays; play++) {
+  const deterministic = cpLaw.size === 1 && cpLaw.values().next().value === 1;
+  if (deterministic) {
+    if (interrupted()) return failure("resource-cycle-interrupted", "worker cancellation/budget");
+    if (controls && normalPlays > 0) {
+      controls.progress();
+      await controls.yield();
+      if (interrupted()) return failure("resource-cycle-interrupted", "worker cancellation/budget");
+    }
+    const amount = input.initialChallengePoints + normalPlays * cpLaw.keys().next().value!;
+    expectedChallengePlays = Math.floor(amount / input.challengePointCost);
+    states = new Map([[amount % input.challengePointCost, 1]]);
+    transitions = normalPlays > 0 ? 1 : 0;
+  }
+  for (let play = 0; !deterministic && play < normalPlays; play++) {
     if (interrupted()) return failure("resource-cycle-interrupted", "worker cancellation/budget");
     if (controls && play % 8 === 0) {
       controls.progress();

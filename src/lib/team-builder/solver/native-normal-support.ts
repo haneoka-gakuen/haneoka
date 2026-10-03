@@ -105,7 +105,11 @@ export function createNativeNormalSupportResolver(data: TeamBuilderData, input: 
       if (snapshotId === null) return [null, null];
       const key = JSON.stringify([snapshotId, memberId]);
       const found = cache.get(key);
-      if (found) return found;
+      if (found) {
+        cache.delete(key);
+        cache.set(key, found);
+        return found;
+      }
       const prepared = snapshots.get(snapshotId),
         member = members.get(memberId);
       const snapshot = prepared?.option,

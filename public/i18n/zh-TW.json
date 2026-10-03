@@ -2836,7 +2836,10 @@
       "failedMessage": "截圖辨識失敗",
       "unavailable": "目前卡牌資料尚無法用於截圖辨識。",
       "invalidImages": "請選擇1至8張PNG、JPEG或WebP截圖，每張最多8 MiB。"
-    }
+    },
+    "personalLiveScore": "個人 Live 分數",
+    "scoreDomain": "分數類型",
+    "gekisoLiveScope": "三段皆為 Combo，持續以 PERFECT 演奏。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

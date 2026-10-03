@@ -2836,7 +2836,10 @@
       "failedMessage": "Screenshot recognition failed",
       "unavailable": "Screenshot recognition is unavailable for the loaded card data.",
       "invalidImages": "Choose 1 to 8 PNG, JPEG or WebP screenshots up to 8 MiB each."
-    }
+    },
+    "personalLiveScore": "Personal Live score",
+    "scoreDomain": "Score type",
+    "gekisoLiveScope": "Three Combo missions with continuous PERFECT playback."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

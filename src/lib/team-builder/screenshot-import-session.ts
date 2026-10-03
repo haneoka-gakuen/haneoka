@@ -1,5 +1,5 @@
 import type { TeamBuilderData } from "./data";
-import type { InventoryV1 } from "./inventory";
+import { practiceRanges, type InventoryV1 } from "./inventory";
 import { createRecognitionClient, normalizeRecognitionResult, type RecognitionTransport } from "./recognition-client";
 import { previewScreenshotImportBatch, applyConfirmedScreenshotImport,
   type ScreenshotRecognitionResult, type ScreenshotReviewContext, type ScreenshotSelection } from "./screenshot-import";
@@ -75,7 +75,9 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
     const preview = previewScreenshotImportBatch(inventory, data, context, results, selections);
     const confirmations = preview.cards.map(card => {
       const previous = state.confirmations.find(choice => choice.key === card.key);
-      return previous ? { ...previous, level: previous.level !== undefined && card.observedLevels.includes(previous.level) ? previous.level : undefined }
+      const legal = practiceRanges(data, card.kind, card.cardId, inventory[card.kind].find(entry => entry.cardId === card.cardId)).level ?? [];
+      return previous ? { ...previous, level: previous.level !== undefined &&
+        (previous.levelSource === "manual" ? legal : card.observedLevels).includes(previous.level) ? previous.level : undefined }
         : { key: card.key, include: false };
     });
     state = { ...state, phase: "review", preview, results: [...results], confirmations,
@@ -139,10 +141,13 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, include } : choice) };
       state.canConfirm = state.confirmations.some(choice => choice.include); emit();
     },
-    level(key: string, level: number | undefined) {
+    level(key: string, level: number | undefined, source: "observed" | "manual" = "observed") {
       const proposal = state.preview?.cards.find(card => card.key === key);
-      if (closed || state.phase !== "review" || !proposal || (level !== undefined && !proposal.observedLevels.includes(level))) throw new RangeError("recognition-review-level");
-      state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, level } : choice) }; emit();
+      if (closed || state.phase !== "review" || !proposal) throw new RangeError("recognition-review-level");
+      const legal = source === "manual" ? practiceRanges(data, proposal.kind, proposal.cardId,
+        inventory[proposal.kind].find(entry => entry.cardId === proposal.cardId)).level ?? [] : proposal.observedLevels;
+      if (level !== undefined && !legal.includes(level)) throw new RangeError("recognition-review-level");
+      state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, level, levelSource: level === undefined ? undefined : source } : choice) }; emit();
     },
     merge(current: InventoryV1, currentData: TeamBuilderData, currentContext: ScreenshotReviewContext) {
       if (closed || state.phase !== "review" || !state.preview || !state.canConfirm) throw new RangeError("recognition-review-required");

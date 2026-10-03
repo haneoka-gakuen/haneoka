@@ -68,7 +68,7 @@
     gap: var(--md-sys-spacing-2);
   }
   .team-builder__screenshot-review .collection > div,
-  .team-builder__screenshot-review details > div {
+  .team-builder__screenshot-review .md-accordion__panel > div {
     display: grid;
     min-width: 0;
     align-content: start;
@@ -204,18 +204,7 @@
     min-width: 0;
     gap: var(--md-sys-spacing-3);
   }
-  .team-builder__options > summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--md-sys-spacing-2);
-    list-style: none;
-  }
-  .team-builder__options > summary::-webkit-details-marker { display: none; }
-  .team-builder__options > summary > span { min-width: 0; overflow-wrap: anywhere; }
-  .team-builder__options > summary small { display: block; }
-  .team-builder__options[open] > summary > .material-icon { transform: rotate(180deg); }
-  .team-builder__options > :not(summary) { margin-block-start: var(--md-sys-spacing-3); }
+  .team-builder__options .md-accordion__label small { display: block; }
   .team-builder__run-actions { display: grid; gap: var(--md-sys-spacing-2); }
   .team-builder__run-actions > .button { width: 100%; }
   .team-builder__start-hint { min-block-size: var(--md-sys-typescale-body-small-line-height); }
@@ -347,11 +336,7 @@
     overflow: hidden;
     clip-path: inset(50%);
   }
-  .team-builder summary {
-    min-height: var(--md-comp-control-height-touch);
-    align-content: center;
-    cursor: pointer;
-  }
+  .team-builder__card-editor .detail-section { padding: 0; }
   .team-builder__lineup small,
   .team-builder__metrics small {
     display: block;
@@ -395,15 +380,15 @@
   .team-builder__chart-results {
     min-width: 0;
   }
-  .team-builder__chart-results > .team-builder__candidate {
+  .team-builder__chart-results > .md-accordion__panel > .team-builder__candidate {
     margin-block-start: var(--md-sys-spacing-3);
   }
-  .team-builder__chart-results > summary .team-builder__song-row {
+  .team-builder__chart-results > .md-accordion__heading .team-builder__song-row {
     display: inline-flex;
     width: calc(100% - var(--md-sys-spacing-4));
     vertical-align: middle;
   }
-  .team-builder__chart-results > summary > .team-builder__hint {
+  .team-builder__chart-results > .md-accordion__heading .team-builder__hint {
     display: block;
     margin-block: var(--md-sys-spacing-2);
   }
@@ -449,6 +434,7 @@
     }
   }
   @media (max-width: 599px) {
+    .team-builder__card-editor .card-detail-controls { grid-template-columns: minmax(0, 1fr); }
     .team-builder__section {
       padding: var(--md-sys-spacing-3);
     }

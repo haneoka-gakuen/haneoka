@@ -43,6 +43,7 @@ export interface ScreenshotCardConfirmation {
   include: boolean;
   /** Omitted means keep the existing value; no missing field can clear practice. */
   level?: number;
+  levelSource?: "observed" | "manual";
 }
 
 const int = (value: unknown, low = 0) => typeof value === "number" && Number.isSafeInteger(value) && value >= low && value <= 0x7fffffff;
@@ -135,8 +136,9 @@ export function previewScreenshotImportBatch(
     cards: [...cards.values()], rejectedObservations: rejected };
 }
 
-/** Only explicit confirmation creates/changes owned cards. Level choices must
- * come from accepted visible evidence. Every other practice/flag/player map is
+/** Only explicit confirmation creates/changes owned cards. Levels come from
+ * visible evidence or an explicit manual entry validated against native ranges.
+ * Every other practice/flag/player map is
  * preserved, and a changed account/revision/source or inventory requires review again.
  */
 export function applyConfirmedScreenshotImport(
@@ -157,7 +159,8 @@ export function applyConfirmedScreenshotImport(
   let next: InventoryV1 = upgradeInventory(current);
   for (const confirmation of accepted) {
     const card = preview.cards.find(value => value.key === confirmation.key)!;
-    if (confirmation.level !== undefined && (!int(confirmation.level, 1) || !card.observedLevels.includes(confirmation.level)))
+    if (confirmation.level !== undefined && (!int(confirmation.level, 1) ||
+        (confirmation.levelSource !== "manual" && !card.observedLevels.includes(confirmation.level))))
       throw new RangeError("screenshot-level-evidence-required");
     next = addInventoryEntries(next, card.kind, [{ cardId: card.cardId }], data);
     if (confirmation.level !== undefined) {

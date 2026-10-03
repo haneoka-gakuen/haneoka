@@ -2836,7 +2836,10 @@
       "failedMessage": "スクリーンショットの認識に失敗しました",
       "unavailable": "現在のカードデータではスクリーンショットを認識できません。",
       "invalidImages": "PNG・JPEG・WebP形式のスクリーンショットを1〜8枚選択してください。1枚あたり最大8 MiBです。"
-    }
+    },
+    "personalLiveScore": "個人Liveスコア",
+    "scoreDomain": "スコアの種類",
+    "gekisoLiveScope": "3区間すべてCombo、継続したPERFECTプレイ。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

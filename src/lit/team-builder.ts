@@ -24,6 +24,7 @@ import {
 import type {
   Objective,
   SkillOrderCriterion,
+  PersonalScoreDomain,
   NativeEventScene,
   PlayMode,
   SearchConstraints,
@@ -63,6 +64,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import { filterChip, iconButton, segmented } from "./ui/controls";
 import { selectionPane } from "./ui/selection-pane";
+import { accordion } from "./ui/accordion";
 import { songJacketCandidates, songTile, liveMusicTypeMark } from "./shared/song-tile";
 import { cardTile } from "./shared/card-tile";
 import { SearchCheckpointStore } from "./shared/search-checkpoint-store";
@@ -85,6 +87,7 @@ import { downloadBlob } from "../lib/canvas-capture";
 import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
 import { isUnchangedInventoryConflict } from "../lib/team-builder/sync-review";
+import { initializeManualCardPractice } from "../lib/team-builder/manual-card-defaults";
 import { createScreenshotImportSession } from "../lib/team-builder/screenshot-import-session";
 import { renderScreenshotImportDialog, type ScreenshotImportDialogState } from "./shared/team-screenshot-import";
 import type { ScreenshotReviewContext } from "../lib/team-builder/screenshot-import";
@@ -152,6 +155,8 @@ export class TeamBuilder extends LitElement {
     running: { state: true },
     cancelling: { state: true },
     skillOrderCriterion: { state: true },
+    selectedScoreDomain: { state: true },
+    disclosureStates: { state: true },
     searchStatus: { state: true },
     picker: { state: true },
     query: { state: true },
@@ -231,6 +236,8 @@ export class TeamBuilder extends LitElement {
   declare running: boolean;
   declare cancelling: boolean;
   declare skillOrderCriterion: SkillOrderCriterion;
+  declare selectedScoreDomain: PersonalScoreDomain;
+  declare disclosureStates: Record<string, boolean>;
   declare searchStatus: string;
   declare picker: string;
   declare query: string;
@@ -436,6 +443,7 @@ export class TeamBuilder extends LitElement {
     return this.store;
   }
   private async loadSource(server: string): Promise<void> {
+    this.selectedScoreDomain = "personal-solo";
     const sameServer = this.data?.identity.server === server;
     const previousData = sameServer ? this.data : undefined;
     const previousInventory = sameServer ? this.inventory : null;
@@ -723,13 +731,12 @@ export class TeamBuilder extends LitElement {
         ${
           preview.issues.some((issue) => issue.path.startsWith("playerModifiers"))
             ? html`
-                <details open>
-                  <summary>${this.t("playerModifiers", "Player bonuses")}</summary>
+                ${this.disclosure("rebase-player", html`${this.t("playerModifiers", "Player bonuses")}`, html`
                   <p class="team-builder__hint">
                     ${this.t("rebaseNeedsReview", "Review the changed training values before continuing.")}
                   </p>
                   ${this.renderPlayerModifierFields()}
-                </details>
+                `, true)}
               `
             : nothing
         }
@@ -1120,6 +1127,8 @@ export class TeamBuilder extends LitElement {
     this.mode = "normal";
     this.objectives = ["score"];
     this.skillOrderCriterion = "nominal-mean";
+    this.selectedScoreDomain = "personal-solo";
+    this.disclosureStates = {};
     this.excludeJust = true;
     this.justRate = 0;
     this.budgetSeconds = 5;
@@ -1306,6 +1315,12 @@ export class TeamBuilder extends LitElement {
   private t(key: string, fallback: string, params?: Record<string, string | number>) {
     return clientText(this.locale, `teamBuilder.${key}`, fallback, params);
   }
+  private disclosure(id: string, label: unknown, content: unknown, defaultExpanded = false, className?: string) {
+    return accordion({ id: `team-builder-${id}`, label, content, className,
+      expanded: this.disclosureStates[id] ?? defaultExpanded,
+      onExpandedChange: expanded => { this.disclosureStates = { ...this.disclosureStates, [id]: expanded }; },
+    });
+  }
   private screenshotText(key: string, fallback: string): string {
     const common: Record<string, string> = { close: "close", cancel: "cancel", level: "teamBuilder.level" };
     if (key === "failedMessage" && this.screenshotState?.error === "recognition-unavailable")
@@ -1387,11 +1402,14 @@ export class TeamBuilder extends LitElement {
     return renderScreenshotImportDialog({ ...state, canConfirm: state.canConfirm && this.canEdit }, {
       text: (key, fallback) => this.screenshotText(key, fallback),
       card: (kind, id) => { const card = this.catalogEntry(id, kind); return card ? this.inventoryCardOptions(card, kind) : null; },
+      levels: (kind, id) => this.data ? practiceRanges(this.data, kind, id, this.inventory?.[kind].find(entry => entry.cardId === id)).level ?? [] : [],
       files: (files) => { void session.files(files).catch(() => { if (this.screenshotSession === session) this.screenshotState = { ...session.state(), error: "invalid-image" }; }); },
       close: () => this.closeScreenshotImport(true), cancel: () => { void session.cancel(); },
       correct: (image, observation) => this.correctScreenshotCard(image, observation),
       candidate: (image, observation, id) => session.correct(image, observation, id),
-      include: (key, value) => session.include(key, value), level: (key, value) => session.level(key, value),
+      include: (key, value) => session.include(key, value), level: (key, value, source) => session.level(key, value, source),
+      expandedSource: key => this.disclosureStates[`screenshot-${key}`] ?? false,
+      expandSource: (key, expanded) => { this.disclosureStates = { ...this.disclosureStates, [`screenshot-${key}`]: expanded }; },
       confirm: () => this.confirmScreenshotImport(),
     });
   }
@@ -1423,9 +1441,9 @@ export class TeamBuilder extends LitElement {
     const legal = [...new Set(levels)].filter(Number.isSafeInteger).sort((a, b) => a - b);
     const disabled = !this.sourceReady || this.dataLoading || !legal.length;
     return html`<div class="team-builder__practice-control">
-      ${this.check(label + " · " + this.t("notSet", "Not set"), value === null, (unknown) => update(unknown ? null : legal[0]), disabled)}
       ${value === null
-        ? nothing
+        ? this.select(label, "unset", [{ value: "unset", label: this.t("notSet", "Not set") },
+            ...legal.map(level => ({ value: String(level), label: String(level) }))], selected => { if (selected !== "unset") update(Number(selected)); }, disabled)
         : !legal.includes(value)
           ? html`<p role="status" class="team-builder__hint">${label}: ${value} · ${this.t("needsReview", "Needs review")}</p>`
           : legal.length > 1
@@ -1713,6 +1731,7 @@ export class TeamBuilder extends LitElement {
         const rows = missing.filter((row) => row.kind === kind).map((row) => ({ cardId: row.cardId }));
         if (rows.length) next = addInventoryEntries(next, kind, rows, this.data ?? undefined);
       }
+      if (this.data) next = initializeManualCardPractice(this.inventory, next, this.data);
     } catch {
       this.error = this.t("addFailed", "Could not add the selected cards. Check your inventory.");
       return;
@@ -2106,13 +2125,17 @@ export class TeamBuilder extends LitElement {
               : nothing
           }
           <div class="card-detail-controls">
-            ${fields.map((field) => this.practiceSlider(this.fieldName(field), ranges[field] ?? [],
+            ${fields.filter(field => !field.endsWith("SkillLevel")).map((field) => this.practiceSlider(this.fieldName(field), ranges[field] ?? [],
               (entry as unknown as Record<string, number | null>)[field], (value) => this.patch([entry.instanceId], { [field]: value })))}
           </div>
+          ${this.kind === "members" ? html`${renderDetailSectionHeading(clientText(this.locale, "skills", "Skills"), "skills")}
+            <div class="card-detail-controls">${fields.filter(field => field.endsWith("SkillLevel")).map(field =>
+              this.practiceSlider(this.fieldName(field), ranges[field] ?? [], (entry as unknown as Record<string, number | null>)[field],
+                value => this.patch([entry.instanceId], { [field]: value })))}</div>` : nothing}
           ${
             this.derivedSkillRows(entry, this.kind).length
               ? html`
-                  ${renderDetailSectionHeading(clientText(this.locale, "skills", "Skills"), "skills")}
+                  ${this.kind === "snapshots" ? renderDetailSectionHeading(clientText(this.locale, "skills", "Skills"), "skills") : nothing}
                   ${specList(this.derivedSkillRows(entry, this.kind))}
                   <p class="team-builder__hint">
                     ${this.t("rankDerived", "These skill levels follow the entered awakening rank.")}
@@ -2482,13 +2505,31 @@ export class TeamBuilder extends LitElement {
       </div>
     `;
   }
-  private get scoreDomain(): "personal-solo" | undefined {
-    if (!this.data) return undefined;
-    return getTeamBuilderCapabilities(this.data.identity).targets.find(
-      (target) => target.mode === this.mode && target.objective === "score" && target.bases.includes(this.metricBasis),
-    )?.scoreDomain;
+  private get scoreDomains(): PersonalScoreDomain[] {
+    if (!this.data) return [];
+    const target = getTeamBuilderCapabilities(this.data.identity).targets.find(
+      (target) => target.mode === this.mode && target.supported && target.objective === "score" && target.bases.includes(this.metricBasis),
+    );
+    return target?.scoreDomains ?? (target?.scoreDomain ? [target.scoreDomain] : []);
+  }
+  private get scoreDomain(): PersonalScoreDomain | undefined {
+    return this.mode === "gekiso" ? this.objectives.includes("score") ? this.selectedScoreDomain : "personal-solo" : undefined;
+  }
+  private get liveChartUnavailable(): boolean {
+    if (this.scoreDomain !== "personal-live" || this.chartSelections.length !== 1) return false;
+    const missions = objectRow(this.data?.songs[String(this.chartSelections[0]!.songId)]?.gekisou).missionTypes;
+    return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => value !== 1);
+  }
+  private renderScoreDomain() {
+    if (this.mode !== "gekiso" || !this.objectives.includes("score") || this.scoreDomains.length < 2) return nothing;
+    return html`${this.select(this.t("scoreDomain", "Score type"), this.selectedScoreDomain,
+      this.scoreDomains.map(value => ({ value, label: value === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score") })),
+      value => { this.cancelSearch(); this.result = null; this.optimizationInput = null; this.selectedScoreDomain = value as PersonalScoreDomain;
+        if (value === "personal-live") this.justRate = 0; }, this.dataLoading || !this.sourceReady)}
+      ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Three Combo missions with continuous PERFECT playback.")}</small>` : nothing}`;
   }
   private objectiveLabel(objective: Objective): string {
+    if (objective === "score" && this.scoreDomain === "personal-live") return this.t("personalLiveScore", "Personal Live score");
     return objective === "score" && this.scoreDomain === "personal-solo"
       ? this.t("personalSoloScore", "Solo score")
       : this.t(objective, objective);
@@ -2551,9 +2592,9 @@ export class TeamBuilder extends LitElement {
   private renderForecastScope() {
     const conditions = this.forecastConditions;
     if (!conditions.length) return nothing;
+    if (this.scoreDomain === "personal-live") return nothing;
     return html`
-      <details class="team-builder__scope-fold">
-        <summary>${this.t("applicableConditions", "Applicable conditions")}</summary>
+      ${this.disclosure("forecast", html`${this.t("applicableConditions", "Applicable conditions")}`, html`
         <p class="team-builder__hint">
           ${
             this.wantsEventScene
@@ -2578,7 +2619,7 @@ export class TeamBuilder extends LitElement {
             `,
           )}
         </ul>
-      </details>
+      `, false)}
     `;
   }
   private get evaluationBasis(): EvaluationBasisRequest | null {
@@ -2882,12 +2923,10 @@ export class TeamBuilder extends LitElement {
     if (!event) return nothing;
     const rules = objectRow(event.bonusRules);
     return html`
-      <details open>
-        <summary>${this.wantsEventScene ? this.t("eventSceneTitle", "Event scenario") : this.t("eventPreview", "Event conditions preview")} · ${this.text(event.title ?? event.name)}</summary>
+      ${this.disclosure(`event-${this.selectedEvent}`, html`${this.wantsEventScene ? this.t("eventSceneTitle", "Event scenario") : this.t("eventPreview", "Event conditions preview")} · ${this.text(event.title ?? event.name)}`, html`
         ${this.renderEventInputs()}
         <button class="button button--text" @click=${() => { this.selectedEvent = ""; this.eventBonusFilter = ""; this.eventFlowKind = ""; this.eventConsumption = null; this.resetEventScene(); }}>${this.t("clearEventPreview", "Clear preview")}</button>
-        <details>
-          <summary>${this.t("eventConditions", "Event bonus conditions")}</summary>
+        ${this.disclosure(`event-bonus-${this.selectedEvent}`, html`${this.t("eventConditions", "Event bonus conditions")}`, html`
         <p class="team-builder__hint">
           ${this.t("eventConditionsScope", "Published bonus conditions are separate from computed event rewards.")}
         </p>
@@ -2945,8 +2984,8 @@ export class TeamBuilder extends LitElement {
             </section>
           `;
         })}
-        </details>
-      </details>
+        `, false)}
+      `, true)}
     `;
   }
   private renderGoals() {
@@ -2962,6 +3001,7 @@ export class TeamBuilder extends LitElement {
               this.cancelSearch();
               this.optimizationInput = null;
               this.mode = value as PlayMode;
+              this.selectedScoreDomain = "personal-solo";
               if (this.data) {
                 this.objectives = this.objectives.filter((objective) => this.supportsObjective(objective));
                 if (!this.objectives.length) this.objectives = this.supportsObjective("score") ? ["score"] : this.supportsObjective("base-score") ? ["base-score"] : [];
@@ -2969,8 +3009,7 @@ export class TeamBuilder extends LitElement {
               this.result = null;
             },
           )}
-        <details class="team-builder__options">
-          <summary><span>${this.t("objectives", "Objectives to compare")}<small class="team-builder__hint">${goalNames || this.t("chooseObjective", "Choose an objective to compare.")}</small></span>${icon("expand_more", 20)}</summary>
+        ${this.disclosure("objectives", html`<span>${this.t("objectives", "Objectives to compare")}<small class="team-builder__hint">${goalNames || this.t("chooseObjective", "Choose an objective to compare.")}</small></span>`, html`
         <fieldset class="team-builder__objectives">
           <legend class="sr-only">${this.t("objectives", "Objectives to compare")}</legend>
           ${OBJECTIVES.map(
@@ -2993,8 +3032,8 @@ export class TeamBuilder extends LitElement {
               </div>
             `,
           )}
-        </fieldset>        </details>
-        ${this.renderSkillOrderCriterion()}
+        </fieldset>        `, false, "team-builder__options")}
+        ${this.renderScoreDomain()}${this.renderSkillOrderCriterion()}
       </section>
       <section class="team-builder__section">
         ${renderDetailSectionHeading(clientText(this.locale, "songs", "Songs"), "songs", { level: 2 })}
@@ -3035,8 +3074,7 @@ export class TeamBuilder extends LitElement {
               `
             : nothing
         }
-        <details class="team-builder__options">
-          <summary><span>${this.t("chartSummary", "{count} eligible charts", { count: this.chartSelections.length })}</span>${icon("expand_more", 20)}</summary>
+        ${this.disclosure("charts", html`<span>${this.t("chartSummary", "{count} eligible charts", { count: this.chartSelections.length })}</span>`, html`
         <div class="team-builder__actions">
           ${this.check(this.t("lockSong", "Use this song only"), this.lockSong, (value) => {
             this.cancelSearch();
@@ -3066,7 +3104,7 @@ export class TeamBuilder extends LitElement {
               : nothing
           }
         </div>
-        </details>
+        `, false, "team-builder__options")}
       </section>
       ${Object.keys(this.data?.events ?? {}).some((id) => /^[1-9]\d*$/.test(id)) ? html`
         <section class="team-builder__section">
@@ -3079,8 +3117,7 @@ export class TeamBuilder extends LitElement {
           ${this.renderEventConditions()}
         </section>
       ` : nothing}
-      <details class="team-builder__section team-builder__options">
-        <summary><span>${this.t("searchOptions", "Search options")}</span>${icon("expand_more", 20)}</summary>
+      ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")}</span>`, html`
         <div class="team-builder__fields">
           ${this.numericField(
             this.t("budget", "Search budget (seconds)"),
@@ -3144,7 +3181,7 @@ export class TeamBuilder extends LitElement {
               `
             : nothing
         }
-      </details>
+      `, false, "team-builder__options")}
       <div class="team-builder__run-actions">
         <button
           class="button"
@@ -3199,8 +3236,7 @@ export class TeamBuilder extends LitElement {
       else this.memoryCharacter = id;
     };
     return html`
-      <details>
-        <summary>${this.t(field, music ? "Song memory" : "Character memory")}</summary>
+      ${this.disclosure(`memory-${field}`, html`${this.t(field, music ? "Song memory" : "Character memory")}`, html`
         <div class="team-builder__modifier-content" data-memory-kind=${field}>
           <p class="team-builder__hint">
             ${this.t("memoryPointsHint", "Enter direct integer points added to each power stat. 0 means no bonus; blank means unknown.")}
@@ -3288,7 +3324,7 @@ export class TeamBuilder extends LitElement {
               : nothing
           }
         </div>
-      </details>
+      `, false)}
     `;
   }
   private renderPlayerModifierFields() {
@@ -3326,10 +3362,9 @@ export class TeamBuilder extends LitElement {
     if (!this.inventory || !this.data) return nothing;
     return html`
       <section class="team-builder__section">
-        <details>
-          <summary>${this.t("playerModifiers", "Player bonuses")}</summary>
+        ${this.disclosure("player-modifiers", html`${this.t("playerModifiers", "Player bonuses")}`, html`
           ${this.renderPlayerModifierFields()}
-        </details>
+        `, false)}
       </section>
     `;
   }
@@ -3337,8 +3372,7 @@ export class TeamBuilder extends LitElement {
     if (!this.inventory || !this.data) return nothing;
     return html`
       <section class="team-builder__section">
-        <details>
-          <summary>${this.t("bands", "Band upgrades")}</summary>
+        ${this.disclosure("bands", html`${this.t("bands", "Band upgrades")}`, html`
           <div class="team-builder__fields">
             ${Object.entries(this.data.bands).map(([id, band]) => {
               const name = this.text(band.bandName ?? band.name);
@@ -3349,8 +3383,8 @@ export class TeamBuilder extends LitElement {
               });
             })}
           </div>
-          <details>
-            <summary>${this.t("characterRanks", "Character ranks")}</summary>
+        `, false)}
+          ${this.disclosure("character-ranks", html`${this.t("characterRanks", "Character ranks")}`, html`
             <div class="team-builder__fields">
               ${Object.entries(this.data.characters).map(([id, character]) => {
                 const name = this.text(character.characterName);
@@ -3364,9 +3398,8 @@ export class TeamBuilder extends LitElement {
                 });
               })}
             </div>
-          </details>
-          <details>
-            <summary>${clientText(this.locale, "bandItems", "Band items")}</summary>
+          `, false)}
+          ${this.disclosure("band-items", html`${clientText(this.locale, "bandItems", "Band items")}`, html`
             <div class="team-builder__fields">
               ${Object.entries(this.data.bandItems).map(([id, item]) => {
                 const name = this.text(item.name ?? item.itemName);
@@ -3380,8 +3413,7 @@ export class TeamBuilder extends LitElement {
                 });
               })}
             </div>
-          </details>
-        </details>
+          `, false)}
       </section>
     `;
   }
@@ -3490,6 +3522,7 @@ export class TeamBuilder extends LitElement {
       return false;
     if (this.wantsEventScene && !this.eventScene) return false;
     if (!this.objectives.every((objective) => this.supportsObjective(objective))) return false;
+    if (this.scoreDomain === "personal-live" && (!this.scoreDomains.includes("personal-live") || this.liveChartUnavailable || this.constraints.justRate !== 0)) return false;
     if (this.gekisoSoloForecast && this.constraints.justRate !== 0) return false;
     if (this.optimizationInput)
       return (
@@ -3526,6 +3559,8 @@ export class TeamBuilder extends LitElement {
       return this.t("targetUnavailable", "Calculation unavailable for this mode");
     }
     if (this.wantsEventScene && !this.eventScene) return this.eventSceneHint;
+    if (this.scoreDomain === "personal-live" && (!this.scoreDomains.includes("personal-live") || this.liveChartUnavailable || this.constraints.justRate !== 0))
+      return this.t("gekisoLiveScope", "Three Combo missions with continuous PERFECT playback.");
     if (this.gekisoSoloForecast && this.constraints.justRate !== 0)
       return this.t("gekisoConditionsPending", "Conditions pending");
     if (!this.evaluationBasis) return this.t("basisIncomplete", "Complete these values to compare efficiency.");
@@ -3600,7 +3635,7 @@ export class TeamBuilder extends LitElement {
       this.cancelSearch();
     };
     try {
-      if (this.optimizationInput && !this.wantsEventScene) {
+      if (this.optimizationInput && !this.wantsEventScene && this.scoreDomain !== "personal-live") {
         const input: OptimizationInput = {
           ...this.optimizationInput,
           scoreDomain: this.scoreDomain,
@@ -3658,6 +3693,8 @@ export class TeamBuilder extends LitElement {
       : "";
   }
   private metricLabel(objective: Objective, metric?: MetricValue): string {
+    if (objective === "score" && (metric ? metric.scoreDomain === "personal-live" : this.scoreDomain === "personal-live"))
+      return this.t("personalLiveScore", "Personal Live score");
     if (objective === "score" && (metric ? metric.scoreDomain === "personal-solo" : this.scoreDomain === "personal-solo"))
       return this.t("personalSoloScore", "Solo score");
     if (this.gekisoSoloForecast && objective === "ss-ratio")
@@ -3672,13 +3709,10 @@ export class TeamBuilder extends LitElement {
     }
     return this.t(objective, objective);
   }
-  private renderMetricDetails(objective: Objective, metric: MetricValue) {
+  private renderMetricDetails(objective: Objective, metric: MetricValue, candidateKey: string) {
     if ((!metric.basis || metric.basis.kind === "single") && !metric.breakdown?.length && !metric.skillOrderCriterion && !metric.bestSkillOrder?.length && !metric.worstSkillOrder?.length) return nothing;
     return html`
-      <details>
-        <summary>
-          ${this.t("metricDetails", "{metric} breakdown", { metric: this.metricLabel(objective, metric) })}
-        </summary>
+      ${this.disclosure(`metric-${candidateKey}-${objective}`, html`${this.t("metricDetails", "{metric} breakdown", { metric: this.metricLabel(objective, metric) })}`, html`
         ${specList([
           ...(metric.skillOrderCriterion ? [{ label: this.t("skillOrderCriterion", "Skill order"), value: this.criterionLabel(metric.skillOrderCriterion) }] : []),
           ...(metric.basis && metric.basis.kind !== "single"
@@ -3709,13 +3743,12 @@ export class TeamBuilder extends LitElement {
               this.t("unavailable", "Required data or formula is unavailable"),
           })),
         ])}
-      </details>
+      `, false)}
       ${([
-        { values: metric.bestSkillOrder, label: this.t("bestSkillOrder", "Highest-scoring skill order") },
-        { values: metric.worstSkillOrder, label: this.t("worstSkillOrder", "Lowest-scoring skill order") },
-      ]).map(({ values, label }) => values?.length ? html`
-        <details>
-          <summary>${label}</summary>
+        { key: "best", values: metric.bestSkillOrder, label: this.t("bestSkillOrder", "Highest-scoring skill order") },
+        { key: "worst", values: metric.worstSkillOrder, label: this.t("worstSkillOrder", "Lowest-scoring skill order") },
+      ]).map(({ key, values, label }) => values?.length ? html`
+        ${this.disclosure(`order-${candidateKey}-${objective}-${key}`, html`${label}`, html`
           <ol class="team-builder__skill-order">
             ${values.map((id) => {
               const member = this.inventory?.members.find((entry) => entry.instanceId === id);
@@ -3723,12 +3756,13 @@ export class TeamBuilder extends LitElement {
               return html`<li>${card ? this.artwork(card, "members") : nothing}<span>${this.text(card?.name)}</span></li>`;
             })}
           </ol>
-        </details>
+        `, false)}
       ` : nothing)}
 
     `;
   }
   private renderCandidate(candidate: Candidate, showSong = true) {
+    const candidateKey = encodeURIComponent(JSON.stringify([candidate.songKey, candidate.assignment]));
     return html`
       <article class="team-builder__candidate">
         ${showSong ? this.songIdentity(candidate.songKey.split(":")[0], candidate.songKey.split(":")[1]) : nothing}
@@ -3779,8 +3813,7 @@ export class TeamBuilder extends LitElement {
             ),
           )}
         </div>
-        <details>
-          <summary>${this.t("configuration", "Team configuration")}</summary>
+        ${this.disclosure(`configuration-${candidateKey}`, html`${this.t("configuration", "Team configuration")}`, html`
           <div class="team-builder__lineup">
             ${candidate.assignment.memberInstanceIds.map((id, index) => {
               const member = this.inventory?.members.find((entry) => entry.instanceId === id);
@@ -3834,11 +3867,10 @@ export class TeamBuilder extends LitElement {
               `;
             })}
           </div>
-        </details>
+        `, false)}
 
-        ${this.objectives.map((objective) => this.renderMetricDetails(objective, candidate.metrics[objective]))}
-        <details>
-          <summary>${this.t("whyRecommended", "Why this candidate")}</summary>
+        ${this.objectives.map((objective) => this.renderMetricDetails(objective, candidate.metrics[objective], candidateKey))}
+        ${this.disclosure(`why-${candidateKey}`, html`${this.t("whyRecommended", "Why this candidate")}`, html`
           <p class="team-builder__hint">
             ${this.t("comparisonScope", "Compared within the entered cards and selected chart.")}
           </p>
@@ -3864,7 +3896,7 @@ export class TeamBuilder extends LitElement {
                 </p>
               `,
             )}
-        </details>
+        `, false)}
       </article>
     `;
   }
@@ -3895,16 +3927,13 @@ export class TeamBuilder extends LitElement {
                 ? this.select(this.t("rankBy", "Rank by"), objective, this.objectives.map((value) => ({ value, label: this.metricLabel(value) })), (value) => { this.rankingObjective = value as Objective; this.rankingLimit = 5; })
                 : nothing}
               ${rankings.slice(0, this.rankingLimit).map((ranking, index) => html`
-                <details class="team-builder__chart-results" ?open=${index === 0}>
-                  <summary>
-                    ${this.songIdentity(String(ranking.songId), String(ranking.difficulty))}
-                    <span class="team-builder__hint">${ranking.proven ? this.t("chartProven", "Selected chart search complete") : this.t("chartCandidate", "Provisional candidates")}</span>
-                  </summary>
+                ${this.disclosure(`chart-${ranking.songKey}`, html`${this.songIdentity(String(ranking.songId), String(ranking.difficulty))}
+                    <span class="team-builder__hint">${ranking.proven ? this.t("chartProven", "Selected chart search complete") : this.t("chartCandidate", "Provisional candidates")}</span>`, html`
                   ${(ranking.top3[objective] ?? []).map((candidate) => this.renderCandidate(candidate, false))}
                   ${!(ranking.top3[objective]?.length)
                     ? html`<p>${ranking.proven ? this.t("noCandidates", "No candidates match these constraints.") : this.t("noRankedCandidates", "No candidates available yet")}</p>`
                     : nothing}
-                </details>
+                `, index === 0, "team-builder__chart-results")}
               `)}
               ${rankings.length > this.rankingLimit
                 ? html`<button class="button button--text" @click=${() => (this.rankingLimit += 5)}>${clientText(this.locale, "more", "More")}</button>`

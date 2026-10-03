@@ -5,6 +5,7 @@ import "@material/web/select/select-option.js";
 import type { ScreenshotImportPreview, ScreenshotCardConfirmation, ScreenshotRecognitionResult } from "../../lib/team-builder/screenshot-import";
 import { tile, tileMedia, type TileOptions } from "../ui/tile";
 import { iconButton } from "../ui/controls";
+import { accordion } from "../ui/accordion";
 
 export interface ScreenshotImportDialogState {
   phase: "select" | "uploading" | "queued" | "processing" | "review" | "failed";
@@ -19,14 +20,17 @@ export interface ScreenshotImportDialogState {
 export interface ScreenshotImportDialogActions {
   text: (key: string, fallback: string) => string;
   card: (kind: "members" | "snapshots", cardId: number) => TileOptions | null;
+  levels?: (kind: "members" | "snapshots", cardId: number) => readonly number[];
   files: (files: File[]) => void;
   close: () => void;
   cancel: () => void;
   correct: (image: number, observation: number) => void;
   candidate: (image: number, observation: number, cardId: number) => void;
   include: (key: string, value: boolean) => void;
-  level: (key: string, value: number | undefined) => void;
+  level: (key: string, value: number | undefined, source: "observed" | "manual") => void;
   confirm: () => void;
+  expandedSource?: (key: string) => boolean;
+  expandSource?: (key: string, expanded: boolean) => void;
 }
 
 /** Independent top-layer review surface; owning UI shows the modal and runs the
@@ -92,14 +96,16 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                 <md-outlined-select label=${t("level", "Visible level")} .value=${choice?.level === undefined ? "keep" : String(choice.level)}
                   .displayText=${choice?.level === undefined ? t("keepLevel", "Keep saved level") : String(choice.level)}
                   @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value;
-                    actions.level(proposal.key, value === "keep" ? undefined : Number(value)); }}>
+                    actions.level(proposal.key, value === "keep" ? undefined : Number(value), proposal.observedLevels.includes(Number(value)) ? "observed" : "manual"); }}>
                   <md-select-option value="keep"><span slot="headline">${t("keepLevel", "Keep saved level")}</span></md-select-option>
-                  ${proposal.observedLevels.map(level => html`<md-select-option value=${String(level)}><span slot="headline">${level}</span></md-select-option>`)}
+                  ${[...new Set([...proposal.observedLevels, ...actions.levels?.(proposal.kind, proposal.cardId) ?? []])].sort((a,b)=>a-b)
+                    .map(level => html`<md-select-option value=${String(level)}><span slot="headline">${level}</span></md-select-option>`)}
                 </md-outlined-select>
                 ${!proposal.observedLevels.length ? html`<small>${t("levelUnknown", "Level not recognized")}</small>` : nothing}
-                <details><summary>${t("sourceImages", "Screenshots")}</summary>
-                  ${proposal.observations.map(value => source(value.image, value.index, proposal.cardId))}
-                </details>
+                ${accordion({ id: `team-screenshot-${proposal.key}`, label: t("sourceImages", "Screenshots"),
+                  expanded: actions.expandedSource?.(proposal.key) ?? false,
+                  onExpandedChange: expanded => actions.expandSource?.(proposal.key, expanded),
+                  content: html`${proposal.observations.map(value => source(value.image, value.index, proposal.cardId))}` })}
               </div>`;
             })}
           </div>` : nothing}

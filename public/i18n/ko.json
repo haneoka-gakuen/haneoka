@@ -2836,7 +2836,10 @@
       "failedMessage": "스크린샷 인식에 실패했습니다",
       "unavailable": "현재 카드 데이터로는 스크린샷을 인식할 수 없습니다.",
       "invalidImages": "PNG, JPEG 또는 WebP 스크린샷을 1~8장 선택하세요. 각 파일은 최대 8 MiB입니다."
-    }
+    },
+    "personalLiveScore": "개인 Live 점수",
+    "scoreDomain": "점수 유형",
+    "gekisoLiveScope": "세 구간 모두 Combo, 중단 없는 PERFECT 플레이."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",
