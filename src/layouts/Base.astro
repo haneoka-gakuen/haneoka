@@ -2,11 +2,8 @@
 import "../styles/index.css";
 import "@fontsource-variable/roboto/wght.css";
 import "@fontsource-variable/noto-sans/wght.css";
-import "@fontsource-variable/noto-sans-jp/wght.css";
-import "@fontsource-variable/noto-sans-tc/wght.css";
-import "@fontsource-variable/noto-sans-sc/wght.css";
-import "@fontsource-variable/noto-sans-kr/wght.css";
 import { ClientRouter } from "astro:transitions";
+import { uiFontStyles } from "../lib/ui-fonts";
 import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
@@ -71,6 +68,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       @layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
     </style>
     <meta charset="utf-8" />
+    {uiFontStyles(locale).map((font) => <link rel="stylesheet" href={font.href} data-ui-font={font.key} />)}
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <script id="haneoka-i18n-seed" type="application/json" is:inline set:html={i18nSeed}></script>
     <script is:inline>
@@ -164,6 +162,8 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
     <audio-dock transition:persist="haneoka-audio"></audio-dock>
     <script>
       import { installI18nDom } from "../i18n/dom";
+      import { installUiFonts } from "../lib/ui-fonts";
+      installUiFonts();
       installI18nDom();
     </script>
     <script>
