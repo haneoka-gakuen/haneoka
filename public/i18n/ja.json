@@ -3145,7 +3145,8 @@
       "invalidFormat": "対応するBoxの書き出しファイルではありません。",
       "card": "カード",
       "entry": "項目"
-    }
+    },
+    "resourceResultsChanged": "育成値や条件が変わりました。結果を更新するには再計算してください。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

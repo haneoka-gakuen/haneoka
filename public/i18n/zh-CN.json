@@ -3145,7 +3145,8 @@
       "invalidFormat": "此文件不是支持的Box导出格式。",
       "card": "卡牌",
       "entry": "项目"
-    }
+    },
+    "resourceResultsChanged": "养成或条件已变更，请重新计算以更新结果。"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

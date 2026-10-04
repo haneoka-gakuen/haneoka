@@ -3145,7 +3145,8 @@
       "invalidFormat": "This file is not a supported Box export.",
       "card": "Card",
       "entry": "Entry"
-    }
+    },
+    "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

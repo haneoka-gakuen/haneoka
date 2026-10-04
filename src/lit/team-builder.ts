@@ -34,6 +34,7 @@ import type {
   SearchConstraints,
   SearchResult,
   Candidate,
+  TeamAssignment,
   SearchProgress,
   OptimizationInput,
   SolverResponse,
@@ -1308,8 +1309,11 @@ export class TeamBuilder extends LitElement {
       );
     } else if (!selector && this.activeSelector) {
       this.activeSelector = undefined;
-      if (!modal && this.selectorOpener?.isConnected) this.selectorOpener.focus({ preventScroll: true });
-
+      if (!modal) {
+        const target = this.selectorOpener?.isConnected ? this.selectorOpener :
+          this.querySelector<HTMLElement>(".team-builder__run-actions > button:not(:disabled)") ?? this.querySelector<HTMLElement>(".team-builder__page-title");
+        target?.focus({ preventScroll: true });
+      }
     }
     if (this.returnOwnedFocus && this.workspaceView === "cards") {
       const id = this.returnOwnedFocus; this.returnOwnedFocus = "";
@@ -3480,14 +3484,14 @@ export class TeamBuilder extends LitElement {
   private resourceNumber(value: number | null) {
     return value === null ? this.t("unavailable", "Required data or formula is unavailable") : value.toLocaleString(this.locale, { maximumFractionDigits: 2 });
   }
-  private renderResourceStageResult(stage: ResourceStageCandidate) {
+  private renderResourceStageResult(stage: ResourceStageCandidate, key: string) {
     const mode = this.resourceCompleted?.context.request[stage.kind].mode;
     return html`<section class="team-builder__resource-stage-result">
       <h3>${this.resourceStageLabel(stage.kind)}</h3>
       <p class="team-builder__hint">${mode ? html`${this.t("mode", "Play mode")}: ${this.t(mode, mode)} · ` : nothing}${this.t("skillOrderCriterion", "Skill order")}: ${this.criterionLabel(stage.skillOrderCriterion)}</p>
       ${this.songIdentity(String(stage.songId), String(stage.difficulty))}
       <div class="collection collection--member team-builder__team-strip">${stage.assignment.memberInstanceIds.map(id => this.resultCard(this.inventory?.members.find(row => row.instanceId === id), "members", id === stage.assignment.leaderInstanceId))}</div>
-      <div class="collection collection--support team-builder__team-strip">${stage.assignment.snapshotInstanceIds.map(id => this.resultCard(this.inventory?.snapshots.find(row => row.instanceId === id), "snapshots"))}</div>
+      ${this.renderTeamConfiguration(stage.assignment, `resource-${key}`)}
     </section>`;
   }
   private renderResourcePlan(plan: ResourcePlan, key: string) {
@@ -3500,7 +3504,7 @@ export class TeamBuilder extends LitElement {
         { label: this.t("resourceBoostRemaining", "Live Boost remaining"), value: this.resourceNumber(plan.totals.boostRemaining) },
         { label: this.t("resourceCPRemaining", "Expected challenge points remaining"), value: this.resourceNumber(plan.totals.expectedChallengePointsRemaining) },
       ])}
-      <div class="team-builder__resource-stages">${this.renderResourceStageResult(plan.normal)}${this.renderResourceStageResult(plan.challenge)}</div>
+      <div class="team-builder__resource-stages">${this.renderResourceStageResult(plan.normal, `${key}-normal`)}${this.renderResourceStageResult(plan.challenge, `${key}-challenge`)}</div>
       ${this.disclosure(`resource-balance-${key}`, this.t("resourceBalance", "Resource balance"), specList([
         { label: this.t("resourceBoostSpent", "Live Boost spent"), value: this.resourceNumber(plan.totals.boostSpent) },
         { label: this.t("resourceCPGained", "Expected challenge points earned"), value: this.resourceNumber(plan.totals.expectedChallengePointsGained) },
@@ -3514,7 +3518,10 @@ export class TeamBuilder extends LitElement {
     const result = completed && this.resourceContextMatches(completed.context) ? completed.result : null;
     const status = html`${this.searchError ? html`<p class="team-builder__error" role="alert">${this.searchError}</p>` : nothing}
       <p class="team-builder__hint" role="status">${this.resourceActive && this.running ? this.resourceProgressLabel : this.searchStatus}</p>`;
-    if (!result) return html`${status}<div class="team-builder__results-empty"><p>${this.t("resourceResultsEmpty", "Choose both stages and a resource budget to compare event plans.")}</p></div>`;
+    if (!result) return html`${status}<div class="team-builder__results-empty"><p>${this.running && this.resourceActive
+      ? this.t("searching", "Finding candidates")
+      : completed ? this.t("resourceResultsChanged", "Training or conditions changed. Calculate again to update the results.")
+      : this.t("resourceResultsEmpty", "Choose both stages and a resource budget to compare event plans.")}</p></div>`;
     return html`<div class="team-builder__resource-plan">${status}
       <div class="team-builder__section-header">
         ${renderDetailSectionHeading(this.t("resourcePlan", "Event resource plan"), "rewards", { level: 2 })}
@@ -4304,6 +4311,62 @@ export class TeamBuilder extends LitElement {
 
     `;
   }
+  private renderTeamConfiguration(assignment: TeamAssignment, key: string) {
+    return this.disclosure(`configuration-${key}`, html`${this.t("configuration", "Team configuration")}`, html`
+          <div class="team-builder__lineup">
+            ${assignment.memberInstanceIds.map((id, index) => {
+              const member = this.inventory?.members.find((entry) => entry.instanceId === id);
+              const snapshotId = assignment.snapshotInstanceIds[index];
+              const snapshot = this.inventory?.snapshots.find(entry => entry.instanceId === snapshotId);
+              return html`
+                <div>
+                  <div class="collection collection--member">
+                    ${this.resultCard(member, "members", id === assignment.leaderInstanceId)}
+                  </div>
+                  <small>
+                    ${this.fieldName("level")}:
+                    ${member?.level ?? this.t("unknown", "Unknown or not entered")} ·
+                    ${this.fieldName("training")}:
+                    ${member?.training ?? this.t("unknown", "Unknown or not entered")} ·
+                    ${this.fieldName("awakening")}:
+                    ${member?.awakening ?? this.t("unknown", "Unknown or not entered")}
+                  </small>
+                  <small>
+                    ${this.fieldName("liveSkillLevel")}:
+                    ${member?.liveSkillLevel ?? this.t("unknown", "Unknown or not entered")} ·
+                    ${this.fieldName("gekisoSkillLevel")}:
+                    ${member?.gekisoSkillLevel ?? this.t("unknown", "Unknown or not entered")}
+                  </small>
+                  ${
+                    id === assignment.leaderInstanceId
+                      ? html`
+                          <strong>${this.t("leader", "Leader")}</strong>
+                          ${member ? specList(this.derivedSkillRows(member, "members")) : nothing}
+                        `
+                      : nothing
+                  }
+                  ${
+                    snapshot
+                      ? html`
+                          <div class="collection collection--support">
+                            ${this.resultCard(snapshot, "snapshots")}
+                          </div>
+                          <small>
+                            ${this.fieldName("level")}:
+                            ${snapshot.level ?? this.t("unknown", "Unknown or not entered")} ·
+                            ${this.fieldName("awakening")}:
+                            ${snapshot.awakening ?? this.t("unknown", "Unknown or not entered")}
+                          </small>
+                          ${specList(this.derivedSkillRows(snapshot, "snapshots"))}
+                        `
+                      : html`<small class="team-builder__hint">${this.t("snapshots", "Snapshots")}: ${snapshotId === null ? clientText(this.locale, "none", "None") : this.t("unknown", "Unknown or not entered")}</small>`
+                  }
+                </div>
+              `;
+            })}
+          </div>
+        `, false);
+  }
   private renderCandidate(candidate: Candidate, showSong = true) {
     const candidateKey = encodeURIComponent(JSON.stringify([candidate.songKey, candidate.assignment]));
     return html`
@@ -4356,61 +4419,7 @@ export class TeamBuilder extends LitElement {
             ),
           )}
         </div>
-        ${this.disclosure(`configuration-${candidateKey}`, html`${this.t("configuration", "Team configuration")}`, html`
-          <div class="team-builder__lineup">
-            ${candidate.assignment.memberInstanceIds.map((id, index) => {
-              const member = this.inventory?.members.find((entry) => entry.instanceId === id);
-              const snapshot = this.inventory?.snapshots.find(
-                (entry) => entry.instanceId === candidate.assignment.snapshotInstanceIds[index],
-              );
-              return html`
-                <div>
-                  <div class="collection collection--member">
-                    ${this.resultCard(member, "members", id === candidate.assignment.leaderInstanceId)}
-                  </div>
-                  <small>
-                    ${this.fieldName("level")}:
-                    ${member?.level ?? this.t("unknown", "Unknown or not entered")} ·
-                    ${this.fieldName("training")}:
-                    ${member?.training ?? this.t("unknown", "Unknown or not entered")} ·
-                    ${this.fieldName("awakening")}:
-                    ${member?.awakening ?? this.t("unknown", "Unknown or not entered")}
-                  </small>
-                  <small>
-                    ${this.fieldName("liveSkillLevel")}:
-                    ${member?.liveSkillLevel ?? this.t("unknown", "Unknown or not entered")} ·
-                    ${this.fieldName("gekisoSkillLevel")}:
-                    ${member?.gekisoSkillLevel ?? this.t("unknown", "Unknown or not entered")}
-                  </small>
-                  ${
-                    id === candidate.assignment.leaderInstanceId
-                      ? html`
-                          <strong>${this.t("leader", "Leader")}</strong>
-                          ${member ? specList(this.derivedSkillRows(member, "members")) : nothing}
-                        `
-                      : nothing
-                  }
-                  ${
-                    snapshot
-                      ? html`
-                          <div class="collection collection--support">
-                            ${this.resultCard(snapshot, "snapshots")}
-                          </div>
-                          <small>
-                            ${this.fieldName("level")}:
-                            ${snapshot.level ?? this.t("unknown", "Unknown or not entered")} ·
-                            ${this.fieldName("awakening")}:
-                            ${snapshot.awakening ?? this.t("unknown", "Unknown or not entered")}
-                          </small>
-                          ${specList(this.derivedSkillRows(snapshot, "snapshots"))}
-                        `
-                      : nothing
-                  }
-                </div>
-              `;
-            })}
-          </div>
-        `, false)}
+        ${this.renderTeamConfiguration(candidate.assignment, candidateKey)}
 
         ${this.objectives.map((objective) => this.renderMetricDetails(objective, candidate.metrics[objective], candidateKey))}
         ${this.disclosure(`why-${candidateKey}`, html`${this.t("whyRecommended", "Why this candidate")}`, html`

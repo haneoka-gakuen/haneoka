@@ -3145,7 +3145,8 @@
       "invalidFormat": "지원되는 Box 내보내기 파일이 아닙니다.",
       "card": "카드",
       "entry": "항목"
-    }
+    },
+    "resourceResultsChanged": "육성 값이나 조건이 변경되었습니다. 결과를 갱신하려면 다시 계산해 주세요."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",
