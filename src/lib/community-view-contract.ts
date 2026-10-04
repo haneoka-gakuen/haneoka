@@ -1,3 +1,4 @@
+import type { MessageParams } from "@haneoka/i18n";
 import type { TemplateResult } from "lit";
 import type { CommunityTime } from "./community-time";
 import type { CommunityForum, ForumGroup } from "./community-forums";
@@ -74,7 +75,7 @@ export interface EntityCommentsViewProps {
   error: string;
   message: string;
   hasMore: boolean;
-  label(key: string, fallback: string): string;
+  label(key: string, fallback: string, params?: MessageParams): string;
   time(value: unknown): CommunityTime | null;
   authorName(comment: EntityComment): string;
   ipLocation(comment: EntityComment): string;

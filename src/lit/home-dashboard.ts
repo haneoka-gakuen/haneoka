@@ -5,7 +5,7 @@ import { navigateDetailPage } from "../lib/detail-navigation";
 import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
 import { initializeI18nClient } from "../i18n/client";
 import { catalogLookupKeys } from "../i18n/keys";
-import type { Catalog } from "@haneoka/i18n";
+import type { Catalog, MessageParams } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
@@ -2262,9 +2262,9 @@ export class HomeDashboard extends LitElement {
   }
 
   private communityMessages?: Catalog;
-  private communityLabel(key: string, fallback: string) {
+  private communityLabel(key: string, fallback: string, params?: MessageParams) {
     for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
-      if (this.communityMessages?.has(candidate)) return this.communityMessages.text(candidate, undefined, fallback);
+      if (this.communityMessages?.has(candidate)) return this.communityMessages.text(candidate, params, fallback);
     return fallback;
   }
   private entityCommentHref(entry: JsonRecord, reply = false) {
@@ -2323,7 +2323,7 @@ export class HomeDashboard extends LitElement {
       comment: {
         record: entry.comment,
         locale: this.locale,
-        label: (key, fallback) => this.communityLabel(key, fallback),
+        label: (key, fallback, params?: MessageParams) => this.communityLabel(key, fallback, params),
         authorHref: `/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
         canReply: Boolean(href),
         allowStickers: false,

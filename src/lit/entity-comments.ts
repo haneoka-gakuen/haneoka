@@ -3,7 +3,7 @@ import { LitElement, nothing } from "lit";
 import { fetchJson, JsonResponseError, preferredLocale, localizedText } from "./shared/catalog";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { catalogLookupKeys } from "../i18n/keys";
-import { normalizeLocale, type Catalog } from "@haneoka/i18n";
+import { normalizeLocale, type Catalog, type MessageParams } from "@haneoka/i18n";
 import { loadingState, errorState } from "./ui/state";
 import { communityCommentName, communityCommentLocation } from "../lib/community-comment-metadata";
 import { RequestScope } from "../lib/request-scope";
@@ -211,11 +211,11 @@ export class EntityComments extends LitElement {
     this.messagesPending = pending;
     return pending;
   }
-  private label = (key: string, fallback: string) => {
+  private label = (key: string, fallback: string, params?: MessageParams) => {
     const catalog = this.messagesCatalog;
     if (!catalog || !this.messagesReady || catalog.locale !== this.uiLocale()) return "";
     for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
-      if (catalog.has(candidate)) return catalog.text(candidate, undefined, fallback);
+      if (catalog.has(candidate)) return catalog.text(candidate, params, fallback);
     return fallback;
   };
   private failure(error: unknown, key = "unavailable", fallback = "Unavailable") {

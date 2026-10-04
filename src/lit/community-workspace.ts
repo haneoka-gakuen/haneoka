@@ -1,3 +1,4 @@
+import { interpolateMessage, type MessageParams } from "@haneoka/i18n";
 import { renderEntityCommentActivity } from "./views/entity-comment-activity";
 import { renderCommunityComment, renderCommentComposer, renderCommentReplies, commentAuthorName } from "./views/community-comment-content";
 import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
@@ -1201,7 +1202,7 @@ export class CommunityWorkspace extends LitElement {
   private detailHref(route: string) {
     return `${this.path(route)}?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
   }
-  private label(path: string, fallback: string) {
+  private label(path: string, fallback: string, params?: MessageParams) {
     const value = path
       .split(".")
       .reduce<unknown>(
@@ -1209,11 +1210,11 @@ export class CommunityWorkspace extends LitElement {
           node && typeof node === "object" ? (node as Value)[key] : undefined,
         this.copy,
       );
-    return typeof value === "string" && value
+    return interpolateMessage(typeof value === "string" && value
       ? value
       : uiText(this.locale, path) !== path
         ? uiText(this.locale, path)
-        : fallback;
+        : fallback, params);
   }
   private async request(path: string, init: RequestInit = {}): Promise<Value> {
     const headers = new Headers(init.headers);
@@ -3789,7 +3790,7 @@ export class CommunityWorkspace extends LitElement {
               ${
                 this.commentDraftOpen
                   ? renderCommentComposer({
-                      locale: this.locale, label: (key, fallback) => this.label(key, fallback),
+                      locale: this.locale, label: (key, fallback, params?: MessageParams) => this.label(key, fallback, params),
                       body: this.commentBody, open: true,
                       signedIn: Boolean(this.session), canComment: Boolean(viewer.canComment),
                       busy: this.busy, sending: this.commentSending, allowStickers: true,
@@ -3931,7 +3932,7 @@ export class CommunityWorkspace extends LitElement {
                 : nothing
             }
             ${renderCommentReplies({
-              label: (key, fallback) => this.label(key, fallback),
+              label: (key, fallback, params?: MessageParams) => this.label(key, fallback, params),
               expanded: this.expandedComments.has(id), hasMore: hasMoreReplies,
               remaining: remainingReplies || Math.max(0, replies.length - 2), loading: loadingReplies,
               onToggle: () => {
@@ -3954,11 +3955,11 @@ export class CommunityWorkspace extends LitElement {
     return renderCommunityComment({
       record: comment,
       locale: this.locale,
-      label: (key, fallback) => this.label(key, fallback),
+      label: (key, fallback, params?: MessageParams) => this.label(key, fallback, params),
       authorHref: this.detailHref(`/community/users/${comment.authorUid}`),
       authorMark: String(comment.authorUid) === String(this.postEnvelope().post.authorUid) ? this.label("postAuthor", "Author") : undefined,
       reply,
-      replyToName: reply && parent?.parentId ? commentAuthorName(parent, (key, fallback) => this.label(key, fallback)) : undefined,
+      replyToName: reply && parent?.parentId ? commentAuthorName(parent, (key, fallback, params?: MessageParams) => this.label(key, fallback, params)) : undefined,
       canReply: !this.session || Boolean(this.postEnvelope().viewer.canComment),
       allowStickers: true,
       editing: edit ? {
@@ -6590,7 +6591,7 @@ export class CommunityWorkspace extends LitElement {
       comment: {
         record: comment,
         locale: this.locale,
-        label: (key, fallback) => this.label(key, fallback),
+        label: (key, fallback, params?: MessageParams) => this.label(key, fallback, params),
         authorHref: this.detailHref(`/community/users/${comment.authorUid}`),
         canReply: Boolean(href),
         allowStickers: false,
