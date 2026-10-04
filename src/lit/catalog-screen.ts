@@ -103,6 +103,7 @@ import {
   resourceCollectionHref,
   legacyEntityRedirectTarget,
   parseEntitySelection,
+  parseResourceRoute,
   resourceKindForCollection,
   returnStateFromLocation,
   type ResourceKind,
@@ -4812,8 +4813,20 @@ export class CatalogScreen extends LitElement {
     this.characterSection = section;
     this.setDetailQuery("section", section);
   }
+  private isCommentCataloguePage(item: Item): boolean {
+    if (typeof window === "undefined") return false;
+    const url = navigationDocumentUrl();
+    const kind = resourceKindForCollection(this.settings.resource);
+    if (!kind || ["live2d", "spine", "help"].includes(kind)) return false;
+    const route = parseResourceRoute(url.pathname) || parseEntitySelection(url.pathname, url.search)?.route;
+    if (route) return route.kind === kind && !route.view && (!route.id || route.id === this.itemId(item));
+    const parts = url.pathname.replace(/^\/+|\/+$/gu, "").split("/");
+    // The native song metadata table opens the ordinary song detail overlay.
+    if (this.settings.resource === "song-meta" && parts.length === 3 && parts[0] === this.dataServer() && parts[1] === this.settings.locale && parts[2] === "song-meta") return true;
+    return parts.length === 3 && parts[0] === this.settings.locale && parts[1] === "catalog" && resourceKindForCollection(parts[2]) === kind;
+  }
   private detailCommentTarget(item: Item): { type: string; id: string } | null {
-    if (this.settings.origin === "bestdori" || this.settings.chartPage || !["jp", "intl"].includes(this.dataServer())) return null;
+    if (this.settings.origin === "bestdori" || this.settings.chartPage || !["jp", "intl"].includes(this.dataServer()) || !this.isCommentCataloguePage(item)) return null;
     const decimal = (value: unknown) => {
       const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : value;
       return typeof text === "string" && /^[1-9]\d{0,15}$/u.test(text) && Number.isSafeInteger(Number(text)) ? text : null;
@@ -4854,11 +4867,8 @@ export class CatalogScreen extends LitElement {
     }
     return html`<entity-comments class="detail-comments" entity-type=${target.type} entity-id=${target.id} locale=${this.settings.locale} server=${this.itemSourceServer(item)} target-title=${this.itemTitle(item)} comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}></entity-comments>`;
   }
-  private characterDiscussionInVisual(item: Item) {
-    return this.profile.presentation === "character" && this.characterSection === "profile" && !this.commentsCompact && this.detailMediaItems(item).length > 0 && !!this.detailCommentTarget(item) && typeof window !== "undefined" && this.isConnected;
-  }
   private detailDiscussion(item: Item) {
-    if (!this.detailCommentTarget(item) || typeof window === "undefined" || !this.isConnected || this.characterDiscussionInVisual(item)) return undefined;
+    if (!this.detailCommentTarget(item) || typeof window === "undefined" || !this.isConnected) return undefined;
     const hasMedia = this.profile.presentation !== "character" && this.detailMediaItems(item).length > 0;
     return { comments: this.renderEntityDiscussion(item), hasMedia, placement: hasMedia && !this.commentsCompact ? "media" as const : "bottom" as const };
   }
@@ -4866,7 +4876,6 @@ export class CatalogScreen extends LitElement {
     return html`
       <character-detail-archive
         .controller=${this}
-        .profileComments=${this.characterDiscussionInVisual(item) ? this.renderEntityDiscussion(item) : undefined}
         .item=${item}
         .fields=${fields}
         .section=${this.characterSection}

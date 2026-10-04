@@ -82,7 +82,6 @@ const resourceHrefForCurrent = (
 export class CharacterDetailArchive extends LitElement {
   static properties = {
     controller: { attribute: false },
-    profileComments: { attribute: false },
     item: { attribute: false },
     fields: { attribute: false },
     section: { type: String },
@@ -90,7 +89,6 @@ export class CharacterDetailArchive extends LitElement {
     selectedMissionType: { state: true },
     selectedRank: { state: true },
   };
-  declare profileComments?: unknown;
   declare controller: Controller;
   declare item: Item;
   declare fields: Field[];
@@ -418,7 +416,7 @@ export class CharacterDetailArchive extends LitElement {
             voiceActor: c.localized(item.voiceActor),
             alternateName: c.localized(item.englishName),
             bandLogo: String(c.band(Number(item.bandId || 0))?.logo || ""),
-            gallery: this.profileComments ? html`<div class="detail-layout--with-comments" data-comments-placement="media"><div class="detail-layout__left"><div>${c.renderDetailMedia(item)}</div><div class="detail-layout__comments">${this.profileComments}</div></div></div>` : c.renderDetailMedia(item),
+            gallery: c.renderDetailMedia(item),
             fields: this.fields
               .filter((field) => !["voiceActor", "bandPart", "englishName"].includes(field.key))
               .map((field) => ({
