@@ -1,3 +1,4 @@
+import { readCommunityForumDirectory } from "../lib/community-forum-directory";
 import { asyncRegion } from "./ui/async-region";
 import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { communityPostCard } from "./views/community-post-card";
@@ -642,6 +643,10 @@ export class CommunityWorkspace extends LitElement {
       // the worker hands out at the visitor's locale prefix — anchor on the
       // "community" segment rather than absolute path indexes.
       const targetUrl = navigationDocumentUrl();
+      if (/\/community\/feeds\/?$/.test(targetUrl.pathname)) {
+        targetUrl.pathname = targetUrl.pathname.replace(/\/community\/feeds\/?$/, "/community/");
+        history.replaceState(history.state, "", targetUrl.pathname + targetUrl.search + targetUrl.hash);
+      }
       this.routeUrl = `${targetUrl.pathname}${targetUrl.search}`;
       const parts = targetUrl.pathname.split("/").filter(Boolean);
       const communityAt = parts.indexOf("community");
@@ -2939,7 +2944,7 @@ export class CommunityWorkspace extends LitElement {
     const forum = this.forums.find(
       (entry) => entry.id === this.selectedForumId,
     );
-    return forum ? this.forumHref(forum) : this.path("/community/feeds");
+    return forum ? this.forumHref(forum) : this.path("/community");
   }
   private leaveEditor() {
     const target =
@@ -3637,7 +3642,7 @@ export class CommunityWorkspace extends LitElement {
       (entry) => entry.id === this.postEnvelope().post.forumId,
     );
     void navigateDetailPage(
-      forum ? this.forumHref(forum) : this.path("/community/feeds"),
+      forum ? this.forumHref(forum) : this.path("/community"),
       "replace",
     );
   }
@@ -3674,7 +3679,7 @@ export class CommunityWorkspace extends LitElement {
     const link = document.createElement("a");
     link.className = "icon-button community-back";
     link.dataset.entityBack = "";
-    link.href = this.path("/community/feeds");
+    link.href = this.path("/community");
     link.setAttribute("aria-label", this.label("back", "Back"));
     link.innerHTML =
       '<svg class="material-icon" width="24" height="24" aria-hidden="true"><use href="/icons.svg#arrow_back"></use></svg>';
@@ -3927,7 +3932,7 @@ export class CommunityWorkspace extends LitElement {
                           ${post.tags.map(
                             (tag) => html`
                               <a
-                                href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}
+                                href=${`${this.path("/community")}?tag=${encodeURIComponent(String(tag))}`}
                               >
                                 #${String(tag)}
                               </a>
@@ -5438,9 +5443,10 @@ export class CommunityWorkspace extends LitElement {
     feedSnapshots.clear();
   }
   private async loadForums(signal: AbortSignal) {
+    let cleanup: Promise<void> | undefined;
+    const directory = await readCommunityForumDirectory(signal, (context) => {
+      if (!this.isConnected || !this.requests.current(signal)) return;
     const viewer = this.viewerId();
-    const context = await readCommunityViewer(signal);
-    if (!this.requests.current(signal)) return;
     const realmChanged = this.readViewer && this.readViewer.realm !== context.realm;
     this.session = context.session;
     if (realmChanged) { this.clearForumContent(); this.phase = "loading"; }
@@ -5461,9 +5467,11 @@ export class CommunityWorkspace extends LitElement {
       this.editorInitialized = false;
       this.stampDraftRead = false;
       this.stampDraft = undefined;
-      await this.discardUploads();
-      if (!this.requests.current(signal)) return;
+      cleanup = this.discardUploads();
     }
+    });
+    if (cleanup) await cleanup;
+    if (!this.requests.current(signal)) return;
     const navigation = this.closest(".app-shell")?.querySelector(
       "community-forum-navigation",
     ) as NonNullable<CommunityWorkspace["forumNavigationState"]>["host"] | null;
@@ -5474,14 +5482,8 @@ export class CommunityWorkspace extends LitElement {
           JSON.stringify([this.viewerId(), this.routeUrl, this.forumEpoch]),
         ),
       };
-    const data = await this.request("/api/v1/community/forums", { signal });
-    if (!this.requests.current(signal)) return;
-    this.forums = Array.isArray(data.forums)
-      ? (data.forums as unknown as CommunityForum[])
-      : [];
-    this.forumGroups = Array.isArray(data.groups)
-      ? (data.groups as unknown as ForumGroup[])
-      : [];
+    this.forums = directory.forums;
+    this.forumGroups = directory.groups;
     const readable = new Set(
       this.forums
         .filter((forum) => forum.capabilities.canRead)
@@ -6715,7 +6717,7 @@ export class CommunityWorkspace extends LitElement {
                       (tag) => html`
                         <a
                           class="chip"
-                          href=${`${this.currentForum ? this.forumHref(this.currentForum) : this.path("/community/feeds")}?tag=${encodeURIComponent(String(typeof tag === "object" && tag ? (tag as Value).normalizedName || "" : tag))}`}
+                          href=${`${this.currentForum ? this.forumHref(this.currentForum) : this.path("/community")}?tag=${encodeURIComponent(String(typeof tag === "object" && tag ? (tag as Value).normalizedName || "" : tag))}`}
                         >
                           #${String(typeof tag === "object" && tag ? (tag as Value).displayName || (tag as Value).normalizedName || "" : tag)}
                         </a>
@@ -6861,7 +6863,7 @@ export class CommunityWorkspace extends LitElement {
                 <div class="list-item list-item--two-line">
                   <a
                     class="list-item__body"
-                    href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag.normalizedName || ""))}`}
+                    href=${`${this.path("/community")}?tag=${encodeURIComponent(String(tag.normalizedName || ""))}`}
                   >
                     <span class="list-item__headline"
                       >#${tag.displayName || tag.normalizedName}</span
