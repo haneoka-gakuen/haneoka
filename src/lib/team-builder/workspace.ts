@@ -4,6 +4,7 @@ import {
   upgradeInventory,
   validateAssignment,
   validateInventory,
+  rebaseInventory,
   type InventoryV2,
   type InventoryV1,
 } from "./inventory";
@@ -34,12 +35,13 @@ const pin = (data: TeamBuilderData): WorkspaceIdentity => {
   return { server: data.identity.server, releaseId: data.identity.releaseId, sourceId: data.identity.sourceId };
 };
 const current = (identity: WorkspaceIdentity, data: TeamBuilderData) => {
-  if (Object.entries(pin(data)).some(([key, value]) => identity[key as keyof WorkspaceIdentity] !== value))
+  if (identity.server !== data.identity.server || identity.sourceId !== pin(data).sourceId)
     throw new TypeError("team-workspace-rebase-required");
 };
 const checkedInventory = (inventory: InventoryV1, data: TeamBuilderData) => {
-  if (!validateInventory(inventory, data).valid) throw new TypeError("team-workspace-invalid-inventory");
-  return upgradeInventory(inventory);
+  const rebased = rebaseInventory(inventory, data);
+  if (!rebased.canApply) throw new TypeError("team-workspace-invalid-inventory");
+  return upgradeInventory(rebased.candidate);
 };
 const name = (value: string) => {
   value = value.trim();
@@ -81,7 +83,7 @@ export function updateUpgradeProfile(
   const profile = workspace.profiles.find((value) => value.id === profileId);
   if (!profile) throw new TypeError("team-workspace-profile-missing");
   current(profile.identity, data);
-  return upsertUpgradeProfile(workspace, { ...profile, inventory: checkedInventory(inventory, data) });
+  return upsertUpgradeProfile(workspace, { ...profile, identity: pin(data), inventory: checkedInventory(inventory, data) });
 }
 export function selectWorkspaceProfile(workspace: TeamWorkspaceV1, profileId: string | null): TeamWorkspaceV1 {
   return checkTeamWorkspace({ ...workspace, activeProfileId: profileId }, workspace.server);
@@ -94,8 +96,15 @@ export function getWorkspaceInventory(
   checkTeamWorkspace(workspace, data.identity.server);
   if (workspace.activeProfileId === null) return checkedInventory(actual, data);
   const profile = workspace.profiles.find((value) => value.id === workspace.activeProfileId)!;
-  current(profile.identity, data);
-  return checkedInventory(profile.inventory, data);
+  if (profile.identity.server !== data.identity.server || profile.identity.sourceId !== data.identity.sourceId)
+    throw new TypeError("team-workspace-rebase-required");
+  const rebased = rebaseInventory(profile.inventory, data);
+  if (!rebased.canApply) throw new TypeError("team-workspace-invalid-inventory");
+  return checkedInventory(rebased.candidate, data);
+}
+export function workspaceProfileCompatible(profile: UpgradeProfile, data: TeamBuilderData): boolean {
+  return profile.identity.server === data.identity.server && profile.identity.sourceId === data.identity.sourceId &&
+    rebaseInventory(profile.inventory, data).canApply;
 }
 export function removeUpgradeProfile(workspace: TeamWorkspaceV1, profileId: string): TeamWorkspaceV1 {
   return checkTeamWorkspace(

@@ -1,4 +1,5 @@
 import type { StorageLike } from "../storage";
+import { mergeSyncDocuments, sameSyncDocument, type SyncBase } from "./sync-merge";
 import {
   checkTeamWorkspace,
   createEmptyTeamWorkspace,
@@ -31,26 +32,30 @@ export interface WorkspaceStoreState {
   remote?: CloudTeamWorkspace;
   error?: string;
   authorityError?: { status: number; code: string };
+  conflictPaths?: string[];
+  mergeBase?: TeamWorkspaceV1;
+  refreshing?: boolean;
   localConflict?: { ownerId: string | null; workspace: TeamWorkspaceV1 | null; pendingWorkspace: TeamWorkspaceV1; baseRevision: number | null; backupKey?: string };
 }
 const storageKey = (server: string, owner: string | null) =>
   `haneoka:team-workspace:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(server)}`;
+const MAX_LOCAL_BYTES = 2 * MAX_WORKSPACE_BYTES + 4096;
 const validRevision = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value < Number.MAX_SAFE_INTEGER;
-const equal = (a: unknown, b: unknown): boolean => {
-  if (a === b) return true;
-  if (Array.isArray(a) || Array.isArray(b))
-    return (
-      Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => equal(value, b[index]))
-    );
-  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
-  return (
-    Object.keys(a).length === Object.keys(b).length &&
-    Object.entries(a).every(
-      ([key, value]) => Object.hasOwn(b, key) && equal(value, (b as Record<string, unknown>)[key]),
-    )
-  );
-};
+const equal = sameSyncDocument;
+
+/** A release-only identity change carries no game-state delta when source IDs agree. */
+function compatibleMetadata(document: TeamWorkspaceV1, reference: TeamWorkspaceV1): TeamWorkspaceV1 {
+  const result = structuredClone(document);
+  for (const kind of ["profiles", "teams"] as const) for (const row of result[kind]) {
+    const target = reference[kind].find(other => other.id === row.id);
+    if (target && target.identity.server === row.identity.server && target.identity.sourceId === row.identity.sourceId) {
+      row.identity.releaseId = target.identity.releaseId;
+      row.inventory.releaseId = target.identity.releaseId;
+    }
+  }
+  return checkTeamWorkspace(result, document.server);
+}
 
 export function mergeTeamWorkspaces(
   cloud: TeamWorkspaceV1,
@@ -144,6 +149,9 @@ export class TeamWorkspaceStore {
   private localConflictRaw?: { ownerId: string | null; raw: string | null };
   private localBackupVersion = -1;
   private authoritySuspended?: WorkspaceStoreState;
+  private syncBase?: SyncBase<TeamWorkspaceV1>;
+  private accountLoad?: { ownerId: string | null; promise: Promise<void> };
+  private lastReadAt = 0;
   private anonymous?: TeamWorkspaceV1;
   private client;
   constructor(
@@ -166,15 +174,37 @@ export class TeamWorkspaceStore {
     const observed = this.options.storage.getItem(key), expected = this.versions.get(key);
     if (this.versions.has(key) && observed !== expected && observed && expected) {
       try {
-        if (new TextEncoder().encode(observed).byteLength <= MAX_WORKSPACE_BYTES && new TextEncoder().encode(expected).byteLength <= MAX_WORKSPACE_BYTES) {
+        if (new TextEncoder().encode(observed).byteLength <= MAX_LOCAL_BYTES && new TextEncoder().encode(expected).byteLength <= MAX_LOCAL_BYTES) {
           const old = JSON.parse(expected), current = JSON.parse(observed);
           const valid = (value: typeof old) => value && typeof value === "object" && !Array.isArray(value) &&
-            Object.keys(value).length === 3 && validRevision(value.baseRevision) && typeof value.dirty === "boolean";
+            Object.keys(value).every(k => ["workspace", "baseRevision", "dirty", "syncBase"].includes(k)) && validRevision(value.baseRevision) && typeof value.dirty === "boolean";
           if (valid(old) && valid(current) && equal(checkTeamWorkspace(old.workspace, this.server), checkTeamWorkspace(current.workspace, this.server)) &&
               (old.baseRevision === current.baseRevision || !current.dirty && current.baseRevision >= old.baseRevision)) {
             this.versions.set(key, observed);
-            if (owner === this.state.ownerId && !current.dirty) this.state.revision = Math.max(this.state.revision, current.baseRevision);
+            if (owner === this.state.ownerId && !current.dirty) {
+              this.state.revision = Math.max(this.state.revision, current.baseRevision);
+              this.syncBase = { revision: current.baseRevision, document: checkTeamWorkspace(current.workspace, this.server) };
+              this.state.dirty = !equal(this.state.workspace, this.syncBase.document);
+            }
             return;
+          }
+          if (owner === this.state.ownerId && valid(old) && valid(current) && this.state.workspace) {
+            const common = checkTeamWorkspace(old.workspace, this.server), foreign = checkTeamWorkspace(current.workspace, this.server);
+            const merged = mergeSyncDocuments(common, this.state.workspace, foreign);
+            if (!merged.conflicts.length) {
+              const candidate = checkTeamWorkspace(merged.value, this.server);
+              this.archivePair(this.state.workspace, foreign);
+              if (this.options.storage.getItem(key) !== observed) throw new Error("team-workspace-local-draft-changed");
+              this.versions.set(key, observed); this.state.workspace = candidate;
+              if (current.baseRevision >= this.state.revision && current.dirty === false) {
+                this.state.revision = current.baseRevision; this.syncBase = { revision: current.baseRevision, document: foreign };
+              } else if (current.baseRevision >= this.state.revision && current.syncBase?.revision === current.baseRevision) {
+                this.state.revision = current.baseRevision;
+                this.syncBase = { revision: current.baseRevision, document: checkTeamWorkspace(current.syncBase.document, this.server) };
+              }
+              this.state.dirty = !this.syncBase || !equal(candidate, this.syncBase.document); return;
+            }
+            this.state.conflictPaths = merged.conflicts;
           }
         }
       } catch { /* Changed documents stay in the review path. */ }
@@ -190,7 +220,7 @@ export class TeamWorkspaceStore {
     if (!pending) return;
     let workspace: TeamWorkspaceV1 | null = null, baseRevision: number | null = null;
     try {
-      if (raw && new TextEncoder().encode(raw).byteLength <= MAX_WORKSPACE_BYTES) {
+      if (raw && new TextEncoder().encode(raw).byteLength <= MAX_LOCAL_BYTES) {
         const value = JSON.parse(raw); workspace = checkTeamWorkspace(value.workspace, this.server);
         if (validRevision(value.baseRevision)) baseRevision = value.baseRevision;
       }
@@ -211,15 +241,16 @@ export class TeamWorkspaceStore {
       raw = this.options.storage.getItem(key);
     this.versions.set(key, raw);
     if (!raw) return null;
-    if (new TextEncoder().encode(raw).byteLength > MAX_WORKSPACE_BYTES)
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_BYTES)
       throw new RangeError("team-workspace-byte-limit");
-    const value = JSON.parse(raw) as { workspace: unknown; baseRevision: unknown; dirty: unknown };
-    if (!validRevision(value.baseRevision) || typeof value.dirty !== "boolean" || Object.keys(value).length !== 3)
+    const value = JSON.parse(raw) as { workspace: unknown; baseRevision: unknown; dirty: unknown; syncBase?: SyncBase<TeamWorkspaceV1> };
+    if (!validRevision(value.baseRevision) || typeof value.dirty !== "boolean" || !Object.keys(value).every(k => ["workspace", "baseRevision", "dirty", "syncBase"].includes(k)))
       throw new TypeError("team-workspace-invalid-draft");
     return {
       workspace: checkTeamWorkspace(value.workspace, this.server),
       baseRevision: value.baseRevision,
       dirty: value.dirty,
+      ...(value.syncBase?.revision === value.baseRevision ? { syncBase: { revision: value.syncBase.revision, document: checkTeamWorkspace(value.syncBase.document, this.server) } } : {}),
     };
   }
   private persist() {
@@ -230,8 +261,9 @@ export class TeamWorkspaceStore {
         workspace: this.state.workspace,
         baseRevision: this.state.revision,
         dirty: this.state.dirty,
+        ...(this.syncBase?.revision === this.state.revision ? { syncBase: this.syncBase } : {}),
       });
-    if (new TextEncoder().encode(raw).byteLength > MAX_WORKSPACE_BYTES)
+    if (new TextEncoder().encode(raw).byteLength > MAX_LOCAL_BYTES)
       throw new RangeError("team-workspace-byte-limit");
     this.options.storage.setItem(key, raw);
     this.versions.set(key, raw);
@@ -249,7 +281,65 @@ export class TeamWorkspaceStore {
       }
     }
   }
-  async setAccount(ownerId: string | null): Promise<void> {
+  setAccount(ownerId: string | null, force = false): Promise<void> {
+    if (this.accountLoad?.ownerId === ownerId) return this.accountLoad.promise;
+    if (!force && ownerId === this.state.ownerId && this.state.workspace && !this.state.authorityError &&
+      ["saved", "pending", "saving", "anonymous"].includes(this.state.phase) && Date.now() - this.lastReadAt < 5000)
+      return Promise.resolve();
+    const operation = this.loadAccount(ownerId);
+    const promise = operation.finally(() => { if (this.accountLoad?.promise === promise) this.accountLoad = undefined; });
+    this.accountLoad = { ownerId, promise }; return promise;
+  }
+  private archivePair(local: TeamWorkspaceV1, remote: TeamWorkspaceV1): void {
+    for (const [label, workspace] of [["local", local], ["remote", remote]] as const) {
+      const key = `haneoka:team-workspace:backup:${this.state.ownerId === null ? "anonymous" : `account:${encodeURIComponent(this.state.ownerId)}`}:${encodeURIComponent(this.server)}:${label}:${crypto.randomUUID()}`;
+      this.options.storage.setItem(key, JSON.stringify({ workspace, baseRevision: this.state.revision, dirty: label === "local" }));
+    }
+  }
+  private reconcileCloud(value: CloudTeamWorkspace, local: TeamWorkspaceV1, base?: SyncBase<TeamWorkspaceV1>): boolean {
+    const cloud = value.workspace ?? createEmptyTeamWorkspace(this.server);
+    const originalLocal = local;
+    local = compatibleMetadata(local, cloud);
+    if (value.revision < this.state.revision) return false;
+    const merged = sameSyncDocument(local, cloud) ? { value: local, conflicts: [] } :
+      base && base.revision <= value.revision ? mergeSyncDocuments(compatibleMetadata(base.document, cloud), local, cloud) :
+        !this.state.dirty ? { value: cloud, conflicts: [] } : null;
+    if (!merged || merged.conflicts.length) {
+      this.state.conflictPaths = merged?.conflicts; this.state.mergeBase = base?.document; this.state.remote = value;
+      if (merged?.conflicts.length) this.archivePair(originalLocal, cloud);
+      return false;
+    }
+    let candidate: TeamWorkspaceV1;
+    try { candidate = checkTeamWorkspace(merged.value, this.server); }
+    catch { this.state.conflictPaths = ["/workspace/references"]; return false; }
+    if (!sameSyncDocument(originalLocal, candidate)) this.archivePair(originalLocal, cloud);
+    this.syncBase = { revision: value.revision, document: cloud };
+    this.state.workspace = candidate; this.state.revision = value.revision; this.state.dirty = !sameSyncDocument(candidate, cloud);
+    this.state.remote = undefined; this.state.conflictPaths = undefined; this.state.mergeBase = undefined; this.state.error = undefined;
+    this.state.phase = this.state.dirty ? "pending" : "saved"; this.persist();
+    if (this.state.dirty) this.schedule(); this.emit(); return true;
+  }
+  private async loadAccount(ownerId: string | null): Promise<void> {
+    if (ownerId !== null && ownerId === this.state.ownerId && this.state.workspace && !this.state.authorityError && !this.state.localConflict) {
+      const generation = this.generation; await this.pending;
+      if (generation !== this.generation || this.state.ownerId !== ownerId) return;
+      const signal = this.controller!.signal; this.state.refreshing = true; this.emit();
+      try {
+        const { value } = await this.client.read(ownerId, signal);
+        if (generation !== this.generation) return;
+        this.lastReadAt = Date.now();
+        if (!this.reconcileCloud(value, this.state.workspace!, this.syncBase)) { this.state.remote = value; this.state.phase = "conflict"; this.emit(); }
+      } catch (error) {
+        if (generation !== this.generation || signal.aborted) return;
+        if (error instanceof CloudTeamWorkspaceRequestError && ([401, 403].includes(error.status) || error.code === "account_changed")) {
+          this.authoritySuspended ??= structuredClone(this.state);
+          this.state = { phase: "error", workspace: null, ownerId: null, revision: 0, dirty: false, error: error.code,
+            authorityError: { status: error.status, code: error.code } };
+        } else this.state.error = String(error);
+        this.emit();
+      } finally { if (generation === this.generation) { this.state.refreshing = false; this.emit(); } }
+      return;
+    }
     const retained = ownerId !== null && this.authoritySuspended?.ownerId === ownerId ? this.authoritySuspended : undefined;
     if (retained || (ownerId === this.state.ownerId && this.state.workspace && this.state.error === "team-workspace-local-draft-changed")) {
       this.controller?.abort(); clearTimeout(this.timer); this.pending = undefined;
@@ -259,6 +349,14 @@ export class TeamWorkspaceStore {
           const { value } = await this.client.read(ownerId, controller.signal);
           if (generation !== this.generation) return;
           if (retained) { this.state = retained; this.authoritySuspended = undefined; }
+          this.lastReadAt = Date.now(); this.state.refreshing = false;
+          if (retained && !this.localConflictRaw) {
+            const local = this.state.workspace ?? value.workspace ?? createEmptyTeamWorkspace(this.server);
+            if (!this.reconcileCloud(value, local, this.syncBase)) {
+              this.state.remote = value; this.state.phase = "conflict"; this.emit();
+            }
+            return;
+          }
           this.state.remote = value;
         }
         if (generation !== this.generation) return;
@@ -280,6 +378,7 @@ export class TeamWorkspaceStore {
     clearTimeout(this.timer);
     this.pending = undefined;
     this.authoritySuspended = undefined;
+    this.syncBase = undefined; this.lastReadAt = 0;
     this.anonymous = undefined;
     this.versions.clear();
     this.localConflictRaw = undefined; this.localBackupVersion = -1;
@@ -300,27 +399,38 @@ export class TeamWorkspaceStore {
       this.state.workspace = local?.workspace ?? createEmptyTeamWorkspace(this.server);
       this.state.revision = local?.baseRevision ?? 0;
       this.state.dirty = local?.dirty ?? false;
+      this.syncBase = local?.syncBase;
       if (ownerId === null) {
-        this.emit();
+        this.lastReadAt = Date.now(); this.emit();
         return;
       }
+      if (local) { this.state.phase = this.state.dirty ? "pending" : "saved"; this.state.refreshing = true; this.emit(); }
       const { value } = await this.client.read(ownerId, controller.signal);
       if (generation !== this.generation) return;
+      this.state.refreshing = false;
+      this.lastReadAt = Date.now();
+      this.guard(ownerId);
+      const pending = { workspace: this.state.workspace!, baseRevision: this.state.revision,
+        dirty: this.state.dirty, syncBase: this.syncBase };
       const remote = value.workspace ?? createEmptyTeamWorkspace(this.server);
       const changed =
-        !!local && (local.dirty || local.baseRevision > value.revision) && !equal(local.workspace, remote);
-      if (changed && local.baseRevision !== value.revision) {
+        (pending.dirty || pending.baseRevision > value.revision) && !equal(pending.workspace, remote);
+      if (changed && pending.baseRevision !== value.revision) {
+        const base = pending.syncBase ?? (pending.baseRevision === 0 ? { revision: 0, document: createEmptyTeamWorkspace(this.server) } : undefined);
+        if (this.reconcileCloud(value, pending.workspace, base)) return;
         this.state.phase = "conflict";
         this.state.remote = value;
         this.state.dirty = true;
         this.emit();
         return;
       }
-      this.state.workspace = changed ? local.workspace : remote;
+      this.state.workspace = changed ? pending.workspace : remote;
       this.state.revision = value.revision;
       this.state.dirty = changed;
+      this.syncBase = { revision: value.revision, document: remote };
       this.persist();
-      if (anonymous && (anonymous.workspace.profiles.length || anonymous.workspace.teams.length)) {
+      if (anonymous && (anonymous.workspace.profiles.length || anonymous.workspace.teams.length) &&
+          !equal(compatibleMetadata(anonymous.workspace, this.state.workspace), this.state.workspace)) {
         this.anonymous = anonymous.workspace;
         this.state.phase = "merge-required";
       } else this.state.phase = changed ? "pending" : "saved";
@@ -328,6 +438,12 @@ export class TeamWorkspaceStore {
       this.emit();
     } catch (error) {
       if (generation !== this.generation || controller.signal.aborted) return;
+      this.state.refreshing = false;
+      if (error instanceof CloudTeamWorkspaceRequestError && ([401, 403].includes(error.status) || error.code === "account_changed")) {
+        this.authoritySuspended ??= structuredClone(this.state);
+        this.state = { phase: "error", workspace: null, ownerId: null, revision: 0, dirty: false,
+          error: error.code, authorityError: { status: error.status, code: error.code } }; this.emit(); return;
+      }
       this.state.phase =
         error instanceof TypeError && !error.message.startsWith("team-workspace-") ? "offline" : "error";
       this.state.error = error instanceof Error ? error.message : String(error);
@@ -345,6 +461,7 @@ export class TeamWorkspaceStore {
     try {
       this.persist();
     } catch (error) {
+      clearTimeout(this.timer);
       this.state.phase = "error";
       this.state.error = error instanceof Error ? error.message : String(error);
       this.emit();
@@ -352,8 +469,8 @@ export class TeamWorkspaceStore {
     }
     if (this.state.ownerId === null) this.state.phase = "anonymous";
     else if (this.state.phase !== "conflict") {
-      this.state.phase = "pending";
-      this.schedule();
+      this.state.phase = this.state.dirty ? "pending" : "saved";
+      if (this.state.dirty) this.schedule();
     }
     this.emit();
   }
@@ -366,6 +483,7 @@ export class TeamWorkspaceStore {
   saveNow(): Promise<void> {
     clearTimeout(this.timer);
     if (this.pending) return this.pending;
+    if (this.accountLoad?.ownerId === this.state.ownerId) return this.accountLoad.promise.then(() => this.saveNow());
     if (
       this.state.ownerId === null ||
       !this.state.workspace ||
@@ -381,6 +499,7 @@ export class TeamWorkspaceStore {
       this.emit();
       return Promise.resolve();
     }
+    if (!this.state.dirty) { this.state.phase = "saved"; this.emit(); return Promise.resolve(); }
     const owner = this.state.ownerId,
       generation = this.generation,
       version = this.edits,
@@ -394,12 +513,14 @@ export class TeamWorkspaceStore {
         if (generation !== this.generation) return;
         const acknowledged = result.value.revision >= revision && result.value.workspace !== null && equal(result.value.workspace, workspace);
         if (result.conflict && !acknowledged) {
+          if (this.reconcileCloud(result.value, this.state.workspace!, this.syncBase)) return;
           this.state.remote = result.value;
           this.state.phase = "conflict";
           this.emit();
           return;
         }
         this.state.revision = result.value.revision;
+        this.syncBase = { revision: result.value.revision, document: result.value.workspace ?? workspace };
         this.state.dirty = this.edits !== version && !equal(this.state.workspace, workspace);
         this.state.remote = result.value;
         this.persist();
@@ -432,10 +553,16 @@ export class TeamWorkspaceStore {
         ? cloud
         : strategy === "local"
           ? this.state.workspace
-          : mergeTeamWorkspaces(cloud, this.state.workspace, priority);
+          : this.syncBase ? mergeSyncDocuments(this.syncBase.document, this.state.workspace, cloud, priority === "cloud" ? "remote" : priority === "local" ? "local" : undefined).value
+            : mergeTeamWorkspaces(cloud, this.state.workspace, priority);
+    if (strategy === "merge" && this.syncBase && !priority && mergeSyncDocuments(this.syncBase.document, this.state.workspace, cloud).conflicts.length)
+      throw new Error("team-workspace-field-choice-required");
+    this.archivePair(this.state.workspace, cloud);
+    this.syncBase = { revision: remote.revision, document: cloud };
     this.state.revision = remote.revision;
     this.state.remote = undefined;
     this.state.phase = "saved";
+    this.state.conflictPaths = undefined; this.state.mergeBase = undefined; this.state.error = undefined;
     if (strategy === "remote") {
       this.state.workspace = checkTeamWorkspace(next, this.server);
       this.state.dirty = false;
@@ -477,6 +604,7 @@ export class TeamWorkspaceStore {
     clearTimeout(this.timer);
     this.pending = undefined;
     this.authoritySuspended = undefined;
+    this.syncBase = undefined; this.lastReadAt = 0; this.accountLoad = undefined;
     this.anonymous = undefined;
     this.versions.clear();
     this.localConflictRaw = undefined;

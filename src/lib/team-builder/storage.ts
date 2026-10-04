@@ -13,6 +13,7 @@ import {
   type InventoryUniquenessPreview,
 } from "./inventory";
 import { InventoryCardMergeConflictError, sameOwnedCardState } from "./data/inventory-unique";
+import { mergeSyncDocuments, sameSyncDocument, type SyncBase } from "./data/sync-merge";
 export { InventoryUniquenessError, InventoryCardMergeConflictError };
 import {
   chooseLocalDraft as chooseStoredLocalDraft,
@@ -75,11 +76,15 @@ export interface InventoryStoreState {
   remote?: CloudInventory;
   error?: string;
   authorityError?: { status: number; code: string };
+  conflictPaths?: string[];
+  mergeBase?: InventoryV1;
+  refreshing?: boolean;
   localDraftChoices?: string[];
   localDraftSource?: "anonymous" | "account";
   localConflict?: { ownerId: string | null; inventory: InventoryV1 | null; pendingInventory: InventoryV1; baseRevision: number | null; backupKey?: string };
 }
 const MAX_JSON_BYTES = 1024 * 1024;
+const MAX_LOCAL_BYTES = 2 * MAX_JSON_BYTES + 4096;
 const key = (data: TeamBuilderData, owner: string | null) =>
   `haneoka:team-inventory:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(data.identity.server)}:${encodeURIComponent(data.identity.releaseId)}`;
 function checked(value: unknown, data: TeamBuilderData, allowDifferentRelease = false): InventoryV2 {
@@ -112,8 +117,11 @@ export function writeLocalInventory(
   owner: string | null = null,
   baseRevision = 0,
   dirty = true,
+  syncBase?: SyncBase<InventoryV1>,
 ): string {
-  const serialized = JSON.stringify({ inventory: checked(inventory, data), baseRevision, dirty });
+  const serialized = JSON.stringify({ inventory: checked(inventory, data), baseRevision, dirty,
+    ...(syncBase && syncBase.revision === baseRevision ? { syncBase } : {}) });
+  if (new TextEncoder().encode(serialized).byteLength > MAX_LOCAL_BYTES) throw new Error("Local inventory JSON is too large");
   storage.setItem(key(data, owner), serialized);
   setLocalDraftLocator(storage, data, owner, data.identity.releaseId);
   return serialized;
@@ -121,14 +129,7 @@ export function writeLocalInventory(
 
 /** JSON object ordering is transport detail; array ordering and every value remain meaningful. */
 function sameInventoryContent(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (Array.isArray(a) || Array.isArray(b))
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
-      a.every((value, index) => sameInventoryContent(value, b[index]));
-  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
-  return Object.keys(a).length === Object.keys(b).length &&
-    Object.entries(a).every(([key, value]) => Object.hasOwn(b, key) &&
-      sameInventoryContent(value, (b as Record<string, unknown>)[key]));
+  return sameSyncDocument(a, b);
 }
 export function mergeInventories(cloud: InventoryV1, draft: InventoryV1, mapPriority?: "cloud" | "draft"): InventoryV1 {
   if (cloud.server !== draft.server || cloud.releaseId !== draft.releaseId)
@@ -285,6 +286,9 @@ export class InventoryStore {
   private localConflictRaw?: { ownerId: string | null; raw: string | null };
   private localBackupVersion = -1;
   private authoritySuspended?: InventoryStoreState;
+  private syncBase?: SyncBase<InventoryV1>;
+  private accountLoad?: { ownerId: string | null; promise: Promise<void> };
+  private lastReadAt = 0;
   private readonly client;
   constructor(
     readonly data: TeamBuilderData,
@@ -316,7 +320,81 @@ export class InventoryStore {
     if (generation !== this.generation) return;
     await this.setAccount(session?.user?.id || null);
   }
-  async setAccount(ownerId: string | null): Promise<void> {
+  setAccount(ownerId: string | null, force = false): Promise<void> {
+    if (this.accountLoad?.ownerId === ownerId) return this.accountLoad.promise;
+    if (!force && ownerId === this.state.ownerId && this.state.inventory && !this.state.authorityError &&
+      ["saved", "pending", "saving", "anonymous"].includes(this.state.phase) && Date.now() - this.lastReadAt < 5000)
+      return Promise.resolve();
+    const operation = this.loadAccount(ownerId);
+    const promise = operation.finally(() => { if (this.accountLoad?.promise === promise) this.accountLoad = undefined; });
+    this.accountLoad = { ownerId, promise };
+    return promise;
+  }
+  private currentInventory(inventory: InventoryV1): InventoryV1 {
+    const preview = rebaseInventory(inventory, this.data);
+    if (!preview.canApply) throw new InventoryValidationError(preview.issues);
+    return checked(preview.candidate, this.data);
+  }
+  private archivePair(local: InventoryV1, remote: InventoryV1): void {
+    for (const [label, inventory] of [["local", local], ["remote", remote]] as const) {
+      const backupKey = `haneoka:team-inventory:backup:${this.state.ownerId === null ? "anonymous" : `account:${encodeURIComponent(this.state.ownerId)}`}:${encodeURIComponent(this.data.identity.server)}:${encodeURIComponent(inventory.releaseId)}:${label}:${crypto.randomUUID()}`;
+      this.options.storage.setItem(backupKey, JSON.stringify({ inventory, baseRevision: this.state.revision, dirty: label === "local" }));
+    }
+  }
+  private reconcileCloud(value: CloudInventory, local: InventoryV1, base?: SyncBase<InventoryV1>): boolean {
+    const cloud = value.inventory ? this.currentInventory(value.inventory) : createEmptyInventory(this.data.identity);
+    if (value.revision < this.state.revision) return false;
+    const merged = sameInventoryContent(local, cloud) ? { value: local, conflicts: [] } :
+      base && base.revision <= value.revision
+        ? mergeSyncDocuments(this.currentInventory(base.document), local, cloud)
+        : !this.state.dirty ? { value: cloud, conflicts: [] } : null;
+    if (!merged || merged.conflicts.length) {
+      this.state.conflictPaths = merged?.conflicts; this.state.mergeBase = base?.document; this.state.remote = value;
+      if (merged?.conflicts.length) this.archivePair(local, value.inventory ?? cloud);
+      return false;
+    }
+    let candidate: InventoryV1;
+    try { candidate = checked(merged.value, this.data); }
+    catch (error) {
+      if (!(error instanceof InventoryValidationError)) throw error;
+      this.state.conflictPaths = error.issues.map(issue => issue.path); return false;
+    }
+    if (!sameInventoryContent(local, candidate)) this.archivePair(local, value.inventory ?? cloud);
+    this.syncBase = { revision: value.revision, document: cloud };
+    this.state.inventory = candidate; this.state.revision = value.revision;
+    this.state.dirty = !sameInventoryContent(candidate, cloud) || !!value.inventory && value.inventory.releaseId !== this.data.identity.releaseId;
+    this.state.remote = undefined; this.state.conflictPaths = undefined; this.state.mergeBase = undefined; this.state.error = undefined;
+    this.state.phase = this.state.dirty ? "pending" : "saved";
+    this.persist();
+    if (this.state.dirty) this.schedule();
+    this.emit(); return true;
+  }
+  private async loadAccount(ownerId: string | null): Promise<void> {
+    if (ownerId !== null && ownerId === this.state.ownerId && this.state.inventory &&
+      !this.state.authorityError && !this.state.localConflict && this.state.phase !== "release-mismatch") {
+      const generation = this.generation;
+      await this.pending;
+      if (generation !== this.generation || this.state.ownerId !== ownerId) return;
+      const signal = this.controller!.signal;
+      this.state.refreshing = true; this.emit();
+      try {
+        const { value } = await this.client.read(ownerId, signal);
+        if (generation !== this.generation) return;
+        this.lastReadAt = Date.now();
+        if (!this.reconcileCloud(value, this.state.inventory!, this.syncBase)) {
+          this.state.remote = value; this.state.phase = "conflict"; this.emit();
+        }
+      } catch (error) {
+        if (generation !== this.generation || signal.aborted) return;
+        if (error instanceof CloudInventoryRequestError && ([401, 403].includes(error.status) || error.code === "account_changed")) {
+          this.authoritySuspended ??= structuredClone(this.state);
+          this.state = { phase: "error", inventory: null, ownerId: null, revision: 0, dirty: false,
+            error: error.code, authorityError: { status: error.status, code: error.code } };
+        } else this.state.error = String(error);
+        this.emit();
+      } finally { if (generation === this.generation) { this.state.refreshing = false; this.emit(); } }
+      return;
+    }
     const retained = ownerId !== null && this.authoritySuspended?.ownerId === ownerId ? this.authoritySuspended : undefined;
     if (retained || (ownerId === this.state.ownerId && this.state.inventory && this.state.error === "inventory-local-draft-changed")) {
       this.controller?.abort(); clearTimeout(this.timer); this.pending = undefined;
@@ -327,6 +405,14 @@ export class InventoryStore {
           const { value } = await this.client.read(ownerId, controller.signal);
           if (generation !== this.generation) return;
           if (retained) { this.state = retained; this.authoritySuspended = undefined; }
+          this.lastReadAt = Date.now(); this.state.refreshing = false;
+          if (retained && !this.localConflictRaw) {
+            const local = this.state.inventory ?? (value.inventory ? this.currentInventory(value.inventory) : createEmptyInventory(this.data.identity));
+            if (!this.reconcileCloud(value, local, this.syncBase)) {
+              this.state.remote = value; this.state.phase = "conflict"; this.emit();
+            }
+            return;
+          }
           this.state.remote = value;
         }
         if (generation !== this.generation) return;
@@ -348,6 +434,7 @@ export class InventoryStore {
     clearTimeout(this.timer);
     this.pending = undefined;
     this.authoritySuspended = undefined;
+    this.syncBase = undefined; this.lastReadAt = 0;
     this.anonymousDraft = undefined;
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;
@@ -379,57 +466,64 @@ export class InventoryStore {
           this.state.phase = "release-mismatch";
           this.state.localDraftSource = "anonymous";
         }
-        this.emit();
+        this.lastReadAt = Date.now(); this.emit();
         return;
       }
+      // Session owner is already confirmed by the caller; show its validated local draft while reading.
+      try {
+        const cached = locateLocalDraft(this.options.storage, this.data, ownerId);
+        if (cached) {
+          const inventory = this.currentInventory(cached.inventory);
+          this.state.inventory = inventory; this.state.revision = cached.baseRevision; this.state.dirty = cached.dirty !== false;
+          if (cached.syncBase) this.syncBase = { revision: cached.syncBase.revision, document: this.currentInventory(cached.syncBase.document) };
+          this.state.phase = this.state.dirty ? "pending" : "saved"; this.state.refreshing = true; this.emit();
+        }
+      } catch { /* The authoritative read still runs; invalid local data follows the existing review path. */ }
       const { value } = await this.client.read(ownerId, signal);
       observedCloud = value;
       if (generation !== this.generation) return;
+      this.state.refreshing = false;
       this.state.revision = value.revision;
       if (value.inventory) {
         const preview = previewInventoryUniqueness(value.inventory);
         if (preview.changed) throw new InventoryUniquenessError(preview);
       }
+      this.lastReadAt = Date.now();
       const local = locateLocalDraft(this.options.storage, this.data, ownerId);
-      const localChanged = !!local && (local.dirty !== false || local.baseRevision > value.revision) &&
-        !sameInventoryContent(local.inventory, value.inventory ?? createEmptyInventory(this.data.identity));
-      if (local && localChanged && local.inventory.releaseId !== this.data.identity.releaseId) {
-        this.restoredDraft = { kind: "account", location: local };
-        this.state = {
-          ...this.state,
-          phase: "release-mismatch",
-          inventory: local.inventory,
-          remote: value,
-          dirty: true,
-          localDraftSource: "account",
-        };
-        this.emit();
-        return;
-      }
-      // A local edit against the still-current revision resumes with the same CAS base.
-      // Only a differing draft and a changed remote revision need a merge decision.
-      if (local && localChanged && local.baseRevision !== value.revision) {
-        this.state = {
-          ...this.state, phase: "conflict", inventory: checked(local.inventory, this.data), remote: value, dirty: true,
-          revision: local.baseRevision,
-          ...(local.baseRevision > value.revision ? { error: "inventory-revision-regressed" } : {}),
-        };
-        this.emit();
-        return;
-      }
-      if (!localChanged && value.inventory && value.inventory.releaseId !== this.data.identity.releaseId) {
+      const remotePreview = value.inventory ? rebaseInventory(value.inventory, this.data) : null;
+      if (remotePreview && !remotePreview.canApply) {
         this.state = { ...this.state, phase: "release-mismatch", inventory: value.inventory, remote: value };
-        this.emit();
-        return;
+        this.emit(); return;
       }
-      this.state.inventory = local && localChanged
-        ? checked(local.inventory, this.data)
-        : value.inventory ? checked(value.inventory, this.data) : createEmptyInventory(this.data.identity);
-      this.state.dirty = localChanged;
-      // Cache the observed cloud revision even when the user makes no edits.
-      this.persist();
+      const cloud = value.inventory ? this.currentInventory(value.inventory) : createEmptyInventory(this.data.identity);
+      const localPreview = local ? rebaseInventory(local.inventory, this.data) : null;
+      if (local && localPreview && !localPreview.canApply && local.dirty !== false) {
+        this.restoredDraft = { kind: "account", location: local };
+        this.state = { ...this.state, phase: "release-mismatch", inventory: local.inventory, remote: value,
+          revision: local.baseRevision, dirty: true, localDraftSource: "account" };
+        this.emit(); return;
+      }
+      let localValue = local && localPreview?.canApply ? this.currentInventory(local.inventory) : null;
+      let localChanged = !!localValue && !!local && (local.dirty !== false || local.baseRevision > value.revision) &&
+        !sameInventoryContent(localValue, cloud);
+      if (local && localChanged && local.baseRevision !== value.revision) {
+        this.state.inventory = localValue; this.state.dirty = true; this.state.revision = local.baseRevision;
+        const base = local.syncBase ?? (local.baseRevision === 0 ? { revision: 0, document: createEmptyInventory(this.data.identity) } : undefined);
+        if (!this.reconcileCloud(value, localValue!, base)) {
+          this.state.phase = "conflict"; this.state.remote = value;
+          if (local.baseRevision > value.revision) this.state.error = "inventory-revision-regressed";
+          this.emit(); return;
+        }
+        localValue = this.state.inventory; localChanged = this.state.dirty;
+      } else {
+        if (local && !localChanged && !sameInventoryContent(localValue, cloud)) this.archivePair(local.inventory, value.inventory ?? cloud);
+        this.state.inventory = localChanged || localValue && sameInventoryContent(localValue, cloud) ? localValue : cloud;
+        this.state.dirty = localChanged || !!value.inventory && value.inventory.releaseId !== this.data.identity.releaseId;
+        this.syncBase = { revision: value.revision, document: cloud };
+        this.persist();
+      }
       const anonymous = locateLocalDraft(this.options.storage, this.data, null);
-      if (anonymous && anonymous.inventory.releaseId !== this.data.identity.releaseId) {
+      if (anonymous && anonymous.inventory.releaseId !== this.data.identity.releaseId && !rebaseInventory(anonymous.inventory, this.data).canApply) {
         this.restoredDraft = { kind: "anonymous", location: anonymous };
         this.state = {
           ...this.state,
@@ -441,9 +535,9 @@ export class InventoryStore {
         this.emit();
         return;
       }
-      this.anonymousDraft = anonymous ? checked(anonymous.inventory, this.data) : undefined;
+      this.anonymousDraft = anonymous ? this.currentInventory(anonymous.inventory) : undefined;
       const draft = this.anonymousDraft;
-      const hasDraft =
+      const hasDraft = !sameInventoryContent(draft, this.state.inventory) &&
         draft &&
         (draft.members.length ||
           draft.snapshots.length ||
@@ -460,6 +554,12 @@ export class InventoryStore {
       this.emit();
     } catch (error) {
       if (generation !== this.generation || signal.aborted) return;
+      this.state.refreshing = false;
+      if (error instanceof CloudInventoryRequestError && ([401, 403].includes(error.status) || error.code === "account_changed")) {
+        this.authoritySuspended ??= structuredClone(this.state);
+        this.state = { phase: "error", inventory: null, ownerId: null, revision: 0, dirty: false,
+          error: error.code, authorityError: { status: error.status, code: error.code } }; this.emit(); return;
+      }
       if (error instanceof InventoryUniquenessError) {
         this.normalizationSource = error;
         this.state = {
@@ -520,15 +620,19 @@ export class InventoryStore {
     this.state.inventory = next;
     this.edits++;
     this.state.dirty = true;
-    this.persist();
+    try { this.persist(); }
+    catch (error) {
+      clearTimeout(this.timer); this.state.phase = "error";
+      this.state.error = error instanceof Error ? error.message : String(error); this.emit(); throw error;
+    }
     if (!this.state.ownerId) {
       this.state.phase = "anonymous";
       this.emit();
       return;
     }
     if (this.state.phase !== "conflict") {
-      this.state.phase = "pending";
-      this.schedule();
+      this.state.phase = this.state.dirty ? "pending" : "saved";
+      if (this.state.dirty) this.schedule();
     }
     this.emit();
   }
@@ -541,17 +645,42 @@ export class InventoryStore {
     const observed = this.options.storage.getItem(storageKey), expected = this.localVersions.get(storageKey);
     if (this.localVersions.has(storageKey) && observed !== expected && expected && observed) {
       try {
-        if (new TextEncoder().encode(observed).byteLength <= MAX_JSON_BYTES && new TextEncoder().encode(expected).byteLength <= MAX_JSON_BYTES) {
+        if (new TextEncoder().encode(observed).byteLength <= MAX_LOCAL_BYTES && new TextEncoder().encode(expected).byteLength <= MAX_LOCAL_BYTES) {
           const old = JSON.parse(expected), current = JSON.parse(observed);
           const envelope = (value: typeof old) => value && typeof value === "object" && !Array.isArray(value) &&
-            Object.keys(value).every(field => ["inventory", "baseRevision", "dirty"].includes(field)) &&
+            Object.keys(value).every(field => ["inventory", "baseRevision", "dirty", "syncBase"].includes(field)) &&
             Number.isSafeInteger(value.baseRevision) && value.baseRevision >= 0 && value.baseRevision < Number.MAX_SAFE_INTEGER &&
             (value.dirty === undefined || typeof value.dirty === "boolean");
           if (envelope(old) && envelope(current) && sameInventoryContent(checked(old.inventory, this.data), checked(current.inventory, this.data)) &&
               (current.baseRevision === old.baseRevision || current.dirty === false && current.baseRevision >= old.baseRevision)) {
             this.localVersions.set(storageKey, observed);
-            if (owner === this.state.ownerId && current.dirty === false) this.state.revision = Math.max(this.state.revision, current.baseRevision);
+            if (owner === this.state.ownerId && current.dirty === false) {
+              this.state.revision = Math.max(this.state.revision, current.baseRevision);
+              this.syncBase = { revision: current.baseRevision, document: this.currentInventory(current.inventory) };
+              this.state.dirty = !sameInventoryContent(this.state.inventory, this.syncBase.document);
+            }
             return;
+          }
+          if (owner === this.state.ownerId && envelope(old) && envelope(current) && this.state.inventory) {
+            const common = this.currentInventory(old.inventory), foreign = this.currentInventory(current.inventory);
+            const merged = mergeSyncDocuments(common, this.state.inventory, foreign);
+            if (!merged.conflicts.length) {
+              const candidate = checked(merged.value, this.data);
+              this.archivePair(this.state.inventory, current.inventory);
+              if (this.options.storage.getItem(storageKey) !== observed) throw new LocalInventoryChangedError();
+              this.localVersions.set(storageKey, observed);
+              this.state.inventory = candidate;
+              if (current.baseRevision >= this.state.revision && current.dirty === false) {
+                this.state.revision = current.baseRevision;
+                this.syncBase = { revision: current.baseRevision, document: foreign };
+              } else if (current.baseRevision >= this.state.revision && current.syncBase?.revision === current.baseRevision) {
+                this.state.revision = current.baseRevision;
+                this.syncBase = { revision: current.baseRevision, document: this.currentInventory(current.syncBase.document) };
+              }
+              this.state.dirty = !this.syncBase || !sameInventoryContent(candidate, this.syncBase.document);
+              return;
+            }
+            this.state.conflictPaths = merged.conflicts;
           }
         }
       } catch { /* A differing or unreadable draft requires explicit review. */ }
@@ -570,7 +699,7 @@ export class InventoryStore {
     if (!pending) return;
     let inventory: InventoryV1 | null = null, baseRevision: number | null = null;
     try {
-      if (raw && new TextEncoder().encode(raw).byteLength <= MAX_JSON_BYTES) {
+      if (raw && new TextEncoder().encode(raw).byteLength <= MAX_LOCAL_BYTES) {
         const stored = JSON.parse(raw);
         inventory = checked(stored.inventory, this.data);
         if (Number.isSafeInteger(stored.baseRevision) && stored.baseRevision >= 0) baseRevision = stored.baseRevision;
@@ -614,8 +743,11 @@ export class InventoryStore {
     this.edit(candidate, true);
   }
   private writeDraft(inventory: InventoryV1, owner: string | null, revision = 0, dirty = true): void {
+    const currentArgument = owner === this.state.ownerId && inventory === this.state.inventory;
     this.assertLocalDraftUnchanged(owner);
-    const serialized = writeLocalInventory(this.options.storage, this.data, inventory, owner, revision, dirty);
+    const own = currentArgument && this.state.inventory;
+    const serialized = writeLocalInventory(this.options.storage, this.data, own || inventory, owner,
+      own ? this.state.revision : revision, own ? this.state.dirty : dirty, own ? this.syncBase : undefined);
     this.localVersions.set(key(this.data, owner), serialized);
   }
   private schedule(): void {
@@ -627,6 +759,7 @@ export class InventoryStore {
   saveNow(): Promise<void> {
     clearTimeout(this.timer);
     if (this.pending) return this.pending;
+    if (this.accountLoad?.ownerId === this.state.ownerId) return this.accountLoad.promise.then(() => this.saveNow());
     if (
       !this.state.ownerId ||
       !this.state.inventory ||
@@ -646,6 +779,7 @@ export class InventoryStore {
       }
       return Promise.resolve();
     }
+    if (!this.state.dirty) { this.state.phase = "saved"; this.emit(); return Promise.resolve(); }
     const owner = this.state.ownerId,
       generation = this.generation,
       version = this.edits;
@@ -663,6 +797,8 @@ export class InventoryStore {
           result.inventorySchema === inventory.schema && result.value.inventory?.releaseId === this.data.identity.releaseId &&
           sameInventoryContent(result.value.inventory, inventory);
         if (result.conflict && !acknowledged) {
+          if (result.conflictCode === "revision_conflict" && result.inventorySchema === inventory.schema &&
+              this.reconcileCloud(result.value, this.state.inventory!, this.syncBase)) return;
           this.state.phase = "conflict";
           this.state.remote = result.value;
           this.state.error = result.value.inventory && result.inventorySchema !== inventory.schema
@@ -670,6 +806,7 @@ export class InventoryStore {
           this.emit();
           return;
         }
+        this.syncBase = { revision: result.value.revision, document: this.currentInventory(result.value.inventory ?? inventory) };
         this.state.revision = result.value.revision;
         this.state.dirty = version !== this.edits && !sameInventoryContent(this.state.inventory, inventory);
         this.state.phase = this.state.dirty ? "pending" : "saved";
@@ -677,6 +814,7 @@ export class InventoryStore {
         this.state.error = undefined;
         this.persist();
         this.state.remote = undefined;
+        this.state.phase = this.state.dirty ? "pending" : "saved";
         this.emit();
       } catch (error) {
         if (generation !== this.generation || signal.aborted) return;
@@ -706,6 +844,7 @@ export class InventoryStore {
       throw new Error("No anonymous merge is pending");
     this.assertLocalDraftUnchanged(null);
     const cloud = this.state.inventory;
+    this.archivePair(this.anonymousDraft, cloud);
     const next =
       strategy === "cloud"
         ? cloud
@@ -727,17 +866,26 @@ export class InventoryStore {
       throw new Error("No cloud conflict is pending");
     const remoteForeign = !!remote.inventory && remote.inventory.releaseId !== this.data.identity.releaseId;
     let cloud: InventoryV1 = createEmptyInventory(this.data.identity);
-    if (strategy !== "local" && remote.inventory) {
-      const preview = remoteForeign ? rebaseInventory(remote.inventory, this.data) : null;
-      if (preview && !preview.canApply) throw new InventoryValidationError(preview.issues);
-      cloud = checked(preview ? preview.candidate : remote.inventory, this.data);
+    let provenCloud = true;
+    if (remote.inventory) {
+      try {
+        const preview = remoteForeign ? rebaseInventory(remote.inventory, this.data) : null;
+        if (preview && !preview.canApply) throw new InventoryValidationError(preview.issues);
+        cloud = checked(preview ? preview.candidate : remote.inventory, this.data);
+      } catch (error) {
+        if (strategy !== "local") throw error;
+        provenCloud = false;
+      }
     }
+    const base = strategy === "merge" && this.syncBase ? this.currentInventory(this.syncBase.document) : null;
     const next =
-      strategy === "remote"
-        ? cloud
-        : strategy === "local"
-          ? this.state.inventory
-          : mergeInventories(cloud, this.state.inventory, mapPriority);
+      strategy === "remote" ? cloud : strategy === "local" ? this.state.inventory : base
+        ? mergeSyncDocuments(base, this.state.inventory, cloud, mapPriority === "cloud" ? "remote" : mapPriority === "draft" ? "local" : undefined).value
+        : mergeInventories(cloud, this.state.inventory, mapPriority);
+    if (strategy === "merge" && base && !mapPriority && mergeSyncDocuments(base, this.state.inventory, cloud).conflicts.length)
+      throw new Error("inventory-field-choice-required");
+    this.archivePair(this.state.inventory, remote.inventory ?? cloud);
+    this.syncBase = provenCloud ? { revision: remote.revision, document: cloud } : undefined;
     const anonymousPending = !!this.anonymousDraft && this.state.localDraftSource === "anonymous";
     if (anonymousPending) this.assertLocalDraftUnchanged(null);
     this.state = {
@@ -746,7 +894,7 @@ export class InventoryStore {
       revision: remote.revision,
       phase: "saved",
       dirty: false,
-      remote: undefined,
+      remote: undefined, conflictPaths: undefined, mergeBase: undefined, error: undefined,
     };
     if (strategy !== "remote" || remoteForeign) this.edit(next, true);
     else this.persist();
@@ -824,6 +972,7 @@ export class InventoryStore {
     clearTimeout(this.timer);
     this.pending = undefined;
     this.authoritySuspended = undefined;
+    this.syncBase = undefined; this.lastReadAt = 0; this.accountLoad = undefined;
     this.anonymousDraft = undefined;
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;

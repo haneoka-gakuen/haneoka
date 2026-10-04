@@ -7,8 +7,9 @@ import {
 } from "../inventory";
 import type { TeamBuilderData } from "../data";
 import type { StorageLike } from "../storage";
+import type { SyncBase } from "./sync-merge";
 
-const MAX_BYTES = 1024 * 1024;
+const MAX_BYTES = 2 * 1024 * 1024 + 4096;
 const MAX_KEYS = 512;
 const MAX_RELEASES = 32;
 const MAX_ID = 0x7fffffff;
@@ -110,6 +111,7 @@ export interface LocatedLocalDraft {
   inventory: InventoryV2;
   baseRevision: number;
   storageKey: string;
+  syncBase?: SyncBase<InventoryV2>;
   /** Absent on historical envelopes, whose differing content must be retained. */
   dirty?: boolean;
 }
@@ -152,6 +154,9 @@ function readStored(
     });
   return {
     inventory: upgradeInventory(envelope.inventory), baseRevision: Number(envelope.baseRevision), storageKey,
+    ...(object(envelope.syncBase) && envelope.syncBase.revision === envelope.baseRevision &&
+      storedShape(envelope.syncBase.document) && envelope.syncBase.document.server === data.identity.server
+      ? { syncBase: { revision: Number(envelope.syncBase.revision), document: upgradeInventory(envelope.syncBase.document) } } : {}),
     ...(typeof envelope.dirty === "boolean" ? { dirty: envelope.dirty } : {}),
   };
 }
