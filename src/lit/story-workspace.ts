@@ -52,7 +52,7 @@ import { storyCastMedia } from "./ui/story-media";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { dialogueRow } from "./ui/dialogue-row";
 import { characterPair } from "./ui/character-pair";
-import { entityHref, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
+import { entityHref, isReleaseServer, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import type { Locale } from "@haneoka/i18n";
@@ -2157,7 +2157,8 @@ export class StoryWorkspace extends LitElement {
     const locale = !this.isBestdori() && body.text ? body.locale : this.locale;
     const resolve = (value: unknown) => resolveLocalizedText(value, locale);
     const authoredNames = Array.isArray(command.targetTextNames) ? command.targetTextNames : [];
-    const targetNames = (Array.isArray(command.targets) ? command.targets : []).map((target) => {
+    const targets = (Array.isArray(command.targets) ? command.targets : []) as JsonRecord[];
+    const targetNames = targets.map((target) => {
       const value = target as JsonRecord;
       return resolve(value.name).text ? value.name : this.character(Number(value.characterId))?.characterName;
     });
@@ -2171,7 +2172,36 @@ export class StoryWorkspace extends LitElement {
       separator: this.isBestdori() ? undefined : (runtime?.displayNameJoiner ?? nativeSpeakerNameJoiner),
     });
     const status = Number(command.targetStatus);
-    return status === 2 ? { ...speaker, text: "" } : status === 1 ? { ...speaker, text: "???", lang: "und" } : speaker;
+    if (status === 2) return { ...speaker, text: "", content: nothing };
+    if (status === 1) return { ...speaker, text: "???", lang: "und", content: "???" };
+    // Keep authored names aligned with their own command targets, including
+    // empty slots; an unmatched group label has no individual destination.
+    const members = names
+      .map((name, index) => ({
+        name: resolve(name),
+        target: names.length === targets.length ? targets[index] : undefined,
+      }))
+      .filter(({ name }) => name.text);
+    const memberSlots =
+      speaker.formatSource === "separator"
+        ? speaker.parts.map((_, index) => index % 2 === 0)
+        : new Intl.ListFormat(locale, { style: "long", type: "conjunction" })
+            .formatToParts(members.map(({ name }) => name.text))
+            .map((part) => part.type === "element");
+    const server = this.dataServer();
+    let memberIndex = 0;
+    const content = speaker.parts.map((part, index) => {
+      const target = memberSlots[index] ? members[memberIndex++]?.target : undefined;
+      const id = Number(target?.characterId);
+      const href =
+        !this.isBestdori() && isReleaseServer(server) && Number.isSafeInteger(id) && id > 0 && this.character(id)
+          ? entityHref({ server, locale: this.locale as Locale, kind: "characters", id: String(id) })
+          : "";
+      // Preserve the authored separator without adding template whitespace.
+      // prettier-ignore
+      return href ? html`<a href=${href} lang=${part.lang}>${advText(part.text)}</a>` : html`<span lang=${part.lang}>${advText(part.text)}</span>`;
+    });
+    return { ...speaker, content };
   }
   private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
     const command = entry.command;
@@ -2263,6 +2293,7 @@ export class StoryWorkspace extends LitElement {
         commandIndex: entry.commandIndex,
         avatar: this.transcriptAvatars(entry),
         speaker: names,
+        speakerContent: speaker.content,
         speakerLanguage: speaker.lang,
         text: advText(text, entry.kind === "message" ? NATIVE_CHAT_FONT_SIZE : undefined),
         textLanguage: resolved.locale,
@@ -2307,7 +2338,7 @@ export class StoryWorkspace extends LitElement {
           ${
             names
               ? html`
-                  <strong class="story-transcript__speaker" lang=${speaker.lang} dir="auto">${advText(names)}</strong>
+                  <strong class="story-transcript__speaker" lang=${speaker.lang} dir="auto">${speaker.content}</strong>
                 `
               : nothing
           }

@@ -10,6 +10,7 @@ export interface DialogueRowOptions {
   className?: string;
   avatar?: unknown;
   speaker?: string;
+  speakerContent?: unknown;
   speakerLanguage?: string;
   text?: unknown;
   textLanguage?: string;
@@ -47,7 +48,7 @@ export function dialogueRow(options: DialogueRowOptions): TemplateResult {
             hasSpeaker
               ? html`
                   <strong class="dialogue-row__speaker" lang=${options.speakerLanguage || nothing}>
-                    ${options.speaker}
+                    ${options.speakerContent ?? options.speaker}
                   </strong>
                 `
               : nothing
