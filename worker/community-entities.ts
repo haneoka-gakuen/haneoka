@@ -14,6 +14,8 @@ import {
 const PREFIX = "/api/v1/community/entity-threads/";
 const PURPOSE_ADMIN = "/api/v1/admin/forum-purposes";
 const FEED = "/api/v1/community/entity-comments";
+const commentReadRequest = (request: Request): Request =>
+  request.method === "HEAD" ? new Request(request, { method: "GET" }) : request;
 const locales = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
 type Locale = (typeof locales)[number];
 export interface CommunityEntityDescriptor {
@@ -365,7 +367,7 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
     focus.search = "";
     focus.searchParams.set("commentId", candidate.id);
     focus.searchParams.set("commentsOnly", "true");
-    const response = await communityEntityCommentBackend.read(request, env, candidate.postId, focus);
+    const response = await communityEntityCommentBackend.read(commentReadRequest(request), env, candidate.postId, focus);
     if (response.status >= 400) continue;
     const data = (await response.json()) as { comments: Array<{ id: string; rootId?: string }> };
     const comment = data.comments.find((row) => row.id === candidate.id);
@@ -390,6 +392,45 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
   return json(request, { entries, nextCursor, sort });
 }
 
+async function recommendations(request: Request, env: Env, url: URL, resolver: CommunityEntityResolver): Promise<Response> {
+  const server = url.searchParams.get("server") ?? "intl", locale = url.searchParams.get("locale") ?? "en";
+  if (!["jp", "intl"].includes(server) || !locales.includes(locale as Locale)
+    || ["server", "locale"].some((key) => url.searchParams.getAll(key).length > 1))
+    return error(request, 400, "invalid_context", "Use a supported display server and locale");
+  const descriptors = new Map<string, Promise<CommunityEntityDescriptor | null>>();
+  return communityEntityCommentBackend.recommendations(request, env, url, async (candidate) => {
+    const target = { entityType: candidate.entityType, originalId: candidate.originalId };
+    const key = JSON.stringify([target.entityType, target.originalId]);
+    let resolved = descriptors.get(key);
+    if (!resolved) {
+      resolved = resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale });
+      descriptors.set(key, resolved);
+    }
+    const descriptor = await resolved;
+    if (!descriptor || descriptor.type !== target.entityType || descriptor.originalId !== target.originalId) return null;
+    const focus = new URL(`${PREFIX}${encodeURIComponent(target.entityType)}/${encodeURIComponent(target.originalId)}`, url);
+    focus.searchParams.set("commentId", candidate.id);
+    focus.searchParams.set("commentsOnly", "true");
+    const response = await communityEntityCommentBackend.read(commentReadRequest(request), env, candidate.threadId, focus);
+    if (!response.ok) return null;
+    const data = (await response.json()) as { comments?: Array<Record<string, unknown> & { id: string; rootId?: string }> };
+    const comment = data.comments?.find((value) => value.id === candidate.id);
+    if (!comment) return null;
+    const entityRef = entityValue(descriptor);
+    const path = entityRef.detailPaths[server as "jp" | "intl"] ?? Object.values(entityRef.detailPaths)[0];
+    if (!path) return null;
+    const link = new URL(path, url);
+    link.searchParams.set("commentId", comment.id);
+    return {
+      kind: "entity-comment", id: comment.id,
+      comment: { ...comment, threadId: candidate.threadId }, entityRef,
+      focusedCommentId: comment.id, rootId: comment.rootId ?? comment.id,
+      deepLink: link.pathname + link.search + link.hash,
+      adminOnlyContext: candidate.visibility === "private",
+    };
+  });
+}
+
 /** The resolver validates original identities and current public locators; request labels never become trusted metadata. */
 export async function handleCommunityEntityRequest(
   request: Request,
@@ -397,7 +438,11 @@ export async function handleCommunityEntityRequest(
   resolver: CommunityEntityResolver,
 ): Promise<Response | null> {
   const url = new URL(request.url);
+  const mixedRecommendations = url.pathname === "/api/v1/community/posts"
+    && url.searchParams.get("scope") === "recommended"
+    && (request.method === "GET" || request.method === "HEAD");
   const recognized =
+    mixedRecommendations ||
     url.pathname.startsWith(PREFIX) ||
     url.pathname === FEED ||
     url.pathname === PURPOSE_ADMIN ||
@@ -407,6 +452,7 @@ export async function handleCommunityEntityRequest(
   if (!recognized) return null;
   if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
   if (!sameOrigin(request)) return error(request, 403, "cross_origin_request", "Use the same-origin entity API");
+  if (mixedRecommendations) return recommendations(request, env, url, resolver);
   if (url.pathname === FEED)
     return request.method === "GET" || request.method === "HEAD"
       ? entityFeed(request, env, url, resolver)
@@ -500,7 +546,7 @@ export async function handleCommunityEntityRequest(
     const headers = new Headers(request.headers);
     headers.delete("Content-Length");
     headers.set("Content-Type", "application/json");
-    const forwarded = new Request(request.url, { method: "POST", headers, body: JSON.stringify(body.body) });
+    const forwarded = new Request(request, { headers, body: JSON.stringify(body.body) });
     const result = await communityEntityCommentBackend.create(forwarded, env, postId, initialize);
     const payload: unknown = await result.json();
     if (!payload || typeof payload !== "object" || result.status >= 400)
@@ -543,7 +589,7 @@ export async function handleCommunityEntityRequest(
   readUrl.searchParams.delete("server");
   readUrl.searchParams.delete("locale");
   readUrl.searchParams.set("commentsOnly", "true");
-  const result = await communityEntityCommentBackend.read(request, env, existing.postId, readUrl);
+  const result = await communityEntityCommentBackend.read(commentReadRequest(request), env, existing.postId, readUrl);
   if (result.status >= 400) return result;
   const payload = (await result.json()) as {
     comments?: Array<{ id: string; rootId?: string }>;

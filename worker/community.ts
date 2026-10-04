@@ -1,4 +1,5 @@
 import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./community-entity-guard";
+import { entityRecommendationCandidates } from "./community-entity-recommendations";
 import { writableTeamOwner } from "./team-inventory";
 import { forumReadSql, forumPermissionSql, forumAdminSql, forumDiscoveryPostSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
 import { mediaPresentations } from "./community-media";
@@ -117,7 +118,19 @@ interface PostRow extends PostDatabaseFields {
 
 interface PostListRow extends PostDatabaseFields {
   body: string;
+  kind?: "post" | "entity-comment";
+  entityType?: string;
+  originalId?: string;
+  threadId?: string;
 }
+
+export type EntityRecommendationHydrator = (candidate: {
+  id: string;
+  entityType: string;
+  originalId: string;
+  threadId: string;
+  visibility: PostVisibility;
+}) => Promise<Record<string, unknown> | null>;
 
 interface PostAttachment {
   contentUrl: string | null;
@@ -1253,7 +1266,7 @@ const ownershipError = async (request: Request, env: Env, id: string, userId: st
   return null;
 };
 
-const listPosts = async (request: Request, env: Env, url: URL): Promise<Response> => {
+const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: EntityRecommendationHydrator): Promise<Response> => {
   const parsed = parseListOptions(request, url);
   if (!parsed.ok) return parsed.response;
   const options = parsed.value;
@@ -1389,6 +1402,7 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   }
   const rowLimit = options.limit + 1;
   let result: D1Result<PostListRow>;
+  const commentEntries = new Map<string, Record<string, unknown>>();
   if (options.scope === "recommended") {
     if (recommendationSeed === null || recommendationRankAsOf === null) {
       throw new Error("A recommendation request has no stable ranking context");
@@ -1448,11 +1462,11 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
       END`;
       scoreBindings.push(userId, userId);
     }
-    const rankCursorSql = options.cursor
+    let rankCursorSql = options.cursor
       ? `WHERE rankScore < ?
           OR (rankScore = ? AND (createdAt < ? OR (createdAt = ? AND id < ?)))`
       : "";
-    const rankCursorBindings: BindValue[] = options.cursor
+    let rankCursorBindings: BindValue[] = options.cursor
       ? [
           options.cursor.rankScore ?? 0,
           options.cursor.rankScore ?? 0,
@@ -1461,9 +1475,16 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
           options.cursor.id,
         ]
       : [];
-    result = await env.DB.prepare(
-      `WITH candidate AS (
-         ${postListSelect} WHERE ${where.join(" AND ")}
+    const commentCandidates = hydrateEntity
+      ? entityRecommendationCandidates({ userId, forumId: options.forumId, q: options.q, tagSelection: options.tagSelection })
+      : null;
+    const candidateSql = commentCandidates
+      ? `SELECT post_candidate.*, 'post' AS kind, NULL AS entityType, NULL AS originalId, NULL AS threadId
+         FROM (${postListSelect} WHERE ${where.join(" AND ")}) AS post_candidate
+         UNION ALL ${commentCandidates.sql}`
+      : `${postListSelect} WHERE ${where.join(" AND ")}`;
+    const rankedSql = `WITH candidate AS (
+         ${candidateSql}
        ), ranked AS (
          SELECT candidate.*,
            (
@@ -1492,14 +1513,33 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
            ) AS rankScore,
            ${reasonExpression} AS recommendationReason
          FROM candidate
-       )
-       SELECT * FROM ranked
-       ${rankCursorSql}
-       ORDER BY rankScore DESC, createdAt DESC, id DESC
-       LIMIT ?`,
-    )
-      .bind(...bindings, ...scoreBindings, ...rankCursorBindings, rowLimit)
-      .all<PostListRow>();
+       ) SELECT * FROM ranked`;
+    const accepted: PostListRow[] = [];
+    const scanLimit = hydrateEntity ? Math.max(rowLimit, 50) : rowLimit;
+    // Resolve current original targets and canonical comment visibility before
+    // page length/hasMore/cursor, filling past stale or unreadable targets.
+    for (;;) {
+      result = await env.DB.prepare(`${rankedSql} ${rankCursorSql}
+        ORDER BY rankScore DESC, createdAt DESC, id DESC LIMIT ?`)
+        .bind(...bindings, ...(commentCandidates?.values ?? []), ...scoreBindings, ...rankCursorBindings, scanLimit)
+        .all<PostListRow>();
+      for (const candidate of result.results) {
+        if (candidate.kind === "entity-comment") {
+          if (!hydrateEntity || !candidate.entityType || !candidate.originalId || !candidate.threadId) continue;
+          const entry = await hydrateEntity({ id: candidate.id, entityType: candidate.entityType,
+            originalId: candidate.originalId, threadId: candidate.threadId, visibility: candidate.visibility });
+          if (!entry) continue;
+          commentEntries.set(candidate.id, entry);
+        }
+        accepted.push(candidate);
+        if (accepted.length === rowLimit) break;
+      }
+      if (!hydrateEntity || accepted.length === rowLimit || result.results.length < scanLimit) break;
+      const last = result.results.at(-1)!;
+      rankCursorSql = "WHERE rankScore < ? OR (rankScore = ? AND (createdAt < ? OR (createdAt = ? AND id < ?)))";
+      rankCursorBindings = [last.rankScore ?? 0, last.rankScore ?? 0, last.createdAt, last.createdAt, last.id];
+    }
+    result = { ...result, results: accepted };
   } else {
     if (options.cursor && pinFirst && typeof options.cursor.pinnedAt === "number") {
       where.push(`(
@@ -1538,13 +1578,13 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   }
   const hasMore = result.results.length > options.limit;
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
-  const taggedRows = await attachPostMetadata(env, rows, userId);
+  const taggedRows = await attachPostMetadata(env, rows.filter((row) => row.kind !== "entity-comment"), userId);
   const viewerFlags = await loadViewerPostFlags(
     env,
     taggedRows.map((row) => row.id),
     userId,
   );
-  const posts = taggedRows.map(({ body, rankScore, ...post }) => {
+  const posts = taggedRows.map(({ body, rankScore, kind: _kind, entityType: _entityType, originalId: _originalId, threadId: _threadId, ...post }) => {
     void rankScore;
     const value = publicAuthoredContent<PostListWithTags>({
       ...post,
@@ -1592,9 +1632,14 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
       );
     }
   }
-  const lastRow = taggedRows.at(-1);
+  const lastRow = rows.at(-1);
   return json(request, {
     posts,
+    ...(hydrateEntity && options.scope === "recommended" ? {
+      entries: rows.map((row) => row.kind === "entity-comment"
+        ? commentEntries.get(row.id)
+        : { kind: "post", id: row.id, post: posts.find((post) => post.id === row.id) }),
+    } : {}),
     nextCursor:
       hasMore && lastRow
         ? encodeCursor({
@@ -3241,4 +3286,4 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
   return error(request, 405, "method_not_allowed", "Method not allowed");
 };
 
-export const communityEntityCommentBackend = { read: getPost, create: createComment };
+export const communityEntityCommentBackend = { read: getPost, create: createComment, recommendations: listPosts };

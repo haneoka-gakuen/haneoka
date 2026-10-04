@@ -1,4 +1,5 @@
 import { getAuthSession, type AuthSession } from "./auth";
+import { entityThreadSql } from "./community-entity-guard";
 import { communityAccessState } from "./access";
 import { postAttachmentsAllowedSql } from "./moderation";
 import {
@@ -38,6 +39,7 @@ type Actor = {
 };
 interface ForumRow {
   id: string;
+  isInternal: number;
   slug: string;
   groupId: string | null;
   namesJson: string;
@@ -238,10 +240,15 @@ export function forumTagFilterSql(selection: ForumTagSelection, postAlias = "pos
   };
 }
 
+const internalEntityForumSql = `(forum.id='20000000-0000-4000-8000-000000000014'
+  AND forum.default_purpose IS NULL
+  AND NOT EXISTS(SELECT 1 FROM community_post AS ordinary_post WHERE ordinary_post.forum_id=forum.id
+    AND NOT ${entityThreadSql("ordinary_post.id")}))`;
 const columns = `forum.id,forum.slug,forum.group_id AS groupId,forum.names_json AS namesJson,forum.descriptions_json AS descriptionsJson,
   forum.icon,forum.sort_order AS sortOrder,forum.enabled,forum.read_permission AS readPermission,
   forum.post_permission AS postPermission,forum.reply_permission AS replyPermission,forum.manage_permission AS managePermission,
-  forum.default_purpose AS defaultPurpose,forum.version,forum.created_at AS createdAt,forum.updated_at AS updatedAt`;
+  forum.default_purpose AS defaultPurpose,forum.version,forum.created_at AS createdAt,forum.updated_at AS updatedAt,
+  CASE WHEN ${internalEntityForumSql} THEN 1 ELSE 0 END AS isInternal`;
 const forumValue = (row: ForumRow) => {
   const names = JSON.parse(row.namesJson) as Record<ForumLocale, string>;
   return {
@@ -261,6 +268,7 @@ const forumValue = (row: ForumRow) => {
       manage: row.managePermission,
     },
     defaultPurpose: row.defaultPurpose,
+    isInternal: row.isInternal === 1,
     version: row.version,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -281,7 +289,7 @@ async function readForums(env: Env, userId: string | null, filter = "1", values:
       ${forumPermissionSql("forum.id", "forum_viewer.user_id", "post")} AS canPost,
       ${forumPermissionSql("forum.id", "forum_viewer.user_id", "reply")} AS canReply,
       ${forumPermissionSql("forum.id", "forum_viewer.user_id", "manage")} AS canManage,
-      (SELECT COUNT(*) FROM community_post AS post WHERE post.forum_id = forum.id AND ${forumReadablePostSql("post", "forum_viewer.user_id")}) AS postCount
+      (SELECT COUNT(*) FROM community_post AS post WHERE post.forum_id = forum.id AND NOT ${entityThreadSql("post.id")} AND ${forumReadablePostSql("post", "forum_viewer.user_id")}) AS postCount
     FROM community_forum AS forum CROSS JOIN forum_viewer
     WHERE ${forumPermissionSql("forum.id", "forum_viewer.user_id", "read")} AND (${filter}) ORDER BY forum.sort_order,forum.id`,
     )
@@ -605,7 +613,7 @@ async function getTagFacets(request: Request, env: Env, url: URL, userId: string
     conditions = [forumReadablePostSql("post", "facet_viewer.user_id"), selected.sql],
     values: Value[] = [userId, ...selected.values];
   if (scope === "recommended")
-    conditions.push(forumDiscoveryPostSql("post", "facet_viewer.user_id"));
+    conditions.push(forumDiscoveryPostSql("post", "facet_viewer.user_id"), `NOT ${entityThreadSql("post.id")}`);
   if (forumId) {
     conditions.push("post.forum_id=?");
     values.push(forumId);
@@ -1083,7 +1091,7 @@ export async function handleCommunityForumsRequest(request: Request, env: Env): 
     const rows = await readForums(
       env,
       userId,
-      purposes.length ? "forum.default_purpose = ?" : "1",
+      `${purposes.length ? "forum.default_purpose = ?" : "1"} AND NOT ${internalEntityForumSql}`,
       purposes.length ? [purposes[0]!] : [],
     );
     return json(request, {
