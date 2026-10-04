@@ -23,7 +23,7 @@ interface Props {
 const { locale, route, title, titleKey, server, entity } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
-const itemActive = (target: string) => target === "/community" ? route === "/community" : isRouteActive(target, route);
+const itemActive = (target: string) => target === "/community" ? ["/community", "/community/feeds"].includes(route) : isRouteActive(target, route);
 const navigationHref = (target: string) => {
   if (target === "/") return `/${server ?? "intl"}/${locale}/`;
   if (target === "/announcements") return `/${server ?? "intl"}/${locale}/announcements/`;
@@ -174,7 +174,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                                       </a></li>
                                     ))}
                                   </ul>
-                                  {forums && current && (
+                                  {forums && (
                                     <community-forum-navigation locale={locale} data-community-forum-directory
                                       transition:persist="community-forum-navigation"></community-forum-navigation>
                                   )}

@@ -168,8 +168,7 @@ const sections: NavSection[] = [
     id: "community",
     label: "community",
     items: [
-      { route: "/community", icon: "dynamic_feed", label: "communityPage.navigation.overview", children: [
-        { route: "/community/feeds", icon: "dynamic_feed", label: "communityPage.feedRecommended" },
+      { route: "/community", icon: "dynamic_feed", label: "communityPage.feedRecommended", children: [
         { route: "/community/latest", icon: "schedule", label: "communityPage.feedLatest" },
         { route: "/community/tags", icon: "sell", label: "communityPage.tags" },
       ] },

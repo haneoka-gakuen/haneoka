@@ -2,17 +2,24 @@ import {LitElement, html, nothing} from 'lit';
 import {repeat} from 'lit/directives/repeat.js';
 import {icon} from './ui/icon';
 import {RequestScope} from '../lib/request-scope';
+import {readCommunityForumDirectory} from '../lib/community-forum-directory';
+import {JsonResponseError} from './shared/catalog';
 import {clientText} from '../i18n/client';
 import {projectForumNavigation, type ForumNavigationSnapshot, type ForumNavigationPayload} from '../lib/community-forum-navigation';
 
 let sequence = 0;
-/** Controlled drawer view; the active community owner supplies fresh ACL DTOs. */
+/** Global drawer directory; community pages also publish the active board. */
 export class CommunityForumNavigation extends LitElement {
   static properties = { locale:{}, snapshot:{state:true}, busy:{state:true} };
   declare locale:string;
   declare private snapshot:ForumNavigationSnapshot;
   declare private busy:boolean;
   private readonly requests = new RequestScope();
+  private readonly directoryRequests = new RequestScope();
+  private realm: string | undefined;
+  private directorySignal: AbortSignal | undefined;
+  private directoryInitialized = false;
+  private readonly revokeDirectory = () => {this.invalidate();void this.loadDirectory();};
   private readonly instance = 'community-forum-nav-'+ ++sequence;
   private readonly expanded = new Map<string,boolean>();
   private context: string | null | undefined;
@@ -27,6 +34,44 @@ export class CommunityForumNavigation extends LitElement {
   ]);
   constructor() { super();this.locale='ja';this.snapshot={forums:[]};this.busy=false; }
   createRenderRoot() { return this; }
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('haneoka:session-changed', this.revokeDirectory);
+    window.addEventListener('haneoka:community-forums-changed', this.revokeDirectory);
+    if (!this.directoryInitialized) void this.loadDirectory();
+  }
+  private async loadDirectory(): Promise<void> {
+    if (this.directorySignal && this.directoryRequests.current(this.directorySignal)) return;
+    const signal = this.directorySignal = this.directoryRequests.begin();
+    this.busy = true;
+    let confirmed = false;
+    try {
+      const data = await readCommunityForumDirectory(signal, viewer => {
+        if (!this.isConnected || !this.directoryRequests.current(signal)) return;
+        if ((this.realm !== undefined && this.realm !== viewer.realm) ||
+            (this.viewerId !== undefined && this.viewerId !== viewer.userId)) {
+          this.requests.cancel();this.snapshot={forums:[]};
+          this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
+        }
+        this.realm=viewer.realm;confirmed=true;
+      });
+      if (!this.isConnected || !this.directoryRequests.current(signal)) return;
+      const token = this.begin(JSON.stringify([data.viewer.userId, location.pathname, 0]));
+      this.commit(token, {...data, viewerId:data.viewer.userId, locale:this.locale,
+        activeForumId:this.snapshot.activeForumId});
+    } catch (error) {
+      if (!this.isConnected || !this.directoryRequests.current(signal)) return;
+      this.requests.cancel();
+      if (!confirmed || (error instanceof JsonResponseError && [401,403,404].includes(error.status)))
+        this.snapshot={forums:[]};
+      this.busy=false;
+    } finally {
+      if (this.directorySignal === signal) {
+        if (this.directoryRequests.current(signal)) this.directoryInitialized=true;
+        this.directorySignal=undefined;
+      }
+    }
+  }
   begin(contextKey:string):AbortSignal {
     let context:unknown;
     try {context=JSON.parse(contextKey);}
@@ -61,22 +106,25 @@ export class CommunityForumNavigation extends LitElement {
     return true;
   }
   /** Ordinary same-session refresh cancels old work without removing readable links. */
-  refresh():void {this.requests.cancel();this.busy=true;}
+  refresh():void {this.requests.cancel();void this.loadDirectory();}
   /** Transfer a persisted navigation instance to a new page owner, or settle a failure. */
   release(signal?:AbortSignal):void {
     if(signal && !this.requests.current(signal))return;
     this.requests.cancel();this.busy=false;
   }
   // Known identity/ACL revocation always removes private DTOs immediately.
-  invalidate():void {this.requests.cancel();this.snapshot={forums:[]};this.busy=false;}
+  invalidate():void {this.requests.cancel();this.directoryRequests.cancel();this.snapshot={forums:[]};this.busy=false;}
   disconnectedCallback() {
+    window.removeEventListener('haneoka:session-changed', this.revokeDirectory);
+    window.removeEventListener('haneoka:community-forums-changed', this.revokeDirectory);
+    this.directoryRequests.cancel();
     this.requests.cancel();
     super.disconnectedCallback();
     // Astro may synchronously move transition:persist nodes to the incoming document.
     queueMicrotask(()=>{
       if(this.isConnected)return;
       this.invalidate();this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
-      this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;
+      this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;this.realm=undefined;this.directoryInitialized=false;
     });
   }
   private groups() {
