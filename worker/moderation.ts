@@ -1,3 +1,4 @@
+import { entityThreadSql } from "./community-entity-guard";
 export type ModerationEntityKind = "attachment" | "comment" | "post" | "profile-name";
 export type ModerationVerdict = "allow" | "block";
 type ModerationDecisionSource = "ai" | "appeal" | "deterministic" | "manual" | "system";
@@ -844,7 +845,7 @@ const recordDecision = async (
            AND post.status = 'published'
            AND post.deleted_at IS NULL
            AND post.moderation_status = 'allow'
-           AND post.author_id <> comment.author_id
+           AND post.author_id <> comment.author_id AND NOT ${entityThreadSql("post.id")}
            AND NOT EXISTS (
              SELECT 1 FROM community_comment AS parent_for_post_author
              WHERE parent_for_post_author.id = comment.parent_id

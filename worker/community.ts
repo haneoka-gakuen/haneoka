@@ -1,3 +1,4 @@
+import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./community-entity-guard";
 import { writableTeamOwner } from "./team-inventory";
 import { forumReadSql, forumPermissionSql, forumAdminSql, forumDiscoveryPostSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
 import { mediaPresentations } from "./community-media";
@@ -811,7 +812,7 @@ const postSelect = `
     author.id AS authorId,
     author_identity.uid AS authorUid,
     COALESCE(author_profile.display_name, author.name) AS authorName,
-    (author_profile.display_name IS NOT NULL) AS authorPublicNameReady,
+    (author_profile.display_name IS NOT NULL OR ${entityThreadSql("post.id")}) AS authorPublicNameReady,
     ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
@@ -858,7 +859,7 @@ const postListSelect = `
     author.id AS authorId,
     author_identity.uid AS authorUid,
     COALESCE(author_profile.display_name, author.name) AS authorName,
-    (author_profile.display_name IS NOT NULL) AS authorPublicNameReady,
+    (author_profile.display_name IS NOT NULL OR ${entityThreadSql("post.id")}) AS authorPublicNameReady,
     ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
@@ -868,12 +869,12 @@ const postListSelect = `
 `;
 
 const activePostWhere = `post.status = 'published' AND post.deleted_at IS NULL
-  AND EXISTS (
+  AND (${entityThreadSql("post.id")} OR EXISTS (
     SELECT 1 FROM community_profile AS post_author_profile
     WHERE post_author_profile.user_id = post.author_id
       AND post_author_profile.status <> 'deleted'
       AND post_author_profile.display_name IS NOT NULL
-  )`;
+  ))`;
 const activePostReadCondition = (userId: string | null): SqlCondition =>
   userId
     ? {
@@ -952,7 +953,7 @@ const visibleNotificationActorWhere = `(notification.actor_user_id IS NULL OR EX
 const moderationReadableCondition = (userId: string | null): SqlCondition =>
   userId
     ? {
-        sql: `(${forumAdminSql("?")} OR (post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}) OR post.author_id = ?)`,
+        sql: `(${forumAdminSql("?")} OR (post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}) OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))`,
         values: [userId, userId],
       }
     : { sql: `post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}`, values: [] };
@@ -960,19 +961,19 @@ const moderationReadableCondition = (userId: string | null): SqlCondition =>
 const readablePostCondition = (userId: string | null): SqlCondition =>
   userId
     ? {
-        sql: `(${forumAdminSql("?")} OR ((post.visibility IN ('public', 'protected') OR post.author_id = ?)
-          AND NOT EXISTS (
+        sql: `(${forumAdminSql("?")} OR ((post.visibility IN ('public', 'protected') OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))
+          AND (${entityThreadSql("post.id")} OR NOT EXISTS (
             SELECT 1 FROM community_user_block AS viewer_block
             WHERE (viewer_block.blocker_user_id = ? AND viewer_block.blocked_user_id = post.author_id)
                OR (viewer_block.blocker_user_id = post.author_id AND viewer_block.blocked_user_id = ?)
-          ))) AND ${forumReadSql("post", "?")}`,
+          )))) AND ${forumReadSql("post", "?")}`,
         values: [userId, userId, userId, userId, userId],
       }
     : { sql: `post.visibility = 'public' AND ${forumReadSql("post", "NULL")}`, values: [] };
 
 const directlyReadableStateCondition = (userId: string | null): SqlCondition =>
   userId
-    ? { sql: `(${forumAdminSql("?")} OR post.archived_at IS NULL OR post.author_id = ?)`, values: [userId, userId] }
+    ? { sql: `(${forumAdminSql("?")} OR post.archived_at IS NULL OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))`, values: [userId, userId] }
     : { sql: "post.archived_at IS NULL", values: [] };
 
 const writablePostStateCondition: SqlCondition = {
@@ -1309,7 +1310,7 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   }
 
   const active = activePostReadCondition(userId);
-  const where = [active.sql];
+  const where = [active.sql,`NOT ${entityThreadSql("post.id")}`];
   const bindings: BindValue[] = [...active.values];
   if (options.scope === "recommended") {
     where.push(forumDiscoveryPostSql("post",userId ? "?" : "NULL"));
@@ -1614,6 +1615,7 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
 };
 
 const getPost = async (request: Request, env: Env, id: string, url: URL): Promise<Response> => {
+  if (url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`) && await entityThreadForPost(env,id)) return error(request,404,"post_not_found","Open the catalogue discussion through its entity target");
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
   const includeCommentsValue = singleSearchParameter(url, "includeComments");
@@ -1728,8 +1730,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
     "comment.deleted_at IS NULL",
     "comment.hidden_at IS NULL",
     commentModerationSql,
+    userId ? "(author_profile.display_name IS NOT NULL OR comment.author_id=?)" : "author_profile.display_name IS NOT NULL",
   ];
-  const commentBindings: BindValue[] = [...(userId ? [userId] : []), id, ...commentModerationValues];
+  const commentBindings: BindValue[] = [...(userId ? [userId] : []), id, ...commentModerationValues, ...(userId ? [userId] : [])];
   if (userId) {
     commentWhere.push(`NOT EXISTS (
       SELECT 1 FROM community_user_block AS comment_block
@@ -1765,7 +1768,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
          OR (reply_candidates.createdAt = ? AND reply_candidates.id > ?)`
     : "";
   const replyCursorBindings: BindValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : [];
-  const visibleMembershipBindings: BindValue[] = [id, ...commentModerationValues];
+  const visibleMembershipBindings: BindValue[] = [id, ...commentModerationValues, ...(userId ? [userId] : [])];
   if (userId) visibleMembershipBindings.push(userId, userId, userId);
   const effectiveParentIdSelect = `CASE
     WHEN comment.parent_id IS NULL THEN NULL
@@ -1787,7 +1790,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
      JOIN community_profile AS author_profile
        ON author_profile.user_id = comment.author_id
       AND author_profile.status <> 'deleted'
-      AND author_profile.display_name IS NOT NULL
+
      WHERE ${commentWhere.join(" AND ")}`;
   const commentSelect = `SELECT
        comment.id,
@@ -1808,7 +1811,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
        ${viewerLikedSql} AS viewerLiked,
        author.id AS authorId,
        author_identity.uid AS authorUid,
-       author_profile.display_name AS authorName,
+       COALESCE(author_profile.display_name,author.name) AS authorName,
        ${avatarUrlSelect("author")} AS authorImage
      FROM community_comment AS comment
      JOIN comment_floors AS commentFloors ON commentFloors.id = comment.id
@@ -1817,12 +1820,12 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
      JOIN community_profile AS author_profile
        ON author_profile.user_id = comment.author_id
       AND author_profile.status <> 'deleted'
-      AND author_profile.display_name IS NOT NULL`;
+`;
   const commentsResult =
     commentsRootId !== null
       ? await env.DB.prepare(
           `WITH RECURSIVE comment_floors AS (
-             SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS floor
+             SELECT id, floor_number AS floor
              FROM community_comment
              WHERE post_id = ?
            ), visible_members AS MATERIALIZED (
@@ -1892,7 +1895,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
           .all<CommentRow>()
       : await env.DB.prepare(
           `WITH RECURSIVE comment_floors AS (
-             SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS floor
+             SELECT id, floor_number AS floor
              FROM community_comment
              WHERE post_id = ?
            ), visible_members AS MATERIALIZED (
@@ -1983,6 +1986,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
            JOIN reply_counts ON reply_counts.rootId = comment_roots.rootId
            LEFT JOIN reply_previews ON reply_previews.id = comment_roots.id
            ORDER BY
+             CASE WHEN EXISTS (SELECT 1 FROM focused_root_ids WHERE rootId=comment_roots.rootId) THEN 0 ELSE 1 END ASC,
              CASE WHEN page_roots.pagePosition IS NULL THEN 1 ELSE 0 END ASC,
              page_roots.pagePosition ASC,
              hydrated_comments.createdAt ASC,
@@ -2150,10 +2154,10 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
      SELECT ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
      WHERE ${activeSessionProfileWhere} AND ${forumPermissionSql("?", "?", "post")} AND ${writableTeamOwner}
        AND (
-       SELECT COUNT(*) FROM community_post WHERE author_id = ? AND created_at >= ?
+       SELECT COUNT(*) FROM community_post WHERE author_id = ? AND created_at >= ? AND NOT ${entityThreadSql("community_post.id")}
      ) < ?
        AND (
-         SELECT COUNT(*) FROM community_post WHERE author_id = ? AND created_at >= ?
+         SELECT COUNT(*) FROM community_post WHERE author_id = ? AND created_at >= ? AND NOT ${entityThreadSql("community_post.id")}
        ) < ?`,
   ).bind(
     id,
@@ -2256,6 +2260,7 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
 const updatePost = async (request: Request, env: Env, id: string): Promise<Response> => {
   const access = await requireWritableSession(request, env, "Sign in to edit a post");
   if (!access.ok) return access.response;
+  if (await entityThreadForPost(env,id)) return error(request,409,"entity_thread_managed","Manage the entity discussion through its forum controls");
   const { session } = access;
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
@@ -2448,6 +2453,7 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
 const deletePost = async (request: Request, env: Env, id: string): Promise<Response> => {
   const access = await requireWritableSession(request, env, "Sign in to delete a post", ["sign_in"]);
   if (!access.ok) return access.response;
+  if (await entityThreadForPost(env,id)) return error(request,409,"entity_thread_managed","Manage the entity discussion through its forum controls");
   if (!await canAccessPostForum(env,id,access.session.user.id,"post")) return error(request,404,"post_not_found","Post not found");
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
@@ -2554,6 +2560,7 @@ const setArchived = async (request: Request, env: Env, id: string, archived: boo
     archived ? "Sign in to archive a post" : "Sign in to restore a post",
   );
   if (!access.ok) return access.response;
+  if (await entityThreadForPost(env,id)) return error(request,409,"entity_thread_managed","Manage the entity discussion through its forum controls");
   if (!await canAccessPostForum(env,id,access.session.user.id,"post")) return error(request,404,"post_not_found","Post not found");
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
@@ -2621,12 +2628,18 @@ const setArchived = async (request: Request, env: Env, id: string, archived: boo
   return json(request, { post: await publicAccessiblePost(env, id, session.user.id) });
 };
 
-const createComment = async (request: Request, env: Env, postId: string): Promise<Response> => {
+export interface CommunityCommentInitializer {
+  statements: D1PreparedStatement[];
+  textOnly: true;
+  acceptedCommentGuard: (commentId: string) => D1PreparedStatement;
+}
+const createComment = async (request: Request, env: Env, postId: string, initialize?: CommunityCommentInitializer): Promise<Response> => {
   const writable = await requireWritableSession(request, env, "Sign in to comment");
   if (!writable.ok) return writable.response;
   const { session } = writable;
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
+  if ((initialize?.textOnly || await entityThreadForPost(env,postId)) && !entityCommentTextOnly(payload.value)) return error(request,422,"entity_comment_media_forbidden","Entity comments accept text only");
   const body = cleanText(payload.value.body, COMMENT_BODY_MAX);
   const parentId =
     typeof payload.value.parentId === "string" && UUID_PATTERN.test(payload.value.parentId)
@@ -2726,7 +2739,7 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
        0 AS viewerLiked,
        author.id AS authorId,
        author_identity.uid AS authorUid,
-       author_profile.display_name AS authorName,
+       COALESCE(author_profile.display_name,author.name) AS authorName,
        ${avatarUrlSelect("author")} AS authorImage
      FROM community_comment AS comment
      JOIN "user" AS author ON author.id = comment.author_id
@@ -2735,10 +2748,24 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
        ON author_profile.user_id = comment.author_id
       AND author_profile.status = 'active'
       AND author_profile.deleted_at IS NULL
-      AND author_profile.display_name IS NOT NULL
+
      WHERE comment.id = ?`,
   ).bind(id);
-  const results = await env.DB.batch<CommentRow>([insert, revision, select]);
+  let batch: D1Result<CommentRow>[];
+  try {
+    batch = await env.DB.batch<CommentRow>([
+      ...(initialize?.statements ?? []),insert, revision, select,
+      ...(initialize ? [initialize.acceptedCommentGuard(id)] : []),
+    ]);
+  } catch (failure) {
+    const message = failure instanceof Error ? failure.message : String(failure);
+    if (initialize && message.includes("NOT NULL constraint failed: community_entity_thread.entity_type")) {
+      if (parentId) return error(request,422,"invalid_parent","The parent comment does not exist on this discussion");
+      return error(request,409,"comment_state_changed","The first comment was not accepted; reload the discussion");
+    }
+    throw failure;
+  }
+  const results = batch.slice(initialize?.statements.length ?? 0);
   const insertResult = results[0];
   const comment = results[2]?.results[0] ?? null;
   if (!insertResult) throw new Error("D1 returned an incomplete comment batch result");
@@ -2783,7 +2810,7 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
     .first<CommentStatusRow>();
   const commentFloor = await env.DB.prepare(
     `WITH comment_floors AS (
-       SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS floor
+       SELECT id, floor_number AS floor
        FROM community_comment
        WHERE post_id = ?
      )
@@ -3213,3 +3240,5 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
   if (action === "restore" && request.method === "POST") return setArchived(request, env, postId, false);
   return error(request, 405, "method_not_allowed", "Method not allowed");
 };
+
+export const communityEntityCommentBackend = { read: getPost, create: createComment };

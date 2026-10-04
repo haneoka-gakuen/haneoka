@@ -1,3 +1,4 @@
+import { entityThreadSql } from "./community-entity-guard";
 import { forumReadSql } from "./community-forums";
 import { getAuthSession } from "./auth";
 import { avatarUrlSelect } from "./avatar-url";
@@ -220,7 +221,7 @@ const readProfile = (env: Env, uid: number): Promise<PublicProfileRow | null> =>
                 AND post.visibility = 'public'
                 AND post.moderation_status = 'allow'
                 AND post.archived_at IS NULL
-                AND post.deleted_at IS NULL AND ${forumReadSql("post","NULL")}
+                AND post.deleted_at IS NULL AND NOT ${entityThreadSql("post.id")} AND ${forumReadSql("post","NULL")}
             ) AS postCount,
             (
               SELECT COUNT(*)
@@ -332,7 +333,7 @@ const readPosts = async (env: Env, userId: string, viewerId: string | null, limi
        AND post.moderation_status = 'allow'
        AND post.archived_at IS NULL
        AND post.deleted_at IS NULL
-       AND ${forumReadSql("post","NULL")}
+       AND NOT ${entityThreadSql("post.id")} AND ${forumReadSql("post","NULL")}
        ${cursorCondition}
      ORDER BY post.created_at DESC, post.id DESC
      LIMIT ?`,

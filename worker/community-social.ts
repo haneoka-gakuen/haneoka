@@ -1,3 +1,4 @@
+import { entityCommentTextOnly, entityThreadForPost, entityThreadSql } from "./community-entity-guard";
 import { forumReadSql, canAccessPostForum } from "./community-forums";
 import { communityAccessState, type CommunityRestrictionKind } from "./access";
 import { getAuthSession, type AuthSession } from "./auth";
@@ -542,9 +543,9 @@ const getTags = async (request: Request, env: Env, url: URL): Promise<Response> 
   const readablePostValues: BindValue[] = [];
   if (viewerId) {
     readablePostConditions.push(
-      "(post.visibility IN ('public', 'protected') OR post.author_id = ?)",
-      "(post.moderation_status = 'allow' OR post.author_id = ?)",
-      "(post.archived_at IS NULL OR post.author_id = ?)",
+      `(post.visibility IN ('public', 'protected') OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))`,
+      `(post.moderation_status = 'allow' OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))`,
+      `(post.archived_at IS NULL OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))`,
       `NOT EXISTS (
         SELECT 1 FROM community_user_block AS viewer_block
         WHERE (viewer_block.blocker_user_id = ? AND viewer_block.blocked_user_id = post.author_id)
@@ -881,11 +882,11 @@ const reportTarget = async (
        AND post.status = 'published' AND post.deleted_at IS NULL AND post.archived_at IS NULL
        AND post.moderation_status = 'allow' AND post.visibility IN ('public', 'protected')
        AND comment_author.status <> 'deleted' AND comment_author.display_name IS NOT NULL
-       AND post_author.status <> 'deleted' AND post_author.display_name IS NOT NULL
+       AND (${entityThreadSql("post.id")} OR (post_author.status <> 'deleted' AND post_author.display_name IS NOT NULL))
        AND NOT EXISTS (
          SELECT 1 FROM community_user_block AS block
-         WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, post.author_id))
-            OR (block.blocker_user_id IN (comment.author_id, post.author_id) AND block.blocked_user_id = ?)
+         WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END))
+            OR (block.blocker_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END) AND block.blocked_user_id = ?)
        )
      LIMIT 1`,
   )
@@ -1072,7 +1073,7 @@ const readCommentResponse = async (env: Env, commentId: string, viewerId: string
     `WITH target_post AS (
        SELECT post_id FROM community_comment WHERE id = ?
      ), comment_floors AS (
-       SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS floor
+       SELECT id, floor_number AS floor
        FROM community_comment
        WHERE post_id = (SELECT post_id FROM target_post)
      ), visible_comments AS (
@@ -1085,7 +1086,7 @@ const readCommentResponse = async (env: Env, commentId: string, viewerId: string
               comment.ip_region_name AS ipRegionName,
               comment.browser_family AS browserFamily, comment.os_family AS osFamily,
               account.id AS authorId, identity.uid AS authorUid,
-              profile.display_name AS authorName, ${avatarUrlSelect("account")} AS authorImage,
+              COALESCE(profile.display_name,account.name) AS authorName, ${avatarUrlSelect("account")} AS authorImage,
               EXISTS(
                 SELECT 1 FROM community_comment_reaction AS reaction
                 WHERE reaction.comment_id = comment.id AND reaction.user_id = ? AND reaction.kind = 'like'
@@ -1098,7 +1099,7 @@ const readCommentResponse = async (env: Env, commentId: string, viewerId: string
        JOIN community_profile AS profile
          ON profile.user_id = comment.author_id
         AND profile.status <> 'deleted'
-        AND profile.display_name IS NOT NULL
+
        WHERE comment.post_id = (SELECT post_id FROM target_post)
          AND comment.deleted_at IS NULL
          AND comment.hidden_at IS NULL
@@ -1107,21 +1108,21 @@ const readCommentResponse = async (env: Env, commentId: string, viewerId: string
          AND post.deleted_at IS NULL
          AND post.archived_at IS NULL
          AND post.moderation_status = 'allow'
-         AND (post.visibility IN ('public', 'protected') OR post.author_id = ?)
+         AND (post.visibility IN ('public', 'protected') OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))
          AND NOT EXISTS (
            SELECT 1 FROM community_user_block AS block
-           WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, post.author_id))
-              OR (block.blocker_user_id IN (comment.author_id, post.author_id) AND block.blocked_user_id = ?)
+           WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END))
+              OR (block.blocker_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END) AND block.blocked_user_id = ?)
          )
      ), numbered_comments AS (
        SELECT visible_comments.*
        FROM visible_comments
      )
      SELECT * FROM numbered_comments
-     WHERE id = ?
+     WHERE id = ? AND authorId=?
      LIMIT 1`,
   )
-    .bind(commentId, viewerId, viewerId, viewerId, viewerId, viewerId, commentId)
+    .bind(commentId, viewerId, viewerId, viewerId, viewerId, viewerId, commentId,viewerId)
     .first<CommentResponseRow>();
 
 const logModerationFailure = (request: Request, commentId: string, failure: unknown): void => {
@@ -1140,6 +1141,8 @@ const patchComment = async (request: Request, env: Env, commentId: string): Prom
   if (!access.ok) return access.response;
   const payload = await readJson(request);
   if ("error" in payload) return payloadError(request, payload.error);
+  const entityParent=await env.DB.prepare("SELECT post_id AS postId FROM community_comment WHERE id=?").bind(commentId).first<{postId:string}>();
+  if (entityParent && await entityThreadForPost(env,entityParent.postId) && !entityCommentTextOnly(payload.value,true)) return error(request,422,"entity_comment_media_forbidden","Entity comments accept text only");
   const body = cleanText(payload.value.body, COMMENT_BODY_MAX);
   const version = expectedVersion(payload.value.version);
   const editReason = optionalText(payload.value.editReason, EDIT_REASON_MAX);
@@ -1187,7 +1190,7 @@ const patchComment = async (request: Request, env: Env, commentId: string): Prom
          AND comment.body <> ?
          AND post.status = 'published' AND post.deleted_at IS NULL AND post.archived_at IS NULL
          AND post.comments_locked_at IS NULL AND post.moderation_status = 'allow'
-         AND (post.visibility IN ('public', 'protected') OR post.author_id = ?)
+         AND (post.visibility IN ('public', 'protected') OR (post.author_id = ? AND NOT ${entityThreadSql("post.id")}))
          AND NOT EXISTS (
            SELECT 1 FROM community_user_block AS block
            WHERE (block.blocker_user_id = ? AND block.blocked_user_id = post.author_id)
@@ -1353,11 +1356,11 @@ const accessibleCommentReactionTarget = async (
        AND post.status = 'published' AND post.deleted_at IS NULL AND post.archived_at IS NULL
        AND post.moderation_status = 'allow' AND post.visibility IN ('public', 'protected')
        AND comment_author.status <> 'deleted' AND comment_author.display_name IS NOT NULL
-       AND post_author.status <> 'deleted' AND post_author.display_name IS NOT NULL
+       AND (${entityThreadSql("post.id")} OR (post_author.status <> 'deleted' AND post_author.display_name IS NOT NULL))
        AND NOT EXISTS (
          SELECT 1 FROM community_user_block AS block
-         WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, post.author_id))
-            OR (block.blocker_user_id IN (comment.author_id, post.author_id) AND block.blocked_user_id = ?)
+         WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END))
+            OR (block.blocker_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END) AND block.blocked_user_id = ?)
        )
      LIMIT 1`,
   )
@@ -1391,8 +1394,8 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
            AND post.moderation_status = 'allow' AND post.visibility IN ('public', 'protected')
            AND NOT EXISTS (
              SELECT 1 FROM community_user_block AS block
-             WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, post.author_id))
-                OR (block.blocker_user_id IN (comment.author_id, post.author_id) AND block.blocked_user_id = ?)
+             WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END))
+                OR (block.blocker_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END) AND block.blocked_user_id = ?)
            )`,
       ).bind(viewerId, now, activationId, commentId, viewerId, viewerId)
     : env.DB.prepare(

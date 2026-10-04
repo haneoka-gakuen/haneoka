@@ -19,6 +19,8 @@ import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
 import { handleCommunityForumsRequest } from "./community-forums";
+import { handleCommunityEntityRequest } from "./community-entities";
+import { createCommunityEntityResolver } from "./community-entity-catalog";
 import { handleCommunityActivityRequest } from "./community-activity";
 import { handleAnnouncementsRequest } from "./announcements";
 import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src/lib/announcement-document";
@@ -3343,6 +3345,11 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (registration) return registration;
     const auth = await handleAuthRequest(request, env);
     if (auth) return auth;
+    const resolveCommunityEntity = createCommunityEntityResolver((catalogEnv, catalogRequest) =>
+      handleCatalogApi(catalogEnv, ctx, catalogRequest, new URL(catalogRequest.url).pathname),
+    );
+    const communityEntity = await handleCommunityEntityRequest(request, env, resolveCommunityEntity);
+    if (communityEntity) return communityEntity;
     const communityForums = await handleCommunityForumsRequest(request, env);
     if (communityForums) return communityForums;
     const admin = await handleAdminRequest(request, env);
