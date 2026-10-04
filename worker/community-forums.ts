@@ -120,6 +120,20 @@ export function forumPermissionSql(forumIdExpression: string, actorIdExpression:
 export function forumReadSql(postAlias: string, actorIdExpression: string): string {
   return forumPermissionSql(`${postAlias}.forum_id`, actorIdExpression, "read");
 }
+/** Published discovery respects visibility tiers; only real site administrators may discover private posts. */
+export function forumDiscoveryPostSql(postAlias: string, actorIdExpression: string): string {
+  const attachments = postAttachmentsAllowedSql.replaceAll(/\bpost\./gu, `${postAlias}.`);
+  return `${postAlias}.status='published' AND ${postAlias}.deleted_at IS NULL AND ${postAlias}.archived_at IS NULL
+    AND ${postAlias}.moderation_status='allow' AND ${attachments}
+    AND (${postAlias}.visibility='public' OR (${actorIdExpression} IS NOT NULL AND ${postAlias}.visibility='protected') OR (${postAlias}.visibility='private' AND ${forumAdminSql(actorIdExpression)}))
+    AND EXISTS(SELECT 1 FROM community_profile AS discovery_author WHERE discovery_author.user_id=${postAlias}.author_id
+      AND discovery_author.status<>'deleted' AND discovery_author.display_name IS NOT NULL)
+    AND NOT EXISTS(SELECT 1 FROM community_user_block AS discovery_block
+      WHERE (discovery_block.blocker_user_id=${actorIdExpression} AND discovery_block.blocked_user_id=${postAlias}.author_id)
+         OR (discovery_block.blocker_user_id=${postAlias}.author_id AND discovery_block.blocked_user_id=${actorIdExpression}))
+    AND EXISTS(SELECT 1 FROM community_forum AS discovery_forum WHERE discovery_forum.id=${postAlias}.forum_id AND discovery_forum.enabled=1)
+    AND ${forumReadSql(postAlias, actorIdExpression)}`;
+}
 export function forumAdminSql(actorIdExpression: string): string {
   return `EXISTS (SELECT 1 FROM community_profile AS forum_admin JOIN "user" AS forum_admin_account ON forum_admin_account.id = forum_admin.user_id
     WHERE forum_admin.user_id = ${actorIdExpression} AND forum_admin.role = 'admin'
@@ -590,6 +604,8 @@ async function getTagFacets(request: Request, env: Env, url: URL, userId: string
   const selected = forumTagFilterSql(selection),
     conditions = [forumReadablePostSql("post", "facet_viewer.user_id"), selected.sql],
     values: Value[] = [userId, ...selected.values];
+  if (scope === "recommended")
+    conditions.push(forumDiscoveryPostSql("post", "facet_viewer.user_id"));
   if (forumId) {
     conditions.push("post.forum_id=?");
     values.push(forumId);

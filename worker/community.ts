@@ -1,5 +1,5 @@
 import { writableTeamOwner } from "./team-inventory";
-import { forumReadSql, forumPermissionSql, forumAdminSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
+import { forumReadSql, forumPermissionSql, forumAdminSql, forumDiscoveryPostSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
 import { mediaPresentations } from "./community-media";
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { authConfiguration, getAuthSession, type AuthSession } from "./auth";
@@ -1057,6 +1057,7 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   viewerUserId: string | null = null,
 ): Promise<Array<T & { attachments: PostAttachment[]; state: PostState; tags: string[] }>> => {
   if (!rows.length) return [];
+  const adminContext=viewerUserId !== null && !!await env.DB.prepare(`SELECT 1 WHERE ${forumAdminSql("?")}`).bind(viewerUserId).first();
   const placeholders = rows.map(() => "?").join(", ");
   const postIds = rows.map((row) => row.id);
   const forumIds = [...new Set(rows.map(row => row.forumId))];
@@ -1081,14 +1082,14 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
        JOIN community_attachment AS attachment ON attachment.id = link.attachment_id
        JOIN community_profile AS attachment_owner_profile
          ON attachment_owner_profile.user_id = attachment.owner_user_id
-        AND attachment_owner_profile.status <> 'deleted'
+        AND (attachment_owner_profile.status <> 'deleted' OR ?=1)
        WHERE link.post_id IN (${placeholders})
          AND ((attachment.status = 'ready' AND attachment.moderation_status = 'allow')
-              OR attachment.owner_user_id = ?)
-         AND attachment.deleted_at IS NULL AND attachment.byte_size IS NOT NULL
+              OR attachment.owner_user_id = ? OR ?=1)
+         AND (attachment.deleted_at IS NULL OR ?=1) AND attachment.byte_size IS NOT NULL
        ORDER BY link.post_id, link.position`,
     )
-      .bind(...postIds, viewerUserId)
+      .bind(Number(adminContext),...postIds, viewerUserId,Number(adminContext),Number(adminContext))
       .all<PostAttachmentRow>(),
   ]);
   const tagsByPost = new Map<string, string[]>();
@@ -1129,6 +1130,13 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
       size: row.size,
       width: row.width,
       ...(allowed ? presentation : presentation?.processing ? { processing: presentation.processing } : {}),
+      ...(adminContext ? {
+        contentUrl:`/api/v1/admin/attachments/${row.id}/content`,
+        ...Object.fromEntries(Object.entries(presentation ?? {}).filter(([key,value])=>["previewUrl","playbackUrl","posterUrl","thumbnailUrl"].includes(key) && typeof value==="string").map(([key,value])=>{
+          const variant=new URL(value as string,"https://haneoka.org").searchParams.get("variant");
+          return [key,`/api/v1/admin/attachments/${row.id}/content${variant ? `?variant=${variant}` : ""}`];
+        })),
+      } : {}),
     };
     const attachments = attachmentsByPost.get(row.postId);
     if (attachments) attachments.push(attachment);
@@ -1136,6 +1144,7 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   }
   return rows.map((row) => ({
     ...row,
+    adminOnlyContext:adminContext && row.visibility === "private",
     forum: forumsById.get(row.forumId) ?? null,
     attachments: attachmentsByPost.get(row.id) ?? [],
     state: row.archivedAt === null ? "active" : "archived",
@@ -1302,6 +1311,10 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   const active = activePostReadCondition(userId);
   const where = [active.sql];
   const bindings: BindValue[] = [...active.values];
+  if (options.scope === "recommended") {
+    where.push(forumDiscoveryPostSql("post",userId ? "?" : "NULL"));
+    if(userId) bindings.push(userId,userId,userId,userId,userId);
+  }
   const access = readablePostCondition(userId);
   where.push(access.sql);
   bindings.push(...access.values);
