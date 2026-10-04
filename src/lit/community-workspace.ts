@@ -1239,9 +1239,30 @@ export class CommunityWorkspace extends LitElement {
     });
   }
   private markAllNotifications() {
+    const userId = this.viewerId(),
+      routeUrl = this.routeUrl,
+      unreadOnly = this.unreadOnly,
+      lifetime = this.lifetime;
     void this.mutate(async () => {
-      await this.request("/api/v1/community/notifications/read-all", { method: "PUT" });
-      this.items = this.items.map((item) => ({ ...item, readAt: item.readAt || Date.now() }));
+      const result = await this.request("/api/v1/community/notifications/read-all", { method: "PUT" });
+      if (
+        !this.isConnected ||
+        this.lifetime !== lifetime ||
+        lifetime.signal.aborted ||
+        this.viewerId() !== userId ||
+        this.routeKind !== "collection" ||
+        this.mode !== "notifications" ||
+        this.routeUrl !== routeUrl ||
+        this.unreadOnly !== unreadOnly
+      )
+        return;
+      if (unreadOnly) {
+        this.items = [];
+        this.cursor = "";
+      } else {
+        const readAt = typeof result.readAt === "number" ? result.readAt : Date.now();
+        this.items = this.items.map((item) => ({ ...item, readAt: item.readAt ?? readAt }));
+      }
     });
   }
   private showToast(text: string, undo?: () => void, timeoutMs = 8000) {
@@ -4239,7 +4260,9 @@ export class CommunityWorkspace extends LitElement {
       const emptyKeys: Record<string, [string, string]> = {
         mine: ["emptyMine", "You have not posted yet"],
         bookmarks: ["emptyBookmarks", "No bookmarks yet"],
-        notifications: ["emptyNotifications", "No notifications yet"],
+        notifications: this.unreadOnly
+          ? ["emptyUnreadNotifications", "No unread notifications"]
+          : ["emptyNotifications", "No notifications yet"],
       };
       const [key, fallback] = emptyKeys[this.mode] || ["emptyTitle", "No community content yet."];
       return emptyState({ title: this.label(key, fallback), icon: "forum" });
