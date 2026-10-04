@@ -105,7 +105,9 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
       const metric = await normal.score(assignment, song, profiles, controls, undefined, {
         gekisoComboBonuses: combo, completePlayBonus: () => ({ value: 0, gaps: [] }),
         assumptions: ["native-GK-personal-Live-ledger", "native-Luck-nominal-law-per-native-member-order",
-          "native-rank-rounded-before-Luck-expectation", "complete-native-update-frame-tape"],
+          "native-rank-rounded-before-Luck-expectation", "complete-native-update-frame-tape",
+          ...(plays.some(play => play.phases.perfectCumulativeJust?.length)
+            ? ["native-perfect-zero-JUST-cumulative-member-projection"] : [])],
         luckPlay: {
           rushFactorPercent: nativeLuckFactorPercent(rules.luckRushScoreBonusPercent),
           async resolve(samples, controls) {

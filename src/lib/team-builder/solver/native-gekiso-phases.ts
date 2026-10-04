@@ -1,6 +1,8 @@
 import type { EvidenceGap, OptimizationInput, TeamAssignment } from "../contracts.ts";
 import { dataRows, nativeRow, type TeamBuilderData } from "../data.ts";
 import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
+import { createNativePerfectCumulativeJustResolver,
+  type NativePerfectCumulativeJustEffect } from "./native-gekiso-cumulative-just.ts";
 import {
   resolveSelectedGekisoSkills,
   resolveGekisoEffectFactorBP,
@@ -37,6 +39,7 @@ export interface NativeGekisoBasicPhasePlan {
   windows: readonly NativeGekisoBasicWindow[];
   verifiedThroughMs: number;
   assumptions: readonly string[];
+  perfectCumulativeJust?: readonly NativePerfectCumulativeJustEffect[];
 }
 const f = Math.fround;
 const int = (value: unknown): value is number =>
@@ -101,6 +104,7 @@ export function createNativeGekisoPlayingChecker(
 /** Prepare actual selected GK level rows once; physical photo holes and native
  * leader slot2 stay intact. Activation still requires native range frames. */
 export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: OptimizationInput) {
+  const cumulativeJust = createNativePerfectCumulativeJustResolver(data);
   const members = new Map(input.members.map((member) => [member.instanceId, member]));
   const photos = new Map(input.snapshots.map((photo) => [photo.instanceId, photo]));
   const phase = new Map(
@@ -229,6 +233,7 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
       assignment: TeamAssignment,
       expectedIdentity: GekisoRuleIdentity,
       frames: readonly NativeGekisoPhaseFrame[],
+      options?: { perfectCumulativeJust: boolean },
     ): GekisoResolved<NativeGekisoBasicPhasePlan> {
       const selected = this.select(assignment, expectedIdentity);
       if (!selected.value) return { value: null, gaps: selected.gaps };
@@ -262,6 +267,7 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
       const bindings = [...new Set(Object.values(selected.value.membersByMission).flat())];
       const windows: NativeGekisoBasicWindow[] = [],
         gaps: EvidenceGap[] = [];
+      const perfectCumulativeJust: NativePerfectCumulativeJustEffect[] = [];
       for (const binding of bindings)
         for (const row of binding.effectsAtLevel) {
           const source = `member:${binding.memberSkillIndex}/GK:${binding.skill.id}/effect:${row.id}`;
@@ -273,6 +279,13 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
           }
           if (binding.skill.mission !== 4 && missions.some((mission) => mission !== binding.skill.mission)) {
             gaps.push(gap("native-gekiso-basic-member-mission-binding-unresolved", source));
+            continue;
+          }
+          if (row.skillEffectType === 13002 && options?.perfectCumulativeJust && binding.skill.mission === 3 &&
+            phase.get(13002) === 2) {
+            const resolved = cumulativeJust(row);
+            if (resolved.value) perfectCumulativeJust.push(resolved.value);
+            else gaps.push(...resolved.gaps);
             continue;
           }
           const family =
@@ -407,6 +420,7 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
               windows,
               verifiedThroughMs: frames.at(-1)?.timeMs ?? 0,
               assumptions: ["complete-native-update-frame-tape", "basic-GK-timed-and-sustained-member-effects"],
+              ...(perfectCumulativeJust.length ? { perfectCumulativeJust } : {}),
             },
             gaps: [],
           };

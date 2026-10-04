@@ -16,6 +16,7 @@ import {
   type GekisoPerfectHistoryNote,
 } from "./gekiso-perfect-counters.ts";
 import { createNativeGekisoPhaseResolver, type NativeGekisoPhaseFrame, type NativeGekisoBasicPhasePlan } from "./native-gekiso-phases.ts";
+import { resolveNativeCumulativeJustBonus } from "./native-gekiso-cumulative-just.ts";
 
 export interface NativeGekisoAdmittedPerfectNote extends GekisoPerfectHistoryNote {
   rangeIndex: 0 | 1 | 2;
@@ -66,7 +67,9 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
   return {
     async evaluate(rules: GekisoRules, runtime: NativeGekisoBasicRuntimeInput, controls?: SearchEvaluationControls)
       : Promise<GekisoResolved<NativeGekisoBasicRuntimeResult>> {
-      const phase = phases.compileBasic(runtime.assignment, runtime.expectedIdentity, runtime.frames);
+      const perfectCumulativeJust = input.constraints.justRate === 0 && runtime.isolatedLuckRangeIndex === undefined &&
+        Array.isArray(runtime.missions) && runtime.missions.filter(mission => mission === 2).length === 1;
+      const phase = phases.compileBasic(runtime.assignment, runtime.expectedIdentity, runtime.frames, { perfectCumulativeJust });
       if (!phase.value) return { value: null, gaps: phase.gaps };
       if (
         rules.server !== runtime.expectedIdentity.server ||
@@ -158,6 +161,12 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
         if (!result.value) return { value: null, gaps: result.gaps };
         counters.push(result.value);
       }
+      if (phase.value.perfectCumulativeJust?.length) {
+        if (counters.some(counter => counter.naturalJustCount !== 0 || counter.bonusJustCount !== 0 || counter.totalJustCount !== 0))
+          return fail("native-gekiso-cumulative-just-history-required", "raw and additional JUST must be known zero");
+        const bonus = resolveNativeCumulativeJustBonus(0, phase.value.perfectCumulativeJust);
+        if (bonus.value !== 0 || bonus.gaps.length) return { value: null, gaps: bonus.gaps };
+      }
       const gaugeAt = (frameMs: number, noteMs: number) => {
         let factor = f(0);
         for (const window of windows) {
@@ -232,6 +241,7 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
             ...phase.value.assumptions,
             "native-admitted-perfect-history",
             "exact-integer-basic-factor-domain",
+            ...(phase.value.perfectCumulativeJust?.length ? ["native-perfect-zero-JUST-cumulative-member-projection"] : []),
             runtime.isolatedLuckRangeIndex === undefined ? "single-Luck-range-global-frame-order"
               : "isolated-native-per-range-LuckScore-expectation",
           ],
