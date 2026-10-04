@@ -2112,10 +2112,5 @@ CREATE TABLE community_forum_audit (
 CREATE INDEX community_forum_audit_target_idx ON community_forum_audit(target_id,created_at DESC,id DESC);
 CREATE TRIGGER community_forum_audit_immutable_update BEFORE UPDATE ON community_forum_audit BEGIN SELECT RAISE(ABORT,'forum audit immutable'); END;
 CREATE TRIGGER community_forum_audit_immutable_delete BEFORE DELETE ON community_forum_audit BEGIN SELECT RAISE(ABORT,'forum audit immutable'); END;
-CREATE TRIGGER community_post_forum_default_after_insert AFTER INSERT ON community_post WHEN NEW.forum_id IS NULL
-BEGIN
- UPDATE community_post SET forum_id=(SELECT id FROM community_forum WHERE default_purpose='general') WHERE id=NEW.id;
- SELECT CASE WHEN (SELECT forum_id FROM community_post WHERE id=NEW.id) IS NULL THEN RAISE(ABORT,'default forum required') END;
-END;
-CREATE TRIGGER community_post_forum_required_update BEFORE UPDATE OF forum_id ON community_post WHEN NEW.forum_id IS NULL
-BEGIN SELECT RAISE(ABORT,'forum required'); END;
+CREATE TRIGGER community_post_forum_default_after_insert AFTER INSERT ON community_post WHEN NEW.forum_id IS NULL BEGIN UPDATE community_post SET forum_id=(SELECT id FROM community_forum WHERE default_purpose='general') WHERE id=NEW.id; SELECT RAISE(ABORT,'default forum required') WHERE (SELECT forum_id FROM community_post WHERE id=NEW.id) IS NULL; END;
+CREATE TRIGGER community_post_forum_required_update BEFORE UPDATE OF forum_id ON community_post WHEN NEW.forum_id IS NULL BEGIN SELECT RAISE(ABORT,'forum required'); END;
