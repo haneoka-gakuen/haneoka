@@ -3414,7 +3414,12 @@
     "fixedChallengeSingle": "Choose one challenge song to evaluate fixed bindings or compare saved teams.",
     "confirmedRanks": "Confirmed section ranks (scenario)",
     "confirmedRanksHint": "Assume these ranks are confirmed at each section’s settlement boundary, with the same personal performance. Opponent results are not predicted.",
-    "sectionRank": "Section {section} rank"
+    "sectionRank": "Section {section} rank",
+    "candidateScope": "Candidate card pool",
+    "candidateScopeHint": "These filters limit the cards used for this calculation. Your card library and training values are kept.",
+    "candidateScopeConflict": "A required card is outside the candidate pool. Adjust the filters or fixed requirements.",
+    "candidateScopeFive": "Include at least five different characters in the candidate pool. Adjust the filters or add cards.",
+    "candidateScopeCount": "Candidate pool: {count} cards"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

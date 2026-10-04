@@ -3414,7 +3414,12 @@
     "fixedChallengeSingle": "请选择一首挑战曲，验算固定绑定或比较保存的队伍。",
     "confirmedRanks": "各段已确认名次（情景）",
     "confirmedRanksHint": "固定个人操作，按各段结算时已确认的名次比较。这些名次不是对未知对手的预测。",
-    "sectionRank": "第 {section} 段名次"
+    "sectionRank": "第 {section} 段名次",
+    "candidateScope": "候选卡范围",
+    "candidateScopeHint": "这些筛选决定本次计算使用的卡牌，保留卡库和已有练度。",
+    "candidateScopeConflict": "必带卡不在候选范围内，请调整筛选或固定要求。",
+    "candidateScopeFive": "候选范围至少需要五位不同角色，请调整筛选或添加卡牌。",
+    "candidateScopeCount": "候选范围：{count} 张卡"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

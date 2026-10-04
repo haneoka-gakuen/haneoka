@@ -3414,7 +3414,12 @@
     "fixedChallengeSingle": "고정 조합을 평가하거나 저장한 팀을 비교하려면 챌린지 곡을 하나 선택하세요.",
     "confirmedRanks": "구간별 확정 순위(시나리오)",
     "confirmedRanksHint": "개인 플레이 조건을 고정하고 각 구간 정산 시 이 순위가 확정되었다고 가정하여 비교합니다. 알 수 없는 상대 결과를 예측하는 값은 아닙니다.",
-    "sectionRank": "{section}구간 순위"
+    "sectionRank": "{section}구간 순위",
+    "candidateScope": "후보 카드 범위",
+    "candidateScopeHint": "이번 계산에 사용할 카드를 필터링합니다. 보유 카드와 육성 값은 유지됩니다.",
+    "candidateScopeConflict": "필수 카드가 후보 범위 밖에 있습니다. 필터나 고정 조건을 조정하세요.",
+    "candidateScopeFive": "후보 범위에 서로 다른 캐릭터가 5명 이상 필요합니다. 필터를 조정하거나 카드를 추가하세요.",
+    "candidateScopeCount": "후보 카드 {count}장"
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

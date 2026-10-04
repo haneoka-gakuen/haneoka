@@ -81,6 +81,7 @@ import { songJacketCandidates, songTile, liveMusicTypeMark } from "./shared/song
 import { cardTile } from "./shared/card-tile";
 import { SearchCheckpointStore } from "./shared/search-checkpoint-store";
 import { SearchResumeStore, type SearchResumeBookmark } from "./shared/search-resume-store";
+import { emptyCandidateScope, resolveCandidateScope, validCandidateScope, type CandidateScope } from "../lib/team-builder/candidate-scope";
 import { searchContinuation } from "../lib/team-builder/search-continuation";
 import { SEARCH_ENGINE_REVISION } from "../lib/team-builder/solver/search-checkpoint";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
@@ -229,6 +230,7 @@ export class TeamBuilder extends LitElement {
     manualResult: { state: true },
     manualProgress: { state: true },
     requiredLeader: { state: true },
+    candidateScope: { state: true },
     fixedBindings: { state: true },
     bonusFloorPoints: { state: true },
     bonusFloorItems: { state: true },
@@ -371,6 +373,7 @@ export class TeamBuilder extends LitElement {
   declare exportingImage: boolean;
   declare manualResult: ManualTeamEvaluationResult | null;
   declare manualProgress: ManualTeamProgress | null;
+  declare candidateScope: CandidateScope;
   declare requiredLeader: string;
   declare fixedBindings: NonNullable<SearchConstraints["requiredBindings"]>;
   declare bonusFloorPoints: number | null;
@@ -561,13 +564,11 @@ export class TeamBuilder extends LitElement {
   }
   private cardAvatars(card: MemberCatalog | SnapshotCatalog) {
     const ids = "characterId" in card ? [card.characterId] : card.characterIds;
-    return [...new Set(ids)].map((id) => {
-      const character = this.visuals?.characters[String(id)] ?? this.data?.characters[String(id)];
-      return {
-        image: String(character?.faceImage ?? character?.thumbnailImage ?? ""),
-        name: this.text(character?.characterName),
-      };
-    });
+    return [...new Set(ids)].map(id => this.characterPortrait(id));
+  }
+  private characterPortrait(id: string | number) {
+    const character = this.visuals?.characters[String(id)] ?? this.data?.characters[String(id)];
+    return { image: String(character?.faceImage ?? character?.thumbnailImage ?? ""), name: this.text(character?.characterName) };
   }
   private visualSong(id: string): Record<string, unknown> {
     return { ...this.data?.songs[id], ...this.visuals?.songs[id] };
@@ -971,7 +972,7 @@ export class TeamBuilder extends LitElement {
     ++this.authGeneration; this.authController?.abort();
     this.currentOwner = undefined;
     this.cancelSearch(); this.result = null; this.resourceCompleted = null; this.optimizationInput = null;
-    this.closePane(); this.inventory = null; this.workspaceImport = null; this.eventPreview = null;
+    this.closePane(); this.inventory = null; this.workspaceImport = null; this.eventPreview = null; this.candidateScopeCache = undefined;
     this.pendingRebase = null; this.pendingUniqueness = null; this.uniquenessChoices = {}; this.uniquenessOriginalText = "";
     this.selectedIds = new Set(); this.bulkPreview = null; this.requiredLeader = ""; this.fixedBindings = [];
     this.portfolioTeams = new Set(); this.practicalBaselineId = ""; this.practicalBaselineCache = undefined;
@@ -1681,6 +1682,7 @@ export class TeamBuilder extends LitElement {
     this.exportingImage = false;
     this.manualResult = null;
     this.manualProgress = null;
+    this.candidateScope = emptyCandidateScope();
     this.requiredLeader = "";
     this.fixedBindings = [];
     this.bonusFloorPoints = null;
@@ -3974,7 +3976,7 @@ export class TeamBuilder extends LitElement {
     if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && this.resourceItemsUnresolved) return null;
     const normalScene = this.resourceScene("normal"), challengeScene = this.resourceScene("challenge");
     const { boost, perPlay, initialCP, challengeCost } = this.resourceBudget;
-    if (!this.data || !this.inventory || !this.canEdit || this.eligibleCharacterCount < 5 || !normalScene || !challengeScene || boost === null || perPlay === null || initialCP === null || challengeCost === null) return null;
+    if (!this.data || !this.inventory || !this.canEdit || this.resourceEligibleCharacterCount < 5 || !normalScene || !challengeScene || boost === null || perPlay === null || initialCP === null || challengeCost === null) return null;
     const normal = this.resourceSelection.normal, challenge = this.resourceSelection.challenge;
     if ((!normal.constraints || !challenge.constraints) && this.formationConstraintIssue) return null;
     const charts = (kind: ResourceStage) => this.resourceCharts(kind).flatMap(row => {
@@ -3998,7 +4000,7 @@ export class TeamBuilder extends LitElement {
   }
   private get resourceUnavailableHint() {
     if (!this.selectedEvent) return this.t("chooseEvent", "Choose event");
-    if (this.eligibleCharacterCount < 5) return this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
+    if (this.resourceEligibleCharacterCount < 5) return this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
     if (this.resourceObjectives.length === 1 && this.resourceObjectives[0] === "event-items" && this.resourceItemsUnresolved)
       return this.t("resourceItemsPending", "Shop rewards are unavailable for this event. Event points can be evaluated separately.");
     if (!this.resourceData?.challengeMusic.choices.length) return this.t("resourceNoChallenge", "No challenge charts available for this event.");
@@ -4322,15 +4324,61 @@ export class TeamBuilder extends LitElement {
     this.result = null;
     this.optimizationInput = null;
   }
+  private candidateScopeCache?: { data: TeamBuilderData; inventory: InventoryV1; scope: CandidateScope; value: ReturnType<typeof resolveCandidateScope> };
+  private get scopedCandidates() {
+    if (!this.data || !this.inventory) return null;
+    const cached = this.candidateScopeCache;
+    if (cached?.data === this.data && cached.inventory === this.inventory && cached.scope === this.candidateScope) return cached.value;
+    const value = resolveCandidateScope(this.data, this.inventory, this.candidateScope);
+    this.candidateScopeCache = { data: this.data, inventory: this.inventory, scope: this.candidateScope, value };
+    return value;
+  }
+  private changeCandidateScope(kind: Kind, field: "attributes" | "rarities" | "bands" | "characters", value?: number) {
+    if (kind === "snapshots" && field !== "attributes" && field !== "rarities") return;
+    const filters = this.candidateScope[kind] as Record<string, number[]>;
+    const ids = value === undefined ? [] : filters[field].includes(value) ? filters[field].filter(id => id !== value) : [...filters[field], value];
+    this.formationChanged(); this.candidateScope = { ...this.candidateScope, [kind]: { ...filters, [field]: ids } };
+  }
+  private renderCandidateScope() {
+    const pool = this.scopedCandidates;
+    const chips = (kind: Kind, field: "attributes" | "rarities" | "bands" | "characters", label: string, options: {value:number;label:string;image?:string}[]) => {
+      const selected = (this.candidateScope[kind] as Record<string, number[]>)[field];
+      return html`<div class="stack stack--tight"><span class="md-label-large">${label}</span><div class="chip-set" role="group" aria-label=${label}>
+        ${filterChip({label:clientText(this.locale,"all","All"),selected:!selected.length,onToggle:()=>this.changeCandidateScope(kind,field)})}
+        ${options.map(option=>filterChip({label:option.label,image:option.image,selected:selected.includes(option.value),onToggle:()=>this.changeCandidateScope(kind,field,option.value)}))}
+      </div></div>`;
+    };
+    return this.disclosure("candidate-scope", html`${this.t("candidateScope", "Candidate card pool")} · ${pool?.members.length ?? 0} / ${pool?.snapshots.length ?? 0}`, html`<div class="stack" data-candidate-scope>
+      <p class="team-builder__hint">${this.t("candidateScopeHint", "These filters limit the cards used for this calculation. Your card library and training values are kept.")}</p>
+      ${(["members","snapshots"] as const).map(kind=>{
+        const cards=Object.values(kind==="members"?this.data?.members??{}:this.data?.snapshots??{});
+        const attributes=[...new Set(cards.map(card=>card.attribute))].sort((a,b)=>a-b);
+        const rarities=[...new Set(cards.map(card=>card.rarity))].sort((a,b)=>a-b);
+        return html`<section class="stack"><h3 class="detail-section-title">${this.t(kind,kind)}</h3>
+          ${chips(kind,"attributes",clientText(this.locale,"attribute","Attribute"),attributes.map(value=>({value,label:this.attributeName({attribute:value})||this.t("unknown","Unknown or not entered"),image:this.visuals?.marks.get(`CardType-${["","Red","Blue","Green","Yellow","Purple"][value]}.png`)})))}
+          ${chips(kind,"rarities",clientText(this.locale,"rarity","Rarity"),rarities.map(value=>({value,label:cardRarityName(value),image:this.visuals?.marks.get(`RarityIconCenter_${cardRarityName(value)}.png`)})))}
+          ${kind==="members" ? html`
+            ${chips(kind,"bands",clientText(this.locale,"band","Band"),Object.entries(this.data?.bands??{}).map(([id,row])=>({value:Number(id),label:this.text(row.bandName??row.name),image:String(row.icon??row.logo??"")})))}
+            ${this.disclosure("candidate-characters",html`${uiText(this.locale,"character")}`,chips(kind,"characters",uiText(this.locale,"character"),Object.entries(this.data?.characters??{}).map(([id,row])=>({value:Number(id),label:this.text(row.characterName??row.name),image:this.characterPortrait(id).image}))),false)}
+          `:nothing}
+        </section>`;
+      })}
+      <div class="team-builder__actions"><button class="button button--text" @click=${()=>{this.formationChanged();this.candidateScope=emptyCandidateScope();}}>${clientText(this.locale,"clear","Clear")}</button></div>
+    </div>`,false);
+  }
   private ownedCardChoices(kind: Kind) {
     return (this.inventory?.[kind] ?? []).map(entry => {
       const card = this.catalogEntry(entry.cardId, kind);
-      return { value: entry.instanceId, label: card ? [this.characterNames(card), this.text(card.name), this.rarityName(card)].filter(Boolean).join(" · ") : this.t("unknown", "Unknown or not entered"), disabled: entry.excluded };
+      return { value: entry.instanceId, label: card ? [this.characterNames(card), this.text(card.name), this.rarityName(card)].filter(Boolean).join(" · ") : this.t("unknown", "Unknown or not entered"), disabled: entry.excluded || (kind === "members" ? this.constraints.excludedMemberIds : this.constraints.excludedSnapshotIds).includes(entry.instanceId) };
     });
   }
   private get formationConstraintIssue(): string {
     if (!this.data || !this.inventory) return "";
     const fallback = this.t("formationConflict", "Check fixed cards: use five different characters, each snapshot once, and no excluded cards.");
+    const constraints = this.constraints;
+    if ([...constraints.lockedMemberIds, ...(this.requiredLeader ? [this.requiredLeader] : []), ...this.fixedBindings.map(row => row.memberInstanceId)].some(id => constraints.excludedMemberIds.includes(id)) ||
+      [...constraints.lockedSnapshotIds, ...this.fixedBindings.flatMap(row => row.snapshotInstanceId ? [row.snapshotInstanceId] : [])].some(id => constraints.excludedSnapshotIds.includes(id)))
+      return this.t("candidateScopeConflict", "A required card is outside the candidate pool. Adjust the filters or fixed requirements.");
     if ([this.bonusFloorPoints, this.bonusFloorItems].some(value => value !== null && (!Number.isFinite(value) || value < 0 || value > 21474836.47 || Math.abs(value * 100 - Math.round(value * 100)) > 0.00001)))
       return this.t("bonusFloorInvalid", "Enter a bonus from 0% with at most two decimal places.");
     try {
@@ -4400,9 +4448,16 @@ export class TeamBuilder extends LitElement {
     </section>`;
   }
   private get eligibleCharacterCount() {
-    return new Set((this.inventory?.members ?? []).filter(entry => !entry.excluded).flatMap(entry => {
+    return this.countEligibleCharacters(this.constraints.excludedMemberIds);
+  }
+  private countEligibleCharacters(excludedIds: readonly string[]) {
+    const excluded = new Set(excludedIds);
+    return new Set((this.inventory?.members ?? []).filter(entry => !excluded.has(entry.instanceId)).flatMap(entry => {
       const card = this.data?.members[String(entry.cardId)]; return card ? [card.characterId] : [];
     })).size;
+  }
+  private get resourceEligibleCharacterCount() {
+    return Math.min(...(["normal", "challenge"] as const).map(kind => this.countEligibleCharacters(this.resourceConstraints(kind).excludedMemberIds)));
   }
   private choosePrimaryGoal(goal: "score" | "ss-ratio") {
     if (!this.objectiveCapability(goal)) return;
@@ -4499,7 +4554,7 @@ export class TeamBuilder extends LitElement {
         }}>${this.t("chooseEvent", "Choose event")}</button></div>
         ${this.renderEventConditions()}
       `, !!this.selectedEvent || this.wantsEventScene) : nothing}
-      ${this.disclosure("team-requirements", html`${this.t("formationConstraints", "Team requirements")}`, html`${this.renderCardConstraints()}${this.renderFormationConstraints(false)}`, false, "team-builder__options team-builder__requirements")}
+      ${this.disclosure("team-requirements", html`${this.t("formationConstraints", "Team requirements")}`, html`${this.renderCandidateScope()}${this.renderCardConstraints()}${this.renderFormationConstraints(false)}`, false, "team-builder__options team-builder__requirements")}
       ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")} · ${this.searchEffort === "practical" ? this.t("practicalSearch", "Practical recommendation") : this.exactSearchLabel}${this.skillOrderCriteria.length ? html` · ${this.criterionLabel(this.effectiveSkillOrderCriterion)}` : nothing}</span>`, html`<div class="stack">
 
         ${this.searchEffort === "practical" ? html`
@@ -4796,9 +4851,9 @@ export class TeamBuilder extends LitElement {
   get constraints(): SearchConstraints {
     return {
       lockedMemberIds: this.inventory?.members.filter((row) => row.locked).map((row) => row.instanceId) ?? [],
-      excludedMemberIds: this.inventory?.members.filter((row) => row.excluded).map((row) => row.instanceId) ?? [],
+      excludedMemberIds: this.scopedCandidates?.excludedMemberIds ?? [],
       lockedSnapshotIds: this.inventory?.snapshots.filter((row) => row.locked).map((row) => row.instanceId) ?? [],
-      excludedSnapshotIds: this.inventory?.snapshots.filter((row) => row.excluded).map((row) => row.instanceId) ?? [],
+      excludedSnapshotIds: this.scopedCandidates?.excludedSnapshotIds ?? [],
       excludedSongKeys: [...this.excludedCharts],
       lockedSongKey: this.challengePoolSearch ? null : this.challengeSearch && this.selectedChallengeId && this.selectedChallengeDifficulty !== ""
         ? `challenge:${this.selectedChallengeId}:${this.selectedChallengeDifficulty}` :
@@ -4959,7 +5014,9 @@ export class TeamBuilder extends LitElement {
   }
   private get optimizationHint(): string {
     if (!this.data || !this.inventory) return this.t("unavailable", "Required data or formula is unavailable");
-    if (this.eligibleCharacterCount < 5) return this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
+    if (this.eligibleCharacterCount < 5) return Object.values(this.candidateScope.members).some(ids => ids.length)
+      ? this.t("candidateScopeFive", "Include at least five different characters in the candidate pool. Adjust the filters or add cards.")
+      : this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
     if (!this.challengeSearch && this.lockSong && !this.selectedSong) return this.t("chooseSong", "Choose song");
     if (!this.challengeSearch && this.lockSong && this.lockDifficulty && !this.difficulties.some((row) => row.value === this.selectedDifficulty))
       return this.t("chooseDifficulty", "Choose a difficulty.");
@@ -5311,12 +5368,12 @@ export class TeamBuilder extends LitElement {
     if (this.practicalBaselineId === "fixed") return this.fixedAssignment ?? undefined;
     const team = this.workspaceDocument?.teams.find(team => team.id === this.practicalBaselineId);
     if (!team || !this.profileMatches(team)) return;
-    const key = JSON.stringify([team.id, team.identity, team.formation, this.requiredLeader, this.fixedBindings]);
+    const key = JSON.stringify([team.id, team.identity, team.formation, this.requiredLeader, this.fixedBindings, this.constraints.excludedMemberIds, this.constraints.excludedSnapshotIds]);
     if (this.practicalBaselineCache?.data === this.data && this.practicalBaselineCache.inventory === this.inventory && this.practicalBaselineCache.key === key) return this.practicalBaselineCache.assignment;
     let assignment: TeamAssignment | undefined;
     try {
       const value = restoreSavedTeam(team, this.data, this.inventory).assignment;
-      if ((!this.requiredLeader || value.leaderInstanceId === this.requiredLeader) && this.fixedBindings.every(binding => {
+      if (value.memberInstanceIds.every(id => !this.constraints.excludedMemberIds.includes(id)) && value.snapshotInstanceIds.every(id => id === null || !this.constraints.excludedSnapshotIds.includes(id)) && (!this.requiredLeader || value.leaderInstanceId === this.requiredLeader) && this.fixedBindings.every(binding => {
         const slot = value.memberInstanceIds.indexOf(binding.memberInstanceId); return slot >= 0 && value.snapshotInstanceIds[slot] === binding.snapshotInstanceId;
       })) assignment = value;
     } catch { /* The selected baseline stays unavailable until its cards are usable. */ }
@@ -5937,7 +5994,7 @@ export class TeamBuilder extends LitElement {
   }
   private get searchSettings() {
     return {
-      mode: this.mode, objectives: [...this.objectives], skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
+      mode: this.mode, objectives: [...this.objectives], candidateScope: structuredClone(this.candidateScope), skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
       searchEffort: this.searchEffort, exactAutoContinue: this.exactAutoContinue, compareModes: this.compareModes, confirmedRanksEnabled: this.confirmedRanksEnabled, confirmedSectionRanks: [...this.confirmedSectionRanks], practicalBaselineId: this.practicalBaselineId, challengeMultiple: this.challengeMultiple, challengePool: this.challengePool ? [...this.challengePool] : null, selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
       songPool: this.songPool ? [...this.songPool] : null, selectedSong: this.selectedSong, selectedDifficulty: this.selectedDifficulty, lockSong: this.lockSong, lockDifficulty: this.lockDifficulty,
       excludedCharts: [...this.excludedCharts], metricBasis: this.metricBasis, songSeconds: { ...this.songSeconds },
@@ -5950,7 +6007,7 @@ export class TeamBuilder extends LitElement {
   }
   private validResumeSettings(value: unknown): value is ReturnType<TeamBuilder["captureSearchSettings"]> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const row: Record<string, unknown> = { searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
+    const row: Record<string, unknown> = { candidateScope: emptyCandidateScope(), searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
     const keys = Object.keys(this.searchSettings);
     if (Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))) return false;
     if (!["practicalBaselineId", "selectedSong", "selectedDifficulty", "selectedChallengeId", "selectedChallengeDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
@@ -5962,6 +6019,7 @@ export class TeamBuilder extends LitElement {
       !["personal-solo", "personal-live"].includes(String(row.selectedScoreDomain)) || !["single", "time", "consumption"].includes(String(row.metricBasis)) ||
       !["live-boost", "event-item"].includes(String(row.consumptionResource)) || !["", "normal", "challenge"].includes(String(row.eventFlowKind))) return false;
     if (!Array.isArray(row.objectives) || !row.objectives.length || row.objectives.length > OBJECTIVES.length || new Set(row.objectives).size !== row.objectives.length || row.objectives.some(value => !OBJECTIVES.includes(value))) return false;
+    if (!validCandidateScope(row.candidateScope)) return false;
     if (!Array.isArray(row.confirmedSectionRanks) || row.confirmedSectionRanks.length !== 3 || row.confirmedSectionRanks.some(rank => !Number.isInteger(rank) || Number(rank) < 1 || Number(rank) > 5)) return false;
     if (row.challengePool !== null && (!Array.isArray(row.challengePool) || row.challengePool.length > 1000 || row.challengePool.some(value => typeof value !== "string"))) return false;
     if (row.songPool !== null && (!Array.isArray(row.songPool) || row.songPool.length > 1000 || row.songPool.some(value => typeof value !== "string"))) return false;
@@ -5982,7 +6040,7 @@ export class TeamBuilder extends LitElement {
     if (!bookmark || this.running || !this.resumeCompatible(bookmark) || !this.validResumeSettings(bookmark.settings)) return;
     const settings = structuredClone(bookmark.settings);
     this.cancelSearch(); this.result = null; this.optimizationInput = null;
-    Object.assign(this, { searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
+    Object.assign(this, { candidateScope: emptyCandidateScope(), searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
     this.planningKind = "team"; this.searchEffort = "exact";
     if (this.canOptimize) { this.startOptimization(bookmark.checkpoint); this.openWorkspace("results"); }
     else this.openWorkspace("plan");
@@ -6138,7 +6196,12 @@ export class TeamBuilder extends LitElement {
                 ${this.renderProfileSelector()}
                 <div class="team-builder__section-header">
                   <span class="team-builder__hint">${this.t("selectedKinds", "{members} members · {snapshots} snapshots", { members: this.inventory?.members.length ?? 0, snapshots: this.inventory?.snapshots.length ?? 0 })}</span>
-                  <button class="button button--text" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button>
+                  <div class="team-builder__actions"><button class="button button--text" @click=${() => {
+                    this.planningKind = "team";
+                    this.disclosureStates = {...this.disclosureStates,"team-requirements":true,"candidate-scope":true};
+                    void this.updateComplete.then(()=>requestAnimationFrame(()=>this.querySelector<HTMLElement>("[data-candidate-scope]")?.scrollIntoView({block:"start"})));
+                  }}>${this.t("candidateScopeCount", "Candidate pool: {count} cards", {count:(this.scopedCandidates?.members.length??0)+(this.scopedCandidates?.snapshots.length??0)})}</button>
+                  <button class="button button--text" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button></div>
                 </div>
               </section>
               ${this.renderPlanningKind()}
