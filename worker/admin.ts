@@ -4,6 +4,7 @@ import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
+import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -812,8 +813,10 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
   const query = (url.searchParams.get("q") || "").normalize("NFKC").trim();
   if (query.length > 100) return error(request, 400, "invalid_query", "q must not exceed 100 characters");
 
-  const conditions: string[] = [];
-  const values: BindValue[] = [];
+  let visitFilter;
+  try { visitFilter = adminVisitFilter(url); } catch { return error(request,400,"invalid_geo_filter","Invalid latest-visit filter"); }
+  const conditions: string[] = visitFilter.sql === "1" ? [] : [visitFilter.sql];
+  const values: BindValue[] = [...visitFilter.values];
   if (role) {
     conditions.push("profile.role = ?");
     values.push(role);
@@ -846,9 +849,9 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
     `SELECT account.id, identity.uid AS publicUid, account.name AS accountName, account.email, account.emailVerified AS emailVerified,
             ${avatarUrlSelect("account")} AS image,
             account.createdAt AS createdAt, account.updatedAt AS updatedAt,
-            visit.visited_at AS lastVisitedAt, visit.ip_address AS lastVisitIpAddress,
-            visit.ip_country_code AS lastVisitCountryCode, visit.ip_region_code AS lastVisitRegionCode,
-            visit.ip_region_name AS lastVisitRegionName, visit.ip_details_json AS lastVisitIpDetails,
+            v.visited_at AS lastVisitedAt, v.ip_address AS lastVisitIpAddress,
+            v.ip_country_code AS lastVisitCountryCode, v.ip_region_code AS lastVisitRegionCode,
+            v.ip_region_name AS lastVisitRegionName, v.ip_details_json AS lastVisitIpDetails,
             profile.display_name AS publicDisplayName,
             profile.pending_display_name AS candidateDisplayName,
             profile.display_name_status AS displayNameStatus,
@@ -874,7 +877,7 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
      FROM "user" AS account
      LEFT JOIN community_profile AS profile ON profile.user_id = account.id
      LEFT JOIN community_identity AS identity ON identity.user_id=account.id
-     LEFT JOIN community_user_last_visit AS visit ON visit.user_id = account.id
+     LEFT JOIN community_user_last_visit AS v ON v.user_id = account.id
      ${where}
      ORDER BY account.createdAt DESC, account.id DESC
      LIMIT ?`,
@@ -4153,6 +4156,12 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     const id = path[1] || "";
     if (!SAFE_ID_PATTERN.test(id)) return error(request, 400, "invalid_entity_id", "Invalid entity identifier");
     return path[0] === "posts" ? readAdminPost(request, env, id) : readAdminAttachment(request, env, id);
+  }
+
+  if (method === "GET" && path.length === 2 && path[0] === "statistics" && (path[1] === "series" || path[1] === "geo")) {
+    const access = await requireStaff(request, env, "admin");
+    if (access instanceof Response) return access;
+    return path[1] === "series" ? readAdminSeries(request, env) : readAdminGeo(request, env);
   }
 
   if (method === "GET" && path.length === 2 && path[0] === "users") {
