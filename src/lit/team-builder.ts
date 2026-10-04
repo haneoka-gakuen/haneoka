@@ -3309,6 +3309,13 @@ export class TeamBuilder extends LitElement {
       id: String(row.challengeMusicId), songId: String(row.underlyingSongId), difficulties: row.difficulties,
     }));
   }
+  private resourceDifficulties(kind: ResourceStage) {
+    const selection = this.resourceSelection[kind];
+    return [...new Set(this.resourceCharts(kind)
+      .filter(row => !selection.chart || row.id === selection.chart)
+      .flatMap(row => row.difficulties.map(chart => Number(chart.difficulty))))]
+      .filter(value => Number.isSafeInteger(value) && value >= 0).sort((a, b) => a - b);
+  }
   private resourceScene(kind: ResourceStage): NativeEventScene | null {
     const start = new Date(this.resourceSelection[kind].start).getTime();
     const windows = this.eventWindows.filter(row => start >= row.start && (row.end === null || start < row.end));
@@ -3414,13 +3421,16 @@ export class TeamBuilder extends LitElement {
       ${this.select(this.t("mode", "Play mode"), selection.mode,
         [{ value: "normal", label: this.t("normal", "Normal live") }, { value: "gekiso", label: this.t("gekiso", "GEKISO live") }],
         value => this.updateResourceStage(kind, { mode: value as "normal" | "gekiso" }))}
+      ${this.select(this.t("availableDifficulty", "Available difficulty"), selection.difficulty,
+        [{ value: "", label: clientText(this.locale, "all", "All") }, ...this.resourceDifficulties(kind).map(value => ({ value: String(value), label: difficultyKey({ difficulty: value }).toUpperCase() }))],
+        value => this.updateResourceStage(kind, { difficulty: value }), !choices.length)}
       ${selected ? this.songIdentity(selected.songId, selection.difficulty) : html`<p>${this.t("resourceAllSongs", "Compare all available songs")}</p>`}
       <div class="team-builder__actions">
         <button class="button button--outlined" ?disabled=${!choices.length} @click=${() => {
           this.closePane(); this.resourcePicker = kind; this.pickerSong = selection.chart; this.pickerDifficulty = selection.difficulty; this.pickerQuery = ""; this.pickerLimit = 30;
           this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = "";
         }}>${this.t("chooseSong", "Choose song")}</button>
-        ${selection.chart ? html`<button class="button button--text" @click=${() => this.updateResourceStage(kind, { chart: "", difficulty: "" })}>${clientText(this.locale, "all", "All")}</button>` : nothing}
+        ${selection.chart ? html`<button class="button button--text" @click=${() => this.updateResourceStage(kind, { chart: "" })}>${clientText(this.locale, "all", "All")}</button>` : nothing}
       </div>
       <md-outlined-text-field type="datetime-local" step="0.001" label=${this.t("eventStart", "Scenario start (local time)")}
         .value=${selection.start} @input=${(event: Event) => this.updateResourceStage(kind, { start: (event.currentTarget as Control).value })}></md-outlined-text-field>
@@ -3471,8 +3481,11 @@ export class TeamBuilder extends LitElement {
     return value === null ? this.t("unavailable", "Required data or formula is unavailable") : value.toLocaleString(this.locale, { maximumFractionDigits: 2 });
   }
   private renderResourceStageResult(stage: ResourceStageCandidate) {
+    const mode = this.resourceCompleted?.context.request[stage.kind].mode;
     return html`<section class="team-builder__resource-stage-result">
-      <h3>${this.resourceStageLabel(stage.kind)}</h3>${this.songIdentity(String(stage.songId), String(stage.difficulty))}
+      <h3>${this.resourceStageLabel(stage.kind)}</h3>
+      <p class="team-builder__hint">${mode ? html`${this.t("mode", "Play mode")}: ${this.t(mode, mode)} · ` : nothing}${this.t("skillOrderCriterion", "Skill order")}: ${this.criterionLabel(stage.skillOrderCriterion)}</p>
+      ${this.songIdentity(String(stage.songId), String(stage.difficulty))}
       <div class="collection collection--member team-builder__team-strip">${stage.assignment.memberInstanceIds.map(id => this.resultCard(this.inventory?.members.find(row => row.instanceId === id), "members", id === stage.assignment.leaderInstanceId))}</div>
       <div class="collection collection--support team-builder__team-strip">${stage.assignment.snapshotInstanceIds.map(id => this.resultCard(this.inventory?.snapshots.find(row => row.instanceId === id), "snapshots"))}</div>
     </section>`;
