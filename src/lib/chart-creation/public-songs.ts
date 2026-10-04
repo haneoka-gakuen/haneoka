@@ -9,6 +9,7 @@ import { readBytes } from "../../../packages/embed-core/src/io";
 import { importSs } from "../../../packages/chart-editor/src/formats/ss";
 import { resolveLocalizedText } from "../localized-text";
 import { AUDIO_LIMITS } from "./audio";
+import { structuredCloneValue } from "../../../packages/chart-editor/src/model";
 
 export interface PublicSongSourceOptions {
   apiBase?: string;
@@ -93,12 +94,22 @@ export function createPinnedPublicFetcher(
 async function bytes(response: Response, signal: AbortSignal, maxBytes: number) {
   return readBytes(response, { signal, maxBytes, locale: "en", fetcher: fetch, progress: () => {} });
 }
-function client(options: PublicSongSourceOptions, identity?: HaneokaReleaseIdentity) {
+function client(
+  options: PublicSongSourceOptions,
+  identity?: HaneokaReleaseIdentity,
+  observeResponse?: (response: Response) => void,
+) {
   const transport = identity ? createPinnedPublicFetcher(identity, options) : (options.fetcher ?? fetch);
   return createHaneokaClient({
     baseUrl: options.apiBase ?? "https://haneoka.org/api/v1/",
     transport: async (request) => {
       const response = await transport(request);
+      try {
+        observeResponse?.(response);
+      } catch (error) {
+        await response.body?.cancel();
+        throw error;
+      }
       const data = await readBytes(
         response,
         { signal: request.signal, maxBytes: 8 * 1024 * 1024, locale: "en", fetcher: transport, progress: () => {} },
@@ -134,6 +145,178 @@ export async function listPublicCreationSongs(
     ...(options.identity ? { release: options.identity.releaseId } : {}),
     decode: song,
   });
+}
+
+export interface PublicCreationCatalogue {
+  items: { id: string; value: PublicCreationSong }[];
+  total: number;
+  nextCursor: null;
+  release: HaneokaReleaseIdentity;
+}
+export type PublicCreationCatalogueOptions = PublicSongSourceOptions & {
+  server: string;
+  locale: HaneokaLocale;
+  signal: AbortSignal;
+  identity?: HaneokaReleaseIdentity;
+};
+interface CataloguePending {
+  controller: AbortController;
+  promise: Promise<PublicCreationCatalogue>;
+  waiters: number;
+  settled: boolean;
+}
+interface CatalogueCache {
+  values: Map<string, PublicCreationCatalogue>;
+  current: Map<string, { key: string; expires: number }>;
+  pending: Map<string, CataloguePending>;
+}
+const catalogueCaches = new WeakMap<EmbedFetcher, CatalogueCache>();
+function catalogueCache(fetcher: EmbedFetcher) {
+  let cache = catalogueCaches.get(fetcher);
+  if (!cache) {
+    cache = { values: new Map(), current: new Map(), pending: new Map() };
+    catalogueCaches.set(fetcher, cache);
+  }
+  return cache;
+}
+function catalogueScope(options: PublicCreationCatalogueOptions) {
+  const base = new URL(options.apiBase ?? "https://haneoka.org/api/v1/");
+  if (!base.pathname.endsWith("/")) base.pathname += "/";
+  return `${base.href}\0${options.server}\0${options.locale}`;
+}
+function cataloguePin(scope: string, identity: HaneokaReleaseIdentity) {
+  return `${scope}\0${identity.releaseId}\0${identity.sourceId}`;
+}
+function catalogueIdentity(response: Response, server: string): HaneokaReleaseIdentity {
+  const releaseId = response.headers.get("x-haneoka-release-id"),
+    sourceId = response.headers.get("x-haneoka-source-id");
+  if (
+    !releaseId ||
+    !/^r-[a-f0-9]{20}$/.test(releaseId) ||
+    !sourceId ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(sourceId)
+  )
+    throw new Error("catalogue_release_identity_missing");
+  return { schema: "haneoka-resource-release-identity-v1", server, releaseId, sourceId };
+}
+function awaitCatalogue(pending: CataloguePending, signal: AbortSignal) {
+  pending.waiters++;
+  return new Promise<PublicCreationCatalogue>((resolve, reject) => {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      signal.removeEventListener("abort", abort);
+      if (--pending.waiters === 0 && !pending.settled)
+        pending.controller.abort(new DOMException("Aborted", "AbortError"));
+    };
+    const abort = () => {
+      release();
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    pending.promise.then(
+      (value) => {
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+        release();
+        resolve(structuredCloneValue(value));
+      },
+      (error) => {
+        release();
+        reject(error);
+      },
+    );
+  });
+}
+/** One bounded metadata GET reads the complete compact index. No chart or audio prefetch. */
+export function listPublicCreationSongCatalogue(
+  options: PublicCreationCatalogueOptions,
+): Promise<PublicCreationCatalogue> {
+  options.signal.throwIfAborted();
+  if (options.identity && options.identity.server !== options.server) throw new Error("resource_source_mismatch");
+  const cache = catalogueCache(options.fetcher ?? fetch),
+    scope = catalogueScope(options),
+    key = options.identity ? cataloguePin(scope, options.identity) : scope;
+  const alias = cache.current.get(scope),
+    pinned = options.identity ? key : alias && alias.expires > Date.now() ? alias.key : undefined;
+  const cached = pinned ? cache.values.get(pinned) : undefined;
+  if (cached) return Promise.resolve(structuredCloneValue(cached));
+  let pending = cache.pending.get(key);
+  if (!pending || pending.controller.signal.aborted) {
+    const controller = new AbortController();
+    let release: HaneokaReleaseIdentity | undefined;
+    const promise = (async () => {
+      const index = await client(options, options.identity, (response) => {
+        if (response.ok) release = catalogueIdentity(response, options.server);
+      }).index<Record<string, PublicCreationSong>>("songs", {
+        server: options.server,
+        locale: options.locale,
+        signal: controller.signal,
+        ...(options.identity ? { release: options.identity.releaseId } : {}),
+        decode: (value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value))
+            throw new Error("invalid_complete_song_index");
+          return Object.fromEntries(Object.entries(value).map(([id, value]) => [id, song(value)]));
+        },
+      });
+      controller.signal.throwIfAborted();
+      if (!release) throw new Error("catalogue_release_identity_missing");
+      const value: PublicCreationCatalogue = {
+        items: Object.entries(index).map(([id, value]) => ({ id, value })),
+        total: Object.keys(index).length,
+        nextCursor: null,
+        release,
+      };
+      const completeKey = cataloguePin(scope, release);
+      cache.values.delete(completeKey);
+      cache.values.set(completeKey, structuredCloneValue(value));
+      while (cache.values.size > 4) cache.values.delete(cache.values.keys().next().value!);
+      if (!options.identity) cache.current.set(scope, { key: completeKey, expires: Date.now() + 60000 });
+      while (cache.current.size > 10) cache.current.delete(cache.current.keys().next().value!);
+      return value;
+    })();
+    pending = { controller, promise, waiters: 0, settled: false };
+    cache.pending.set(key, pending);
+    const active = pending;
+    void promise.then(
+      () => {
+        active.settled = true;
+        if (cache.pending.get(key) === active) cache.pending.delete(key);
+      },
+      () => {
+        active.settled = true;
+        if (cache.pending.get(key) === active) cache.pending.delete(key);
+      },
+    );
+  }
+  return awaitCatalogue(pending, options.signal);
+}
+/** Picker-owned generation rejects late server/source/provider responses even if a transport ignores abort. */
+export class PublicCreationCatalogueReader {
+  private generation = 0;
+  private controller?: AbortController;
+  async load(options: PublicCreationCatalogueOptions) {
+    this.cancel();
+    const generation = this.generation,
+      controller = (this.controller = new AbortController());
+    const signal = AbortSignal.any([options.signal, controller.signal]);
+    const value = await listPublicCreationSongCatalogue({ ...options, signal });
+    signal.throwIfAborted();
+    if (generation !== this.generation) throw new DOMException("Superseded catalogue", "AbortError");
+    return value;
+  }
+  cancel() {
+    this.generation++;
+    this.controller?.abort();
+    this.controller = undefined;
+  }
 }
 
 export async function loadPublicCreationSong(

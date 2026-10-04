@@ -13,7 +13,7 @@ import { readReleaseServer } from "../lib/release-server";
 import { beginLoading } from "../lib/loading-progress";
 import { loadingState } from "./ui/state";
 import {
-  listPublicCreationSongs,
+  PublicCreationCatalogueReader,
   loadPublicCreationSong,
   pinnedPublicUrl,
   type PublicCreationSong,
@@ -35,6 +35,7 @@ export class ChartCreationLibrary extends LitElement {
     query: { state: true },
     filtersOpen: { state: true },
     bandFilter: { state: true },
+    visibleCount: { state: true },
   };
   declare locale: HaneokaLocale;
   declare onImport: ((value: PublicChartImport, signal: AbortSignal) => Promise<void>) | undefined;
@@ -48,7 +49,16 @@ export class ChartCreationLibrary extends LitElement {
   declare private filtersOpen: boolean;
   declare private bandFilter: string;
   private identity?: HaneokaReleaseIdentity;
-  private cursor: string | null = null;
+  declare private visibleCount: number;
+  private readonly catalogue = new PublicCreationCatalogueReader();
+  private indexLoaded = false;
+  private indexLocale = "";
+  private searchSnapshot?: {
+    items: { id: string; value: PublicCreationSong }[];
+    locale: string;
+    rows: { id: string; value: PublicCreationSong; searchText: string; bandId: string }[];
+    bands: [string, string][];
+  };
   private server = "";
   private controller?: AbortController;
   private unlocale?: () => void;
@@ -57,6 +67,7 @@ export class ChartCreationLibrary extends LitElement {
   constructor() {
     super();
     this.locale = "en";
+    this.visibleCount = 40;
     this.opened = false;
     this.busy = false;
     this.error = "";
@@ -73,12 +84,23 @@ export class ChartCreationLibrary extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.unlocale = initializeI18nClient().subscribe((c) => {
+      const changed = this.locale !== c.locale;
       this.locale = c.locale;
+      if (changed && this.opened) {
+        this.cancelRequest();
+        this.items = [];
+        this.identity = undefined;
+        this.indexLoaded = false;
+        this.chosen = "";
+        this.visibleCount = 40;
+        this.bandFilter = "";
+        void this.loadIndex();
+      }
       this.requestUpdate();
     });
   }
   disconnectedCallback() {
-    this.controller?.abort();
+    this.cancelRequest();
     this.images.disconnect();
     this.unlocale?.();
     super.disconnectedCallback();
@@ -92,13 +114,21 @@ export class ChartCreationLibrary extends LitElement {
   private t(key: string) {
     return clientText(this.locale, `chartEditorPage.${key}`);
   }
+  private cancelRequest() {
+    this.catalogue.cancel();
+    this.controller?.abort();
+    this.controller = undefined;
+    this.busy = false;
+  }
   async show() {
     this.trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const server = readReleaseServer();
-    if (server !== this.server) {
+    if (server !== this.server || (this.indexLocale && this.indexLocale !== this.locale)) {
+      this.cancelRequest();
       this.identity = undefined;
       this.items = [];
-      this.cursor = null;
+      this.indexLoaded = false;
+      this.visibleCount = 40;
       this.chosen = "";
       this.query = "";
       this.bandFilter = "";
@@ -106,37 +136,37 @@ export class ChartCreationLibrary extends LitElement {
     }
     this.opened = true;
     await this.updateComplete;
-    this.querySelector<HTMLDialogElement>("dialog")!.showModal();
-    if (!this.items.length) await this.more();
+    if (!this.isConnected || !this.opened) return;
+    const dialog = this.querySelector<HTMLDialogElement>("dialog")!;
+    if (!dialog.open) dialog.showModal();
+    if (!this.indexLoaded) await this.loadIndex();
   }
   private close() {
-    this.controller?.abort();
+    this.cancelRequest();
     this.querySelector<HTMLDialogElement>("dialog")?.close();
     this.opened = false;
     this.images.disconnect();
     if (this.trigger?.isConnected && this.trigger.getClientRects().length) this.trigger.focus();
     else this.closest("chart-creation-workspace")?.querySelector<HTMLElement>(".chart-creation__editor")?.focus();
   }
-  private async more() {
+  private async loadIndex() {
     if (this.busy) return;
     this.busy = true;
     this.error = "";
     const controller = (this.controller = new AbortController());
+    this.indexLocale = this.locale;
     const report = beginLoading(this.t("serverLibrary"), { signal: controller.signal, scope: "owner" });
     try {
-      const page = await listPublicCreationSongs({
+      const page = await this.catalogue.load({
         server: this.server,
         locale: this.locale,
         signal: controller.signal,
-        limit: 20,
-        ...(this.identity ? { identity: this.identity } : {}),
-        ...(this.cursor ? { cursor: this.cursor } : {}),
       });
       controller.signal.throwIfAborted();
+      if (this.controller !== controller || !this.isConnected || !this.opened) return;
       this.identity = page.release;
-      this.cursor = page.nextCursor;
-      const seen = new Set(this.items.map((item) => item.id));
-      this.items = [...this.items, ...page.items.filter((item) => !seen.has(item.id))];
+      this.items = page.items;
+      this.indexLoaded = true;
       report.finish();
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -186,32 +216,33 @@ export class ChartCreationLibrary extends LitElement {
       }
     }
   }
+  private searchIndex() {
+    if (this.searchSnapshot?.items === this.items && this.searchSnapshot.locale === this.locale)
+      return this.searchSnapshot;
+    const rows = this.items.map(({ id, value }) => ({
+      id,
+      value,
+      bandId: String((value as unknown as Record<string, unknown>).bandId ?? ""),
+      searchText: [
+        songTitle(value as unknown as Record<string, unknown>, this.locale).text,
+        resolveLocalizedText(value.musicTitle, this.locale).text,
+        resolveLocalizedText(value.bandName, this.locale).text,
+      ].join(" ").normalize("NFKC").toLocaleLowerCase(),
+    }));
+    const bands = [...new Map(rows.map(({ bandId, value }) => [
+      bandId, resolveLocalizedText(value.bandName, this.locale).text,
+    ] as [string, string])).entries()].filter(([id, name]) => id && name);
+    return this.searchSnapshot = { items: this.items, locale: this.locale, rows, bands };
+  }
   render() {
     const selected = this.items.find((item) => item.id === this.chosen)?.value;
-    const bands = [
-      ...new Map(
-        this.items.map(({ value }) => [
-          String((value as unknown as Record<string, unknown>).bandId ?? ""),
-          resolveLocalizedText(value.bandName, this.locale).text,
-        ]),
-      ).entries(),
-    ].filter(([id, name]) => id && name);
-    const query = this.query.toLocaleLowerCase(),
-      matching = this.items.filter(
-        ({ value }) =>
-          (!this.bandFilter || String((value as unknown as Record<string, unknown>).bandId) === this.bandFilter) &&
-          [
-            songTitle(value as unknown as Record<string, unknown>, this.locale).text,
-            resolveLocalizedText(value.musicTitle, this.locale).text,
-            resolveLocalizedText(value.bandName, this.locale).text,
-          ]
-            .join(" ")
-            .toLocaleLowerCase()
-            .includes(query),
-      );
+    const { rows, bands } = this.searchIndex();
+    const query = this.query.normalize("NFKC").trim().toLocaleLowerCase();
+    const matching = rows.filter((row) =>
+      (!this.bandFilter || row.bandId === this.bandFilter) && row.searchText.includes(query));
     const picture = (value: unknown) =>
       typeof value === "string" && value && this.identity ? pinnedPublicUrl(value, this.identity) : "";
-    const items = matching.map(({ id, value }) => {
+    const items = matching.slice(0, this.visibleCount).map(({ id, value }) => {
       const row = { ...value, jacketUrl: picture(value.jacketUrl) } as unknown as Record<string, unknown>;
       const tile = songTile(
         row,
@@ -239,20 +270,20 @@ export class ChartCreationLibrary extends LitElement {
       filtersOpen: this.filtersOpen,
       toggleFilters: () => (this.filtersOpen = !this.filtersOpen),
       query: this.query,
-      search: (value) => (this.query = value),
+      search: (value) => { this.query = value; this.visibleCount = 40; },
       kind: "song",
       items,
       selected: this.chosen,
       select: (id) => this.choose(id),
-      countLabel: String(matching.length),
+      countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "loading") : String(matching.length),
       emptyLabel: this.busy ? "" : clientText(this.locale, "empty"),
       moreLabel: this.t("loadMoreSongs"),
-      ...(this.cursor && !this.busy ? { more: () => void this.more() } : {}),
+      ...(matching.length > this.visibleCount ? { more: () => { this.visibleCount += 40; } } : {}),
       filters: html`
         <md-outlined-select
           label=${clientText(this.locale, "band")}
           .value=${this.bandFilter}
-          @change=${(event: Event) => (this.bandFilter = (event.target as HTMLSelectElement).value)}
+          @change=${(event: Event) => { this.bandFilter = (event.target as HTMLSelectElement).value; this.visibleCount = 40; }}
         >
           <md-select-option value=""><div slot="headline">${clientText(this.locale, "all")}</div></md-select-option>
           ${bands.map(
@@ -268,6 +299,7 @@ export class ChartCreationLibrary extends LitElement {
           this.error
             ? html`
                 <p role="alert">${this.error}</p>
+                ${!this.indexLoaded ? html`<button class="button button--text" ?disabled=${this.busy} @click=${() => void this.loadIndex()}>${clientText(this.locale, "retry")}</button>` : nothing}
               `
             : nothing
         }
