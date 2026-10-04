@@ -5,8 +5,7 @@ import { prepareEvaluationForSearch } from "./evaluation.ts";
 import { loadSongOptions } from "./song-loader.ts";
 import { createSearchCheckpoint, restoreSearchCheckpoint, searchFingerprint } from "./search-checkpoint.ts";
 import { validateSearchBudget } from "./search-budget.ts";
-import { prepareResourcePlanStages } from "./native-challenge-stage-adapter.ts";
-import { optimizeFixedResourcePlans } from "../resource-planner.ts";
+import { prepareAndOptimizeResourcePlan } from "../resource-plan-runner.ts";
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SolverRequest>) => void) | null;
   postMessage(message: SolverResponse): void;
@@ -30,20 +29,10 @@ scope.onmessage = (event) => {
   active = run;
   const execute = async () => {
     if (message.type === "resource-prepare") {
-      const started = performance.now();
-      scope.postMessage({ type: "resource-progress", runId: run.runId, progress: { phase: "loading" } });
-      const stages = await prepareResourcePlanStages(message.request, {
-        cancelled: () => run.cancelled,
-        progress: (progress) => { if (active === run) scope.postMessage({ type: "resource-progress",
-          runId: run.runId, progress: { phase: "stage", ...progress } }); },
-      });
-      if (active !== run) return;
-      const remaining = Math.max(1, Math.floor(message.request.budget.maxMilliseconds - (performance.now() - started)));
-      const result = await optimizeFixedResourcePlans({ ...stages, budget: { ...stages.budget, maxMilliseconds: remaining } }, {
-        cancelled: () => run.cancelled,
+      const result = await prepareAndOptimizeResourcePlan(message.request, {
+        cancelled: () => run.cancelled || active !== run,
         progress: (progress) => { if (active === run) scope.postMessage({ type: "resource-progress", runId: run.runId, progress }); },
       });
-      result.elapsedMs = performance.now() - started;
       if (active === run) {
         scope.postMessage({ type: "resource-result", runId: run.runId, result });
         active = null;
