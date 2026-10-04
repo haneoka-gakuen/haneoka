@@ -42,7 +42,7 @@ jobs:
           ref: ${{ inputs.producer_pin }}
           persist-credentials: false
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - uses: actions/setup-python@v6
