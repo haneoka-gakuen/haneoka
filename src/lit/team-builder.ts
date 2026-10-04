@@ -92,6 +92,14 @@ import {
   mergeInventories,
   type InventoryStoreState,
 } from "../lib/team-builder/storage";
+import {
+  createUpgradeProfile, upsertUpgradeProfile, updateUpgradeProfile, selectWorkspaceProfile,
+  getWorkspaceInventory, removeUpgradeProfile, createSavedTeam, upsertSavedTeam,
+  restoreSavedTeam, removeSavedTeam, exportTeamWorkspace, importTeamWorkspace,
+  type TeamWorkspaceV1, type UpgradeProfile, type SavedTeam,
+} from "../lib/team-builder/workspace";
+import { TeamWorkspaceStore, mergeTeamWorkspaces, type WorkspaceStoreState } from "../lib/team-builder/data/workspace-storage";
+import { validWorkspaceName } from "../lib/team-builder/data/workspace-document";
 import { downloadBlob } from "../lib/canvas-capture";
 import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
@@ -173,6 +181,13 @@ export class TeamBuilder extends LitElement {
     result: { state: true },
     resultView: { state: true },
     comparisonKeys: { state: true },
+    actualInventoryFallback: { state: true },
+    workspaceState: { state: true },
+    workspaceError: { state: true },
+    profileName: { state: true },
+    teamName: { state: true },
+    workspaceImport: { state: true },
+    workspaceImportPriority: { state: true },
     manualResult: { state: true },
     manualProgress: { state: true },
     requiredLeader: { state: true },
@@ -271,6 +286,14 @@ export class TeamBuilder extends LitElement {
   declare result: SearchResult | null;
   declare resultView: "overall" | "by-chart";
   declare comparisonKeys: string[];
+  private workspaceStore?: TeamWorkspaceStore;
+  declare actualInventoryFallback: boolean;
+  declare workspaceState: WorkspaceStoreState | null;
+  declare workspaceError: string;
+  declare profileName: string;
+  declare teamName: string;
+  declare workspaceImport: { document: TeamWorkspaceV1; scope: string } | null;
+  declare workspaceImportPriority: "cloud" | "local";
   private manualScope: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined } | null = null;
   private manualObjectives: Objective[] = [];
   declare manualResult: ManualTeamEvaluationResult | null;
@@ -474,9 +497,251 @@ export class TeamBuilder extends LitElement {
   private visualSong(id: string): Record<string, unknown> {
     return { ...this.data?.songs[id], ...this.visuals?.songs[id] };
   }
+  private get workspaceDocument() {
+    return this.workspaceState && this.workspaceState.ownerId === this.currentOwner ? this.workspaceState.workspace : null;
+  }
+  private get activeProfileId() { return this.actualInventoryFallback ? null : this.workspaceDocument?.activeProfileId ?? null; }
+  private get activeProfile() { return this.workspaceDocument?.profiles.find(profile => profile.id === this.activeProfileId); }
+  private get canEditWorkspace() {
+    return !!this.workspaceDocument && !!this.workspaceStore && this.sourceReady && this.currentOwner !== undefined &&
+      ["anonymous", "saved", "pending", "saving", "offline"].includes(this.workspaceState!.phase);
+  }
+  private get workspaceScope() {
+    return JSON.stringify([this.data?.identity, this.currentOwner, this.workspaceState?.revision, this.workspaceDocument]);
+  }
+  private profileMatches(value: Pick<UpgradeProfile, "identity">) {
+    return !!value && !!this.data && value.identity.server === this.data.identity.server &&
+      value.identity.releaseId === this.data.identity.releaseId && value.identity.sourceId === this.data.identity.sourceId;
+  }
+  private bindWorkspaceStore() {
+    this.workspaceStore?.dispose();
+    this.actualInventoryFallback = false;
+    this.workspaceState = null;
+    this.workspaceError = "";
+    this.workspaceImport = null;
+    if (!this.data) return;
+    const store = new TeamWorkspaceStore(this.data.identity.server, { storage: localStorage, onChange: state => {
+      if (this.workspaceStore !== store || this.data?.identity.server !== store.server || !this.isConnected) return;
+      const previousProfile = this.activeProfileId;
+      this.workspaceState = state;
+      if (["anonymous", "saved", "pending", "saving"].includes(state.phase)) this.workspaceError = "";
+      if (previousProfile !== this.activeProfileId) {
+        this.closePane(); this.formationChanged();
+        this.requiredLeader = ""; this.fixedBindings = [];
+        this.selectedIds = new Set(); this.bulkPreview = null;
+      }
+      this.refreshWorkspaceInventory();
+    } });
+    this.workspaceStore = store;
+  }
+  private refreshWorkspaceInventory() {
+    if (!this.data || this.pendingRebase) return;
+    const actual = this.storeState && this.storeState.ownerId === this.currentOwner ? this.storeState.inventory : null;
+    let next: InventoryV1 | null = actual ?? null;
+    if (this.activeProfileId && actual && this.workspaceDocument) {
+      try { next = getWorkspaceInventory(this.workspaceDocument, actual, this.data); }
+      catch { next = null; this.workspaceError = this.t("profileNeedsUpdate", "This plan uses older card data. Create an updated copy to use it."); }
+    }
+    if (next && this.inventory && exportInventory(next) === exportInventory(this.inventory)) return;
+    this.formationChanged();
+    this.inventory = next;
+  }
+  private changeWorkspace(next: TeamWorkspaceV1): boolean {
+    if (!this.canEditWorkspace || !this.workspaceStore) return false;
+    try { this.workspaceStore.edit(next); this.workspaceError = ""; return true; }
+    catch { this.workspaceError = this.t("workspaceSaveFailed", "Could not save plans. Export a backup, then retry."); return false; }
+  }
+  private activateProfile(id: string | null) {
+    const document = this.workspaceDocument;
+    if (!document) return;
+    if (!this.canEditWorkspace) {
+      if (id === null) { this.actualInventoryFallback = true; this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = []; this.refreshWorkspaceInventory(); }
+      return;
+    }
+    const profile = document.profiles.find(row => row.id === id);
+    if (id && (!profile || !this.profileMatches(profile))) {
+      this.workspaceError = this.t("profileNeedsUpdate", "This plan uses older card data. Create an updated copy to use it.");
+      this.openWorkspace("sync"); return;
+    }
+    if (this.changeWorkspace(selectWorkspaceProfile(document, id))) {
+      this.actualInventoryFallback = false; this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = []; this.refreshWorkspaceInventory();
+    }
+  }
+  private createProfile() {
+    if (!this.inventory || !this.data || !this.workspaceDocument || !this.canEdit || !validWorkspaceName(this.profileName.trim())) return;
+    try {
+      const profile = createUpgradeProfile(this.inventory, this.data, this.profileName, this.storeState?.revision ?? 0);
+      this.actualInventoryFallback = false;
+      if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) {
+        this.profileName = ""; this.openWorkspace("growth");
+      }
+    } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
+  }
+  private updateProfileSource(profile: UpgradeProfile) {
+    if (!this.data || !this.workspaceDocument || !this.canEditWorkspace) return;
+    try {
+      const preview = rebaseInventory(profile.inventory, this.data);
+      if (!preview.canApply) throw new Error("profile-rebase-review");
+      const copy = createUpgradeProfile(preview.candidate, this.data, profile.name, profile.baseInventoryRevision);
+      this.actualInventoryFallback = false;
+      this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, copy), copy.id));
+    } catch { this.workspaceError = this.t("profileUpdateBlocked", "Some saved cards or training values are unavailable in this data. Keep the backup and review the card library."); }
+  }
+  private saveFixedTeam() {
+    if (!this.canEdit || !this.fixedAssignment || !this.inventory || !this.data || !this.workspaceDocument || !validWorkspaceName(this.teamName.trim())) return;
+    try {
+      const team = createSavedTeam(this.teamName, this.fixedAssignment, this.inventory, this.data, this.activeProfileId);
+      if (this.changeWorkspace(upsertSavedTeam(this.workspaceDocument, team))) this.teamName = "";
+    } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
+  }
+  private loadSavedTeam(team: SavedTeam, savedTraining: boolean) {
+    if (!this.data || !this.workspaceDocument || !this.canEditWorkspace || !this.canEdit) return;
+    try {
+      const restored = restoreSavedTeam(team, this.data, savedTraining ? undefined : this.inventory ?? undefined);
+      if (savedTraining) {
+        const profile = createUpgradeProfile(restored.inventory, this.data, team.name, this.storeState?.revision ?? 0);
+        this.actualInventoryFallback = false;
+        if (!this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) return;
+      }
+      this.useFixedTeam(restored.assignment);
+      this.workspaceError = "";
+    } catch { this.workspaceError = this.t("savedTeamUnavailable", "This team needs matching card data and all of its saved cards. Restore its training as a new plan, or review the card library."); }
+  }
+  private renameWorkspaceEntry(kind: "profiles" | "teams", id: string, name: string) {
+    const document = this.workspaceDocument;
+    if (!document || !validWorkspaceName(name.trim())) { this.workspaceError = this.t("workspaceNameRequired", "Enter a name of 1 to 80 characters."); return; }
+    const entry = document[kind].find(row => row.id === id);
+    if (!entry) return;
+    try {
+      this.changeWorkspace(kind === "profiles" ? upsertUpgradeProfile(document, { ...entry as UpgradeProfile, name: name.trim() }) : upsertSavedTeam(document, { ...entry as SavedTeam, name: name.trim() }));
+    } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
+  }
+  private exportWorkspace() {
+    if (!this.workspaceDocument) return;
+    void downloadBlob(new Blob([exportTeamWorkspace(this.workspaceDocument)], { type: "application/json" }), "haneoka-team-workspace.json");
+  }
+  private readonly importWorkspaceFile = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement, file = input.files?.[0]; input.value = "";
+    if (!file || !this.canEditWorkspace) return;
+    const scope = this.workspaceScope, server = this.server;
+    try {
+      if (file.size > 1024 * 1024) throw new Error("workspace-size");
+      const document = importTeamWorkspace(await file.text(), server);
+      if (!this.isConnected || scope !== this.workspaceScope || !this.canEditWorkspace) return;
+      this.workspaceImport = { document, scope };
+      this.workspaceImportPriority = "cloud";
+      this.workspaceError = "";
+    } catch { if (this.isConnected && scope === this.workspaceScope) this.workspaceError = this.t("workspaceImportInvalid", "Choose a valid plan backup for this server, up to 1 MiB."); }
+  };
+  private confirmWorkspaceImport() {
+    const draft = this.workspaceImport, current = this.workspaceDocument;
+    if (!draft || !current || draft.scope !== this.workspaceScope || !this.canEditWorkspace) return;
+    try {
+      const merged = mergeTeamWorkspaces(current, draft.document, this.workspaceImportPriority);
+      if (this.changeWorkspace({ ...merged, activeProfileId: current.activeProfileId })) this.workspaceImport = null;
+    } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
+  }
+  private resolveWorkspace(strategy: "remote" | "local" | "merge") {
+    if (!this.workspaceStore || !this.workspaceState || this.workspaceState.ownerId !== this.currentOwner) return;
+    try {
+      if (this.workspaceState.phase === "conflict") this.workspaceStore.resolveConflict(strategy, this.workspaceImportPriority);
+      else if (this.workspaceState.phase === "merge-required") this.workspaceStore.resolveAnonymous(strategy === "remote" ? "cloud" : strategy, this.workspaceImportPriority);
+      this.workspaceError = "";
+    } catch { this.workspaceError = this.t("workspaceSaveFailed", "Could not save plans. Export a backup, then retry."); }
+  }
+  private renderProfileSelector() {
+    const document = this.workspaceDocument;
+    if (!document) return nothing;
+    return html`<div class="team-builder__profile-selector">${this.select(this.t("trainingSource", "Training source"), this.activeProfileId ?? "",
+      [{ value: "", label: this.t("actualInventory", "Actual card library") }, ...document.profiles.map(profile => ({ value: profile.id, label: profile.name, disabled: !this.canEditWorkspace || !this.profileMatches(profile) }))],
+      value => this.activateProfile(value || null), !this.sourceReady)}
+      ${this.activeProfileId ? html`<p class="team-builder__hint">${this.t("profileEditingHint", "Edits apply to this planning copy. Import account data into the actual card library.")}</p>` : nothing}</div>`;
+  }
+  private renderSavedTeamPreview(team: SavedTeam) {
+    if (!this.profileMatches(team)) return nothing;
+    return this.disclosure(`saved-preview-${team.id}`, html`${this.t("configuration", "Team configuration")}`, html`
+      <div class="team-builder__saved-lineup">${team.formation.memberCardIds.map((id, index) => {
+        const member = team.inventory.members.find(entry => entry.cardId === id), card = this.data?.members[String(id)];
+        const photoId = team.formation.snapshotCardIds[index], photo = photoId === null ? undefined : this.data?.snapshots[String(photoId)];
+        const practice = team.inventory.snapshots.find(entry => entry.cardId === photoId);
+        return html`<div class="stack stack--tight">
+          ${card ? tile({ ...this.cardOptions(card, "members"), href: `/${this.server}/${this.locale}/member-cards/${id}/`, marks: [...(this.cardOptions(card, "members").marks ?? []), ...(id === team.formation.leaderCardId ? [{ at: "bottom-end" as const, text: this.t("leader", "Leader") }] : [])] }) : html`<p class="team-builder__hint">${this.t("unknown", "Unknown or not entered")}</p>`}
+          <small>${this.fieldName("level")}: ${member?.level ?? this.t("unknown", "Unknown or not entered")} · ${this.fieldName("training")}: ${member?.training ?? this.t("unknown", "Unknown or not entered")} · ${this.fieldName("awakening")}: ${member?.awakening ?? this.t("unknown", "Unknown or not entered")}</small>
+          ${photo ? html`${tile({ ...this.cardOptions(photo, "snapshots"), href: `/${this.server}/${this.locale}/support-cards/${photoId}/` })}<small>${this.fieldName("level")}: ${practice?.level ?? this.t("unknown", "Unknown or not entered")} · ${this.fieldName("awakening")}: ${practice?.awakening ?? this.t("unknown", "Unknown or not entered")}</small>` : html`<small>${this.t("snapshots", "Snapshots")}: ${photoId === null ? clientText(this.locale, "none", "None") : this.t("unknown", "Unknown or not entered")}</small>`}
+        </div>`;
+      })}</div>
+    `, false);
+  }
+  private renderWorkspaceManager() {
+    const document = this.workspaceDocument, state = this.workspaceState;
+    const phaseKey: Record<string, string> = { "auth-loading": "authLoading", loading: "cloudLoading", anonymous: "local", saved: "saved", pending: "saving", saving: "saving", offline: "saveFailed", conflict: "conflict", "merge-required": "merge", error: "saveFailed" };
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.t("plansAndTeams", "Plans and saved teams"), "cards", { level: 2 })}
+      <p role="status">${state?.error === "team-workspace-local-draft-changed" ? this.t("workspaceLocalChanged", "Plans changed in another tab. Export this copy before reloading.") : this.t(phaseKey[state?.phase ?? "auth-loading"], "Checking sign-in status")}</p>
+      ${this.workspaceError ? html`<p class="team-builder__error" role="alert">${this.workspaceError}</p>` : nothing}
+      <div class="team-builder__actions">
+        <button class="button button--outlined" ?disabled=${!document} @click=${() => this.exportWorkspace()}>${this.t("exportPlans", "Export plan backup")}</button>
+        <button class="button button--outlined" ?disabled=${!this.canEditWorkspace} @click=${() => this.querySelector<HTMLInputElement>("[data-workspace-import]")?.click()}>${this.t("importPlans", "Import plan backup")}</button>
+        <input hidden data-workspace-import type="file" accept="application/json,.json" @change=${this.importWorkspaceFile} />
+        ${state && ["error", "offline"].includes(state.phase) ? html`<button class="button button--outlined" @click=${() => {
+          if (this.currentOwner === undefined) return;
+          if (state.phase === "offline" && state.dirty) void this.workspaceStore?.saveNow();
+          else void this.workspaceStore?.setAccount(this.currentOwner);
+        }}>${clientText(this.locale, "retry", "Retry")}</button>` : nothing}
+      </div>
+      ${state && ["conflict", "merge-required"].includes(state.phase) && state.ownerId === this.currentOwner ? html`<div class="stack">
+        ${this.select(this.t("workspaceMergePriority", "Conflicting plans"), this.workspaceImportPriority, [{ value: "cloud", label: this.t("keepExistingPlans", "Keep existing versions") }, { value: "local", label: this.t("keepImportedPlans", "Keep incoming versions") }], value => { this.workspaceImportPriority = value as "cloud" | "local"; })}
+        <div class="team-builder__actions">
+          <button class="button" @click=${() => this.resolveWorkspace("merge")}>${this.t("mergePlans", "Merge plans")}</button>
+          <button class="button button--outlined" @click=${() => this.resolveWorkspace("remote")}>${this.t("useCloudPlans", "Use cloud plans")}</button>
+          <button class="button button--text" @click=${() => this.resolveWorkspace("local")}>${this.t("useLocalPlans", "Use local plans")}</button>
+        </div>
+      </div>` : nothing}
+      ${this.workspaceImport ? html`<div class="stack">
+        <p>${this.t("planImportSummary", "{profiles} plans · {teams} saved teams", { profiles: this.workspaceImport.document.profiles.length, teams: this.workspaceImport.document.teams.length })}</p>
+        ${this.select(this.t("workspaceMergePriority", "Conflicting plans"), this.workspaceImportPriority, [{ value: "cloud", label: this.t("keepExistingPlans", "Keep existing versions") }, { value: "local", label: this.t("keepImportedPlans", "Keep incoming versions") }], value => { this.workspaceImportPriority = value as "cloud" | "local"; })}
+        <div class="team-builder__actions"><button class="button" @click=${() => this.confirmWorkspaceImport()}>${this.t("mergePlans", "Merge plans")}</button><button class="button button--text" @click=${() => { this.workspaceImport = null; }}>${clientText(this.locale, "cancel", "Cancel")}</button></div>
+      </div>` : nothing}
+      ${document ? html`
+        ${this.disclosure("upgrade-profiles", html`${this.t("upgradeProfiles", "Upgrade plans")} · ${document.profiles.length} / 32`, html`
+          <p class="team-builder__hint">${this.t("createProfileHint", "Copy the selected training values into an independent upgrade plan.")}</p>
+          <div class="team-builder__fields">
+            <md-outlined-text-field label=${this.t("profileName", "Plan name")} .value=${live(this.profileName)} maxlength="80" @input=${(event: Event) => { this.profileName = (event.currentTarget as Control).value; }}></md-outlined-text-field>
+            <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || document.profiles.length >= 32 || !validWorkspaceName(this.profileName.trim())} @click=${() => this.createProfile()}>${this.t("createProfile", "Create planning copy")}</button>
+          </div>
+          <div class="stack">${document.profiles.map(profile => html`<div class="team-builder__saved-entry">
+            <md-outlined-text-field label=${this.t("profileName", "Plan name")} .value=${live(profile.name)} maxlength="80" ?disabled=${!this.canEditWorkspace} @change=${(event: Event) => this.renameWorkspaceEntry("profiles", profile.id, (event.currentTarget as Control).value)}></md-outlined-text-field>
+            <div class="team-builder__actions">
+              ${this.profileMatches(profile) ? html`<button class="button button--outlined" ?disabled=${!this.canEditWorkspace} @click=${() => this.activateProfile(profile.id)}>${profile.id === this.activeProfileId ? this.t("activePlan", "Active plan") : this.t("usePlan", "Use plan")}</button>` : html`<button class="button button--outlined" ?disabled=${!this.canEditWorkspace || document.profiles.length >= 32} @click=${() => this.updateProfileSource(profile)}>${this.t("updateProfileCopy", "Create updated copy")}</button>`}
+              <button class="button button--text" ?disabled=${!this.canEditWorkspace} @click=${() => this.changeWorkspace(removeUpgradeProfile(document, profile.id))}>${clientText(this.locale, "remove", "Remove")}</button>
+            </div>
+          </div>`)}</div>
+        `, true)}
+        ${this.disclosure("saved-teams", html`${this.t("savedTeams", "Saved teams")} · ${document.teams.length} / 64`, html`
+          <div class="team-builder__fields">
+            <md-outlined-text-field label=${this.t("teamName", "Team name")} .value=${live(this.teamName)} maxlength="80" @input=${(event: Event) => { this.teamName = (event.currentTarget as Control).value; }}></md-outlined-text-field>
+            <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || !this.fixedAssignment || document.teams.length >= 64 || !validWorkspaceName(this.teamName.trim())} @click=${() => this.saveFixedTeam()}>${this.t("saveNamedTeam", "Save team")}</button>
+          </div>
+          ${this.fixedAssignment ? this.renderTeamConfiguration(this.fixedAssignment, "save-team-preview") : html`<p class="team-builder__hint">${this.t("saveTeamHint", "Choose a result or bind five members and a leader before saving a team.")}</p>`}
+          <div class="stack">${document.teams.map(team => html`<div class="team-builder__saved-entry">
+            <md-outlined-text-field label=${this.t("teamName", "Team name")} .value=${live(team.name)} maxlength="80" ?disabled=${!this.canEditWorkspace} @change=${(event: Event) => this.renameWorkspaceEntry("teams", team.id, (event.currentTarget as Control).value)}></md-outlined-text-field>
+            <p class="team-builder__hint">${team.formation.memberCardIds.map(id => this.characterNames(this.data?.members[String(id)])).join(" · ")}</p>
+            ${this.renderSavedTeamPreview(team)}
+            <div class="team-builder__actions">
+              <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || !this.profileMatches(team)} @click=${() => this.loadSavedTeam(team, false)}>${this.t("useCurrentTraining", "Use current training")}</button>
+              <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || !this.profileMatches(team) || document.profiles.length >= 32} @click=${() => this.loadSavedTeam(team, true)}>${this.t("restoreSavedTraining", "Restore training as a plan")}</button>
+              <button class="button button--text" ?disabled=${!this.canEditWorkspace} @click=${() => this.changeWorkspace(removeSavedTeam(document, team.id))}>${clientText(this.locale, "remove", "Remove")}</button>
+            </div>
+            ${!this.profileMatches(team) ? html`<p class="team-builder__hint">${this.t("savedTeamOlderData", "This team belongs to older card data. Its backup is retained.")}</p>` : nothing}
+          </div>`)}</div>
+        `, true)}
+      ` : nothing}
+    </section>`;
+  }
   private bindStore(): InventoryStore | undefined {
     if (!this.data) return;
     try {
+      this.bindWorkspaceStore();
       this.store = new InventoryStore(this.data, {
         storage: localStorage,
         onChange: (state) => {
@@ -503,8 +768,7 @@ export class TeamBuilder extends LitElement {
             };
           }
           if (this.pendingRebase) this.inventory = this.pendingRebase.draft;
-          else if (state.inventory) this.inventory = state.inventory;
-          else if (state.ownerId !== this.currentOwner && this.currentOwner) this.inventory = null;
+          else this.refreshWorkspaceInventory();
           this.requestUpdate();
         },
       });
@@ -519,7 +783,7 @@ export class TeamBuilder extends LitElement {
     this.selectedScoreDomain = "personal-solo";
     const sameServer = this.data?.identity.server === server;
     const previousData = sameServer ? this.data : undefined;
-    const previousInventory = sameServer ? this.inventory : null;
+    const previousInventory = sameServer ? this.storeState?.inventory ?? null : null;
     const previousOwner = this.currentOwner;
     const previousRevision = this.storeState?.revision ?? 0;
     const previousState = sameServer ? this.storeState : null;
@@ -532,6 +796,10 @@ export class TeamBuilder extends LitElement {
     this.identityController?.abort();
     ++this.authGeneration;
     this.store?.dispose();
+    this.workspaceStore?.dispose();
+    this.workspaceStore = undefined;
+    this.workspaceState = null;
+    this.workspaceImport = null;
     this.store = undefined;
     this.storeState = null;
     this.sourceReady = false;
@@ -651,6 +919,9 @@ export class TeamBuilder extends LitElement {
         if (generation !== this.authGeneration || !this.isConnected) return;
         this.result = null;
         this.currentOwner = owner;
+        this.refreshWorkspaceInventory();
+        if (this.workspaceStore && (this.workspaceStore.state.ownerId !== owner || this.workspaceStore.state.phase === "auth-loading"))
+          void this.workspaceStore.setAccount(owner);
         this.syncCheckpointCache();
         this.requestUpdate();
       }
@@ -696,7 +967,10 @@ export class TeamBuilder extends LitElement {
       this.sourceReady &&
       !this.pendingRebase &&
       !this.pendingUniqueness &&
+      (!this.activeProfileId || (this.canEditWorkspace && !!this.inventory && this.profileMatches(this.activeProfile!))) &&
+      this.inventory &&
       this.storeState?.inventory &&
+      this.storeState.ownerId === this.currentOwner &&
       ["anonymous", "saved", "pending", "saving", "offline"].includes(this.storeState.phase),
     );
   }
@@ -961,6 +1235,8 @@ export class TeamBuilder extends LitElement {
   }
   private get maintenanceNeedsAction(): boolean {
     return (
+      !!this.workspaceError ||
+      ["conflict", "merge-required", "offline", "error"].includes(this.workspaceState?.phase ?? "") ||
       !!this.pendingUniqueness ||
       !!this.pendingRebase ||
       !!this.error ||
@@ -985,7 +1261,7 @@ export class TeamBuilder extends LitElement {
         ${!this.visitedViews.has("growth") ? nothing : ready ? html`<div ?inert=${!this.canEdit}>${this.renderPlayerModifiers()}${this.renderBands()}</div>` : this.renderInventoryAccess()}
       </section>
       <section id="team-panel-sync" class="team-builder__panel" aria-label=${this.t("inventorySyncTab", "Sync")} ?hidden=${this.workspaceView !== "sync"}>
-        ${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}
+        ${this.renderWorkspaceManager()}${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}
       </section>
     `;
   }
@@ -1082,6 +1358,8 @@ export class TeamBuilder extends LitElement {
                     @click=${async () => {
                       await this.store?.setAccount(null);
                       this.currentOwner = null;
+                      void this.workspaceStore?.setAccount(null);
+                      this.refreshWorkspaceInventory();
                       this.syncCheckpointCache();
                       this.error = "";
                     }}
@@ -1093,7 +1371,7 @@ export class TeamBuilder extends LitElement {
           }
           <button
             class="button button--outlined"
-            ?disabled=${!this.canEdit}
+            ?disabled=${!this.canEdit || !!this.activeProfileId}
             @click=${() => this.querySelector<HTMLInputElement>("[data-inventory-import]")?.click()}
           >
             ${clientText(this.locale, "import", "Import")}
@@ -1134,13 +1412,13 @@ export class TeamBuilder extends LitElement {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = "";
-    if (!file || !this.data || !this.canEdit) return;
+    if (!file || !this.data || !this.canEdit || this.activeProfileId) return;
     const generation = this.authGeneration;
     let originalText = "";
     try {
       if (file.size > 1024 * 1024) throw new Error("inventory-size");
       originalText = await file.text();
-      if (generation !== this.authGeneration || !this.isConnected) return;
+      if (generation !== this.authGeneration || !this.isConnected || this.activeProfileId) return;
       const next = importInventory(originalText, this.data);
       this.replaceInventory(next);
     } catch (error) {
@@ -1193,6 +1471,13 @@ export class TeamBuilder extends LitElement {
     this.result = null;
     this.resultView = "overall";
     this.comparisonKeys = [];
+    this.actualInventoryFallback = false;
+    this.workspaceState = null;
+    this.workspaceError = "";
+    this.profileName = "";
+    this.teamName = "";
+    this.workspaceImport = null;
+    this.workspaceImportPriority = "cloud";
     this.manualResult = null;
     this.manualProgress = null;
     this.requiredLeader = "";
@@ -1285,6 +1570,10 @@ export class TeamBuilder extends LitElement {
     this.dataController?.abort();
     this.visualsController?.abort();
     this.store?.dispose();
+    this.workspaceStore?.dispose();
+    this.workspaceStore = undefined;
+    this.workspaceState = null;
+    this.workspaceImport = null;
     this.store = undefined;
     this.images.disconnect();
     this.paneFocus.detach();
@@ -1315,6 +1604,7 @@ export class TeamBuilder extends LitElement {
       this.resourcePicker = null;
       this.resourceCompleted = null;
     }
+    if (this.workspaceImport && this.workspaceImport.scope !== this.workspaceScope) this.workspaceImport = null;
     if (this.boxState && !this.boxScopeMatches()) {
       this.closeBoxImport(true);
       this.error = this.boxText("changed", "Your account, data or inventory changed. Open the import again.");
@@ -1414,6 +1704,7 @@ export class TeamBuilder extends LitElement {
     return this.boxText("invalidFormat", "This file is not a supported Box export.");
   }
   private boxContext(): BoxReviewContext | null {
+    if (this.activeProfileId) return null;
     if (!this.canEdit || !this.data?.identity.sourceId || !this.inventory || !this.storeState || this.currentOwner === undefined || this.storeState.ownerId !== this.currentOwner) return null;
     // Anonymous imports are scoped to this component, never to a fabricated cloud account.
     const ownerId = this.currentOwner ?? (this.boxLocalOwner ||= `local:${crypto.randomUUID()}`);
@@ -1543,6 +1834,7 @@ export class TeamBuilder extends LitElement {
     return clientText(this.locale, common[key] ?? `teamBuilder.screenshotImport.${key}`, fallback);
   }
   private screenshotContext(): ScreenshotReviewContext | null {
+    if (this.activeProfileId) return null;
     if (!this.data?.identity.sourceId || !this.inventory || !this.storeState || !this.currentOwner || this.storeState.ownerId !== this.currentOwner) return null;
     return { ownerId: this.currentOwner, revision: this.storeState.revision, server: this.data.identity.server,
       releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId };
@@ -1645,7 +1937,7 @@ export class TeamBuilder extends LitElement {
       { id: "cards" as const, label: this.t("inventoryCardsTab", "Cards"), graphic: icon("style") },
       { id: "growth" as const, label: this.t("inventoryGrowthTab", "Growth"), graphic: icon("trending_up") },
       { id: "results" as const, label: this.t("results", "Candidates"), graphic: icon("leaderboard") },
-      { id: "sync" as const, label: this.t("inventorySyncTab", "Sync"), graphic: icon("refresh") },
+      { id: "sync" as const, label: this.t("plansAndSync", "Plans & sync"), graphic: icon("refresh") },
     ];
   }
   private renderWorkspaceNavigation() {
@@ -1660,6 +1952,7 @@ export class TeamBuilder extends LitElement {
         </button>`)}
       </nav>
       <div class="team-builder__sidebar-status">
+        ${this.renderProfileSelector()}
         <p class="team-builder__hint">${this.t("selectedKinds", "{members} members · {snapshots} snapshots", {
           members: this.inventory?.members.length ?? 0, snapshots: this.inventory?.snapshots.length ?? 0,
         })}</p>
@@ -1754,12 +2047,12 @@ export class TeamBuilder extends LitElement {
         ?disabled=${disabled}
         label=${label}
         .value=${value}
-        .displayText=${entries.find((entry) => entry.value === value)?.label ?? ""}
+        .displayText=${live(entries.find((entry) => entry.value === value)?.label ?? "")}
         @change=${(event: Event) => change((event.currentTarget as Control).value)}
       >
         ${entries.map(
           (entry) => html`
-            <md-select-option value=${entry.value} ?selected=${entry.value === value} ?disabled=${entry.disabled}>
+            <md-select-option value=${entry.value} .displayText=${entry.label} ?selected=${entry.value === value} ?disabled=${entry.disabled}>
               <div slot="headline">${entry.label}</div>
             </md-select-option>
           `,
@@ -1796,6 +2089,13 @@ export class TeamBuilder extends LitElement {
       return;
     }
     try {
+      if (this.activeProfileId) {
+        if (!this.canEditWorkspace || !this.workspaceState?.workspace || !this.workspaceStore || !this.data) return;
+        this.workspaceStore.edit(updateUpgradeProfile(this.workspaceState.workspace, this.activeProfileId, next, this.data));
+        this.refreshWorkspaceInventory();
+        this.error = "";
+        return;
+      }
       this.store?.edit(next);
       this.inventory = next;
       this.error = "";
@@ -4680,7 +4980,10 @@ export class TeamBuilder extends LitElement {
     const selected = this.comparisonResult === this.result && this.comparisonKeys.includes(candidateKey);
     return html`
       <article class="team-builder__candidate" aria-label=${this.comparisonLabel(index)}>
-        <button class="button button--text" ?disabled=${!this.canCompareCandidates} @click=${() => this.useFixedTeam(candidate.assignment)}>${this.t("useFixedTeam", "Use this team")}</button>
+        <div class="team-builder__actions">
+          <button class="button button--text" ?disabled=${!this.canCompareCandidates} @click=${() => this.useFixedTeam(candidate.assignment)}>${this.t("useFixedTeam", "Use this team")}</button>
+          <button class="button button--text" ?disabled=${!this.canCompareCandidates || !this.canEditWorkspace} @click=${() => { this.useFixedTeam(candidate.assignment); this.openWorkspace("sync"); }}>${this.t("saveNamedTeam", "Save team")}</button>
+        </div>
         <div class="team-builder__section-header"><strong>${this.comparisonLabel(index)}</strong>
           ${this.check(this.t("compare", "Compare"), selected, value => this.toggleComparison(candidate, value),
             !this.canCompareCandidates || (!selected && this.comparisonKeys.length >= 3))}

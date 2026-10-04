@@ -24,6 +24,7 @@ import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src
 import { handleModerationQueue, reconcileModerationState } from "./moderation";
 import { handleProfileRequest } from "./profile";
 import { handleTeamInventoryRequest } from "./team-inventory";
+import { handleTeamWorkspaceRequest } from "./team-workspace";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
@@ -3339,6 +3340,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (profile) return profile;
     const teamInventory = await handleTeamInventoryRequest(request, env);
     if (teamInventory) return teamInventory;
+    const teamWorkspace = await handleTeamWorkspaceRequest(request, env);
+    if (teamWorkspace) return teamWorkspace;
     const screenshotRecognition = await handleScreenshotRecognitionRequest(request, env, recognitionReferenceProvider);
     if (screenshotRecognition) return screenshotRecognition;
     const publicProfile = await handlePublicProfileRequest(request, env);

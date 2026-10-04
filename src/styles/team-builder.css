@@ -589,3 +589,12 @@
   .team-builder__binding > .button { justify-self: end; }
   @media (max-width: 599px) { .team-builder__binding-cards { grid-template-columns: minmax(0, 1fr); } }
 }
+
+@layer pages {
+  .team-builder__profile-selector { display: grid; grid-column: 1 / -1; min-width: 0; gap: 8px; }
+  .team-builder__saved-lineup { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr)); gap: 12px; }
+  @media (max-width: 599px) { .team-builder__saved-lineup { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .team-builder__saved-entry { display: grid; min-width: 0; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+  #team-panel-sync { display: grid; gap: var(--md-sys-spacing-4); }
+  #team-panel-sync[hidden] { display: none; }
+}

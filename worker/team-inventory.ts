@@ -291,6 +291,17 @@ const writableOwner = `EXISTS (
     )
 )`;
 
+// The separate planning library shares account authorization and transport bounds.
+export {
+  json as privateTeamJson,
+  error as privateTeamError,
+  exactKeys as teamExactKeys,
+  sameOrigin as teamSameOrigin,
+  requireAccess as requireTeamAccess,
+  readBody as readTeamBody,
+  writableOwner as writableTeamOwner,
+};
+
 export const handleTeamInventoryRequest = async (request: Request, env: Env): Promise<Response | null> => {
   const url = new URL(request.url);
   if (!url.pathname.startsWith(PREFIX)) return null;
