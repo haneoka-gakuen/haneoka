@@ -10,6 +10,7 @@ import { readReleaseServer } from "../lib/release-server";
 import { RequestScope } from "../lib/request-scope";
 import { downloadBlob } from "../lib/canvas-capture";
 import { iconButton } from "./ui/controls";
+import { icon } from "./ui/icon";
 import type { Locale } from "../i18n/locales";
 import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -18,6 +19,7 @@ import { resourcePath } from "../lib/resource-route";
 import {
   playerProfileIdPattern,
   validPlayerProfileId,
+  playerProfileReturn,
   playerProfileRankingEndpoint,
 } from "../lib/player-profile-route";
 import { emptyState, errorState } from "./ui/state";
@@ -194,9 +196,24 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.syncUrl("");
   }
   private syncChrome() {
+    const returnTo = playerProfileReturn(navigationDocumentUrl().searchParams.get("return"));
     setAppBarActions(
       this.owner,
       html`
+        ${
+          returnTo
+            ? html`
+                <a
+                  class="icon-button"
+                  href=${returnTo}
+                  aria-label=${clientText(this.locale, "back", "Back")}
+                  title=${clientText(this.locale, "back", "Back")}
+                >
+                  ${icon("arrow_back", 24)}
+                </a>
+              `
+            : nothing
+        }
         <div>
           <button
             type="button"

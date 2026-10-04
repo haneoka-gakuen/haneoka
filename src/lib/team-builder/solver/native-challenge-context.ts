@@ -13,6 +13,7 @@ export interface NativeChallengeContext {
   underlyingSongId: number;
   parameterMusicType: number;
   skillTargetMusicType: number;
+  /** Native music getter addends; the calculator retains its separate global base. */
   musicTypeBaseBonusBP: number;
   musicTagBaseBonusBP: number;
   bestMusicTagIds: number[];

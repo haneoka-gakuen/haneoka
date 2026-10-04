@@ -405,10 +405,14 @@ export function createNativeNormalSlotResolver(
           bandItemBonusBP: member.value,
           leaderSkillBonusBP: leaderBonuses[slot]!,
           typeLinkBonusBP: uniform(typeLinkBP),
-          musicTypeBonusBP: parameterMusicType !== null && nativeMusicTypeMatchesCard(parameterMusicType, member.cardType)
-            ? (override?.musicTypeBaseBonusBP ?? musicTypeBaseBP) + member.musicTypeBonusBP : 0,
+          // The calculator's MasterParameter base, member rank and music
+          // getter are separate addends. A challenge getter returning zero
+          // retains the global base rather than replacing it.
+          musicTypeBonusBP: parameterMusicType !== null &&
+            (member.cardType === 99 || nativeMusicTypeMatchesCard(parameterMusicType, member.cardType))
+            ? musicTypeBaseBP + member.musicTypeBonusBP + (override?.musicTypeBaseBonusBP ?? 0) : 0,
           musicTagBonusBP: member.tags!.some((id) => song.bestMusicTagIds!.includes(id))
-            ? (override?.musicTagBaseBonusBP ?? musicTagBaseBP) + member.musicTagBonusBP
+            ? musicTagBaseBP + member.musicTagBonusBP + (override?.musicTagBaseBonusBP ?? 0)
             : 0,
           vipBonusBP,
         });
