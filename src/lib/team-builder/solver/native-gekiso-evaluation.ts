@@ -104,6 +104,8 @@ export function createNativeGekisoContextEvaluation(
     input.evaluation.gaps.push({ code: "native-gekiso-context-source-unreviewed", source: data.identity.sourceId ?? "sourceId" });
   return {
     input,
+    ...(normal.resolveSlots ? { resolveSlots: normal.resolveSlots } : {}),
+    ...(normal.resolveEventBonusBP ? { resolveEventBonusBP: normal.resolveEventBonusBP } : {}),
     async evaluate(assignment: TeamAssignment, song: PreparedSong, controls: SearchEvaluationControls): Promise<Candidate> {
       const candidate = await solo.evaluate(assignment, song, controls);
       if (input.objectives.includes("score")) {

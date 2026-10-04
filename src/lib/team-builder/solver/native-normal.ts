@@ -193,6 +193,7 @@ export function createNativeNormalSlotResolver(
     new Map<number, BonusProfile>(),
   ] as const;
   for (const [id, upgrade] of Object.entries(sources.bandUpgrades)) {
+    if (upgrade.inactive) continue;
     const available = dataRows(upgrade.item.effects).map(nativeRow);
     const chosen = upgrade.effects;
     const unresolved = upgrade.level === null || !upgrade.levelRow || chosen.length !== 1;

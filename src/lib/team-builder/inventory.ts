@@ -74,6 +74,11 @@ const SNAPSHOT_FIELDS = ["level", "awakening"] as const;
 const rangeCache = new WeakMap<TeamBuilderData, Map<string, Record<string, number[]>>>();
 const values = (rows: Record<string, unknown>[], key: string) =>
   [...new Set(rows.map((row) => Number(row[key])))].filter(Number.isFinite).sort((a, b) => a - b);
+/** Zero explicitly means this known band item is not unlocked; null stays unknown. */
+export function bandItemLevelValues(data: TeamBuilderData, itemId: string | number): number[] {
+  const item = data.bandItems[String(itemId)];
+  return item ? [...new Set([0, ...values(dataRows(item.levels).map(nativeRow), "level")])] : [];
+}
 
 export function createEmptyInventory(identity: ReleaseIdentity): InventoryV2 {
   return {
@@ -424,7 +429,7 @@ export function validateInventory(
       }
       const allowed =
         field === "bandItems"
-          ? values(dataRows(record.levels).map(nativeRow), "level")
+          ? bandItemLevelValues(data, id)
           : values(data.progression[field] || [], "rank");
       if (level === null) {
         if (options.requirePractice) problem(`${field}.${id}`, "unknown-practice");

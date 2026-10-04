@@ -163,6 +163,13 @@ export interface Candidate {
   metrics: Record<Objective, MetricValue>;
   /** The objective values used by Pareto comparison, in requested order. */
   vector: number[];
+  /** Native formation BP bonuses before rank/consumption/reward selection. */
+  eventBonusBP?: { points: number | null; items: number | null; gaps: EvidenceGap[] };
+}
+export interface RequiredSnapshotBinding {
+  memberInstanceId: string;
+  /** Null fixes an empty physical slot for this required member. */
+  snapshotInstanceId: string | null;
 }
 export interface SearchConstraints {
   lockedMemberIds: string[];
@@ -176,6 +183,14 @@ export interface SearchConstraints {
   /** Fraction of eligible nodes receiving JUST, default 0; other nodes PERFECT. */
   justRate: number;
   teamSize: number;
+  /** Required leader is also a required member; null/omitted leaves it open. */
+  requiredLeaderId?: string | null;
+  /** Each pair requires its member and, if nonnull, its owned photo. */
+  requiredBindings?: RequiredSnapshotBinding[];
+  /** BP units:10000=100%; each supplied floor needs an identified event scene. */
+  bonusFloors?: { eventPointsBP?: number; eventItemsBP?: number };
+  /** 1..15 distinct unordered member card-ID sets, independent of leader/photos. */
+  resultDistinctCardSets?: number;
 }
 export interface SearchBudget {
   maxEvaluations: number;
@@ -212,6 +227,9 @@ export interface SearchResult {
   gaps: EvidenceGap[];
   proof?: SearchProof;
   bySong?: SongSearchRanking[];
+  /** Best real complete candidate per distinct unordered member card-ID set,
+   * independently ranked for each objective; other bindings stay on that candidate. */
+  cardSetsByObjective?: Partial<Record<Objective, { memberCardIds: number[]; candidate: Candidate }[]>>;
 }
 
 /** A completed selected-domain result. Budget-limited DFS state is not persisted. */
@@ -221,6 +239,15 @@ export interface SearchCheckpoint {
   fingerprint: string;
   resultDigest: string;
   result: SearchResult;
+}
+/** Partial traversal is opaque to UI. The cursor owner validates its schema,
+ * full semantic fingerprint, checksum and bounded internal state on restore. */
+export interface SearchResumeCheckpoint {
+  schema: "haneoka-search-resume-v1";
+  engineRevision: string;
+  fingerprint: string;
+  stateDigest: string;
+  state: unknown;
 }
 
 /** Fully resolved native slot state. The adapter preserves gaps until the full
@@ -304,6 +331,27 @@ export interface WorkerPreparationInput {
   constraints: SearchConstraints;
   budget: SearchBudget;
   eventScene?: NativeEventScene;
+  /** Qualified single-wrapper challenge context for this one parent chart. */
+  challengeMusicId?: number;
+}
+export interface ManualTeamPreparationInput extends WorkerPreparationInput {
+  assignment: TeamAssignment;
+}
+export interface ManualTeamEvaluationResult extends ReleaseIdentity {
+  schema: "haneoka-manual-team-result-v1";
+  sourceId: string;
+  assignment: TeamAssignment;
+  status: "complete" | "cancelled" | "budget-limited" | "unavailable";
+  /** One fixed-assignment result per completely evaluated chart. */
+  candidates: Candidate[];
+  elapsedMs: number;
+  gaps: EvidenceGap[];
+}
+export interface ManualTeamProgress {
+  phase: "loading" | "evaluation" | "complete";
+  chartsCompleted: number;
+  totalCharts: number;
+  elapsedMs: number;
 }
 /** A recorded native start or explicitly identified replay scenario. The
  * server's held-event list and Master time-column choice are supplied together;
@@ -322,14 +370,20 @@ export interface NativeEventScene {
   };
 }
 export type SolverRequest =
+  | { type: "manual-prepare"; runId: string; request: ManualTeamPreparationInput }
   | { type: "resource-prepare"; runId: string; request: ResourcePlannerPreparationInput }
-  | { type: "prepare"; runId: string; request: WorkerPreparationInput; checkpoint?: SearchCheckpoint }
-  | { type: "start"; runId: string; input: OptimizationInput; checkpoint?: SearchCheckpoint }
+  | { type: "prepare"; runId: string; request: WorkerPreparationInput; checkpoint?: SearchCheckpoint;
+      resumeCheckpoint?: SearchResumeCheckpoint }
+  | { type: "start"; runId: string; input: OptimizationInput; checkpoint?: SearchCheckpoint;
+      resumeCheckpoint?: SearchResumeCheckpoint }
   | { type: "cancel"; runId: string };
 export type SolverResponse =
+  | { type: "manual-progress"; runId: string; progress: ManualTeamProgress }
+  | { type: "manual-result"; runId: string; result: ManualTeamEvaluationResult }
   | { type: "resource-progress"; runId: string; progress:
       { phase: "loading" } | ({ phase: "stage" } & ResourceStagePreparationProgress) | ResourcePlannerProgress }
   | { type: "resource-result"; runId: string; result: ResourcePlannerResult }
   | { type: "progress"; runId: string; progress: SearchProgress }
-  | { type: "result"; runId: string; result: SearchResult; checkpoint?: SearchCheckpoint; reusedCheckpoint?: boolean }
+  | { type: "result"; runId: string; result: SearchResult; checkpoint?: SearchCheckpoint; reusedCheckpoint?: boolean;
+      resumeCheckpoint?: SearchResumeCheckpoint }
   | { type: "error"; runId: string; code: string };

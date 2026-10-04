@@ -8,8 +8,11 @@ import type {
 } from "./contracts.ts";
 import { prepareSong, type PreparedSong } from "./song-metrics.ts";
 import { createAssignmentEvaluator } from "./solver/evaluate.ts";
-import { createSongRankingCollector } from "./solver/search-rankings.ts";
+import { createSearchCollectors } from "./search-collectors.ts";
 import { validateSearchBudget } from "./solver/search-budget.ts";
+import { compileSearchRequirements, candidateMeetsBonusFloors } from "./search-requirements.ts";
+import { createAssignmentCursor } from "./assignment-cursor.ts";
+import type { SearchResumeState } from "./search-resume.ts";
 
 export interface SearchHooks {
   /** Prepared in the worker for native formation conditions; reads selected slots only. */
@@ -23,6 +26,10 @@ export interface SearchHooks {
   /** Yield to the worker event queue, so a cancel message can be delivered. */
   yield?: () => Promise<void>;
   now?: () => number;
+  /** Full native Worker request fingerprint; enables serializable unfinished work. */
+  fingerprint?: string;
+  resumeState?: SearchResumeState;
+  onResumeState?: (state: SearchResumeState | undefined) => void;
 }
 export interface SearchEvaluationControls {
   cancelled: () => boolean;
@@ -109,6 +116,7 @@ export function validateOptimizationInput(input: OptimizationInput): void {
   for (const id of constraint.lockedSnapshotIds)
     if (constraint.excludedSnapshotIds.includes(id) || !input.snapshots.some((snapshot) => snapshot.instanceId === id))
       throw new RangeError("invalid-locked-snapshot");
+  compileSearchRequirements(input);
 }
 
 /** Exhaustive search until an explicit budget or cancellation. Only complete,
@@ -116,6 +124,7 @@ export function validateOptimizationInput(input: OptimizationInput): void {
  */
 export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks = {}): Promise<SearchResult> {
   validateOptimizationInput(input);
+  const requirements = compileSearchRequirements(input);
   if (input.skillOrderCriterion === "worst-ap" && !hooks.evaluate)
     throw new RangeError("worst-ap-requires-native-order-factory");
   if (input.scoreDomain === "personal-live" && !hooks.evaluate)
@@ -148,7 +157,7 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
     recordGap({ code: "snapshot-equip-legality-unresolved", source: `snapshot:${snapshot.cardId}` });
     return false;
   });
-  if (input.constraints.lockedSnapshotIds.some((id) => !snapshots.some((snapshot) => snapshot.instanceId === id)))
+  if (requirements.requiredSnapshotIds.some((id) => !snapshots.some((snapshot) => snapshot.instanceId === id)))
     return unavailable();
   const incompleteDomain = gaps.size > 0;
   const evaluate: NonNullable<SearchHooks["evaluate"]> =
@@ -165,13 +174,23 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
         (!input.constraints.excludeJustMissions || !song.segments.some((segment) => segment.mission === 3)),
     )
     .map((song) => prepareSong(song, input.evaluation));
-  const frontier: Candidate[] = [];
-  const ranking = createSongRankingCollector(input);
-  let evaluated = 0;
+  const resumable = hooks.fingerprint !== undefined;
+  if (resumable && !/^[a-f0-9]{64}$/u.test(hooks.fingerprint!)) throw new RangeError("search-resume-fingerprint");
+  const resume = hooks.resumeState;
+  if (resume && (!resumable || resume.schema !== "haneoka-search-resume-state-v1" ||
+    resume.cursor.fingerprint !== hooks.fingerprint || resume.evaluated !== resume.cursor.completedLeaves ||
+    !Number.isSafeInteger(resume.evaluated) || resume.evaluated < 0 || resume.frontier.length > 1000))
+    throw new RangeError("search-resume-context");
+  const frontier: Candidate[] = resume ? structuredClone(resume.frontier) : [];
+  const ranking = createSearchCollectors(input, resume?.collectors);
+  resume?.gaps.forEach(recordGap);
+  let evaluated = resume?.evaluated ?? 0;
+  const initiallyEvaluated = evaluated;
   let work = 0;
   let completeness: SearchResult["completeness"] = "exhaustive";
   let stopped = false;
-  let incompleteNativeInputs = false;
+  let incompleteNativeInputs = resume?.incompleteNativeInputs ?? false;
+  let pendingCandidate = resume?.pendingCandidate ? structuredClone(resume.pendingCandidate) : undefined;
   let lastNestedProgress = -Infinity;
   const reportProgress = () => {
     const elapsedMs = elapsed();
@@ -203,8 +222,17 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
     return !stopped;
   }
   function offer(candidate: Candidate): void {
-    ranking.offer(candidate);
+    const floors = candidateMeetsBonusFloors(candidate, input.constraints);
+    floors.gaps.forEach(recordGap);
+    ranking.offer(candidate, floors.eligible, floors.gaps.length > 0);
+    if (!floors.eligible) {
+      if (floors.gaps.length) incompleteNativeInputs = true;
+      return;
+    }
     for (const objective of input.objectives) candidate.metrics[objective].gaps.forEach(recordGap);
+    offerFrontier(candidate);
+  }
+  function offerFrontier(candidate: Candidate): void {
     if (
       !candidate.vector.every(Number.isFinite) ||
       input.objectives.some((objective) => {
@@ -235,6 +263,7 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
     if (frontier.length >= input.budget.maxCandidates) {
       completeness = "budget-limited";
       stopped = true;
+      pendingCandidate = candidate;
       return;
     }
     frontier.push(candidate);
@@ -242,11 +271,19 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
   const team: typeof members = [];
   const equipped: (string | null)[] = [];
   const usedSnapshots = new Set<string>();
+  const requiredSnapshots = new Set(requirements.requiredSnapshotIds);
+  let remainingSnapshotLocks = requiredSnapshots.size;
   async function assignSnapshots(slot: number): Promise<void> {
     if (!(await checkpoint())) return;
+    // A missing required photo must occupy one of the remaining physical slots.
+    // Tight slots admit only still-unused required photos, preserving legal DFS order.
+    const slotsRemaining = team.length - slot;
+    if (remainingSnapshotLocks > slotsRemaining) return;
+    const requiredSlot = slotsRemaining > 0 && remainingSnapshotLocks === slotsRemaining;
     if (slot === team.length) {
-      if (!input.constraints.lockedSnapshotIds.every((id) => usedSnapshots.has(id))) return;
+      if (!requirements.requiredSnapshotIds.every((id) => usedSnapshots.has(id))) return;
       for (const leader of team) {
+        if (requirements.leader !== null && leader.instanceId !== requirements.leader) continue;
         const assignment: TeamAssignment = {
           memberInstanceIds: team.map((member) => member.instanceId),
           snapshotInstanceIds: [...equipped],
@@ -274,12 +311,21 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
       }
       return;
     }
-    equipped.push(null);
-    await assignSnapshots(slot + 1);
-    equipped.pop();
-    if (stopped) return;
+    const memberId = team[slot]!.instanceId;
+    const fixed = requirements.bindings.has(memberId), binding = requirements.bindings.get(memberId);
+    if (!requiredSlot && (!fixed || binding === null)) {
+      equipped.push(null);
+      await assignSnapshots(slot + 1);
+      equipped.pop();
+      if (stopped) return;
+    }
     for (const snapshot of snapshots) {
       if (usedSnapshots.has(snapshot.instanceId)) continue;
+      const required = requiredSnapshots.has(snapshot.instanceId);
+      if (requiredSlot && !required) continue;
+      if ((fixed && binding !== snapshot.instanceId) ||
+        (requirements.photoOwners.has(snapshot.instanceId) && requirements.photoOwners.get(snapshot.instanceId) !== memberId))
+        continue;
       // Unknown equip constraints are an unresolved capability, not permission.
       if (!snapshot.allowedCharacterIds) {
         recordGap({ code: "snapshot-equip-legality-unresolved", source: `snapshot:${snapshot.cardId}` });
@@ -287,22 +333,24 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
       }
       if (!snapshot.allowedCharacterIds.includes(team[slot]!.characterId)) continue;
       usedSnapshots.add(snapshot.instanceId);
+      if (required) remainingSnapshotLocks--;
       equipped.push(snapshot.instanceId);
       await assignSnapshots(slot + 1);
       equipped.pop();
       usedSnapshots.delete(snapshot.instanceId);
+      if (required) remainingSnapshotLocks++;
       if (stopped) return;
     }
   }
   async function choose(start: number): Promise<void> {
     if (!(await checkpoint())) return;
     if (team.length === input.constraints.teamSize) {
-      if (input.constraints.lockedMemberIds.every((id) => team.some((member) => member.instanceId === id)))
+      if (requirements.requiredMemberIds.every((id) => team.some((member) => member.instanceId === id)))
         await assignSnapshots(0);
       return;
     }
     const remaining = input.constraints.teamSize - team.length;
-    const missingLocks = input.constraints.lockedMemberIds.filter(
+    const missingLocks = requirements.requiredMemberIds.filter(
       (id) => !team.some((member) => member.instanceId === id),
     );
     if (
@@ -321,7 +369,51 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
       if (stopped) return;
     }
   }
-  await choose(0);
+  if (resumable) {
+    const cursor = createAssignmentCursor({ members, snapshots, songKeys: songs.map(song => song.song.key),
+      constraints: input.constraints }, resume ? { fingerprint: hooks.fingerprint!, state: resume.cursor } : undefined);
+    const songMap = new Map(songs.map(song => [song.song.key, song]));
+    let completedSinceYield = 0;
+    if (pendingCandidate) {
+      const pending = pendingCandidate;
+      pendingCandidate = undefined;
+      offerFrontier(pending);
+    }
+    while (!stopped) {
+      if (hooks.cancelled?.()) { completeness = "cancelled"; stopped = true; break; }
+      const step = cursor.take();
+      if (step.kind === "done") break;
+      if (elapsed() >= input.budget.maxMilliseconds || evaluated - initiallyEvaluated >= input.budget.maxEvaluations) {
+        completeness = "budget-limited"; stopped = true; break;
+      }
+      if (step.kind === "yield") { reportProgress(); await (hooks.yield ?? defaultYield)(); continue; }
+      const candidate = await evaluate(step.assignment, songMap.get(step.songKey)!, {
+        cancelled: hooks.cancelled ?? (() => false), yield: hooks.yield ?? defaultYield,
+        expired: () => elapsed() >= input.budget.maxMilliseconds, progress: reportProgress,
+      });
+      const cancelled = hooks.cancelled?.(), expired = elapsed() >= input.budget.maxMilliseconds;
+      // An interrupted native leaf is still leased. Preserve its subspace rather
+      // than publishing or counting an incomplete score as completed work.
+      if ((cancelled || expired) && input.objectives.some(objective => {
+        const metric = candidate.metrics[objective];
+        return metric.value === null || metric.status === "unavailable" || metric.gaps.length > 0;
+      })) { completeness = cancelled ? "cancelled" : "budget-limited"; stopped = true; break; }
+      evaluated++;
+      offer(candidate);
+      cursor.commit();
+      if (cancelled || expired) { completeness = cancelled ? "cancelled" : "budget-limited"; stopped = true; }
+      if (!stopped && ++completedSinceYield % 64 === 0) {
+        reportProgress();
+        await (hooks.yield ?? defaultYield)();
+      }
+    }
+    hooks.onResumeState?.(cursor.stats().exhausted && !pendingCandidate ? undefined : {
+      schema: "haneoka-search-resume-state-v1", cursor: cursor.snapshot(hooks.fingerprint!),
+      frontier: structuredClone(frontier), collectors: ranking.snapshot(), evaluated,
+      gaps: [...gaps.values()], incompleteNativeInputs,
+      ...(pendingCandidate ? { pendingCandidate: structuredClone(pendingCandidate) } : {}),
+    });
+  } else await choose(0);
   const finalCompleteness =
     completeness === "exhaustive" && (incompleteDomain || incompleteNativeInputs) ? "unavailable" : completeness;
   const proof = {
@@ -352,6 +444,7 @@ export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks
       completeness === "exhaustive" && !incompleteDomain,
       new Set(songs.map((song) => song.song.key)),
     ),
+    ...(input.constraints.resultDistinctCardSets !== undefined ? { cardSetsByObjective: ranking.finishGroups() } : {}),
   };
 }
 

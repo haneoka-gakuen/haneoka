@@ -33,6 +33,7 @@ import type { PreparedSong } from "../song-metrics.ts";
 import type { SearchEvaluationControls } from "../optimizer.ts";
 import { nativeRuleGaps, nativeRuleSupports } from "./native-rule-profile.ts";
 import { createNativeGekisoContextEvaluation, type NativeGekisoPlans } from "./native-gekiso-evaluation.ts";
+import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
 const zero = (): PowerStats => ({ performance: 0, technique: 0, visual: 0 });
 const rates = (row: Record<string, unknown>): PowerStats => ({
   performance: Number(row.performanceRate),
@@ -97,6 +98,8 @@ export interface EvaluationRequest {
   nativeRuntime?: ScoreEvaluationModel;
   basis?: EvaluationBasisRequest;
   eventScene?: NativeEventScene;
+  /** One original wrapper; multiple distinct wrappers prepare separate factories. */
+  challengeMusicId?: number;
 }
 /** Real inventory → actual growth rows → canonical chart → native note core.
  * base-score is a named component; full-score/rewards remain unavailable until
@@ -229,6 +232,7 @@ export function prepareEvaluation(request: EvaluationRequest): OptimizationInput
  */
 export interface PreparedSearchEvaluation {
   input: OptimizationInput;
+  resolveEventBonusBP?: (assignment: TeamAssignment) => NonNullable<Candidate["eventBonusBP"]>;
   resolveSlots?: ReturnType<typeof createNativeNormalSlotResolver>["resolveSlots"];
   evaluate: (
     assignment: TeamAssignment,
@@ -237,6 +241,9 @@ export interface PreparedSearchEvaluation {
   ) => Candidate | Promise<Candidate>;
 }
 export function prepareEvaluationForSearch(request: EvaluationRequest): PreparedSearchEvaluation {
+  if (request.challengeMusicId !== undefined && request.mode === "gekiso" &&
+      request.objectives.includes("score") && request.scoreDomain !== "personal-solo")
+    throw new RangeError("native-challenge-gekiso-live-context-unresolved");
   if (request.scoreDomain !== undefined && !["personal-solo", "personal-live"].includes(request.scoreDomain))
     throw new RangeError("score-domain");
   if (!request.nativeRuntime && request.nativeGekisoPlans === undefined && request.mode === "gekiso" &&
@@ -304,8 +311,23 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
     }
   }
   const scene = request.eventScene;
+  const challenge = request.challengeMusicId !== undefined && scene?.kind === "challenge"
+    ? resolveNativeChallengeContext(request.data, request.data.challengeMusicTable, {
+        challengeMusicId: request.challengeMusicId, eventId: scene.eventId,
+        startTimeMs: scene.liveStartServerTime.epochMilliseconds, masterTimeSlot: scene.masterTimeSlot,
+      }) : undefined;
+  if (request.challengeMusicId !== undefined && !challenge)
+    input.evaluation.gaps.push(gap("native-challenge-scenario-required", "one identified challenge wrapper"));
+  if (challenge) {
+    input.evaluation.gaps.push(...challenge.gaps);
+    if (request.songs.length !== 1 || request.songs[0]?.songId !== challenge.value?.underlyingSongId)
+      input.evaluation.gaps.push(gap("native-challenge-parent-chart-mismatch", "single original wrapper parent chart"));
+  }
+  const floors = request.constraints.bonusFloors;
+  if ((floors?.eventPointsBP !== undefined || floors?.eventItemsBP !== undefined) && !scene)
+    input.evaluation.gaps.push(gap("native-event-bonus-floor-scene-required", "identified held-event formation bonus floors"));
   if (scene) input.evaluation.gaps.push(...validateNativeEventScene(request.data, scene));
-  if (scene?.kind === "challenge")
+  if (scene?.kind === "challenge" && !challenge?.value)
     input.evaluation.gaps.push(
       gap("native-challenge-score-boot-context-unresolved", "challenge chart/power/rank overrides"),
     );
@@ -334,7 +356,8 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
   const eventPower = scene && request.songs.length ? payoutFor(request.songs[0]!.songId) : undefined;
   if (scene && !eventPower) input.evaluation.gaps.push(gap("native-event-chart-required", "selected canonical chart"));
   if (eventPower) input.evaluation.gaps.push(...eventPower.powerGaps);
-  const native = createNativeNormalSlotResolver(request.data, request.inventory, input, eventPower);
+  const native = createNativeNormalSlotResolver(request.data, request.inventory, input, eventPower,
+    challenge?.value ? new Map([[challenge.value.underlyingSongId, challenge.value]]) : undefined);
   const score = createNativeNormalScoreResolver(request.data, input);
   input.evaluation.gaps.push(...native.gaps, ...score.gaps);
   const lifeRow = dataRows(request.data.liveTools.liveSettings)
@@ -372,9 +395,15 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
   }
   const profilesCache = reuseAssignmentProfiles(native.resolveSlots, request);
   const evaluate = createAssignmentEvaluator(input, profilesCache.resolve);
+  const resolveEventBonusBP = scene ? (assignment: TeamAssignment): NonNullable<Candidate["eventBonusBP"]> => {
+    const bonus = eventPower?.resolveBonuses(assignment);
+    return { points: bonus?.value?.points ?? null, items: bonus?.value?.items ?? null,
+      gaps: bonus ? [...bonus.gaps] : [gap("native-event-chart-required", "selected canonical chart")] };
+  } : undefined;
   return {
     input,
     resolveSlots: profilesCache.resolve,
+    ...(resolveEventBonusBP ? { resolveEventBonusBP } : {}),
     evaluate: async (assignment: TeamAssignment, song: PreparedSong, controls: SearchEvaluationControls) => {
       const profiles = profilesCache.resolve(assignment, song, controls);
       let law: NativeNormalPlayScoreLaw | undefined;
@@ -390,13 +419,15 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
           : undefined,
       );
       const candidate = evaluate(assignment, song, metric);
+      if (resolveEventBonusBP) candidate.eventBonusBP = resolveEventBonusBP(assignment);
       if (scene && request.objectives.includes("event-points")) {
         let points: MetricValue = unavailableMetric("native-event-complete-play-law-unresolved", song.song.key);
         if (law && metric.value !== null && !controls.cancelled() && !controls.expired()) {
           const payout = payoutFor(song.song.songId);
           const amounts = law.outcomes.map((outcome) => ({
             ...outcome,
-            points: payout.resolve(assignment, { nativeLiveMode: 0, soloScore: outcome.score, roomPlayers: [] }, null)
+            points: payout.resolve(assignment, { nativeLiveMode: scene.kind === "challenge" ? 3 : 0,
+              soloScore: outcome.score, roomPlayers: [] }, null)
               .eventPoints,
           }));
           const gaps = amounts.flatMap((outcome) => outcome.points.gaps);

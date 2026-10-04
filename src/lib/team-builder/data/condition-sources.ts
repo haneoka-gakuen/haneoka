@@ -68,21 +68,22 @@ export function nativeConditionSources(data: TeamBuilderData, inventory: Invento
   const bandUpgrades = Object.fromEntries(
     Object.entries(data.bandItems).map(([id, item]) => {
       const level = inventory.bandItems[id] ?? null;
+      const inactive = level === 0;
       const levelRows =
-        level === null
+        level === null || inactive
           ? []
           : dataRows(item.levels)
               .map(nativeRow)
               .filter((row) => row.level === level);
       const effects =
-        level === null
+        level === null || inactive
           ? []
           : dataRows(item.effects)
               .map(nativeRow)
               .filter((row) => row.level === level);
       if (level === null) gap("unknown-band-upgrade-level", id);
-      else if (levelRows.length !== 1 || !effects.length) gap("missing-band-upgrade-level-or-effects", id);
-      return [id, { item, level, levelRow: levelRows.length === 1 ? levelRows[0]! : null, effects }] as const;
+      else if (!inactive && (levelRows.length !== 1 || !effects.length)) gap("missing-band-upgrade-level-or-effects", id);
+      return [id, { item, level, inactive, levelRow: levelRows.length === 1 ? levelRows[0]! : null, effects }] as const;
     }),
   );
   const songs = Object.fromEntries(

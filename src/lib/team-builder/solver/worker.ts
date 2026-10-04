@@ -5,7 +5,9 @@ import { prepareEvaluationForSearch } from "./evaluation.ts";
 import { loadSongOptions } from "./song-loader.ts";
 import { createSearchCheckpoint, restoreSearchCheckpoint, searchFingerprint } from "./search-checkpoint.ts";
 import { validateSearchBudget } from "./search-budget.ts";
+import { createSearchResumeCheckpoint, restoreSearchResumeCheckpoint, type SearchResumeState } from "../search-resume.ts";
 import { prepareAndOptimizeResourcePlan } from "../resource-plan-runner.ts";
+import { evaluateManualTeam } from "../manual-team.ts";
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SolverRequest>) => void) | null;
   postMessage(message: SolverResponse): void;
@@ -20,7 +22,8 @@ scope.onmessage = (event) => {
     }
     return;
   }
-  if (message.type !== "start" && message.type !== "prepare" && message.type !== "resource-prepare") return;
+  if (message.type !== "start" && message.type !== "prepare" && message.type !== "resource-prepare" &&
+      message.type !== "manual-prepare") return;
   if (active) {
     active.cancelled = true;
     active.controller.abort();
@@ -28,6 +31,17 @@ scope.onmessage = (event) => {
   const run = { runId: message.runId, cancelled: false, controller: new AbortController() };
   active = run;
   const execute = async () => {
+    if (message.type === "manual-prepare") {
+      const result = await evaluateManualTeam(message.request, {
+        cancelled: () => run.cancelled || active !== run,
+        progress: progress => { if (active === run) scope.postMessage({ type: "manual-progress", runId: run.runId, progress }); },
+      });
+      if (active === run) {
+        scope.postMessage({ type: "manual-result", runId: run.runId, result });
+        active = null;
+      }
+      return;
+    }
     if (message.type === "resource-prepare") {
       const result = await prepareAndOptimizeResourcePlan(message.request, {
         cancelled: () => run.cancelled || active !== run,
@@ -113,7 +127,13 @@ scope.onmessage = (event) => {
       ({ input, evaluate } = prepareEvaluationForSearch({ ...message.request, songs: preparedSongs }));
     if (!input) throw new Error("solver-input-unresolved");
     validateOptimizationInput(input);
+    const resumedState = await restoreSearchResumeCheckpoint(message.resumeCheckpoint, fingerprint);
+    if (active !== run) return;
+    let resumeState: SearchResumeState | undefined;
     const result = await optimizeTeams(input, {
+      fingerprint,
+      resumeState: resumedState ?? undefined,
+      onResumeState: state => { resumeState = state; },
       evaluate,
       cancelled: () => run.cancelled,
       progress: (progress) => {
@@ -122,19 +142,27 @@ scope.onmessage = (event) => {
     });
     const completed = { ...result, capabilities: getTeamBuilderCapabilities(input) };
     const checkpoint = await createSearchCheckpoint(fingerprint, completed);
+    const resumeCheckpoint = resumeState ? await createSearchResumeCheckpoint(fingerprint, resumeState) : null;
     if (active === run) {
       scope.postMessage({
         type: "result",
         runId: run.runId,
         result: checkpoint?.result ?? completed,
         ...(checkpoint ? { checkpoint } : {}),
+        ...(resumeCheckpoint ? { resumeCheckpoint } : {}),
       });
       active = null;
     }
   };
   void execute().catch((error: unknown) => {
     if (active === run) {
-      if (run.cancelled && message.type === "resource-prepare")
+      if (run.cancelled && message.type === "manual-prepare")
+        scope.postMessage({ type: "manual-result", runId: run.runId, result: {
+          ...message.request.data.identity, sourceId: message.request.data.identity.sourceId ?? "",
+          schema: "haneoka-manual-team-result-v1", assignment: structuredClone(message.request.assignment),
+          status: "cancelled", candidates: [], elapsedMs: 0, gaps: [],
+        } });
+      else if (run.cancelled && message.type === "resource-prepare")
         scope.postMessage({ type: "resource-result", runId: run.runId, result: {
           schema: "haneoka-resource-plan-result-v1", byObjective: {}, completeness: "cancelled",
           elapsedMs: 0, pairsEvaluated: 0, difference: null, scope: "fixed-normal-challenge-pair-requested-domain",

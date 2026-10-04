@@ -1,4 +1,4 @@
-import type { Candidate, EvidenceGap, OptimizationInput, TeamAssignment } from "../contracts.ts";
+import type { Candidate, EvidenceGap, OptimizationInput, ResolvedSlotProfile, TeamAssignment } from "../contracts.ts";
 import { dataRows, nativeRow, type TeamBuilderData } from "../data.ts";
 import type { SearchEvaluationControls } from "../optimizer.ts";
 import type { PreparedSong } from "../song-metrics.ts";
@@ -7,6 +7,9 @@ import { resolveGekisoSSTargets } from "./gekiso-mission-luck.ts";
 
 interface NormalPrepared {
   input: OptimizationInput;
+  resolveSlots?: (assignment: TeamAssignment, song: PreparedSong) =>
+    (ResolvedSlotProfile | undefined)[];
+  resolveEventBonusBP?: (assignment: TeamAssignment) => NonNullable<Candidate["eventBonusBP"]>;
   evaluate: (
     assignment: TeamAssignment,
     song: PreparedSong,
@@ -80,6 +83,8 @@ export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: N
   };
   return {
     input,
+    ...(normal.resolveSlots ? { resolveSlots: normal.resolveSlots } : {}),
+    ...(normal.resolveEventBonusBP ? { resolveEventBonusBP: normal.resolveEventBonusBP } : {}),
     async evaluate(
       assignment: TeamAssignment,
       song: PreparedSong,

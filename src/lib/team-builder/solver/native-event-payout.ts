@@ -340,6 +340,14 @@ export function createNativeEventPayoutResolver(
     itemGaps,
     challengePointGaps: cpGaps,
     resolve,
+    /** Formation bonus floors consume these BP sums, before score rank, boost
+     * or future server reward selection. Item BP can be known with item count unknown. */
+    resolveBonuses(assignment: TeamAssignment): NativeLeafResult<{ points: number; items: number }> {
+      const formation = formationBonus(assignment);
+      const local = [...powerGaps, ...formation.gaps];
+      return local.length || !formation.value ? unavailable(local)
+        : { value: { ...formation.value }, gaps: [] };
+    },
     /** Each card's power effect is applied at its own native slot, before the
      * separately floored rank/photo/band/leader contributions.
      */
