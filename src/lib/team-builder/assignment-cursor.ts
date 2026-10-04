@@ -1,5 +1,6 @@
 import type { MemberOption, SearchConstraints, SnapshotOption, TeamAssignment } from "./contracts.ts";
 import { compileSearchRequirements } from "./search-requirements.ts";
+import { canMatchMandatorySlots } from "./mandatory-slot-matching.ts";
 
 type Members = readonly Pick<MemberOption, "instanceId" | "characterId">[];
 type Photos = readonly Pick<SnapshotOption, "instanceId" | "allowedCharacterIds">[];
@@ -49,6 +50,8 @@ export function createAssignmentCursor(domain: AssignmentCursorDomain, restore?:
   const memberIndex = new Map(members.map((value, index) => [value.instanceId, index]));
   const requiredMembers = requirements.requiredMemberIds.map(value => memberIndex.get(value)!);
   const requiredPhotos = new Set(requirements.requiredSnapshotIds);
+  const requiredPhotoOptions = new Map(photos.filter(photo => requiredPhotos.has(photo.instanceId))
+    .map(photo => [photo.instanceId, new Set(photo.allowedCharacterIds)]));
   const teamSize = domain.constraints.teamSize;
   let tasks: Task[] = songs.length ? [{ kind: "members", members: [], start: 0 }] : [];
   let completedLeaves = 0, work = 0;
@@ -128,6 +131,18 @@ export function createAssignmentCursor(domain: AssignmentCursorDomain, restore?:
               members[index]!.instanceId === requirements.leader);
             tasks.push({ kind: "leaf", members: task.members, photos: task.photos, leader, song: 0 }); continue;
           }
+          if (missing.length && !canMatchMandatorySlots(missing.map(id => {
+            const allowed = requiredPhotoOptions.get(id)!;
+            let mask = 0;
+            for (let offset = 0; offset < remaining; offset++) {
+              const candidate = members[task.members[slot + offset]!]!;
+              if (allowed.has(candidate.characterId) &&
+                (!requirements.bindings.has(candidate.instanceId) || requirements.bindings.get(candidate.instanceId) === id) &&
+                (!requirements.photoOwners.has(id) || requirements.photoOwners.get(id) === candidate.instanceId))
+                mask |= 1 << offset;
+            }
+            return mask;
+          }), remaining)) continue;
           const member = members[task.members[slot]!]!;
           const fixed = requirements.bindings.has(member.instanceId), binding = requirements.bindings.get(member.instanceId);
           for (let index = photos.length - 1; index >= 0; index--) {
