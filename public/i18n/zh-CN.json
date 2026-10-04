@@ -1090,7 +1090,7 @@
     "emptyTitle": "还没有动态",
     "loadMore": "加载更多",
     "loadMoreComments": "加载更多评论",
-    "reactionFailed": "无法更新点赞状态。",
+    "reactionFailed": "无法保存点赞，请重试。",
     "commentFailed": "无法发送评论。",
     "back": "返回社区",
     "notFound": "未找到这条动态",

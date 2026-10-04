@@ -1090,7 +1090,7 @@
     "emptyTitle": "まだ投稿がありません",
     "loadMore": "さらに読み込む",
     "loadMoreComments": "コメントをさらに読み込む",
-    "reactionFailed": "リアクションを更新できませんでした。",
+    "reactionFailed": "いいねを保存できませんでした。再試行してください。",
     "commentFailed": "コメントを送信できませんでした。",
     "back": "コミュニティへ戻る",
     "notFound": "投稿が見つかりません",

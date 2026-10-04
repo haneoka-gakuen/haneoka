@@ -1090,7 +1090,7 @@
     "emptyTitle": "還沒有動態",
     "loadMore": "載入更多",
     "loadMoreComments": "載入更多留言",
-    "reactionFailed": "無法更新按讚狀態。",
+    "reactionFailed": "無法儲存按讚，請重試。",
     "commentFailed": "無法送出留言。",
     "back": "返回社群",
     "notFound": "找不到這則動態",

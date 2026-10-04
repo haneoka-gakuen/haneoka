@@ -1090,7 +1090,7 @@
     "emptyTitle": "No posts yet",
     "loadMore": "Load more",
     "loadMoreComments": "Load more comments",
-    "reactionFailed": "The reaction could not be updated.",
+    "reactionFailed": "Could not save like. Try again.",
     "commentFailed": "The comment could not be sent.",
     "back": "Back to community",
     "notFound": "Post not found",
