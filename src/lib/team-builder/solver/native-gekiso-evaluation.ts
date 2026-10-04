@@ -15,7 +15,7 @@ import { createNativeGekisoLuckLiveScoreResolver } from "./native-gekiso-luck-li
 /** Same-pin playback context, supplied explicitly or produced from a qualified chart. */
 export interface NativeGekisoSongPlan {
   producer?: "native-all-combo-ap-event-reduction-v1" | "native-no-luck-ap-event-reduction-v1" |
-    "native-single-luck-ap-event-reduction-v1";
+    "native-single-luck-ap-event-reduction-v1" | "native-three-luck-ap-event-reduction-v1";
   identity: { server: string; releaseId: string; sourceId: string };
   missionPattern: number;
   frames: readonly NativeGekisoRuntimeFrame[];
@@ -116,16 +116,17 @@ export function createNativeGekisoContextEvaluation(
         if (context?.rules.value && normal.resolveSlots) {
           const profiles: readonly (ResolvedSlotProfile | undefined)[] = normal.resolveSlots(assignment, song);
           const singleLuck = context.plan.producer === "native-single-luck-ap-event-reduction-v1";
-          metric = await (singleLuck ? luckScore : score).score(assignment, song, profiles, context.rules.value, {
+          const threeLuck = context.plan.producer === "native-three-luck-ap-event-reduction-v1";
+          metric = await (singleLuck || threeLuck ? luckScore : score).score(assignment, song, profiles, context.rules.value, {
             expectedIdentity: data.identity, assignment,
             missions: song.song.segments.map((range) => range.mission) as [1 | 2 | 3, 1 | 2 | 3, 1 | 2 | 3],
             frames: context.plan.frames, randomLaw: { kind: "uniform-residue" },
-            projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: 100000 },
-            requireNoPendingLots: singleLuck,
+            projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: threeLuck ? 500000 : 100000 },
+            requireNoPendingLots: singleLuck || threeLuck,
           }, context.plan.ranges, controls);
           if (context.plan.producer)
             metric.assumptions = [...metric.assumptions.filter((value) => value !== "complete-native-update-frame-tape"),
-              singleLuck ? "native-single-luck-ap-event-reduction" : context.plan.producer === "native-no-luck-ap-event-reduction-v1"
+              threeLuck ? "native-three-luck-ap-event-reduction" : singleLuck ? "native-single-luck-ap-event-reduction" : context.plan.producer === "native-no-luck-ap-event-reduction-v1"
                 ? "native-no-luck-ap-event-reduction" : "native-all-combo-ap-event-reduction",
               "uninterrupted-native-perfect-playback"];
         }

@@ -41,6 +41,9 @@ export interface NativeGekisoBasicRuntimeInput {
   liveScore?: GekisoLuckLiveScorePlan;
   /** Event reduction requires every note to generate and consume at most one lot. */
   requireNoPendingLots?: boolean;
+  /** Isolated expectation for one native per-range LuckScore. The basic
+   * selected-family path has no shared minimum/probability modifiers. */
+  isolatedLuckRangeIndex?: 0 | 1 | 2;
 }
 export interface NativeGekisoBasicRuntimeResult {
   phases: NativeGekisoBasicPhasePlan;
@@ -76,7 +79,11 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
         !Array.isArray(runtime.missions) ||
         runtime.missions.length !== 3 ||
         runtime.missions.some((mission) => ![1, 2, 3].includes(mission)) ||
-        runtime.missions.filter((mission) => mission === 2).length > 1
+        (runtime.missions.filter((mission) => mission === 2).length > 1 &&
+          (runtime.isolatedLuckRangeIndex === undefined || !runtime.requireNoPendingLots ||
+            runtime.projection !== "expectations-only")) ||
+        (runtime.isolatedLuckRangeIndex !== undefined &&
+          (![0, 1, 2].includes(runtime.isolatedLuckRangeIndex) || runtime.missions[runtime.isolatedLuckRangeIndex] !== 2))
       )
         return fail("native-gekiso-basic-runtime-missions-unresolved", "one Luck range and three Master missions");
       const states = [0, 0, 0],
@@ -160,7 +167,7 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
         }
         return factor;
       };
-      const luckIndex = runtime.missions.indexOf(2);
+      const luckIndex = runtime.isolatedLuckRangeIndex ?? runtime.missions.indexOf(2);
       if (runtime.requireNoPendingLots) for (const frame of runtime.frames) for (const note of frame.notes) {
         if (note.rangeIndex !== luckIndex) continue;
         const factor = gaugeAt(frame.timeMs, note.timeMs);
@@ -225,7 +232,8 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
             ...phase.value.assumptions,
             "native-admitted-perfect-history",
             "exact-integer-basic-factor-domain",
-            "single-Luck-range-global-frame-order",
+            runtime.isolatedLuckRangeIndex === undefined ? "single-Luck-range-global-frame-order"
+              : "isolated-native-per-range-LuckScore-expectation",
           ],
         },
         gaps: [],

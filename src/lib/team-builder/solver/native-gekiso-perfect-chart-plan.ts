@@ -14,12 +14,12 @@ export function createNativeGekisoPerfectChartPlan(data: TeamBuilderData, song: 
   if (combo.value) return combo;
   const missions = song.segments.map((range) => range.mission);
   const luckCount = missions.filter((mission) => mission === 2).length;
-  if (missions.length !== 3 || missions.some((mission) => ![1, 2, 3].includes(mission)) || luckCount > 1)
+  if (missions.length !== 3 || missions.some((mission) => ![1, 2, 3].includes(mission)) || luckCount === 2)
     return { value: null, gaps: [{ code: "native-gekiso-perfect-driver-luck-count-unresolved", source: song.key }] };
   const shape = { ...song, segments: song.segments.map((range) => ({ ...range, mission: 1 })) };
   const built = createNativeGekisoAllComboChartPlan(data, shape, timing, { effectTypes: [11001, 12000, 13000] });
   if (!built.value) return built;
-  return { value: { ...built.value, producer: luckCount
+  return { value: { ...built.value, producer: luckCount === 3 ? "native-three-luck-ap-event-reduction-v1" : luckCount
     ? "native-single-luck-ap-event-reduction-v1" : "native-no-luck-ap-event-reduction-v1",
     missionPattern: nativeGekisoMissionPattern(missions)!, frames: built.value.frames.map((frame) => ({ ...frame,
       rangeUpdates: frame.rangeUpdates.map((update) => ({ ...update, mission: missions[update.rangeIndex]! })),

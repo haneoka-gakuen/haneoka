@@ -17,7 +17,7 @@ export function nativeGekisoAllComboDriverSupports(identity: NativeRuleIdentity)
 }
 
 export const NATIVE_GEKISO_ALL_COMBO_CONDITIONS = [
-  "native-gekiso-no-luck-or-single-luck-perfect-missions", "native-gekiso-uninterrupted-perfect-playback",
+  "native-gekiso-no-luck-single-or-three-luck-perfect-missions", "native-gekiso-uninterrupted-perfect-playback",
   "native-gekiso-disjoint-chart-ranges", "native-gekiso-basic-integer-member-effects",
   "native-luck-note-charge-below-both-gauge-maxima",
   "native-gekiso-personal-single-player-rank", "native-all-combo-ap-event-reduction",

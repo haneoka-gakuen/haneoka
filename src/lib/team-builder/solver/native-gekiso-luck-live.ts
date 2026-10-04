@@ -5,7 +5,9 @@ import type { PreparedSong } from "../song-metrics.ts";
 import { nativeLuckFactorPercent, unavailableMetric } from "../score.ts";
 import { gekisoPreviousScoreFrameEnd, resolveGekisoRankingBonus, type GekisoRules } from "./gekiso-mission-luck.ts";
 import { evaluateGekisoLuckTimeline } from "./gekiso-luck-timeline.ts";
-import { createNativeGekisoBasicRuntimeResolver, type NativeGekisoBasicRuntimeInput } from "./native-gekiso-runtime.ts";
+import { createNativeGekisoBasicRuntimeResolver, type NativeGekisoBasicRuntimeInput,
+  type NativeGekisoBasicRuntimeResult } from "./native-gekiso-runtime.ts";
+import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
 import type { NativeGekisoScoreRange } from "./native-gekiso-live-score.ts";
 import { createNativeNormalScoreResolver } from "./native-normal-score.ts";
 
@@ -13,9 +15,10 @@ const f = Math.fround;
 const int = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) &&
   value >= 0 && value <= 0x7fffffff;
 
-/** One Luck range, selected basic member effects and an explicit native update
- * tape. The regular member-order engine supplies both per-note floors; Luck
- * state and rank residues stay joint until each complete order is averaged. */
+/** Selected basic effects and one or three disjoint Luck ranges. Each native
+ * range owns its gauge/Next/rush state. With no minimum/probability modifiers
+ * and no inter-range rush handle, complete order means add range-local gains;
+ * both per-note floors and rank residues remain inside each range law. */
 export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, input: OptimizationInput) {
   const runtime = createNativeGekisoBasicRuntimeResolver(data, input);
   const normal = createNativeNormalScoreResolver(data, input);
@@ -26,8 +29,11 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
     async score(assignment: TeamAssignment, song: PreparedSong, profiles: readonly (ResolvedSlotProfile | undefined)[],
       rules: GekisoRules, tape: NativeGekisoBasicRuntimeInput, ranges: readonly NativeGekisoScoreRange[],
       controls: SearchEvaluationControls): Promise<MetricValue> {
-      if (input.constraints.justRate !== 0 || tape.missions.filter((mission) => mission === 2).length !== 1)
-        return unavailableMetric("native-gekiso-luck-live-domain-unresolved", "PERFECT, exactly one Luck range");
+      const luckIndices = tape.missions.flatMap((mission, index) => mission === 2 ? [index as 0 | 1 | 2] : []);
+      const threeLuck = luckIndices.length === 3;
+      if (input.constraints.justRate !== 0 || ![1, 3].includes(luckIndices.length) ||
+        (threeLuck && (!tape.requireNoPendingLots || !nativeGekisoAllComboDriverSupports(data.identity))))
+        return unavailableMetric("native-gekiso-luck-live-domain-unresolved", "PERFECT, one or three qualified Luck ranges");
       if (tape.assignment.leaderInstanceId !== assignment.leaderInstanceId ||
         tape.assignment.memberInstanceIds.length !== assignment.memberInstanceIds.length ||
         tape.assignment.memberInstanceIds.some((id, index) => id !== assignment.memberInstanceIds[index]) ||
@@ -62,13 +68,18 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
       }
       if ([...counts.values()].some((count) => count !== 0))
         return unavailableMetric("native-gekiso-live-chart-admission-mismatch", "extra admitted history");
-      const played = await runtime.evaluate(rules, { ...tape, projection: "expectations-only", liveScore: undefined }, controls);
-      if (!played.value) return { value: null, status: "unavailable", assumptions: [], gaps: played.gaps };
+      const plays: NativeGekisoBasicRuntimeResult[] = [];
+      for (const index of luckIndices) {
+        const played = await runtime.evaluate(rules, { ...tape, projection: "expectations-only", liveScore: undefined,
+          ...(threeLuck ? { isolatedLuckRangeIndex: index } : {}) }, controls);
+        if (!played.value) return { value: null, status: "unavailable", assumptions: [], gaps: played.gaps };
+        plays.push(played.value);
+      }
       const combo = song.nodes.map((node) => {
         const index = ranges.findIndex((range, index) => tape.missions[index] === 1 &&
           range.startTimeMs <= node.event.timeMs && node.event.timeMs <= range.endTimeMs);
         if (index < 0) return f(0);
-        const snapshots = played.value!.counters[index]!.comboSnapshots,
+        const snapshots = plays[0]!.counters[index]!.comboSnapshots,
           boundary = gekisoPreviousScoreFrameEnd(node.event.timeMs);
         let low = 0, high = snapshots.length;
         while (low < high) { const mid = (low + high) >>> 1;
@@ -78,13 +89,16 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
         for (const row of ladder) { if (row.count > count) break; value = f(value + f(row.bonus)); }
         return value;
       });
-      const frames = played.value.luckInput.frames;
-      const luckIndex = tape.missions.indexOf(2),
-        rushStart = Math.min(...tape.frames.flatMap((frame) => frame.notes
+      const luckRanges = luckIndices.map((luckIndex, index) => ({
+        luckIndex, luckInput: plays[index]!.luckInput,
+        rushStart: Math.min(...tape.frames.flatMap((frame) => frame.notes
           .filter((note) => note.rangeIndex === luckIndex).map((note) => note.timeMs))),
-        rushEnd = tape.frames.find((frame) => frame.rangeUpdates.some((update) =>
-          update.rangeIndex === luckIndex && update.simulateState === 8))?.timeMs;
-      if (rushEnd === undefined) return unavailableMetric("native-gekiso-luck-score-horizon-unresolved", song.song.key);
+        rushEnd: tape.frames.find((frame) => frame.rangeUpdates.some((update) =>
+          update.rangeIndex === luckIndex && update.simulateState === 8))?.timeMs,
+      }));
+      if (luckRanges.some((range) => range.rushEnd === undefined || !int(range.rushStart) ||
+        (threeLuck && range.luckIndex < 2 && range.rushEnd! >= ranges[range.luckIndex + 1]!.startTimeMs)))
+        return unavailableMetric("native-gekiso-luck-score-horizon-unresolved", song.song.key);
       const frameEnd = (time: number) => Math.ceil(f(f(time) / f(40))) * 40;
       const orderMeans = new Map<string, number>();
       let cachedBytes = 0;
@@ -104,7 +118,7 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
                 ? sample.idleScore : 0), 0));
             let idlePlay = input.evaluation.songContexts[song.song.key]!.fixedScore +
               samples.reduce((sum, sample) => sum + sample.idleScore, 0);
-            const residues: number[] = [], baseRemainders: number[] = [];
+            const baseRemainders: number[] = [];
             const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
             for (const [index, range] of ranges.entries()) {
               const bonus = resolveGekisoRankingBonus({ rules, rangeIndex: index, complete: true, rank: range.rank,
@@ -112,39 +126,45 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
               if (!bonus.value) return { value: null, gaps: bonus.gaps };
               idlePlay += bonus.value.fixedScore;
               baseRemainders.push(idleRanges[index]! % (100 / gcd(bonus.value.percent, 100)));
-              residues.push(frameEnd(range.endTimeMs) >= rushStart && frameEnd(range.startTimeMs) < rushEnd!
-                ? (idleRanges[index]! * bonus.value.percent) % 100 : 0);
             }
-            const signature = residues.join("/") + "|" + samples.filter((sample) =>
-              sample.timeMs >= rushStart && sample.timeMs < rushEnd!).map((sample) =>
-                sample.rushScore - sample.idleScore).join(",");
-            const cached = orderMeans.get(signature);
-            if (cached !== undefined) return { value: idlePlay + cached, gaps: [] };
-            let cursor = 0;
-            const scoreFrames = frames.map((frame) => {
-              const start = cursor;
-              while (cursor < samples.length && samples[cursor]!.timeMs <= frame.timeMs) cursor++;
-              return samples.slice(start, cursor).map((sample) => ({ timeMs: sample.timeMs, idleScore: 0,
-                rushScore: sample.timeMs >= rushStart && sample.timeMs < rushEnd!
-                  ? sample.rushScore - sample.idleScore : 0 }));
-            });
-            if (cursor !== samples.length) return { value: null,
-              gaps: [{ code: "native-gekiso-luck-score-horizon-unresolved", source: song.song.key }] };
-            const law = await evaluateGekisoLuckTimeline(rules, { ...played.value!.luckInput,
-              projection: "expectations-only", liveScore: { projection: "score-expectation",
-                initialScore: 0, rankBaseRemainders: baseRemainders as [number, number, number],
-                expectedNoteCount: song.nodes.length, frames: scoreFrames, ranges } }, controls);
-            const delta = law.value?.liveScore?.mean ?? null;
-            const value = delta === null ? null : idlePlay + delta;
-            if (value !== null && !law.gaps.length && !controls.cancelled() && !controls.expired() &&
-              signature.length * 2 <= 4 * 1024 * 1024) {
-              while (orderMeans.size && (orderMeans.size >= 128 || cachedBytes + signature.length * 2 > 4 * 1024 * 1024)) {
-                const oldest = orderMeans.keys().next().value!;
-                orderMeans.delete(oldest); cachedBytes -= oldest.length * 2;
+            let totalDelta = 0;
+            for (const { luckIndex, luckInput, rushStart, rushEnd } of luckRanges) {
+              const frames = luckInput.frames;
+              const residues = ranges.map((range, index) => frameEnd(range.endTimeMs) >= rushStart &&
+                frameEnd(range.startTimeMs) < rushEnd! ? (idleRanges[index]! * rules.rankingPercents[index]![range.rank - 1]!) % 100 : 0);
+              const signature = luckIndex + "|" + residues.join("/") + "|" + samples.filter((sample) =>
+                sample.timeMs >= rushStart && sample.timeMs < rushEnd!).map((sample) =>
+                  sample.rushScore - sample.idleScore).join(",");
+              const cached = orderMeans.get(signature);
+              if (cached !== undefined) { totalDelta += cached; continue; }
+              let cursor = 0;
+              const scoreFrames = frames.map((frame) => {
+                const start = cursor;
+                while (cursor < samples.length && samples[cursor]!.timeMs <= frame.timeMs) cursor++;
+                return samples.slice(start, cursor).map((sample) => ({ timeMs: sample.timeMs, idleScore: 0,
+                  rushScore: sample.timeMs >= rushStart && sample.timeMs < rushEnd!
+                    ? sample.rushScore - sample.idleScore : 0 }));
+              });
+              if (cursor !== samples.length) return { value: null,
+                gaps: [{ code: "native-gekiso-luck-score-horizon-unresolved", source: song.song.key }] };
+              const law = await evaluateGekisoLuckTimeline(rules, { ...luckInput,
+                projection: "expectations-only", liveScore: { projection: "score-expectation",
+                  initialScore: 0, rankBaseRemainders: baseRemainders as [number, number, number],
+                  expectedNoteCount: song.nodes.length, frames: scoreFrames, ranges } }, controls);
+              const delta = law.value?.liveScore?.mean ?? null;
+              const value = delta === null ? null : idlePlay + delta;
+              if (value !== null && !law.gaps.length && !controls.cancelled() && !controls.expired() &&
+                signature.length * 2 <= 4 * 1024 * 1024) {
+                while (orderMeans.size && (orderMeans.size >= 128 || cachedBytes + signature.length * 2 > 4 * 1024 * 1024)) {
+                  const oldest = orderMeans.keys().next().value!;
+                  orderMeans.delete(oldest); cachedBytes -= oldest.length * 2;
+                }
+                orderMeans.set(signature, delta!); cachedBytes += signature.length * 2;
               }
-              orderMeans.set(signature, delta!); cachedBytes += signature.length * 2;
+              if (value === null || law.gaps.length) return { value: null, gaps: law.gaps };
+              totalDelta += delta!;
             }
-            return { value, gaps: law.gaps };
+            return { value: idlePlay + totalDelta, gaps: [] };
           },
         },
       });
