@@ -13,7 +13,8 @@ const ids = (value: unknown): value is number[] =>
  * This scope resolves type15000 with a same-member Live trigger and static band
  * conditions. Other support state machines retain their own evidence gap.
  */
-export function createNativeNormalSupportResolver(data: TeamBuilderData, input: OptimizationInput) {
+export function createNativeNormalSupportResolver(data: TeamBuilderData,
+  input: Pick<OptimizationInput, "members" | "snapshots"> & { evaluation: Pick<OptimizationInput["evaluation"], "mode"> }) {
   const neutral = createNativeNormalAPNeutralResolver(data);
   const conditions = new Map(
     dataRows(data.skillReference.conditions)

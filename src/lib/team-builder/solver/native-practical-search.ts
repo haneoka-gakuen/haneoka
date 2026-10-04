@@ -1,8 +1,9 @@
+import { addPower, floorPowerBP } from "./power.ts";
 import type { Candidate, EvidenceGap, Objective, SongOption, TeamAssignment, WorkerPreparationInput } from "../contracts.ts";
 import { nativeSnapshotEquipRuleKnown } from "../data.ts";
 import { inventoryOptions } from "../data/solver-input.ts";
 import { validateInventory } from "../inventory.ts";
-import { refinePracticalCandidates, type PracticalControls, type PracticalDirection,
+import { refinePracticalCandidates, type PracticalControls,
   type PracticalTask, type PracticalSearchResult } from "../practical-search.ts";
 import { prepareSong } from "../song-metrics.ts";
 import { unavailableMetric } from "../score.ts";
@@ -12,6 +13,7 @@ import { loadSongOptions } from "./song-loader.ts";
 import { searchFingerprint } from "./search-checkpoint.ts";
 import { validateSearchBudget } from "./search-budget.ts";
 import { createPracticalPreparationCache } from "./practical-preparation-cache.ts";
+import { createNativePracticalFeatureDirections } from "./native-practical-features.ts";
 
 export type NativePracticalChart = { songId: number; difficulty: number } | { challengeMusicId: number; difficulty: number };
 export interface NativePracticalPreparationInput extends Omit<WorkerPreparationInput,
@@ -41,7 +43,6 @@ export interface NativePracticalControls extends Omit<PracticalControls, "progre
   progress?: (progress: NativePracticalProgress) => void;
 }
 const objectives: Objective[] = ["score", "ss-ratio", "ss-surplus", "event-points", "event-items", "base-score"];
-const sum = (stats: { performance: number; technique: number; visual: number }) => stats.performance + stats.technique + stats.visual;
 
 /** Feature priorities choose a bounded heuristic pool. Each published result
  * is evaluated by the native factory over its full member-order domain. */
@@ -114,15 +115,8 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
   } finally { clearTimeout(timer); clearInterval(cancellation); }
   const options = inventoryOptions(request.inventory, request.data, nativeGrowthPowerResolver, { requiredMode: "normal" });
   if (!nativeSnapshotEquipRuleKnown(request.data.identity)) options.snapshots.forEach(photo => { delete photo.allowedCharacterIds; });
-  const directions: PracticalDirection[] = [];
-  const direction = (id: string, preferred: (member: typeof options.members[number]) => boolean) => {
-    directions.push({ id, members: Object.fromEntries(options.members.map(member => [member.instanceId,
-      sum(member.stats) * (preferred(member) ? 2 : 1)])), snapshots: Object.fromEntries(options.snapshots.map(photo =>
-        [photo.instanceId, photo.bonusBP ? sum(photo.bonusBP) : 0])) });
-  };
-  direction("actual-growth-feature", () => false);
-  for (const type of [...new Set(options.members.map(member => member.attribute))].slice(0, 5)) direction(`attribute:${type}`, member => member.attribute === type);
-  for (const band of [...new Set(options.members.map(member => member.bandId))].slice(0, 5)) direction(`band:${band}`, member => member.bandId === band);
+  const directions = createNativePracticalFeatureDirections(request.data, request.inventory,
+    options.members, options.snapshots, request.eventScene);
   const tasks: PracticalTask[] = charts.filter(chart =>
     !request.constraints.excludedSongKeys.includes(chart.key) &&
     (!request.constraints.lockedSongKey || request.constraints.lockedSongKey === chart.key))
@@ -142,6 +136,24 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
   });
   const result = await refinePracticalCandidates({ contextFingerprint, ...options, constraints: request.constraints,
     tasks, directions, baseline: request.baseline, finalistLimit: request.finalistLimit }, {
+    async priority(assignment, task) {
+      const chart = byChart.get(task.songKey)!;
+      if (!chart.song || chart.gaps.length || cancelled() || expired()) return null;
+      const memberIds = new Set(assignment.memberInstanceIds), photoIds = new Set(assignment.snapshotInstanceIds);
+      const inventory = { ...request.inventory, members: request.inventory.members.filter(member => memberIds.has(member.instanceId)),
+        snapshots: request.inventory.snapshots.filter(photo => photoIds.has(photo.instanceId)) };
+      try {
+        const prepared = preparations.get(task, assignment, () => prepareEvaluationForSearch({ ...request, inventory, songs: [chart.song!], mode: task.mode,
+          scoreDomain: task.mode === "gekiso" ? task.objective === "score" ? request.scoreDomain ?? "personal-live" : "personal-solo" : undefined,
+          objectives: [task.objective], challengeMusicId: "challengeMusicId" in chart.chart ? chart.chart.challengeMusicId : undefined }));
+        const profiles = prepared.resolveSlots?.(assignment, prepareSong(chart.song, prepared.input.evaluation));
+        if (!profiles || profiles.length !== 5 || profiles.some(profile => !profile || profile.gaps.length || !profile.bpPower)) return null;
+        // Same authoritative deck getter used by the native score consumer.
+        // This is a seed/finalist priority only, never published as native score.
+        const deck = floorPowerBP(addPower(...profiles.map(profile => profile!.bpPower!)));
+        return ((deck.performance + deck.technique + deck.visual) / 10000) | 0;
+      } catch { return null; }
+    },
     async full(assignment, task) {
       const chart = byChart.get(task.songKey)!;
       let candidate: Candidate;

@@ -30,6 +30,8 @@ export interface PracticalDirection {
   /** Diversity/priority features supplied by the native owner; never final scores. */
   members: Readonly<Record<string, number>>;
   snapshots: Readonly<Record<string, number>>;
+  pairs?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  leaders?: Readonly<Record<string, number>>;
 }
 export interface PracticalTask { key: string; songKey: string; mode: PlayMode; objective: Objective }
 export interface PracticalSearchInput {
@@ -50,6 +52,8 @@ export interface PracticalControls {
     taskKey?: string; completed: number; total: number }) => void;
 }
 export interface PracticalEvaluators {
+  /** Native-owner task-dependent whole-team feature, not a score or upper bound. */
+  priority?: (assignment: TeamAssignment, task: PracticalTask, controls: PracticalControls) => Promise<number | null>;
   /** Optional native-owner balanced ten-order screen. Its value never escapes as a Candidate. */
   screen?: (assignment: TeamAssignment, task: PracticalTask, controls: PracticalControls) =>
     Promise<{ orders: 10; value: number | null }>;
@@ -122,19 +126,24 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
     return output.status !== "complete";
   };
   const yieldWork = controls.yield ?? pause;
-  const prepared = new Map<string, { assignment: TeamAssignment; origins: Set<string>; feature: number }>();
+  const prepared = new Map<string, { assignment: TeamAssignment; origins: Set<string>; byDirection: Map<string, number> }>();
   const add = (assignment: TeamAssignment, origin: string, feature: number) => {
     if (!legal(assignment)) return;
     const identity = key(assignment), old = prepared.get(identity);
-    if (old) { old.origins.add(origin); old.feature = Math.max(old.feature, feature); }
-    else prepared.set(identity, { assignment: structuredClone(assignment), origins: new Set([origin]), feature });
+    if (old) { old.origins.add(origin); old.byDirection.set(origin, Math.max(old.byDirection.get(origin) ?? -Infinity, feature)); }
+    else prepared.set(identity, { assignment: structuredClone(assignment), origins: new Set([origin]), byDirection: new Map([[origin, feature]]) });
   };
+  const featureOf = (direction: PracticalDirection, assignment: TeamAssignment) => assignment.memberInstanceIds.reduce((sum, id) => sum + (direction.members[id] ?? 0), 0) +
+    assignment.snapshotInstanceIds.reduce((sum, id, slot) => sum + (id === null ? 0 : (direction.snapshots[id] ?? 0) +
+      (direction.pairs?.[assignment.memberInstanceIds[slot]!]?.[id] ?? 0)), 0) + (direction.leaders?.[assignment.leaderInstanceId] ?? 0);
   const seeds: { assignment: TeamAssignment; direction: PracticalDirection }[] = [];
   if (request.baseline && legal(request.baseline)) add(request.baseline, "current", Infinity);
   for (const [directionIndex, direction] of request.directions.entries()) {
     if (stopped()) return output;
     if (!direction.id || Object.values(direction.members).some(value => !Number.isFinite(value)) ||
-      Object.values(direction.snapshots).some(value => !Number.isFinite(value))) throw new RangeError("practical-direction");
+      Object.values(direction.snapshots).some(value => !Number.isFinite(value)) ||
+      Object.values(direction.leaders ?? {}).some(value => !Number.isFinite(value)) ||
+      Object.values(direction.pairs ?? {}).some(row => Object.values(row).some(value => !Number.isFinite(value)))) throw new RangeError("practical-direction");
     const ordered = [...members].sort((a, b) => (direction.members[b.instanceId] ?? 0) - (direction.members[a.instanceId] ?? 0) ||
       a.instanceId.localeCompare(b.instanceId, "en"));
     const selected = requirements.requiredMemberIds.map(id => memberMap.get(id)!);
@@ -160,9 +169,12 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
         desired.pop();
       }
       if (assignment) {
-        const feature = (value: TeamAssignment) => value.memberInstanceIds.reduce((sum, id) => sum + (direction.members[id] ?? 0), 0) +
-          value.snapshotInstanceIds.reduce((sum, id) => sum + (id === null ? 0 : direction.snapshots[id] ?? 0), 0);
+        const feature = (value: TeamAssignment) => featureOf(direction, value);
         add(assignment, direction.id, feature(assignment)); seeds.push({ assignment, direction });
+        for (const leaderInstanceId of assignment.memberInstanceIds) {
+          const variant = { ...assignment, leaderInstanceId };
+          add(variant, direction.id, feature(variant));
+        }
       }
     }
     controls.progress?.({ phase: "seeds", completed: directionIndex + 1, total: request.directions.length }); await yieldWork();
@@ -172,9 +184,8 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
     const winners = new Map<string, { assignment: TeamAssignment; feature: number }>();
     const consider = async (kind: string, assignment: TeamAssignment) => {
       output.neighbourChecks++;
-      if (legal(assignment)) {
-        const feature = assignment.memberInstanceIds.reduce((sum, id) => sum + (seed.direction.members[id] ?? 0), 0) +
-          assignment.snapshotInstanceIds.reduce((sum, id) => sum + (id === null ? 0 : seed.direction.snapshots[id] ?? 0), 0);
+      if (legal(assignment) && key(assignment) !== key(seed.assignment)) {
+        const feature = featureOf(seed.direction, assignment);
         if (!winners.has(kind) || winners.get(kind)!.feature < feature) winners.set(kind, { assignment, feature });
       }
       if (output.neighbourChecks % 50 === 0) { controls.progress?.({ phase: "neighbours", completed: output.neighbourChecks, total: totalNeighbours }); await yieldWork(); }
@@ -202,7 +213,13 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
     const screened: { candidate: typeof prepared extends Map<string, infer T> ? T : never; value: number }[] = [];
     for (const candidate of prepared.values()) {
       if (stopped()) return output;
-      let value = candidate.feature;
+      // Direction units are compared only within that direction below.
+      // With no usable whole-team priority, global ordering is a stable tie.
+      let value = 0;
+      if (evaluators.priority) {
+        const priority = await evaluators.priority(candidate.assignment, row.task, controls);
+        if (priority !== null && Number.isFinite(priority)) value = priority;
+      }
       if (evaluators.screen) { const score = await evaluators.screen(candidate.assignment, row.task, controls);
         if (score.orders !== 10) throw new RangeError("practical-screen-orders");
         value = score.value !== null && Number.isFinite(score.value) ? score.value : -Infinity; }
@@ -214,7 +231,12 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
     const choose = (value: typeof screened[number] | undefined) => { if (!value || finalists.length >= limit) return;
       const identity = key(value.candidate.assignment); if (!seen.has(identity)) { seen.add(identity); finalists.push(value); } };
     choose(screened.find(value => value.candidate.origins.has("current"))); choose(screened[0]);
-    for (const direction of request.directions) choose(screened.find(value => value.candidate.origins.has(direction.id)));
+    for (const direction of request.directions) {
+      const representatives = screened.filter(value => value.candidate.origins.has(direction.id));
+      if (!evaluators.screen) representatives.sort((a, b) => (b.candidate.byDirection.get(direction.id) ?? -Infinity) -
+        (a.candidate.byDirection.get(direction.id) ?? -Infinity) || key(a.candidate.assignment).localeCompare(key(b.candidate.assignment), "en"));
+      choose(representatives[0]);
+    }
     screened.forEach(choose);
     let completedFinalists = 0;
     for (const finalist of finalists) {
