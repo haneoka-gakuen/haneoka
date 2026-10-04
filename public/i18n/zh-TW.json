@@ -3336,7 +3336,10 @@
     "moreGoals": "更多目標",
     "optionalEvent": "活動條件（選填）",
     "maximumLuckPending": "最高 LUCK 分數不可用，請對這些譜面使用平均分計算。",
-    "resultsTab": "結果"
+    "resultsTab": "結果",
+    "challengeSoloOnly": "挑戰評估使用個人 Solo 分數。",
+    "challengeSong": "挑戰歌曲",
+    "challengeChartUnavailable": "請選擇此活動與開始時間可用的挑戰譜面。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

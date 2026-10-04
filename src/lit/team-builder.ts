@@ -15,11 +15,13 @@ import { fetchCurrentTeamBuilderIdentity, fetchTeamBuilderData } from "../lib/te
 import { resourcePlannerStageData } from "../lib/team-builder/data/resource-stage";
 import { resourcePlanInputIssues } from "../lib/team-builder/resource-plan-input";
 import type { ResourcePlannerPreparationInput, ResourcePlannerResult, ResourcePlan, ResourceStageCandidate, ResourcePlanObjective } from "../lib/team-builder/resource-plan-contract";
+import { resolveNativeChallengeContext } from "../lib/team-builder/solver/native-challenge-context";
 import { validateNativeEventScene } from "../lib/team-builder/solver/native-event-scene";
 import { getTeamBuilderCapabilities } from "../lib/team-builder/solver/capabilities";
 import { clearAppBarActions, clearAppBarSearch, setAppBarActions } from "../lib/app-bar";
 import {
   dataRows,
+  nativeRow,
   nativeSnapshotEquipRuleKnown,
   objectRow,
   type TeamBuilderData,
@@ -164,6 +166,9 @@ export class TeamBuilder extends LitElement {
     songPool: { state: true },
     poolSelecting: { state: true },
     pickerPoolIds: { state: true },
+    selectedChallengeId: { state: true },
+    selectedChallengeDifficulty: { state: true },
+    singleChallengePicking: { state: true },
     selectedSong: { state: true },
     selectedDifficulty: { state: true },
     lockSong: { state: true },
@@ -274,6 +279,9 @@ export class TeamBuilder extends LitElement {
   declare songPool: string[] | null;
   declare poolSelecting: boolean;
   declare pickerPoolIds: Set<string>;
+  declare selectedChallengeId: string;
+  declare selectedChallengeDifficulty: string;
+  declare singleChallengePicking: boolean;
   declare selectedSong: string;
   declare selectedDifficulty: string;
   declare lockSong: boolean;
@@ -848,6 +856,7 @@ export class TeamBuilder extends LitElement {
       this.memoryCharacter = "";
       this.selectedCards = new Set();
       this.selectedSong = "";
+      this.selectedChallengeId = ""; this.selectedChallengeDifficulty = "";
       this.songPool = null;
       this.selectedDifficulty = "";
       this.excludedCharts = new Set();
@@ -1468,6 +1477,9 @@ export class TeamBuilder extends LitElement {
     this.songPool = null;
     this.poolSelecting = false;
     this.pickerPoolIds = new Set();
+    this.selectedChallengeId = "";
+    this.selectedChallengeDifficulty = "";
+    this.singleChallengePicking = false;
     this.selectedSong = "";
     this.selectedDifficulty = "";
     this.lockSong = false;
@@ -2217,6 +2229,7 @@ export class TeamBuilder extends LitElement {
     this.poolSelecting = false;
     this.selectingEvent = false;
     this.resourcePicker = null;
+    this.singleChallengePicking = false;
     this.addingCards = false;
     this.editingId = "";
   }
@@ -2939,8 +2952,8 @@ export class TeamBuilder extends LitElement {
   private choosePickerSong(id: string) {
     this.pickerSong = id;
     const rows = dataRows(this.data?.songs[id]?.difficulty ?? this.data?.songs[id]?.difficulties);
-    if (!rows.some((row) => String(row.difficulty) === this.pickerDifficulty))
-      this.pickerDifficulty = String(rows[0]?.difficulty ?? "");
+    if (this.pickerSongDifficulty && rows.some(row => String(row.difficulty) === this.pickerSongDifficulty)) this.pickerDifficulty = this.pickerSongDifficulty;
+    else if (!rows.some((row) => String(row.difficulty) === this.pickerDifficulty)) this.pickerDifficulty = String(rows[0]?.difficulty ?? "");
   }
   private renderSongPane() {
     if (!this.selectingSong || !this.data) return nothing;
@@ -3112,7 +3125,7 @@ export class TeamBuilder extends LitElement {
     return target?.scoreDomains ?? (target?.scoreDomain ? [target.scoreDomain] : []);
   }
   private get scoreDomain(): PersonalScoreDomain | undefined {
-    return this.mode === "gekiso" ? this.objectives.includes("score") ? this.selectedScoreDomain : "personal-solo" : undefined;
+    return this.mode === "gekiso" ? this.challengeSearch ? "personal-solo" : this.objectives.includes("score") ? this.selectedScoreDomain : "personal-solo" : undefined;
   }
   private get liveChartUnavailable(): boolean {
     if (this.scoreDomain !== "personal-live" || this.chartSelections.length !== 1) return false;
@@ -3120,6 +3133,7 @@ export class TeamBuilder extends LitElement {
     return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => ![1, 2, 3].includes(value)) || missions.filter(value => value === 2).length === 2;
   }
   private renderScoreDomain() {
+    if (this.mode === "gekiso" && this.challengeSearch) return html`<p class="team-builder__hint">${this.t("challengeSoloOnly", "Challenge evaluation uses personal Solo score.")}</p>`;
     if (this.mode !== "gekiso" || !this.objectives.includes("score") || this.scoreDomains.length < 2) return nothing;
     return html`${this.select(this.t("scoreDomain", "Score type"), this.selectedScoreDomain,
       this.scoreDomains.map(value => ({ value, label: value === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score") })),
@@ -3247,7 +3261,7 @@ export class TeamBuilder extends LitElement {
       `, false)}
     `;
   }
-  private chartSelectionKey(chart: { songId: number; difficulty: number }) { return `${chart.songId}:${chart.difficulty}`; }
+  private chartSelectionKey(chart: { songId: number; difficulty: number }) { return this.challengeSearch ? `challenge:${this.selectedChallengeId}:${chart.difficulty}` : `${chart.songId}:${chart.difficulty}`; }
   private get evaluationBasis(): EvaluationBasisRequest | null {
     if (this.metricBasis === "single") return { kind: "single" };
     if (this.metricBasis === "time") {
@@ -3430,10 +3444,49 @@ export class TeamBuilder extends LitElement {
       `,
     });
   }
+  private get challengeSearch() { return this.wantsEventScene && this.eventFlowKind === "challenge"; }
+  private get challengeContext() {
+    const scene = this.eventScene;
+    if (!this.challengeSearch || !this.data || !scene || scene.kind !== "challenge" || !this.selectedChallengeId) return null;
+    return resolveNativeChallengeContext(this.data, this.data.challengeMusicTable, {
+      challengeMusicId: Number(this.selectedChallengeId), eventId: scene.eventId,
+      startTimeMs: scene.liveStartServerTime.epochMilliseconds, masterTimeSlot: scene.masterTimeSlot,
+    }).value;
+  }
+  private openSingleChallengePicker() {
+    this.closePane(); this.resourcePicker = "challenge"; this.singleChallengePicking = true;
+    this.pickerSong = this.selectedChallengeId; this.pickerDifficulty = this.selectedChallengeDifficulty;
+    this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = ""; this.pickerLimit = 30;
+  }
+  private renderChallengeSelection() {
+    const choices = this.resourceCharts("challenge"), selected = choices.find(row => row.id === this.selectedChallengeId);
+    const key = `challenge:${this.selectedChallengeId}:${this.selectedChallengeDifficulty}`;
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.t("challengeSong", "Challenge song"), "songs", { level: 2 })}
+      <button class="button button--outlined" ?disabled=${!choices.length} @click=${() => this.openSingleChallengePicker()}>${this.t("chooseSong", "Choose song")}</button>
+      ${selected ? html`${this.songIdentity(selected.songId, this.selectedChallengeDifficulty)}${difficultyPicker({ rows: selected.difficulties, selected: difficultyKey({ difficulty: this.selectedChallengeDifficulty }), locale: this.locale, onSelect: (_key, index) => { this.formationChanged(); this.selectedChallengeDifficulty = String(selected.difficulties[index]?.difficulty ?? ""); } })}
+        ${this.check(this.t("excludeChart", "Exclude this chart"), this.excludedCharts.has(key), value => { this.formationChanged(); const next = new Set(this.excludedCharts); if (value) next.add(key); else next.delete(key); this.excludedCharts = next; })}` : nothing}
+      ${!this.challengeContext ? html`<p role="status" class="team-builder__hint">${!this.eventScene ? this.eventSceneHint : this.t("challengeChartUnavailable", "Choose a challenge chart available for this event and start time.")}</p>` : nothing}
+    </section>`;
+  }
+  private resolveResultChart(key: string): { songId: string; difficulty: string; challenge: boolean } | null {
+    const parts = key.split(":");
+    if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) return { songId: parts[0], difficulty: parts[1], challenge: false };
+    if (parts.length !== 3 || parts[0] !== "challenge" || !/^\d+$/.test(parts[1]) || !/^\d+$/.test(parts[2])) return null;
+    const ranked = this.result?.bySong?.find(row => row.songKey === key);
+    const rows = this.data?.challengeMusicTable?.rows.map(nativeRow).filter(row => row.id === Number(parts[1])) ?? [];
+    const parent = ranked?.songId ?? (rows.length === 1 ? rows[0].liveMusicId : undefined);
+    return typeof parent === "number" && Number.isSafeInteger(parent) && parent > 0 ? { songId: String(parent), difficulty: parts[2], challenge: true } : null;
+  }
+  private resultSongIdentity(key: string) {
+    const chart = this.resolveResultChart(key);
+    return chart ? html`${this.songIdentity(chart.songId, chart.difficulty)}${chart.challenge ? html`<small class="team-builder__hint">${this.t("eventChallenge", "Challenge play")}</small>` : nothing}` : html`<p>${this.t("unknown", "Unknown or not entered")}</p>`;
+  }
   private get wantsEventScene() {
     return this.applyEventScene || this.objectives.includes("event-points") || this.bonusFloorPoints !== null || this.bonusFloorItems !== null;
   }
   private resetEventScene() {
+    this.selectedChallengeId = ""; this.selectedChallengeDifficulty = "";
     this.resourceSingleHeld = false;
     this.resourceBudget = { ...this.resourceBudget, perPlay: null, challengeCost: null };
     this.resourceSelection = { normal: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null }, challenge: { mode: "normal", chart: "", difficulty: "", start: "", constraints: null } };
@@ -3466,9 +3519,9 @@ export class TeamBuilder extends LitElement {
     const epochMilliseconds = this.eventStartText ? new Date(this.eventStartText).getTime() : NaN;
     const matching = this.eventWindows.filter((entry) => epochMilliseconds >= entry.start && (entry.end === null || epochMilliseconds < entry.end));
     const slot = matching.length === 1 ? matching[0] : undefined;
-    if (!this.selectedEvent || this.eventFlowKind !== "normal" || !row || !slot || !this.eventSingleHeld || !Number.isSafeInteger(epochMilliseconds)) return null;
+    if (!this.selectedEvent || !["normal", "challenge"].includes(this.eventFlowKind) || !row || !slot || !this.eventSingleHeld || !Number.isSafeInteger(epochMilliseconds)) return null;
     return {
-      eventId: Number(this.selectedEvent), kind: this.eventFlowKind, consumedCount: row.consumedCount,
+      eventId: Number(this.selectedEvent), kind: this.eventFlowKind as "normal" | "challenge", consumedCount: row.consumedCount,
       heldEventIds: [Number(this.selectedEvent)], masterTimeSlot: slot.slot,
       liveStartServerTime: { epochMilliseconds, source: "explicit-scenario", reference: `planner-scenario:${this.data!.identity.server}:${this.data!.identity.releaseId}:${this.selectedEvent}:${epochMilliseconds}:${slot.slot}:${this.eventFlowKind}:${row.consumedCount}` },
     };
@@ -3478,7 +3531,6 @@ export class TeamBuilder extends LitElement {
     return scene && this.data && !validateNativeEventScene(this.data, scene).length ? scene : null;
   }
   private get eventSceneHint() {
-    if (this.eventFlowKind === "challenge") return this.t("eventStageUnavailable", "This stage is not supported for calculation");
     if (this.eventStartText) {
       const time = new Date(this.eventStartText).getTime();
       const matching = this.eventWindows.filter((entry) => time >= entry.start && (entry.end === null || time < entry.end));
@@ -3510,7 +3562,7 @@ export class TeamBuilder extends LitElement {
   private get eventBoostRows() {
     const sources = this.eventConditionPreview?.sources;
     return (this.eventFlowKind === "normal" ? sources?.normalBoostRows : this.eventFlowKind === "challenge" ? sources?.challengeBoostRows : [])
-      ?.filter((row) => row.consumedCount >= 0) ?? [];
+      ?.filter((row) => row.consumedCount >= 0 && (this.eventFlowKind !== "challenge" || this.resourceData?.challengeConsumption.selectableCounts?.includes(row.consumedCount))) ?? [];
   }
   private renderEventInputs() {
     const rows = this.eventBoostRows;
@@ -3854,11 +3906,16 @@ export class TeamBuilder extends LitElement {
       `,
       closeLabel: clientText(this.locale, "close", "Close"), close: () => this.closePane(),
       searchLabel: clientText(this.locale, "search", "Search"), query: this.pickerQuery, search: value => { this.pickerQuery = value; this.pickerLimit = 30; },
-      kind: "song", selected: this.pickerSong, selectedValues: this.pickerPoolIds, select: value => { this.pickerSong = value; this.togglePickerPool(value); },
+      kind: "song", selected: this.pickerSong, selectedValues: this.singleChallengePicking ? undefined : this.pickerPoolIds, select: value => { this.pickerSong = value; if (this.singleChallengePicking) { const charts = all.find(row => row.id === value)?.difficulties ?? []; if (this.pickerSongDifficulty && charts.some(row => String(row.difficulty) === this.pickerSongDifficulty)) this.pickerDifficulty = this.pickerSongDifficulty; else if (!charts.some(row => String(row.difficulty) === this.pickerDifficulty)) this.pickerDifficulty = String(charts[0]?.difficulty ?? ""); } else this.togglePickerPool(value); },
       countLabel: this.t("pickerCount", "{count} matching entries", { count: rows.length }), emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
       moreLabel: clientText(this.locale, "more", "More"), more: rows.length > this.pickerLimit ? () => { this.pickerLimit += 30; } : undefined,
       items: rows.slice(0, this.pickerLimit).map(row => ({ ...this.songOptions(row.songId), value: row.id })),
-      preview: html`
+      preview: this.singleChallengePicking ? html`
+        ${chosen ? html`${this.songIdentity(chosen.songId, this.pickerDifficulty)}${difficultyPicker({ rows: chosen.difficulties, selected: difficultyKey({ difficulty: this.pickerDifficulty }), locale: this.locale, onSelect: (_key, index) => { this.pickerDifficulty = String(chosen.difficulties[index]?.difficulty ?? ""); } })}` : nothing}
+        <button class="button" ?disabled=${!chosen || !chosen.difficulties.some(row => String(row.difficulty) === this.pickerDifficulty)} @click=${() => {
+          this.formationChanged(); this.selectedChallengeId = this.pickerSong; this.selectedChallengeDifficulty = this.pickerDifficulty; this.closePane();
+        }}>${this.t("useSong", "Use selected song")}</button>
+      ` : html`
         <p>${this.t("selectedSongsCount", "{count} songs selected", { count: this.pickerPoolIds.size })}</p>
         <div class="team-builder__actions">
           <button class="button button--text" @click=${() => { this.pickerPoolIds = new Set([...this.pickerPoolIds, ...rows.map(row => row.id)]); }}>${this.t("selectMatchingSongs", "Select matching songs")}</button>
@@ -3981,6 +4038,7 @@ export class TeamBuilder extends LitElement {
       worker = this.worker = new Worker(new URL("../lib/team-builder/solver/worker.ts", import.meta.url), { type: "module" });
       const request: Extract<SolverRequest, { type: "manual-prepare" }> = { type: "manual-prepare", runId, request: {
         data, inventory: structuredClone(inventory), assignment, selections: this.chartSelections,
+        ...(this.challengeSearch && this.challengeContext ? { challengeMusicId: this.challengeContext.challengeMusicId } : {}),
         mode: this.mode, scoreDomain: this.scoreDomain, skillOrderCriterion: this.effectiveSkillOrderCriterion,
         objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
         budget: { maxEvaluations: 100000, maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxCandidates: 1000 },
@@ -4033,7 +4091,7 @@ export class TeamBuilder extends LitElement {
       ${this.renderTeamConfiguration(result.assignment, "manual-team")}
       ${result.candidates.slice(0, this.rankingLimit).map(candidate => html`<article class="team-builder__candidate">
         <button class="button button--text" ?disabled=${this.exportingImage || this.running} @click=${() => void this.exportCandidateImage(candidate, "manual")}>${this.t("exportTeamImage", "Export team image")}</button>
-        ${this.songIdentity(...candidate.songKey.split(":") as [string, string])}
+        ${this.resultSongIdentity(candidate.songKey)}
         ${specList(this.manualObjectives.map(objective => ({ label: this.metricLabel(objective, candidate.metrics[objective]), value: this.comparisonMetric(objective, candidate.metrics[objective]) })))}
       </article>`)}
       ${result.candidates.length > this.rankingLimit ? html`<button class="button button--text" @click=${() => { this.rankingLimit += 5; }}>${clientText(this.locale, "loadMore", "Load more")}</button>` : nothing}
@@ -4143,6 +4201,7 @@ export class TeamBuilder extends LitElement {
     this.pickerPoolIds = new Set(this.songPool ?? (this.lockSong && this.selectedSong ? [this.selectedSong] : []));
   }
   private renderSearchSongs() {
+    if (this.challengeSearch) return this.renderChallengeSelection();
     const difficulties = [...new Set(Object.values(this.data?.songs ?? {}).flatMap(song => dataRows(song.difficulty ?? song.difficulties).map(row => Number(row.difficulty))))].filter(Number.isSafeInteger).sort((a,b) => a-b);
     const scope = this.lockSong ? "single" : this.songPool === null ? "all" : "pool";
     return html`<section class="team-builder__section">
@@ -4506,7 +4565,8 @@ export class TeamBuilder extends LitElement {
       lockedSnapshotIds: this.inventory?.snapshots.filter((row) => row.locked).map((row) => row.instanceId) ?? [],
       excludedSnapshotIds: this.inventory?.snapshots.filter((row) => row.excluded).map((row) => row.instanceId) ?? [],
       excludedSongKeys: [...this.excludedCharts],
-      lockedSongKey:
+      lockedSongKey: this.challengeSearch && this.selectedChallengeId && this.selectedChallengeDifficulty !== ""
+        ? `challenge:${this.selectedChallengeId}:${this.selectedChallengeDifficulty}` :
         this.lockSong && this.lockDifficulty && this.selectedSong && this.selectedDifficulty !== ""
           ? `${this.selectedSong}:${this.selectedDifficulty}`
           : null,
@@ -4577,6 +4637,13 @@ export class TeamBuilder extends LitElement {
   }
   private get chartSelections(): { songId: number; difficulty: number }[] {
     if (!this.data) return [];
+    if (this.challengeSearch) {
+      const context = this.challengeContext, difficulty = Number(this.selectedChallengeDifficulty);
+      if (!context || this.selectedChallengeDifficulty === "" || !Number.isSafeInteger(difficulty) || this.excludedCharts.has(`challenge:${this.selectedChallengeId}:${difficulty}`)) return [];
+      const row = dataRows(this.data.songs[String(context.underlyingSongId)]?.difficulty).find(row => row.difficulty === difficulty);
+      return row && typeof row.file === "string" && row.file.startsWith(`/assets/${this.data.identity.server}/`) && Number.isSafeInteger(row.scoreId)
+        ? [{ songId: context.underlyingSongId, difficulty }] : [];
+    }
     return Object.entries(this.data.songs).flatMap(([id, song]) => {
       if (!this.lockSong && this.songPool !== null && !this.songPool.includes(id)) return [];
       if (this.lockSong && id !== this.selectedSong) return [];
@@ -4607,8 +4674,8 @@ export class TeamBuilder extends LitElement {
       !this.canEdit ||
       !this.objectives.length ||
       this.eligibleCharacterCount < 5 ||
-      (this.lockSong && !this.selectedSong) ||
-      (this.lockSong && this.lockDifficulty && !this.difficulties.some((row) => row.value === this.selectedDifficulty)) ||
+      (!this.challengeSearch && this.lockSong && !this.selectedSong) ||
+      (!this.challengeSearch && this.lockSong && this.lockDifficulty && !this.difficulties.some((row) => row.value === this.selectedDifficulty)) ||
       !this.chartSelections.length ||
       this.chartSelections.length > 1000 ||
       !this.evaluationBasis ||
@@ -4638,9 +4705,10 @@ export class TeamBuilder extends LitElement {
   private get optimizationHint(): string {
     if (!this.data || !this.inventory) return this.t("unavailable", "Required data or formula is unavailable");
     if (this.eligibleCharacterCount < 5) return this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
-    if (this.lockSong && !this.selectedSong) return this.t("chooseSong", "Choose song");
-    if (this.lockSong && this.lockDifficulty && !this.difficulties.some((row) => row.value === this.selectedDifficulty))
+    if (!this.challengeSearch && this.lockSong && !this.selectedSong) return this.t("chooseSong", "Choose song");
+    if (!this.challengeSearch && this.lockSong && this.lockDifficulty && !this.difficulties.some((row) => row.value === this.selectedDifficulty))
       return this.t("chooseDifficulty", "Choose a difficulty.");
+    if (this.challengeSearch && !this.challengeContext) return !this.eventScene ? this.eventSceneHint : this.t("challengeChartUnavailable", "Choose a challenge chart available for this event and start time.");
     if (!this.chartSelections.length)
       return this.t("noEligibleCharts", "Adjust song locks or exclusions to include a chart.");
     if (this.chartSelections.length > 1000)
@@ -4766,6 +4834,7 @@ export class TeamBuilder extends LitElement {
           skillOrderCriterion: this.effectiveSkillOrderCriterion,
           inventory: structuredClone(this.inventory),
           selections: this.chartSelections,
+          ...(this.challengeSearch && this.challengeContext ? { challengeMusicId: this.challengeContext.challengeMusicId } : {}),
           mode: this.mode,
           objectives: [...this.objectives],
           constraints: this.constraints,
@@ -4825,14 +4894,16 @@ export class TeamBuilder extends LitElement {
     this.searchError = "";
     const loading = beginLoading(this.t("exportTeamImage", "Export team image"));
     try {
-      const [songId, difficulty] = candidate.songKey.split(":"), song = this.visualSong(songId);
+      const resolvedChart = this.resolveResultChart(candidate.songKey);
+      if (!resolvedChart) throw new Error("image-chart-unavailable");
+      const { songId, difficulty } = resolvedChart, song = this.visualSong(songId);
       const chart = dataRows(song.difficulty ?? song.difficulties).find(row => String(row.difficulty) === difficulty);
       const style = getComputedStyle(this), color = (key: string, fallback: string) => style.getPropertyValue(key).trim() || fallback;
       const imageEventScene = request?.type === "prepare" ? request.request.eventScene : source === "manual" && this.wantsEventScene ? this.eventScene : null;
       const model: TeamResultImage = {
         title: songTitle(song, this.locale).text,
         jacket: songJacketCandidates(song)[0],
-        subtitle: [difficultyKey({ difficulty }).toUpperCase(), String(chart?.displayLevel ?? chart?.playLevel ?? ""), this.t(this.mode, this.mode)].filter(Boolean).join(" · "),
+        subtitle: [...(resolvedChart.challenge ? [this.t("eventChallenge", "Challenge play")] : []), difficultyKey({ difficulty }).toUpperCase(), String(chart?.displayLevel ?? chart?.playLevel ?? ""), this.t(this.mode, this.mode)].filter(Boolean).join(" · "),
         membersLabel: this.t("members", "Members"), snapshotsLabel: this.t("snapshots", "Snapshots"),
         leaderLabel: this.t("leader", "Leader"), emptyLabel: clientText(this.locale, "none", "None"), imageUnavailableLabel: this.t("imageUnavailable", "Image unavailable"),
         members: candidate.assignment.memberInstanceIds.map(id => card(id, "members", id === candidate.assignment.leaderInstanceId)),
@@ -4854,7 +4925,7 @@ export class TeamBuilder extends LitElement {
       };
       const blob = await renderTeamResultImage(model);
       if (!this.isConnected || generation !== this.requestId || data !== this.data || inventory !== this.inventory || owner !== this.currentOwner) return;
-      await downloadBlob(blob, `haneoka-team-${songId}-${difficulty}.png`);
+      await downloadBlob(blob, `haneoka-team-${resolvedChart.challenge ? "challenge-" : ""}${songId}-${difficulty}.png`);
     } catch {
       if (this.isConnected && generation === this.requestId) this.searchError = this.t("teamImageFailed", "Could not export this team image. Try again.");
     } finally { this.exportingImage = false; loading.finish(); }
@@ -5057,7 +5128,7 @@ export class TeamBuilder extends LitElement {
             <caption class="sr-only">${this.t("comparisonSameSearch", "Candidates from the same search.")}</caption>
             <thead><tr><th scope="col" class="is-sticky">${this.t("objectives", "Objectives to compare")}</th>${rows.map(row => html`<th scope="col">${this.comparisonLabel(row.index)}</th>`)}</tr></thead>
             <tbody>
-              <tr><th scope="row" class="is-sticky">${clientText(this.locale, "songs", "Songs")}</th>${rows.map(row => html`<td>${this.songIdentity(...row.candidate.songKey.split(":") as [string,string])}</td>`)}</tr>
+              <tr><th scope="row" class="is-sticky">${clientText(this.locale, "songs", "Songs")}</th>${rows.map(row => html`<td>${this.resultSongIdentity(row.candidate.songKey)}</td>`)}</tr>
               ${this.comparisonObjectives.map(objective => {
                 const values = rows.map(row => row.candidate.metrics[objective]).filter(metric => metric && metric.status !== "unavailable" && typeof metric.value === "number" && Number.isFinite(metric.value)).map(metric => metric.value!);
                 const best = values.length ? Math.max(...values) : null;
@@ -5087,7 +5158,7 @@ export class TeamBuilder extends LitElement {
           ${this.check(this.t("compare", "Compare"), selected, value => this.toggleComparison(candidate, value),
             !this.canCompareCandidates || (!selected && this.comparisonKeys.length >= 3))}
         </div>
-        ${showSong ? this.songIdentity(candidate.songKey.split(":")[0], candidate.songKey.split(":")[1]) : nothing}
+        ${showSong ? this.resultSongIdentity(candidate.songKey) : nothing}
         <dl class="team-builder__metrics">
           ${this.resultObjectives.map((objective) => {
             const metric = candidate.metrics[objective];
@@ -5197,7 +5268,7 @@ export class TeamBuilder extends LitElement {
           : html`
               ${objectivePicker}
               ${rankings.slice(0, this.rankingLimit).map((ranking, index) => html`
-                ${this.disclosure(`chart-${ranking.songKey}`, html`${this.songIdentity(String(ranking.songId), String(ranking.difficulty))}
+                ${this.disclosure(`chart-${ranking.songKey}`, html`${this.resultSongIdentity(ranking.songKey)}
                     <span class="team-builder__hint">${ranking.proven ? this.t("chartProven", "Selected chart search complete") : this.t("chartCandidate", "Provisional candidates")}</span>`, html`
                   ${(ranking.top3[objective] ?? []).map((candidate) => this.renderCandidate(candidate, false))}
                   ${!(ranking.top3[objective]?.length)
@@ -5244,6 +5315,7 @@ export class TeamBuilder extends LitElement {
   private get searchSettings() {
     return {
       mode: this.mode, objectives: [...this.objectives], skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
+      selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
       songPool: this.songPool ? [...this.songPool] : null, selectedSong: this.selectedSong, selectedDifficulty: this.selectedDifficulty, lockSong: this.lockSong, lockDifficulty: this.lockDifficulty,
       excludedCharts: [...this.excludedCharts], metricBasis: this.metricBasis, songSeconds: { ...this.songSeconds },
       downtimeSeconds: this.downtimeSeconds, consumptionAmount: this.consumptionAmount, consumptionResource: this.consumptionResource,
@@ -5255,10 +5327,10 @@ export class TeamBuilder extends LitElement {
   }
   private validResumeSettings(value: unknown): value is ReturnType<TeamBuilder["captureSearchSettings"]> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const row: Record<string, unknown> = { songPool: null, ...value as Record<string, unknown> };
+    const row: Record<string, unknown> = { songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
     const keys = Object.keys(this.searchSettings);
     if (Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))) return false;
-    if (!["selectedSong", "selectedDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
+    if (!["selectedSong", "selectedDifficulty", "selectedChallengeId", "selectedChallengeDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
     if (!["lockSong", "lockDifficulty", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
     if (!["downtimeSeconds", "consumptionAmount", "bonusFloorPoints", "bonusFloorItems", "distinctCardSets", "eventConsumption"].every(key => row[key] === null || typeof row[key] === "number" && Number.isFinite(row[key]))) return false;
     if (typeof row.justRate !== "number" || !Number.isFinite(row.justRate)) return false;
@@ -5284,7 +5356,7 @@ export class TeamBuilder extends LitElement {
     if (!bookmark || this.running || !this.resumeCompatible(bookmark) || !this.validResumeSettings(bookmark.settings)) return;
     const settings = structuredClone(bookmark.settings);
     this.cancelSearch(); this.result = null; this.optimizationInput = null;
-    Object.assign(this, { songPool: null }, settings, { excludedCharts: new Set(settings.excludedCharts) });
+    Object.assign(this, { songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
     this.planningKind = "team";
     if (this.canOptimize) { this.startOptimization(bookmark.checkpoint); this.openWorkspace("results"); }
     else this.openWorkspace("plan");

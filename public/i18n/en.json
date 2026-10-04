@@ -3336,7 +3336,10 @@
     "moreGoals": "More goals",
     "optionalEvent": "Event conditions (optional)",
     "maximumLuckPending": "Maximum LUCK score is unavailable. Use average scoring for these charts.",
-    "resultsTab": "Results"
+    "resultsTab": "Results",
+    "challengeSoloOnly": "Challenge evaluation uses personal Solo score.",
+    "challengeSong": "Challenge song",
+    "challengeChartUnavailable": "Choose a challenge chart available for this event and start time."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

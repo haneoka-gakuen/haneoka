@@ -3336,7 +3336,10 @@
     "moreGoals": "他の目標",
     "optionalEvent": "イベント条件（任意）",
     "maximumLuckPending": "LUCKの最高スコアは利用できません。これらの譜面では平均スコアを使用してください。",
-    "resultsTab": "結果"
+    "resultsTab": "結果",
+    "challengeSoloOnly": "チャレンジの評価は個人Soloスコアを使用します。",
+    "challengeSong": "チャレンジ楽曲",
+    "challengeChartUnavailable": "このイベントと開始時刻で利用できるチャレンジ譜面を選択してください。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",
