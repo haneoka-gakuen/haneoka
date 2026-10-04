@@ -1,3 +1,4 @@
+import "../styles/admin-forums.css";
 import {
   FORUM_LOCALES,
   FORUM_ICONS,
@@ -2972,6 +2973,8 @@ export class AdminWorkspace extends LitElement {
       <md-outlined-text-field
         name=${name}
         label=${label}
+        type=${name === "description" ? "textarea" : "text"}
+        rows=${name === "description" ? 3 : nothing}
         .value=${value}
         ?disabled=${!!this.busy}
         @input=${(event: Event) => update(String((event.target as HTMLElement & { value?: string }).value || ""))}
@@ -2981,10 +2984,10 @@ export class AdminWorkspace extends LitElement {
     const audiences = (values: string[]) =>
       values.map((value) => ({ value, label: this.label(`forum.audience.${value}`, value) }));
     return html`
-      <div class="admin-forum-layout">
+      <div class="admin-forum-layout admin-forum-workspace">
         <section class="admin-forum-list surface">
           <header class="admin-section-heading">
-            <h2>${this.label("sections.forums", "Forums")}</h2>
+            <h2>${this.label("sections.forums", "Forums")} <span class="admin-forum-total">${this.forums.length}</span></h2>
             <button
               class="button button--tonal"
               type="button"
@@ -3001,8 +3004,8 @@ export class AdminWorkspace extends LitElement {
             </button>
             ${this.forumGroups.map(
               (group) => html`
-                <button class="chip" type="button" ?disabled=${!!this.busy} @click=${() => this.editForumGroup(group)}>
-                  ${this.forumName(group)}
+                <button class="button button--text admin-forum-group-action" type="button" ?disabled=${!!this.busy} @click=${() => this.editForumGroup(group)}>
+                  ${icon("edit",14)}${this.forumName(group)}
                 </button>
               `,
             )}
@@ -3030,14 +3033,16 @@ export class AdminWorkspace extends LitElement {
           )}
         </section>
         ${this.groupDraft ? this.renderForumGroupEditor() : nothing}
+        ${!draft && !this.groupDraft ? html`<section class="admin-forum-empty surface">${icon("forum",32)}<h3>${this.label("forum.selectToEdit", "Select a forum to edit")}</h3><p>${this.label("forum.selectHint", "Choose a forum to manage its name, group and access permissions.")}</p></section>` : nothing}
         ${
           draft
             ? html`
                 <form class="admin-forum-editor surface" @submit=${this.saveForum}>
                   <header class="admin-section-heading">
-                    <h2>
-                      ${draft.id ? this.label("forum.edit", "Edit forum") : this.label("forum.create", "Create forum")}
-                    </h2>
+                    <div>
+                      <span class="admin-eyebrow">${draft.id ? this.label("forum.edit", "Edit forum") : this.label("forum.create", "Create forum")}</span>
+                      <h2>${localizedText(draft.names, preferredLocale()) || draft.slug || this.label("forum.create", "Create forum")}</h2>
+                    </div>
                   </header>
                   ${
                   this.error
@@ -3059,6 +3064,7 @@ export class AdminWorkspace extends LitElement {
                       `
                     : nothing
                 }
+                  <div class="admin-forum-editor__body">
                   ${
                   draft.id
                     ? html`
@@ -3070,6 +3076,8 @@ export class AdminWorkspace extends LitElement {
                     ${textField("slug", this.label("forum.slug", "URL name"), draft.slug, (slug) => this.patchForum({ slug }))}
                     ${this.forumSelect(this.label("forum.group", "Group"), draft.groupId || "", [{ value: "", label: this.label("forum.ungrouped", "Ungrouped") }, ...this.forumGroups.map((group) => ({ value: group.id, label: this.forumName(group) }))], (groupId) => this.patchForum({ groupId: groupId || null }))}
                   </div>
+                  <section class="admin-forum-section">
+                    <h3>${this.label("forum.displaySettings", "Name and appearance")}</h3>
                   ${segmented({
                   label: this.label("forum.language", "Language"),
                   value: locale,
@@ -3098,6 +3106,11 @@ export class AdminWorkspace extends LitElement {
                       ?disabled=${!!this.busy}
                       @input=${(event: Event) => this.patchForum({ sortOrder: Number((event.target as HTMLElement & { value?: string }).value) })}
                     ></md-outlined-text-field>
+                  </div>
+                  </section>
+                  <section class="admin-forum-section">
+                    <h3>${this.label("forum.accessSettings", "Access permissions")}</h3>
+                    <div class="admin-forum-fields">
                     ${(["read", "post", "reply", "manage"] as const).map((permission) =>
                     this.forumSelect(
                       this.label(`forum.permission.${permission}`, permission),
@@ -3115,6 +3128,11 @@ export class AdminWorkspace extends LitElement {
                         }),
                     ),
                   )}
+                    </div>
+                  </section>
+                  <section class="admin-forum-section">
+                    <h3>${this.label("forum.destinationSettings", "Defaults and availability")}</h3>
+                    <div class="admin-forum-fields">
                     ${this.forumSelect(
                     this.label("forum.purpose", "Default destination"),
                     draft.defaultPurpose || "",
@@ -3136,6 +3154,8 @@ export class AdminWorkspace extends LitElement {
                     (value) => this.patchForum({ enabled: value === "enabled" }),
                   )}
                   </div>
+                  </section>
+                  </div>
                   <footer class="admin-forum-actions">
                     <button
                       class="button button--text"
@@ -3146,7 +3166,7 @@ export class AdminWorkspace extends LitElement {
                       this.forumConflict = null;
                     }}
                     >
-                      ${this.label("cancel", "Cancel")}
+                      ${clientText(preferredLocale(), "cancel", "Cancel")}
                     </button>
                     <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
                   </footer>
@@ -3239,6 +3259,7 @@ export class AdminWorkspace extends LitElement {
               `
             : nothing
         }
+        <div class="admin-forum-editor__body">
         ${segmented({ label: this.label("forum.language", "Language"), value: locale, options: FORUM_LOCALES.map((value) => ({ value, label: new Intl.DisplayNames([preferredLocale()], { type: "language" }).of(value) || value })), onSelect: (value) => (this.forumLocale = value as ForumLocale) })}
         <div class="admin-forum-fields">
           <md-outlined-text-field
@@ -3262,6 +3283,7 @@ export class AdminWorkspace extends LitElement {
             @input=${(event: Event) => (this.groupDraft = { ...draft, sortOrder: Number((event.target as HTMLElement & { value?: string }).value) })}
           ></md-outlined-text-field>
         </div>
+        </div>
         <footer class="admin-forum-actions">
           <button
             class="button button--text"
@@ -3271,7 +3293,7 @@ export class AdminWorkspace extends LitElement {
               this.groupConflict = null;
             }}
           >
-            ${this.label("cancel", "Cancel")}
+            ${clientText(preferredLocale(), "cancel", "Cancel")}
           </button>
           <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
         </footer>
@@ -3343,7 +3365,7 @@ export class AdminWorkspace extends LitElement {
             <button
               class="icon-button"
               type="button"
-              aria-label=${this.label("cancel", "Cancel")}
+              aria-label=${clientText(preferredLocale(), "cancel", "Cancel")}
               @click=${() => this.closeMovePost()}
             >
               ${icon("close", 24)}
@@ -3384,7 +3406,7 @@ export class AdminWorkspace extends LitElement {
           </div>
           <footer class="admin-forum-actions">
             <button class="button button--text" type="button" @click=${() => this.closeMovePost()}>
-              ${this.label("cancel", "Cancel")}
+              ${clientText(preferredLocale(), "cancel", "Cancel")}
             </button>
             <button class="button" ?disabled=${!!this.busy || !this.moveTarget || !this.moveReason.trim()}>
               ${this.label("forum.confirmMove", "Move post")}

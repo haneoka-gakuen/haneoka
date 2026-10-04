@@ -1842,7 +1842,12 @@
         "help": "說明",
         "lightbulb": "想法",
         "flag": "意見回饋"
-      }
+      },
+      "displaySettings": "名稱與外觀",
+      "accessSettings": "存取權限",
+      "destinationSettings": "預設與啟用狀態",
+      "selectToEdit": "選擇要編輯的板塊",
+      "selectHint": "請選擇板塊以管理名稱、分組與存取權限。"
     },
     "save": "儲存",
     "cancel": "取消"

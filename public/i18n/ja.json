@@ -1842,7 +1842,12 @@
         "help": "ヘルプ",
         "lightbulb": "アイデア",
         "flag": "フィードバック"
-      }
+      },
+      "displaySettings": "名前と外観",
+      "accessSettings": "アクセス権限",
+      "destinationSettings": "既定値と利用状態",
+      "selectToEdit": "編集するフォーラムを選択",
+      "selectHint": "名前、グループ、アクセス権限を管理するフォーラムを選択してください。"
     },
     "save": "保存",
     "cancel": "キャンセル"

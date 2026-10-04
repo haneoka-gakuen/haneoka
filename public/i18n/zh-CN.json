@@ -1842,7 +1842,12 @@
         "help": "帮助",
         "lightbulb": "想法",
         "flag": "意见反馈"
-      }
+      },
+      "displaySettings": "名称与外观",
+      "accessSettings": "访问权限",
+      "destinationSettings": "默认值与启用状态",
+      "selectToEdit": "选择要编辑的板块",
+      "selectHint": "选择板块以管理名称、分组和访问权限。"
     },
     "save": "保存",
     "cancel": "取消"

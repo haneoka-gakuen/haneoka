@@ -1842,7 +1842,12 @@
         "help": "Help",
         "lightbulb": "Ideas",
         "flag": "Feedback"
-      }
+      },
+      "displaySettings": "Name and appearance",
+      "accessSettings": "Access permissions",
+      "destinationSettings": "Defaults and availability",
+      "selectToEdit": "Select a forum to edit",
+      "selectHint": "Choose a forum to manage its name, group and access permissions."
     },
     "save": "Save",
     "cancel": "Cancel"
