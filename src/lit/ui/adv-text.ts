@@ -27,7 +27,7 @@ class AdvText extends Directive {
     this.source = source;
     this.nativeBase = nativeBase;
     // prettier-ignore
-    return html`<span class="adv-text">${renderNodes(parseAdvRichText(source), nativeBase)}</span>`;
+    return html`<span class="story-rich-text">${renderNodes(parseAdvRichText(source), nativeBase)}</span>`;
   }
 }
 export const advText = directive(AdvText);
