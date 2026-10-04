@@ -380,9 +380,11 @@ export type SolverRequest =
   | { type: "manual-prepare"; runId: string; request: ManualTeamPreparationInput }
   | { type: "resource-prepare"; runId: string; request: ResourcePlannerPreparationInput }
   | { type: "prepare"; runId: string; request: WorkerPreparationInput; checkpoint?: SearchCheckpoint;
-      resumeCheckpoint?: SearchResumeCheckpoint }
+      resumeCheckpoint?: SearchResumeCheckpoint; execution?: "bounded" | "complete" }
   | { type: "start"; runId: string; input: OptimizationInput; checkpoint?: SearchCheckpoint;
-      resumeCheckpoint?: SearchResumeCheckpoint }
+      resumeCheckpoint?: SearchResumeCheckpoint; execution?: "bounded" | "complete" }
+  | { type: "slice-ack"; runId: string; slices: number; stateDigest: string;
+      action: "continue" | "pause" | "persistence-failed" }
   | { type: "cancel"; runId: string };
 export type SolverResponse =
   | { type: "practical-progress"; runId: string; progress: NativePracticalProgress }
@@ -393,6 +395,11 @@ export type SolverResponse =
       { phase: "loading" } | ({ phase: "stage" } & ResourceStagePreparationProgress) | ResourcePlannerProgress }
   | { type: "resource-result"; runId: string; result: ResourcePlannerResult }
   | { type: "progress"; runId: string; progress: SearchProgress }
+  | { type: "slice-result"; runId: string; slices: number; result: SearchResult; resumeCheckpoint: SearchResumeCheckpoint }
   | { type: "result"; runId: string; result: SearchResult; checkpoint?: SearchCheckpoint; reusedCheckpoint?: boolean;
-      resumeCheckpoint?: SearchResumeCheckpoint }
+      resumeCheckpoint?: SearchResumeCheckpoint; continuation?: {
+        method: "exhaustive-bounded-slice-continuation"; slices: number;
+        stopReason: "domain-finished" | "unavailable" | "cancelled" | "memory-limit" | "no-progress" | "missing-resume-state" |
+          "paused" | "persistence-unavailable";
+      } }
   | { type: "error"; runId: string; code: string };

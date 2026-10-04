@@ -10,17 +10,37 @@ import { prepareAndOptimizeResourcePlan } from "../resource-plan-runner.ts";
 import { evaluateManualTeam, type PinnedManualTeamSong } from "../manual-team.ts";
 import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
 import { prepareNativePracticalSearch } from "./native-practical-search.ts";
+import { runCompleteSearch } from "../complete-search.ts";
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SolverRequest>) => void) | null;
   postMessage(message: SolverResponse): void;
 };
-let active: { runId: string; cancelled: boolean; controller: AbortController } | null = null;
+interface SolverRun {
+  runId: string;
+  cancelled: boolean;
+  controller: AbortController;
+  waitingSlice?: { slices: number; stateDigest: string; resolve: () => void };
+  pauseReason?: "paused" | "persistence-unavailable";
+}
+let active: SolverRun | null = null;
 scope.onmessage = (event) => {
   const message = event.data;
+  if (message.type === "slice-ack") {
+    if (active?.runId === message.runId && !active.cancelled && active.waitingSlice?.slices === message.slices &&
+      active.waitingSlice.stateDigest === message.stateDigest &&
+      ["continue", "pause", "persistence-failed"].includes(message.action)) {
+      if (message.action !== "continue") active.pauseReason = message.action === "pause" ? "paused" : "persistence-unavailable";
+      active.waitingSlice.resolve();
+      active.waitingSlice = undefined;
+    }
+    return;
+  }
   if (message.type === "cancel") {
     if (active?.runId === message.runId) {
       active.cancelled = true;
       active.controller.abort();
+      active.waitingSlice?.resolve();
+      active.waitingSlice = undefined;
     }
     return;
   }
@@ -29,8 +49,10 @@ scope.onmessage = (event) => {
   if (active) {
     active.cancelled = true;
     active.controller.abort();
+    active.waitingSlice?.resolve();
+    active.waitingSlice = undefined;
   }
-  const run = { runId: message.runId, cancelled: false, controller: new AbortController() };
+  const run: SolverRun = { runId: message.runId, cancelled: false, controller: new AbortController() };
   active = run;
   const execute = async () => {
     if (message.type === "practical-prepare") {
@@ -76,6 +98,8 @@ scope.onmessage = (event) => {
       }
       return;
     }
+    if (message.execution !== undefined && message.execution !== "bounded" && message.execution !== "complete")
+      throw new RangeError("solver-execution-policy");
     validateSearchBudget(message.type === "prepare" ? message.request.budget : message.input.budget);
     let input: OptimizationInput | undefined;
     let preparedSongs: SongOption[] = [];
@@ -163,6 +187,9 @@ scope.onmessage = (event) => {
         result: restored,
         checkpoint: { ...message.checkpoint!, result: restored },
         reusedCheckpoint: true,
+        ...(message.execution === "complete" ? { continuation: {
+          method: "exhaustive-bounded-slice-continuation" as const, stopReason: "domain-finished" as const, slices: 0,
+        } } : {}),
       });
       active = null;
       return;
@@ -174,16 +201,37 @@ scope.onmessage = (event) => {
     const resumedState = await restoreSearchResumeCheckpoint(message.resumeCheckpoint, fingerprint);
     if (active !== run) return;
     let resumeState: SearchResumeState | undefined;
-    const result = await optimizeTeams(input, {
+    const hooks: import("../optimizer.ts").SearchHooks & { fingerprint: string } = {
       fingerprint,
       resumeState: resumedState ?? undefined,
       onResumeState: state => { resumeState = state; },
       evaluate,
-      cancelled: () => run.cancelled,
-      progress: (progress) => {
+      cancelled: () => run.cancelled || active !== run || !!run.pauseReason,
+      progress: (progress: import("../contracts.ts").SearchProgress) => {
         if (active === run) scope.postMessage({ type: "progress", runId: run.runId, progress });
       },
-    });
+    };
+    let continuation: Extract<SolverResponse, { type: "result" }>["continuation"];
+    let result;
+    if (message.execution === "complete") {
+      const complete = await runCompleteSearch(input, { ...hooks,
+        async onSlice({ slices, result: partial, resumeState: state }) {
+          if (partial.completeness !== "budget-limited" || !state || active !== run || run.cancelled) return;
+          const saved = await createSearchResumeCheckpoint(fingerprint, state);
+          if (active !== run || run.cancelled) return;
+          if (!saved) { run.pauseReason = "persistence-unavailable"; return; }
+          await new Promise<void>(resolve => {
+            run.waitingSlice = { slices, stateDigest: saved.stateDigest, resolve };
+            scope.postMessage({ type: "slice-result", runId: run.runId, slices,
+              result: { ...partial, capabilities: getTeamBuilderCapabilities(input!) }, resumeCheckpoint: saved });
+          });
+          run.waitingSlice = undefined;
+        },
+      });
+      const pauseReason = run.cancelled ? undefined : run.pauseReason;
+      result = pauseReason ? { ...complete.result, completeness: "budget-limited" as const } : complete.result;
+      continuation = { method: complete.method, slices: complete.slices, stopReason: pauseReason ?? complete.stopReason };
+    } else result = await optimizeTeams(input, hooks);
     const completed = { ...result, capabilities: getTeamBuilderCapabilities(input) };
     const checkpoint = await createSearchCheckpoint(fingerprint, completed);
     const resumeCheckpoint = resumeState ? await createSearchResumeCheckpoint(fingerprint, resumeState) : null;
@@ -194,6 +242,7 @@ scope.onmessage = (event) => {
         result: checkpoint?.result ?? completed,
         ...(checkpoint ? { checkpoint } : {}),
         ...(resumeCheckpoint ? { resumeCheckpoint } : {}),
+        ...(continuation ? { continuation } : {}),
       });
       active = null;
     }
