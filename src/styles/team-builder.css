@@ -479,6 +479,14 @@
     display: block;
     margin-block: var(--md-sys-spacing-2);
   }
+  .team-builder__comparison .data-table { table-layout: fixed; width: calc(112px + 220px * var(--comparison-count, 3)); }
+  .team-builder__comparison .data-table td { min-width: 0; vertical-align: top; }
+  .team-builder__comparison .data-table .is-sticky { width: 112px; min-width: 112px; max-width: 112px; padding-inline: 8px; white-space: normal; }
+  @media (max-width: 599px) {
+    .team-builder__comparison .data-table { width: calc(112px + 176px * var(--comparison-count, 3)); }
+  }
+  .team-builder__comparison td > small { display: block; color: var(--md-sys-color-on-surface-variant); }
+  .team-builder__comparison-best > strong { color: var(--md-sys-color-primary); }
   .team-builder__candidate {
     display: grid;
     gap: var(--md-sys-spacing-3);
@@ -565,4 +573,19 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+}
+
+@layer pages {
+  .team-builder__fixed-preview { max-width: 420px; margin: 0; }
+  .team-builder__bound-card { grid-template-columns: minmax(0, 1fr); }
+  .team-builder__bound-card .tile { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 12px; }
+  .team-builder__bound-card .tile__identity { padding: 0; }
+  .team-builder__bound-card .tile__title { min-block-size: 0; }
+  .team-builder__bound-card .tile__mark--start { top: 4px; left: 4px; }
+  .team-builder__bound-card .tile__mark--end { top: 4px; right: 4px; }
+  .team-builder__bound-card .tile__mark--image > img { width: 16px; height: 16px; }
+  .team-builder__binding { display: grid; min-width: 0; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+  .team-builder__binding-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 12px; }
+  .team-builder__binding > .button { justify-self: end; }
+  @media (max-width: 599px) { .team-builder__binding-cards { grid-template-columns: minmax(0, 1fr); } }
 }
