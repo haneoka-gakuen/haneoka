@@ -60,6 +60,7 @@ catalog:
   parse5: ^8.0.1
   pagefind: ^1.5.2
   "@lit-labs/ssr-client": ^1.1.8
+  echarts: 6.1.0
 catalogMode: prefer
 cleanupUnusedCatalogs: true
 allowBuilds:
