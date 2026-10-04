@@ -1350,7 +1350,8 @@
     "navigation": {
       "overview": "Community overview",
       "mine": "Mine"
-    }
+    },
+    "draftNotSaved": "Draft not saved"
   },
   "adminPage": {
     "title": "Admin",

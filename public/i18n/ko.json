@@ -1350,7 +1350,8 @@
     "navigation": {
       "overview": "커뮤니티 개요",
       "mine": "내 공간"
-    }
+    },
+    "draftNotSaved": "초안 저장 안 됨"
   },
   "adminPage": {
     "title": "관리",

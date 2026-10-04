@@ -30,7 +30,8 @@
     flex: 0 0 24px;
     --md-circular-progress-size: 24px;
   }
-  .community-page > :is(.list, .community-stack, .community-list-actions, .state, .load-more) {
+  .community-page > :is(.list, .community-stack, .community-list-actions, .state, .load-more),
+  .community-page > .async-region > .async-region__content > :is(.list, .community-stack, .community-list-actions, .state, .load-more) {
     width: min(100%, 860px);
     margin-inline: auto;
   }
@@ -775,7 +776,7 @@
     color: var(--md-sys-color-on-surface-variant);
     overflow-wrap: anywhere;
   }
-  .community-upload-list progress {
+  .community-upload-list :is(progress, md-linear-progress) {
     width: 100%;
     accent-color: var(--md-sys-color-primary);
   }

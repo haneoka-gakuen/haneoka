@@ -30,7 +30,7 @@
     width: 42%;
   }
   .async-region__placeholder--cards {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    grid-template-columns: repeat(var(--async-region-columns, 2), minmax(0, 1fr));
     gap: 16px;
   }
   .async-region__placeholder--cards > .async-region__skeleton {
@@ -62,7 +62,6 @@
   }
   @media (max-width: 599px) {
     .async-region__placeholder--cards {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
     .async-region__placeholder--cards > .async-region__skeleton {

@@ -1350,7 +1350,8 @@
     "navigation": {
       "overview": "コミュニティ概要",
       "mine": "マイページ"
-    }
+    },
+    "draftNotSaved": "下書き未保存"
   },
   "adminPage": {
     "title": "管理",

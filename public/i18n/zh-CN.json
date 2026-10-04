@@ -1350,7 +1350,8 @@
     "navigation": {
       "overview": "社区概览",
       "mine": "我的"
-    }
+    },
+    "draftNotSaved": "草稿未保存"
   },
   "adminPage": {
     "title": "管理",

@@ -5,26 +5,8 @@ import { trapFocus } from "../lib/overlay";
 import { icon } from "./ui/icon";
 import type PhotoSwipe from "photoswipe";
 import "photoswipe/style.css";
-export interface CommunityImage {
-  contentUrl: string;
-  mediaType?: string;
-  displayMediaType?: string;
-  previewUrl?: string;
-  thumbnailUrl?: string;
-  posterUrl?: string;
-  playbackUrl?: string;
-  displayWidth?: number | null;
-  displayHeight?: number | null;
-  durationSeconds?: number | null;
-  fileName?: string;
-  width?: number | null;
-  height?: number | null;
-}
-export const communityImageRatio = (image: Partial<CommunityImage>, fallback = 4 / 5) => {
-  const width = Number(image.displayWidth || image.width),
-    height = Number(image.displayHeight || image.height);
-  return width > 0 && height > 0 ? Math.max(0.6, Math.min(1.8, width / height)) : fallback;
-};
+import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
+export { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 export class CommunityGallery extends LitElement {
   static properties = {
     images: { attribute: false },
@@ -163,7 +145,7 @@ export class CommunityGallery extends LitElement {
                         data-index=${index}
                         controls
                         playsinline
-                        preload="metadata"
+                        preload="none"
                         .muted=${image.mediaType === "image/gif"}
                         ?loop=${image.mediaType === "image/gif"}
                         src=${index === this.index ? this.displaySource(image) : nothing}

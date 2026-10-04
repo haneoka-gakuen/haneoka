@@ -1350,7 +1350,8 @@
     "navigation": {
       "overview": "社群總覽",
       "mine": "我的"
-    }
+    },
+    "draftNotSaved": "草稿未儲存"
   },
   "adminPage": {
     "title": "管理",

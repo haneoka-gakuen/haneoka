@@ -1,6 +1,17 @@
 export type CommunityRecord = Record<string, unknown>;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+const relativeFormats = new Map<string, Intl.RelativeTimeFormat>();
+const boundedFormat = <T>(cache: Map<string, T>, locale: string, create: () => T): T => {
+  let format = cache.get(locale);
+  if (!format) {
+    format = create();
+    if (cache.size >= 8) cache.delete(cache.keys().next().value!);
+    cache.set(locale, format);
+  }
+  return format;
+};
 
 /** Convert the timestamp formats used by the community API to milliseconds. */
 export const communityTimestamp = (value: unknown): number | null => {
@@ -58,12 +69,19 @@ export const formatCommunityTime = (value: unknown, locale: string, now = Date.n
   if (timestamp === null) return null;
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return null;
-  const exact = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" }).format(date);
+  const exact = boundedFormat(
+    dateFormats,
+    locale,
+    () => new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" }),
+  ).format(date);
   const delta = timestamp - now;
   const relative = relativeUnit(delta);
   const text =
     Math.abs(delta) < WEEK_MS
-      ? new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(relative.value, relative.unit)
+      ? boundedFormat(relativeFormats, locale, () => new Intl.RelativeTimeFormat(locale, { numeric: "auto" })).format(
+          relative.value,
+          relative.unit,
+        )
       : exact;
   return { text, dateTime: date.toISOString(), title: exact };
 };

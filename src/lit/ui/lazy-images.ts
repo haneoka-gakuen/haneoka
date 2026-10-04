@@ -64,6 +64,8 @@ export interface LazyImageOptions {
   candidates?: (source: string) => readonly string[];
   /** How far ahead of the viewport to start loading. */
   rootMargin?: string;
+  /** Scroll container whose nearby rows should be prefetched. */
+  root?: Element | null;
   /** Restricts observation when a parent owns only part of its light-DOM tree. */
   filter?: (image: HTMLImageElement) => boolean;
 }
@@ -117,6 +119,7 @@ export class LazyImages {
   private observer?: IntersectionObserver;
   private candidates: (source: string) => readonly string[];
   private rootMargin: string;
+  private root: Element | null;
   private filter: (image: HTMLImageElement) => boolean;
   private observed = new Set<HTMLImageElement>();
   private pending = new Set<HTMLImageElement>();
@@ -124,6 +127,7 @@ export class LazyImages {
   constructor(options: LazyImageOptions = {}) {
     this.candidates = options.candidates ?? ((source) => [source]);
     this.rootMargin = options.rootMargin ?? "240px";
+    this.root = options.root ?? null;
     this.filter = options.filter ?? (() => true);
   }
 
@@ -150,7 +154,7 @@ export class LazyImages {
     }
     this.observer ??= new IntersectionObserver(
       (entries) => entries.forEach((entry) => entry.isIntersecting && this.load(entry.target as HTMLImageElement)),
-      { rootMargin: this.rootMargin },
+      { root: this.root, rootMargin: this.rootMargin },
     );
     images.forEach((image) => {
       this.observed.add(image);
