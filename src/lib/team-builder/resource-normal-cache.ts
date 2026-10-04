@@ -29,7 +29,7 @@ export function memoizeNormalResourceCycles(resolve: NormalResourceCycleResolver
       if (interrupted(controls)) return stopped();
       if (context.kind !== "normal" || ![context.server, context.releaseId, context.sourceId].every(value => typeof value === "string" && value.length > 0) ||
           !Number.isSafeInteger(context.eventId) || context.eventId < 1 || context.consumedCount !== input.boostPerNormalPlay ||
-          !["nominal-mean", "worst-ap"].includes(context.skillOrderCriterion))
+          !["nominal-mean", "worst-ap", "best-ap"].includes(context.skillOrderCriterion))
         return { value: null, gaps: [{ code: "resource-normal-cache-context", source: "same-source normal stage and consumption" }] };
       const key = JSON.stringify([
         context.server, context.releaseId, context.sourceId, context.kind, context.eventId,
