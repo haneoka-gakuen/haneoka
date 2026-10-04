@@ -297,37 +297,8 @@
     flex-direction: column;
     height: min(800px, calc(100dvh - 32px));
   }
-  .stamp-maker__picker-filters {
-    flex: 0 1 auto;
-    max-height: 45dvh;
-    overflow: auto;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .stamp-maker__picker-filters[hidden] {
-    display: none;
-  }
-  .stamp-maker__facet {
-    display: grid;
-    gap: var(--md-sys-spacing-2);
-    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-4);
-  }
-  .stamp-maker__facet > strong {
-    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
-      var(--md-sys-typescale-label-large-line-height) var(--app-font);
-  }
   .stamp-maker__chooser::backdrop {
     background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
-  }
-  .stamp-maker__chooser .sheet__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 56px;
-    padding: 8px 16px;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--md-sys-color-surface-container-high);
   }
   .stamp-maker__grid {
     flex: 1;

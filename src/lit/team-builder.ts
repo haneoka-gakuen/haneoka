@@ -76,6 +76,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import { filterChip, iconButton, segmented } from "./ui/controls";
 import { selectionPane } from "./ui/selection-pane";
+import { chooserFacet, chooserGroup, chooserFilters } from "./ui/chooser-filters";
 import { accordion } from "./ui/accordion";
 import { songJacketCandidates, songTile, liveMusicTypeMark } from "./shared/song-tile";
 import { cardTile } from "./shared/card-tile";
@@ -248,6 +249,8 @@ export class TeamBuilder extends LitElement {
     searchStatus: { state: true },
     picker: { state: true },
     query: { state: true },
+    ownedFilters: { state: true },
+    ownedFiltersOpen: { state: true },
     selectedIds: { state: true },
     bulkField: { state: true },
     bulkValue: { state: true },
@@ -265,7 +268,7 @@ export class TeamBuilder extends LitElement {
     resourceCompleted: { state: true },
     searchError: { state: true },
     saveState: { state: true },
-    visibleLimit: { state: true },
+
     mergePriority: { state: true },
     optimizationInput: { attribute: false },
     addingCards: { state: true },
@@ -282,7 +285,7 @@ export class TeamBuilder extends LitElement {
     pickerSong: { state: true },
     pickerDifficulty: { state: true },
     pickerQuery: { state: true },
-    pickerLimit: { state: true },
+
     pickerAttribute: { state: true },
     pickerSongDifficulty: { state: true },
     pickerFiltersOpen: { state: true },
@@ -395,6 +398,8 @@ export class TeamBuilder extends LitElement {
   declare searchStatus: string;
   declare picker: string;
   declare query: string;
+  declare ownedFilters: { kind: string; band: string; character: string; rarity: string; attribute: string };
+  declare ownedFiltersOpen: boolean;
   declare selectedIds: Set<string>;
   declare bulkField: string;
   declare bulkValue: number | null;
@@ -416,7 +421,6 @@ export class TeamBuilder extends LitElement {
   private visitedViews = new Set<WorkspaceView>(["plan"]);
   declare searchError: string;
   declare saveState: string;
-  declare visibleLimit: number;
   declare mergePriority: "cloud" | "draft";
   declare optimizationInput: OptimizationInput | null;
   declare addingCards: boolean;
@@ -433,7 +437,6 @@ export class TeamBuilder extends LitElement {
   declare pickerSong: string;
   declare pickerDifficulty: string;
   declare pickerQuery: string;
-  declare pickerLimit: number;
   declare pickerAttribute: string;
   declare pickerSongDifficulty: string;
   declare pickerFiltersOpen: boolean;
@@ -1714,6 +1717,8 @@ export class TeamBuilder extends LitElement {
     this.searchStatus = "";
     this.picker = "";
     this.query = "";
+    this.ownedFilters = { kind: "", band: "", character: "", rarity: "", attribute: "" };
+    this.ownedFiltersOpen = false;
     this.selectedIds = new Set();
     this.bulkField = "level";
     this.bulkValue = null;
@@ -1731,7 +1736,6 @@ export class TeamBuilder extends LitElement {
     this.resourceCompleted = null;
     this.searchError = "";
     this.saveState = "auth-loading";
-    this.visibleLimit = 30;
     this.mergePriority = "cloud";
     this.optimizationInput = null;
     this.addingCards = false;
@@ -1748,7 +1752,6 @@ export class TeamBuilder extends LitElement {
     this.pickerSong = "";
     this.pickerDifficulty = "";
     this.pickerQuery = "";
-    this.pickerLimit = 30;
     this.pickerAttribute = "";
     this.pickerSongDifficulty = "";
     this.pickerFiltersOpen = false;
@@ -2121,7 +2124,7 @@ export class TeamBuilder extends LitElement {
     this.screenshotCorrection = { image, observation };
     this.kind = row.kind; this.picker = ""; this.pickerQuery = "";
     this.pickerBand = ""; this.pickerRarity = ""; this.pickerAttribute = ""; this.pickerCharacter = "";
-    this.selectedCards = new Set(); this.pickerLimit = 30; this.addingCards = true;
+    this.selectedCards = new Set(); this.addingCards = true;
   }
   private confirmScreenshotImport() {
     const context = this.screenshotContext(), session = this.screenshotSession;
@@ -2569,19 +2572,45 @@ export class TeamBuilder extends LitElement {
       ? ["level", "awakening"]
       : ["level", "training", "awakening", "liveSkillLevel", "gekisoSkillLevel"];
   }
+  private cardMatchesFilters(card: MemberCatalog | SnapshotCatalog | undefined, filters: { band: string; character: string; rarity: string; attribute: string }, query: string) {
+    if (!card) return false;
+    const haystack = [String(card.id), `#${card.id}`, this.text(card.name), this.characterNames(card), this.t("characterId" in card ? "members" : "snapshots", "characterId" in card ? "Members" : "Snapshots"),
+      ...this.bandsFor(card).map(id => this.text(this.data?.bands[String(id)]?.bandName))].join(" ").normalize("NFKC").toLocaleLowerCase(this.locale);
+    return (!filters.band || this.bandsFor(card).includes(Number(filters.band))) &&
+      (!filters.rarity || String(card.rarity) === filters.rarity) &&
+      (!filters.attribute || String(card.attribute) === filters.attribute) &&
+      (!filters.character || ("characterId" in card ? [card.characterId] : card.characterIds).includes(Number(filters.character))) &&
+      haystack.includes(query.normalize("NFKC").toLocaleLowerCase(this.locale));
+  }
+  private pickerFacet(label: string, value: string, options: {value:string;label:string;image?:string;imageOnly?:boolean}[], change: (value:string)=>void) {
+    return chooserFacet({label,value,allLabel:options.find(option=>option.value==="")?.label??clientText(this.locale,"all","All"),options:options.filter(option=>option.value!==""),change});
+  }
+  private renderCardFilterGroups(cards: (MemberCatalog | SnapshotCatalog)[], filters: { band: string; character: string; rarity: string; attribute: string }, change: (field: "band" | "character" | "rarity" | "attribute", value: string) => void) {
+    const allLabel = clientText(this.locale, "all", "All");
+    const characters = Object.entries(this.data?.characters ?? {}).filter(([,row]) => !filters.band || String(row.bandId) === filters.band);
+    return html`
+      ${chooserFacet({label:clientText(this.locale,"bands","Bands"),allLabel,value:filters.band,
+        options:Object.entries(this.data?.bands??{}).map(([value,row])=>({value,label:this.text(row.bandName??row.name),image:String(row.icon??row.logo??"")})),
+        change:value=>{change("band",value);change("character","");}})}
+      ${chooserFacet({label:clientText(this.locale,"characters","Characters"),allLabel,value:filters.character,
+        options:characters.map(([value])=>({value,label:this.characterPortrait(value).name,image:this.characterPortrait(value).image})),change:value=>change("character",value)})}
+      ${chooserFacet({label:clientText(this.locale,"rarity","Rarity"),allLabel,value:filters.rarity,
+        options:[...new Set(cards.map(card=>card.rarity))].sort((a,b)=>a-b).map(value=>({value:String(value),label:cardRarityName(value),imageOnly:true,image:this.visuals?.marks.get(`RarityIconCenter_${cardRarityName(value)}.png`)})),change:value=>change("rarity",value)})}
+      ${chooserFacet({label:clientText(this.locale,"attribute","Attribute"),allLabel,value:filters.attribute,
+        options:[...new Set(cards.map(card=>card.attribute))].sort((a,b)=>a-b).map(value=>({value:String(value),label:this.attributeName({attribute:value}),image:this.visuals?.marks.get(`CardType-${["","Red","Blue","Green","Yellow","Purple"][value]}.png`)})),change:value=>change("attribute",value)})}
+    `;
+  }
   private get filteredOwnedEntries() {
     return this.ownedEntries.filter(({ kind, entry }) => {
       const card = this.catalogEntry(entry.cardId, kind);
-      const textMatches = [this.text(card?.name), this.characterNames(card), this.t(kind, kind)]
-        .join(" ").toLocaleLowerCase().includes(this.query.toLocaleLowerCase());
-      if (!textMatches) return false;
+      if ((this.ownedFilters.kind && kind !== this.ownedFilters.kind) || !this.cardMatchesFilters(card, this.ownedFilters, this.query)) return false;
       if (!this.selectedEvent || !this.eventBonusFilter) return true;
       const bonus = this.eventCardBonuses(kind, entry.instanceId)?.[this.eventBonusFilter] ?? null;
       return bonus === null || bonus > 0;
     });
   }
   private get visibleOwnedEntries() {
-    return this.filteredOwnedEntries.slice(0, this.visibleLimit);
+    return this.filteredOwnedEntries;
   }
   private selectVisibleOwned() {
     this.selectedIds = new Set([...this.selectedIds, ...this.visibleOwnedEntries.map(({ entry }) => entry.instanceId)]);
@@ -2725,24 +2754,11 @@ export class TeamBuilder extends LitElement {
     if (!this.data || (!this.addingCards && !this.editingId)) return nothing;
     if (this.addingCards) {
       const cards = Object.values(this.kind === "members" ? this.data.members : this.data.snapshots);
-      const matching = cards.filter(
-        (card) =>
-          (!this.pickerBand || this.bandsFor(card).includes(Number(this.pickerBand))) &&
-          (!this.pickerRarity || String(card.rarity) === this.pickerRarity) &&
-          (!this.pickerCharacter ||
-            ("characterId" in card ? [card.characterId] : card.characterIds).includes(Number(this.pickerCharacter))) &&
-          (!this.pickerAttribute || String(card.attribute) === this.pickerAttribute) &&
-          [this.text(card.name), this.characterNames(card)]
-            .join(" ")
-            .toLocaleLowerCase()
-            .includes(this.pickerQuery.toLocaleLowerCase()),
-      );
+      const filters = {band:this.pickerBand,character:this.pickerCharacter,rarity:this.pickerRarity,attribute:this.pickerAttribute};
+      const matching = cards.filter(card => this.cardMatchesFilters(card, filters, this.pickerQuery));
       const chosen = this.catalogEntry(Number(this.picker));
-      const all = { value: "", label: clientText(this.locale, "all", "All") };
-      const bands = Object.entries(this.data.bands)
-        .map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name) }))
-        .filter((row) => row.label);
       return selectionPane({
+      filterLayout: "facets",
         id: "team-card-picker",
         title: this.t("choose", "Choose card"),
         closeLabel: clientText(this.locale, "close", "Close"),
@@ -2754,8 +2770,7 @@ export class TeamBuilder extends LitElement {
         query: this.pickerQuery,
         search: (value) => {
           this.pickerQuery = value;
-          this.pickerLimit = 30;
-        },
+          },
         kind: this.kind === "members" ? "member" : "support",
         selected: this.picker,
         select: (value) => {
@@ -2763,66 +2778,16 @@ export class TeamBuilder extends LitElement {
         },
         countLabel: this.t("pickerCount", "{count} matching entries", { count: matching.length }),
         emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
-        moreLabel: clientText(this.locale, "more", "More"),
-        more: matching.length > this.pickerLimit ? () => (this.pickerLimit += 30) : undefined,
+
         filters: html`
-          ${this.screenshotCorrection ? nothing : this.select(
-            this.t("cardKind", "Card type"),
-            this.kind,
-            [
-              { value: "members", label: this.t("members", "Members") },
-              { value: "snapshots", label: this.t("snapshots", "Snapshots") },
-            ],
-            (value) => {
-              this.kind = value as Kind;
-              this.picker = "";
-              this.pickerRarity = "";
-              this.pickerLimit = 30;
-            },
-          )}
-          ${this.select(clientText(this.locale, "band", "Band"), this.pickerBand, [all, ...bands], (value) => {
-            this.pickerBand = value;
-            this.pickerLimit = 30;
+          ${this.screenshotCorrection ? nothing : chooserGroup(this.t("cardKind", "Card type"), segmented({label:this.t("cardKind","Card type"),value:this.kind,
+            options:[{value:"members",label:this.t("members","Members")},{value:"snapshots",label:this.t("snapshots","Snapshots")}],
+            onSelect:value=>{this.kind=value as Kind;this.picker="";this.pickerRarity="";}}))}
+          ${this.renderCardFilterGroups(cards, filters, (field,value)=>{
+            if(field==="band") this.pickerBand=value; else if(field==="character") this.pickerCharacter=value;
+            else if(field==="rarity") this.pickerRarity=value; else this.pickerAttribute=value;
           })}
-          <div class="rarity-filter" role="group" aria-label=${clientText(this.locale, "rarity", "Rarity")}>
-            <span class="md-label-large">${clientText(this.locale, "rarity", "Rarity")}</span>
-            <div class="chip-set">
-              ${[
-                all,
-                ...[...new Set(cards.map((row) => row.rarity))]
-                  .sort((left, right) => left - right)
-                  .map((value) => ({ value: String(value), label: cardRarityName(value) })),
-              ].map((entry) =>
-                filterChip({
-                  label: entry.label,
-                  selected: this.pickerRarity === entry.value,
-                  imageOnly: Boolean(entry.value),
-                  image: entry.value ? this.visuals?.marks.get(`RarityIconCenter_${entry.label}.png`) : undefined,
-                  onToggle: () => {
-                    this.pickerRarity = this.pickerRarity === entry.value ? "" : entry.value;
-                    this.pickerLimit = 30;
-                  },
-                }),
-              )}
-            </div>
-          </div>
-          ${this.select(
-            clientText(this.locale, "attribute", "Attribute"),
-            this.pickerAttribute,
-            [
-              all,
-              ...[...new Set(cards.map((row) => row.attribute))].map((value) => ({
-                value: String(value),
-                label: this.attributeName(cards.find((row) => row.attribute === value)!),
-              })),
-            ],
-            (value) => {
-              this.pickerAttribute = value;
-              this.pickerLimit = 30;
-            },
-          )}
-          ${this.select(uiText(this.locale, "character"), this.pickerCharacter, [all, ...Object.entries(this.data.characters).map(([value, row]) => ({ value, label: this.text(row.characterName) }))], (value) => (this.pickerCharacter = value))}
-          ${this.screenshotCorrection ? nothing : html`<div class="team-builder__actions team-builder__wide">
+          ${this.screenshotCorrection ? nothing : html`<div class="chooser-facet"><div class="chooser-filter-options">
             <button
               class="button button--text"
               @click=${() => (this.selectedCards = new Set([...this.selectedCards, ...matching.map((card) => this.batchKey(card.id))]))}
@@ -2836,9 +2801,9 @@ export class TeamBuilder extends LitElement {
             >
               ${clientText(this.locale, "clear", "Clear")}
             </button>
-          </div>`}
+          </div></div>`}
         `,
-        items: matching.slice(0, this.pickerLimit).map((card) => ({
+        items: matching.map((card) => ({
           ...this.inventoryCardOptions(card, this.kind), value: String(card.id),
         })),
         preview: html`
@@ -2977,6 +2942,7 @@ export class TeamBuilder extends LitElement {
         <div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("library", "Card library"), "cards", { count: entries.length, level: 2 })}
           <div class="team-builder__actions">
+          ${iconButton({icon:"filter_alt",label:clientText(this.locale,"filter","Filter"),toggle:true,pressed:this.ownedFiltersOpen,onClick:()=>{this.ownedFiltersOpen=!this.ownedFiltersOpen;}})}
           <button class="button button--outlined team-builder__box-action" ?disabled=${!this.boxContext()} @click=${() => this.openBoxImport()}>${this.boxText("title", "Import Box")}</button>
           ${iconButton({ icon: "image", label: !this.currentOwner ? this.t("signIn", "Sign in to Haneoka") : this.screenshotContext()
               ? this.screenshotText("title", "Import screenshots") : this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data."),
@@ -2990,8 +2956,7 @@ export class TeamBuilder extends LitElement {
               this.addingCards = true;
               this.picker = "";
               this.pickerQuery = "";
-              this.pickerLimit = 30;
-            }}
+              }}
           >
             ${this.t("add", "Add card")}
           </button>
@@ -3006,24 +2971,29 @@ export class TeamBuilder extends LitElement {
                   .value=${live(this.query)}
                   @input=${(event: Event) => {
                     this.query = (event.currentTarget as Control).value;
-                    this.visibleLimit = 30;
-                  }}
+                    }}
                 ></md-outlined-text-field>
               `
             : nothing
         }
+        ${chooserFilters(this.ownedFiltersOpen, html`
+          ${chooserFacet({label:this.t("cardKind","Card type"),allLabel:clientText(this.locale,"all","All"),value:this.ownedFilters.kind,
+            options:[{value:"members",label:this.t("members","Members")},{value:"snapshots",label:this.t("snapshots","Snapshots")}],
+            change:value=>{this.ownedFilters={...this.ownedFilters,kind:value,rarity:""};}})}
+          ${this.renderCardFilterGroups([...(!this.ownedFilters.kind||this.ownedFilters.kind==="members"?Object.values(this.data?.members??{}):[]),...(!this.ownedFilters.kind||this.ownedFilters.kind==="snapshots"?Object.values(this.data?.snapshots??{}):[])],this.ownedFilters,(field,value)=>{this.ownedFilters={...this.ownedFilters,[field]:value};})}
+        `)}
         ${this.selectedEvent && entries.length
           ? this.select(this.t("eventBonusFilter", "Show event bonus cards"), this.eventBonusFilter, [
               { value: "", label: clientText(this.locale, "all", "All") },
               ...(["points", "items", "power"] as const).map((value) => ({ value, label: this.eventBonusLabel(value) })),
-            ], (value) => { this.eventBonusFilter = value as EventBonusAxis | ""; this.visibleLimit = 30; this.bulkPreview = null; })
+            ], (value) => { this.eventBonusFilter = value as EventBonusAxis | ""; this.bulkPreview = null; })
           : nothing}
         ${
           entries.length
             ? html`
                 <div class="team-builder__actions">
                   <button class="button button--text" @click=${() => this.selectVisibleOwned()}>
-                    ${this.t("selectVisibleOwned", "Select visible cards")}
+                    ${this.t("selectMatching", "Select matching cards")}
                   </button>
                   <button
                     class="button button--text"
@@ -3081,21 +3051,12 @@ export class TeamBuilder extends LitElement {
           entries.length
             ? html`
                 <div class="collection collection--member team-builder__owned team-builder__card-grid">
-                  ${visible.slice(0, this.visibleLimit).map(({ entry, kind }) => this.renderEntry(entry, kind))}
+                  ${visible.map(({ entry, kind }) => this.renderEntry(entry, kind))}
                 </div>
               `
             : html`
                 <p>${this.t("emptyLibrary", "Add owned cards or import inventory JSON.")}</p>
               `
-        }
-        ${
-          visible.length > this.visibleLimit
-            ? html`
-                <button class="button button--text" @click=${() => (this.visibleLimit += 30)}>
-                  ${clientText(this.locale, "more", "More")}
-                </button>
-              `
-            : nothing
         }
       </section>
     `;
@@ -3184,6 +3145,7 @@ export class TeamBuilder extends LitElement {
     const chosen = this.data.songs[this.pickerSong];
     const rows = dataRows(chosen?.difficulty ?? chosen?.difficulties);
     return selectionPane({
+      filterLayout: "facets",
       id: "team-song-picker",
       title: this.poolSelecting ? this.t("chooseSongPool", "Choose songs to compare") : this.t("chooseSong", "Choose song"),
       closeLabel: clientText(this.locale, "close", "Close"),
@@ -3195,48 +3157,44 @@ export class TeamBuilder extends LitElement {
       query: this.pickerQuery,
       search: (value) => {
         this.pickerQuery = value;
-        this.pickerLimit = 30;
-      },
+        },
       kind: "song",
       selected: this.pickerSong,
       selectedValues: this.poolSelecting ? this.pickerPoolIds : undefined,
       select: (value) => { this.choosePickerSong(value); if (this.poolSelecting) this.togglePickerPool(value); },
       countLabel: this.t("pickerCount", "{count} matching entries", { count: matching.length }),
       emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
-      moreLabel: clientText(this.locale, "more", "More"),
-      more: matching.length > this.pickerLimit ? () => (this.pickerLimit += 30) : undefined,
+
       filters: html`
-        ${this.select(uiText(this.locale, "genre"), this.pickerGenre, [all, ...["original", "virtual", "jpop", "anime", "game"].map((key, index) => ({ value: String(index + 1), label: clientText(this.locale, `songTypes.${key}`, key) }))], (value) => (this.pickerGenre = value))}
-        ${this.select(uiText(this.locale, "characters"), this.pickerCharacter, [all, ...Object.entries(this.data.characters).map(([value, row]) => ({ value, label: this.text(row.characterName) }))], (value) => (this.pickerCharacter = value))}
-        ${this.select(
+        ${this.pickerFacet(uiText(this.locale, "genre"), this.pickerGenre, [all, ...["original", "virtual", "jpop", "anime", "game"].map((key, index) => ({ value: String(index + 1), label: clientText(this.locale, `songTypes.${key}`, key) }))], (value) => (this.pickerGenre = value))}
+        ${this.pickerFacet(uiText(this.locale, "characters"), this.pickerCharacter, [all, ...Object.entries(this.data.characters).map(([value, row]) => ({ value, label: this.characterPortrait(value).name, image: this.characterPortrait(value).image }))], (value) => (this.pickerCharacter = value))}
+        ${this.pickerFacet(
           clientText(this.locale, "band", "Band"),
           this.pickerBand,
           [
             all,
             ...Object.entries(this.data.bands)
-              .map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name) }))
+              .map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name), image: String(row.icon ?? row.logo ?? "") }))
               .filter((row) => row.label),
           ],
           (value) => {
             this.pickerBand = value;
-            this.pickerLimit = 30;
-          },
+            },
         )}
-        ${this.select(
+        ${this.pickerFacet(
           clientText(this.locale, "attribute", "Attribute"),
           this.pickerAttribute,
           [
             all,
             ...[...new Set(Object.values(this.data.songs).map((song) => Number(song.musicType)))]
               .filter((value) => value >= 1 && value <= 5)
-              .map((value) => ({ value: String(value), label: this.attributeName({ attribute: value }) })),
+              .map((value) => ({ value: String(value), label: this.attributeName({ attribute: value }), image: this.visuals?.marks.get(`CardType-${["","Red","Blue","Green","Yellow","Purple"][value]}.png`) })),
           ],
           (value) => {
             this.pickerAttribute = value;
-            this.pickerLimit = 30;
-          },
+            },
         )}
-        ${this.select(
+        ${this.pickerFacet(
           this.t("availableDifficulty", "Available difficulty"),
           this.pickerSongDifficulty,
           [
@@ -3248,11 +3206,10 @@ export class TeamBuilder extends LitElement {
           ],
           (value) => {
             this.pickerSongDifficulty = value;
-            this.pickerLimit = 30;
-          },
+            },
         )}
       `,
-      items: matching.slice(0, this.pickerLimit).map(([value]) => ({ ...this.songOptions(value), value })),
+      items: matching.map(([value]) => ({ ...this.songOptions(value), value })),
       preview: this.poolSelecting ? html`
         <p>${this.t("selectedSongsCount", "{count} songs selected", { count: this.pickerPoolIds.size })}</p>
         <div class="team-builder__actions">
@@ -3634,21 +3591,21 @@ export class TeamBuilder extends LitElement {
     );
     const chosen = this.data.events[this.pickerEvent];
     return selectionPane({
+      filterLayout: "facets",
       id: "team-event-picker", title: this.t("eventPreview", "Event conditions preview"),
       closeLabel: clientText(this.locale, "close", "Close"), close: () => this.closePane(),
       searchLabel: clientText(this.locale, "search", "Search"), filterLabel: this.t("pickerFilters", "Filters"),
       filtersOpen: this.pickerFiltersOpen, toggleFilters: () => (this.pickerFiltersOpen = !this.pickerFiltersOpen),
-      query: this.pickerQuery, search: (value) => { this.pickerQuery = value; this.pickerLimit = 30; },
+      query: this.pickerQuery, search: (value) => { this.pickerQuery = value; },
       kind: "system", selected: this.pickerEvent, select: (value) => (this.pickerEvent = value),
       countLabel: this.t("pickerCount", "{count} matching entries", { count: matching.length }),
       emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
-      moreLabel: clientText(this.locale, "more", "More"),
-      more: matching.length > this.pickerLimit ? () => (this.pickerLimit += 30) : undefined,
-      filters: this.select(this.t("eventStatus", "Event status"), this.pickerEventStatus, [
+
+      filters: this.pickerFacet(this.t("eventStatus", "Event status"), this.pickerEventStatus, [
         { value: "", label: clientText(this.locale, "all", "All") },
         ...["ongoing", "upcoming", "ended", "unknown"].map((value) => ({ value, label: this.t("eventStatus_" + value, value) })),
-      ], (value) => { this.pickerEventStatus = value; this.pickerLimit = 30; }),
-      items: matching.slice(0, this.pickerLimit).map((value) => ({ ...this.eventOptions(value), value })),
+      ], (value) => { this.pickerEventStatus = value; }),
+      items: matching.map((value) => ({ ...this.eventOptions(value), value })),
       preview: html`
         ${chosen ? html`
           <strong>${this.text(chosen.title ?? chosen.name)}</strong>
@@ -3656,7 +3613,7 @@ export class TeamBuilder extends LitElement {
         ` : nothing}
         <button class="button" ?disabled=${!chosen} @click=${() => {
           this.selectedEvent = this.pickerEvent; this.eventFlowKind = ""; this.eventConsumption = null;
-          this.eventBonusFilter = ""; this.visibleLimit = 30; this.bulkPreview = null; this.resetEventScene(); this.closePane();
+          this.eventBonusFilter = ""; this.bulkPreview = null; this.resetEventScene(); this.closePane();
         }}>${this.t("previewEvent", "View event conditions")}</button>
       `,
     });
@@ -3674,14 +3631,12 @@ export class TeamBuilder extends LitElement {
   private openSingleChallengePicker() {
     this.closePane(); this.resourcePicker = "challenge"; this.singleChallengePicking = true;
     this.pickerSong = this.selectedChallengeId; this.pickerDifficulty = this.selectedChallengeDifficulty;
-    this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = ""; this.pickerLimit = 30;
-  }
+    this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = ""; }
   private openChallengePool() {
     this.closePane(); this.resourcePicker = "challenge"; this.challengePoolPicking = true;
     this.pickerPoolIds = new Set(this.challengePool ?? this.resourceCharts("challenge").map(row => row.id));
     this.pickerSong = ""; this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = "";
-    this.pickerSongDifficulty = this.selectedChallengeDifficulty; this.pickerLimit = 30;
-  }
+    this.pickerSongDifficulty = this.selectedChallengeDifficulty; }
   private renderChallengeSelection() {
     const choices = this.resourceCharts("challenge"), selected = choices.find(row => row.id === this.selectedChallengeId);
     const key = `challenge:${this.selectedChallengeId}:${this.selectedChallengeDifficulty}`;
@@ -4101,8 +4056,7 @@ export class TeamBuilder extends LitElement {
       ${selected ? this.songIdentity(selected.songId, selection.difficulty) : selection.pool ? html`<p>${this.t("selectedSongsCount", "{count} songs selected", { count: selection.pool.length })}</p>` : html`<p>${this.t("resourceAllSongs", "Compare all available songs")}</p>`}
       <div class="team-builder__actions">
         <button class="button button--outlined" ?disabled=${!choices.length} @click=${() => {
-          this.closePane(); this.resourcePicker = kind; this.pickerPoolIds = new Set(selection.pool ?? (selection.chart ? [selection.chart] : [])); this.pickerSong = selection.chart; this.pickerDifficulty = selection.difficulty; this.pickerQuery = ""; this.pickerLimit = 30;
-          this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = selection.difficulty;
+          this.closePane(); this.resourcePicker = kind; this.pickerPoolIds = new Set(selection.pool ?? (selection.chart ? [selection.chart] : [])); this.pickerSong = selection.chart; this.pickerDifficulty = selection.difficulty; this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerSongDifficulty = selection.difficulty;
         }}>${this.t("chooseSongPool", "Choose songs to compare")}</button>
         ${selection.chart || selection.pool ? html`<button class="button button--text" @click=${() => this.updateResourceStage(kind, { chart: "", pool: null })}>${clientText(this.locale, "all", "All")}</button>` : nothing}
       </div>
@@ -4131,22 +4085,22 @@ export class TeamBuilder extends LitElement {
         songTitle(song, this.locale).text.toLocaleLowerCase().includes(this.pickerQuery.toLocaleLowerCase());
     });
     const chosen = all.find(row => row.id === this.pickerSong);
-    return selectionPane({ id: "team-resource-song-picker", title: this.resourceStageLabel(kind),
+    return selectionPane({
+      filterLayout: "facets", id: "team-resource-song-picker", title: this.resourceStageLabel(kind),
       filterLabel: this.t("pickerFilters", "Filters"), filtersOpen: this.pickerFiltersOpen, toggleFilters: () => { this.pickerFiltersOpen = !this.pickerFiltersOpen; },
       filters: html`
-        ${this.select(clientText(this.locale, "band", "Band"), this.pickerBand, [{ value: "", label: clientText(this.locale, "all", "All") },
-          ...Object.entries(this.data?.bands ?? {}).map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name) }))], value => { this.pickerBand = value; this.pickerLimit = 30; })}
-        ${this.select(clientText(this.locale, "attribute", "Attribute"), this.pickerAttribute, [{ value: "", label: clientText(this.locale, "all", "All") },
-          ...[...new Set(all.map(row => Number(this.visualSong(row.songId).musicType)))].filter(value => value >= 1 && value <= 5).map(value => ({ value: String(value), label: this.attributeName({ attribute: value }) }))], value => { this.pickerAttribute = value; this.pickerLimit = 30; })}
-        ${this.select(this.t("availableDifficulty", "Available difficulty"), this.pickerSongDifficulty, [{ value: "", label: clientText(this.locale, "all", "All") },
-          ...[...new Set(all.flatMap(row => row.difficulties.map(chart => Number(chart.difficulty))))].sort((a,b) => a-b).map(value => ({ value: String(value), label: difficultyKey({ difficulty: value }).toUpperCase() }))], value => { this.pickerSongDifficulty = value; this.pickerLimit = 30; })}
+        ${this.pickerFacet(clientText(this.locale, "band", "Band"), this.pickerBand, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...Object.entries(this.data?.bands ?? {}).map(([value, row]) => ({ value, label: this.text(row.bandName ?? row.name), image: String(row.icon ?? row.logo ?? "") }))], value => { this.pickerBand = value; })}
+        ${this.pickerFacet(clientText(this.locale, "attribute", "Attribute"), this.pickerAttribute, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...[...new Set(all.map(row => Number(this.visualSong(row.songId).musicType)))].filter(value => value >= 1 && value <= 5).map(value => ({ value: String(value), label: this.attributeName({ attribute: value }), image: this.visuals?.marks.get(`CardType-${["","Red","Blue","Green","Yellow","Purple"][value]}.png`) }))], value => { this.pickerAttribute = value; })}
+        ${this.pickerFacet(this.t("availableDifficulty", "Available difficulty"), this.pickerSongDifficulty, [{ value: "", label: clientText(this.locale, "all", "All") },
+          ...[...new Set(all.flatMap(row => row.difficulties.map(chart => Number(chart.difficulty))))].sort((a,b) => a-b).map(value => ({ value: String(value), label: difficultyKey({ difficulty: value }).toUpperCase() }))], value => { this.pickerSongDifficulty = value; })}
       `,
       closeLabel: clientText(this.locale, "close", "Close"), close: () => this.closePane(),
-      searchLabel: clientText(this.locale, "search", "Search"), query: this.pickerQuery, search: value => { this.pickerQuery = value; this.pickerLimit = 30; },
+      searchLabel: clientText(this.locale, "search", "Search"), query: this.pickerQuery, search: value => { this.pickerQuery = value; },
       kind: "song", selected: this.pickerSong, selectedValues: this.singleChallengePicking ? undefined : this.pickerPoolIds, select: value => { this.pickerSong = value; if (this.singleChallengePicking) { const charts = all.find(row => row.id === value)?.difficulties ?? []; if (this.pickerSongDifficulty && charts.some(row => String(row.difficulty) === this.pickerSongDifficulty)) this.pickerDifficulty = this.pickerSongDifficulty; else if (!charts.some(row => String(row.difficulty) === this.pickerDifficulty)) this.pickerDifficulty = String(charts[0]?.difficulty ?? ""); } else this.togglePickerPool(value); },
       countLabel: this.t("pickerCount", "{count} matching entries", { count: rows.length }), emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
-      moreLabel: clientText(this.locale, "more", "More"), more: rows.length > this.pickerLimit ? () => { this.pickerLimit += 30; } : undefined,
-      items: rows.slice(0, this.pickerLimit).map(row => ({ ...this.songOptions(row.songId), value: row.id })),
+      items: rows.map(row => ({ ...this.songOptions(row.songId), value: row.id })),
       preview: this.singleChallengePicking ? html`
         ${chosen ? html`${this.songIdentity(chosen.songId, this.pickerDifficulty)}${difficultyPicker({ rows: chosen.difficulties, selected: difficultyKey({ difficulty: this.pickerDifficulty }), locale: this.locale, onSelect: (_key, index) => { this.pickerDifficulty = String(chosen.difficulties[index]?.difficulty ?? ""); } })}` : nothing}
         <button class="button" ?disabled=${!chosen || !chosen.difficulties.some(row => String(row.difficulty) === this.pickerDifficulty)} @click=${() => {
@@ -4496,8 +4450,7 @@ export class TeamBuilder extends LitElement {
   }
   private openSongPool(multiple: boolean) {
     this.closePane(); this.poolSelecting = multiple; this.selectingSong = true;
-    this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerGenre = ""; this.pickerCharacter = ""; this.pickerLimit = 30;
-    this.pickerSong = this.selectedSong; this.pickerDifficulty = this.selectedDifficulty;
+    this.pickerQuery = ""; this.pickerBand = ""; this.pickerAttribute = ""; this.pickerGenre = ""; this.pickerCharacter = ""; this.pickerSong = this.selectedSong; this.pickerDifficulty = this.selectedDifficulty;
     this.pickerSongDifficulty = this.lockDifficulty ? this.selectedDifficulty : "";
     this.pickerPoolIds = new Set(this.songPool ?? (this.lockSong && this.selectedSong ? [this.selectedSong] : []));
   }
@@ -4577,7 +4530,7 @@ export class TeamBuilder extends LitElement {
       ${Object.keys(this.data?.events ?? {}).some(id => /^[1-9]\d*$/.test(id)) ? this.disclosure("score-event-context", html`${this.t("optionalEvent", "Event conditions (optional)")}`, html`
         <div class="team-builder__actions"><button class="button button--outlined" @click=${() => {
           this.closePane(); this.selectingEvent = true; this.pickerEvent = this.selectedEvent;
-          this.pickerEventStatus = ""; this.pickerQuery = ""; this.pickerLimit = 30;
+          this.pickerEventStatus = ""; this.pickerQuery = "";
         }}>${this.t("chooseEvent", "Choose event")}</button></div>
         ${this.renderEventConditions()}
       `, !!this.selectedEvent || this.wantsEventScene) : nothing}

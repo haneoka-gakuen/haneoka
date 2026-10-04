@@ -37,6 +37,7 @@ import {
 } from "../lib/stamp-maker/render";
 import { catalogUrl, fetchJson, localizedText, type JsonRecord } from "./shared/catalog";
 import { segmented, iconButton, filterChip } from "./ui/controls";
+import { chooserFacet, chooserHeader, chooserFilters } from "./ui/chooser-filters";
 import { accordion } from "./ui/accordion";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -1867,18 +1868,15 @@ export class StampMaker extends LitElement {
             if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close();
           }}
         >
-          <header class="sheet__header">
-            <strong>${this.t("choose")}</strong>
-            <div class="stamp-maker__row">
-              ${this.pickerBrowsingLocale !== "textless" ? filterChip({ label: this.t("original"), selected: this.pickerOriginal, onToggle: () => (this.pickerOriginal = !this.pickerOriginal) }) : nothing}
-              ${iconButton({ label: clientText(this.locale, "filter", "Filter"), icon: "filter_alt", toggle: true, pressed: this.pickerFiltersOpen, onClick: () => (this.pickerFiltersOpen = !this.pickerFiltersOpen) })}
-              ${iconButton({ label: this.t("close"), icon: "close", onClick: () => this.querySelector<HTMLDialogElement>("dialog")?.close() })}
-            </div>
-          </header>
+          ${chooserHeader({ title: this.t("choose"), filterLabel: clientText(this.locale, "filter", "Filter"),
+            filtersOpen: this.pickerFiltersOpen, toggleFilters: () => (this.pickerFiltersOpen = !this.pickerFiltersOpen),
+            closeLabel: this.t("close"), close: () => this.querySelector<HTMLDialogElement>("dialog")?.close(),
+            actions: this.pickerBrowsingLocale !== "textless" ? filterChip({ label: this.t("original"), selected: this.pickerOriginal, onToggle: () => (this.pickerOriginal = !this.pickerOriginal) }) : nothing,
+          })}
           ${guard(
             [this.catalog, this.textless, this.mode, this.locale, this.imageLanguage, this.pickerBrowsingLocale, this.pickerOriginal, this.pickerFiltersOpen, this.pickerBand, this.pickerCharacter, this.bands, this.characters, this.selected],
             () => html`
-              <div class="stamp-maker__picker-filters" ?hidden=${!this.pickerFiltersOpen}>
+              ${chooserFilters(this.pickerFiltersOpen, html`
               <div class="stamp-maker__picker-language">
                 <div
                   class="settings-options stamp-maker__language-options"
@@ -1931,21 +1929,12 @@ export class StampMaker extends LitElement {
                   }
                 </div>
               </div>
-                <div class="stamp-maker__facet" role="group" aria-label=${clientText(this.locale, "bands", "Bands")}>
-                  <strong>${clientText(this.locale, "bands", "Bands")}</strong>
-                  <div class="stamp-maker__row">
-                    ${filterChip({ label: clientText(this.locale, "all", "All"), selected: !this.pickerBand, onToggle: () => { this.pickerBand = ""; this.pickerCharacter = ""; } })}
-                    ${this.pickerBands.map(({ id, name, image }) => filterChip({ label: name, image, selected: this.pickerBand === id, onToggle: () => { this.pickerBand = this.pickerBand === id ? "" : id; this.pickerCharacter = ""; } }))}
-                  </div>
-                </div>
-                <div class="stamp-maker__facet" role="group" aria-label=${clientText(this.locale, "characters", "Characters")}>
-                  <strong>${clientText(this.locale, "characters", "Characters")}</strong>
-                  <div class="stamp-maker__row">
-                    ${filterChip({ label: clientText(this.locale, "all", "All"), selected: !this.pickerCharacter, onToggle: () => (this.pickerCharacter = "") })}
-                    ${this.pickerCharacters.map(({ id, name, image }) => filterChip({ label: name, image, selected: this.pickerCharacter === id, onToggle: () => (this.pickerCharacter = this.pickerCharacter === id ? "" : id) }))}
-                  </div>
-                </div>
-              </div>
+                ${chooserFacet({ label: clientText(this.locale, "bands", "Bands"), allLabel: clientText(this.locale, "all", "All"), value: this.pickerBand,
+                  options: this.pickerBands.map(({id,name,image})=>({value:id,label:name,image})),
+                  change: value => { this.pickerBand = value; this.pickerCharacter = ""; } })}
+                ${chooserFacet({ label: clientText(this.locale, "characters", "Characters"), allLabel: clientText(this.locale, "all", "All"), value: this.pickerCharacter,
+                  options: this.pickerCharacters.map(({id,name,image})=>({value:id,label:name,image})), change: value => (this.pickerCharacter = value) })}
+              `)}
               <div class="collection stamp-maker__grid">
                 ${this.pickerChoices.map((stamp) =>
                   tile({

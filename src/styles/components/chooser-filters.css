@@ -1,0 +1,44 @@
+@layer pages {
+  .chooser-filters {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 45dvh;
+    overflow: auto;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .chooser-filters[hidden] { display: none; }
+  .chooser-facet {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-4);
+  }
+  .chooser-facet > strong {
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .chooser-filter-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--md-sys-spacing-2);
+    min-width: 0;
+  }
+  .sheet__header.chooser-header,
+  .selection-pane > .sheet__header.chooser-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    flex-shrink: 0;
+    min-height: 56px;
+    padding: 8px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--md-sys-color-surface-container-high);
+  }
+}
+
+@layer pages {
+  .selection-pane:has(> .chooser-header) > .selection-pane__body { min-height: 160px; }
+}

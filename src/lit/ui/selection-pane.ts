@@ -2,7 +2,8 @@ import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import "@material/web/checkbox/checkbox.js";
 import { tile, tileMedia, type TileOptions } from "./tile";
-import { iconButton, rovingKeydown } from "./controls";
+import { rovingKeydown } from "./controls";
+import { chooserHeader, chooserFilters } from "./chooser-filters";
 
 /** Native chooser dialog, matching the stamp selector above the app shell. */
 export function selectionPane(options: {
@@ -17,6 +18,8 @@ export function selectionPane(options: {
   query: string;
   search: (value: string) => void;
   filters: unknown;
+  /** Stamp-style chip groups; existing other callers may still supply fields. */
+  filterLayout?: "facets" | "fields";
   kind: "member" | "support" | "song" | "system";
   items: ReadonlyArray<TileOptions & { value: string }>;
   selected: string;
@@ -25,7 +28,8 @@ export function selectionPane(options: {
   select: (value: string) => void;
   countLabel: string;
   emptyLabel: string;
-  moreLabel: string;
+  /** Optional source paging for other tools. Team pickers pass the full domain. */
+  moreLabel?: string;
   more?: () => void;
   preview: unknown;
 }) {
@@ -43,13 +47,9 @@ export function selectionPane(options: {
         if (event.target === event.currentTarget) options.close();
       }}
     >
-      <header class="sheet__header">
-        <strong>${options.title}</strong>
-        <span class="selection-pane__actions">
-          ${iconButton({ icon: "filter_alt", label: options.filterLabel, pressed: options.filtersOpen, onClick: options.toggleFilters })}
-          ${iconButton({ icon: "close", label: options.closeLabel, onClick: options.close })}
-        </span>
-      </header>
+      ${chooserHeader({ title: options.title, filterLabel: options.filterLabel, filtersOpen: options.filtersOpen,
+        toggleFilters: options.toggleFilters, closeLabel: options.closeLabel, close: options.close })}
+      ${chooserFilters(options.filtersOpen, options.filterLayout === "facets" ? options.filters : html`<div class="chooser-facet"><div class="team-builder__fields" aria-label=${options.filterLabel}>${options.filters}</div></div>`)}
       <div class="selection-pane__body">
         <md-outlined-text-field
           type="search"
@@ -57,13 +57,6 @@ export function selectionPane(options: {
           .value=${live(options.query)}
           @input=${(event: Event) => options.search((event.currentTarget as HTMLInputElement).value)}
         ></md-outlined-text-field>
-        ${
-          options.filtersOpen
-            ? html`
-                <div class="team-builder__fields" aria-label=${options.filterLabel}>${options.filters}</div>
-              `
-            : nothing
-        }
         <p role="status" class="team-builder__hint">${options.countLabel}</p>
         <div
           class=${`collection collection--${options.kind}`}
@@ -103,13 +96,7 @@ export function selectionPane(options: {
               `
             : nothing
         }
-        ${
-          options.more
-            ? html`
-                <button class="button button--text" @click=${options.more}>${options.moreLabel}</button>
-              `
-            : nothing
-        }
+        ${options.more ? html`<button class="button button--text" @click=${options.more}>${options.moreLabel ?? "More"}</button>` : nothing}
       </div>
       <footer class="selection-pane__footer">
         <div id=${previewId} role=${options.selectedValues ? "group" : "tabpanel"} class="team-builder__picker-preview">${options.preview}</div>
