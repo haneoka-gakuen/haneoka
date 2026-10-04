@@ -3214,7 +3214,15 @@
     "useCurrentTraining": "使用目前養成",
     "restoreSavedTraining": "將養成恢復為方案",
     "savedTeamOlderData": "此隊伍屬於較舊的卡牌資料，備份已保留。",
-    "plansAndSync": "方案與同步"
+    "plansAndSync": "方案與同步",
+    "exportTeamImage": "匯出隊伍圖片",
+    "imageUnavailable": "圖片不可用",
+    "teamImageFailed": "無法匯出此隊伍圖片，請重試。",
+    "resumeSaveFailed": "無法儲存搜尋進度。",
+    "resumeIncompatible": "已存搜尋使用不同的卡牌資料、養成或搜尋規則，請開始新的搜尋。",
+    "resumeAvailable": "已儲存未完成的搜尋，可沿用原條件與目前時間預算繼續。",
+    "resumeSearch": "繼續已存搜尋",
+    "discardSearchProgress": "捨棄已存進度"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

@@ -3214,7 +3214,15 @@
     "useCurrentTraining": "使用当前养成",
     "restoreSavedTraining": "将养成恢复为方案",
     "savedTeamOlderData": "此队伍属于较旧的卡牌数据，备份已保留。",
-    "plansAndSync": "方案与同步"
+    "plansAndSync": "方案与同步",
+    "exportTeamImage": "导出队伍图片",
+    "imageUnavailable": "图片不可用",
+    "teamImageFailed": "无法导出此队伍图片，请重试。",
+    "resumeSaveFailed": "无法保存搜索进度。",
+    "resumeIncompatible": "已存搜索使用不同的卡牌数据、养成或搜索规则，请开始新的搜索。",
+    "resumeAvailable": "已保存未完成的搜索，可沿用原条件与当前时间预算继续。",
+    "resumeSearch": "继续已存搜索",
+    "discardSearchProgress": "丢弃已存进度"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

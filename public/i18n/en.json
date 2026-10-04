@@ -3214,7 +3214,15 @@
     "useCurrentTraining": "Use current training",
     "restoreSavedTraining": "Restore training as a plan",
     "savedTeamOlderData": "This team belongs to older card data. Its backup is retained.",
-    "plansAndSync": "Plans & sync"
+    "plansAndSync": "Plans & sync",
+    "exportTeamImage": "Export team image",
+    "imageUnavailable": "Image unavailable",
+    "teamImageFailed": "Could not export this team image. Try again.",
+    "resumeSaveFailed": "Search progress could not be saved.",
+    "resumeIncompatible": "The saved search uses different card data, training or search rules. Start a new search.",
+    "resumeAvailable": "A partial search is saved. Continue with its original conditions and the current time budget.",
+    "resumeSearch": "Continue saved search",
+    "discardSearchProgress": "Discard saved progress"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

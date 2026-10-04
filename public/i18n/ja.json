@@ -3214,7 +3214,15 @@
     "useCurrentTraining": "現在の育成値を使用",
     "restoreSavedTraining": "育成値をプランとして復元",
     "savedTeamOlderData": "この編成は古いカードデータに対応しています。バックアップは保持されています。",
-    "plansAndSync": "プランと同期"
+    "plansAndSync": "プランと同期",
+    "exportTeamImage": "編成画像を書き出す",
+    "imageUnavailable": "画像を利用できません",
+    "teamImageFailed": "この編成画像を書き出せませんでした。再試行してください。",
+    "resumeSaveFailed": "探索の進行状況を保存できませんでした。",
+    "resumeIncompatible": "保存済みの探索はカードデータ、育成値、または探索ルールが異なります。新しい探索を開始してください。",
+    "resumeAvailable": "未完了の探索が保存されています。元の条件と現在の時間予算で続行できます。",
+    "resumeSearch": "保存済みの探索を続行",
+    "discardSearchProgress": "保存済みの進行状況を破棄"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

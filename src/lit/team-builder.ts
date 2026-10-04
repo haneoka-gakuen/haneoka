@@ -43,6 +43,7 @@ import type {
   WorkerPreparationInput,
   EvaluationBasisRequest,
   MetricValue,
+  SearchResumeCheckpoint,
   ManualTeamEvaluationResult,
   ManualTeamProgress,
 } from "../lib/team-builder/contracts";
@@ -77,6 +78,8 @@ import { accordion } from "./ui/accordion";
 import { songJacketCandidates, songTile, liveMusicTypeMark } from "./shared/song-tile";
 import { cardTile } from "./shared/card-tile";
 import { SearchCheckpointStore } from "./shared/search-checkpoint-store";
+import { SearchResumeStore, type SearchResumeBookmark } from "./shared/search-resume-store";
+import { SEARCH_ENGINE_REVISION } from "../lib/team-builder/solver/search-checkpoint";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
 import { uiText, gameDateTimeRange } from "./shared/catalog";
 import { eventArtwork, eventBanner } from "./ui/event-artwork";
@@ -100,6 +103,7 @@ import {
 } from "../lib/team-builder/workspace";
 import { TeamWorkspaceStore, mergeTeamWorkspaces, type WorkspaceStoreState } from "../lib/team-builder/data/workspace-storage";
 import { validWorkspaceName } from "../lib/team-builder/data/workspace-document";
+import { renderTeamResultImage, type ResultImageCard, type TeamResultImage } from "./shared/team-result-image";
 import { downloadBlob } from "../lib/canvas-capture";
 import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
@@ -188,6 +192,7 @@ export class TeamBuilder extends LitElement {
     teamName: { state: true },
     workspaceImport: { state: true },
     workspaceImportPriority: { state: true },
+    exportingImage: { state: true },
     manualResult: { state: true },
     manualProgress: { state: true },
     requiredLeader: { state: true },
@@ -286,6 +291,7 @@ export class TeamBuilder extends LitElement {
   declare result: SearchResult | null;
   declare resultView: "overall" | "by-chart";
   declare comparisonKeys: string[];
+  private resumeStore?: SearchResumeStore;
   private workspaceStore?: TeamWorkspaceStore;
   declare actualInventoryFallback: boolean;
   declare workspaceState: WorkspaceStoreState | null;
@@ -296,6 +302,7 @@ export class TeamBuilder extends LitElement {
   declare workspaceImportPriority: "cloud" | "local";
   private manualScope: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined } | null = null;
   private manualObjectives: Objective[] = [];
+  declare exportingImage: boolean;
   declare manualResult: ManualTeamEvaluationResult | null;
   declare manualProgress: ManualTeamProgress | null;
   declare requiredLeader: string;
@@ -797,6 +804,8 @@ export class TeamBuilder extends LitElement {
     ++this.authGeneration;
     this.store?.dispose();
     this.workspaceStore?.dispose();
+    this.resumeStore?.dispose();
+    this.resumeStore = undefined;
     this.workspaceStore = undefined;
     this.workspaceState = null;
     this.workspaceImport = null;
@@ -1478,6 +1487,7 @@ export class TeamBuilder extends LitElement {
     this.teamName = "";
     this.workspaceImport = null;
     this.workspaceImportPriority = "cloud";
+    this.exportingImage = false;
     this.manualResult = null;
     this.manualProgress = null;
     this.requiredLeader = "";
@@ -1571,6 +1581,8 @@ export class TeamBuilder extends LitElement {
     this.visualsController?.abort();
     this.store?.dispose();
     this.workspaceStore?.dispose();
+    this.resumeStore?.dispose();
+    this.resumeStore = undefined;
     this.workspaceStore = undefined;
     this.workspaceState = null;
     this.workspaceImport = null;
@@ -1589,6 +1601,7 @@ export class TeamBuilder extends LitElement {
   }
   protected updated() {
     if (!this.isConnected) return;
+    this.syncResumeStore();
     if (this.comparisonResult && this.comparisonResult !== this.result) this.clearComparison();
     if (this.comparisonIndex?.result !== this.result) this.comparisonIndex = undefined;
     const resourceScope = JSON.stringify([this.data?.identity, this.currentOwner !== undefined, this.currentOwner]);
@@ -3989,6 +4002,7 @@ export class TeamBuilder extends LitElement {
       <p role="status">${result.status === "complete" ? this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}</p>
       ${this.renderTeamConfiguration(result.assignment, "manual-team")}
       ${result.candidates.slice(0, this.rankingLimit).map(candidate => html`<article class="team-builder__candidate">
+        <button class="button button--text" ?disabled=${this.exportingImage || this.running} @click=${() => void this.exportCandidateImage(candidate, "manual")}>${this.t("exportTeamImage", "Export team image")}</button>
         ${this.songIdentity(...candidate.songKey.split(":") as [string, string])}
         ${specList(this.manualObjectives.map(objective => ({ label: this.metricLabel(objective, candidate.metrics[objective]), value: this.comparisonMetric(objective, candidate.metrics[objective]) })))}
       </article>`)}
@@ -4640,7 +4654,7 @@ export class TeamBuilder extends LitElement {
     if (!this.evaluationBasis) return this.t("basisIncomplete", "Complete these values to compare efficiency.");
     return this.t("checkConditions", "Check the entered conditions.");
   }
-  startOptimization(): void {
+  startOptimization(resumeCheckpoint?: SearchResumeCheckpoint): void {
     if (!this.canOptimize || !this.data || !this.inventory) return;
     this.cancelSearch();
     this.syncCheckpointCache();
@@ -4649,6 +4663,10 @@ export class TeamBuilder extends LitElement {
     this.searchStatus = "";
     const generation = this.requestId;
     const checkpointCache = this.checkpointCache;
+    const resumeStore = this.resumeStore;
+    const resumeInventory = exportInventory(this.inventory);
+    const resumeIdentity = { server: this.data.identity.server, releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId ?? "" };
+    const resumeSettings = this.searchSettings;
     this.rankingLimit = 5;
     const runId = crypto.randomUUID();
     let runRequest: SearchRunRequest;
@@ -4656,7 +4674,7 @@ export class TeamBuilder extends LitElement {
     const budget = {
       maxEvaluations: 100000,
       maxMilliseconds: Math.round(this.budgetSeconds * 1000),
-      maxCandidates: 50,
+      maxCandidates: resumeCheckpoint ? 1000 : 50,
     };
     let worker: Worker;
     try {
@@ -4693,6 +4711,10 @@ export class TeamBuilder extends LitElement {
             ...(preparation ? { preparation } : {}),
           };
           if (message.checkpoint) void checkpointCache?.save(message.checkpoint);
+          if (resumeStore === this.resumeStore) void resumeStore?.save(message.resumeCheckpoint && runRequest.type === "prepare" ? {
+            schema: "haneoka-team-resume-bookmark-v1", identity: resumeIdentity, inventoryText: resumeInventory,
+            settings: resumeSettings, checkpoint: message.resumeCheckpoint, result: message.result, savedAt: new Date().toISOString(),
+          } : null);
           if (message.reusedCheckpoint) this.searchStatus = this.t("checkpointReused", "Reused a complete result");
         } else this.searchError = this.t("unavailable", "Required data or formula is unavailable");
         void checkpointCache?.flush();
@@ -4746,6 +4768,7 @@ export class TeamBuilder extends LitElement {
         this.searchDispatched = true;
         worker.postMessage({
           ...runRequest,
+          ...(resumeCheckpoint ? { resumeCheckpoint } : {}),
           ...(checkpointCache?.lastComplete ? { checkpoint: checkpointCache.lastComplete } : {}),
         });
       };
@@ -4760,6 +4783,67 @@ export class TeamBuilder extends LitElement {
       this.cancelSearch();
       this.searchError = this.t("unavailable", "Required data or formula is unavailable");
     }
+  }
+  private async exportCandidateImage(candidate: Candidate, source: "search" | "manual" = "search") {
+    const current = source === "search" ? this.canCompareCandidates && this.comparableCandidates.some(row => this.resultCandidateKey(row) === this.resultCandidateKey(candidate))
+      : !this.running && !!this.manualScope && !!this.manualResult?.candidates.includes(candidate);
+    if (!current || !this.data || !this.inventory || this.exportingImage) return;
+    const data = this.data, inventory = this.inventory, owner = this.currentOwner, generation = this.requestId;
+    const result = source === "search" ? this.result! : this.manualResult!;
+    const request = source === "search" ? this.completedSearch!.request : null;
+    const conditions = request?.type === "prepare" ? request.request : request?.type === "start" ? request.input : null;
+    const objectives = source === "search" ? [...this.resultObjectives] : [...this.manualObjectives];
+    const format = (value: number | null) => value === null ? this.t("unknown", "Unknown or not entered") : value.toLocaleString(this.locale);
+    const card = (id: string, kind: Kind, leader: boolean): ResultImageCard => {
+      const entry = inventory[kind].find(row => row.instanceId === id);
+      const catalog = entry ? (kind === "members" ? data.members[String(entry.cardId)] : data.snapshots[String(entry.cardId)]) : undefined;
+      if (!entry || !catalog) throw new Error("image-card-unavailable");
+      const options = this.cardOptions(catalog, kind), fields = kind === "members" ? ["level", "training", "awakening", "liveSkillLevel", "gekisoSkillLevel"] : ["level", "awakening"];
+      return { title: this.text(catalog.name), character: this.characterNames(catalog), image: catalog.image,
+        avatars: this.cardAvatars(catalog).map(value => value.image).filter(Boolean),
+        attribute: options.marks?.find(mark => mark?.at === "start")?.image,
+        rarity: options.marks?.find(mark => mark?.at === "end")?.image,
+        attributeLabel: this.attributeName(catalog), rarityLabel: this.rarityName(catalog), leader,
+        facts: fields.map(field => ({ label: this.fieldName(field), value: format((entry as unknown as Record<string, number | null>)[field] ?? null) })),
+      };
+    };
+    this.exportingImage = true;
+    this.searchError = "";
+    const loading = beginLoading(this.t("exportTeamImage", "Export team image"));
+    try {
+      const [songId, difficulty] = candidate.songKey.split(":"), song = this.visualSong(songId);
+      const chart = dataRows(song.difficulty ?? song.difficulties).find(row => String(row.difficulty) === difficulty);
+      const style = getComputedStyle(this), color = (key: string, fallback: string) => style.getPropertyValue(key).trim() || fallback;
+      const imageEventScene = request?.type === "prepare" ? request.request.eventScene : source === "manual" && this.wantsEventScene ? this.eventScene : null;
+      const model: TeamResultImage = {
+        title: songTitle(song, this.locale).text,
+        jacket: songJacketCandidates(song)[0],
+        subtitle: [difficultyKey({ difficulty }).toUpperCase(), String(chart?.displayLevel ?? chart?.playLevel ?? ""), this.t(this.mode, this.mode)].filter(Boolean).join(" · "),
+        membersLabel: this.t("members", "Members"), snapshotsLabel: this.t("snapshots", "Snapshots"),
+        leaderLabel: this.t("leader", "Leader"), emptyLabel: clientText(this.locale, "none", "None"), imageUnavailableLabel: this.t("imageUnavailable", "Image unavailable"),
+        members: candidate.assignment.memberInstanceIds.map(id => card(id, "members", id === candidate.assignment.leaderInstanceId)),
+        snapshots: candidate.assignment.snapshotInstanceIds.map(id => id === null ? null : card(id, "snapshots", false)),
+        metrics: objectives.map(objective => {
+          const metric = candidate.metrics[objective], number = (value: number) => value.toLocaleString(this.locale, objective === "ss-ratio" ? { style: "percent", maximumFractionDigits: 2 } : { maximumFractionDigits: 2 });
+          const available = metric && metric.value !== null && Number.isFinite(metric.value) && metric.status !== "unavailable";
+          return { label: this.metricLabel(objective, metric), value: available ? number(metric.value!) : this.t("goalUnavailable", "Unavailable"),
+            detail: metric ? [this.t(metric.status, metric.status), this.metricUnit(metric), ...(available && metric.range ? [`${this.t("outcomeRange", "Range")}: ${number(metric.range.minimum)}–${number(metric.range.maximum)}`] : [])].filter(Boolean).join(" · ") : "" };
+        }),
+        footer: [
+          `${this.criterionLabel(conditions?.skillOrderCriterion ?? this.effectiveSkillOrderCriterion)} · ${"completeness" in result ? this.t(result.completeness, result.completeness) : result.status === "complete" ? this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}`,
+          ...(imageEventScene ? [`${this.text(data.events[String(imageEventScene.eventId)]?.title ?? data.events[String(imageEventScene.eventId)]?.name)} · ${this.t("eventConsumption", "Actual cost")}: ${imageEventScene.consumedCount} · ${new Date(imageEventScene.liveStartServerTime.epochMilliseconds).toISOString()}`] : []),
+          `${this.activeProfile?.name ?? this.t("actualInventory", "Actual card library")} · ${data.identity.server} · ${data.identity.releaseId}`,
+          data.identity.sourceId ?? "", "haneoka.org",
+        ], server: data.identity.server, releaseId: data.identity.releaseId,
+        theme: { surface: color("--md-sys-color-surface", "white"), container: color("--md-sys-color-surface-container", "#f3f3f3"),
+          text: color("--md-sys-color-on-surface", "black"), muted: color("--md-sys-color-on-surface-variant", "#444"), primary: color("--md-sys-color-primary", "black"), outline: color("--md-sys-color-outline-variant", "#ccc"), font: color("--app-font", "sans-serif") },
+      };
+      const blob = await renderTeamResultImage(model);
+      if (!this.isConnected || generation !== this.requestId || data !== this.data || inventory !== this.inventory || owner !== this.currentOwner) return;
+      await downloadBlob(blob, `haneoka-team-${songId}-${difficulty}.png`);
+    } catch {
+      if (this.isConnected && generation === this.requestId) this.searchError = this.t("teamImageFailed", "Could not export this team image. Try again.");
+    } finally { this.exportingImage = false; loading.finish(); }
   }
   private metricUnit(metric: MetricValue): string {
     return metric.basis && metric.basis.kind !== "single"
@@ -4982,6 +5066,7 @@ export class TeamBuilder extends LitElement {
       <article class="team-builder__candidate" aria-label=${this.comparisonLabel(index)}>
         <div class="team-builder__actions">
           <button class="button button--text" ?disabled=${!this.canCompareCandidates} @click=${() => this.useFixedTeam(candidate.assignment)}>${this.t("useFixedTeam", "Use this team")}</button>
+          <button class="button button--text" ?disabled=${!this.canCompareCandidates || this.exportingImage} @click=${() => void this.exportCandidateImage(candidate)}>${this.t("exportTeamImage", "Export team image")}</button>
           <button class="button button--text" ?disabled=${!this.canCompareCandidates || !this.canEditWorkspace} @click=${() => { this.useFixedTeam(candidate.assignment); this.openWorkspace("sync"); }}>${this.t("saveNamedTeam", "Save team")}</button>
         </div>
         <div class="team-builder__section-header"><strong>${this.comparisonLabel(index)}</strong>
@@ -5135,6 +5220,72 @@ export class TeamBuilder extends LitElement {
   private get previousResult(): boolean {
     return Boolean(this.result && this.completedSearch?.result !== this.result);
   }
+  private syncResumeStore() {
+    const key = this.sourceReady && this.data && this.currentOwner !== undefined && this.storeState?.ownerId === this.currentOwner
+      ? JSON.stringify([this.data.identity.server, this.currentOwner, this.activeProfileId]) : null;
+    if (key === (this.resumeStore?.key ?? null)) return;
+    this.resumeStore?.dispose();
+    this.resumeStore = key === null ? undefined : new SearchResumeStore(key, () => this.requestUpdate());
+  }
+  private get searchSettings() {
+    return {
+      mode: this.mode, objectives: [...this.objectives], skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
+      selectedSong: this.selectedSong, selectedDifficulty: this.selectedDifficulty, lockSong: this.lockSong, lockDifficulty: this.lockDifficulty,
+      excludedCharts: [...this.excludedCharts], metricBasis: this.metricBasis, songSeconds: { ...this.songSeconds },
+      downtimeSeconds: this.downtimeSeconds, consumptionAmount: this.consumptionAmount, consumptionResource: this.consumptionResource,
+      excludeJust: this.excludeJust, justRate: this.justRate, requiredLeader: this.requiredLeader, fixedBindings: structuredClone(this.fixedBindings),
+      bonusFloorPoints: this.bonusFloorPoints, bonusFloorItems: this.bonusFloorItems, distinctCardSets: this.distinctCardSets,
+      selectedEvent: this.selectedEvent, eventFlowKind: this.eventFlowKind, eventConsumption: this.eventConsumption,
+      applyEventScene: this.applyEventScene, eventStartText: this.eventStartText, eventSingleHeld: this.eventSingleHeld,
+    };
+  }
+  private validResumeSettings(value: unknown): value is ReturnType<TeamBuilder["captureSearchSettings"]> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const row = value as Record<string, unknown>, keys = Object.keys(this.searchSettings);
+    if (Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))) return false;
+    if (!["selectedSong", "selectedDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
+    if (!["lockSong", "lockDifficulty", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
+    if (!["downtimeSeconds", "consumptionAmount", "bonusFloorPoints", "bonusFloorItems", "distinctCardSets", "eventConsumption"].every(key => row[key] === null || typeof row[key] === "number" && Number.isFinite(row[key]))) return false;
+    if (typeof row.justRate !== "number" || !Number.isFinite(row.justRate)) return false;
+    if (!MODES.includes(row.mode as PlayMode) || !["nominal-mean", "worst-ap"].includes(String(row.skillOrderCriterion)) ||
+      !["personal-solo", "personal-live"].includes(String(row.selectedScoreDomain)) || !["single", "time", "consumption"].includes(String(row.metricBasis)) ||
+      !["live-boost", "event-item"].includes(String(row.consumptionResource)) || !["", "normal", "challenge"].includes(String(row.eventFlowKind))) return false;
+    if (!Array.isArray(row.objectives) || !row.objectives.length || row.objectives.length > OBJECTIVES.length || new Set(row.objectives).size !== row.objectives.length || row.objectives.some(value => !OBJECTIVES.includes(value))) return false;
+    if (!Array.isArray(row.excludedCharts) || row.excludedCharts.length > 1000 || row.excludedCharts.some(value => typeof value !== "string")) return false;
+    if (!Array.isArray(row.fixedBindings) || row.fixedBindings.length > 5 || row.fixedBindings.some(value => !value || typeof value.memberInstanceId !== "string" || value.snapshotInstanceId !== null && typeof value.snapshotInstanceId !== "string")) return false;
+    if (!row.songSeconds || typeof row.songSeconds !== "object" || Array.isArray(row.songSeconds) || Object.values(row.songSeconds).some(value => typeof value !== "number" || !Number.isFinite(value) || value <= 0)) return false;
+    return true;
+  }
+  private captureSearchSettings() { return this.searchSettings; }
+  private resumeCompatible(bookmark: SearchResumeBookmark) {
+    return !!this.inventory && !!this.data && this.canEdit && bookmark.checkpoint.engineRevision === SEARCH_ENGINE_REVISION &&
+      bookmark.identity.server === this.data.identity.server && bookmark.identity.releaseId === this.data.identity.releaseId &&
+      bookmark.identity.sourceId === this.data.identity.sourceId && bookmark.inventoryText === exportInventory(this.inventory) &&
+      this.validResumeSettings(bookmark.settings);
+  }
+  private continueSavedSearch() {
+    const bookmark = this.resumeStore?.value;
+    if (!bookmark || this.running || !this.resumeCompatible(bookmark) || !this.validResumeSettings(bookmark.settings)) return;
+    const settings = structuredClone(bookmark.settings);
+    this.cancelSearch(); this.result = null; this.optimizationInput = null;
+    Object.assign(this, settings, { excludedCharts: new Set(settings.excludedCharts) });
+    this.planningKind = "team";
+    if (this.canOptimize) { this.startOptimization(bookmark.checkpoint); this.openWorkspace("results"); }
+    else this.openWorkspace("plan");
+  }
+  private renderResumeStatus() {
+    const store = this.resumeStore, bookmark = store?.value;
+    if (!store) return nothing;
+    if (!bookmark) return store.status === "error" ? html`<p class="team-builder__hint" role="status">${this.t("resumeSaveFailed", "Search progress could not be saved.")}</p>` : nothing;
+    const compatible = this.resumeCompatible(bookmark);
+    return html`<div class="stack stack--tight">
+      <p class="team-builder__hint" role="status">${!compatible ? this.t("resumeIncompatible", "The saved search uses different card data, training or search rules. Start a new search.") : store.status === "error" ? this.t("resumeSaveFailed", "Search progress could not be saved.") : this.t("resumeAvailable", "A partial search is saved. Continue with its original conditions and the current time budget.")}</p>
+      <div class="team-builder__actions">
+        <button class="button button--outlined" ?disabled=${this.running || !compatible} @click=${() => this.continueSavedSearch()}>${this.t("resumeSearch", "Continue saved search")}</button>
+        <button class="button button--text" ?disabled=${this.running} @click=${() => void store.save(null)}>${this.t("discardSearchProgress", "Discard saved progress")}</button>
+      </div>
+    </div>`;
+  }
   private renderCheckpointStatus() {
     const cache = this.checkpointCache;
     if (!cache?.lastComplete || this.result !== cache.lastComplete.result) return nothing;
@@ -5195,6 +5346,7 @@ export class TeamBuilder extends LitElement {
           >${clientText(this.locale, "cancel", "Cancel")}</button>
         </div>` : nothing}
         ${this.renderCheckpointStatus()}
+        ${this.renderResumeStatus()}
         ${this.renderManualResult()}
         ${
           this.result
@@ -5262,6 +5414,7 @@ export class TeamBuilder extends LitElement {
               @click=${() => this.loadSource(readReleaseServer())}>${clientText(this.locale, "retry", "Retry")}</button>` : nothing}
             <section id="team-panel-plan" class="team-builder__panel team-builder__controls" aria-label=${page.id === "plan" ? page.label : this.t("planningControls", "Team and resource conditions")} ?hidden=${this.workspaceView !== "plan"}>
               ${this.renderPlanningKind()}
+              ${this.planningKind === "team" ? this.renderResumeStatus() : nothing}
               <div class="team-builder__controls" ?hidden=${this.planningKind !== "team"}>${this.renderGoals()}</div>
               <div ?hidden=${this.planningKind !== "resource"}>${this.renderResourcePlanning()}</div>
             </section>
