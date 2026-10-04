@@ -113,7 +113,8 @@ export function createNativeGekisoSoloEvaluator(data: TeamBuilderData, normal: N
           metric.assumptions.push("native-gekiso-personal-solo-perfect-timing");
           for (const entry of metric.breakdown ?? []) {
             if (entry.key.endsWith("numerator")) entry.source = "native personal-solo ledger";
-            if (entry.key.endsWith("threshold")) entry.source = "same-release native personal SoloScore rank7";
+            if (entry.key.endsWith("threshold")) entry.source = normal.input.evaluation.songContexts[song.song.key]?.ssContext?.source ??
+              "same-release native personal SoloScore rank7";
           }
         }
       }

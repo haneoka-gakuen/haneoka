@@ -35,6 +35,7 @@ import { nativeRuleGaps, nativeRuleSupports } from "./native-rule-profile.ts";
 import { createNativeGekisoContextEvaluation, type NativeGekisoPlans } from "./native-gekiso-evaluation.ts";
 import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
 import type { NativeGekisoRankingScenario } from "./native-gekiso-ranking-scenario.ts";
+import { createNativePersonalSSResolver } from "./native-personal-ss.ts";
 const zero = (): PowerStats => ({ performance: 0, technique: 0, visual: 0 });
 const rates = (row: Record<string, unknown>): PowerStats => ({
   performance: Number(row.performanceRate),
@@ -384,14 +385,13 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
       !usableSnapshots.has(state.instanceId)
     )
       input.evaluation.gaps.push(gap("native-normal-incomplete-snapshot-search", state.instanceId));
-  const rankRows = dataRows(request.data.liveTools.scoreRanks).map(nativeRow);
-  const ssByGroup = new Map(
-    rankRows.filter((row) => row.liveScoreRank === 7).map((row) => [Number(row.group), Number(row.requiredScore)]),
-  );
+  const resolveSS = createNativePersonalSSResolver(request.data);
+  const ssContexts = new Map(request.songs.map(song => [song.key, resolveSS(song.songId)]));
   for (const song of request.songs) {
-    const threshold = ssByGroup.get(Number(request.data.songs[String(song.songId)]?.liveScoreRankGroup));
-    input.evaluation.songContexts[song.key]!.personalSS =
-      threshold !== undefined && threshold > 0 && Number.isSafeInteger(threshold) ? threshold : null;
+    const ss = ssContexts.get(song.key)!;
+    input.evaluation.songContexts[song.key]!.personalSS = ss.threshold;
+    input.evaluation.songContexts[song.key]!.ssContext = { domain: "personal", threshold: ss.threshold,
+      numerator: null, source: ss.source };
     if (Number.isSafeInteger(initialLife) && initialLife > 0)
       input.evaluation.songContexts[song.key]!.life = initialLife;
   }
@@ -421,6 +421,11 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
           : undefined,
       );
       const candidate = evaluate(assignment, song, metric);
+      const ss = ssContexts.get(song.song.key)!;
+      for (const objective of ["ss-ratio", "ss-surplus"] as const) {
+        candidate.metrics[objective].scoreDomain = "personal-solo";
+        if (ss.gaps.length) candidate.metrics[objective].gaps.push(...ss.gaps);
+      }
       if (resolveEventBonusBP) candidate.eventBonusBP = resolveEventBonusBP(assignment);
       if (scene && request.objectives.includes("event-points")) {
         let points: MetricValue = unavailableMetric("native-event-complete-play-law-unresolved", song.song.key);

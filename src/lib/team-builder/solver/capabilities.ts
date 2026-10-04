@@ -23,7 +23,7 @@ export function getTeamBuilderCapabilities(identity: ReleaseIdentity & { sourceI
         const supported =
           identity.server === "intl" &&
           ((mode === "normal" && objective === "base-score") ||
-            (nativeSourceKnown && normalForecast) ||
+            (nativeSourceKnown && normalForecast && (objective === "score" || soloKnown)) ||
             (soloKnown && gekisoSolo) ||
             eventPoints);
         const code =
