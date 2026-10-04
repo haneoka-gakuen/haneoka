@@ -984,7 +984,9 @@ export class TeamBuilder extends LitElement {
       "release-mismatch": "releaseMismatch",
       "normalization-required": "uniquenessTitle",
     };
-    const label = this.t(labels[this.saveState] ?? "authLoading", "Checking sign-in status");
+    const label = this.storeState?.error === "inventory-local-draft-changed"
+      ? this.t("localDraftChanged", "Your card library changed in another tab. Export your current inputs, then reload the saved library.")
+      : this.t(labels[this.saveState] ?? "authLoading", "Checking sign-in status");
     return html`
       <section class="team-builder__section">
         <div class="team-builder__actions">

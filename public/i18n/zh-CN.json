@@ -3147,7 +3147,8 @@
       "card": "卡牌",
       "entry": "项目"
     },
-    "resourceResultsChanged": "养成或条件已变更，请重新计算以更新结果。"
+    "resourceResultsChanged": "养成或条件已变更，请重新计算以更新结果。",
+    "localDraftChanged": "另一个标签页已修改卡库。请先导出当前输入，再重新读取已保存的卡库。"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

@@ -42,6 +42,11 @@ export class CloudInventoryRequestError extends Error {
     super(`Inventory request failed: ${code}`);
   }
 }
+export class LocalInventoryChangedError extends Error {
+  constructor() {
+    super("inventory-local-draft-changed");
+  }
+}
 export interface CloudInventory {
   ownerId: string;
   server: string;
@@ -105,9 +110,11 @@ export function writeLocalInventory(
   owner: string | null = null,
   baseRevision = 0,
   dirty = true,
-): void {
-  storage.setItem(key(data, owner), JSON.stringify({ inventory: checked(inventory, data), baseRevision, dirty }));
+): string {
+  const serialized = JSON.stringify({ inventory: checked(inventory, data), baseRevision, dirty });
+  storage.setItem(key(data, owner), serialized);
   setLocalDraftLocator(storage, data, owner, data.identity.releaseId);
+  return serialized;
 }
 
 /** JSON object ordering is transport detail; array ordering and every value remain meaningful. */
@@ -270,6 +277,7 @@ export class InventoryStore {
   private restoredDraft?: { kind: "anonymous" | "account"; location: LocatedLocalDraft };
   private normalizationSource?: InventoryUniquenessError;
   private pendingCloudRebase = false;
+  private localVersions = new Map<string, string | null>();
   private readonly client;
   constructor(
     readonly data: TeamBuilderData,
@@ -309,6 +317,7 @@ export class InventoryStore {
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;
     this.pendingCloudRebase = false;
+    this.localVersions.clear();
     const generation = ++this.generation;
     this.edits++;
     this.controller = new AbortController();
@@ -317,6 +326,10 @@ export class InventoryStore {
     this.emit();
     let observedCloud: CloudInventory | undefined;
     try {
+      for (const owner of new Set([ownerId, null])) {
+        const storageKey = key(this.data, owner);
+        this.localVersions.set(storageKey, this.options.storage.getItem(storageKey));
+      }
       if (!ownerId) {
         const local = locateLocalDraft(this.options.storage, this.data, null);
         this.state.inventory = local
@@ -482,14 +495,23 @@ export class InventoryStore {
   }
   private persist(): void {
     if (this.state.inventory)
-      writeLocalInventory(
-        this.options.storage,
-        this.data,
-        this.state.inventory,
-        this.state.ownerId,
-        this.state.revision,
-        this.state.dirty,
-      );
+      this.writeDraft(this.state.inventory, this.state.ownerId, this.state.revision, this.state.dirty);
+  }
+  private assertLocalDraftUnchanged(owner: string | null): void {
+    const storageKey = key(this.data, owner);
+    if (!this.localVersions.has(storageKey) ||
+        this.options.storage.getItem(storageKey) !== this.localVersions.get(storageKey)) {
+      clearTimeout(this.timer);
+      this.state.phase = "error";
+      this.state.error = "inventory-local-draft-changed";
+      this.emit();
+      throw new LocalInventoryChangedError();
+    }
+  }
+  private writeDraft(inventory: InventoryV1, owner: string | null, revision = 0, dirty = true): void {
+    this.assertLocalDraftUnchanged(owner);
+    const serialized = writeLocalInventory(this.options.storage, this.data, inventory, owner, revision, dirty);
+    this.localVersions.set(key(this.data, owner), serialized);
   }
   private schedule(): void {
     clearTimeout(this.timer);
@@ -509,6 +531,16 @@ export class InventoryStore {
       )
     )
       return Promise.resolve();
+    try {
+      this.assertLocalDraftUnchanged(this.state.ownerId);
+    } catch (error) {
+      if (!(error instanceof LocalInventoryChangedError)) {
+        this.state.phase = "error";
+        this.state.error = String(error);
+        this.emit();
+      }
+      return Promise.resolve();
+    }
     const owner = this.state.ownerId,
       generation = this.generation,
       version = this.edits;
@@ -536,9 +568,16 @@ export class InventoryStore {
         this.emit();
       } catch (error) {
         if (generation !== this.generation || signal.aborted) return;
-        this.state.phase = error instanceof CloudInventoryRequestError ? "error" : "offline";
-        this.state.error = String(error);
-        this.persist();
+        this.state.phase = error instanceof CloudInventoryRequestError || error instanceof LocalInventoryChangedError ? "error" : "offline";
+        this.state.error = error instanceof LocalInventoryChangedError ? error.message : String(error);
+        if (!(error instanceof LocalInventoryChangedError)) {
+          try {
+            this.persist();
+          } catch (draftError) {
+            this.state.phase = "error";
+            this.state.error = draftError instanceof LocalInventoryChangedError ? draftError.message : String(draftError);
+          }
+        }
         this.emit();
       } finally {
         if (generation === this.generation) {
@@ -553,6 +592,7 @@ export class InventoryStore {
   resolveAnonymous(strategy: "cloud" | "draft" | "merge", mapPriority?: "cloud" | "draft"): void {
     if (this.state.phase !== "merge-required" || !this.anonymousDraft || !this.state.inventory)
       throw new Error("No anonymous merge is pending");
+    this.assertLocalDraftUnchanged(null);
     const cloud = this.state.inventory;
     const next =
       strategy === "cloud"
@@ -565,6 +605,7 @@ export class InventoryStore {
     if (strategy !== "cloud" || this.pendingCloudRebase || this.state.dirty) this.edit(next);
     this.pendingCloudRebase = false;
     this.options.storage.removeItem(key(this.data, null));
+    this.localVersions.set(key(this.data, null), null);
     setLocalDraftLocator(this.options.storage, this.data, null, null);
     this.emit();
   }
@@ -586,6 +627,7 @@ export class InventoryStore {
           ? this.state.inventory
           : mergeInventories(cloud, this.state.inventory, mapPriority);
     const anonymousPending = !!this.anonymousDraft && this.state.localDraftSource === "anonymous";
+    if (anonymousPending) this.assertLocalDraftUnchanged(null);
     this.state = {
       ...this.state,
       inventory: next,
@@ -599,6 +641,7 @@ export class InventoryStore {
     if (anonymousPending) {
       this.anonymousDraft = undefined;
       this.options.storage.removeItem(key(this.data, null));
+      this.localVersions.set(key(this.data, null), null);
       setLocalDraftLocator(this.options.storage, this.data, null, null);
     }
     this.pendingCloudRebase = false;
@@ -631,7 +674,7 @@ export class InventoryStore {
     this.state.localDraftSource = undefined;
     if (restored?.kind === "anonymous" && this.state.ownerId) {
       this.anonymousDraft = next;
-      writeLocalInventory(this.options.storage, this.data, next, null);
+      this.writeDraft(next, null);
       const remote = this.state.remote;
       if (remote?.inventory && remote.inventory.releaseId !== this.data.identity.releaseId) {
         this.state.inventory = next;
@@ -672,6 +715,7 @@ export class InventoryStore {
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;
     this.pendingCloudRebase = false;
+    this.localVersions.clear();
     this.state = { phase: "auth-loading", inventory: null, ownerId: null, revision: 0, dirty: false };
   }
   async chooseLocalDraft(releaseId: string): Promise<void> {

@@ -3147,7 +3147,8 @@
       "card": "カード",
       "entry": "項目"
     },
-    "resourceResultsChanged": "育成値や条件が変わりました。結果を更新するには再計算してください。"
+    "resourceResultsChanged": "育成値や条件が変わりました。結果を更新するには再計算してください。",
+    "localDraftChanged": "別のタブでカード一覧が変更されました。現在の入力をエクスポートしてから、保存済みの一覧を読み直してください。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

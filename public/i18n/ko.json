@@ -3147,7 +3147,8 @@
       "card": "카드",
       "entry": "항목"
     },
-    "resourceResultsChanged": "육성 값이나 조건이 변경되었습니다. 결과를 갱신하려면 다시 계산해 주세요."
+    "resourceResultsChanged": "육성 값이나 조건이 변경되었습니다. 결과를 갱신하려면 다시 계산해 주세요.",
+    "localDraftChanged": "다른 탭에서 카드 목록이 변경되었습니다. 현재 입력을 내보낸 뒤 저장된 목록을 다시 불러오세요."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

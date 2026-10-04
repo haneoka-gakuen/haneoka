@@ -3147,7 +3147,8 @@
       "card": "Card",
       "entry": "Entry"
     },
-    "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results."
+    "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results.",
+    "localDraftChanged": "Your card library changed in another tab. Export your current inputs, then reload the saved library."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

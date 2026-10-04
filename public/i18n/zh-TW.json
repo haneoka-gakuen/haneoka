@@ -3147,7 +3147,8 @@
       "card": "卡牌",
       "entry": "項目"
     },
-    "resourceResultsChanged": "養成或條件已變更，請重新計算以更新結果。"
+    "resourceResultsChanged": "養成或條件已變更，請重新計算以更新結果。",
+    "localDraftChanged": "另一個分頁已修改卡庫。請先匯出目前輸入，再重新讀取已儲存的卡庫。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",
