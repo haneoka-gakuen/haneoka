@@ -1131,7 +1131,7 @@
     "visibility": "可见性",
     "visibilityPublic": "公开",
     "visibilityProtected": "仅登录用户",
-    "visibilityPrivate": "仅自己",
+    "visibilityPrivate": "仅自己可见",
     "draftRestored": "已恢复本地草稿",
     "draftSaved": "草稿已自动保存在此设备",
     "feedRecommended": "推荐",

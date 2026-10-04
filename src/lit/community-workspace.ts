@@ -7066,6 +7066,9 @@ export class CommunityWorkspace extends LitElement {
             <span class="community-pin__title"
               >${String(post.title || this.label("emptyTitle", "Untitled"))}</span
             >
+            ${post.adminOnlyContext && post.visibility === "private" ? html`
+              <span class="chip chip--static chip--tonal">${icon("lock", 14)}${this.label("visibilityPrivate", "Only visible to you")}</span>
+            ` : nothing}
             ${
               images.length
                 ? nothing

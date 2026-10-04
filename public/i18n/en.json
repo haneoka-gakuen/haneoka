@@ -1131,7 +1131,7 @@
     "visibility": "Visibility",
     "visibilityPublic": "Public",
     "visibilityProtected": "Signed-in users",
-    "visibilityPrivate": "Only me",
+    "visibilityPrivate": "Only visible to you",
     "draftRestored": "Local draft restored",
     "draftSaved": "Draft saved on this device",
     "feedRecommended": "For you",

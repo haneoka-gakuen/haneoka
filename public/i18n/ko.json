@@ -1131,7 +1131,7 @@
     "visibility": "공개 범위",
     "visibilityPublic": "전체 공개",
     "visibilityProtected": "로그인한 사용자만",
-    "visibilityPrivate": "나만 보기",
+    "visibilityPrivate": "나만 볼 수 있음",
     "draftRestored": "로컬 초안을 복원했습니다",
     "draftSaved": "이 기기에 초안을 자동 저장했습니다",
     "feedRecommended": "추천",

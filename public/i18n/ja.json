@@ -1131,7 +1131,7 @@
     "visibility": "公開範囲",
     "visibilityPublic": "公開",
     "visibilityProtected": "ログインユーザーのみ",
-    "visibilityPrivate": "自分のみ",
+    "visibilityPrivate": "自分のみ閲覧可",
     "draftRestored": "ローカル下書きを復元しました",
     "draftSaved": "この端末に下書きを自動保存しました",
     "feedRecommended": "おすすめ",

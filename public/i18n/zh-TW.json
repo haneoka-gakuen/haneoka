@@ -1131,7 +1131,7 @@
     "visibility": "可見範圍",
     "visibilityPublic": "公開",
     "visibilityProtected": "僅限已登入使用者",
-    "visibilityPrivate": "僅自己",
+    "visibilityPrivate": "僅自己可見",
     "draftRestored": "已還原本機草稿",
     "draftSaved": "草稿已自動儲存在此裝置",
     "feedRecommended": "推薦",
