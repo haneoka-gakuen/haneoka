@@ -362,7 +362,8 @@
       "audio_missing": "저장한 오디오가 없습니다",
       "project_missing": "저장한 채보가 없습니다",
       "revision_missing": "저장한 버전이 없습니다",
-      "save_failed": "저장할 수 없습니다. 남은 저장 공간을 확인해 주세요"
+      "save_failed": "저장할 수 없습니다. 남은 저장 공간을 확인해 주세요",
+      "title": "채보 편집기 · Beta"
     }
   },
   "storyEditor": "스토리 편집기",

@@ -362,7 +362,8 @@
       "audio_missing": "找不到已保存音频",
       "project_missing": "找不到已保存谱面",
       "revision_missing": "找不到已保存版本",
-      "save_failed": "无法保存，请检查剩余存储空间"
+      "save_failed": "无法保存，请检查剩余存储空间",
+      "title": "谱面编辑器 · Beta"
     }
   },
   "storyEditor": "故事编辑器",

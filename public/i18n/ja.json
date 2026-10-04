@@ -362,7 +362,8 @@
       "audio_missing": "保存した音源が見つかりません",
       "project_missing": "保存した譜面が見つかりません",
       "revision_missing": "バージョンが見つかりません",
-      "save_failed": "保存できませんでした。空き容量を確認してください"
+      "save_failed": "保存できませんでした。空き容量を確認してください",
+      "title": "譜面エディター · Beta"
     }
   },
   "storyEditor": "ストーリーエディター",

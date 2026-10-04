@@ -362,7 +362,8 @@
       "audio_missing": "Saved audio is missing",
       "project_missing": "Saved chart is missing",
       "revision_missing": "Saved version is missing",
-      "save_failed": "Could not save. Check available storage."
+      "save_failed": "Could not save. Check available storage.",
+      "title": "Chart Editor · Beta"
     }
   },
   "storyEditor": "Story Editor",

@@ -362,7 +362,8 @@
       "audio_missing": "找不到已儲存音訊",
       "project_missing": "找不到已儲存譜面",
       "revision_missing": "找不到已儲存版本",
-      "save_failed": "無法儲存，請檢查剩餘儲存空間"
+      "save_failed": "無法儲存，請檢查剩餘儲存空間",
+      "title": "譜面編輯器 · Beta"
     }
   },
   "storyEditor": "故事編輯器",

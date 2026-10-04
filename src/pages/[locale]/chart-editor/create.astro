@@ -6,11 +6,12 @@ import { t } from "../../../i18n/messages";
 import "../../../styles/chart-creation.css";
 export function getStaticPaths() { return LOCALES.map(locale => ({ params: { locale }, props: { locale } })); }
 const { locale } = Astro.props as { locale: Locale };
-const title = t(locale, "chartEditor", "Chart Editor");
+const titleKey = "chartEditorPage.creation.title";
+const title = t(locale, titleKey, `${t(locale, "chartEditor", "Chart Editor")} · Beta`);
 const route = "/chart-editor/create";
 ---
-<Base locale={locale} route={route} title={title} titleKey="chartEditor">
-  <AppShell locale={locale} route={route} title={title} titleKey="chartEditor">
+<Base locale={locale} route={route} title={title} titleKey={titleKey}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
     <chart-creation-workspace locale={locale}></chart-creation-workspace>
   </AppShell>
 </Base>
