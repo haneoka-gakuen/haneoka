@@ -36,6 +36,7 @@ from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
 from build.runtime_texture_projection import RuntimeTextureProjection
 from build.game_systems import build_game_systems
+from build.jp_shop import bind_jp_shop_metadata
 from build.tgw_card import build_tgw_card
 from build.live2d_preview import PREVIEW_SCHEMA as LIVE2D_PREVIEW_SCHEMA
 from build.spine_catalog import build_spine_catalog
@@ -7828,6 +7829,8 @@ def build_api(
         "feature-status": _feature_status(data),
     }
     documents.update(build_game_systems(data, documents, RESOURCE_TYPES, _timestamp))
+    if data.server == "jp":
+        documents["shop"] = bind_jp_shop_metadata(documents["shop"], data.rows("MasterShop"))
     documents["stickers"] = build_stickers(data, _timestamp)
     documents["backgrounds"] = build_backgrounds(data)
     documents["tgw-card"] = build_tgw_card(data, documents, RESOURCE_TYPES)
