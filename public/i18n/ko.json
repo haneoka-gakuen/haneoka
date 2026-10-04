@@ -3394,7 +3394,15 @@
     "practicalPreparing": "팀 준비 중",
     "practicalImproving": "팀 개선 중",
     "practicalChecking": "후보 확인 중",
-    "practicalCalculating": "점수 계산 중"
+    "practicalCalculating": "점수 계산 중",
+    "recoveryTitle": "유지할 버전 선택",
+    "recoveryHint": "각 버전은 따로 보관되어 있습니다. 백업을 내보낸 후 계속 사용할 전체 버전을 선택하세요.",
+    "recoveryPending": "이 탭의 저장하지 않은 변경 사항",
+    "recoveryLocal": "이 브라우저에 저장된 버전",
+    "recoveryCloud": "계정에 저장된 버전",
+    "recoveryUnavailable": "읽을 수 있는 버전이 없습니다.",
+    "recoveryUseSelected": "선택한 버전 사용",
+    "recoveryChanged": "저장된 버전이 다시 변경되었습니다. 다시 시도하여 최신 버전을 확인하세요."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

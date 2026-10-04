@@ -468,6 +468,8 @@ export class TeamBuilder extends LitElement {
   private storeState: InventoryStoreState | null = null;
   private authController?: AbortController;
   private authGeneration = 0;
+  private authorityBlocked = false;
+  private recoveryChoices: Partial<Record<"inventory" | "workspace", { conflict: object; id: string }>> = {};
   private currentOwner: string | null | undefined;
   private dataController?: AbortController;
   private identityController?: AbortController;
@@ -559,7 +561,7 @@ export class TeamBuilder extends LitElement {
     return { ...this.data?.songs[id], ...this.visuals?.songs[id] };
   }
   private get workspaceDocument() {
-    return this.workspaceState && this.workspaceState.ownerId === this.currentOwner ? this.workspaceState.workspace : null;
+    return !this.authorityBlocked && this.workspaceState && this.workspaceState.ownerId === this.currentOwner ? this.workspaceState.workspace : null;
   }
   private get activeProfileId() { return this.actualInventoryFallback ? null : this.workspaceDocument?.activeProfileId ?? null; }
   private get activeProfile() { return this.workspaceDocument?.profiles.find(profile => profile.id === this.activeProfileId); }
@@ -585,6 +587,8 @@ export class TeamBuilder extends LitElement {
       if (this.workspaceStore !== store || this.data?.identity.server !== store.server || !this.isConnected) return;
       const previousProfile = this.activeProfileId;
       this.workspaceState = state;
+      if (state.authorityError) { this.suspendAccountAuthority(state.authorityError); return; }
+      if (this.authorityBlocked) { this.requestUpdate(); return; }
       if (["anonymous", "saved", "pending", "saving"].includes(state.phase)) this.workspaceError = "";
       if (previousProfile !== this.activeProfileId) {
         this.closePane(); this.formationChanged();
@@ -596,7 +600,7 @@ export class TeamBuilder extends LitElement {
     this.workspaceStore = store;
   }
   private refreshWorkspaceInventory() {
-    if (!this.data || this.pendingRebase) return;
+    if (this.authorityBlocked || !this.data || this.pendingRebase) return;
     const actual = this.storeState && this.storeState.ownerId === this.currentOwner ? this.storeState.inventory : null;
     let next: InventoryV1 | null = actual ?? null;
     if (this.activeProfileId && actual && this.workspaceDocument) {
@@ -738,18 +742,18 @@ export class TeamBuilder extends LitElement {
     const phaseKey: Record<string, string> = { "auth-loading": "authLoading", loading: "cloudLoading", anonymous: "local", saved: "saved", pending: "saving", saving: "saving", offline: "saveFailed", conflict: "conflict", "merge-required": "merge", error: "saveFailed" };
     return html`<section class="team-builder__section">
       ${renderDetailSectionHeading(this.t("plansAndTeams", "Plans and saved teams"), "cards", { level: 2 })}
-      <p role="status">${state?.error === "team-workspace-local-draft-changed" ? this.t("workspaceLocalChanged", "Plans changed in another tab. Export this copy before reloading.") : this.t(phaseKey[state?.phase ?? "auth-loading"], "Checking sign-in status")}</p>
+      <p role="status">${this.authorityBlocked ? this.t("authUnavailable", "Sign-in status could not be checked.") : state?.localConflict ? this.t("recoveryHint", "These versions were kept separately. Export backups, then choose the complete version to continue with.") : state?.error === "team-workspace-local-draft-changed" ? this.t("workspaceLocalChanged", "Plans changed in another tab. Export this copy before reloading.") : this.t(phaseKey[state?.phase ?? "auth-loading"], "Checking sign-in status")}</p>
       ${this.workspaceError ? html`<p class="team-builder__error" role="alert">${this.workspaceError}</p>` : nothing}
       <div class="team-builder__actions">
         <button class="button button--outlined" ?disabled=${!document} @click=${() => this.exportWorkspace()}>${this.t("exportPlans", "Export plan backup")}</button>
         <button class="button button--outlined" ?disabled=${!this.canEditWorkspace} @click=${() => this.querySelector<HTMLInputElement>("[data-workspace-import]")?.click()}>${this.t("importPlans", "Import plan backup")}</button>
         <input hidden data-workspace-import type="file" accept="application/json,.json" @change=${this.importWorkspaceFile} />
         ${state && ["error", "offline"].includes(state.phase) ? html`<button class="button button--outlined" @click=${() => {
-          if (this.currentOwner === undefined) return;
-          if (state.phase === "offline" && state.dirty) void this.workspaceStore?.saveNow();
-          else void this.workspaceStore?.setAccount(this.currentOwner);
+          if (!this.authorityBlocked && state.phase === "offline" && state.dirty && state.ownerId === this.currentOwner) void this.workspaceStore?.saveNow();
+          else void this.checkAccount(true);
         }}>${clientText(this.locale, "retry", "Retry")}</button>` : nothing}
       </div>
+      ${this.renderLocalRecovery("workspace")}
       ${state && ["conflict", "merge-required"].includes(state.phase) && state.ownerId === this.currentOwner ? html`<div class="stack">
         ${this.select(this.t("workspaceMergePriority", "Conflicting plans"), this.workspaceImportPriority, [{ value: "cloud", label: this.t("keepExistingPlans", "Keep existing versions") }, { value: "local", label: this.t("keepImportedPlans", "Keep incoming versions") }], value => { this.workspaceImportPriority = value as "cloud" | "local"; })}
         <div class="team-builder__actions">
@@ -803,10 +807,13 @@ export class TeamBuilder extends LitElement {
     if (!this.data) return;
     try {
       this.bindWorkspaceStore();
-      this.store = new InventoryStore(this.data, {
+      const store = new InventoryStore(this.data, {
         storage: localStorage,
         onChange: (state) => {
+          if (this.store !== store || !this.isConnected) return;
           this.storeState = state;
+          if (state.authorityError) { this.suspendAccountAuthority(state.authorityError); return; }
+          if (this.authorityBlocked) { this.requestUpdate(); return; }
           const uniqueness = state.normalization;
           if (uniqueness) {
             this.pendingUniqueness = uniqueness;
@@ -833,6 +840,7 @@ export class TeamBuilder extends LitElement {
           this.requestUpdate();
         },
       });
+      this.store = store;
       void this.checkAccount();
     } catch {
       this.saveState = "error";
@@ -945,6 +953,86 @@ export class TeamBuilder extends LitElement {
       loading.finish();
     }
   }
+  private suspendAccountAuthority(_error: { status: number; code: string }) {
+    if (this.authorityBlocked) return;
+    this.authorityBlocked = true;
+    ++this.authGeneration; this.authController?.abort();
+    this.currentOwner = undefined;
+    this.cancelSearch(); this.result = null; this.resourceCompleted = null; this.optimizationInput = null;
+    this.closePane(); this.inventory = null; this.workspaceImport = null; this.eventPreview = null;
+    this.pendingRebase = null; this.pendingUniqueness = null; this.uniquenessChoices = {}; this.uniquenessOriginalText = "";
+    this.selectedIds = new Set(); this.bulkPreview = null; this.requiredLeader = ""; this.fixedBindings = [];
+    this.portfolioTeams = new Set(); this.practicalBaselineId = ""; this.practicalBaselineCache = undefined;
+    this.recoveryChoices = {};
+    this.checkpointCache?.dispose(); this.checkpointCache = null;
+    this.resumeStore?.dispose(); this.resumeStore = undefined;
+    this.saveState = "auth-error"; this.error = this.t("authUnavailable", "Sign-in status could not be checked.");
+    this.requestUpdate();
+  }
+  private localRecovery(kind: "inventory" | "workspace") {
+    if (this.authorityBlocked || this.currentOwner === undefined || !this.data) return null;
+    const state = kind === "inventory" ? this.storeState : this.workspaceState;
+    if (!state || state.ownerId !== this.currentOwner || !state.localConflict) return null;
+    const conflict = state.localConflict;
+    const inventory = this.storeState, workspace = this.workspaceState;
+    const pending = kind === "inventory" ? inventory!.localConflict!.pendingInventory : workspace!.localConflict!.pendingWorkspace;
+    const local = kind === "inventory" ? inventory!.localConflict!.inventory : workspace!.localConflict!.workspace;
+    const remote = state.remote?.ownerId === this.currentOwner && state.remote?.server === this.data.identity.server
+      ? kind === "inventory" ? inventory!.remote?.inventory ?? null : workspace!.remote?.workspace ?? null : null;
+    return { conflict, data: this.data, owner: this.currentOwner, candidates: [
+      { id: "pending", label: this.t("recoveryPending", "Unsaved changes in this tab"), value: pending },
+      { id: "local", label: this.t("recoveryLocal", "Saved in this browser"), value: local },
+      { id: "cloud", label: this.t("recoveryCloud", "Saved in your account"), value: remote },
+    ].map(row => ({ ...row, usable: !!row.value && (kind !== "inventory" || validateInventory(row.value, this.data!).valid) })) };
+  }
+  private recoveryMatches(kind: "inventory" | "workspace", context: NonNullable<ReturnType<TeamBuilder["localRecovery"]>>) {
+    const current = this.localRecovery(kind);
+    return this.isConnected && !!current && current.conflict === context.conflict && current.data === context.data && current.owner === context.owner;
+  }
+  private exportRecovery(kind: "inventory" | "workspace", context: NonNullable<ReturnType<TeamBuilder["localRecovery"]>>, id: string) {
+    const row = context.candidates.find(candidate => candidate.id === id);
+    if (!row?.value || !this.recoveryMatches(kind, context)) return;
+    const text = kind === "inventory" ? exportInventory(row.value as InventoryV1) : exportTeamWorkspace(row.value as TeamWorkspaceV1);
+    void downloadBlob(new Blob([text], { type: "application/json" }), `haneoka-${kind}-${id}-backup.json`);
+  }
+  private confirmLocalRecovery(kind: "inventory" | "workspace", context: NonNullable<ReturnType<TeamBuilder["localRecovery"]>>) {
+    const selection = this.recoveryChoices[kind];
+    const row = selection?.conflict === context.conflict ? context.candidates.find(candidate => candidate.id === selection.id) : undefined;
+    if (!row?.value || !row.usable || !this.recoveryMatches(kind, context)) return;
+    try {
+      if (kind === "inventory") this.store?.resolveLocalConflict(structuredClone(row.value as InventoryV1));
+      else this.workspaceStore?.resolveLocalConflict(structuredClone(row.value as TeamWorkspaceV1));
+      this.recoveryChoices = { ...this.recoveryChoices, [kind]: undefined };
+      if (kind === "inventory") this.error = ""; else this.workspaceError = "";
+    } catch {
+      const message = this.t("recoveryChanged", "The saved version changed again. Retry to review the latest versions.");
+      if (kind === "inventory") this.error = message; else this.workspaceError = message;
+    }
+    this.requestUpdate();
+  }
+  private renderLocalRecovery(kind: "inventory" | "workspace") {
+    const context = this.localRecovery(kind);
+    if (!context) return nothing;
+    const selected = this.recoveryChoices[kind]?.conflict === context.conflict ? this.recoveryChoices[kind]?.id ?? "" : "";
+    return html`<section class="stack" aria-label=${this.t("recoveryTitle", "Choose a version to keep")}>
+      <h3 class="detail-section-title">${this.t("recoveryTitle", "Choose a version to keep")}</h3>
+      <p>${this.t("recoveryHint", "These versions were kept separately. Export backups, then choose the complete version to continue with.")}</p>
+      ${context.candidates.map(row => html`<div class="stack">
+        <strong>${row.label}</strong>
+        ${row.value ? kind === "inventory" ? html`<p>${this.t("selectedKinds", "{members} members · {snapshots} snapshots", { members: (row.value as InventoryV1).members.length, snapshots: (row.value as InventoryV1).snapshots.length })}</p>`
+          : html`<p>${this.t("planImportSummary", "{profiles} plans · {teams} saved teams", { profiles: (row.value as TeamWorkspaceV1).profiles.length, teams: (row.value as TeamWorkspaceV1).teams.length })}</p><p>${[...(row.value as TeamWorkspaceV1).profiles, ...(row.value as TeamWorkspaceV1).teams].map(entry => entry.name).join(" · ")}</p>`
+          : html`<p>${this.t("recoveryUnavailable", "No readable version is available here.")}</p>`}
+        ${row.value && !row.usable ? html`<p>${this.t("releaseMismatch", "This library uses different card data. Review it before use.")}</p>` : nothing}
+        <button class="button button--outlined" ?disabled=${!row.value} @click=${() => this.exportRecovery(kind, context, row.id)}>${clientText(this.locale, "export", "Export")} · ${row.label}</button>
+      </div>`)}
+      ${this.select(this.t("recoveryTitle", "Choose a version to keep"), selected,
+        [{ value: "", label: this.t("notSet", "Not set") }, ...context.candidates.map(row => ({ value: row.id, label: row.label, disabled: !row.usable }))], value => {
+          if (!this.recoveryMatches(kind, context)) return;
+          this.recoveryChoices = { ...this.recoveryChoices, [kind]: { conflict: context.conflict, id: value } }; this.requestUpdate();
+        })}
+      <button class="button" ?disabled=${!context.candidates.some(row => row.id === selected && row.usable)} @click=${() => this.confirmLocalRecovery(kind, context)}>${this.t("recoveryUseSelected", "Use selected version")}</button>
+    </section>`;
+  }
   private async checkAccount(force = false): Promise<void> {
     if (!this.sourceReady || !this.store || !this.data || readReleaseServer() !== this.data.identity.server) return;
     this.authController?.abort();
@@ -962,7 +1050,12 @@ export class TeamBuilder extends LitElement {
         cache: "no-store",
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error("session-unavailable");
+      if (!response.ok) {
+        if ([401, 403].includes(response.status) && generation === this.authGeneration && this.isConnected && (typeof this.currentOwner === "string" || this.authorityBlocked)) {
+          this.suspendAccountAuthority({ status: response.status, code: "session-authority" }); return;
+        }
+        throw new Error("session-unavailable");
+      }
       const session = (await response.json()) as { user?: { id?: string } } | null;
       if (generation !== this.authGeneration || !this.isConnected) return;
       if (session !== null && (typeof session !== "object" || (session.user && typeof session.user.id !== "string")))
@@ -977,16 +1070,23 @@ export class TeamBuilder extends LitElement {
         this.uniquenessChoices = {};
         this.uniquenessOriginalText = "";
       }
-      if (owner !== this.currentOwner || force || this.store.state.phase === "auth-loading") {
+      if (this.authorityBlocked || owner !== this.currentOwner || force || this.store.state.phase === "auth-loading") {
         this.cancelSearch();
         if (owner !== this.currentOwner) this.result = null;
         await this.store.setAccount(owner);
         if (generation !== this.authGeneration || !this.isConnected) return;
-        this.result = null;
-        this.currentOwner = owner;
+        if (this.store.state.authorityError) { this.suspendAccountAuthority(this.store.state.authorityError); return; }
+        if (this.workspaceStore && (this.authorityBlocked || force || this.workspaceStore.state.ownerId !== owner || this.workspaceStore.state.phase === "auth-loading")) {
+          await this.workspaceStore.setAccount(owner);
+          if (generation !== this.authGeneration || !this.isConnected) return;
+          if (this.workspaceStore.state.authorityError) { this.suspendAccountAuthority(this.workspaceStore.state.authorityError); return; }
+        }
+        this.authorityBlocked = false;
+        this.result = null; this.currentOwner = owner;
+        this.storeState = this.store.state;
+        this.workspaceState = this.workspaceStore?.state ?? null;
+        this.saveState = this.store.state.phase; this.error = "";
         this.refreshWorkspaceInventory();
-        if (this.workspaceStore && (this.workspaceStore.state.ownerId !== owner || this.workspaceStore.state.phase === "auth-loading"))
-          void this.workspaceStore.setAccount(owner);
         this.syncCheckpointCache();
         this.requestUpdate();
       }
@@ -1028,6 +1128,7 @@ export class TeamBuilder extends LitElement {
   }
   private get canEdit(): boolean {
     return Boolean(
+      !this.authorityBlocked &&
       !this.dataLoading &&
       this.sourceReady &&
       !this.pendingRebase &&
@@ -1173,7 +1274,7 @@ export class TeamBuilder extends LitElement {
           </button>
           <button
             class="button button--outlined"
-            @click=${() => downloadBlob(new Blob([exportInventory(pending.original)], { type: "application/json" }), "haneoka-inventory-backup.json")}
+            @click=${() => { if (!this.authorityBlocked && this.pendingRebase === pending) void downloadBlob(new Blob([exportInventory(pending.original)], { type: "application/json" }), "haneoka-inventory-backup.json"); }}
           >
             ${this.t("exportPrevious", "Export original inventory")}
           </button>
@@ -1351,7 +1452,9 @@ export class TeamBuilder extends LitElement {
       "release-mismatch": "releaseMismatch",
       "normalization-required": "uniquenessTitle",
     };
-    const label = this.storeState?.error === "inventory-local-draft-changed"
+    const label = this.authorityBlocked ? this.t("authUnavailable", "Sign-in status could not be checked.") : this.storeState?.localConflict
+      ? this.t("recoveryHint", "These versions were kept separately. Export backups, then choose the complete version to continue with.")
+      : this.storeState?.error === "inventory-local-draft-changed"
       ? this.t("localDraftChanged", "Your card library changed in another tab. Export your current inputs, then reload the saved library.")
       : this.t(labels[this.saveState] ?? "authLoading", "Checking sign-in status");
     return html`
@@ -1359,7 +1462,7 @@ export class TeamBuilder extends LitElement {
         <div class="team-builder__actions">
           <span role="status">${label}</span>
           ${
-            !this.storeState?.ownerId
+            (this.authorityBlocked || !this.storeState?.ownerId)
               ? html`
                   <a
                     class="button button--text"
@@ -1383,6 +1486,8 @@ export class TeamBuilder extends LitElement {
               : nothing
           }
         </div>
+        ${this.renderLocalRecovery("inventory")}
+        ${this.error && this.storeState?.localConflict ? html`<p class="team-builder__error" role="alert">${this.error}</p>` : nothing}
         ${
           (this.saveState === "merge-required" || this.saveState === "conflict") &&
           this.storeState &&
@@ -1415,7 +1520,7 @@ export class TeamBuilder extends LitElement {
           ${
             this.store &&
             ["error", "auth-error"].includes(this.saveState) &&
-            this.currentOwner === undefined &&
+            !this.authorityBlocked && this.currentOwner === undefined &&
             !this.storeState?.ownerId
               ? html`
                   <button
@@ -4135,7 +4240,7 @@ export class TeamBuilder extends LitElement {
     return html`<section class="stack">
       <div class="team-builder__section-header">
         ${renderDetailSectionHeading(this.t("manualTeamResult", "Fixed team results"), "stats", { level: 2 })}
-        ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => void downloadBlob(new Blob([JSON.stringify(result, null, 2)], { type: "application/json" }), "haneoka-fixed-team-result.json") })}
+        ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => { if (!this.authorityBlocked && this.manualResult === result) void downloadBlob(new Blob([JSON.stringify(result, null, 2)], { type: "application/json" }), "haneoka-fixed-team-result.json"); } })}
       </div>
       <p role="status">${result.status === "complete" ? this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}</p>
       ${this.renderTeamConfiguration(result.assignment, "manual-team")}

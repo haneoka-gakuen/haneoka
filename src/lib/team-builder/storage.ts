@@ -74,8 +74,10 @@ export interface InventoryStoreState {
   dirty: boolean;
   remote?: CloudInventory;
   error?: string;
+  authorityError?: { status: number; code: string };
   localDraftChoices?: string[];
   localDraftSource?: "anonymous" | "account";
+  localConflict?: { ownerId: string | null; inventory: InventoryV1 | null; pendingInventory: InventoryV1; baseRevision: number | null; backupKey?: string };
 }
 const MAX_JSON_BYTES = 1024 * 1024;
 const key = (data: TeamBuilderData, owner: string | null) =>
@@ -214,7 +216,7 @@ export function createCloudInventoryClient(server: string, fetcher: typeof fetch
   async function request(
     init: RequestInit,
     ownerId: string,
-  ): Promise<{ conflict: boolean; conflictCode?: string; value: CloudInventory }> {
+  ): Promise<{ conflict: boolean; conflictCode?: string; value: CloudInventory; inventorySchema: InventoryV1["schema"] | null }> {
     const response = await fetcher(url, {
       credentials: "same-origin",
       cache: "no-store",
@@ -246,11 +248,13 @@ export function createCloudInventoryClient(server: string, fetcher: typeof fetch
         !["haneoka-team-inventory-v1", "haneoka-team-inventory-v2"].includes(value.inventory.schema))
     )
       throw new Error("Inventory document identity mismatch");
+    const inventorySchema = value.inventory?.schema ?? null;
     if (value.inventory) value.inventory = upgradeInventory(value.inventory);
     return {
       conflict: response.status === 409,
       ...(response.status === 409 ? { conflictCode: payload.error?.code } : {}),
       value,
+      inventorySchema,
     };
   }
   return {
@@ -278,6 +282,9 @@ export class InventoryStore {
   private normalizationSource?: InventoryUniquenessError;
   private pendingCloudRebase = false;
   private localVersions = new Map<string, string | null>();
+  private localConflictRaw?: { ownerId: string | null; raw: string | null };
+  private localBackupVersion = -1;
+  private authoritySuspended?: InventoryStoreState;
   private readonly client;
   constructor(
     readonly data: TeamBuilderData,
@@ -310,14 +317,44 @@ export class InventoryStore {
     await this.setAccount(session?.user?.id || null);
   }
   async setAccount(ownerId: string | null): Promise<void> {
+    const retained = ownerId !== null && this.authoritySuspended?.ownerId === ownerId ? this.authoritySuspended : undefined;
+    if (retained || (ownerId === this.state.ownerId && this.state.inventory && this.state.error === "inventory-local-draft-changed")) {
+      this.controller?.abort(); clearTimeout(this.timer); this.pending = undefined;
+      const generation = ++this.generation;
+      const controller = this.controller = new AbortController();
+      try {
+        if (ownerId) {
+          const { value } = await this.client.read(ownerId, controller.signal);
+          if (generation !== this.generation) return;
+          if (retained) { this.state = retained; this.authoritySuspended = undefined; }
+          this.state.remote = value;
+        }
+        if (generation !== this.generation) return;
+        const owner = this.localConflictRaw ? this.localConflictRaw.ownerId : ownerId;
+        this.captureLocalConflict(owner, this.options.storage.getItem(key(this.data, owner)));
+      } catch (error) {
+        if (generation !== this.generation || controller.signal.aborted) return;
+        if (error instanceof CloudInventoryRequestError &&
+            ([401, 403].includes(error.status) || error.code === "account_changed")) {
+          this.authoritySuspended ??= structuredClone(this.state);
+          this.state = { phase: "error", inventory: null, ownerId: null, revision: 0, dirty: false,
+            error: error.code, authorityError: { status: error.status, code: error.code } };
+        }
+      }
+      if (generation === this.generation) this.emit();
+      return;
+    }
     this.controller?.abort();
     clearTimeout(this.timer);
     this.pending = undefined;
+    this.authoritySuspended = undefined;
     this.anonymousDraft = undefined;
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;
     this.pendingCloudRebase = false;
     this.localVersions.clear();
+    this.localConflictRaw = undefined;
+    this.localBackupVersion = -1;
     const generation = ++this.generation;
     this.edits++;
     this.controller = new AbortController();
@@ -470,7 +507,7 @@ export class InventoryStore {
       this.emit();
     }
   }
-  edit(inventory: InventoryV1): void {
+  edit(inventory: InventoryV1, force = false): void {
     if (
       !this.state.inventory ||
       ["loading", "auth-loading", "release-mismatch", "merge-required", "normalization-required"].includes(
@@ -478,7 +515,9 @@ export class InventoryStore {
       )
     )
       throw new Error("Inventory is not ready for editing");
-    this.state.inventory = checked(inventory, this.data);
+    const next = checked(inventory, this.data);
+    if (!force && sameInventoryContent(next, this.state.inventory)) return;
+    this.state.inventory = next;
     this.edits++;
     this.state.dirty = true;
     this.persist();
@@ -499,14 +538,80 @@ export class InventoryStore {
   }
   private assertLocalDraftUnchanged(owner: string | null): void {
     const storageKey = key(this.data, owner);
-    if (!this.localVersions.has(storageKey) ||
-        this.options.storage.getItem(storageKey) !== this.localVersions.get(storageKey)) {
+    const observed = this.options.storage.getItem(storageKey), expected = this.localVersions.get(storageKey);
+    if (this.localVersions.has(storageKey) && observed !== expected && expected && observed) {
+      try {
+        if (new TextEncoder().encode(observed).byteLength <= MAX_JSON_BYTES && new TextEncoder().encode(expected).byteLength <= MAX_JSON_BYTES) {
+          const old = JSON.parse(expected), current = JSON.parse(observed);
+          const envelope = (value: typeof old) => value && typeof value === "object" && !Array.isArray(value) &&
+            Object.keys(value).every(field => ["inventory", "baseRevision", "dirty"].includes(field)) &&
+            Number.isSafeInteger(value.baseRevision) && value.baseRevision >= 0 && value.baseRevision < Number.MAX_SAFE_INTEGER &&
+            (value.dirty === undefined || typeof value.dirty === "boolean");
+          if (envelope(old) && envelope(current) && sameInventoryContent(checked(old.inventory, this.data), checked(current.inventory, this.data)) &&
+              (current.baseRevision === old.baseRevision || current.dirty === false && current.baseRevision >= old.baseRevision)) {
+            this.localVersions.set(storageKey, observed);
+            if (owner === this.state.ownerId && current.dirty === false) this.state.revision = Math.max(this.state.revision, current.baseRevision);
+            return;
+          }
+        }
+      } catch { /* A differing or unreadable draft requires explicit review. */ }
+    }
+    if (!this.localVersions.has(storageKey) || observed !== expected) {
       clearTimeout(this.timer);
+      this.captureLocalConflict(owner, observed);
       this.state.phase = "error";
       this.state.error = "inventory-local-draft-changed";
       this.emit();
       throw new LocalInventoryChangedError();
     }
+  }
+  private captureLocalConflict(owner: string | null, raw: string | null): void {
+    const pending = owner !== this.state.ownerId ? this.anonymousDraft ?? this.state.inventory : this.state.inventory;
+    if (!pending) return;
+    let inventory: InventoryV1 | null = null, baseRevision: number | null = null;
+    try {
+      if (raw && new TextEncoder().encode(raw).byteLength <= MAX_JSON_BYTES) {
+        const stored = JSON.parse(raw);
+        inventory = checked(stored.inventory, this.data);
+        if (Number.isSafeInteger(stored.baseRevision) && stored.baseRevision >= 0) baseRevision = stored.baseRevision;
+      }
+    } catch { /* Preserve an unreadable foreign raw without adopting it. */ }
+    const conflict: NonNullable<InventoryStoreState["localConflict"]> = { ownerId: owner, inventory, baseRevision, pendingInventory: structuredClone(pending),
+      ...(this.state.localConflict?.backupKey ? { backupKey: this.state.localConflict.backupKey } : {}) };
+    if (this.localBackupVersion !== this.edits) {
+      try {
+        const backupKey = `haneoka:team-inventory:backup:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(this.data.identity.server)}:${encodeURIComponent(pending.releaseId)}:${crypto.randomUUID()}`;
+        this.options.storage.setItem(backupKey, JSON.stringify({ inventory: pending, baseRevision: this.state.revision, dirty: true }));
+        conflict.backupKey = backupKey; this.localBackupVersion = this.edits;
+      } catch { /* The in-memory draft remains exportable if backup storage is unavailable. */ }
+    }
+    this.localConflictRaw = { ownerId: owner, raw };
+    this.state.localConflict = conflict;
+  }
+  /** A UI-reviewed complete candidate, never an automatic choice of disk/cloud. */
+  resolveLocalConflict(inventory: InventoryV1): void {
+    const conflict = this.localConflictRaw;
+    if (!conflict || !this.state.localConflict ||
+        (conflict.ownerId !== this.state.ownerId && !(conflict.ownerId === null && this.state.ownerId && this.anonymousDraft)) ||
+        this.options.storage.getItem(key(this.data, conflict.ownerId)) !== conflict.raw)
+      throw new LocalInventoryChangedError();
+    const candidate = checked(inventory, this.data);
+    if (conflict.raw !== null) {
+      const backupKey = `haneoka:team-inventory:backup:${conflict.ownerId === null ? "anonymous" : `account:${encodeURIComponent(conflict.ownerId)}`}:${encodeURIComponent(this.data.identity.server)}:${encodeURIComponent(this.data.identity.releaseId)}:${crypto.randomUUID()}`;
+      this.options.storage.setItem(backupKey, conflict.raw);
+    }
+    this.localVersions.set(key(this.data, conflict.ownerId), conflict.raw);
+    if (conflict.ownerId !== this.state.ownerId) {
+      this.writeDraft(candidate, null);
+      this.anonymousDraft = candidate;
+      this.state.localConflict = undefined; this.localConflictRaw = undefined;
+      this.state.error = undefined; this.state.phase = "merge-required"; this.emit();
+      return;
+    }
+    if (this.state.remote) this.state.revision = this.state.remote.revision;
+    this.state.localConflict = undefined; this.localConflictRaw = undefined;
+    this.state.phase = "saved"; this.state.error = undefined;
+    this.edit(candidate, true);
   }
   private writeDraft(inventory: InventoryV1, owner: string | null, revision = 0, dirty = true): void {
     this.assertLocalDraftUnchanged(owner);
@@ -554,17 +659,24 @@ export class InventoryStore {
       try {
         const result = await this.client.save(owner, inventory, revision, signal);
         if (generation !== this.generation) return;
-        if (result.conflict) {
+        const acknowledged = result.conflictCode === "revision_conflict" && result.value.revision >= revision &&
+          result.inventorySchema === inventory.schema && result.value.inventory?.releaseId === this.data.identity.releaseId &&
+          sameInventoryContent(result.value.inventory, inventory);
+        if (result.conflict && !acknowledged) {
           this.state.phase = "conflict";
           this.state.remote = result.value;
-          this.state.error = result.conflictCode;
+          this.state.error = result.value.inventory && result.inventorySchema !== inventory.schema
+            ? "inventory_schema_conflict" : result.conflictCode;
           this.emit();
           return;
         }
         this.state.revision = result.value.revision;
-        this.state.dirty = version !== this.edits;
+        this.state.dirty = version !== this.edits && !sameInventoryContent(this.state.inventory, inventory);
         this.state.phase = this.state.dirty ? "pending" : "saved";
+        this.state.remote = result.value;
+        this.state.error = undefined;
         this.persist();
+        this.state.remote = undefined;
         this.emit();
       } catch (error) {
         if (generation !== this.generation || signal.aborted) return;
@@ -602,7 +714,7 @@ export class InventoryStore {
           : mergeInventories(cloud, this.anonymousDraft, mapPriority);
     this.state.phase = "saved";
     this.anonymousDraft = undefined;
-    if (strategy !== "cloud" || this.pendingCloudRebase || this.state.dirty) this.edit(next);
+    if (strategy !== "cloud" || this.pendingCloudRebase || this.state.dirty) this.edit(next, true);
     this.pendingCloudRebase = false;
     this.options.storage.removeItem(key(this.data, null));
     this.localVersions.set(key(this.data, null), null);
@@ -636,7 +748,7 @@ export class InventoryStore {
       dirty: false,
       remote: undefined,
     };
-    if (strategy !== "remote" || remoteForeign) this.edit(next);
+    if (strategy !== "remote" || remoteForeign) this.edit(next, true);
     else this.persist();
     if (anonymousPending) {
       this.anonymousDraft = undefined;
@@ -704,18 +816,20 @@ export class InventoryStore {
     }
     this.state.phase = "saved";
     this.state.inventory = next;
-    this.edit(next);
+    this.edit(next, true);
   }
   dispose(): void {
     this.generation++;
     this.controller?.abort();
     clearTimeout(this.timer);
     this.pending = undefined;
+    this.authoritySuspended = undefined;
     this.anonymousDraft = undefined;
     this.restoredDraft = undefined;
     this.normalizationSource = undefined;
     this.pendingCloudRebase = false;
     this.localVersions.clear();
+    this.localConflictRaw = undefined;
     this.state = { phase: "auth-loading", inventory: null, ownerId: null, revision: 0, dirty: false };
   }
   async chooseLocalDraft(releaseId: string): Promise<void> {
@@ -782,6 +896,6 @@ export class InventoryStore {
       return;
     }
     this.state.phase = "saved";
-    this.edit(checked(next, this.data));
+    this.edit(checked(next, this.data), true);
   }
 }

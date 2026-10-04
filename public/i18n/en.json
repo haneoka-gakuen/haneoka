@@ -3394,7 +3394,15 @@
     "practicalPreparing": "Preparing teams",
     "practicalImproving": "Improving teams",
     "practicalChecking": "Checking candidates",
-    "practicalCalculating": "Calculating scores"
+    "practicalCalculating": "Calculating scores",
+    "recoveryTitle": "Choose a version to keep",
+    "recoveryHint": "These versions were kept separately. Export backups, then choose the complete version to continue with.",
+    "recoveryPending": "Unsaved changes in this tab",
+    "recoveryLocal": "Saved in this browser",
+    "recoveryCloud": "Saved in your account",
+    "recoveryUnavailable": "No readable version is available here.",
+    "recoveryUseSelected": "Use selected version",
+    "recoveryChanged": "The saved version changed again. Retry to review the latest versions."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

@@ -3394,7 +3394,15 @@
     "practicalPreparing": "編成を準備中",
     "practicalImproving": "編成を改善中",
     "practicalChecking": "候補を確認中",
-    "practicalCalculating": "スコアを計算中"
+    "practicalCalculating": "スコアを計算中",
+    "recoveryTitle": "保持するバージョンを選択",
+    "recoveryHint": "各バージョンは個別に保持されています。バックアップを書き出してから、引き続き使用するバージョンを選んでください。",
+    "recoveryPending": "このタブの未保存の変更",
+    "recoveryLocal": "このブラウザーに保存されたバージョン",
+    "recoveryCloud": "アカウントに保存されたバージョン",
+    "recoveryUnavailable": "読み込めるバージョンがありません。",
+    "recoveryUseSelected": "選択したバージョンを使用",
+    "recoveryChanged": "保存されたバージョンが再び変更されました。再試行して最新の内容を確認してください。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

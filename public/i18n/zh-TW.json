@@ -3394,7 +3394,15 @@
     "practicalPreparing": "正在準備隊伍",
     "practicalImproving": "正在改善隊伍",
     "practicalChecking": "正在檢查候選",
-    "practicalCalculating": "正在計算分數"
+    "practicalCalculating": "正在計算分數",
+    "recoveryTitle": "選擇要保留的版本",
+    "recoveryHint": "以下版本已分別保留。請先匯出備份，再選擇繼續使用的完整版本。",
+    "recoveryPending": "此分頁中尚未儲存的變更",
+    "recoveryLocal": "此瀏覽器中儲存的版本",
+    "recoveryCloud": "帳號中儲存的版本",
+    "recoveryUnavailable": "此處沒有可讀取的版本。",
+    "recoveryUseSelected": "使用所選版本",
+    "recoveryChanged": "已儲存的版本再次變更。請重試並檢查最新版本。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

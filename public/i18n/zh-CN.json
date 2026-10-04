@@ -3394,7 +3394,15 @@
     "practicalPreparing": "正在准备队伍",
     "practicalImproving": "正在改进队伍",
     "practicalChecking": "正在检查候选",
-    "practicalCalculating": "正在计算分数"
+    "practicalCalculating": "正在计算分数",
+    "recoveryTitle": "选择要保留的版本",
+    "recoveryHint": "以下版本已分别保留。请先导出备份，再选择继续使用的完整版本。",
+    "recoveryPending": "此标签页中未保存的更改",
+    "recoveryLocal": "此浏览器中保存的版本",
+    "recoveryCloud": "账号中保存的版本",
+    "recoveryUnavailable": "此处没有可读取的版本。",
+    "recoveryUseSelected": "使用所选版本",
+    "recoveryChanged": "已保存的版本再次发生变化。请重试并复核最新版本。"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",
