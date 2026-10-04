@@ -34,6 +34,7 @@ import type { SearchEvaluationControls } from "../optimizer.ts";
 import { nativeRuleGaps, nativeRuleSupports } from "./native-rule-profile.ts";
 import { createNativeGekisoContextEvaluation, type NativeGekisoPlans } from "./native-gekiso-evaluation.ts";
 import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
+import type { NativeGekisoRankingScenario } from "./native-gekiso-ranking-scenario.ts";
 const zero = (): PowerStats => ({ performance: 0, technique: 0, visual: 0 });
 const rates = (row: Record<string, unknown>): PowerStats => ({
   performance: Number(row.performanceRate),
@@ -81,6 +82,7 @@ export const nativeGrowthPowerResolver: PowerResolver = {
 };
 
 export interface EvaluationRequest {
+  nativeGekisoRankingScenario?: NativeGekisoRankingScenario;
   /** Internal explicit native playback provider, carried in the Worker request fingerprint. */
   nativeGekisoPlans?: NativeGekisoPlans;
   /** Internal: preserve Gekiso requirements while preparing its normal Solo ledger. */
@@ -257,7 +259,7 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
       throw new RangeError("native-gekiso-context-domain");
     const normal = prepareEvaluationForSearch({ ...request, nativeGekisoPlans: undefined,
       mode: "normal", scoreDomain: undefined, requireGekisoPractice: true });
-    return createNativeGekisoContextEvaluation(request.data, normal, request.nativeGekisoPlans);
+    return createNativeGekisoContextEvaluation(request.data, normal, request.nativeGekisoPlans, request.nativeGekisoRankingScenario);
   }
   if (request.nativeRuntime && (request.skillOrderCriterion === "worst-ap" || request.skillOrderCriterion === "best-ap"))
     throw new RangeError(`${request.skillOrderCriterion}-requires-native-order-factory`);

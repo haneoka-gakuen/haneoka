@@ -3411,7 +3411,10 @@
     "completeSearch": "完全探索",
     "exactSliceBudget": "探索区間ごとの時間（秒）",
     "eventChallengeSongs": "イベント楽曲",
-    "fixedChallengeSingle": "固定した組み合わせの評価や保存チームの比較には、チャレンジ楽曲を1曲選んでください。"
+    "fixedChallengeSingle": "固定した組み合わせの評価や保存チームの比較には、チャレンジ楽曲を1曲選んでください。",
+    "confirmedRanks": "各区間の確定順位（シナリオ）",
+    "confirmedRanksHint": "個人のプレイ条件を固定し、各区間の精算時にこの順位が確定していると仮定して比較します。未知の対戦相手の結果の予測ではありません。",
+    "sectionRank": "第{section}区間の順位"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

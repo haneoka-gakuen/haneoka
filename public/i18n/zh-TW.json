@@ -3411,7 +3411,10 @@
     "completeSearch": "完整搜尋",
     "exactSliceBudget": "每段搜尋時間（秒）",
     "eventChallengeSongs": "活動曲目",
-    "fixedChallengeSingle": "請選擇一首挑戰曲，驗算固定配對或比較已儲存的隊伍。"
+    "fixedChallengeSingle": "請選擇一首挑戰曲，驗算固定配對或比較已儲存的隊伍。",
+    "confirmedRanks": "各段已確認名次（情境）",
+    "confirmedRanksHint": "固定個人操作，按各段結算時已確認的名次比較。這些名次不是對未知對手的預測。",
+    "sectionRank": "第 {section} 段名次"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

@@ -219,6 +219,8 @@ export class TeamBuilder extends LitElement {
     searchEffort: { state: true },
     exactAutoContinue: { state: true },
     compareModes: { state: true },
+    confirmedRanksEnabled: { state: true },
+    confirmedSectionRanks: { state: true },
     practicalBaselineId: { state: true },
     practicalProgress: { state: true },
     practicalCompleted: { state: true },
@@ -341,7 +343,7 @@ export class TeamBuilder extends LitElement {
   declare teamName: string;
   declare workspaceImport: { document: TeamWorkspaceV1; scope: string } | null;
   declare workspaceImportPriority: "cloud" | "local";
-  private manualScope: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined } | null = null;
+  private manualScope: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; request: Extract<SolverRequest, { type: "manual-prepare" }>["request"] } | null = null;
   private manualObjectives: Objective[] = [];
   declare portfolioTeams: Set<string>;
   declare portfolioLimit: number;
@@ -356,6 +358,8 @@ export class TeamBuilder extends LitElement {
   private portfolioReject?: (reason: Error) => void;
   declare exactAutoContinue: boolean;
   declare searchEffort: "practical" | "exact";
+  declare confirmedRanksEnabled: boolean;
+  declare confirmedSectionRanks: [number, number, number];
   declare compareModes: boolean;
   declare practicalBaselineId: string;
   private practicalBaselineCache?: { data: TeamBuilderData; inventory: InventoryV1; key: string; assignment?: TeamAssignment };
@@ -1669,7 +1673,8 @@ export class TeamBuilder extends LitElement {
     this.replacementBefore = ""; this.replacementAfter = "";
     this.searchEffort = "practical";
     this.exactAutoContinue = true;
-    this.compareModes = false; this.practicalBaselineId = "";
+    this.compareModes = false;
+    this.confirmedRanksEnabled = false; this.confirmedSectionRanks = [1, 1, 1]; this.practicalBaselineId = "";
     this.practicalProgress = null;
     this.practicalCompareKeys = [];
     this.practicalCompleted = null;
@@ -3300,6 +3305,30 @@ export class TeamBuilder extends LitElement {
         if (value === "personal-live") this.justRate = 0; }, this.dataLoading || !this.sourceReady)}
       ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Continuous PERFECT play; zero, one or three LUCK segments. Natural JUST is unsupported.")}</small>` : nothing}`;
   }
+  private get canSetConfirmedRanks() {
+    return !this.challengeSearch && this.objectives.includes("score") && this.selectedScoreDomain === "personal-live" &&
+      (this.mode === "gekiso" || this.searchEffort === "practical" && this.compareModes) &&
+      !!this.objectiveCapability("score", "gekiso")?.scoreDomains?.includes("personal-live");
+  }
+  private get nativeRankScenario(): WorkerPreparationInput["nativeGekisoRankingScenario"] {
+    if (!this.confirmedRanksEnabled || !this.canSetConfirmedRanks) return undefined;
+    return { ranks: [...this.confirmedSectionRanks], availability: "confirmed-at-native-ready", source: "explicit-scenario",
+      reference: `team-builder-confirmed-ranks:${this.confirmedSectionRanks.join(":")}` };
+  }
+  private renderConfirmedRanks() {
+    if (!this.canSetConfirmedRanks) return nothing;
+    return html`<div class="stack">
+      ${this.check(this.t("confirmedRanks", "Confirmed section ranks (scenario)"), this.confirmedRanksEnabled, value => { this.formationChanged(); this.confirmedRanksEnabled = value; })}
+      ${this.confirmedRanksEnabled ? html`
+        <p class="team-builder__hint">${this.t("confirmedRanksHint", "Assume these ranks are confirmed at each section’s settlement boundary, with the same personal performance. Opponent results are not predicted.")}</p>
+        <div class="team-builder__fields">${this.confirmedSectionRanks.map((rank, index) => this.select(
+          this.t("sectionRank", "Section {section} rank", { section: index + 1 }), String(rank),
+          [1, 2, 3, 4, 5].map(value => ({ value: String(value), label: String(value) })), value => {
+            this.formationChanged(); const ranks: [number, number, number] = [...this.confirmedSectionRanks]; ranks[index] = Number(value); this.confirmedSectionRanks = ranks;
+          }))}</div>
+      ` : nothing}
+    </div>`;
+  }
   private objectiveLabel(objective: Objective): string {
     if (objective === "score" && this.scoreDomain === "personal-live") return this.t("personalLiveScore", "Personal Live score");
     return objective === "score" && this.scoreDomain === "personal-solo"
@@ -4223,7 +4252,7 @@ export class TeamBuilder extends LitElement {
       const request: Extract<SolverRequest, { type: "manual-prepare" }> = { type: "manual-prepare", runId, request: {
         data, inventory: structuredClone(inventory), assignment, selections: this.chartSelections,
         ...(this.challengeSearch && this.challengeContext ? { challengeMusicId: this.challengeContext.challengeMusicId } : {}),
-        mode: this.mode, scoreDomain: this.scoreDomain, skillOrderCriterion: this.effectiveSkillOrderCriterion,
+        mode: this.mode, scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}), skillOrderCriterion: this.effectiveSkillOrderCriterion,
         objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
         budget: { maxEvaluations: 100000, maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxCandidates: 1000 },
         ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
@@ -4231,7 +4260,7 @@ export class TeamBuilder extends LitElement {
       this.running = true;
       this.searchRunId = runId;
       this.searchDispatched = true;
-      this.manualScope = { data, inventory, owner };
+      this.manualScope = { data, inventory, owner, request: structuredClone(request.request) };
       this.rankingLimit = 5;
       this.manualObjectives = [...this.objectives];
       this.manualProgress = { phase: "loading", chartsCompleted: 0, totalCharts: this.chartSelections.length, elapsedMs: 0 };
@@ -4263,13 +4292,19 @@ export class TeamBuilder extends LitElement {
       this.cancelSearch(); this.searchError = this.t("unavailable", "Required data or formula is unavailable");
     }
   }
+  private manualResultExport() {
+    const scope = this.manualScope;
+    if (this.authorityBlocked || this.running || !this.manualResult || !scope || !this.sourceReady ||
+      scope.data !== this.data || scope.inventory !== this.inventory || scope.owner !== this.currentOwner) return null;
+    return { ...this.manualResult, request: scope.request };
+  }
   private renderManualResult() {
     const result = this.manualResult;
     if (!result) return nothing;
     return html`<section class="stack">
       <div class="team-builder__section-header">
         ${renderDetailSectionHeading(this.t("manualTeamResult", "Fixed team results"), "stats", { level: 2 })}
-        ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => { if (!this.authorityBlocked && this.manualResult === result) void downloadBlob(new Blob([JSON.stringify(result, null, 2)], { type: "application/json" }), "haneoka-fixed-team-result.json"); } })}
+        ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => { const value = this.manualResult === result ? this.manualResultExport() : null; if (value) void downloadBlob(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }), "haneoka-fixed-team-result.json"); } })}
       </div>
       <p role="status">${result.status === "complete" ? this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}</p>
       ${this.renderTeamConfiguration(result.assignment, "manual-team")}
@@ -4465,7 +4500,7 @@ export class TeamBuilder extends LitElement {
         ${this.renderEventConditions()}
       `, !!this.selectedEvent || this.wantsEventScene) : nothing}
       ${this.disclosure("team-requirements", html`${this.t("formationConstraints", "Team requirements")}`, html`${this.renderCardConstraints()}${this.renderFormationConstraints(false)}`, false, "team-builder__options team-builder__requirements")}
-      ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")} · ${this.searchEffort === "practical" ? this.t("practicalSearch", "Practical recommendation") : this.exactSearchLabel}${this.skillOrderCriteria.length ? html` · ${this.criterionLabel(this.effectiveSkillOrderCriterion)}` : nothing}</span>`, html`
+      ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")} · ${this.searchEffort === "practical" ? this.t("practicalSearch", "Practical recommendation") : this.exactSearchLabel}${this.skillOrderCriteria.length ? html` · ${this.criterionLabel(this.effectiveSkillOrderCriterion)}` : nothing}</span>`, html`<div class="stack">
 
         ${this.searchEffort === "practical" ? html`
           ${this.select(this.t("baselineTeam", "Baseline team"), this.practicalBaselineId,
@@ -4476,6 +4511,7 @@ export class TeamBuilder extends LitElement {
           ${this.check(this.t("comparePlayModes", "Compare normal and GEKISO"), this.compareModes, value => { this.formationChanged(); this.compareModes = value; })}
           ${this.compareModes && !this.challengeSearch ? this.select(this.t("gekisoScoreType", "GEKISO score type"), this.selectedScoreDomain,
             [{ value: "personal-solo", label: this.t("personalSoloScore", "Solo score") }, { value: "personal-live", label: this.t("personalLiveScore", "Personal Live score") }], value => { this.formationChanged(); this.selectedScoreDomain = value as PersonalScoreDomain; }) : nothing}` : nothing}
+        ${this.renderConfirmedRanks()}
         ${this.searchEffort === "exact" ? this.check(this.t("exactAutoContinue", "Continue automatically until the complete search finishes"), this.exactAutoContinue, value => { this.cancelSearch(); this.exactAutoContinue = value; }) : nothing}
         <div class="team-builder__fields">
           ${this.numericField(
@@ -4541,7 +4577,7 @@ export class TeamBuilder extends LitElement {
               `
             : nothing
         }
-      `, false, "team-builder__options")}
+      </div>` , false, "team-builder__options")}
     `;
   }
   private get playerModifiers(): PlayerModifiers {
@@ -5063,7 +5099,7 @@ export class TeamBuilder extends LitElement {
       if (this.optimizationInput && !this.wantsEventScene && this.scoreDomain !== "personal-live") {
         const input: OptimizationInput = {
           ...this.optimizationInput,
-          scoreDomain: this.scoreDomain,
+          scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}),
           skillOrderCriterion: this.effectiveSkillOrderCriterion,
           objectives: [...this.objectives],
           constraints: this.constraints,
@@ -5077,7 +5113,7 @@ export class TeamBuilder extends LitElement {
       } else {
         const request: WorkerPreparationInput = {
           data: this.data,
-          scoreDomain: this.scoreDomain,
+          scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}),
           skillOrderCriterion: this.effectiveSkillOrderCriterion,
           inventory: structuredClone(this.inventory),
           selections: this.chartSelections,
@@ -5115,7 +5151,7 @@ export class TeamBuilder extends LitElement {
     }
   }
   private get portfolioSignature() {
-    return JSON.stringify([this.activeProfileId, [...this.portfolioTeams].sort(), this.mode, this.scoreDomain, this.effectiveSkillOrderCriterion,
+    return JSON.stringify([this.activeProfileId, [...this.portfolioTeams].sort(), this.mode, this.scoreDomain, this.nativeRankScenario, this.effectiveSkillOrderCriterion,
       this.chartSelections, this.evaluationBasis, this.portfolioConstraints(), this.wantsEventScene ? this.eventScene : null,
       this.challengeSearch ? this.selectedChallengeId : null,
       this.workspaceDocument?.teams.filter(team => this.portfolioTeams.has(team.id)).map(team => ({ id: team.id, identity: team.identity, formation: team.formation }))]);
@@ -5145,7 +5181,7 @@ export class TeamBuilder extends LitElement {
     catch { this.workspaceError = this.t("savedTeamUnavailable", "This team needs matching card data and all of its saved cards. Restore its training as a new plan, or review the card library."); return; }
     const request: WorkerPreparationInput = {
       data, inventory: structuredClone(inventory), selections: this.chartSelections, mode: this.mode,
-      scoreDomain: this.scoreDomain, objectives: ["score"], skillOrderCriterion: this.effectiveSkillOrderCriterion,
+      scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}), objectives: ["score"], skillOrderCriterion: this.effectiveSkillOrderCriterion,
       constraints: this.portfolioConstraints(),
       basis: this.evaluationBasis!, budget: { maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxEvaluations: 100000, maxCandidates: 1000 },
       ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
@@ -5314,6 +5350,7 @@ export class TeamBuilder extends LitElement {
       selections: this.challengeSearch ? this.chartSelections.map(chart => ({ challengeMusicId: chart.challengeMusicId ?? Number(this.selectedChallengeId), difficulty: chart.difficulty })) : this.chartSelections,
       modes: this.practicalModes, objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
       skillOrderCriterion: this.effectiveSkillOrderCriterion, scoreDomain: this.challengeSearch ? "personal-solo" : this.selectedScoreDomain,
+      ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}),
       ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
       ...(this.practicalBaselineAssignment ? { baseline: this.practicalBaselineAssignment } : {}), finalistLimit: 6,
       budget: { maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxEvaluations: 100000, maxCandidates: 50 },
@@ -5901,7 +5938,7 @@ export class TeamBuilder extends LitElement {
   private get searchSettings() {
     return {
       mode: this.mode, objectives: [...this.objectives], skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
-      searchEffort: this.searchEffort, exactAutoContinue: this.exactAutoContinue, compareModes: this.compareModes, practicalBaselineId: this.practicalBaselineId, challengeMultiple: this.challengeMultiple, challengePool: this.challengePool ? [...this.challengePool] : null, selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
+      searchEffort: this.searchEffort, exactAutoContinue: this.exactAutoContinue, compareModes: this.compareModes, confirmedRanksEnabled: this.confirmedRanksEnabled, confirmedSectionRanks: [...this.confirmedSectionRanks], practicalBaselineId: this.practicalBaselineId, challengeMultiple: this.challengeMultiple, challengePool: this.challengePool ? [...this.challengePool] : null, selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
       songPool: this.songPool ? [...this.songPool] : null, selectedSong: this.selectedSong, selectedDifficulty: this.selectedDifficulty, lockSong: this.lockSong, lockDifficulty: this.lockDifficulty,
       excludedCharts: [...this.excludedCharts], metricBasis: this.metricBasis, songSeconds: { ...this.songSeconds },
       downtimeSeconds: this.downtimeSeconds, consumptionAmount: this.consumptionAmount, consumptionResource: this.consumptionResource,
@@ -5913,11 +5950,11 @@ export class TeamBuilder extends LitElement {
   }
   private validResumeSettings(value: unknown): value is ReturnType<TeamBuilder["captureSearchSettings"]> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const row: Record<string, unknown> = { searchEffort: "exact", exactAutoContinue: true, compareModes: false, practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
+    const row: Record<string, unknown> = { searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
     const keys = Object.keys(this.searchSettings);
     if (Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))) return false;
     if (!["practicalBaselineId", "selectedSong", "selectedDifficulty", "selectedChallengeId", "selectedChallengeDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
-    if (!["lockSong", "lockDifficulty", "challengeMultiple", "exactAutoContinue", "compareModes", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
+    if (!["lockSong", "lockDifficulty", "confirmedRanksEnabled", "challengeMultiple", "exactAutoContinue", "compareModes", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
     if (!["downtimeSeconds", "consumptionAmount", "bonusFloorPoints", "bonusFloorItems", "distinctCardSets", "eventConsumption"].every(key => row[key] === null || typeof row[key] === "number" && Number.isFinite(row[key]))) return false;
     if (typeof row.justRate !== "number" || !Number.isFinite(row.justRate)) return false;
     if (!["exact", "practical"].includes(String(row.searchEffort))) return false;
@@ -5925,6 +5962,7 @@ export class TeamBuilder extends LitElement {
       !["personal-solo", "personal-live"].includes(String(row.selectedScoreDomain)) || !["single", "time", "consumption"].includes(String(row.metricBasis)) ||
       !["live-boost", "event-item"].includes(String(row.consumptionResource)) || !["", "normal", "challenge"].includes(String(row.eventFlowKind))) return false;
     if (!Array.isArray(row.objectives) || !row.objectives.length || row.objectives.length > OBJECTIVES.length || new Set(row.objectives).size !== row.objectives.length || row.objectives.some(value => !OBJECTIVES.includes(value))) return false;
+    if (!Array.isArray(row.confirmedSectionRanks) || row.confirmedSectionRanks.length !== 3 || row.confirmedSectionRanks.some(rank => !Number.isInteger(rank) || Number(rank) < 1 || Number(rank) > 5)) return false;
     if (row.challengePool !== null && (!Array.isArray(row.challengePool) || row.challengePool.length > 1000 || row.challengePool.some(value => typeof value !== "string"))) return false;
     if (row.songPool !== null && (!Array.isArray(row.songPool) || row.songPool.length > 1000 || row.songPool.some(value => typeof value !== "string"))) return false;
     if (!Array.isArray(row.excludedCharts) || row.excludedCharts.length > 1000 || row.excludedCharts.some(value => typeof value !== "string")) return false;
@@ -5944,7 +5982,7 @@ export class TeamBuilder extends LitElement {
     if (!bookmark || this.running || !this.resumeCompatible(bookmark) || !this.validResumeSettings(bookmark.settings)) return;
     const settings = structuredClone(bookmark.settings);
     this.cancelSearch(); this.result = null; this.optimizationInput = null;
-    Object.assign(this, { searchEffort: "exact", exactAutoContinue: true, compareModes: false, practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
+    Object.assign(this, { searchEffort: "exact", exactAutoContinue: true, compareModes: false, confirmedRanksEnabled: false, confirmedSectionRanks: [1, 1, 1], practicalBaselineId: "", challengeMultiple: false, challengePool: null, songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
     this.planningKind = "team"; this.searchEffort = "exact";
     if (this.canOptimize) { this.startOptimization(bookmark.checkpoint); this.openWorkspace("results"); }
     else this.openWorkspace("plan");

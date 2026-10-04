@@ -4,6 +4,7 @@ import type { NativeGekisoPlans, NativeGekisoSongPlan } from "./solver/native-ge
 import type { ResourcePlannerPreparationInput, ResourcePlannerProgress, ResourcePlannerResult } from "./resource-plan-contract.ts";
 import type { ResourceStagePreparationProgress } from "./solver/native-challenge-stage-adapter.ts";
 import type { NativePracticalPreparationInput, NativePracticalProgress, NativePracticalResult } from "./solver/native-practical-search.ts";
+import type { NativeGekisoRankingScenario } from "./solver/native-gekiso-ranking-scenario.ts";
 /** Serializable inputs shared by the inventory adapter, solver worker and UI. */
 export interface ReleaseIdentity {
   server: string;
@@ -316,6 +317,8 @@ export interface OptimizationInput extends ReleaseIdentity {
   basis?: EvaluationBasisRequest;
 }
 export interface WorkerPreparationInput {
+  /** Explicit confirmed section ranks for GK personal Live; Solo score/SS/PT are unaffected. */
+  nativeGekisoRankingScenario?: NativeGekisoRankingScenario;
   /** Optional explicit context; the Worker otherwise produces eligible chart plans. */
   nativeGekisoPlans?: NativeGekisoPlans;
   /** Default mean; AP endpoints select the lowest/highest complete native order. */

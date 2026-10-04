@@ -3411,7 +3411,10 @@
     "completeSearch": "Complete search",
     "exactSliceBudget": "Time per search step (seconds)",
     "eventChallengeSongs": "Event songs",
-    "fixedChallengeSingle": "Choose one challenge song to evaluate fixed bindings or compare saved teams."
+    "fixedChallengeSingle": "Choose one challenge song to evaluate fixed bindings or compare saved teams.",
+    "confirmedRanks": "Confirmed section ranks (scenario)",
+    "confirmedRanksHint": "Assume these ranks are confirmed at each section’s settlement boundary, with the same personal performance. Opponent results are not predicted.",
+    "sectionRank": "Section {section} rank"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

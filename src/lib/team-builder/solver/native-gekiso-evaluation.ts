@@ -11,6 +11,7 @@ import type { NativeGekisoRuntimeFrame } from "./native-gekiso-runtime.ts";
 import { createNativeGekisoSoloEvaluator } from "./native-gekiso-solo.ts";
 import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
 import { createNativeGekisoLuckLiveScoreResolver } from "./native-gekiso-luck-live.ts";
+import { resolveNativeGekisoRankingScenario, type NativeGekisoRankingScenario } from "./native-gekiso-ranking-scenario.ts";
 
 /** Same-pin playback context, supplied explicitly or produced from a qualified chart. */
 export interface NativeGekisoSongPlan {
@@ -72,6 +73,7 @@ export function createNativeGekisoContextEvaluation(
   data: TeamBuilderData,
   normal: PreparedSearchEvaluation,
   plans: NativeGekisoPlans,
+  rankingScenario?: NativeGekisoRankingScenario,
 ): PreparedSearchEvaluation {
   const solo = createNativeGekisoSoloEvaluator(data, normal);
   const score = createNativeGekisoNoLuckLiveScoreResolver(data, normal.input);
@@ -79,10 +81,13 @@ export function createNativeGekisoContextEvaluation(
   const tables = resolveNativeGekisoContextTables(data);
   const prepared = new Map(normal.input.songs.map((song) => {
     const plan = plans[song.key];
+    const ranking = plan ? resolveNativeGekisoRankingScenario(data, plan, rankingScenario) : undefined;
     return [song.key, plan ? {
       plan,
+      ranking,
       rules: !nativeGekisoPlanMatchesIdentity(data, plan)
         ? { value: null, gaps: [{ code: "native-gekiso-plan-source-mismatch", source: song.key }] }
+        : ranking?.gaps.length ? { value: null, gaps: ranking.gaps }
         : tables.gaps.length ? { value: null, gaps: tables.gaps } : prepareGekisoRules({ identity: data.identity, expectedIdentity: data.identity,
         missionPattern: plan.missionPattern, settings: dataRows(data.liveTools.liveSettings),
         rankingBonuses: tables.rankingBonuses,
@@ -125,7 +130,9 @@ export function createNativeGekisoContextEvaluation(
             frames: context.plan.frames, randomLaw: { kind: "uniform-residue" },
             projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: threeLuck ? 500000 : 100000 },
             requireNoPendingLots: singleLuck || threeLuck,
-          }, context.plan.ranges, controls);
+          }, context.ranking?.ranges ?? context.plan.ranges, controls);
+          if (context.ranking?.assumptions.length)
+            metric.assumptions.push(...context.ranking.assumptions);
           if (context.plan.producer)
             metric.assumptions = [...metric.assumptions.filter((value) => value !== "complete-native-update-frame-tape"),
               threeLuck ? "native-three-luck-ap-event-reduction" : singleLuck ? "native-single-luck-ap-event-reduction" : context.plan.producer === "native-no-luck-ap-event-reduction-v1"
