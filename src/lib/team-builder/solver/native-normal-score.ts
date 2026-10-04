@@ -119,24 +119,33 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
     const model = input.evaluation,
       context = model.songContexts[song.song.key]!;
     const sums = new Float64Array(song.nodes.length + 1);
+    // Within this immutable prefix only note% and combo vary. Reuse exact
+    // native integer samples, preserving per-node accumulation and both floors.
+    // Augmented GK samples keep the existing path; this map dies with prefix().
+    const noteScores = augmentation ? null : new Map<string, number>();
     for (const [index, node] of song.nodes.entries()) {
       if (index % 2048 === 0) {
         if (interrupted(controls)) return null;
         if (index) {
           controls.progress();
           await controls.yield();
+          noteScores?.clear();
         }
       }
-      sums[index + 1] =
-        sums[index]! +
-        calcNativeNoteScore({
+      const notePercent = model.noteScorePercents[node.event.operateType]!,
+        comboFactor = nativeComboFactor(node.comboBonus, 0, augmentation?.gekisoComboBonuses[index] ?? 0);
+      const sampleKey = noteScores ?
+        `${Object.is(notePercent, -0) ? "-0" : notePercent}|${Object.is(comboFactor, -0) ? "-0" : comboFactor}` : "";
+      let score = noteScores?.get(sampleKey);
+      if (score === undefined) {
+        score = calcNativeNoteScore({
           bandPower: power,
           adjustmentFactor: model.adjustmentFactor,
           musicDifficultyFactor: nativeDifficultyFactor(song.song.playLevel),
           convertedNoteCount: song.convertedNoteCount,
-          notePercent: model.noteScorePercents[node.event.operateType]!,
+          notePercent,
           judgementPercent: model.perfectPercent,
-          comboFactor: nativeComboFactor(node.comboBonus, 0, augmentation?.gekisoComboBonuses[index] ?? 0),
+          comboFactor,
           scoreUpFactor: factor,
           luckFactorPercent: luckPercent,
           eventBonusFactor: context.eventBonusFactor,
@@ -144,6 +153,9 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
           lifeOnusFactor: model.lifeOnusFactor,
           assistModeFactor: context.assistModeFactor,
         });
+        if (noteScores && noteScores.size < 512) noteScores.set(sampleKey, score);
+      }
+      sums[index + 1] = sums[index]! + score;
     }
     while (prefixes.length && (prefixes.length >= 48 || cachedNodes + sums.length > 200000))
       cachedNodes -= prefixes.shift()!.sums.length;
