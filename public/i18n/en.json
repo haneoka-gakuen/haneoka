@@ -2627,6 +2627,11 @@
     "communityPublish": "Post to community",
     "communityPrepareFailed": "Could not save the image for your post. Try again."
   },
+  "playerProfile": {
+    "title": "Player lookup",
+    "queryIdle": "Enter a player ID",
+    "invalidId": "Check the player ID"
+  },
   "teamBuilder": {
     "title": "Team builder · Beta",
     "library": "Card library",

@@ -2627,6 +2627,11 @@
     "communityPublish": "发布到社区",
     "communityPrepareFailed": "无法保存发帖图片，请重试。"
   },
+  "playerProfile": {
+    "title": "玩家查询",
+    "queryIdle": "输入玩家 ID",
+    "invalidId": "请检查玩家 ID"
+  },
   "teamBuilder": {
     "title": "配队工具 · Beta",
     "library": "卡库",

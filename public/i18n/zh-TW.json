@@ -2627,6 +2627,11 @@
     "communityPublish": "發佈到社群",
     "communityPrepareFailed": "無法儲存發文圖片，請重試。"
   },
+  "playerProfile": {
+    "title": "玩家查詢",
+    "queryIdle": "輸入玩家 ID",
+    "invalidId": "請檢查玩家 ID"
+  },
   "teamBuilder": {
     "title": "配隊工具 · Beta",
     "library": "卡庫",

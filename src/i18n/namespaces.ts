@@ -146,6 +146,7 @@ const COMMON_FLAT_KEYS = [
 const CATALOG_ROOT_KEYS = [
   "announcements",
   "searchPage",
+  "playerProfile",
   "catalog",
   "catalogCompat",
   "chartPlayer",

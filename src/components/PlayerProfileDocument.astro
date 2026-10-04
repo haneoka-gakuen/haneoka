@@ -1,0 +1,27 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import type { Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+import { homePath } from "../lib/resource-route";
+import { rankingCardCatalog } from "../lib/ranking-card-catalog";
+import { serializePageData } from "../lib/page-data";
+import "../styles/song-ranking.css";
+const { locale } = Astro.props as { locale: Locale };
+const route = "/player-profile";
+const title = t(locale, "playerProfile.title", "Player lookup");
+const [intl, jp] = await Promise.all([rankingCardCatalog("intl"), rankingCardCatalog("jp")]);
+const pageDataId = "player-profile-card-catalogs";
+---
+
+<Base locale={locale} route={route} title={title} titleKey="playerProfile.title">
+  <AppShell locale={locale} route={route} title={title} titleKey="playerProfile.title"
+    entity={{ title, backHref: homePath("intl", locale) }}>
+    <player-profile-workspace locale={locale} data-page-data={pageDataId}></player-profile-workspace>
+    <script is:inline type="application/json" id={pageDataId} set:html={serializePageData({ intl, jp })}></script>
+  </AppShell>
+</Base>
+
+<script>
+  import "../lit/player-profile-workspace";
+</script>

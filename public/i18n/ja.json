@@ -2627,6 +2627,11 @@
     "communityPublish": "コミュニティに投稿",
     "communityPrepareFailed": "投稿用の画像を保存できませんでした。もう一度お試しください。"
   },
+  "playerProfile": {
+    "title": "プレイヤー検索",
+    "queryIdle": "プレイヤーIDを入力",
+    "invalidId": "プレイヤーIDを確認してください"
+  },
   "teamBuilder": {
     "title": "編成シミュレーター · Beta",
     "library": "カード所持状況",

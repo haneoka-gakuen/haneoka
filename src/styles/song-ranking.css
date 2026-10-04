@@ -132,7 +132,7 @@
     padding: 8px 0;
     border-radius: var(--md-sys-shape-corner-small);
   }
-  button.song-ranking__player-copy {
+  :is(button, a).song-ranking__player-copy {
     cursor: pointer;
     min-height: 48px;
   }

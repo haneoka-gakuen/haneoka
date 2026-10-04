@@ -2627,6 +2627,11 @@
     "communityPublish": "커뮤니티에 게시",
     "communityPrepareFailed": "게시할 이미지를 저장하지 못했습니다. 다시 시도해 주세요."
   },
+  "playerProfile": {
+    "title": "플레이어 조회",
+    "queryIdle": "플레이어 ID 입력",
+    "invalidId": "플레이어 ID를 확인해 주세요"
+  },
   "teamBuilder": {
     "title": "팀 편성 · Beta",
     "library": "보유 카드",
