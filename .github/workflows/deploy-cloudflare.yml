@@ -70,6 +70,8 @@ jobs:
       - name: Build production assets before database changes
         run: |
           pnpm build:packages
+          pnpm --filter @haneoka/api-client build
+          pnpm --filter @haneoka/embed-core build
           pnpm build:frontend
           pnpm runtime:cubism:verify-output
           for entry in core vega cassiopeia home-spot vega-theme api-client; do
