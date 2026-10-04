@@ -3,6 +3,7 @@ import { avatarUrlSelect } from "./avatar-url";
 import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
+import { readAdminUser } from "./admin-user-details";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -110,6 +111,7 @@ interface UserListRow {
   id: string;
   image: string | null;
   publicDisplayName: string | null;
+  publicUid: number | null;
   role: AdminRole;
   status: "active" | "deleted" | "suspended";
   signInRestricted: number;
@@ -824,13 +826,14 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
     conditions.push(
       `(account.id = ?
         OR account.email = ? COLLATE NOCASE
+        OR identity.uid = ?
         OR account.name LIKE ? ESCAPE '\\' COLLATE NOCASE
         OR profile.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE
         OR profile.pending_display_name LIKE ? ESCAPE '\\' COLLATE NOCASE
         OR profile.handle LIKE ? ESCAPE '\\' COLLATE NOCASE)`,
     );
     const pattern = `${escapeLike(query)}%`;
-    values.push(query, query, pattern, pattern, pattern, pattern);
+    values.push(query, query, /^[1-9][0-9]{0,15}$/.test(query) && Number.isSafeInteger(Number(query)) ? Number(query) : null, pattern, pattern, pattern, pattern);
   }
   if (cursor && typeof cursor.sort === "string") {
     conditions.push("(account.createdAt < ? OR (account.createdAt = ? AND account.id < ?))");
@@ -840,7 +843,7 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
   const now = Date.now();
   values.push(limit);
   const result = await env.DB.prepare(
-    `SELECT account.id, account.name AS accountName, account.email, account.emailVerified AS emailVerified,
+    `SELECT account.id, identity.uid AS publicUid, account.name AS accountName, account.email, account.emailVerified AS emailVerified,
             ${avatarUrlSelect("account")} AS image,
             account.createdAt AS createdAt, account.updatedAt AS updatedAt,
             visit.visited_at AS lastVisitedAt, visit.ip_address AS lastVisitIpAddress,
@@ -869,7 +872,8 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
                 AND (restriction.expires_at IS NULL OR restriction.expires_at > ?)
             ) AS uploadRestricted
      FROM "user" AS account
-     JOIN community_profile AS profile ON profile.user_id = account.id
+     LEFT JOIN community_profile AS profile ON profile.user_id = account.id
+     LEFT JOIN community_identity AS identity ON identity.user_id=account.id
      LEFT JOIN community_user_last_visit AS visit ON visit.user_id = account.id
      ${where}
      ORDER BY account.createdAt DESC, account.id DESC
@@ -901,6 +905,8 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
   }
   const users = result.results.map((row) => ({
     id: row.id,
+    publicUid: row.publicUid,
+    detailUrl: `${ADMIN_PREFIX}/users/${encodeURIComponent(row.id)}`,
     accountName: row.accountName,
     candidateDisplayName: row.candidateDisplayName,
     displayNameStatus: row.displayNameStatus,
@@ -4147,6 +4153,13 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     const id = path[1] || "";
     if (!SAFE_ID_PATTERN.test(id)) return error(request, 400, "invalid_entity_id", "Invalid entity identifier");
     return path[0] === "posts" ? readAdminPost(request, env, id) : readAdminAttachment(request, env, id);
+  }
+
+  if (method === "GET" && path.length === 2 && path[0] === "users") {
+    const access = await requireStaff(request, env, "admin");
+    if (access instanceof Response) return access;
+    const id = path[1] || "";
+    return SAFE_ID_PATTERN.test(id) ? readAdminUser(request, env, id) : error(request,400,"invalid_user_id","Invalid Haneoka account identifier");
   }
 
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);
