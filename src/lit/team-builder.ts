@@ -596,6 +596,7 @@ export class TeamBuilder extends LitElement {
         // Session verification establishes visibility before either document
         // returns. Each store callback can now render its accepted version.
         this.currentOwner = owner;
+        this.restoreInventoryViewPreference();
         this.requestUpdate();
         await Promise.all([
           reloadInventory ? store.setAccount(owner) : Promise.resolve(),
@@ -700,9 +701,29 @@ export class TeamBuilder extends LitElement {
     return !!value && !!this.data && value.identity.server === this.data.identity.server &&
       value.identity.releaseId === this.data.identity.releaseId && value.identity.sourceId === this.data.identity.sourceId;
   }
+  private get inventoryViewPreferenceKey(): string | null {
+    if (!this.data || this.currentOwner === undefined) return null;
+    const owner = this.currentOwner === null ? "anonymous" : `account:${encodeURIComponent(this.currentOwner)}`;
+    return `haneoka:team-builder:view:v1:${encodeURIComponent(this.data.identity.server)}:${owner}`;
+  }
+  private rememberActualInventoryView(actual: boolean) {
+    this.actualInventoryFallback = actual;
+    const key = this.inventoryViewPreferenceKey;
+    if (!key) return;
+    try {
+      if (actual) sessionStorage.setItem(key, "actual");
+      else sessionStorage.removeItem(key);
+    } catch { /* The current selection still works when tab storage is unavailable. */ }
+  }
+  private restoreInventoryViewPreference() {
+    const key = this.inventoryViewPreferenceKey;
+    if (!key) { this.actualInventoryFallback = false; return; }
+    try { this.actualInventoryFallback = sessionStorage.getItem(key) === "actual"; }
+    catch { /* Keep the current in-memory view. */ }
+  }
   private bindWorkspaceStore() {
     this.workspaceStore?.dispose();
-    this.actualInventoryFallback = false;
+    this.restoreInventoryViewPreference();
     this.workspaceState = null;
     this.workspaceError = "";
     this.workspaceImport = null;
@@ -745,25 +766,28 @@ export class TeamBuilder extends LitElement {
   private activateProfile(id: string | null) {
     const document = this.workspaceDocument;
     if (!document) return;
-    if (!this.canEditWorkspace) {
-      if (id === null) { this.actualInventoryFallback = true; this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = []; this.refreshWorkspaceInventory(); }
+    if (id === null) {
+      this.rememberActualInventoryView(true);
+      this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = [];
+      this.refreshWorkspaceInventory();
       return;
     }
+    if (!this.canEditWorkspace) return;
     const profile = document.profiles.find(row => row.id === id);
-    if (id && (!profile || !this.profileMatches(profile))) {
+    if (!profile || !this.profileMatches(profile)) {
       this.workspaceError = this.t("profileNeedsUpdate", "This plan uses older card data. Create an updated copy to use it.");
       this.openWorkspace("sync"); return;
     }
     if (this.changeWorkspace(selectWorkspaceProfile(document, id))) {
-      this.actualInventoryFallback = false; this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = []; this.refreshWorkspaceInventory();
+      this.rememberActualInventoryView(false); this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = []; this.refreshWorkspaceInventory();
     }
   }
   private createProfile() {
     if (!this.inventory || !this.data || !this.workspaceDocument || !this.canEdit || !validWorkspaceName(this.profileName.trim())) return;
     try {
       const profile = createUpgradeProfile(this.inventory, this.data, this.profileName, this.storeState?.revision ?? 0);
-      this.actualInventoryFallback = false;
       if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) {
+        this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
         this.profileName = ""; this.openWorkspace("growth");
       }
     } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
@@ -775,7 +799,7 @@ export class TeamBuilder extends LitElement {
       const profile = createUpgradeProfile(inventory, this.data, this.t("theoreticalPlanName", "All cards at maximum training"), this.storeState?.revision ?? 0);
       const document = selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id);
       if (this.changeWorkspace(document)) {
-        this.actualInventoryFallback = false;
+        this.rememberActualInventoryView(false);
         this.candidateScope = emptyCandidateScope();
         this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = [];
         this.refreshWorkspaceInventory(); this.openWorkspace("plan");
@@ -788,8 +812,9 @@ export class TeamBuilder extends LitElement {
       const preview = rebaseInventory(profile.inventory, this.data);
       if (!preview.canApply) throw new Error("profile-rebase-review");
       const copy = createUpgradeProfile(preview.candidate, this.data, profile.name, profile.baseInventoryRevision);
-      this.actualInventoryFallback = false;
-      this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, copy), copy.id));
+      if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, copy), copy.id))) {
+        this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
+      }
     } catch { this.workspaceError = this.t("profileUpdateBlocked", "Some saved cards or training values are unavailable in this data. Keep the backup and review the card library."); }
   }
   private saveFixedTeam() {
@@ -805,8 +830,8 @@ export class TeamBuilder extends LitElement {
       const restored = restoreSavedTeam(team, this.data, savedTraining ? undefined : this.inventory ?? undefined);
       if (savedTraining) {
         const profile = createUpgradeProfile(restored.inventory, this.data, team.name, this.storeState?.revision ?? 0);
-        this.actualInventoryFallback = false;
         if (!this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) return;
+        this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
       }
       this.useFixedTeam(restored.assignment);
       this.workspaceError = "";
@@ -853,7 +878,7 @@ export class TeamBuilder extends LitElement {
       else if (this.workspaceState.phase === "merge-required") this.workspaceStore.resolveAnonymous(strategy === "remote" ? "cloud" : strategy, this.workspaceImportPriority);
       else return;
       if (strategy === "remote") {
-        this.actualInventoryFallback = false;
+        this.rememberActualInventoryView(false);
         this.requiredLeader = ""; this.fixedBindings = [];
         this.selectedIds = new Set(); this.bulkPreview = null;
       }
@@ -1154,6 +1179,8 @@ export class TeamBuilder extends LitElement {
     try {
       if (kind === "inventory") this.store?.resolveLocalConflict(structuredClone(row.value as InventoryV1));
       else this.workspaceStore?.resolveLocalConflict(structuredClone(row.value as TeamWorkspaceV1));
+      this.rememberActualInventoryView(kind === "inventory");
+      this.refreshWorkspaceInventory();
       this.recoveryChoices = { ...this.recoveryChoices, [kind]: undefined };
       if (kind === "inventory") this.error = ""; else this.workspaceError = "";
     } catch {
@@ -1676,7 +1703,7 @@ export class TeamBuilder extends LitElement {
         store.resolveConflict(strategy === "cloud" ? "remote" : "merge", strategy === "merge" ? this.mergePriority : undefined);
       else return;
       if (strategy === "cloud") {
-        this.actualInventoryFallback = true;
+        this.rememberActualInventoryView(true);
         this.requiredLeader = ""; this.fixedBindings = [];
         this.selectedIds = new Set(); this.bulkPreview = null;
       }
