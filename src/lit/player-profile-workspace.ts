@@ -14,11 +14,10 @@ import type { Locale } from "../i18n/locales";
 import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { updateEntityHeading } from "../lib/detail-navigation";
-import { resourcePath, homePath } from "../lib/resource-route";
+import { resourcePath } from "../lib/resource-route";
 import {
   playerProfileIdPattern,
   validPlayerProfileId,
-  playerProfileReturn,
   playerProfileRankingEndpoint,
 } from "../lib/player-profile-route";
 import { emptyState, errorState } from "./ui/state";
@@ -195,11 +194,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.syncUrl("");
   }
   private syncChrome() {
-    const back = document.querySelector<HTMLAnchorElement>("[data-entity-back]");
-    if (back)
-      back.href =
-        playerProfileReturn(navigationDocumentUrl().searchParams.get("return")) ||
-        homePath(readReleaseServer(), this.locale as Locale);
     setAppBarActions(
       this.owner,
       html`

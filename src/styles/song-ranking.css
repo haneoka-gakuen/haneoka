@@ -516,3 +516,21 @@
     background: transparent;
   }
 }
+
+@layer pages {
+  @media (max-width: 599px) {
+    [data-route="/player-profile"] .top-app-bar:has([data-search-expanded="true"]) > :is(h1, .top-app-bar__leading) {
+      display: none;
+    }
+    [data-route="/player-profile"] .top-app-bar__actions:has([data-search-expanded="true"]),
+    [data-route="/player-profile"] .top-app-bar__search-group {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    [data-route="/player-profile"] .top-app-bar__search[data-search-expanded="true"] {
+      position: static;
+      flex: 1 1 0;
+      padding-inline: 0;
+    }
+  }
+}

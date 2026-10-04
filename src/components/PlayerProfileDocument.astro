@@ -3,7 +3,6 @@ import Base from "../layouts/Base.astro";
 import AppShell from "./AppShell.astro";
 import type { Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-import { homePath } from "../lib/resource-route";
 import { rankingCardCatalog } from "../lib/ranking-card-catalog";
 import { serializePageData } from "../lib/page-data";
 import "../styles/song-ranking.css";
@@ -15,8 +14,7 @@ const pageDataId = "player-profile-card-catalogs";
 ---
 
 <Base locale={locale} route={route} title={title} titleKey="playerProfile.title">
-  <AppShell locale={locale} route={route} title={title} titleKey="playerProfile.title"
-    entity={{ title, backHref: homePath("intl", locale) }}>
+  <AppShell locale={locale} route={route} title={title} titleKey="playerProfile.title">
     <player-profile-workspace locale={locale} data-page-data={pageDataId}></player-profile-workspace>
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData({ intl, jp })}></script>
   </AppShell>
