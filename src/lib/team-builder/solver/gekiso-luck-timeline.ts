@@ -323,6 +323,21 @@ export async function evaluateGekisoLuckTimeline(
     probabilityUpFactor: number | null,
     charges: ChargeLaw["values"],
   ): Promise<GekisoResolved<GekisoLuckTimelineResult> | null> => {
+    // With no queued lots a pending-frame is the identity transition on
+    // every state. Validate the fixed invocation through the native scalar
+    // leaf once; retain all gauge/Next/rush/score/residue state unchanged.
+    // Actual nonidentity branches keep their original state/transition caps.
+    if (meanOnly && kind === "pending-frame" && states.size &&
+      [...states.values()].every(value => value.state.lotCount === 0)) {
+      if (interrupted()) return fail("gekiso-luck-timeline-interrupted", "worker cancellation/budget");
+      const value = states.values().next().value!;
+      const checked = resolveGekisoLuckStep(rules, { state: value.state, charge: 0,
+        kind, rangeState, currentFrameHasLotResult: value.currentFrameHasLotResult,
+        probabilityUpFactor, rushBonusHandleActive: value.rushBonusHandleActive,
+        initialDraw: null, nextDraw: null });
+      if (!checked.value) return { value: null, gaps: checked.gaps };
+      return null;
+    }
     const next: typeof states = new Map();
     // The scalar step only adds to points/resultCounts. Its nonlinear kernel
     // depends on gauge/Next/rush/quota; reuse that kernel across score histories
