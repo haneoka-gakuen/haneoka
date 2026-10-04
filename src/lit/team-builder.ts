@@ -277,6 +277,8 @@ export class TeamBuilder extends LitElement {
     pickerRarity: { state: true },
     dataLoading: { state: true },
     sourceReady: { state: true },
+    sourceRefreshError: { state: true },
+    authRefreshError: { state: true },
     pendingRebase: { state: true },
     selectedCards: { state: true },
     memorySong: { state: true },
@@ -496,6 +498,146 @@ export class TeamBuilder extends LitElement {
   private verifiedData: TeamBuilderData | null = null;
   private stopSongDisplay?: () => void;
   private stopDifficultyDisplay?: () => void;
+  private async checkCurrentSource(server: string): Promise<void> {
+    if (this.dataLoading && server === this.server) return;
+    if (server !== this.server || !this.data) {
+      await this.loadSource(server);
+      return;
+    }
+    this.identityController?.abort();
+    const controller = (this.identityController = new AbortController());
+    const data = this.data;
+    const warm = this.sourceReady && this.verifiedData === data;
+    const loading = warm ? undefined : beginLoading(this.t("refreshData", "Check latest data"), { signal: controller.signal });
+    if (!warm) this.sourceReady = false;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 12000);
+    try {
+      const identity = await fetchCurrentTeamBuilderIdentity(server, controller.signal);
+      if (this.identityController !== controller || this.data !== data || !this.isConnected || readReleaseServer() !== server) return;
+      clearTimeout(timer);
+      if (
+        this.verifiedData !== data ||
+        identity.releaseId !== data.identity.releaseId ||
+        identity.sourceId !== data.identity.sourceId
+      ) {
+        await this.loadSource(server);
+      } else {
+        this.sourceReady = true; this.sourceRefreshError = false;
+        if (this.error === this.t("dataError", "Could not load card data.")) this.error = "";
+        if (!this.store) this.bindStore(); else await this.checkAccount();
+      }
+    } catch {
+      if (this.identityController === controller && this.data === data && this.isConnected && (!controller.signal.aborted || timedOut)) {
+        this.sourceRefreshError = true;
+        if (!warm) { this.sourceReady = false; this.cancelSearch(); this.error = this.t("dataError", "Could not load card data."); }
+        else await this.checkAccount();
+      }
+    } finally {
+      clearTimeout(timer);
+      loading?.finish();
+    }
+  }
+  private async checkAccountRequest(task: { data: TeamBuilderData; store: InventoryStore; force: boolean }): Promise<void> {
+    const { data, store } = task, workspace = this.workspaceStore;
+    const current = () => this.data === data && this.store === store && this.workspaceStore === workspace &&
+      this.isConnected && readReleaseServer() === data.identity.server;
+    this.authController?.abort();
+    const controller = (this.authController = new AbortController());
+    const warm = this.currentOwner !== undefined && store.state.phase !== "auth-loading" && store.state.phase !== "loading";
+    const loading = warm ? undefined : beginLoading(this.t("authLoading", "Checking sign-in status"), { signal: controller.signal });
+    const generation = ++this.authGeneration;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 12000);
+    try {
+      const response = await fetch("/api/auth/get-session", {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        if ((response.status === 401 || response.status === 403) && generation === this.authGeneration && current()) {
+          this.authRefreshError = true;
+          if (typeof this.currentOwner === "string" || this.authorityBlocked) this.suspendAccountAuthority({ status: response.status, code: "session-authority" });
+          return;
+        }
+        throw new Error("session-unavailable");
+      }
+      const session = (await response.json()) as { user?: { id?: string } } | null;
+      if (generation !== this.authGeneration || !current()) return;
+      if (session !== null && (typeof session !== "object" || (session.user && typeof session.user.id !== "string")))
+        throw new Error("session-shape");
+      const owner = typeof session?.user?.id === "string" ? session.user.id : null;
+      this.authRefreshError = false;
+      if (this.pendingRebase?.ownerId && owner !== this.pendingRebase.ownerId) {
+        this.pendingRebase = null;
+        this.inventory = null;
+      }
+      if (this.pendingUniqueness && owner !== this.uniquenessOwner) {
+        this.pendingUniqueness = null;
+        this.uniquenessChoices = {};
+        this.uniquenessOriginalText = "";
+      }
+      const changedOwner = owner !== this.currentOwner;
+      const reloadInventory = this.authorityBlocked || changedOwner || task.force || store.state.ownerId !== owner || store.state.phase === "auth-loading";
+      const reloadWorkspace = !!workspace && (this.authorityBlocked || changedOwner || task.force || workspace.state.ownerId !== owner || workspace.state.phase === "auth-loading");
+      if (reloadInventory || reloadWorkspace) {
+        this.cancelSearch();
+        if (changedOwner) {
+          this.result = null; this.inventory = null;
+          this.actualInventoryFallback = false;
+        }
+        // Session verification establishes visibility before either document
+        // returns. Each store callback can now render its accepted version.
+        this.currentOwner = owner;
+        this.requestUpdate();
+        await Promise.all([
+          reloadInventory ? store.setAccount(owner) : Promise.resolve(),
+          reloadWorkspace ? workspace!.setAccount(owner) : Promise.resolve(),
+        ]);
+        if (generation !== this.authGeneration || !current()) return;
+        const denied = store.state.authorityError ?? workspace?.state.authorityError;
+        if (denied) { this.suspendAccountAuthority(denied); return; }
+        this.authorityBlocked = false;
+        this.storeState = store.state;
+        this.workspaceState = workspace?.state ?? null;
+        this.saveState = store.state.phase; this.error = "";
+        this.refreshWorkspaceInventory();
+        this.syncCheckpointCache();
+        this.requestUpdate();
+      }
+    } catch {
+      if ((!controller.signal.aborted || timedOut) && generation === this.authGeneration) {
+        this.authRefreshError = true;
+        if (this.currentOwner === undefined) { this.error = this.t("authUnavailable", "Sign-in status could not be checked."); this.saveState = "auth-error"; }
+      }
+    } finally {
+      clearTimeout(timer);
+      loading?.finish();
+    }
+  }
+  private sameInventoryInput(left: InventoryV1, right: InventoryV1): boolean {
+    const same = (a: unknown, b: unknown): boolean => {
+      if (a === b) return true;
+      if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => same(value, b[index]));
+      if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+      return Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => Object.hasOwn(b, key) && same(value, (b as Record<string, unknown>)[key]));
+    };
+    return same(left, right);
+  }
+  private get backgroundSyncError() {
+    return this.authRefreshError ? this.t("authUnavailable", "Sign-in status could not be checked.") : this.sourceRefreshError ? this.t("dataError", "Could not load card data.") : "";
+  }
+  private accountCheckTask?: { data: TeamBuilderData; store: InventoryStore; force: boolean; promise: Promise<void> };
+  private sourceCheckTask?: { server: string; data: TeamBuilderData | null; promise: Promise<void> };
+  declare sourceRefreshError: boolean;
+  declare authRefreshError: boolean;
   private readonly refreshAccount = () => {
     // The OS file chooser can refocus the window. Keep its review open while
     // checking the account; a settings-server change still reloads the source.
@@ -507,49 +649,13 @@ export class TeamBuilder extends LitElement {
   };
   private readonly localeReady = () => this.requestUpdate();
 
-  private async refreshCurrentSource(): Promise<void> {
-    const server = readReleaseServer();
-    if (this.dataLoading && server === this.server) return;
-    if (server !== this.server || !this.data) {
-      await this.loadSource(server);
-      return;
-    }
-    this.identityController?.abort();
-    const controller = (this.identityController = new AbortController());
-    const loading = beginLoading(this.t("refreshData", "Check latest data"), { signal: controller.signal });
-    const data = this.data;
-    this.sourceReady = false;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 12000);
-    try {
-      const identity = await fetchCurrentTeamBuilderIdentity(server, controller.signal);
-      if (this.identityController !== controller || this.data !== data || !this.isConnected || readReleaseServer() !== server) return;
-      clearTimeout(timer);
-      if (
-        !this.store ||
-        this.verifiedData !== data ||
-        identity.releaseId !== data.identity.releaseId ||
-        identity.sourceId !== data.identity.sourceId
-      ) {
-        await this.loadSource(server);
-      } else {
-        this.sourceReady = true;
-        if (this.error === this.t("dataError", "Could not load card data.")) this.error = "";
-        await this.checkAccount();
-      }
-    } catch {
-      if (this.identityController === controller && this.data === data && this.isConnected && (!controller.signal.aborted || timedOut)) {
-        this.sourceReady = false;
-        this.cancelSearch();
-        this.error = this.t("dataError", "Could not load card data.");
-      }
-    } finally {
-      clearTimeout(timer);
-      loading.finish();
-    }
+  private refreshCurrentSource(): Promise<void> {
+    const server = readReleaseServer(), current = this.sourceCheckTask;
+    if (current && current.server === server && current.data === this.data) return current.promise;
+    const task = { server, data: this.data, promise: Promise.resolve() };
+    task.promise = this.checkCurrentSource(server).finally(() => { if (this.sourceCheckTask === task) this.sourceCheckTask = undefined; });
+    this.sourceCheckTask = task;
+    return task.promise;
   }
 
   private async loadVisuals() {
@@ -622,10 +728,12 @@ export class TeamBuilder extends LitElement {
     const actual = this.storeState && this.storeState.ownerId === this.currentOwner ? this.storeState.inventory : null;
     let next: InventoryV1 | null = actual ?? null;
     if (this.activeProfileId && actual && this.workspaceDocument) {
+      const profile = this.activeProfile;
+      if (profile && this.profileMatches(profile) && this.inventory && this.sameInventoryInput(profile.inventory, this.inventory)) return;
       try { next = getWorkspaceInventory(this.workspaceDocument, actual, this.data); }
       catch { next = null; this.workspaceError = this.t("profileNeedsUpdate", "This plan uses older card data. Create an updated copy to use it."); }
     }
-    if (next && this.inventory && exportInventory(next) === exportInventory(this.inventory)) return;
+    if (next && this.inventory && this.sameInventoryInput(next, this.inventory)) return;
     this.formationChanged();
     this.inventory = next;
   }
@@ -743,7 +851,16 @@ export class TeamBuilder extends LitElement {
     try {
       if (this.workspaceState.phase === "conflict") this.workspaceStore.resolveConflict(strategy, this.workspaceImportPriority);
       else if (this.workspaceState.phase === "merge-required") this.workspaceStore.resolveAnonymous(strategy === "remote" ? "cloud" : strategy, this.workspaceImportPriority);
+      else return;
+      if (strategy === "remote") {
+        this.actualInventoryFallback = false;
+        this.requiredLeader = ""; this.fixedBindings = [];
+        this.selectedIds = new Set(); this.bulkPreview = null;
+      }
+      this.workspaceState = this.workspaceStore.state;
+      this.refreshWorkspaceInventory();
       this.workspaceError = "";
+      this.requestUpdate();
     } catch { this.workspaceError = this.t("workspaceSaveFailed", "Could not save plans. Export a backup, then retry."); }
   }
   private renderProfileSelector() {
@@ -837,7 +954,7 @@ export class TeamBuilder extends LitElement {
       ` : nothing}
     </section>`;
   }
-  private bindStore(): InventoryStore | undefined {
+  private bindStore(checkSession = true): InventoryStore | undefined {
     if (!this.data) return;
     try {
       this.bindWorkspaceStore();
@@ -875,7 +992,7 @@ export class TeamBuilder extends LitElement {
         },
       });
       this.store = store;
-      void this.checkAccount();
+      if (checkSession) void this.checkAccount();
     } catch {
       this.saveState = "error";
       this.error = this.t("saveFailed", "Save failed. Your draft is retained.");
@@ -956,7 +1073,7 @@ export class TeamBuilder extends LitElement {
       if (previousData?.identity.releaseId !== data.identity.releaseId || previousData?.identity.sourceId !== data.identity.sourceId) this.result = null;
       this.data = data;
       this.verifiedData = data;
-      this.sourceReady = true;
+      this.sourceReady = true; this.sourceRefreshError = false;
       void this.loadVisuals();
       if (previousInventory && previousInventory.releaseId !== data.identity.releaseId) {
         this.pendingRebase = {
@@ -991,6 +1108,7 @@ export class TeamBuilder extends LitElement {
     if (this.authorityBlocked) return;
     this.authorityBlocked = true;
     ++this.authGeneration; this.authController?.abort();
+    this.accountCheckTask = undefined;
     this.currentOwner = undefined;
     this.cancelSearch(); this.result = null; this.resourceCompleted = null; this.optimizationInput = null;
     this.closePane(); this.inventory = null; this.workspaceImport = null; this.eventPreview = null; this.candidateScopeCache = undefined;
@@ -1067,74 +1185,21 @@ export class TeamBuilder extends LitElement {
       <button class="button" ?disabled=${!context.candidates.some(row => row.id === selected && row.usable)} @click=${() => this.confirmLocalRecovery(kind, context)}>${this.t("recoveryUseSelected", "Use selected version")}</button>
     </section>`;
   }
-  private async checkAccount(force = false): Promise<void> {
-    if (!this.sourceReady || !this.store || !this.data || readReleaseServer() !== this.data.identity.server) return;
-    this.authController?.abort();
-    const controller = (this.authController = new AbortController());
-    const loading = beginLoading(this.t("authLoading", "Checking sign-in status"), { signal: controller.signal });
-    const generation = ++this.authGeneration;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 12000);
-    try {
-      const response = await fetch("/api/auth/get-session", {
-        credentials: "same-origin",
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        if ([401, 403].includes(response.status) && generation === this.authGeneration && this.isConnected && (typeof this.currentOwner === "string" || this.authorityBlocked)) {
-          this.suspendAccountAuthority({ status: response.status, code: "session-authority" }); return;
-        }
-        throw new Error("session-unavailable");
-      }
-      const session = (await response.json()) as { user?: { id?: string } } | null;
-      if (generation !== this.authGeneration || !this.isConnected) return;
-      if (session !== null && (typeof session !== "object" || (session.user && typeof session.user.id !== "string")))
-        throw new Error("session-shape");
-      const owner = typeof session?.user?.id === "string" ? session.user.id : null;
-      if (this.pendingRebase?.ownerId && owner !== this.pendingRebase.ownerId) {
-        this.pendingRebase = null;
-        this.inventory = null;
-      }
-      if (this.pendingUniqueness && owner !== this.uniquenessOwner) {
-        this.pendingUniqueness = null;
-        this.uniquenessChoices = {};
-        this.uniquenessOriginalText = "";
-      }
-      if (this.authorityBlocked || owner !== this.currentOwner || force || this.store.state.phase === "auth-loading") {
-        this.cancelSearch();
-        if (owner !== this.currentOwner) this.result = null;
-        await this.store.setAccount(owner);
-        if (generation !== this.authGeneration || !this.isConnected) return;
-        if (this.store.state.authorityError) { this.suspendAccountAuthority(this.store.state.authorityError); return; }
-        if (this.workspaceStore && (this.authorityBlocked || force || this.workspaceStore.state.ownerId !== owner || this.workspaceStore.state.phase === "auth-loading")) {
-          await this.workspaceStore.setAccount(owner);
-          if (generation !== this.authGeneration || !this.isConnected) return;
-          if (this.workspaceStore.state.authorityError) { this.suspendAccountAuthority(this.workspaceStore.state.authorityError); return; }
-        }
-        this.authorityBlocked = false;
-        this.result = null; this.currentOwner = owner;
-        this.storeState = this.store.state;
-        this.workspaceState = this.workspaceStore?.state ?? null;
-        this.saveState = this.store.state.phase; this.error = "";
-        this.refreshWorkspaceInventory();
-        this.syncCheckpointCache();
-        this.requestUpdate();
-      }
-    } catch {
-      if ((!controller.signal.aborted || timedOut) && generation === this.authGeneration) {
-        this.error = this.t("authUnavailable", "Sign-in status could not be checked.");
-        if (this.currentOwner === undefined) this.saveState = "auth-error";
-      }
-    } finally {
-      clearTimeout(timer);
-      loading.finish();
+  private checkAccount(force = false): Promise<void> {
+    if (!this.sourceReady || !this.store || !this.data || readReleaseServer() !== this.data.identity.server) return Promise.resolve();
+    const current = this.accountCheckTask;
+    if (current && current.data === this.data && current.store === this.store) {
+      current.force ||= force;
+      return current.promise;
     }
+    const task = { data: this.data, store: this.store, force, promise: Promise.resolve() };
+    task.promise = this.checkAccountRequest(task).finally(() => { if (this.accountCheckTask === task) this.accountCheckTask = undefined; });
+    this.accountCheckTask = task;
+    return task.promise;
   }
   private async retryInventory(): Promise<void> {
+    if (this.sourceRefreshError) { await this.refreshCurrentSource(); return; }
+    if (this.data && !this.store) { this.bindStore(); return; }
     if (!this.sourceReady) {
       await this.loadSource(readReleaseServer());
       return;
@@ -1435,6 +1500,7 @@ export class TeamBuilder extends LitElement {
   }
   private get maintenanceNeedsAction(): boolean {
     return (
+      !!this.backgroundSyncError ||
       !!this.workspaceError ||
       ["conflict", "merge-required", "offline", "error"].includes(this.workspaceState?.phase ?? "") ||
       !!this.pendingUniqueness ||
@@ -1493,6 +1559,7 @@ export class TeamBuilder extends LitElement {
       : this.t(labels[this.saveState] ?? "authLoading", "Checking sign-in status");
     return html`
       <section class="team-builder__section">
+        ${this.backgroundSyncError ? html`<p role="status" class="team-builder__error">${this.backgroundSyncError}</p>` : nothing}
         <div class="team-builder__actions">
           <span role="status">${label}</span>
           ${
@@ -1508,7 +1575,7 @@ export class TeamBuilder extends LitElement {
               : nothing
           }
           ${
-            ["error", "offline", "auth-error"].includes(this.saveState)
+            (["error", "offline", "auth-error"].includes(this.saveState) || !!this.backgroundSyncError)
               ? html`
                   <button
                     class="button button--outlined"
@@ -1552,7 +1619,7 @@ export class TeamBuilder extends LitElement {
         }
         <div class="team-builder__actions">
           ${
-            this.store &&
+            this.data &&
             ["error", "auth-error"].includes(this.saveState) &&
             !this.authorityBlocked && this.currentOwner === undefined &&
             !this.storeState?.ownerId
@@ -1560,6 +1627,7 @@ export class TeamBuilder extends LitElement {
                   <button
                     class="button button--outlined"
                     @click=${async () => {
+                      if (!this.store) this.bindStore(false);
                       await this.store?.setAccount(null);
                       this.currentOwner = null;
                       void this.workspaceStore?.setAccount(null);
@@ -1599,15 +1667,24 @@ export class TeamBuilder extends LitElement {
     `;
   }
   private resolveInventory(strategy: "merge" | "cloud") {
+    const store = this.store;
+    if (!store || this.authorityBlocked || store.state.ownerId !== this.currentOwner) return;
     try {
       if (this.saveState === "merge-required")
-        this.store?.resolveAnonymous(strategy, strategy === "merge" ? this.mergePriority : undefined);
+        store.resolveAnonymous(strategy, strategy === "merge" ? this.mergePriority : undefined);
       else if (this.saveState === "conflict")
-        this.store?.resolveConflict(
-          strategy === "cloud" ? "remote" : "merge",
-          strategy === "merge" ? this.mergePriority : undefined,
-        );
+        store.resolveConflict(strategy === "cloud" ? "remote" : "merge", strategy === "merge" ? this.mergePriority : undefined);
+      else return;
+      if (strategy === "cloud") {
+        this.actualInventoryFallback = true;
+        this.requiredLeader = ""; this.fixedBindings = [];
+        this.selectedIds = new Set(); this.bulkPreview = null;
+      }
+      this.storeState = store.state;
+      this.saveState = store.state.phase;
+      this.refreshWorkspaceInventory();
       this.error = "";
+      this.requestUpdate();
     } catch {
       this.error = this.t("conflict", "Inventory changed on another device.");
     }
@@ -1747,6 +1824,7 @@ export class TeamBuilder extends LitElement {
     this.memoryCharacter = "";
     this.dataLoading = false;
     this.sourceReady = false;
+    this.sourceRefreshError = false; this.authRefreshError = false;
     this.pendingRebase = null;
     this.selectingSong = false;
     this.pickerSong = "";
