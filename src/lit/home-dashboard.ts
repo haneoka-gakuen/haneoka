@@ -40,6 +40,18 @@ import { localizedContent, localizedList } from "./ui/localized-content";
 import { eventArtwork } from "./ui/event-artwork";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
+import { segmented } from "./ui/controls";
+import {
+  BIRTHDAY_UTC_OFFSET,
+  BIRTHDAY_DAY_MS,
+  birthdayDayStart,
+  nextBirthdayAt,
+  characterBirthdayOccurrence,
+  birthdayCharacterChoices,
+  birthdayPeriodMatches,
+  birthdayRefreshAt,
+  type BirthdayGachaPeriod,
+} from "../lib/home-birthday";
 
 type ModuleId = "songs" | "cards" | "birthdays" | "community" | "news" | "fanInfo";
 export interface HomeFanInfo {
@@ -80,6 +92,8 @@ type Birthday = {
   /** For cast birthdays: the characters this person voices. */
   voiceRoles: Array<{ name: unknown; href?: string; image: string }>;
   nextAt: number;
+  retainedUntil: number;
+  announced: boolean;
   external: boolean;
   characterId: number | null;
   bandName: string;
@@ -106,10 +120,6 @@ type Banner = {
 const MODULES: ModuleId[] = ["birthdays", "news", "cards", "songs", "community", "fanInfo"];
 const PROFILE_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"];
 const STORAGE_KEY = "haneoka:home-layout:v6";
-const BIRTHDAY_UTC_OFFSET = 9 * 60 * 60 * 1000;
-const BIRTHDAY_DAY_MS = 24 * 60 * 60 * 1000;
-const birthdayDayStart = () =>
-  Math.floor((Date.now() + BIRTHDAY_UTC_OFFSET) / BIRTHDAY_DAY_MS) * BIRTHDAY_DAY_MS - BIRTHDAY_UTC_OFFSET;
 /* MasterBand colours for the character-profile fallback (profiles use slugs, not ids). */
 const PROFILE_BAND_SEED: Record<string, string> = {
   mygo: "var(--md-ref-band-1)",
@@ -159,6 +169,7 @@ export class HomeDashboard extends LitElement {
     hiddenModules: { state: true },
     slide: { state: true },
     songLimit: { state: true },
+    birthdaySelection: { state: true },
   };
   declare locale: string;
   declare server: HomeSeed["server"];
@@ -169,6 +180,7 @@ export class HomeDashboard extends LitElement {
   declare announcementsPhase: "loading" | "ready" | "error";
   declare fanInfo: HomeFanInfo;
   private birthdayGacha: JsonRecord[] = [];
+  private birthdayGachaServer?: HomeSeed["server"];
   private birthdayStories: Record<string, JsonRecord[]> = {};
   private crossServerCatalogs: NonNullable<HomeSeed["crossServerCatalogs"]> = {};
   private seed?: HomeSeed;
@@ -187,6 +199,7 @@ export class HomeDashboard extends LitElement {
   declare slide: number;
   /** Candidate songs for the single row; available width chooses its visible prefix. */
   declare songLimit: number;
+  declare private birthdaySelection: string;
   private readonly appBarOwner = `home-dashboard-${++homeActionSequence}`;
   private characterProfiles: JsonRecord[] = [];
   private castProfiles: JsonRecord[] = [];
@@ -230,6 +243,7 @@ export class HomeDashboard extends LitElement {
     this.hiddenModules = {};
     this.slide = 0;
     this.songLimit = 24;
+    this.birthdaySelection = "";
   }
   createRenderRoot() {
     return this;
@@ -250,7 +264,6 @@ export class HomeDashboard extends LitElement {
     this.restoreLayout();
     addEventListener("haneoka:locale-ready", this.localeListener);
     document.addEventListener("visibilitychange", this.visibilityListener);
-    this.clockTimer = window.setInterval(this.visibilityListener, 60_000);
     if (!this.seed || this.seed.server !== readReleaseServer()) {
       void this.load();
       void this.loadProfiles();
@@ -264,7 +277,8 @@ export class HomeDashboard extends LitElement {
   disconnectedCallback() {
     this.disposeSongDisplay?.();
     if (this.slideTimer) window.clearInterval(this.slideTimer);
-    if (this.clockTimer) window.clearInterval(this.clockTimer);
+    if (this.clockTimer) window.clearTimeout(this.clockTimer);
+    this.clockTimer = undefined;
     document.removeEventListener("visibilitychange", this.visibilityListener);
     removeEventListener("haneoka:locale-ready", this.localeListener);
     clearAppBarActions(this.appBarOwner);
@@ -278,6 +292,14 @@ export class HomeDashboard extends LitElement {
     super.disconnectedCallback();
   }
   protected updated(changed: PropertyValues) {
+    if (
+      this.birthdaySelection &&
+      !birthdayCharacterChoices(this.birthdays().filter((item) => item.kind === "character")).some(
+        (item) => this.birthdayChoiceKey(item) === this.birthdaySelection,
+      )
+    )
+      this.birthdaySelection = "";
+    this.scheduleBirthdayRefresh();
     if (changed.has("locale")) this.syncAction();
     this.lazyImages.observe(this);
     for (const element of this.fitObserved)
@@ -291,6 +313,18 @@ export class HomeDashboard extends LitElement {
         this.fitObserver?.observe(element);
       }
     this.queueFit();
+  }
+  private scheduleBirthdayRefresh() {
+    if (this.clockTimer) window.clearTimeout(this.clockTimer);
+    if (!this.isConnected) return;
+    const now = Date.now();
+    this.clockTimer = window.setTimeout(
+      () => {
+        this.clockTimer = undefined;
+        this.visibilityListener();
+      },
+      Math.max(1, birthdayRefreshAt(now, this.birthdayRecruitments()) - now),
+    );
   }
   private queueFit() {
     if (!this.isConnected || this.fitFrame) return;
@@ -341,6 +375,7 @@ export class HomeDashboard extends LitElement {
     super.update(changed);
   }
   prepareHome(seed: HomeSeed, locale: string) {
+    if (this.seed?.server !== seed.server || this.seed?.releaseId !== seed.releaseId) this.birthdaySelection = "";
     this.catalogRequests.cancel();
     this.liveRequests.cancel();
     this.locale = locale;
@@ -526,6 +561,7 @@ export class HomeDashboard extends LitElement {
       })),
     ];
     this.birthdayGacha = values(documents.gacha, "entries");
+    this.birthdayGachaServer = this.sourceServer();
     const birthdayStories = documents.stories?.birthdayStories;
     this.birthdayStories =
       birthdayStories && typeof birthdayStories === "object" && !Array.isArray(birthdayStories)
@@ -549,6 +585,9 @@ export class HomeDashboard extends LitElement {
     this.seed = undefined;
     this.crossServerCatalogs = {};
     this.server = server;
+    this.birthdaySelection = "";
+    this.birthdayGacha = [];
+    this.birthdayGachaServer = undefined;
     this.phase = "loading";
     const keys = [
       "catalog/summary",
@@ -740,7 +779,9 @@ export class HomeDashboard extends LitElement {
       ? "—"
       : new Intl.DateTimeFormat(
           this.locale,
-          short ? { month: "short", day: "numeric", timeZone } : { year: "numeric", month: "short", day: "numeric", timeZone },
+          short
+            ? { month: "short", day: "numeric", timeZone }
+            : { year: "numeric", month: "short", day: "numeric", timeZone },
         ).format(date);
   }
   private songTitle(song: JsonRecord) {
@@ -814,13 +855,8 @@ export class HomeDashboard extends LitElement {
     );
   }
   private birthdays(): Birthday[] {
-    const now = new Date(Date.now() + BIRTHDAY_UTC_OFFSET),
-      start = birthdayDayStart();
-    const next = (month: number, day: number) => {
-      let date = Date.UTC(now.getUTCFullYear(), month - 1, day) - BIRTHDAY_UTC_OFFSET;
-      if (date < start) date = Date.UTC(now.getUTCFullYear() + 1, month - 1, day) - BIRTHDAY_UTC_OFFSET;
-      return date;
-    };
+    const now = Date.now(),
+      periods = this.birthdayRecruitments();
     const index = Math.max(0, PROFILE_LOCALES.indexOf(this.locale));
     const characters = this.characterProfiles.flatMap<Birthday>((profile) => {
       const birthdays = profile.birthday as string[] | undefined,
@@ -832,7 +868,14 @@ export class HomeDashboard extends LitElement {
       return [
         {
           color: String(catalog?.colorCode || PROFILE_BAND_SEED[String(profile.band)] || "var(--md-sys-color-primary)"),
-          nextAt: next(Number(match[1]), Number(match[2])),
+          ...characterBirthdayOccurrence(
+            Number(match[1]),
+            Number(match[2]),
+            catalog ? Number(catalog.characterId) : null,
+            periods,
+            this.sourceServer(),
+            now,
+          ),
           external: !catalog,
           href: catalog
             ? entityHref({
@@ -890,7 +933,9 @@ export class HomeDashboard extends LitElement {
               (profiles[0] ? PROFILE_BAND_SEED[String(profiles[0].band)] : "") ||
               "var(--md-sys-color-tertiary)",
           ),
-          nextAt: next(Number(birthday.month), Number(birthday.day)),
+          nextAt: nextBirthdayAt(Number(birthday.month), Number(birthday.day), now),
+          retainedUntil: nextBirthdayAt(Number(birthday.month), Number(birthday.day), now) + BIRTHDAY_DAY_MS,
+          announced: false,
           external: !catalog,
           href: catalog
             ? entityHref({
@@ -911,10 +956,12 @@ export class HomeDashboard extends LitElement {
         },
       ];
     });
-    return [...characters, ...cast].sort(
-      (a, b) =>
-        a.nextAt - b.nextAt || Number(a.kind === "cast") - Number(b.kind === "cast") || a.key.localeCompare(b.key),
-    );
+    return [...characters, ...cast]
+      .filter((item) => Number.isFinite(item.nextAt))
+      .sort(
+        (a, b) =>
+          a.nextAt - b.nextAt || Number(a.kind === "cast") - Number(b.kind === "cast") || a.key.localeCompare(b.key),
+      );
   }
 
   /* ---------- render: spotlight (banners + event) ---------- */
@@ -1404,74 +1451,79 @@ export class HomeDashboard extends LitElement {
   }
   private birthdayCountdown(item: Birthday) {
     const today = birthdayDayStart();
+    if (item.nextAt < today) {
+      const recruitment = this.birthdayRecruitment(item);
+      return recruitment && recruitment.start > Date.now()
+        ? this.text("upcoming", "Upcoming")
+        : this.text("ongoing", "Ongoing");
+    }
     const days = Math.round((item.nextAt - today) / 86400000);
     return days === 0
       ? this.text("birthdayGreeting", "Happy birthday")
       : this.text(days === 1 ? "daysAwayOne" : "daysAway", "{count} days").replace("{count}", this.count(days));
   }
   private birthdayShortCountdown(item: Birthday) {
+    if (item.nextAt < birthdayDayStart()) return this.spanText(item.retainedUntil - Date.now());
     const days = Math.round((item.nextAt - birthdayDayStart()) / 86400000);
     return days === 0
       ? this.text("birthdayGreeting", "Happy birthday")
       : this.text("spanDays", "{count}d").replace("{count}", this.count(days));
   }
-  private birthdayRecruitment(item: Birthday) {
-    if (!item.characterId) return undefined;
-    const candidates = this.birthdayGacha.flatMap((gacha) => {
-      const pickups = values(gacha.featured).filter((prize) => {
-        if (Number(prize.resourceType) !== 2 || prize.pickup === false) return false;
-        const card = this.cards.find(
-          (entry) =>
-            entry.homeKind === "cards" &&
-            this.rowServer(entry) === this.sourceServer() &&
-            Number(entry.cardId) === Number(prize.resourceId),
-        );
-        return (
-          Number(prize.rarity ?? card?.rarity) === 20 &&
-          Number(prize.characterId ?? card?.characterId) === item.characterId
-        );
-      });
-      if (!pickups.length) return [];
-      const artwork =
-        pickups
-          .map((prize) => {
-            const card = this.cards.find(
-              (entry) =>
-                entry.homeKind === "cards" &&
-                this.rowServer(entry) === this.sourceServer() &&
-                Number(entry.cardId) === Number(prize.resourceId),
-            );
-            const images = card?.images as JsonRecord | undefined;
-            return String(
+  private birthdayRecruitments(): Array<BirthdayGachaPeriod & { gacha: JsonRecord; artwork: string }> {
+    if (this.birthdayGachaServer !== this.sourceServer()) return [];
+    return this.birthdayGacha.flatMap((gacha) => {
+      const server = String(gacha.sourceServer || this.sourceServer());
+      if (server !== this.sourceServer()) return [];
+      return values(gacha.featured).flatMap((prize) => {
+        if (Number(prize.resourceType) !== 2 || prize.pickup === false) return [];
+        const card =
+          this.cards.find(
+            (entry) =>
+              entry.homeKind === "cards" &&
+              this.rowServer(entry) === server &&
+              Number(entry.cardId) === Number(prize.resourceId),
+          ) || (this.seed?.documents.cards?.[String(prize.resourceId)] as JsonRecord | undefined);
+        if (Number(prize.rarity ?? card?.rarity) !== 20) return [];
+        const characterId = Number(prize.characterId ?? card?.characterId);
+        if (!Number.isSafeInteger(characterId) || characterId <= 0) return [];
+        const cardYear = Number(prize.cardYear ?? card?.cardYear);
+        const images = card?.images as JsonRecord | undefined;
+        return [
+          {
+            server,
+            characterId,
+            ...(Number.isSafeInteger(cardYear) && cardYear > 0 ? { cardYear } : {}),
+            cardReleasedAt: timestamp(card?.releasedAt),
+            start: timestamp(gacha.startAt),
+            end: timestamp(gacha.endAt),
+            gacha,
+            artwork: String(
               (prize.cardImages as JsonRecord | undefined)?.full ||
                 prize.cardImage ||
                 images?.full ||
                 images?.thumbnail ||
                 "",
-            );
-          })
-          .find(Boolean) || "";
-      const cardTime =
-        pickups
-          .map((prize) =>
-            this.cards.find(
-              (entry) =>
-                entry.homeKind === "cards" &&
-                this.rowServer(entry) === this.sourceServer() &&
-                Number(entry.cardId) === Number(prize.resourceId),
             ),
-          )
-          .map((card) => timestamp(card?.releasedAt))
-          .find(Boolean) || 0;
-      const start = timestamp(gacha.startAt),
-        end = timestamp(gacha.endAt);
-      const reference = start || cardTime;
-      if (!reference || Math.abs(reference - item.nextAt) > 45 * 86400000) return [];
-      return [{ gacha, start, end, artwork, distance: Math.abs(reference - item.nextAt) }];
+          },
+        ];
+      });
     });
+  }
+  private birthdayRecruitment(item: Birthday) {
+    if (!item.characterId) return undefined;
     const now = Date.now();
-    const state = (row: (typeof candidates)[number]) => (row.end && row.end < now ? 2 : row.start > now ? 1 : 0);
-    return candidates.sort((a, b) => state(a) - state(b) || a.distance - b.distance)[0];
+    const candidates = this.birthdayRecruitments().filter(
+      (period) =>
+        period.characterId === item.characterId && birthdayPeriodMatches(period, item.nextAt, this.sourceServer()),
+    );
+    const state = (row: (typeof candidates)[number]) =>
+      row.start > now ? 1 : row.end <= 0 ? 3 : row.end <= now ? 2 : 0;
+    return candidates.sort(
+      (a, b) => state(a) - state(b) || Math.abs(a.start - item.nextAt) - Math.abs(b.start - item.nextAt),
+    )[0];
+  }
+  private birthdayChoiceKey(item: Birthday) {
+    return `${this.sourceServer()}:${item.key}:${item.nextAt}`;
   }
   private birthdayCard(item: Birthday) {
     if (!item.characterId) return undefined;
@@ -1508,8 +1560,15 @@ export class HomeDashboard extends LitElement {
   }
   private renderBirthdays() {
     const items = this.birthdays();
-    const featured = items.find((item) => item.kind === "character");
+    const choices = birthdayCharacterChoices(items.filter((item) => item.kind === "character"));
+    const featured = choices.find((item) => this.birthdayChoiceKey(item) === this.birthdaySelection) || choices[0];
     const recruitment = featured ? this.birthdayRecruitment(featured) : undefined;
+    const recruitmentStatus =
+      recruitment && recruitment.start > Date.now()
+        ? this.text("upcoming", "Upcoming")
+        : recruitment?.end && recruitment.end > Date.now()
+          ? this.text("ongoing", "Ongoing")
+          : "";
     const story = featured ? this.birthdayStory(featured) : undefined;
     const card = featured ? this.birthdayCard(featured) : undefined;
     const sourceCard = card ? (this.seed?.documents.cards?.[String(card.cardId)] as JsonRecord | undefined) : undefined;
@@ -1561,6 +1620,78 @@ export class HomeDashboard extends LitElement {
       : html`
           ${icon("cake", 40)}
         `;
+    const avatars = featured
+      ? html`
+          <ul class="home-birthday-avatars" data-home-avatars>
+            ${items
+              .filter((item) => item.key !== featured.key)
+              .slice(0, 12)
+              .map((item) => {
+                const role = item.voiceRoles.find((entry) => entry.href);
+                const href = item.kind === "cast" ? role?.href : item.characterId ? item.href : undefined;
+                const label = [
+                  item.name,
+                  this.text(item.kind, item.kind),
+                  item.kind === "cast"
+                    ? formatList(
+                        item.voiceRoles.map((value) => localizedText(value.name, this.locale)),
+                        this.locale,
+                      )
+                    : "",
+                  this.formatDate(item.nextAt, true, "Asia/Tokyo"),
+                  this.birthdayCountdown(item),
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const content = html`
+                  <span class="home-birthday-portrait" style=${`--member:${item.color}`}>
+                    ${
+                      item.image
+                        ? html`
+                            <img
+                              class="home-birthday-portrait__main"
+                              src=${item.image}
+                              alt=""
+                              loading="lazy"
+                              @error=${hideBrokenImage}
+                            />
+                          `
+                        : Array.from(item.name)[0]
+                    }
+                    ${
+                      item.kind === "cast" && role?.image
+                        ? html`
+                            <img
+                              class="home-birthday-portrait__role"
+                              src=${role.image}
+                              alt=""
+                              loading="lazy"
+                              @error=${hideBrokenImage}
+                            />
+                          `
+                        : nothing
+                    }
+                  </span>
+                  <span class="home-birthday-avatar-name">${item.name}</span>
+                  <span class="home-birthday-avatar-days tabular">${this.birthdayShortCountdown(item)}</span>
+                `;
+                return html`
+                  <li>
+                    ${
+                      href
+                        ? html`
+                            <a href=${href} aria-label=${label} title=${label}>${content}</a>
+                          `
+                        : html`
+                            <span aria-label=${label} title=${label}>${content}</span>
+                          `
+                    }
+                  </li>
+                `;
+              })}
+          </ul>
+        `
+      : nothing;
     return html`
       <section class="home-card home-info home-birthdays" aria-labelledby="home-birthdays-title">
         <h2 class="sr-only" id="home-birthdays-title">${this.text("birthdaysTitle", "Birthday countdown")}</h2>
@@ -1658,7 +1789,13 @@ export class HomeDashboard extends LitElement {
                         : nothing
                     }
                     <span class="home-birthday-due">
-                      <b class="tabular">${this.birthdayCountdown(featured)}</b>
+                      <b class="tabular" aria-label=${this.birthdayCountdown(featured)}>
+                        ${
+                          choices.length > 1 && featured.nextAt > birthdayDayStart()
+                            ? this.birthdayShortCountdown(featured)
+                            : this.birthdayCountdown(featured)
+                        }
+                      </b>
                       <time datetime=${new Date(featured.nextAt + BIRTHDAY_UTC_OFFSET).toISOString().slice(0, 10)}>
                         ${this.formatDate(featured.nextAt, true, "Asia/Tokyo")}
                       </time>
@@ -1667,7 +1804,11 @@ export class HomeDashboard extends LitElement {
                       recruitment
                         ? html`
                             <span class="home-birthday-recruitment-time">
-                              ${this.eventPhrase(recruitment.start, recruitment.end)}
+                              ${
+                                recruitment.end || recruitment.start > Date.now()
+                                  ? this.eventPhrase(recruitment.start, recruitment.end)
+                                  : this.formatDate(recruitment.start, true, "Asia/Tokyo")
+                              }
                             </span>
                           `
                         : nothing
@@ -1675,75 +1816,51 @@ export class HomeDashboard extends LitElement {
                   </div>
                 </div>
                 <div class="home-birthday-bottom">
-                  <ul class="home-birthday-avatars" data-home-avatars>
-                    ${items
-                      .filter((item) => item !== featured)
-                      .slice(0, 12)
-                      .map((item) => {
-                        const role = item.voiceRoles.find((entry) => entry.href);
-                        const href = item.kind === "cast" ? role?.href : item.characterId ? item.href : undefined;
-                        const label = [
-                          item.name,
-                          this.text(item.kind, item.kind),
-                          item.kind === "cast"
-                            ? formatList(
-                                item.voiceRoles.map((value) => localizedText(value.name, this.locale)),
-                                this.locale,
-                              )
-                            : "",
-                          this.formatDate(item.nextAt, true, "Asia/Tokyo"),
-                          this.birthdayCountdown(item),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ");
-                        const content = html`
-                          <span class="home-birthday-portrait" style=${`--member:${item.color}`}>
-                            ${
-                              item.image
-                                ? html`
-                                    <img
-                                      class="home-birthday-portrait__main"
-                                      src=${item.image}
-                                      alt=""
-                                      loading="lazy"
-                                      @error=${hideBrokenImage}
-                                    />
-                                  `
-                                : Array.from(item.name)[0]
-                            }
-                            ${
-                              item.kind === "cast" && role?.image
-                                ? html`
-                                    <img
-                                      class="home-birthday-portrait__role"
-                                      src=${role.image}
-                                      alt=""
-                                      loading="lazy"
-                                      @error=${hideBrokenImage}
-                                    />
-                                  `
-                                : nothing
-                            }
-                          </span>
-                          <span class="home-birthday-avatar-name">${item.name}</span>
-                          <span class="home-birthday-avatar-days tabular">${this.birthdayShortCountdown(item)}</span>
-                        `;
-                        return html`
-                          <li>
-                            ${
-                              href
-                                ? html`
-                                    <a href=${href} aria-label=${label} title=${label}>${content}</a>
-                                  `
-                                : html`
-                                    <span aria-label=${label} title=${label}>${content}</span>
-                                  `
-                            }
-                          </li>
-                        `;
-                      })}
-                  </ul>
+                  ${
+                    choices.length > 1
+                      ? html`
+                          <div style="min-width:0;max-width:100%;overflow-x:auto">
+                            <div style="display:flex;align-items:center;gap:var(--md-sys-spacing-2);width:max-content">
+                              ${segmented({
+                                label: `${this.text("birthdaysTitle", "Birthday countdown")} · ${uiText(this.locale, "gacha")}`,
+                                value: this.birthdayChoiceKey(featured),
+                                options: choices.map((item) => {
+                                  const pool = this.birthdayRecruitment(item);
+                                  const status =
+                                    pool?.start && pool.start > Date.now()
+                                      ? this.text("upcoming", "Upcoming")
+                                      : pool?.end && pool.end > Date.now()
+                                        ? this.text("ongoing", "Ongoing")
+                                        : "";
+                                  return {
+                                    value: this.birthdayChoiceKey(item),
+                                    label: [item.name, status].filter(Boolean).join(" · "),
+                                  };
+                                }),
+                                onSelect: (value) => {
+                                  this.birthdaySelection = value;
+                                },
+                              })}
+                              ${avatars}
+                            </div>
+                          </div>
+                        `
+                      : avatars
+                  }
                   <nav class="home-birthday-actions" aria-label=${this.text("birthdaysTitle", "Birthday countdown")}>
+                    ${
+                      choices.length === 1 && featured.nextAt >= birthdayDayStart() && recruitmentStatus
+                        ? html`
+                            <span
+                              class="home-birthday-recruitment-time"
+                              style="display:inline"
+                              aria-label=${`${uiText(this.locale, "gacha")}: ${recruitmentStatus}`}
+                            >
+                              ${recruitmentStatus}
+                            </span>
+                          `
+                        : nothing
+                    }
                     ${
                       story
                         ? html`
