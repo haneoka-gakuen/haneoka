@@ -1492,3 +1492,38 @@
     color: var(--md-sys-color-on-surface);
   }
 }
+
+@layer pages {
+  .community-post-discussion > .community-forum-link {
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 28px;
+    margin-bottom: 8px;
+    padding-inline: 0;
+    border: 0;
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 500 12px/18px var(--app-font);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .community-pin > .community-forum-link {
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-height: 24px;
+    margin: 0 12px 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 11px/16px var(--app-font);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  @media (min-width: 840px) {
+    .has-media .community-post-discussion:has(> .community-forum-link) {
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+    }
+  }
+}
