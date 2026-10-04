@@ -294,6 +294,11 @@
   .team-builder__constraint-group { display: grid; min-width: 0; gap: var(--md-sys-spacing-2); align-content: start; }
   .team-builder__options .md-accordion__label small { display: block; }
   .team-builder__run-actions { display: grid; gap: var(--md-sys-spacing-2); }
+  .team-builder__page-header > .team-builder__run-actions {
+    flex: 1 1 220px;
+    max-width: 360px;
+    margin-inline-start: auto;
+  }
   .team-builder__run-actions > .button { width: 100%; }
   .team-builder__start-hint { min-block-size: var(--md-sys-typescale-body-small-line-height); }
   .team-builder__modifier-content {
@@ -524,10 +529,9 @@
       var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   @media (min-width: 1100px) {
-    .team-builder__content { grid-template-columns: 208px minmax(0, 1fr); }
-    .team-builder__sidebar { position: sticky; top: var(--pane-gutter); }
-    .team-builder__navigation { flex-direction: column; overflow: visible; }
-    .team-builder__nav-item { flex: initial; }
+    .team-builder__content { grid-template-columns: minmax(0, 1fr); }
+    .team-builder__navigation { overflow: visible; }
+    .team-builder__nav-item { flex: 1; }
     .team-builder__nav-item > span { overflow-wrap: anywhere; }
   }
   @media (max-width: 1099px) {

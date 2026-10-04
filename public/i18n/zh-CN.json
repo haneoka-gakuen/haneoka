@@ -3402,7 +3402,16 @@
     "recoveryCloud": "账号中保存的版本",
     "recoveryUnavailable": "此处没有可读取的版本。",
     "recoveryUseSelected": "使用所选版本",
-    "recoveryChanged": "已保存的版本再次发生变化。请重试并复核最新版本。"
+    "recoveryChanged": "已保存的版本再次发生变化。请重试并复核最新版本。",
+    "exactAutoContinue": "自动继续，直到完整搜索结束",
+    "exactContinuing": "正在保存进度并继续完整搜索…",
+    "exactCapacityPause": "进度已保存。候选内存已达上限，请缩小目标或卡池范围后继续。",
+    "exactNoProgress": "进度已保存。请增加每段时间，以完成下一次评分。",
+    "exactPaused": "进度已保存，可随时继续。",
+    "completeSearch": "完整搜索",
+    "exactSliceBudget": "每段搜索时间（秒）",
+    "eventChallengeSongs": "活动曲目",
+    "fixedChallengeSingle": "请选择一首挑战曲，验算固定绑定或比较保存的队伍。"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

@@ -3402,7 +3402,16 @@
     "recoveryCloud": "アカウントに保存されたバージョン",
     "recoveryUnavailable": "読み込めるバージョンがありません。",
     "recoveryUseSelected": "選択したバージョンを使用",
-    "recoveryChanged": "保存されたバージョンが再び変更されました。再試行して最新の内容を確認してください。"
+    "recoveryChanged": "保存されたバージョンが再び変更されました。再試行して最新の内容を確認してください。",
+    "exactAutoContinue": "完全探索が終わるまで自動で続行",
+    "exactContinuing": "進捗を保存して完全探索を続行しています…",
+    "exactCapacityPause": "進捗を保存しました。候補のメモリ上限に達しました。目標やカードの範囲を絞って続行してください。",
+    "exactNoProgress": "進捗を保存しました。次の評価を完了するには、各区間の時間を増やしてください。",
+    "exactPaused": "進捗を保存しました。準備ができたら続行できます。",
+    "completeSearch": "完全探索",
+    "exactSliceBudget": "探索区間ごとの時間（秒）",
+    "eventChallengeSongs": "イベント楽曲",
+    "fixedChallengeSingle": "固定した組み合わせの評価や保存チームの比較には、チャレンジ楽曲を1曲選んでください。"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

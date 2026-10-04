@@ -3402,7 +3402,16 @@
     "recoveryCloud": "Saved in your account",
     "recoveryUnavailable": "No readable version is available here.",
     "recoveryUseSelected": "Use selected version",
-    "recoveryChanged": "The saved version changed again. Retry to review the latest versions."
+    "recoveryChanged": "The saved version changed again. Retry to review the latest versions.",
+    "exactAutoContinue": "Continue automatically until the complete search finishes",
+    "exactContinuing": "Saving progress and continuing the complete search…",
+    "exactCapacityPause": "Progress saved. The candidate memory limit was reached; narrow the goals or card pool to continue.",
+    "exactNoProgress": "Progress saved. Increase the time budget to finish the next evaluation.",
+    "exactPaused": "Progress saved. Continue when you are ready.",
+    "completeSearch": "Complete search",
+    "exactSliceBudget": "Time per search step (seconds)",
+    "eventChallengeSongs": "Event songs",
+    "fixedChallengeSingle": "Choose one challenge song to evaluate fixed bindings or compare saved teams."
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

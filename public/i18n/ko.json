@@ -3402,7 +3402,16 @@
     "recoveryCloud": "계정에 저장된 버전",
     "recoveryUnavailable": "읽을 수 있는 버전이 없습니다.",
     "recoveryUseSelected": "선택한 버전 사용",
-    "recoveryChanged": "저장된 버전이 다시 변경되었습니다. 다시 시도하여 최신 버전을 확인하세요."
+    "recoveryChanged": "저장된 버전이 다시 변경되었습니다. 다시 시도하여 최신 버전을 확인하세요.",
+    "exactAutoContinue": "전체 탐색이 끝날 때까지 자동으로 계속",
+    "exactContinuing": "진행 상황을 저장하고 전체 탐색을 계속하는 중…",
+    "exactCapacityPause": "진행 상황을 저장했습니다. 후보 메모리 한도에 도달했습니다. 목표나 카드 범위를 줄여서 계속하세요.",
+    "exactNoProgress": "진행 상황을 저장했습니다. 다음 평가를 마치려면 구간별 시간을 늘려주세요.",
+    "exactPaused": "진행 상황을 저장했습니다. 준비되면 계속할 수 있습니다.",
+    "completeSearch": "전체 탐색",
+    "exactSliceBudget": "탐색 구간별 시간(초)",
+    "eventChallengeSongs": "이벤트 곡",
+    "fixedChallengeSingle": "고정 조합을 평가하거나 저장한 팀을 비교하려면 챌린지 곡을 하나 선택하세요."
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

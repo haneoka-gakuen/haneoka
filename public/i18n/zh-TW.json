@@ -3402,7 +3402,16 @@
     "recoveryCloud": "帳號中儲存的版本",
     "recoveryUnavailable": "此處沒有可讀取的版本。",
     "recoveryUseSelected": "使用所選版本",
-    "recoveryChanged": "已儲存的版本再次變更。請重試並檢查最新版本。"
+    "recoveryChanged": "已儲存的版本再次變更。請重試並檢查最新版本。",
+    "exactAutoContinue": "自動繼續，直到完整搜尋結束",
+    "exactContinuing": "正在儲存進度並繼續完整搜尋…",
+    "exactCapacityPause": "進度已儲存。候選記憶體已達上限，請縮小目標或卡池範圍後繼續。",
+    "exactNoProgress": "進度已儲存。請增加每段時間，以完成下一次評分。",
+    "exactPaused": "進度已儲存，可隨時繼續。",
+    "completeSearch": "完整搜尋",
+    "exactSliceBudget": "每段搜尋時間（秒）",
+    "eventChallengeSongs": "活動曲目",
+    "fixedChallengeSingle": "請選擇一首挑戰曲，驗算固定配對或比較已儲存的隊伍。"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",
