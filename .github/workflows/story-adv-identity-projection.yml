@@ -1,0 +1,80 @@
+name: Publish current native story ADV identities
+on:
+  workflow_dispatch:
+    inputs:
+      producer_pin:
+        description: Reviewed full commit containing producer fields and bounded metadata publisher
+        required: true
+        type: string
+      server:
+        required: true
+        type: choice
+        options: [intl, jp]
+        default: intl
+      identity_json:
+        description: Exact current server, releaseId and sourceId; no fallback source
+        required: true
+        type: string
+      publish:
+        required: true
+        type: boolean
+        default: false
+      rebuild_site:
+        required: true
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: current-story-adv-identity-${{ inputs.server }}
+  cancel-in-progress: false
+jobs:
+  stories:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: resource-${{ inputs.server }}
+    outputs:
+      release_promoted: ${{ steps.project.outputs.release_promoted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.producer_pin }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install the existing small R2 import closure
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/story-adv-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/story-adv-dependencies/requirements.txt"
+      - name: Join original MasterAdv and preserve current story metadata
+        id: project
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ inputs.producer_pin }}
+          RESOURCE_SERVER: ${{ inputs.server }}
+          STORY_ADV_CURRENT_IDENTITY_JSON: ${{ inputs.identity_json }}
+          PUBLISH: ${{ inputs.publish }}
+        run: python scripts/publish/story_adv_identity.py --output "$RUNNER_TEMP/story-adv-output"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: story-adv-${{ inputs.server }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/story-adv-output/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+  rebuild-site:
+    needs: stories
+    if: ${{ inputs.rebuild_site && needs.stories.outputs.release_promoted == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch normal build after verified metadata promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main

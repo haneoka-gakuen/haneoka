@@ -1,0 +1,70 @@
+name: Publish current native JP shop metadata
+on:
+  workflow_dispatch:
+    inputs:
+      producer_pin:
+        description: Full reviewed commit containing native JP adapter and bounded publisher
+        required: true
+        type: string
+      projection_json:
+        description: Exact current JP source/release and original Shop/Product digests
+        required: true
+        type: string
+      publish:
+        required: true
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: current-native-jp-shop-projection
+  cancel-in-progress: false
+jobs:
+  shop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: resource-jp
+    outputs:
+      release_promoted: ${{ steps.project.outputs.release_promoted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.producer_pin }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install existing locked small R2 and Master decoder imports
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/jp-shop-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/jp-shop-dependencies/requirements.txt"
+      - name: Verify native JP Shop/Product and promote metadata-only delta
+        id: project
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ inputs.producer_pin }}
+          JP_SHOP_INPUT_JSON: ${{ inputs.projection_json }}
+          PUBLISH: ${{ inputs.publish }}
+        run: python scripts/publish/jp_shop.py --output "$RUNNER_TEMP/jp-shop-output"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: native-jp-shop-${{ github.run_id }}
+          path: ${{ runner.temp }}/jp-shop-output/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+  rebuild-site:
+    needs: shop
+    if: ${{ needs.shop.outputs.release_promoted == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch normal build after verified native JP shop promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main

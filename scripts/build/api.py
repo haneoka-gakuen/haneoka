@@ -5279,6 +5279,8 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
         commands = _story_commands(data, asset_name)
         assets = _story_assets(data, asset_name, commands, live2d)
         story = _present(
+            advId=adv_id,
+            sourceTable="MasterAdv",
             storyId=story_id,
             storyKey=story_id,
             episodeNumber=int(metadata.get("episodeNumber") or 0),
