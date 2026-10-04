@@ -530,6 +530,7 @@ export class CatalogScreen extends LitElement {
     detailReady: { state: true },
     docked: { state: true },
     compact: { state: true },
+    commentsCompact: { state: true },
     density: { state: true },
     sim: { state: true },
     gachaOption: { state: true },
@@ -572,6 +573,9 @@ export class CatalogScreen extends LitElement {
   declare docked: boolean;
   /** Compact window: detail opens as a full-screen dialog. */
   declare compact: boolean;
+  declare commentsCompact: boolean;
+  private commentsRequested = false;
+  private commentsModuleError = false;
   declare density: Density;
   /** Gacha simulator session for the open detail; owned here so the module stays stateless. */
   declare sim: import("./game-system-detail").GachaSimState | null;
@@ -1271,6 +1275,7 @@ export class CatalogScreen extends LitElement {
     this.detailReady = false;
     this.docked = matches(EXPANDED);
     this.compact = matches(COMPACT);
+    this.commentsCompact = matches("(max-width: 959px)");
     this.density = "comfortable";
     this.sim = null;
     this.gachaOption = "";
@@ -1315,9 +1320,11 @@ export class CatalogScreen extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
     ]);
     this.density = currentDensity();
+    this.commentsCompact = matches("(max-width: 959px)");
     this.disposeMedia = [
       watchMedia(EXPANDED, (value) => (this.docked = value)),
       watchMedia(COMPACT, (value) => (this.compact = value)),
+      watchMedia("(max-width: 959px)", (value) => (this.commentsCompact = value)),
     ];
     window.addEventListener(DENSITY_EVENT, this.onDensity);
     window.addEventListener("keydown", this.onKeydown);
@@ -4805,10 +4812,61 @@ export class CatalogScreen extends LitElement {
     this.characterSection = section;
     this.setDetailQuery("section", section);
   }
+  private detailCommentTarget(item: Item): { type: string; id: string } | null {
+    if (this.settings.origin === "bestdori" || this.settings.chartPage || !["jp", "intl"].includes(this.dataServer())) return null;
+    const decimal = (value: unknown) => {
+      const text = typeof value === "number" && Number.isSafeInteger(value) ? String(value) : value;
+      return typeof text === "string" && /^[1-9]\d{0,15}$/u.test(text) && Number.isSafeInteger(Number(text)) ? text : null;
+    };
+    const fields: Record<string, string> = { cards: "cardId", "support-cards": "supportCardId", characters: "characterId", songs: "musicId", "song-meta": "musicId", "band-items": "bandItemId", items: "itemId", comics: "comicId", stamps: "stampId", stickers: "stickerId", backgrounds: "backgroundId" };
+    const resource = this.settings.resource;
+    let type = resource === "song-meta" ? "songs" : resource;
+    let id: string | null;
+    if (fields[resource]) id = decimal(item[fields[resource]]);
+    else if (resource === "passes" || resource === "missions" || resource === "real-lives") {
+      const variants: Record<string, [string, string]> = { "season-pass": ["passes-season", "season-"], "monthly-pass": ["passes-monthly", "monthly-"], "regular-mission": ["missions-regular", "regular-mission-"], "limited-mission": ["missions-limited", "limited-mission-"], "real-live": ["real-lives", "real-live-"] };
+      const variant = variants[String(item.kind || "")];
+      if (!variant || (resource === "passes" && !variant[0].startsWith("passes-")) || (resource === "missions" && !variant[0].startsWith("missions-")) || (resource === "real-lives" && variant[0] !== "real-lives")) return null;
+      type = variant[0];
+      id = typeof item.id === "string" && item.id.startsWith(variant[1]) ? decimal(item.id.slice(variant[1].length)) : null;
+    } else if (["events", "gacha", "login-campaigns", "exchange", "circle", "challenge", "shop", "tgw-card"].includes(resource)) {
+      const kinds: Record<string, string> = { events: "game-event", gacha: "gacha", "login-campaigns": "login", exchange: "exchange", circle: "circle", challenge: "challenge", shop: "shop" };
+      if (kinds[resource] && item.kind !== kinds[resource]) return null;
+      if (resource === "events" && item.sourceTable !== "MasterEvent" && !(Array.isArray(item.sourceTables) && item.sourceTables.includes("MasterEvent"))) return null;
+      if (resource === "shop" && item.sourceTable !== "MasterShop") return null;
+      if (resource === "tgw-card" && item.sourceTable !== "MasterVip") return null;
+      id = decimal(item[resource === "tgw-card" ? "rank" : "id"]);
+    } else return null;
+    const raw = item.raw as Item | undefined;
+    if (!id || (raw?._id !== undefined && decimal(raw._id) !== id)) return null;
+    return { type, id };
+  }
+  private renderEntityDiscussion(item: Item) {
+    const target = this.detailCommentTarget(item);
+    if (!target || typeof window === "undefined" || !this.isConnected) return nothing;
+    if (!customElements.get("entity-comments")) {
+      if (this.commentsModuleError) return errorState(this.label("unavailable", "Unavailable"), this.label("retry", "Retry"), () => { this.commentsModuleError = false; this.commentsRequested = false; this.requestUpdate(); });
+      if (!this.commentsRequested) {
+        this.commentsRequested = true;
+        void import("./entity-comments").then(() => { if (this.isConnected) this.requestUpdate(); }).catch(() => { this.commentsModuleError = true; this.commentsRequested = false; if (this.isConnected) this.requestUpdate(); });
+      }
+      return loadingState(clientText(this.settings.locale, "communityPage.comments", "Comments"), { local: true });
+    }
+    return html`<entity-comments class="detail-comments" entity-type=${target.type} entity-id=${target.id} locale=${this.settings.locale} server=${this.itemSourceServer(item)} target-title=${this.itemTitle(item)} comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}></entity-comments>`;
+  }
+  private characterDiscussionInVisual(item: Item) {
+    return this.profile.presentation === "character" && this.characterSection === "profile" && !this.commentsCompact && this.detailMediaItems(item).length > 0 && !!this.detailCommentTarget(item) && typeof window !== "undefined" && this.isConnected;
+  }
+  private detailDiscussion(item: Item) {
+    if (!this.detailCommentTarget(item) || typeof window === "undefined" || !this.isConnected || this.characterDiscussionInVisual(item)) return undefined;
+    const hasMedia = this.profile.presentation !== "character" && this.detailMediaItems(item).length > 0;
+    return { comments: this.renderEntityDiscussion(item), hasMedia, placement: hasMedia && !this.commentsCompact ? "media" as const : "bottom" as const };
+  }
   private renderCharacterArchive(item: Item, fields: Array<{ key: string; value: string }>) {
     return html`
       <character-detail-archive
         .controller=${this}
+        .profileComments=${this.characterDiscussionInVisual(item) ? this.renderEntityDiscussion(item) : undefined}
         .item=${item}
         .fields=${fields}
         .section=${this.characterSection}
@@ -5155,6 +5213,7 @@ export class CatalogScreen extends LitElement {
                 : nothing
             }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.viewingServerNotice()}
           `,
+          this.detailDiscussion(item),
         ),
       })}
       ${
