@@ -1367,3 +1367,179 @@
     }
   }
 }
+@layer pages {
+  .admin-analytics {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .admin-analytics > .admin-section-heading {
+    align-items: center;
+  }
+  .admin-analytics > .admin-section-heading p {
+    margin: 4px 0 0;
+  }
+  .admin-chart-card {
+    min-width: 0;
+    padding: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .admin-chart-card > header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .admin-chart-card h4 {
+    margin: 0;
+    font: 500 16px/24px var(--app-font);
+  }
+  .admin-chart-card md-outlined-select {
+    width: min(100%, 360px);
+    min-width: 0;
+  }
+  .admin-chart {
+    width: 100%;
+    min-width: 0;
+    height: 320px;
+  }
+  .admin-chart--pie {
+    height: 280px;
+  }
+  .admin-chart--map,
+  .admin-chart--countries {
+    height: 430px;
+  }
+  .admin-chart-partitions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .admin-geo-charts {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+    gap: 16px;
+  }
+  .admin-geo-window {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font: 400 13px/20px var(--app-font);
+  }
+  .admin-map-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .admin-geo-totals {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .admin-geo-totals > span {
+    display: grid;
+    gap: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 12px/18px var(--app-font);
+  }
+  .admin-geo-totals strong {
+    color: var(--md-sys-color-on-surface);
+    font: 500 22px/28px var(--app-font);
+  }
+  .admin-map-credit {
+    margin-bottom: 0;
+    font: 400 11px/16px var(--app-font);
+  }
+  .admin-map-credit a {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .admin-geo-filter-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    font: 400 12px/18px var(--app-font);
+  }
+  .admin-geo-filter-summary > span:nth-child(2) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+  .admin-geo-filter-summary .admin-status {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 999px) {
+    .admin-geo-charts {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-chart--countries {
+      height: 320px;
+    }
+  }
+  @media (max-width: 699px) {
+    .admin-chart-partitions {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-geo-totals {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .admin-chart-card {
+      padding: 12px;
+    }
+    .admin-chart--map {
+      height: 240px;
+    }
+    .admin-analytics > .admin-section-heading {
+      display: grid;
+    }
+  }
+}
+@layer pages {
+  .admin-country-data {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 12px;
+  }
+  .admin-country-data .button {
+    width: 100%;
+    justify-content: space-between;
+    text-align: start;
+    min-width: 0;
+  }
+  .admin-country-data .button > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    margin-inline-end: auto;
+  }
+  @media (max-width: 699px) {
+    .admin-country-data {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+@layer pages {
+  .admin-chart-partitions .admin-country-data {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-trend-data {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px 20px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .admin-trend-data > span {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font: 400 12px/20px var(--app-font);
+  }
+}

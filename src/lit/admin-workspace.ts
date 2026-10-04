@@ -10,13 +10,27 @@ import { navigationDocumentUrl } from "../lib/document-url";
 import { communityExcerpt, communityMarkup } from "../lib/community-markup";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { segmented } from "./ui/controls";
+import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsOptions } from "./admin-analytics";
 import "./community-sticker";
 
 type Value = Record<string, unknown>;
 const sections = ["overview", "users", "posts", "reports", "appeals", "operations"] as const;
 type Section = (typeof sections)[number];
-type PostFilter = "all" | "pending" | "review" | "block" | "hidden" | "draft";
+type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
 type HistorySection = "revisions" | "stateEvents" | "comments";
+const ADMIN_GEO_FILTERS = [
+  "geoCountry",
+  "geoRegion",
+  "geoCity",
+  "geoCountryUnknown",
+  "geoRegionUnknown",
+  "geoCityUnknown",
+  "geoLat",
+  "geoLng",
+  "geoCoordinates",
+  "visitedFrom",
+  "visitedTo",
+] as const;
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size} aria-hidden="true">
     <use href=${`/icons.svg#${name}`}></use>
@@ -56,6 +70,17 @@ export class AdminWorkspace extends LitElement {
     userCopyState: { state: true },
     userRoleFilter: { state: true },
     userStatusFilter: { state: true },
+    analyticsRange: { state: true },
+    analyticsMetric: { state: true },
+    analyticsSeries: { state: true },
+    analyticsGeo: { state: true },
+    seriesLoading: { state: true },
+    geoLoading: { state: true },
+    seriesError: { state: true },
+    geoError: { state: true },
+    mapError: { state: true },
+    geoWindow: { state: true },
+    analyticsModuleError: { state: true },
   };
   declare section: Section;
   declare phase: "loading" | "ready" | "error";
@@ -88,12 +113,29 @@ export class AdminWorkspace extends LitElement {
   declare userCopyState: "" | "copied" | "manual";
   declare userRoleFilter: string;
   declare userStatusFilter: string;
+  declare analyticsRange: string;
+  declare analyticsMetric: string;
+  declare analyticsSeries: AdminSeriesData | null;
+  declare analyticsGeo: AdminGeoData | null;
+  declare seriesLoading: boolean;
+  declare geoLoading: boolean;
+  declare seriesError: string;
+  declare geoError: string;
+  declare mapError: boolean;
+  declare geoWindow: boolean;
+  declare analyticsModuleError: string;
   private readonly expandedPanels = new Set<string>();
   private readonly listRequests = new RequestScope();
   private readonly sourceRequests = new RequestScope();
   private readonly serverRequests = new RequestScope();
   private readonly historyRequests = new RequestScope();
   private readonly userRequests = new RequestScope();
+  private readonly seriesRequests = new RequestScope();
+  private readonly geoRequests = new RequestScope();
+  private analyticsView?: AdminAnalyticsView;
+  private analyticsRoot?: HTMLElement;
+  private analyticsModule?: Promise<typeof import("./admin-analytics")>;
+  private analyticsMount?: { element: HTMLElement; generation: number };
   private readonly failedPreviews = new Set<string>();
   private lifetime = new AbortController();
   private privateAccess = new AbortController();
@@ -132,6 +174,17 @@ export class AdminWorkspace extends LitElement {
     this.userCopyState = "";
     this.userRoleFilter = "";
     this.userStatusFilter = "";
+    this.analyticsRange = "30";
+    this.analyticsMetric = "registrations";
+    this.analyticsSeries = null;
+    this.analyticsGeo = null;
+    this.seriesLoading = false;
+    this.geoLoading = false;
+    this.seriesError = "";
+    this.geoError = "";
+    this.mapError = false;
+    this.geoWindow = false;
+    this.analyticsModuleError = "";
   }
 
   private paneFocus = new PaneFocus();
@@ -141,6 +194,7 @@ export class AdminWorkspace extends LitElement {
   updated() {
     if (this.selectedUserId && this.section !== "users") this.closeUserDetails();
     // The dialog is modal: focus stays inside it and Escape closes it.
+    this.syncAnalytics();
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => {
       this.closeReview();
       this.closeUserDetails();
@@ -166,13 +220,14 @@ export class AdminWorkspace extends LitElement {
       ? filters.get("role")!
       : "";
     this.userStatusFilter = ["active", "suspended", "deleted"].includes(state || "") ? state! : "";
-    this.postFilter = ["pending", "review", "block"].includes(moderation || "")
+    this.postFilter = ["pending", "review", "block", "allow"].includes(moderation || "")
       ? (moderation as PostFilter)
-      : state === "hidden" || state === "draft"
+      : state === "hidden" || state === "draft" || state === "published"
         ? state
         : "all";
     void Promise.all([
       import("@material/web/progress/linear-progress.js"),
+      import("@material/web/checkbox/checkbox.js"),
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
       import("@material/web/textfield/outlined-text-field.js"),
@@ -255,6 +310,18 @@ export class AdminWorkspace extends LitElement {
     this.serverRequests.cancel();
     this.closeReview();
     this.closeUserDetails();
+    this.seriesRequests.cancel();
+    this.geoRequests.cancel();
+    this.disposeAnalytics();
+    this.analyticsSeries = null;
+    this.analyticsGeo = null;
+    this.seriesLoading = false;
+    this.geoLoading = false;
+    this.seriesError = "";
+    this.geoError = "";
+    this.mapError = false;
+    this.analyticsModuleError = "";
+    this.analyticsModule = undefined;
     this.expandedPanels.clear();
     this.staff = {};
     this.document = {};
@@ -373,9 +440,15 @@ export class AdminWorkspace extends LitElement {
       if (section === "users") {
         if (this.userRoleFilter) query.set("role", this.userRoleFilter);
         if (this.userStatusFilter) query.set("status", this.userStatusFilter);
+        const location = navigationDocumentUrl();
+        for (const key of ADMIN_GEO_FILTERS)
+          for (const value of location.searchParams.getAll(key)) query.append(key, value);
       }
       if (section === "posts" && this.postFilter !== "all")
-        query.set(["hidden", "draft"].includes(this.postFilter) ? "status" : "moderationStatus", this.postFilter);
+        query.set(
+          ["hidden", "draft", "published"].includes(this.postFilter) ? "status" : "moderationStatus",
+          this.postFilter,
+        );
       if (this.section === "reports" || this.section === "appeals") query.set("status", "all");
       const result: Value =
         section === "overview"
@@ -399,6 +472,10 @@ export class AdminWorkspace extends LitElement {
       } else this.document = result;
       this.cursor = String(result.nextCursor || "");
       this.phase = "ready";
+      if (!append && section === "overview") {
+        void this.loadAnalyticsSeries();
+        void this.loadAnalyticsGeo();
+      }
       if (!append && section === "operations") await this.loadResourceServers();
       if (!append && section === "users" && this.selectedUserId && !this.userLoading)
         await this.loadUserDetails(this.selectedUserId);
@@ -906,7 +983,8 @@ export class AdminWorkspace extends LitElement {
     const params = new URLSearchParams(location.search);
     params.delete("status");
     params.delete("moderationStatus");
-    if (value !== "all") params.set(["hidden", "draft"].includes(value) ? "status" : "moderationStatus", value);
+    if (value !== "all")
+      params.set(["hidden", "draft", "published"].includes(value) ? "status" : "moderationStatus", value);
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
     void this.load(false);
   }
@@ -916,10 +994,12 @@ export class AdminWorkspace extends LitElement {
         ${segmented({
           label: this.label("workspace.filterPosts", "Filter posts"),
           value: this.postFilter,
-          options: (["all", "pending", "review", "block", "hidden", "draft"] as PostFilter[]).map((value) => ({
-            value,
-            label: value === "all" ? this.label("workspace.allPosts", "All posts") : this.valueLabel(value),
-          })),
+          options: (["all", "pending", "review", "block", "allow", "hidden", "draft", "published"] as PostFilter[]).map(
+            (value) => ({
+              value,
+              label: value === "all" ? this.label("workspace.allPosts", "All posts") : this.valueLabel(value),
+            }),
+          ),
           onSelect: (value) => this.selectPostFilter(value),
         })}
       </div>
@@ -951,6 +1031,535 @@ export class AdminWorkspace extends LitElement {
             `,
           )}
       </nav>
+    `;
+  }
+  private analyticsDates() {
+    const today = new Date().toISOString().slice(0, 10);
+    const end = Date.parse(today) + 86400000;
+    return {
+      from: new Date(end - Number(this.analyticsRange) * 86400000).toISOString().slice(0, 10),
+      to: new Date(end).toISOString().slice(0, 10),
+    };
+  }
+  private async loadAnalyticsSeries() {
+    const generation = this.privateGeneration;
+    if (!this.accessCurrent(generation) || this.section !== "overview" || this.staff.role !== "admin") return;
+    const signal = this.seriesRequests.begin();
+    const current = () =>
+      this.accessCurrent(generation) && this.seriesRequests.current(signal) && this.section === "overview";
+    this.seriesLoading = true;
+    this.analyticsSeries = null;
+    this.seriesError = "";
+    const progress = beginLoading(this.label("analytics.trends", "Trends"), { signal });
+    try {
+      const dates = this.analyticsDates();
+      const query = new URLSearchParams({ ...dates, bucket: "day" });
+      const value = await this.request(`/api/v1/admin/statistics/series?${query}`, { signal });
+      if (!current()) return;
+      if (!Array.isArray(value.series) || value.timezone !== "UTC")
+        throw new Error(this.label("loadFailed", "Admin data could not be loaded."));
+      this.analyticsSeries = value as unknown as AdminSeriesData;
+    } catch (error) {
+      if (!current()) return;
+      this.analyticsSeries = null;
+      this.seriesError = error instanceof Error ? error.message : String(error);
+      progress.fail(error);
+    } finally {
+      if (current()) this.seriesLoading = false;
+      progress.finish();
+    }
+  }
+  private async loadAnalyticsGeo() {
+    const generation = this.privateGeneration;
+    if (!this.accessCurrent(generation) || this.section !== "overview" || this.staff.role !== "admin") return;
+    const signal = this.geoRequests.begin();
+    const current = () =>
+      this.accessCurrent(generation) && this.geoRequests.current(signal) && this.section === "overview";
+    this.geoLoading = true;
+    this.analyticsGeo = null;
+    this.geoError = "";
+    this.mapError = false;
+    const progress = beginLoading(this.label("analytics.map", "IP location distribution"), { signal });
+    try {
+      const query = new URLSearchParams();
+      if (this.geoWindow) {
+        const dates = this.analyticsDates();
+        query.set("visitedFrom", String(Date.parse(dates.from)));
+        query.set("visitedTo", String(Date.parse(dates.to)));
+      }
+      const value = await this.request(`/api/v1/admin/statistics/geo${query.size ? `?${query}` : ""}`, { signal });
+      if (!current()) return;
+      if (!Array.isArray(value.countries) || !Array.isArray(value.points) || !value.totals)
+        throw new Error(this.label("loadFailed", "Admin data could not be loaded."));
+      this.analyticsGeo = value as unknown as AdminGeoData;
+    } catch (error) {
+      if (!current()) return;
+      this.analyticsGeo = null;
+      this.geoError = error instanceof Error ? error.message : String(error);
+      progress.fail(error);
+    } finally {
+      if (current()) this.geoLoading = false;
+      progress.finish();
+    }
+  }
+  private selectAnalyticsRange(value: string) {
+    if (!["7", "30", "90", "365"].includes(value)) return;
+    this.analyticsRange = value;
+    void this.loadAnalyticsSeries();
+    if (this.geoWindow) void this.loadAnalyticsGeo();
+  }
+  private openAnalyticsUsers(apiUrl: string) {
+    if (!this.accessCurrent(this.privateGeneration)) return;
+    try {
+      const url = new URL(apiUrl, location.origin);
+      if (url.origin !== location.origin || url.pathname !== "/api/v1/admin/users" || url.username || url.password)
+        return;
+      const query = new URLSearchParams();
+      for (const key of ["role", "status", ...ADMIN_GEO_FILTERS])
+        for (const value of url.searchParams.getAll(key)) query.append(key, value);
+      location.assign(`/admin/users${query.size ? `?${query}` : ""}`);
+    } catch {
+      /* Ignore an invalid drilldown URL rather than navigate outside administration. */
+    }
+  }
+  private disposeAnalytics() {
+    this.analyticsMount = undefined;
+    this.analyticsView?.dispose();
+    this.analyticsView = undefined;
+    this.analyticsRoot = undefined;
+  }
+  private analyticsOptions(generation: number): AdminAnalyticsOptions {
+    const keys = [
+      "registrations",
+      "posts",
+      "comments",
+      "attachments",
+      "moderationJobsCreated",
+      "moderationDecisions",
+      "moderationCasesLatestCompleted",
+      "usersPartition",
+      "contentPartition",
+      "moderationPartition",
+      "countries",
+      "unknownCountry",
+      "map",
+      "usersCount",
+      "approximate",
+    ];
+    return {
+      locale: preferredLocale(),
+      labels: Object.fromEntries(keys.map((key) => [key, this.label(`analytics.${key}`, key)])),
+      valueLabel: (value) => this.valueLabel(value),
+      isCurrent: () => this.accessCurrent(generation) && this.section === "overview",
+      onUsers: (url) => this.openAnalyticsUsers(url),
+      onPostState: (key, value) => {
+        if (!this.accessCurrent(generation)) return;
+        location.assign(`/admin/posts?${new URLSearchParams({ [key]: value })}`);
+      },
+      onMapError: () => {
+        if (this.accessCurrent(generation)) this.mapError = true;
+      },
+      onThemeChange: () => {
+        if (this.accessCurrent(generation)) this.requestUpdate();
+      },
+    };
+  }
+  private paintAnalytics(generation: number) {
+    if (!this.accessCurrent(generation) || this.section !== "overview" || !this.analyticsView) return;
+    this.analyticsView.updateOptions(this.analyticsOptions(generation));
+    this.analyticsView.renderSeries(this.analyticsSeries, this.analyticsMetric);
+    const statistics = this.document.statistics;
+    if (statistics && typeof statistics === "object") this.analyticsView.renderPartitions(statistics as Value);
+    this.analyticsView.renderCountries(this.analyticsGeo);
+  }
+  private syncAnalytics() {
+    const root = this.querySelector<HTMLElement>(".admin-analytics");
+    if (
+      !root ||
+      this.section !== "overview" ||
+      this.phase !== "ready" ||
+      this.staff.role !== "admin" ||
+      this.privateAccess.signal.aborted
+    ) {
+      this.disposeAnalytics();
+      return;
+    }
+    const generation = this.privateGeneration;
+    if (this.analyticsModuleError) return;
+    if (this.analyticsView && this.analyticsRoot === root) {
+      this.paintAnalytics(generation);
+      return;
+    }
+    if (this.analyticsMount?.element === root && this.analyticsMount.generation === generation) return;
+    this.disposeAnalytics();
+    const mount = { element: root, generation };
+    this.analyticsMount = mount;
+    this.analyticsModule ??= import("./admin-analytics");
+    const progress = beginLoading(this.label("analytics.loadingCharts", "Loading charts"), {
+      signal: this.privateAccess.signal,
+    });
+    void this.analyticsModule
+      .then((module) => {
+        if (
+          !this.accessCurrent(generation) ||
+          this.analyticsMount !== mount ||
+          !root.isConnected ||
+          this.querySelector(".admin-analytics") !== root
+        )
+          return;
+        this.analyticsRoot = root;
+        this.analyticsView = new module.AdminAnalyticsView(root, this.analyticsOptions(generation));
+        this.analyticsMount = undefined;
+        this.paintAnalytics(generation);
+      })
+      .catch((error) => {
+        if (!this.accessCurrent(generation) || this.analyticsMount !== mount) return;
+        this.analyticsMount = undefined;
+        this.analyticsModule = undefined;
+        this.analyticsModuleError = error instanceof Error ? error.message : String(error);
+      })
+      .finally(() => progress.finish());
+  }
+  private renderGeoFilterSummary() {
+    if (this.section !== "users") return nothing;
+    const params = navigationDocumentUrl().searchParams;
+    if (!ADMIN_GEO_FILTERS.some((key) => params.has(key))) return nothing;
+    return html`
+      <div class="admin-geo-filter-summary">
+        <span>${this.label("analytics.locationFilter", "Latest-visit location filter")}</span>
+        <span>
+          ${ADMIN_GEO_FILTERS.filter((key) => params.has(key)).map(
+            (key) => html`
+              <span class="admin-status">
+                ${this.label(`analytics.filters.${key}`, key)}:
+                ${key.endsWith("Unknown") || key === "geoCoordinates" ? this.label("ip.unknown", "Unknown") : key === "visitedFrom" || key === "visitedTo" ? this.fullDate(Number(params.get(key))) : String(params.get(key))}
+              </span>
+            `,
+          )}
+        </span>
+        <button
+          class="button button--text"
+          @click=${() => {
+            const query = new URLSearchParams(location.search);
+            ADMIN_GEO_FILTERS.forEach((key) => query.delete(key));
+            history.replaceState(history.state, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
+            this.closeUserDetails();
+            void this.load(false);
+          }}
+        >
+          ${this.label("analytics.clearLocationFilter", "Clear location filter")}
+        </button>
+      </div>
+    `;
+  }
+  private renderAnalytics() {
+    const generation = this.privateGeneration;
+    const metrics = [
+      "registrations",
+      "posts",
+      "comments",
+      "attachments",
+      "moderationJobsCreated",
+      "moderationDecisions",
+      "moderationCasesLatestCompleted",
+    ];
+    const geo = this.analyticsGeo;
+    return html`
+      <section class="admin-analytics" aria-label=${this.label("analytics.title", "Community analytics")}>
+        ${
+          this.analyticsModuleError
+            ? html`
+                <div class="inline-message error" role="alert">
+                  ${this.label("analytics.chartsUnavailable", "Charts are temporarily unavailable.")}
+                  <button
+                    class="button button--text"
+                    @click=${() => {
+                      this.analyticsModuleError = "";
+                      this.analyticsModule = undefined;
+                      this.requestUpdate();
+                    }}
+                  >
+                    ${this.label("retry", "Retry")}
+                  </button>
+                </div>
+              `
+            : nothing
+        }
+        <header class="admin-section-heading">
+          <div>
+            <h3>${this.label("analytics.title", "Community analytics")}</h3>
+            <p class="admin-muted">
+              ${this.label("analytics.utcRange", "Trend windows use UTC; the end date is exclusive.")}
+            </p>
+          </div>
+          ${segmented({ label: this.label("analytics.range", "Time range"), value: this.analyticsRange, options: ["7", "30", "90", "365"].map((value) => ({ value, label: this.label("analytics.days", "{count} days").replace("{count}", value) })), onSelect: (value) => this.selectAnalyticsRange(value) })}
+        </header>
+        <section class="admin-chart-card" aria-busy=${String(this.seriesLoading)}>
+          <header>
+            <h4>${this.label("analytics.trends", "Trends")}</h4>
+            <md-outlined-select
+              label=${this.label("analytics.metric", "Metric")}
+              .value=${this.analyticsMetric}
+              @change=${(event: Event) => {
+                const value = String((event.target as HTMLElement & { value: string }).value);
+                if (metrics.includes(value)) this.analyticsMetric = value;
+              }}
+            >
+              ${metrics.map(
+                (metric) => html`
+                  <md-select-option value=${metric}>
+                    <div slot="headline">${this.label(`analytics.${metric}`, metric)}</div>
+                  </md-select-option>
+                `,
+              )}
+            </md-outlined-select>
+          </header>
+          ${
+            this.seriesError
+              ? html`
+                  <div class="inline-message error" role="alert">
+                    ${this.seriesError}
+                    <button class="button button--text" @click=${() => this.loadAnalyticsSeries()}>
+                      ${this.label("retry", "Retry")}
+                    </button>
+                  </div>
+                `
+              : nothing
+          }
+          <div class="admin-chart" data-admin-chart="trend"></div>
+          ${
+            this.analyticsSeries
+              ? this.disclosure({
+                  id: "admin-trend-data",
+                  label: this.label("analytics.trendData", "Trend data"),
+                  content: html`
+                    <div class="admin-trend-data">
+                      ${(
+                        this.analyticsSeries.series.find((row) => row.metric === this.analyticsMetric)?.points || []
+                      ).map(
+                        (point) => html`
+                          <span>
+                            <time>${point.bucket} UTC</time>
+                            <strong>${point.count.toLocaleString(preferredLocale())}</strong>
+                          </span>
+                        `,
+                      )}
+                    </div>
+                  `,
+                })
+              : nothing
+          }
+          ${
+            this.analyticsSeries
+              ? html`
+                  <p class="admin-muted">${this.analyticsSeries.from} — ${this.analyticsSeries.to} UTC</p>
+                `
+              : nothing
+          }
+          ${
+            this.analyticsMetric === "moderationCasesLatestCompleted"
+              ? html`
+                  <p class="admin-muted">
+                    ${this.label("analytics.latestCompletionNote", "This is the latest stored completion time of each case, not every historical decision.")}
+                  </p>
+                `
+              : nothing
+          }
+          ${
+            this.analyticsSeries && this.analyticsMetric !== "moderationCasesLatestCompleted"
+              ? html`
+                  <p class="admin-muted">
+                    ${this.analyticsMetric === "moderationDecisions" ? this.label("analytics.decisionBasis", "Counts represent recorded terminal review events; a case may have more than one decision.") : this.label("analytics.creationBasis", "Counts use the creation times of records still retained.")}
+                  </p>
+                `
+              : nothing
+          }
+          ${
+            this.analyticsSeries?.activity?.historicalSeriesAvailable === false
+              ? html`
+                  <p class="admin-muted">
+                    ${this.label("analytics.activityUnavailable", "Historical daily activity is unavailable; only each user's latest visit is retained.")}
+                  </p>
+                `
+              : nothing
+          }
+        </section>
+        <div class="admin-chart-partitions">
+          ${["users", "content", "moderation"].map(
+            (key) => html`
+              <section class="admin-chart-card">
+                <h4>${this.label(`analytics.${key}Partition`, key)}</h4>
+                <div class="admin-chart admin-chart--pie" data-admin-chart=${key}></div>
+                <div class="admin-country-data">
+                  ${Object.entries(
+                    ((this.document.statistics as Value)?.[
+                      { users: "profiles", content: "postStatus", moderation: "postModeration" }[key]!
+                    ] as Value) || {},
+                  )
+                    .filter(([, count]) => typeof count === "number" && Number.isFinite(count) && count >= 0)
+                    .map(
+                      ([state, count]) => html`
+                        <button
+                          class="button button--text"
+                          @click=${() => {
+                            if (!this.accessCurrent(generation)) return;
+                            if (key === "users")
+                              this.openAnalyticsUsers(`/api/v1/admin/users?status=${encodeURIComponent(state)}`);
+                            else
+                              this.analyticsOptions(generation).onPostState(
+                                key === "content" ? "status" : "moderationStatus",
+                                state,
+                              );
+                          }}
+                        >
+                          ${this.valueLabel(state)}
+                          <strong>${Number(count).toLocaleString(preferredLocale())}</strong>
+                        </button>
+                      `,
+                    )}
+                </div>
+              </section>
+            `,
+          )}
+        </div>
+        <p class="admin-muted">
+          ${this.label("analytics.currentPartitions", "Status distributions are current snapshots. Each chart uses one separate status dimension.")}
+        </p>
+        <section class="admin-chart-card" aria-busy=${String(this.geoLoading)}>
+          <header>
+            <div>
+              <h4>${this.label("analytics.map", "IP location distribution")}</h4>
+              <p class="admin-muted">
+                ${this.label("analytics.approximate", "Approximate recorded IP locations, not GPS.")}
+                ${this.label("analytics.pointSize", "Marker size represents user count.")}
+              </p>
+            </div>
+            <span class="admin-map-actions">
+              <button
+                class="icon-button"
+                aria-label=${this.label("analytics.zoomIn", "Zoom in")}
+                @click=${() => this.analyticsView?.zoomMap(1.5)}
+              >
+                ${icon("add", 20)}
+              </button>
+              <button
+                class="icon-button"
+                aria-label=${this.label("analytics.zoomOut", "Zoom out")}
+                @click=${() => this.analyticsView?.zoomMap(1 / 1.5)}
+              >
+                ${icon("remove", 20)}
+              </button>
+              <button class="button button--text" @click=${() => this.analyticsView?.resetMap()}>
+                ${this.label("analytics.resetMap", "Reset map")}
+              </button>
+            </span>
+          </header>
+          <label class="admin-geo-window">
+            <md-checkbox
+              aria-label=${this.label("analytics.limitVisits", "Only latest visits within the selected time window")}
+              .checked=${this.geoWindow}
+              @change=${(event: Event) => {
+                this.geoWindow = (event.target as HTMLElement & { checked: boolean }).checked;
+                void this.loadAnalyticsGeo();
+              }}
+            ></md-checkbox>
+            ${this.label("analytics.limitVisits", "Only latest visits within the selected time window")}
+          </label>
+          ${
+            this.geoError
+              ? html`
+                  <div class="inline-message error" role="alert">
+                    ${this.geoError}
+                    <button class="button button--text" @click=${() => this.loadAnalyticsGeo()}>
+                      ${this.label("retry", "Retry")}
+                    </button>
+                  </div>
+                `
+              : nothing
+          }
+          ${
+            this.mapError
+              ? html`
+                  <p class="inline-message error">
+                    ${this.label("analytics.mapUnavailable", "The base map could not be loaded. Country totals remain available.")}
+                    <button
+                      class="button button--text"
+                      @click=${() => {
+                        this.mapError = false;
+                        this.analyticsView?.retryMap();
+                      }}
+                    >
+                      ${this.label("retry", "Retry")}
+                    </button>
+                  </p>
+                `
+              : nothing
+          }
+          <div class="admin-geo-charts">
+            <div class="admin-chart admin-chart--map" data-admin-chart="map"></div>
+            <div class="admin-chart admin-chart--countries" data-admin-chart="countries"></div>
+          </div>
+          ${
+            geo
+              ? html`
+                  <div class="admin-geo-totals">
+                    ${[
+                      ["total", this.label("metrics.totalUsers", "Total users")],
+                      ["unknownCountry", this.label("analytics.unknownCountry", "Unknown country or region")],
+                      ["unknownCoordinates", this.label("analytics.unknownCoordinates", "Unknown coordinates")],
+                      ["noVisit", this.label("analytics.noVisit", "No visit record")],
+                    ].map(
+                      ([key, label]) => html`
+                        <span>
+                          ${label}
+                          <strong>
+                            ${(geo.totals as unknown as Record<string, number>)[key].toLocaleString(preferredLocale())}
+                          </strong>
+                        </span>
+                      `,
+                    )}
+                  </div>
+                  <p class="admin-muted">
+                    ${this.label("analytics.selectLocation", "Select a location with recorded users to open its filtered user list.")}${geo.pointsTruncated ? ` ${this.label("analytics.pointsTruncated", "Map locations are truncated; country totals still cover the full cohort.")}` : ""}
+                  </p>
+                `
+              : nothing
+          }
+          ${
+            geo
+              ? this.disclosure({
+                  id: "admin-country-data",
+                  label: this.label("analytics.countryData", "Country and region data"),
+                  content: html`
+                    <div class="admin-country-data">
+                      ${geo.countries.map(
+                        (row) => html`
+                          <button
+                            class="button button--text"
+                            @click=${() => {
+                              if (this.accessCurrent(generation)) this.openAnalyticsUsers(row.usersUrl);
+                            }}
+                          >
+                            <span>
+                              ${row.countryCode ? this.country(row.countryCode) || row.countryCode : this.label("analytics.unknownCountry", "Unknown country or region")}
+                            </span>
+                            <strong>${row.count.toLocaleString(preferredLocale())}</strong>
+                            ${icon("arrow_forward", 18)}
+                          </button>
+                        `,
+                      )}
+                    </div>
+                  `,
+                })
+              : nothing
+          }
+          <p class="admin-map-credit">
+            <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noopener noreferrer">
+              Natural Earth · Public domain
+            </a>
+          </p>
+        </section>
+      </section>
     `;
   }
   private renderOverview() {
@@ -1016,7 +1625,7 @@ export class AdminWorkspace extends LitElement {
             ["resourceRuns", "/admin/operations"],
           ])}
         </div>
-        ${this.renderStatistics()}
+        ${this.renderAnalytics()}${this.renderStatistics()}
         <section class="admin-review-entry surface">
           <span class="admin-review-entry__icon">${icon("fact_check", 28)}</span>
           <div>
@@ -2782,7 +3391,15 @@ export class AdminWorkspace extends LitElement {
                                   : nothing
                               }
                           </header>
-                          ${this.section === "posts" ? this.renderPostFilters() : this.section === "users" ? this.renderUserFilters() : nothing}
+                          ${
+                              this.section === "posts"
+                                ? this.renderPostFilters()
+                                : this.section === "users"
+                                  ? html`
+                                      ${this.renderUserFilters()}${this.renderGeoFilterSummary()}
+                                    `
+                                  : nothing
+                            }
                           ${
                               this.error
                                 ? html`
