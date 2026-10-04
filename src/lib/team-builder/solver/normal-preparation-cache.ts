@@ -1,3 +1,4 @@
+import { normalSkillPreparationKeyInput } from "../normal-skill-key.ts";
 import {
   buildNormalSkillWindows,
   normalSkillOrders,
@@ -74,7 +75,7 @@ export function createNormalPreparationCache(
       if (interrupted(controls)) return null;
       let key: string | null;
       try {
-        key = JSON.stringify(exactValue(input));
+        key = JSON.stringify(exactValue(normalSkillPreparationKeyInput(input)));
       } catch {
         // Invalid inputs still reach the authoritative builder and its own gaps.
         key = null;
