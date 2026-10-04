@@ -1,3 +1,4 @@
+import { communityPostCard } from "./views/community-post-card";
 import {
   CommunityReactions,
   type ReactionState,
@@ -3844,6 +3845,7 @@ export class CommunityWorkspace extends LitElement {
               : nothing
           }
           <div class="community-post-discussion">
+            <div class="community-post-heading">
             ${this.renderForumLink(post)}
             <header class="community-post-author">
               <a
@@ -3869,8 +3871,10 @@ export class CommunityWorkspace extends LitElement {
                   : nothing
               }
             </header>
+            </div>
             <div class="community-discussion-scroll">
               <div class="community-post-copy">
+                ${post.visibility === "private" ? html`<span class="community-post-card__visibility community-post-visibility">${icon("lock",14)}${this.label("visibilityPrivate", "Only visible to you")}</span>` : nothing}
                 <h2 class="community-post-title">
                   ${String(post.title || "")}
                 </h2>
@@ -6361,37 +6365,7 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderForumNav() {
-    return html`
-      <nav
-        class="community-forum-nav"
-        aria-label=${this.label("forums", "Forums")}
-      >
-        <a class="button button--text" href=${this.path("/community/forums")}>
-          ${icon("grid_view", 18)}${this.label("forums", "Forums")}
-        </a>
-        <a
-          class="chip"
-          href=${this.path("/community")}
-          aria-current=${!this.currentForum ? "page" : nothing}
-        >
-          ${this.label("feedRecommended", "Recommended")}
-        </a>
-        ${this.forums
-          .filter((forum) => forum.capabilities.canRead)
-          .map(
-            (forum) => html`
-              <a
-                class="chip"
-                href=${this.forumHref(forum)}
-                aria-current=${this.currentForum?.id === forum.id ? "page" : nothing}
-                data-community-forum-id=${forum.id}
-              >
-                ${this.forumName(forum)}
-              </a>
-            `,
-          )}
-      </nav>
-    `;
+    return nothing;
   }
   private renderForumHeader() {
     const forum = this.currentForum;
@@ -6679,7 +6653,7 @@ export class CommunityWorkspace extends LitElement {
             </a>
             <p>${communityExcerpt(String(post.excerpt || post.body || ""))}</p>
             <div class="community-topic-tags">
-              ${this.renderForumLink(post)}
+              ${this.currentForum ? nothing : this.renderForumLink(post)}
               ${
                 post.pinnedAt != null
                   ? html`
@@ -7005,17 +6979,11 @@ export class CommunityWorkspace extends LitElement {
     const viewer = (post.viewer as Value | undefined) || {};
     const images = communityPostMedia(post);
     const excerpt = communityExcerpt(String(post.excerpt || post.body || ""));
-    return html`
-      <article class="community-pin">
-        <a
-          class="community-pin__link tile--interactive"
-          href=${href}
-          aria-label=${String(post.title || this.label("emptyTitle", "Untitled"))}
-        >
-          ${
-            images.length
-              ? html`
-                  <span
+    return communityPostCard({
+      href,
+      title: String(post.title || this.label("emptyTitle", "Untitled")),
+      hasMedia: images.length > 0,
+      media: images.length ? html`<span
                     class="community-pin__media"
                     style=${`aspect-ratio:${communityImageRatio(images[0] as Partial<CommunityImage>)}`}
                   >
@@ -7057,33 +7025,12 @@ export class CommunityWorkspace extends LitElement {
                           `
                         : nothing
                     }
-                  </span>
-                `
-              : nothing
-            /* A text-only pin is exactly that: no cover block, no reserved
-                 ratio — the body is the full text, at its natural height. */
-          }
-          <span class="community-pin__body">
-            <span class="community-pin__title"
-              >${String(post.title || this.label("emptyTitle", "Untitled"))}</span
-            >
-            ${post.adminOnlyContext && post.visibility === "private" ? html`
-              <span class="chip chip--static chip--tonal">${icon("lock", 14)}${this.label("visibilityPrivate", "Only visible to you")}</span>
-            ` : nothing}
-            ${
-              images.length
-                ? nothing
-                : html`
-                    <span class="community-pin__note">
-                      ${excerpt || this.label("postBody", "What would you like to share?")}
-                    </span>
-                  `
-            }
-          </span>
-        </a>
-        ${this.renderForumLink(post)}
-        <div class="community-pin__meta">
-          <a
+                  </span>` : nothing,
+      forum: this.renderForumLink(post),
+      privateLabel: post.adminOnlyContext && post.visibility === "private" ? this.label("visibilityPrivate", "Only visible to you") : undefined,
+      status: nothing,
+      excerpt: images.length ? nothing : html`<span class="community-pin__note">${excerpt || this.label("postBody", "What would you like to share?")}</span>`,
+      author: html`<a
             class="community-pin__author"
             href=${this.detailHref(`/community/users/${post.authorUid}`)}
           >
@@ -7103,8 +7050,8 @@ export class CommunityWorkspace extends LitElement {
             <span class="clamp-1"
               >${String(post.authorName || this.label("member", "Member"))}</span
             >
-          </a>
-          <button
+          </a>`,
+      reaction: html`<button
             class=${`community-pin__like${viewer.liked ? " is-liked" : ""}`}
             type="button"
             aria-label=${viewer.liked ? this.label("unlike", "Unlike") : this.label("like", "Like")}
@@ -7114,10 +7061,7 @@ export class CommunityWorkspace extends LitElement {
           >
             ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 16)}
             <span class="tabular">${Number(post.likeCount || 0)}</span>
-          </button>
-        </div>
-      </article>
-    `;
-  }
-}
+          </button>`,
+    });
+  }}
 customElements.define("community-workspace", CommunityWorkspace);
