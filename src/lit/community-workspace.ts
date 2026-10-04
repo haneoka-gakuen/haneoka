@@ -1,3 +1,4 @@
+import { asyncRegion } from "./ui/async-region";
 import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { communityPostCard } from "./views/community-post-card";
 import {
@@ -5738,7 +5739,7 @@ export class CommunityWorkspace extends LitElement {
       ${iconButton({
         icon: "refresh",
         label: this.label("refresh", "Refresh"),
-        disabled: this.phase === "loading" || this.loadingMore,
+        disabled: this.phase === "loading" || this.loadingMore || this.refreshing,
         onClick: () =>
           this.mode === "feeds" && this.feedScope === "recommended"
             ? this.refreshFeed()
@@ -5822,7 +5823,7 @@ export class CommunityWorkspace extends LitElement {
             : nothing
         }
         ${
-          this.error && this.phase !== "error"
+          this.error && this.phase !== "error" && !["feeds", "mine", "bookmarks", "forums"].includes(this.mode)
             ? html`
                 <div class="inline-message error" role="alert">
                   ${this.error}
@@ -6054,8 +6055,11 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderPhase() {
+    const usesAsyncRegion = this.routeKind === "collection" && ["feeds", "mine", "bookmarks", "forums"].includes(this.mode);
     if (this.phase === "loading")
-      return loadingState(this.label("loading", "Loading"));
+      return usesAsyncRegion
+        ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: this.mode === "forums" || this.forumSlug ? "list" : "cards" })
+        : loadingState(this.label("loading", "Loading"));
     if (this.phase === "error")
       return errorState(
         this.label("unavailable", "Unavailable"),
@@ -6063,9 +6067,11 @@ export class CommunityWorkspace extends LitElement {
         () => void this.load(false),
         this.error,
       );
-    return this.mode === "forums"
-      ? this.renderForumDirectory()
-      : this.renderItems();
+    const content = this.mode === "forums" ? this.renderForumDirectory() : this.renderItems();
+    if (!usesAsyncRegion) return content;
+    return this.error
+      ? asyncRegion({ state: "error", message: this.error, retryLabel: this.label("retry", "Retry"), onRetry: () => void this.load(false), retainedContent: content })
+      : asyncRegion({ state: this.refreshing ? "refreshing" : "ready", content });
   }
   /**
    * The filter panel: a modal side sheet at every size, like every browse
