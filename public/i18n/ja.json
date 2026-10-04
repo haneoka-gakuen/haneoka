@@ -3087,7 +3087,7 @@
     },
     "personalLiveScore": "個人Liveスコア",
     "scoreDomain": "スコアの種類",
-    "gekisoLiveScope": "連続PERFECT、LUCK区間は最大1つ。自然発生のJUSTは非対応。",
+    "gekisoLiveScope": "連続PERFECT、LUCK区間数は0・1・3。自然発生のJUSTは非対応。",
     "resourceCalculate": "イベント計画を計算",
     "resourceNoChallenge": "このイベントで利用できるチャレンジ譜面はありません。",
     "resourceCostUnavailable": "チャレンジの消費量を選択できません。",

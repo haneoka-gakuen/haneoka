@@ -3087,7 +3087,7 @@
     },
     "personalLiveScore": "个人 Live 分数",
     "scoreDomain": "分数类型",
-    "gekisoLiveScope": "连续 PERFECT，最多一个 LUCK 区间；不支持自然 JUST。",
+    "gekisoLiveScope": "连续 PERFECT，LUCK 区间数限 0、1 或 3；不支持自然 JUST。",
     "resourceCalculate": "计算活动方案",
     "resourceNoChallenge": "此活动没有可用的挑战谱面。",
     "resourceCostUnavailable": "挑战消耗选项不可用。",

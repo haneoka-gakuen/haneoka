@@ -3087,7 +3087,7 @@
     },
     "personalLiveScore": "Personal Live score",
     "scoreDomain": "Score type",
-    "gekisoLiveScope": "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported.",
+    "gekisoLiveScope": "Continuous PERFECT play; zero, one or three LUCK segments. Natural JUST is unsupported.",
     "resourceCalculate": "Calculate event plan",
     "resourceNoChallenge": "No challenge charts available for this event.",
     "resourceCostUnavailable": "Challenge consumption options are unavailable.",

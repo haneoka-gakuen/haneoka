@@ -2737,7 +2737,7 @@ export class TeamBuilder extends LitElement {
   private get liveChartUnavailable(): boolean {
     if (this.scoreDomain !== "personal-live" || this.chartSelections.length !== 1) return false;
     const missions = objectRow(this.data?.songs[String(this.chartSelections[0]!.songId)]?.gekisou).missionTypes;
-    return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => ![1, 2, 3].includes(value)) || missions.filter(value => value === 2).length > 1;
+    return !Array.isArray(missions) || missions.length !== 3 || missions.some(value => ![1, 2, 3].includes(value)) || missions.filter(value => value === 2).length === 2;
   }
   private renderScoreDomain() {
     if (this.mode !== "gekiso" || !this.objectives.includes("score") || this.scoreDomains.length < 2) return nothing;
@@ -2745,7 +2745,7 @@ export class TeamBuilder extends LitElement {
       this.scoreDomains.map(value => ({ value, label: value === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score") })),
       value => { this.cancelSearch(); this.result = null; this.optimizationInput = null; this.selectedScoreDomain = value as PersonalScoreDomain;
         if (value === "personal-live") this.justRate = 0; }, this.dataLoading || !this.sourceReady)}
-      ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported.")}</small>` : nothing}`;
+      ${this.scoreDomain === "personal-live" ? html`<small class="team-builder__hint">${this.t("gekisoLiveScope", "Continuous PERFECT play; zero, one or three LUCK segments. Natural JUST is unsupported.")}</small>` : nothing}`;
   }
   private objectiveLabel(objective: Objective): string {
     if (objective === "score" && this.scoreDomain === "personal-live") return this.t("personalLiveScore", "Personal Live score");
@@ -4110,7 +4110,7 @@ export class TeamBuilder extends LitElement {
     }
     if (this.wantsEventScene && !this.eventScene) return this.eventSceneHint;
     if (this.scoreDomain === "personal-live" && (!this.scoreDomains.includes("personal-live") || this.liveChartUnavailable || this.constraints.justRate !== 0))
-      return this.t("gekisoLiveScope", "Continuous PERFECT play; at most one LUCK segment. Natural JUST is unsupported.");
+      return this.t("gekisoLiveScope", "Continuous PERFECT play; zero, one or three LUCK segments. Natural JUST is unsupported.");
     if (this.gekisoSoloForecast && this.constraints.justRate !== 0)
       return this.t("gekisoConditionsPending", "Conditions pending");
     if (!this.evaluationBasis) return this.t("basisIncomplete", "Complete these values to compare efficiency.");

@@ -3087,7 +3087,7 @@
     },
     "personalLiveScore": "개인 Live 점수",
     "scoreDomain": "점수 유형",
-    "gekisoLiveScope": "연속 PERFECT, LUCK 구간 최대 1개. 자연 발생 JUST는 지원하지 않습니다.",
+    "gekisoLiveScope": "연속 PERFECT, LUCK 구간은 0개, 1개 또는 3개. 자연 발생 JUST는 지원하지 않습니다.",
     "resourceCalculate": "이벤트 계획 계산",
     "resourceNoChallenge": "이 이벤트에 사용할 수 있는 챌린지 채보가 없습니다.",
     "resourceCostUnavailable": "챌린지 소비량을 선택할 수 없습니다.",
