@@ -1,3 +1,6 @@
+import { renderEntityCommentActivity } from "./views/entity-comment-activity";
+import { renderCommunityComment, renderCommentComposer, renderCommentReplies, commentAuthorName } from "./views/community-comment-content";
+import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
 import { guard } from "lit/directives/guard.js";
 import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
 import { operationProgress } from "./ui/operation-progress";
@@ -20,7 +23,7 @@ import {
   removeCommunityStampDraft,
 } from "../lib/community-stamp-draft";
 import "../styles/community-forums.css";
-import { forumIcon } from "../lib/community-forums";
+import { forumIcon, visibleCommunityForums } from "../lib/community-forums";
 import type {
   CommunityForum,
   ForumGroup,
@@ -201,6 +204,7 @@ export class CommunityWorkspace extends LitElement {
     columnCount: { state: true },
     commentMenu: { state: true },
     editingComment: { state: true },
+    commentEdit: { state: true },
     commentBody: { state: true },
     expandedComments: { state: true },
     replyLoading: { state: true },
@@ -281,6 +285,7 @@ export class CommunityWorkspace extends LitElement {
   private previewActive = false;
   declare commentMenu: { comment: Value; x: number; y: number } | null;
   declare editingComment: string;
+  declare private commentEdit: { id: string; body: string; version: number } | null;
   declare commentBody: string;
   private commentDraftRevision = 0;
   declare expandedComments: Set<string>;
@@ -448,6 +453,7 @@ export class CommunityWorkspace extends LitElement {
     this.columnCount = 2;
     this.commentMenu = null;
     this.editingComment = "";
+    this.commentEdit = null;
     this.commentBody = "";
     this.expandedComments = new Set();
     this.replyLoading = new Set();
@@ -762,10 +768,7 @@ export class CommunityWorkspace extends LitElement {
     if (append && this.loadedCollectionEndpoint) {
       const loaded = new URL(this.loadedCollectionEndpoint, location.origin);
       if (this.cursor) loaded.searchParams.set("cursor", this.cursor);
-      if (
-        loaded.searchParams.get("scope") === "recommended" &&
-        this.feedSeed !== null
-      )
+      if (loaded.searchParams.get("scope") === "recommended" && this.feedSeed !== null)
         loaded.searchParams.set("seed", String(this.feedSeed));
       return `${loaded.pathname}${loaded.search}`;
     }
@@ -779,17 +782,11 @@ export class CommunityWorkspace extends LitElement {
       if (this.unreadOnly) query.set("unread", "true");
       return `/api/v1/community/notifications?${query}`;
     }
-    if (this.mode === "activity")
-      return `/api/v1/community/me/comments?${query}`;
-    const scope =
-      this.mode === "mine"
-        ? "mine"
-        : this.mode === "bookmarks"
-          ? "bookmarked"
-          : this.feedScope;
+    if (this.mode === "activity") return `/api/v1/community/me/comments?${query}`;
+    const scope = this.mode === "mine" ? "mine" : this.mode === "bookmarks" ? "bookmarked" : this.feedScope;
     query.set("scope", scope);
-    if (scope === "recommended" && append && this.feedSeed !== null)
-      query.set("seed", String(this.feedSeed));
+    if (scope === "recommended") { query.set("server", currentReleaseServer()); query.set("locale", this.locale); }
+    if (scope === "recommended" && append && this.feedSeed !== null) query.set("seed", String(this.feedSeed));
     // Archived posts are only legal with scope=mine; everywhere else the feed
     // is always the active one.
     query.set("state", this.mode === "mine" ? this.postState : "active");
@@ -1034,7 +1031,9 @@ export class CommunityWorkspace extends LitElement {
       const data = (await response.json()) as Value;
       if (!this.requests.current(signal)) return;
       if (this.usesForums() && !await this.confirmReadViewer(signal)) return;
-      const next = Array.isArray(data.posts)
+      const next = Array.isArray(data.entries)
+        ? communityRecommendationItems(data)
+        : Array.isArray(data.posts)
         ? data.posts
         : Array.isArray(data.tags)
           ? data.tags
@@ -1044,8 +1043,10 @@ export class CommunityWorkspace extends LitElement {
               ? data.comments
               : [];
       const mergedNext =
-        Array.isArray(data.posts)
-          ? (next as Value[]).map((record) => this.mergeReaction("post", record, reactionMark))
+        Array.isArray(data.posts) || Array.isArray(data.entries)
+          ? (next as Value[]).map((record) => isEntityCommentRecommendation(record)
+            ? { ...record, comment: this.mergeReaction("comment", record.comment as unknown as Value, reactionMark) }
+            : this.mergeReaction("post", record, reactionMark))
           : next;
       this.items = append
         ? [
@@ -1427,22 +1428,16 @@ export class CommunityWorkspace extends LitElement {
   }
   private reactionRecord(kind: "post" | "comment", id: string) {
     if (kind === "comment") {
-      const record = (this.document?.comments as Value[] | undefined)?.find(
-        (entry) => String(entry.id) === id,
-      );
+      const activity = this.items.find((entry) => isEntityCommentRecommendation(entry) && String(entry.comment.id) === id);
+      const record = activity && isEntityCommentRecommendation(activity) ? activity.comment as unknown as Value : (this.document?.comments as Value[] | undefined)?.find((entry) => String(entry.id) === id);
       return record ? { record, viewer: (record.viewer as Value) || {} } : null;
     }
     const envelope = this.postEnvelope();
-    if (
-      ["post-detail", "post-edit"].includes(this.routeKind) &&
-      String(envelope.post.id) === id
-    )
+    if (["post-detail", "post-edit"].includes(this.routeKind) && String(envelope.post.id) === id)
       return { record: envelope.post, viewer: envelope.viewer };
     const record =
       this.items.find((entry) => String(entry.id) === id) ||
-      (this.document?.posts as Value[] | undefined)?.find(
-        (entry) => String(entry.id) === id,
-      );
+      (this.document?.posts as Value[] | undefined)?.find((entry) => String(entry.id) === id);
     return record ? { record, viewer: (record.viewer as Value) || {} } : null;
   }
   private mergeReaction(
@@ -1827,39 +1822,45 @@ export class CommunityWorkspace extends LitElement {
     this.toggleReaction("comment", String(comment.id));
   }
   private patchComment(id: string, replacement?: Value) {
-    const root = this.document || {};
-    const comments = (
-      Array.isArray(root.comments) ? (root.comments as Value[]) : []
-    ).flatMap((entry) =>
+    this.items = this.items.flatMap((entry) => isEntityCommentRecommendation(entry) && String(entry.comment.id) === id
+      ? replacement ? [{ ...entry, comment: replacement }] : [] : [entry]);
+    if (!this.document) return;
+    const root = this.document;
+    const comments = (Array.isArray(root.comments) ? (root.comments as Value[]) : []).flatMap((entry) =>
       String(entry.id) === id ? (replacement ? [replacement] : []) : [entry],
     );
     this.document = { ...root, comments };
   }
   private saveComment(comment: Value) {
-    const body =
-      this.querySelector<HTMLTextAreaElement>(
-        `textarea[data-comment-edit="${CSS.escape(String(comment.id))}"]`,
-      )?.value.trim() || "";
-    if (!body) return;
+    const edit = this.commentEdit;
+    if (!edit || edit.id !== String(comment.id) || this.editingComment !== edit.id) return;
+    const body = edit.body.trim();
+    if (!body || body.length > 5000) return;
+    const userId = this.viewerId(), lifetime = this.lifetime, epoch = this.forumEpoch, postId = this.entityId;
+    const reactionMark = this.reactions.mark();
     void this.mutate(async () => {
-      const result = await this.request(
-        `/api/v1/community/comments/${encodeURIComponent(String(comment.id))}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ body, version: comment.version }),
-        },
-      );
+      const operation = this.mutationVersion;
+      const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted &&
+        userId === this.viewerId() && epoch === this.forumEpoch && postId === this.entityId && operation === this.mutationVersion;
+      const result = await this.request(`/api/v1/community/comments/${encodeURIComponent(edit.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body, version: edit.version }),
+      });
+      if (!current()) return;
       if (result.visibilityChanged) {
-        this.patchComment(String(comment.id));
-        await this.load(false);
+        this.patchComment(edit.id);
+        void this.load(false);
       } else {
-        this.patchComment(String(comment.id), {
-          ...comment,
-          ...((result.comment as Value) || {}),
-        });
-        await this.refreshComments(false, String(comment.id));
+        const active = this.reactionRecord("comment", edit.id)?.record || comment;
+        this.patchComment(edit.id, this.mergeReaction("comment", { ...active, ...((result.comment as Value) || {}) }, reactionMark));
+        if (this.routeKind === "collection") void this.load(false);
+        else void this.refreshComments(false, edit.id);
       }
-      this.editingComment = "";
+      if (this.commentEdit === edit) this.cancelCommentEdit(edit.id);
+      else if (this.commentEdit?.id === edit.id) {
+        const version = Number((result.comment as Value | undefined)?.version);
+        if (Number.isSafeInteger(version) && version > 0) this.commentEdit = { ...this.commentEdit, version };
+      }
     });
   }
   private deleteComment(comment: Value) {
@@ -1870,37 +1871,25 @@ export class CommunityWorkspace extends LitElement {
       label: String(comment.body || "").slice(0, 80),
       confirm: {
         title: this.label("delete", "Delete"),
-        body: this.label(
-          "deleteCommentConfirm",
-          "This comment will be removed and cannot be restored.",
-        ),
+        body: this.label("deleteCommentConfirm", "This comment will be removed and cannot be restored."),
         confirmLabel: this.label("delete", "Delete"),
         action: () =>
           void this.mutate(async () => {
-            const result = await this.request(
-              `/api/v1/community/comments/${encodeURIComponent(String(comment.id))}`,
-              {
-                method: "DELETE",
-                body: JSON.stringify({ version: comment.version }),
-              },
-            );
+            const result = await this.request(`/api/v1/community/comments/${encodeURIComponent(String(comment.id))}`, {
+              method: "DELETE",
+              body: JSON.stringify({ version: comment.version }),
+            });
             if (this.routeKind === "collection" && this.mode === "activity") {
               this.items = this.items.map((entry) =>
                 String(entry.id) === String(comment.id)
-                  ? {
-                      ...entry,
-                      ...(result.comment as Value),
-                      viewer: { canDelete: false, canEdit: false },
-                    }
+                  ? { ...entry, ...(result.comment as Value), viewer: { canDelete: false, canEdit: false } }
                   : entry,
               );
-              this.invalidateFeedSnapshots(
-                this.viewerId(),
-                (route) => route.kind === "posts",
-              );
+              this.invalidateFeedSnapshots(this.viewerId(), (route) => route.kind === "posts");
             } else {
               this.patchComment(String(comment.id));
-              await this.refreshComments();
+              if (this.routeKind === "collection") await this.load(false);
+              else await this.refreshComments();
             }
           }),
       },
@@ -3539,21 +3528,13 @@ export class CommunityWorkspace extends LitElement {
   }
   private renderPostDetail() {
     const { post, viewer } = this.postEnvelope();
-    const comments = Array.isArray(this.document?.comments)
-      ? (this.document.comments as Value[])
-      : [];
+    const comments = Array.isArray(this.document?.comments) ? (this.document.comments as Value[]) : [];
     const name = String(
-      (post.author as Value | undefined)?.displayName ||
-        post.authorName ||
-        this.label("member", "Member"),
+      (post.author as Value | undefined)?.displayName || post.authorName || this.label("member", "Member"),
     );
-    const attachments = Array.isArray(post.attachments)
-      ? (post.attachments as Value[])
-      : [];
+    const attachments = Array.isArray(post.attachments) ? (post.attachments as Value[]) : [];
     const pendingAttachments = viewer.canEdit
-      ? attachments.filter(
-          (item) => !item.contentUrl && item.status !== "deleted",
-        )
+      ? attachments.filter((item) => !item.contentUrl && item.status !== "deleted")
       : [];
     const pendingAttachmentRows = pendingAttachments.map((item) => {
       const processing = (item.processing as Value | undefined)?.state;
@@ -3587,15 +3568,12 @@ export class CommunityWorkspace extends LitElement {
       `;
     });
     const images = attachments.flatMap((item) => {
-      if (/^(image|video)\//.test(String(item.mediaType)) && item.contentUrl)
-        return [item];
+      if (/^(image|video)\//.test(String(item.mediaType)) && item.contentUrl) return [item];
       if (
         !viewer.canEdit ||
         !["pending", "review"].includes(String(post.moderationStatus)) ||
         !["scanning", "review", "ready"].includes(String(item.status)) ||
-        !["pending", "review", "allow"].includes(
-          String(item.moderationStatus),
-        ) ||
+        !["pending", "review", "allow"].includes(String(item.moderationStatus)) ||
         !String(item.mediaType).startsWith("image/") ||
         !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
           String(item.displayMediaType || item.mediaType),
@@ -3610,13 +3588,10 @@ export class CommunityWorkspace extends LitElement {
           url.username ||
           url.password ||
           url.hash ||
-          url.pathname !==
-            `/api/v1/community/attachments/${encodeURIComponent(String(item.id))}/content` ||
+          url.pathname !== `/api/v1/community/attachments/${encodeURIComponent(String(item.id))}/content` ||
           url.searchParams.get("preview") !== "owner" ||
           (url.searchParams.has("variant") &&
-            !["thumb", "poster", "media"].includes(
-              url.searchParams.get("variant") || "",
-            ))
+            !["thumb", "poster", "media"].includes(url.searchParams.get("variant") || ""))
         )
           return [];
         return [
@@ -3648,9 +3623,7 @@ export class CommunityWorkspace extends LitElement {
         ${
           this.error
             ? html`
-                <div class="inline-message error" role="alert">
-                  ${this.error}
-                </div>
+                <div class="inline-message error" role="alert">${this.error}</div>
               `
             : nothing
         }
@@ -3664,15 +3637,11 @@ export class CommunityWorkspace extends LitElement {
         ${
           this.toast
             ? html`
-                <div class="community-undo" role="status">
-                  ${this.toast.text}
-                </div>
+                <div class="community-undo" role="status">${this.toast.text}</div>
               `
             : nothing
         }
-        <article
-          class=${`community-post-layout ${images.length ? "has-media" : ""}`}
-        >
+        <article class=${`community-post-layout ${images.length ? "has-media" : ""}`}>
           ${
             images.length
               ? html`
@@ -3686,13 +3655,9 @@ export class CommunityWorkspace extends LitElement {
               : nothing
           }
           <div class="community-post-discussion">
-            <div class="community-post-heading">
             ${this.renderForumLink(post)}
             <header class="community-post-author">
-              <a
-                class="community-post-author__link"
-                href=${this.detailHref(`/community/users/${post.authorUid}`)}
-              >
+              <a class="community-post-author__link" href=${this.detailHref(`/community/users/${post.authorUid}`)}>
                 ${this.avatar(post.authorImage, name, 40)}
                 <span>
                   <strong>${name}</strong>
@@ -3712,13 +3677,9 @@ export class CommunityWorkspace extends LitElement {
                   : nothing
               }
             </header>
-            </div>
             <div class="community-discussion-scroll">
               <div class="community-post-copy">
-                ${post.visibility === "private" ? html`<span class="community-post-card__visibility community-post-visibility">${icon("lock",14)}${this.label("visibilityPrivate", "Only visible to you")}</span>` : nothing}
-                <h2 class="community-post-title">
-                  ${String(post.title || "")}
-                </h2>
+                <h2 class="community-post-title">${String(post.title || "")}</h2>
                 ${
                   post.moderationStatus !== "allow"
                     ? html`
@@ -3731,36 +3692,27 @@ export class CommunityWorkspace extends LitElement {
                 ${
                   post.state === "archived"
                     ? html`
-                        <p class="inline-message">
-                          ${this.label("archivedHint", "Archived")}
-                        </p>
+                        <p class="inline-message">${this.label("archivedHint", "Archived")}</p>
                       `
                     : nothing
                 }
                 ${
                   pendingAttachments.length
                     ? html`
-                        <ul
-                          class="list list--divided"
-                          aria-label=${this.label("attachments", "Attachments")}
-                        >
+                        <ul class="list list--divided" aria-label=${this.label("attachments", "Attachments")}>
                           ${pendingAttachmentRows}
                         </ul>
                       `
                     : nothing
                 }
-                <div class="community-bbcode">
-                  ${unsafeHTML(this.markup(String(post.body || "")))}
-                </div>
+                <div class="community-bbcode">${unsafeHTML(this.markup(String(post.body || "")))}</div>
                 ${
                   Array.isArray(post.tags) && post.tags.length
                     ? html`
                         <div class="community-post-tags">
                           ${post.tags.map(
                             (tag) => html`
-                              <a
-                                href=${`${this.path("/community")}?tag=${encodeURIComponent(String(tag))}`}
-                              >
+                              <a href=${`${this.path("/community/feeds")}?tag=${encodeURIComponent(String(tag))}`}>
                                 #${String(tag)}
                               </a>
                             `,
@@ -3774,28 +3726,19 @@ export class CommunityWorkspace extends LitElement {
                   ${
                     isEdited(post)
                       ? html`
-                          <span
-                            >${this.label("lastEdited", "Last edited")}
-                            ${this.time(post.lastEditedAt)}</span
-                          >
+                          <span>${this.label("lastEdited", "Last edited")} ${this.time(post.lastEditedAt)}</span>
                         `
                       : nothing
                   }${
                     postLocation
                       ? html`
-                          <span
-                            >${this.label("ipLocation", "IP location")}:
-                            ${postLocation}</span
-                          >
+                          <span>${this.label("ipLocation", "IP location")}: ${postLocation}</span>
                         `
                       : nothing
                   }
                 </div>
               </div>
-              <section
-                class="community-comments"
-                aria-busy=${this.commentsLoading}
-              >
+              <section class="community-comments" aria-busy=${this.commentsLoading}>
                 <header class="community-comments__heading">
                   <h2>
                     ${this.label("commentCount", "{count} comments").replace("{count}", new Intl.NumberFormat(this.locale).format(Number(post.commentCount ?? comments.length)))}
@@ -3805,14 +3748,8 @@ export class CommunityWorkspace extends LitElement {
                       label: this.label("sort", "Sort"),
                       value: this.commentSort,
                       options: [
-                        {
-                          value: "hot",
-                          label: this.label("commentSortPopular", "Hot"),
-                        },
-                        {
-                          value: "latest",
-                          label: this.label("commentSortLatest", "Latest"),
-                        },
+                        { value: "hot", label: this.label("commentSortPopular", "Hot") },
+                        { value: "latest", label: this.label("commentSortLatest", "Latest") },
                       ],
                       onSelect: (value) => {
                         if (value === this.commentSort) return;
@@ -3833,7 +3770,6 @@ export class CommunityWorkspace extends LitElement {
                     : nothing
                 }
                 ${this.renderCommentThreads(comments)}
-
                 ${
                   this.document?.commentsNextCursor
                     ? html`
@@ -3852,51 +3788,18 @@ export class CommunityWorkspace extends LitElement {
             <div class="community-discussion-actions">
               ${
                 this.commentDraftOpen
-                  ? html`
-                      <form
-                        class="community-comment-form"
-                        @submit=${this.submitComment}
-                      >
-                        ${
-                          this.replyTo
-                            ? html`
-                                <div class="community-reply-banner">
-                                  <span>
-                                    ${this.label("replyingTo", "Replying")} ·
-                                    ${String(comments.find((comment) => String(comment.id) === this.replyTo)?.authorName || this.label("member", "Member"))}
-                                  </span>
-                                  ${iconButton({ icon: "close", label: this.label("cancel", "Cancel"), onClick: () => (this.replyTo = "") })}
-                                </div>
-                              `
-                            : nothing
-                        }
-                        <community-editor
-                          compact
-                          .locale=${this.locale}
-                          .value=${this.commentBody}
-                          .maxLength=${5000}
-                          @body-change=${(event: CustomEvent<string>) => { ++this.commentDraftRevision; this.commentBody = event.detail; }}
-                        ></community-editor>
-                        <div class="community-comment-form__actions">
-                          <button
-                            class="button button--text"
-                            type="button"
-                            @click=${() => {
-                              this.commentDraftOpen = false;
-                              this.replyTo = "";
-                            }}
-                          >
-                            ${this.label("cancel", "Cancel")}
-                          </button>
-                          <button
-                            class="button"
-                            ?disabled=${this.busy || !this.commentBody.trim() || this.commentBody.length > 5000}
-                          >
-                            ${icon("send", 18)}${this.commentSending ? this.label("publishing", "Publishing…") : this.label("comment", "Comment")}
-                          </button>
-                        </div>
-                      </form>
-                    `
+                  ? renderCommentComposer({
+                      locale: this.locale, label: (key, fallback) => this.label(key, fallback),
+                      body: this.commentBody, open: true,
+                      signedIn: Boolean(this.session), canComment: Boolean(viewer.canComment),
+                      busy: this.busy, sending: this.commentSending, allowStickers: true,
+                      replyName: this.replyTo ? String(comments.find((comment) => String(comment.id) === this.replyTo)?.authorName || this.label("member", "Member")) : undefined,
+                      onSignIn: () => { this.requireSession(); }, onOpen: () => this.openComment(),
+                      onClose: () => this.closeCommentComposer(),
+                      onCancelReply: () => this.cancelCommentReply(),
+                      onBody: (body) => { ++this.commentDraftRevision; this.commentBody = body; },
+                      onSubmit: (event) => void this.submitComment(event as SubmitEvent),
+                    })
                   : html`
                       <div class="community-engagement">
                         <button
@@ -3907,9 +3810,7 @@ export class CommunityWorkspace extends LitElement {
                           @click=${() => this.openComment()}
                         >
                           ${icon("edit", 20)}
-                          <span
-                            >${this.label("writeComment", "Write a comment")}</span
-                          >
+                          <span>${this.label("writeComment", "Write a comment")}</span>
                         </button>
                         <button
                           aria-label=${this.label(viewer.liked ? "unlike" : "like", "Like")}
@@ -3971,11 +3872,12 @@ export class CommunityWorkspace extends LitElement {
       this.error = this.label("commentsClosed", "Comments are closed for this post");
       return;
     }
+    ++this.commentDraftRevision;
     this.replyTo = id;
     this.commentDraftOpen = true;
     void import("./community-editor").then(async () => {
       await this.updateComplete;
-      const editor = this.querySelector<LitElement & { focus: () => void }>(".community-comment-form community-editor");
+      const editor = this.querySelector<LitElement & { focus: () => void }>(".community-comment-form community-comment-editor, .community-comment-form community-editor");
       await editor?.updateComplete;
       editor?.focus();
     }).catch(() => { this.error = this.label("unavailable", "Unavailable"); });
@@ -4028,208 +3930,51 @@ export class CommunityWorkspace extends LitElement {
                   `
                 : nothing
             }
-            ${
-              hasMoreReplies || this.expandedComments.has(id)
-                ? html`
-                    <button
-                      class="button button--text community-replies-toggle"
-                      aria-expanded=${this.expandedComments.has(id)}
-                      ?disabled=${loadingReplies}
-                      aria-busy=${String(loadingReplies)}
-                      @click=${() => {
-                        const next = new Set(this.expandedComments);
-                        if (next.has(id)) {
-                          next.delete(id);
-                          this.expandedComments = next;
-                        } else if (root.replyCursor && replies.length <= 2) {
-                          void this.loadMoreReplies(id);
-                        } else {
-                          next.add(id);
-                          this.expandedComments = next;
-                        }
-                      }}
-                    >
-                      ${
-                        this.expandedComments.has(id)
-                          ? this.label("collapseReplies", "Collapse replies")
-                          : this.label("expandReplies", "Show {count} more replies").replace(
-                              "{count}",
-                              String(remainingReplies || Math.max(0, replies.length - 2)),
-                            )
-                      }${icon(this.expandedComments.has(id) ? "expand_less" : "expand_more", 18)}
-                    </button>
-                  `
-                : nothing
-            }
-            ${
-              this.expandedComments.has(id) && root.replyCursor
-                ? html`
-                    <button
-                      class="button button--text community-replies-toggle"
-                      ?disabled=${loadingReplies}
-                      aria-busy=${String(loadingReplies)}
-                      @click=${() => void this.loadMoreReplies(id)}
-                    >
-                      ${this.label("expandReplies", "Show {count} more replies").replace("{count}", String(remainingReplies))}
-                      ${icon("expand_more", 18)}
-                    </button>
-                  `
-                : nothing
-            }
+            ${renderCommentReplies({
+              label: (key, fallback) => this.label(key, fallback),
+              expanded: this.expandedComments.has(id), hasMore: hasMoreReplies,
+              remaining: remainingReplies || Math.max(0, replies.length - 2), loading: loadingReplies,
+              onToggle: () => {
+                const next = new Set(this.expandedComments);
+                if (next.has(id)) { next.delete(id); this.expandedComments = next; }
+                else if (root.replyCursor && replies.length <= 2) void this.loadMoreReplies(id);
+                else { next.add(id); this.expandedComments = next; }
+              },
+              onMore: root.replyCursor ? () => void this.loadMoreReplies(id) : undefined,
+            })}
           </div>
         `,
       );
     });
   }
   private renderComment(comment: Value, reply = false) {
-    const viewer = (comment.viewer as Value | undefined) || {};
-    const floor = Number(comment.floor);
-    const floorLabel =
-      Number.isSafeInteger(floor) && floor > 0
-        ? this.label("commentFloor", "Floor {floor}").replace(
-            "{floor}",
-            String(floor),
-          )
-        : "";
-    const name = String(
-      (comment.author as Value | undefined)?.displayName ||
-        comment.authorName ||
-        this.label("member", "Member"),
-    );
-    const parent = (this.document?.comments as Value[] | undefined)?.find(
-      (entry) => String(entry.id) === String(comment.parentId),
-    );
-    const location = this.ipLocation(comment.ipLocation);
-    return communityComment({
-      id: String(comment.id),
-      name,
+    const id = String(comment.id);
+    const parent = (this.document?.comments as Value[] | undefined)?.find((entry) => String(entry.id) === String(comment.parentId));
+    const edit = this.commentEdit?.id === id ? this.commentEdit : undefined;
+    return renderCommunityComment({
+      record: comment,
+      locale: this.locale,
+      label: (key, fallback) => this.label(key, fallback),
       authorHref: this.detailHref(`/community/users/${comment.authorUid}`),
-      avatar: this.avatar(comment.authorImage, name, reply ? 28 : 40),
+      authorMark: String(comment.authorUid) === String(this.postEnvelope().post.authorUid) ? this.label("postAuthor", "Author") : undefined,
       reply,
-      authorMark: html`
-        ${
-          String(comment.authorUid) ===
-          String(this.postEnvelope().post.authorUid)
-            ? html`
-                <span class="community-comment__author-mark"
-                  >${this.label("postAuthor", "Author")}</span
-                >
-              `
-            : nothing
-        }
-      `,
-      headerActions: html`
-        ${
-          floorLabel
-            ? html`
-                <span class="community-comment__floor" aria-label=${floorLabel}
-                  >${floorLabel}</span
-                >
-              `
-            : nothing
-        }
-        ${iconButton({ icon: "more_horiz", label: this.label("commentActions", "Comment actions"), className: "community-comment__more", onClick: (event) => this.openCommentMenu(comment, event) })}
-      `,
-      body: html`
-        ${
-          this.editingComment === String(comment.id)
-            ? html`
-                <form
-                  class="community-comment-edit"
-                  @submit=${(event: SubmitEvent) => {
-                      event.preventDefault();
-                      this.saveComment(comment);
-                    }}
-                >
-                  <textarea
-                    class="text-area"
-                    data-comment-edit=${String(comment.id)}
-                    .value=${String(comment.body || "")}
-                    maxlength="5000"
-                    aria-label=${this.label("edit", "Edit")}
-                    required
-                  ></textarea>
-                  <div class="dialog-actions">
-                    <button
-                      class="button button--text"
-                      type="button"
-                      @click=${() => (this.editingComment = "")}
-                    >
-                      ${this.label("cancel", "Cancel")}
-                    </button>
-                    <button class="button button--tonal" ?disabled=${this.busy}>
-                      ${this.label("save", "Save")}
-                    </button>
-                  </div>
-                </form>
-              `
-            : html`
-                <div class="community-bbcode community-comment__body">
-                  ${
-                      reply && parent && String(parent.parentId || "")
-                        ? html`
-                            <span class="community-comment__reply-name">
-                              ${this.label("replyingTo", "Replying to")}
-                              ${String(parent.authorName || this.label("member", "Member"))}
-                            </span>
-                          `
-                        : nothing
-                    }${unsafeHTML(this.markup(String(comment.body || "")))}
-                </div>
-              `
-        }
-      `,
-      context: html`
-        ${this.time(comment.createdAt)}
-        ${
-              isEdited(comment)
-                ? html`
-                    <span
-                      >${this.label("lastEdited", "Last edited")}
-                      ${this.time(comment.lastEditedAt)}</span
-                    >
-                  `
-                : nothing
-            }
-        ${
-              location
-                ? html`
-                    <span
-                      >${this.label("ipLocation", "IP location")}:
-                      ${location}</span
-                    >
-                  `
-                : nothing
-            }${
-              comment.moderationStatus && comment.moderationStatus !== "allow"
-                ? html`
-                    <span role="status">
-                      ${this.label(comment.moderationStatus === "block" ? "moderationBlocked" : "moderationPending", "Reviewing")}
-                    </span>
-                  `
-                : nothing
-            }
-      `,
-      actions: html`
-        <button
-          type="button"
-          aria-label=${this.label(viewer.liked ? "unlike" : "like", "Like")}
-          aria-pressed=${Boolean(viewer.liked)}
-          ?disabled=${viewer.canLike === false}
-          @click=${() => this.toggleCommentReaction(comment)}
-        >
-          ${icon(viewer.liked ? "favorite-filled" : "favorite_border", 18)}
-          <span
-            >${Number(comment.likeCount || 0) || this.label("like", "Like")}</span
-          >
-        </button>
-        <button
-          type="button"
-          @click=${() => this.openComment(String(comment.id))}
-        >
-          ${icon("chat_bubble_outline", 18)}${this.label("reply", "Reply")}
-        </button>
-      `,
+      replyToName: reply && parent?.parentId ? commentAuthorName(parent, (key, fallback) => this.label(key, fallback)) : undefined,
+      canReply: !this.session || Boolean(this.postEnvelope().viewer.canComment),
+      allowStickers: true,
+      editing: edit ? {
+        body: edit.body, busy: this.busy,
+        onBody: (body) => this.changeCommentEditBody(id, body),
+        onSave: (event) => { event.preventDefault(); this.saveComment(comment); },
+        onCancel: () => this.cancelCommentEdit(id),
+      } : undefined,
+      actions: {
+        like: () => this.toggleCommentReaction(comment),
+        reply: () => this.openComment(id),
+        edit: () => this.startCommentEdit(comment),
+        report: () => this.openDialog("report", "comment", id, String(comment.body || "").slice(0, 80)),
+        appeal: () => this.openDialog("appeal", "comment", id, String(comment.body || "").slice(0, 80)),
+        remove: () => this.deleteComment(comment),
+      },
     });
   }
   private openCommentMenu(comment: Value, event: MouseEvent) {
@@ -5178,6 +4923,7 @@ export class CommunityWorkspace extends LitElement {
     this.cardMenu = null;
     this.dialog = null;
     this.commentMenu = null;
+    this.cancelCommentEdit();
     this.commentDraftOpen = false;
     this.expandedComments = new Set();
     this.commentsRequest.cancel();
@@ -5226,15 +4972,15 @@ export class CommunityWorkspace extends LitElement {
           JSON.stringify([this.viewerId(), this.routeUrl, this.forumEpoch]),
         ),
       };
-    this.forums = directory.forums;
+    this.forums = visibleCommunityForums(directory.forums);
     this.forumGroups = directory.groups;
     const readable = new Set(
-      this.forums
+      directory.forums
         .filter((forum) => forum.capabilities.canRead)
         .map((forum) => forum.id),
     );
     if (["feeds", "mine", "bookmarks"].includes(this.mode))
-      this.items = this.items.filter((post) =>
+      this.items = this.items.filter((post) => isEntityCommentRecommendation(post) ||
         readable.has(String(post.forumId || "")),
       );
     if (
@@ -5281,7 +5027,7 @@ export class CommunityWorkspace extends LitElement {
       ["feeds", "mine", "bookmarks"].includes(this.mode) && this.phase !== "ready" &&
       snapshot.viewer === this.viewerId() && snapshot.realm === this.readViewer?.realm &&
       snapshot.endpoint === this.endpoint(false) &&
-      snapshot.items.every((post) => readable.has(String(post.forumId || "")))) {
+      snapshot.items.every((post) => !isEntityCommentRecommendation(post) && readable.has(String(post.forumId || "")))) {
       this.items = snapshot.items;
       this.cursor = snapshot.cursor;
       this.feedSeed = snapshot.seed;
@@ -6663,7 +6409,9 @@ export class CommunityWorkspace extends LitElement {
         ${columns.map(
           (column) => html`
             <div class="community-masonry__column">
-              ${column.map((post) => keyed(String(post.id), guard([post, this.locale, this.routeUrl, this.copy], () => this.renderPin(post))))}
+              ${column.map((post) => isEntityCommentRecommendation(post)
+                ? keyed(String(post.id), guard([post, this.locale, this.routeUrl, this.copy, this.commentEdit?.id === String(post.comment.id) ? this.commentEdit : undefined, this.busy], () => this.renderEntityCommentRecommendation(post)))
+                : keyed(String(post.id), guard([post, this.locale, this.routeUrl, this.copy], () => this.renderPin(post))))}
             </div>
           `,
         )}
@@ -6793,5 +6541,75 @@ export class CommunityWorkspace extends LitElement {
   declare commentSending: boolean;
   declare facetsError: string;
   declare draftSaveState: "" | "saved" | "failed";
+
+  private startCommentEdit(comment: Value) {
+    if (!this.requireSession() || !(comment.viewer as Value | undefined)?.canEdit) return;
+    const id = String(comment.id || ""), version = Number(comment.version);
+    if (!id || !Number.isSafeInteger(version) || version < 1) return;
+    this.editingComment = id;
+    this.commentEdit = { id, body: String(comment.body || ""), version };
+    this.prepareCommentEditor();
+  }
+  private changeCommentEditBody(id: string, body: string) {
+    if (this.editingComment !== id || this.commentEdit?.id !== id) return;
+    this.commentEdit = { ...this.commentEdit, body };
+  }
+  private cancelCommentEdit(id = this.editingComment) {
+    if (this.editingComment !== id) return;
+    this.editingComment = "";
+    this.commentEdit = null;
+  }
+  private entityCommentHref(entry: Value, reply = false) {
+    if (!isEntityCommentRecommendation(entry)) return "";
+    return entityCommentRecommendationHref(entry, currentReleaseServer(), location.pathname + location.search + location.hash, reply);
+  }
+  private replyToEntityComment(entry: Value) {
+    const href = this.entityCommentHref(entry, true);
+    if (href) void navigateDetailPage(href);
+  }
+  private closeCommentComposer() {
+    ++this.commentDraftRevision;
+    this.commentDraftOpen = false;
+    this.replyTo = "";
+  }
+  private cancelCommentReply() {
+    ++this.commentDraftRevision;
+    this.replyTo = "";
+  }
+  private renderEntityCommentRecommendation(entry: Value) {
+    if (!isEntityCommentRecommendation(entry)) return nothing;
+    const comment = entry.comment as unknown as Value;
+    const id = String(comment.id);
+    const edit = this.commentEdit?.id === id ? this.commentEdit : undefined;
+    const href = this.entityCommentHref(entry);
+    return renderEntityCommentActivity({
+      contextLabel: this.label("comments", "Comments"),
+      targetTitle: entry.entityRef.titles[this.locale] || Object.values(entry.entityRef.titles).find(Boolean) || entry.entityRef.originalId,
+      targetHref: href,
+      privateLabel: entry.adminOnlyContext ? this.label("visibilityPrivate", "Private") : undefined,
+      comment: {
+        record: comment,
+        locale: this.locale,
+        label: (key, fallback) => this.label(key, fallback),
+        authorHref: this.detailHref(`/community/users/${comment.authorUid}`),
+        canReply: Boolean(href),
+        allowStickers: false,
+        editing: edit ? {
+          body: edit.body, busy: this.busy,
+          onBody: (body) => this.changeCommentEditBody(id, body),
+          onSave: (event) => { event.preventDefault(); this.saveComment(comment); },
+          onCancel: () => this.cancelCommentEdit(id),
+        } : undefined,
+        actions: {
+          like: () => this.toggleCommentReaction(comment),
+          reply: () => this.replyToEntityComment(entry),
+          edit: () => this.startCommentEdit(comment),
+          report: () => this.openDialog("report", "comment", id, String(comment.body || "").slice(0, 80)),
+          appeal: () => this.openDialog("appeal", "comment", id, String(comment.body || "").slice(0, 80)),
+          remove: () => this.deleteComment(comment),
+        },
+      },
+    });
+  }
 }
 customElements.define("community-workspace", CommunityWorkspace);

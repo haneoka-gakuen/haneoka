@@ -5,6 +5,7 @@ import { clientText, initializeI18nClient } from "../i18n/client";
 import { catalogLookupKeys } from "../i18n/keys";
 import { normalizeLocale, type Catalog } from "@haneoka/i18n";
 import { loadingState, errorState } from "./ui/state";
+import { communityCommentName, communityCommentLocation } from "../lib/community-comment-metadata";
 import { RequestScope } from "../lib/request-scope";
 import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { CommunityReactions } from "../lib/community-reaction";
@@ -47,6 +48,7 @@ export class EntityComments extends LitElement {
     replyLoading: { state: true },
     messagesReady: { state: true },
     messagesError: { state: true },
+    composerOpen: { state: true },
   };
   declare entityType: string;
   declare entityId: string;
@@ -60,7 +62,7 @@ export class EntityComments extends LitElement {
   declare replyTo: string;
   declare sort: "hot" | "latest";
   declare editing: { id: string; body: string; version: number } | null;
-  declare dialog: { kind: "delete" | "report"; id: string; reason: string; details: string } | null;
+  declare dialog: { kind: "delete" | "report" | "appeal"; id: string; reason: string; details: string } | null;
   declare error: string;
   declare message: string;
   declare busy: string;
@@ -70,6 +72,7 @@ export class EntityComments extends LitElement {
   declare replyLoading: Set<string>;
   declare messagesReady: boolean;
   declare messagesError: string;
+  declare composerOpen: boolean;
   private messagesCatalog?: Catalog;
   private messagesRequest = new RequestScope();
   private messagesPending?: Promise<void>;
@@ -86,6 +89,7 @@ export class EntityComments extends LitElement {
   private mutationVersion = 0;
   private draftIdentity = "";
   private draftRevision = 0;
+  private handledReplyIntent = "";
   constructor() {
     super();
     this.entityType = "";
@@ -110,6 +114,7 @@ export class EntityComments extends LitElement {
     this.replyLoading = new Set();
     this.messagesReady = false;
     this.messagesError = "";
+    this.composerOpen = false;
   }
   createRenderRoot() {
     return this;
@@ -238,6 +243,7 @@ export class EntityComments extends LitElement {
     this.body = draft.body;
     this.replyTo = draft.replyTo;
     this.sort = draft.sort;
+    this.composerOpen = Boolean(draft.body || draft.replyTo);
   }
   private cancelReplies() {
     for (const request of this.replies.values()) request.cancel();
@@ -253,6 +259,7 @@ export class EntityComments extends LitElement {
     this.document = null;
     this.editing = null;
     this.dialog = null;
+    this.composerOpen = false;
     this.message = "";
     this.phase = "loading";
     this.refreshing = false;
@@ -287,7 +294,7 @@ export class EntityComments extends LitElement {
       { active: Boolean(comment.viewer.liked), likeCount: Number(comment.likeCount || 0) },
       mark,
     );
-    return { ...comment, likeCount: state.likeCount, viewer: { ...comment.viewer, liked: state.active } };
+    return { ...comment, likeCount: state.likeCount, viewer: { ...comment.viewer, liked: state.active, canReport: comment.viewer.canReport !== false } };
   }
   private async load(append = false) {
     if (!this.isConnected || !this.entityType || !this.entityId || (append && this.loadingMore)) return;
@@ -318,6 +325,7 @@ export class EntityComments extends LitElement {
         this.body = "";
         this.replyTo = "";
         this.expanded = new Set();
+        this.composerOpen = false;
       }
       this.viewer = viewer;
       const draftIdentity = this.draftKey();
@@ -354,6 +362,20 @@ export class EntityComments extends LitElement {
       this.phase = "ready";
       if (data.focusedRootId) this.expanded = new Set([...this.expanded, data.focusedRootId]);
       this.rememberDraft();
+      const intent = navigationDocumentUrl().searchParams.get("replyTo") || "";
+      const intentKey = JSON.stringify([this.identity, intent, viewer.realm]);
+      if (uuid(intent) && this.handledReplyIntent !== intentKey && this.comment(intent)) {
+        this.handledReplyIntent = intentKey;
+        this.openComposer(intent);
+      }
+      const commentAction = navigationDocumentUrl().searchParams.get("commentAction") || "";
+      const actionCommentId = data.focusedCommentId || this.focusId();
+      const actionKey = JSON.stringify([this.identity, actionCommentId, commentAction, viewer.realm]);
+      if (uuid(actionCommentId) && ["edit", "delete", "report", "appeal"].includes(commentAction) && this.handledReplyIntent !== actionKey && this.comment(actionCommentId)) {
+        this.handledReplyIntent = actionKey;
+        if (commentAction === "edit") this.edit(actionCommentId);
+        else this.openDialog(commentAction as "delete" | "report" | "appeal", actionCommentId);
+      }
       await this.updateComplete;
       const focused = data.focusedCommentId;
       if (focused && this.requests.current(signal))
@@ -434,6 +456,7 @@ export class EntityComments extends LitElement {
       if (revision === this.draftRevision && this.body === draftBody && this.replyTo === parentId) {
         this.body = "";
         this.replyTo = "";
+        this.composerOpen = false;
       }
       this.rememberDraft();
       this.message = response.moderationQueued ? this.label("moderationPending", "Reviewing") : "";
@@ -508,6 +531,7 @@ export class EntityComments extends LitElement {
     const comment = this.comment(id);
     if (!comment?.viewer.canEdit || !this.signedIn()) return;
     this.editing = { id, body: comment.body, version: comment.version };
+    this.prepareEditor();
   };
   private saveEdit = async (event: Event) => {
     event.preventDefault();
@@ -529,10 +553,12 @@ export class EntityComments extends LitElement {
       void this.load(false);
     });
   };
-  private openDialog = (kind: "delete" | "report", id: string) => {
+  private openDialog = (kind: "delete" | "report" | "appeal", id: string) => {
     if (!this.signedIn()) return;
     const comment = this.comment(id);
-    if (!comment || (kind === "delete" && !comment.viewer.canDelete)) return;
+    if (!comment || (kind === "delete" && !comment.viewer.canDelete) ||
+      (kind === "report" && comment.viewer.canReport === false) ||
+      (kind === "appeal" && !(comment.viewer.canEdit && comment.moderationStatus === "block"))) return;
     this.dialog = { kind, id, reason: "other", details: "" };
   };
   private submitDialog = async (event: Event) => {
@@ -548,6 +574,11 @@ export class EntityComments extends LitElement {
           method: "DELETE",
           body: JSON.stringify({ version: comment.version }),
         });
+      else if (dialog.kind === "appeal")
+        await this.request("/api/v1/community/appeals", {
+          method: "POST",
+          body: JSON.stringify({ entityKind: "comment", entityId: dialog.id, statement: dialog.details.trim() }),
+        });
       else
         await this.request("/api/v1/community/reports", {
           method: "POST",
@@ -561,7 +592,7 @@ export class EntityComments extends LitElement {
       if (!current() || context !== this.context || realm !== this.viewer?.realm) return;
       if (this.dialog === dialog) this.dialog = null;
       if (dialog.kind === "delete") await this.load(false);
-      else this.message = this.label("reportDialog.submitted", "Report submitted");
+      else this.message = dialog.kind === "appeal" ? this.label("appealSubmitted", "Appeal submitted") : this.label("reportDialog.submitted", "Report submitted");
     });
   };
   private expand = async (id: string) => {
@@ -672,8 +703,36 @@ export class EntityComments extends LitElement {
       };
     });
   }
+  private openComposer = (id = "") => {
+    if (!this.signedIn() || !this.document?.viewer.canComment) return;
+    if (id && !this.comment(id)) return;
+    if (id !== this.replyTo) ++this.draftRevision;
+    this.replyTo = id;
+    this.composerOpen = true;
+    this.prepareEditor();
+  };
+  private prepareEditor() {
+    const context = this.context, lifetime = this.lifetime, realm = this.viewer?.realm;
+    const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted && context === this.context && realm === this.viewer?.realm;
+    void import("./community-editor").then(async () => {
+      if (!current()) return;
+      await this.updateComplete;
+      if (!current()) return;
+      const editor = this.querySelector<HTMLElement & { updateComplete: Promise<unknown> }>("community-editor");
+      await editor?.updateComplete;
+      if (current()) editor?.focus();
+    }).catch(() => { if (current()) this.error = this.label("unavailable", "Unavailable"); });
+  }
+  private closeComposer = () => {
+    ++this.draftRevision;
+    this.composerOpen = false;
+    this.replyTo = "";
+    this.rememberDraft();
+  };
   private actions: EntityCommentsViewActions = {
     signIn: () => this.signIn(),
+    openComposer: () => this.openComposer(),
+    closeComposer: this.closeComposer,
     refresh: () => void this.load(false),
     sort: (sort) => {
       this.sort = sort;
@@ -684,12 +743,7 @@ export class EntityComments extends LitElement {
     expand: (id) => void this.expand(id),
     moreReplies: (id) => void this.moreReplies(id),
     like: this.like,
-    reply: (id) => {
-      if (this.signedIn() && this.document?.viewer.canComment && this.comment(id)) {
-        ++this.draftRevision;
-        this.replyTo = id;
-      }
-    },
+    reply: (id) => this.openComposer(id),
     cancelReply: () => {
       ++this.draftRevision;
       this.replyTo = "";
@@ -710,6 +764,7 @@ export class EntityComments extends LitElement {
     },
     remove: (id) => this.openDialog("delete", id),
     report: (id) => this.openDialog("report", id),
+    appeal: (id) => this.openDialog("appeal", id),
     reason: (reason) => {
       if (this.dialog) this.dialog = { ...this.dialog, reason };
     },
@@ -741,6 +796,7 @@ export class EntityComments extends LitElement {
       signedIn: Boolean(this.viewer?.userId),
       canComment: Boolean(this.document?.viewer.canComment),
       body: this.body,
+      composerOpen: this.composerOpen,
       replyTo: this.comment(this.replyTo) || null,
       editing: this.editing,
       dialog: this.dialog,
@@ -750,8 +806,13 @@ export class EntityComments extends LitElement {
       hasMore: Boolean(this.document?.nextCursor),
       label: this.label,
       time: (value) => formatCommunityTime(value, this.uiLocale()),
-      authorHref: (comment) =>
-        "/" + this.uiLocale() + "/community/users/" + encodeURIComponent(comment.authorUid) + "/",
+      authorName: (comment) => communityCommentName(comment, this.label("member", "Member")),
+      ipLocation: (comment) => communityCommentLocation(comment.ipLocation, this.uiLocale()),
+      authorHref: (comment) => {
+        const page = navigationDocumentUrl();
+        const query = new URLSearchParams({ return: page.pathname + page.search + page.hash });
+        return "/" + this.uiLocale() + "/community/users/" + encodeURIComponent(comment.authorUid) + "/?" + query;
+      },
     };
     return view(props, this.actions);
   }

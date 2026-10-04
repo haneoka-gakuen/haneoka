@@ -20,6 +20,7 @@ export interface ForumInput {
 }
 export interface CommunityForum extends ForumInput {
   id: string;
+  isInternal?: boolean;
   defaultName: string;
   version: number;
   createdAt: number;
@@ -61,4 +62,9 @@ export const FORUM_ICONS = [
 ] as const;
 export function forumIcon(value: string): string {
   return (FORUM_ICONS as readonly string[]).includes(value) ? value : "forum";
+}
+
+/** Navigation follows the authoritative DTO flag, never its title, slug or legacy purpose. */
+export function visibleCommunityForums(forums: readonly CommunityForum[]): CommunityForum[] {
+  return forums.filter((forum) => forum.isInternal !== true);
 }

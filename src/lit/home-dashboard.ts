@@ -1,3 +1,11 @@
+import { renderLazyEntityCommentActivity } from "./views/entity-comment-activity-lazy";
+import "../styles/home-community-comments.css";
+import { CommunityReactions } from "../lib/community-reaction";
+import { navigateDetailPage } from "../lib/detail-navigation";
+import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
+import { initializeI18nClient } from "../i18n/client";
+import { catalogLookupKeys } from "../i18n/keys";
+import type { Catalog } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
@@ -165,6 +173,7 @@ export class HomeDashboard extends LitElement {
     events: { state: true },
     counts: { state: true },
     posts: { state: true },
+    communityCommentError: { state: true },
     communityPhase: { state: true },
     order: { state: true },
     hiddenModules: { state: true },
@@ -195,6 +204,9 @@ export class HomeDashboard extends LitElement {
   declare events: Spotlight[];
   declare counts: Record<string, number>;
   declare posts: JsonRecord[];
+  declare communityCommentError: string;
+  private communityReactions = new CommunityReactions();
+  private communityLifetime = new AbortController();
   declare communityPhase: "loading" | "ready" | "error";
   declare order: ModuleId[];
   declare hiddenModules: Record<string, boolean>;
@@ -240,6 +252,7 @@ export class HomeDashboard extends LitElement {
     this.events = [];
     this.counts = {};
     this.posts = [];
+    this.communityCommentError = "";
     this.communityPhase = "loading";
     this.order = [...MODULES];
     this.hiddenModules = {};
@@ -252,6 +265,7 @@ export class HomeDashboard extends LitElement {
   }
   private disposeSongDisplay?: () => void;
   connectedCallback() {
+    if (this.communityLifetime.signal.aborted) this.communityLifetime = new AbortController();
     const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
     if (seed) {
       try {
@@ -281,6 +295,8 @@ export class HomeDashboard extends LitElement {
     void document.fonts?.ready.then(() => this.queueFit());
   }
   disconnectedCallback() {
+    this.communityLifetime.abort();
+    this.communityReactions.clear();
     window.removeEventListener("haneoka:session-changed", this.onCommunityContextChange);
     window.removeEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
     window.removeEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
@@ -310,7 +326,7 @@ export class HomeDashboard extends LitElement {
     )
       this.birthdaySelection = "";
     this.scheduleBirthdayRefresh();
-    if (changed.has("locale")) this.syncAction();
+    if (changed.has("locale")) { this.syncAction(); this.communityReactions.clear(); this.communityMessages = undefined; }
     this.lazyImages.observe(this);
     for (const element of this.fitObserved)
       if (!this.contains(element)) {
@@ -627,6 +643,7 @@ export class HomeDashboard extends LitElement {
     const server = this.sourceServer();
     const locale = this.locale;
     const signal = this.liveRequests.begin();
+    const reactionMark = this.communityReactions.mark();
     const currentPanel = () => this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
     const newsWork = fetchAnnouncements(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]), locale)
       .then((news) => {
@@ -640,7 +657,7 @@ export class HomeDashboard extends LitElement {
       if (!currentPanel()) return;
       if (this.communityViewer && this.communityViewer.realm !== viewer.realm) this.posts = [];
       this.communityViewer = viewer;
-      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?limit=5&scope=recommended", {signal,credentials:"same-origin",cache:"no-store"});
+      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",server,locale}), {signal,credentials:"same-origin",cache:"no-store"});
       const current = await readCommunityViewer(signal);
       if (!currentPanel()) return;
       if (current.realm !== viewer.realm) {
@@ -649,7 +666,20 @@ export class HomeDashboard extends LitElement {
         this.communityPhase = "error";
         return;
       }
-      this.posts = Array.isArray(posts.posts) ? posts.posts as JsonRecord[] : [];
+      const next = communityRecommendationItems(posts);
+      if (next.some(isEntityCommentRecommendation)) {
+        const client = initializeI18nClient(), version = client.version;
+        const messages = await client.ensure(locale as Parameters<typeof client.ensure>[0], ["common", "community"], signal);
+        if (!currentPanel() || client.version !== version) return;
+        this.communityMessages = messages;
+      }
+      this.posts = next.map((entry) => {
+        if (!isEntityCommentRecommendation(entry)) return entry;
+        const comment = entry.comment;
+        if (comment.viewer.canLike === false) { this.communityReactions.forget(comment.id); return entry; }
+        const state = this.communityReactions.merge(comment.id, {active:Boolean(comment.viewer.liked),likeCount:Number(comment.likeCount||0)}, reactionMark);
+        return {...entry,comment:{...comment,likeCount:state.likeCount,viewer:{...comment.viewer,liked:state.active}}};
+      });
       this.communityPhase = "ready";
     } catch (error) {
       if (!currentPanel()) return;
@@ -659,6 +689,8 @@ export class HomeDashboard extends LitElement {
   }
   private readonly onCommunityContextChange = () => {
     this.liveRequests.cancel();
+    this.communityReactions.clear();
+    this.communityCommentError = "";
     this.posts = [];
     this.communityViewer = undefined;
     this.communityPhase = "loading";
@@ -1914,7 +1946,7 @@ export class HomeDashboard extends LitElement {
   }
   private renderCommunity() {
     return html`
-      <section class="home-card home-info home-community" aria-labelledby="home-community-title">
+      <section class=${`home-card home-info home-community${this.posts.slice(0, 2).some(isEntityCommentRecommendation) ? " home-community--comments" : ""}`} aria-labelledby="home-community-title">
         ${this.moduleHeader(
           icon("forum"),
           this.text("communityTitle", "Trending community"),
@@ -1930,12 +1962,15 @@ export class HomeDashboard extends LitElement {
             </a>
           `,
         )}
+        ${this.communityCommentError ? html`<div class="inline-message error" role="alert">${this.communityCommentError}</div>` : nothing}
         ${
           this.posts.length
             ? html`
                 <ol class="community-hot-list home-info__body" data-home-fit role="list">
-                  ${this.posts.slice(0, 8).map(
-                    (post, index) => html`
+                  ${this.posts.slice(0, this.posts.some(isEntityCommentRecommendation) ? 2 : 8).map(
+                    (post, index) => isEntityCommentRecommendation(post)
+                      ? html`<li>${this.renderRecommendedComment(post)}</li>`
+                      : html`
                       <li class=${index === 0 ? "home-community-lead" : ""}>
                         <a class="list-item list-item--interactive" href=${`/community/posts/${post.id}`}>
                           <span class="list-item__marker tabular" aria-hidden="true">${index + 1}</span>
@@ -2224,6 +2259,85 @@ export class HomeDashboard extends LitElement {
         ${this.renderDialog()}
       </div>
     `;
+  }
+
+  private communityMessages?: Catalog;
+  private communityLabel(key: string, fallback: string) {
+    for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
+      if (this.communityMessages?.has(candidate)) return this.communityMessages.text(candidate, undefined, fallback);
+    return fallback;
+  }
+  private entityCommentHref(entry: JsonRecord, reply = false) {
+    return isEntityCommentRecommendation(entry) ? entityCommentRecommendationHref(entry, this.sourceServer(), location.pathname + location.search + location.hash, reply) : "";
+  }
+  private openRecommendedComment(entry: JsonRecord, action: "reply" | "edit" | "delete" | "report" | "appeal") {
+    const href = this.entityCommentHref(entry, action === "reply");
+    if (!href) return;
+    const target = new URL(href, location.origin);
+    if (action !== "reply") target.searchParams.set("commentAction", action);
+    void navigateDetailPage(target.pathname + target.search + target.hash);
+  }
+  private likeRecommendedComment(entry: JsonRecord) {
+    if (!isEntityCommentRecommendation(entry)) return;
+    if (!this.communityViewer?.userId) {
+      location.assign("/" + this.locale + "/account/?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
+      return;
+    }
+    const id = entry.comment.id, realm = this.communityViewer.realm, locale = this.locale, server = this.sourceServer(), lifetime = this.communityLifetime;
+    const find = () => this.posts.find((item) => isEntityCommentRecommendation(item) && item.comment.id === id);
+    const current = () => this.isConnected && !lifetime.signal.aborted && lifetime === this.communityLifetime &&
+      realm === this.communityViewer?.realm && locale === this.locale && server === this.sourceServer() && !!find();
+    if (entry.comment.viewer.canLike === false) return;
+    this.communityCommentError = "";
+    this.communityReactions.toggle(id, { active: Boolean(entry.comment.viewer.liked), likeCount: Number(entry.comment.likeCount || 0) }, {
+      current,
+      terminal: (error) => !!error && typeof error === "object" && "status" in error && Number(error.status) >= 400 && Number(error.status) < 500,
+      send: async (active, signal) => {
+        const result = await fetchJson<JsonRecord>("/api/v1/community/comments/" + encodeURIComponent(id) + "/reaction", {
+          method: "PUT", body: JSON.stringify({ active }), headers: {"content-type":"application/json"},
+          credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([signal, lifetime.signal]),
+        });
+        return { active: Boolean(result.active), likeCount: Number(result.likeCount) };
+      },
+      apply: (state) => {
+        if (!current()) return;
+        this.posts = this.posts.map((item) => isEntityCommentRecommendation(item) && item.comment.id === id
+          ? { ...item, comment: { ...item.comment, likeCount: state.likeCount, viewer: { ...item.comment.viewer, liked: state.active } } } : item);
+      },
+      reject: (error) => {
+        if (!current()) return;
+        this.communityCommentError = this.communityLabel("reactionFailed", "Could not save like. Try again.");
+        if (error && typeof error === "object" && "status" in error && [401, 404].includes(Number(error.status)))
+          this.posts = this.posts.filter((item) => !(isEntityCommentRecommendation(item) && item.comment.id === id));
+      },
+    });
+  }
+  private renderRecommendedComment(entry: JsonRecord) {
+    if (!isEntityCommentRecommendation(entry)) return nothing;
+    const href = this.entityCommentHref(entry);
+    return renderLazyEntityCommentActivity({
+      contextLabel: this.communityLabel("comments", "Comments"),
+      targetTitle: entry.entityRef.titles[this.locale] || Object.values(entry.entityRef.titles).find(Boolean) || entry.entityRef.originalId,
+      targetHref: href,
+      privateLabel: entry.adminOnlyContext ? this.communityLabel("visibilityPrivate", "Private") : undefined,
+      comment: {
+        record: entry.comment,
+        locale: this.locale,
+        label: (key, fallback) => this.communityLabel(key, fallback),
+        authorHref: `/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
+        canReply: Boolean(href),
+        allowStickers: false,
+        preview: true,
+        actions: {
+          like: () => this.likeRecommendedComment(entry),
+          reply: href ? () => this.openRecommendedComment(entry, "reply") : undefined,
+          edit: href ? () => this.openRecommendedComment(entry, "edit") : undefined,
+          report: href ? () => this.openRecommendedComment(entry, "report") : undefined,
+          appeal: href ? () => this.openRecommendedComment(entry, "appeal") : undefined,
+          remove: href ? () => this.openRecommendedComment(entry, "delete") : undefined,
+        },
+      },
+    }, () => this.requestUpdate());
   }
 }
 if (!customElements.get("home-dashboard")) customElements.define("home-dashboard", HomeDashboard);

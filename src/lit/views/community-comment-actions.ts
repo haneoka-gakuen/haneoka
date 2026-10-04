@@ -34,6 +34,7 @@ export class CommunityCommentActions extends LitElement {
     super.disconnectedCallback();
   }
   private close = () => {
+    this.querySelector<HTMLElement>("[popover]")?.hidePopover?.();
     this.position = null;
     this.querySelector<HTMLButtonElement>(".community-comment__more")?.focus();
   };
@@ -43,7 +44,12 @@ export class CommunityCommentActions extends LitElement {
       x: Math.max(8, Math.min(rect.right - 224, innerWidth - 232)),
       y: Math.max(8, Math.min(rect.bottom, innerHeight - (this.actions.length * 48 + 24))),
     };
-    void this.updateComplete.then(() => this.querySelector<HTMLElement>("[role=menuitem]")?.focus());
+    void this.updateComplete.then(() => {
+      const menu = this.querySelector<HTMLElement>("[role=menu]");
+      if (!this.isConnected || !this.position || !menu) return;
+      menu.showPopover?.();
+      menu.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    });
   };
   private keys = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -78,9 +84,13 @@ export class CommunityCommentActions extends LitElement {
               <div
                 class="menu community-card-menu community-comment-menu"
                 role="menu"
+                popover="auto"
                 aria-label=${this.label}
-                style=${`left:${this.position.x}px;top:${this.position.y}px`}
+                style=${`left:${this.position.x}px;top:${this.position.y}px;margin:0;border:0;right:auto;bottom:auto`}
                 @keydown=${this.keys}
+                @toggle=${(event: Event) => {
+                  if ((event as ToggleEvent).newState === "closed") this.position = null;
+                }}
               >
                 ${this.actions.map(
                   (action) => html`
@@ -98,12 +108,12 @@ export class CommunityCommentActions extends LitElement {
                   `,
                 )}
               </div>
-              <button
+              ${typeof HTMLElement.prototype.showPopover !== "function" ? html`<button
                 class="scrim community-menu-scrim"
                 type="button"
                 aria-label=${this.closeLabel}
                 @click=${this.close}
-              ></button>
+              ></button>` : nothing}
             `
           : nothing
       }

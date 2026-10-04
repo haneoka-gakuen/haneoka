@@ -1,0 +1,19 @@
+@layer components {
+  dialog.dialog-host {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    color: inherit;
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+  dialog.dialog-host:not([open]) {
+    display: none;
+  }
+  dialog.dialog-host::backdrop {
+    background: transparent;
+  }
+}

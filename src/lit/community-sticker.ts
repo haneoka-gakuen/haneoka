@@ -4,16 +4,19 @@ import { isReleaseServer, readReleaseServer } from "../lib/release-server";
 import { validStickerToken } from "../lib/community-markup";
 
 const catalogs = new Map<string, { expires: number; promise: Promise<JsonRecord> }>();
-export function communityStamps(server: string): Promise<JsonRecord> {
+export function communityStamps(server: string, reload = false): Promise<JsonRecord> {
   if (!isReleaseServer(server)) return Promise.resolve({});
   const existing = catalogs.get(server);
-  if (existing && existing.expires > Date.now()) return existing.promise;
+  if (!reload && existing && existing.expires > Date.now()) return existing.promise;
   const promise = fetchJson<JsonRecord>(catalogUrl("stamps", "", server)).catch((error) => {
     catalogs.delete(server);
     throw error;
   });
   catalogs.set(server, { expires: Date.now() + 300000, promise });
   return promise;
+}
+export function stampServers(server: string): string[] {
+  return [...new Set([server, readReleaseServer(), "intl", "jp"])].filter(isReleaseServer);
 }
 export function stampSources(stamp: JsonRecord, locale: string): string[] {
   const source = String(stamp.image || "");

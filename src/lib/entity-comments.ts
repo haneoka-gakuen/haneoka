@@ -24,7 +24,9 @@ export interface EntityComment {
   version: number;
   parentId: string | null;
   rootId?: string;
-  authorUid: string;
+  authorUid: string | number;
+  author?: { displayName?: string | null } | null;
+  ipLocation?: { countryCode: string } | null;
   authorName: string;
   authorImage?: string | null;
   createdAt: number;

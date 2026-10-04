@@ -1,0 +1,6 @@
+@layer components {
+  community-comment-editor {
+    display: block;
+    min-inline-size: 0;
+  }
+}

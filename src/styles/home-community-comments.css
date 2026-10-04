@@ -1,0 +1,16 @@
+@layer pages {
+  .home-community--comments {
+    aspect-ratio: auto;
+    min-block-size: 18rem;
+  }
+  .home-community--comments .entity-comment-tile {
+    padding: 8px;
+    background: transparent;
+  }
+  .home-community--comments .community-comment__body--preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+}

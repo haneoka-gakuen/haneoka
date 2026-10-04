@@ -52,7 +52,8 @@ const tree = (source: string): Tree[] => {
 const literal = (nodes: Tree[]): string =>
   nodes.map((node) => (typeof node === "string" ? node : literal(node.content))).join("");
 
-export function communityMarkup(source: string, spoiler = "Spoiler", locale = "en"): string {
+export interface CommunityMarkupOptions { allowStickers?: boolean; }
+export function communityMarkup(source: string, spoiler = "Spoiler", locale = "en", options: CommunityMarkupOptions = {}): string {
   const flow = (nodes: Tree[], align = ""): string => {
     const blocks: string[] = [];
     let inline = "";
@@ -103,6 +104,7 @@ export function communityMarkup(source: string, spoiler = "Spoiler", locale = "e
         : inline(node.content);
     }
     if (tag === "sticker") {
+      if (options.allowStickers === false) return inline(node.content);
       const token = attribute(node);
       return validStickerToken(token)
         ? `<community-sticker token="${escapeMarkup(token)}" locale="${escapeMarkup(locale)}" label="${escapeMarkup(literal(node.content))}"></community-sticker>`

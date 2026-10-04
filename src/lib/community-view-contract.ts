@@ -66,20 +66,25 @@ export interface EntityCommentsViewProps {
   signedIn: boolean;
   canComment: boolean;
   body: string;
+  composerOpen: boolean;
   replyTo: EntityComment | null;
   editing: { id: string; body: string; version: number } | null;
-  dialog: { kind: "delete" | "report"; id: string; reason: string; details: string } | null;
+  dialog: { kind: "delete" | "report" | "appeal"; id: string; reason: string; details: string } | null;
   busy: string;
   error: string;
   message: string;
   hasMore: boolean;
   label(key: string, fallback: string): string;
   time(value: unknown): CommunityTime | null;
+  authorName(comment: EntityComment): string;
+  ipLocation(comment: EntityComment): string;
   authorHref(comment: EntityComment): string;
 }
 
 export interface EntityCommentsViewActions {
   signIn(): void;
+  openComposer(): void;
+  closeComposer(): void;
   refresh(): void;
   sort(value: "hot" | "latest"): void;
   more(): void;
@@ -96,6 +101,7 @@ export interface EntityCommentsViewActions {
   cancelEdit(): void;
   remove(commentId: string): void;
   report(commentId: string): void;
+  appeal(commentId: string): void;
   reason(value: string): void;
   details(value: string): void;
   submitDialog(event: Event): void;

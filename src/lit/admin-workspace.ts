@@ -1,3 +1,4 @@
+import { modal } from "./ui/modal";
 import "../styles/admin-forums.css";
 import {
   FORUM_LOCALES,
@@ -2148,12 +2149,10 @@ export class AdminWorkspace extends LitElement {
     const profileAvailable = typeof user.version === "number" && typeof user.role === "string";
     const managementAvailable = !!user.restrictions && Array.isArray(user.activeRestrictions);
     return html`
-      <div class="dialog-host admin-dialog-scrim" role="presentation" @click=${() => this.closeUserDetails()}>
+      <dialog ${modal(() => { this.closeUserDetails(); })} aria-labelledby="admin-user-title" class="dialog-host admin-dialog-scrim" @click=${() => this.closeUserDetails()}>
         <section
           class="admin-history-dialog admin-user-details surface"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-user-title"
+
           tabindex="-1"
           data-overlay-pane
           @click=${(event: Event) => event.stopPropagation()}
@@ -2368,7 +2367,7 @@ export class AdminWorkspace extends LitElement {
               : nothing
           }
         </section>
-      </div>
+      </dialog>
     `;
   }
   private renderUserActions(user: Value) {
@@ -3349,12 +3348,10 @@ export class AdminWorkspace extends LitElement {
     const post = this.movePost!;
     const source = this.forums.find((forum) => forum.id === post.forumId);
     return html`
-      <div class="dialog-host admin-dialog-scrim" role="presentation" @click=${() => this.closeMovePost()}>
+      <dialog ${modal(() => { this.closeMovePost(); })} aria-labelledby="admin-move-title" class="dialog-host admin-dialog-scrim" @click=${() => this.closeMovePost()}>
         <form
           class="admin-forum-move surface"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-move-title"
+
           data-overlay-pane
           tabindex="-1"
           @click=${(event: Event) => event.stopPropagation()}
@@ -3413,7 +3410,7 @@ export class AdminWorkspace extends LitElement {
             </button>
           </footer>
         </form>
-      </div>
+      </dialog>
     `;
   }
   private renderHistory() {
@@ -3443,12 +3440,10 @@ export class AdminWorkspace extends LitElement {
     const publicPost = post.publicEligible === true;
     const available = !!history && !post.deletedAt && !this.busy && !this.historyLoading;
     return html`
-      <div class="dialog-host admin-dialog-scrim" role="presentation" @click=${() => this.closeReview()}>
+      <dialog ${modal(() => { this.closeReview(); })} aria-labelledby="admin-review-title" class="dialog-host admin-dialog-scrim" @click=${() => this.closeReview()}>
         <section
           class="admin-history-dialog surface"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-review-title"
+
           tabindex="-1"
           data-overlay-pane
           @click=${(event: Event) => event.stopPropagation()}
@@ -3720,7 +3715,7 @@ export class AdminWorkspace extends LitElement {
               : nothing
           }
         </section>
-      </div>
+      </dialog>
     `;
   }
   private renderCommentHistory() {

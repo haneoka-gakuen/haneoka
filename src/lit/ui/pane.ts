@@ -121,6 +121,11 @@ export class PaneFocus {
 
   /** Attach to `root` (or detach when it is null / closed). */
   sync(root: HTMLElement | null, onDismiss: () => void) {
+    // Native modal dialogs already own focus/inertness, including nested dialogs.
+    if (root?.closest("dialog")) {
+      this.detach();
+      return;
+    }
     if (!root) {
       this.detach();
       return;

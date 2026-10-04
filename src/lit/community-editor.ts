@@ -5,7 +5,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import { clientText } from "../i18n/client";
 import { communityMarkup, communityDocument, safeCommunityLink } from "../lib/community-markup";
-import { communityStamps, stampSources } from "./community-sticker";
+import { communityStamps, stampServers } from "./community-sticker";
 import { currentReleaseServer, localizedText, type JsonRecord } from "./shared/catalog";
 import { icon } from "./ui/icon";
 
@@ -21,6 +21,8 @@ export class CommunityEditor extends LitElement {
     menu: { state: true },
     compact: { type: Boolean, reflect: true },
     maxLength: { type: Number },
+    labels: { attribute: false },
+    allowStickers: { type: Boolean, attribute: "allow-stickers" },
   };
   declare value: string;
   declare locale: string;
@@ -31,10 +33,20 @@ export class CommunityEditor extends LitElement {
   declare loading: boolean;
   declare compact: boolean;
   declare maxLength: number;
+  declare labels?: (key: string) => string;
+  declare allowStickers: boolean;
   declare menu: "format" | "insert" | null;
   private editor?: Editor;
   private current = "";
   private mounted = false;
+  private stampSequence = 0;
+  private visualSelection = { from: 1, to: 1 };
+  private dismiss = (event: Event) => {
+    if (!event.composedPath().includes(this)) {
+      this.menu = null;
+      this.picker = false;
+    }
+  };
   constructor() {
     super();
     this.value = "";
@@ -47,32 +59,47 @@ export class CommunityEditor extends LitElement {
     this.menu = null;
     this.compact = false;
     this.maxLength = 20000;
+    this.allowStickers = true;
   }
   createRenderRoot() {
     return this;
   }
   override focus() {
-    this.editor?.commands.focus();
+    if (this.raw) this.querySelector<HTMLTextAreaElement>(".community-source-editor")?.focus();
+    else this.editor?.commands.focus();
   }
   private text(key: string) {
-    return clientText(this.locale, `communityPage.${key}`, key);
+    return this.labels ? this.labels(key) : clientText(this.locale, `communityPage.${key}`, key);
   }
   protected firstUpdated() {
     this.mount();
   }
   protected updated(changed: Map<string, unknown>) {
+    if (changed.has("allowStickers") && this.editor) {
+      ++this.stampSequence;
+      this.picker = false;
+      this.loading = false;
+      this.editor.destroy();
+      this.editor = undefined;
+      this.mount();
+    }
+    if (changed.has("locale") || changed.has("labels")) this.editor?.view.dom.setAttribute("aria-label", this.text("postBody"));
     if (changed.has("value") && this.value !== this.current) {
       this.current = this.value;
-      this.editor?.commands.setContent(communityMarkup(this.value, this.text("spoiler"), this.locale), {
+      this.editor?.commands.setContent(communityMarkup(this.value, this.text("spoiler"), this.locale, { allowStickers: this.allowStickers }), {
         emitUpdate: false,
       });
     }
   }
   connectedCallback() {
     super.connectedCallback();
+    document.addEventListener("pointerdown", this.dismiss);
     if (this.mounted) void this.updateComplete.then(() => this.mount());
   }
   disconnectedCallback() {
+    document.removeEventListener("pointerdown", this.dismiss);
+    this.stampSequence++;
+    this.loading = false;
     this.editor?.destroy();
     this.editor = undefined;
     super.disconnectedCallback();
@@ -109,18 +136,19 @@ export class CommunityEditor extends LitElement {
     this.current = this.value;
     this.editor = new Editor({
       element,
+      editable: !this.raw,
       extensions: [
         StarterKit.configure({
           heading: { levels: [2, 3, 4] },
           code: false,
           link: { openOnClick: false, autolink: false, defaultProtocol: "https", protocols: ["http", "https"] },
         }),
-        Sticker,
+        ...(this.allowStickers ? [Sticker] : []),
         Spoiler,
         TextAlign.configure({ types: ["heading", "paragraph"] }),
         Highlight,
       ],
-      content: communityMarkup(this.value, this.text("spoiler"), this.locale),
+      content: communityMarkup(this.value, this.text("spoiler"), this.locale, { allowStickers: this.allowStickers }),
       editorProps: {
         attributes: {
           role: "textbox",
@@ -129,7 +157,7 @@ export class CommunityEditor extends LitElement {
           class: "community-bbcode",
         },
       },
-      onUpdate: ({ editor }) => this.change(communityDocument(editor.getJSON()).trimEnd()),
+      onUpdate: ({ editor }) => this.change(communityDocument(editor.getJSON())),
       onSelectionUpdate: () => this.requestUpdate(),
       onTransaction: () => this.requestUpdate(),
     });
@@ -168,32 +196,91 @@ export class CommunityEditor extends LitElement {
     if (command === "link") this.querySelector<HTMLDialogElement>(".community-link-dialog")?.showModal();
     this.menu = null;
   }
+  private preserveSelection(event: PointerEvent) {
+    // Keep the editable selection and mobile keyboard while tapping formatting controls.
+    if ((event.target as Element).closest("button") && event.isPrimary) event.preventDefault();
+  }
+  private async toggleSource() {
+    if (this.raw && this.value.length > this.maxLength) {
+      this.error = this.text("invalidBody");
+      return;
+    }
+    if (!this.raw && this.editor)
+      this.visualSelection = { from: this.editor.state.selection.from, to: this.editor.state.selection.to };
+    this.raw = !this.raw;
+    this.menu = null;
+    this.picker = false;
+    this.error = "";
+    this.editor?.setEditable(!this.raw, false);
+    if (!this.raw && this.editor) {
+      this.editor.commands.setContent(communityMarkup(this.value, this.text("spoiler"), this.locale, { allowStickers: this.allowStickers }), {
+        emitUpdate: false,
+      });
+      const end = this.editor.state.doc.content.size;
+      this.editor.commands.setTextSelection({
+        from: Math.min(this.visualSelection.from, end),
+        to: Math.min(this.visualSelection.to, end),
+      });
+    }
+    await this.updateComplete;
+    this.focus();
+  }
   private async openStamps() {
+    if (!this.allowStickers) return;
     this.picker = !this.picker;
     if (!this.picker || this.stamps.length) return;
+    const sequence = ++this.stampSequence;
+    const reload = Boolean(this.error);
     this.loading = true;
     this.error = "";
-    try {
-      const catalog = await communityStamps(currentReleaseServer());
-      if (this.isConnected)
-        this.stamps = Object.values(catalog)
-          .filter((item): item is JsonRecord => !!item && typeof item === "object")
-          .sort((a, b) => Number(a.stampId) - Number(b.stampId));
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
-    } finally {
-      this.loading = false;
+    const entries = new Map<string, JsonRecord>();
+    for (const server of stampServers(currentReleaseServer())) {
+      try {
+        const catalog = await communityStamps(server, reload);
+        if (!this.isConnected || sequence !== this.stampSequence) return;
+        for (const [id, stamp] of Object.entries(catalog)) {
+          if (!stamp || typeof stamp !== "object" || entries.has(id)) continue;
+          const entry = stamp as JsonRecord;
+          if (!/^\d{1,12}$/.test(String(entry.stampId || id))) continue;
+          entries.set(id, { ...entry, stampId: entry.stampId || id, sourceServer: server });
+        }
+        this.stamps = [...entries.values()].sort((a, b) => Number(a.stampId) - Number(b.stampId));
+      } catch {
+        if (!this.isConnected || sequence !== this.stampSequence) return;
+      }
     }
+    this.loading = false;
+    if (!this.stamps.length) this.error = this.text("stickersUnavailable");
+  }
+  private stampToken(stamp: JsonRecord) {
+    return `${stamp.sourceServer || currentReleaseServer()}:${stamp.stampId}:${this.locale}`;
   }
   private insertStamp(stamp: JsonRecord) {
+    if (!this.allowStickers) return;
     const label = localizedText(stamp.name, this.locale);
-    const token = `${currentReleaseServer()}:${stamp.stampId}:${this.locale}`;
+    const token = this.stampToken(stamp);
     this.editor
       ?.chain()
       .focus()
       .insertContent({ type: "communitySticker", attrs: { token, label, locale: this.locale } } as JSONContent)
       .run();
     this.picker = false;
+  }
+  private active(command: string): boolean {
+    const node = (
+      {
+        list: "bulletList",
+        orderedList: "orderedList",
+        quote: "blockquote",
+        code: "codeBlock",
+        spoiler: "communitySpoiler",
+      } as Record<string, string>
+    )[command];
+    if (["h2", "h3", "h4"].includes(command))
+      return this.editor?.isActive("heading", { level: Number(command.slice(1)) }) || false;
+    if (["left", "center", "right", "justify"].includes(command))
+      return this.editor?.isActive({ textAlign: command }) || false;
+    return this.editor?.isActive(node || command) || false;
   }
   render() {
     const common = [
@@ -225,10 +312,21 @@ export class CommunityEditor extends LitElement {
       { command: "divider", icon: "horizontal_rule", label: "divider" },
     ];
     return html`
-      <div class="community-rich-editor">
-        <div class="community-editor-toolbar-row">
+      <div
+        class="community-rich-editor"
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === "Escape" && (this.menu || this.picker)) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.menu = null;
+            this.picker = false;
+            this.focus();
+          }
+        }}
+      >
+        <div class="community-editor-toolbar-row" @pointerdown=${this.preserveSelection}>
           <div class="community-format-toolbar" role="toolbar" aria-label=${this.text("formatting")}>
-            ${(this.compact ? common.slice(0, 2) : common).map(
+            ${(this.compact ? common.filter(({ command }) => command !== "underline") : common).map(
               ({ command, icon: glyph, mark }) => html`
                 <button
                   class="icon-button"
@@ -243,6 +341,7 @@ export class CommunityEditor extends LitElement {
                 </button>
               `,
             )}
+            ${this.allowStickers !== false ? html`
             <button
               class="icon-button"
               type="button"
@@ -257,6 +356,7 @@ export class CommunityEditor extends LitElement {
             >
               ${icon("emoji_emotions", 20)}
             </button>
+` : nothing}
             <button
               class="icon-button"
               type="button"
@@ -305,57 +405,50 @@ export class CommunityEditor extends LitElement {
           >
             ${icon("text_format", 20)}
           </button>
+          <button
+            class="icon-button community-source-toggle"
+            type="button"
+            aria-label=${this.raw ? this.text("visualEditor") : "BBCode"}
+            title=${this.raw ? this.text("visualEditor") : "BBCode"}
+            aria-pressed=${this.raw}
+            @click=${this.toggleSource}
+          >
+            ${this.raw ? icon("notes", 20) : icon("code", 20)}
+          </button>
         </div>
         ${
           this.menu
             ? html`
                 <section
                   class="community-format-panel"
+                  @pointerdown=${this.preserveSelection}
                   aria-label=${this.text(this.menu === "format" ? "moreFormatting" : "insert")}
                 >
                   ${(this.menu === "format" ? format : inserts).map(
                     ({ command, icon: glyph, label }) => html`
-                      <button type="button" ?disabled=${this.raw} @click=${() => this.format(command)}>
+                      <button
+                        type="button"
+                        aria-pressed=${this.active(command)}
+                        ?disabled=${this.raw}
+                        @click=${() => this.format(command)}
+                      >
                         ${icon(glyph, 20)}
                         <span>${this.text(label)}</span>
                       </button>
                     `,
                   )}
-                  ${
-                    this.menu === "format"
-                      ? html`
-                          <button
-                            class="community-source-toggle"
-                            type="button"
-                            aria-pressed=${this.raw}
-                            @click=${() => {
-                              if (this.raw && this.value.length > this.maxLength) {
-                                this.error = this.text("invalidBody");
-                                return;
-                              }
-                              this.raw = !this.raw;
-                              this.menu = null;
-                              if (!this.raw)
-                                this.editor?.commands.setContent(
-                                  communityMarkup(this.value, this.text("spoiler"), this.locale),
-                                  { emitUpdate: false },
-                                );
-                            }}
-                          >
-                            ${icon("code", 20)}
-                            <span>${this.raw ? this.text("visualEditor") : "BBCode"}</span>
-                          </button>
-                        `
-                      : nothing
-                  }
                 </section>
               `
             : nothing
         }
         ${
-          this.picker
+          this.allowStickers !== false && this.picker
             ? html`
-                <section class="community-stamp-picker" aria-label=${this.text("stickers")}>
+                <section
+                  class="community-stamp-picker"
+                  aria-label=${this.text("stickers")}
+                  @pointerdown=${this.preserveSelection}
+                >
                   ${
                     this.loading
                       ? html`
@@ -388,13 +481,11 @@ export class CommunityEditor extends LitElement {
                         aria-label=${localizedText(stamp.name, this.locale)}
                         @click=${() => this.insertStamp(stamp)}
                       >
-                        <img
-                          src=${stampSources(stamp, this.locale)[0] || ""}
-                          width="72"
-                          height="72"
-                          alt=""
-                          loading="lazy"
-                        />
+                        <community-sticker
+                          token=${this.stampToken(stamp)}
+                          locale=${this.locale}
+                          label=${localizedText(stamp.name, this.locale)}
+                        ></community-sticker>
                       </button>
                     `,
                   )}
@@ -453,7 +544,7 @@ export class CommunityEditor extends LitElement {
             </label>
             <div class="dialog-actions">
               <button class="button button--text" value="cancel" formnovalidate>${this.text("cancel")}</button>
-              <button class="button">${this.text("save")}</button>
+              <button class="button" type="submit">${this.text("save")}</button>
             </div>
           </form>
         </dialog>
