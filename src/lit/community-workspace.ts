@@ -1,3 +1,4 @@
+import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { communityPostCard } from "./views/community-post-card";
 import {
   CommunityReactions,
@@ -190,6 +191,7 @@ export class CommunityWorkspace extends LitElement {
     editorReady: { state: true },
     session: { state: true },
     loadingMore: { state: true },
+    refreshing: { state: true },
     commentsLoading: { state: true },
     columnCount: { state: true },
     commentMenu: { state: true },
@@ -260,6 +262,8 @@ export class CommunityWorkspace extends LitElement {
   declare editorReady: boolean;
   declare session: Value | null;
   declare loadingMore: boolean;
+  declare refreshing: boolean;
+  private readViewer?: CommunityViewer;
   declare commentsLoading: boolean;
   declare columnCount: number;
   private previewQueue: string[] = [];
@@ -427,6 +431,7 @@ export class CommunityWorkspace extends LitElement {
     this.editorReady = false;
     this.session = null;
     this.loadingMore = false;
+    this.refreshing = false;
     this.commentsLoading = false;
     this.columnCount = 2;
     this.commentMenu = null;
@@ -854,6 +859,7 @@ export class CommunityWorkspace extends LitElement {
     const signal = this.requests.begin();
     const progress = beginLoading(this.label("loading", "Loading"), { signal });
     this.loadingMore = append;
+    this.refreshing = !append && this.phase === "ready";
     const activeEditor =
       this.editorInitialized &&
       this.editorReady &&
@@ -872,6 +878,7 @@ export class CommunityWorkspace extends LitElement {
         try {
           await this.loadForums(signal);
         } catch (error) {
+          if (error instanceof CommunityRealmChanged) throw error;
           if (!this.requests.current(signal)) return;
           this.forums = [];
           this.forumGroups = [];
@@ -925,6 +932,7 @@ export class CommunityWorkspace extends LitElement {
         }
         const detail = (await response.json()) as Value;
         if (!this.requests.current(signal)) return;
+        if (!await this.confirmReadViewer(signal)) return;
         this.document = detail;
         this.publishForumNavigation();
         if (focusedId) this.revealComment(focusedId);
@@ -1073,6 +1081,7 @@ export class CommunityWorkspace extends LitElement {
       if (!response.ok) throw new JsonResponseError(response.status, null);
       const data = (await response.json()) as Value;
       if (!this.requests.current(signal)) return;
+      if (this.usesForums() && !await this.confirmReadViewer(signal)) return;
       const next = Array.isArray(data.posts)
         ? data.posts
         : Array.isArray(data.tags)
@@ -1123,6 +1132,16 @@ export class CommunityWorkspace extends LitElement {
         void this.loadTagFacets();
     } catch (error) {
       if (!this.requests.current(signal)) return;
+      if (error instanceof CommunityRealmChanged) {
+        this.session = null;
+        this.readViewer = undefined;
+        this.clearForumContent();
+        this.editorTitle = ""; this.editorBody = ""; this.editorTags = ""; this.editorVisibility = "public"; this.editorEditReason = "";
+        this.editorVersion = 0; this.editorInitialized = false; this.commentBody = ""; this.replyTo = ""; this.editingComment = "";
+        this.selectedForumId = ""; this.forumExplicit = false; this.stampDraftRead = false; this.stampDraft = undefined;
+        void this.discardUploads();
+        this.phase = "error";
+      }
       if (
         error instanceof JsonResponseError &&
         [401, 403, 404].includes(error.status)
@@ -1158,7 +1177,7 @@ export class CommunityWorkspace extends LitElement {
       progress.fail(error);
     } finally {
       progress.finish();
-      if (this.requests.current(signal)) this.loadingMore = false;
+      if (this.requests.current(signal)) { this.loadingMore = false; this.refreshing = false; }
     }
   }
   private submit(event: Event) {
@@ -1349,6 +1368,8 @@ export class CommunityWorkspace extends LitElement {
     removeFromBookmarks: boolean,
     route: FeedSnapshotRoute,
   ) {
+    if (route.scope === "recommended" && Object.hasOwn(postPatch, "visibility"))
+      return items.filter((item) => String(item.id) !== postId);
     if (removeFromBookmarks && route.scope === "bookmarked") {
       return items.filter((item) => String(item.id) !== postId);
     }
@@ -1377,6 +1398,7 @@ export class CommunityWorkspace extends LitElement {
       if (snapshot.viewer !== viewerId) continue;
       const route = feedSnapshotRoute(routeUrl);
       if (route.kind !== "posts") continue;
+      if (route.scope === "recommended" && Object.hasOwn(postPatch, "visibility")) { feedSnapshots.delete(routeUrl); continue; }
       if (!snapshot.items.some((item) => String(item.id) === postId)) {
         if (route.scope === "bookmarked" && viewerPatch.bookmarked === true)
           feedSnapshots.delete(routeUrl);
@@ -3037,6 +3059,8 @@ export class CommunityWorkspace extends LitElement {
         void this.clearStampDraft(this.stampDraft);
       if (!editing) localStorage.removeItem(this.draftKey());
       feedSnapshots.clear();
+      if (editing && String(current.visibility || "public") !== String(data.get("visibility") || "public"))
+        window.dispatchEvent(new CustomEvent("haneoka:community-posts-changed", {detail:{postId:id}}));
       void navigateDetailPage(
         `${this.path(`/community/posts/${encodeURIComponent(id)}`)}?return=${encodeURIComponent(this.editorReturnHref())}`,
       );
@@ -5430,9 +5454,12 @@ export class CommunityWorkspace extends LitElement {
   }
   private async loadForums(signal: AbortSignal) {
     const viewer = this.viewerId();
-    const session = await this.request("/api/auth/get-session", { signal });
+    const context = await readCommunityViewer(signal);
     if (!this.requests.current(signal)) return;
-    this.session = session.user ? session : null;
+    const realmChanged = this.readViewer && this.readViewer.realm !== context.realm;
+    this.session = context.session;
+    if (realmChanged) { this.clearForumContent(); this.phase = "loading"; }
+    this.readViewer = context;
     if (viewer !== this.viewerId()) {
       this.clearForumContent();
       this.editorTitle = "";
@@ -5540,6 +5567,26 @@ export class CommunityWorkspace extends LitElement {
       };
       this.publishForumNavigation();
     });
+  }
+  private async confirmReadViewer(signal: AbortSignal) {
+    const current = await readCommunityViewer(signal);
+    if (!this.requests.current(signal)) return false;
+    if (this.readViewer?.realm !== current.realm) {
+      const changedUser = this.viewerId() !== current.userId;
+      this.session = current.session;
+      this.clearForumContent();
+      if (changedUser) {
+        this.editorTitle = ""; this.editorBody = ""; this.editorTags = ""; this.editorVisibility = "public"; this.editorEditReason = "";
+        this.editorVersion = 0; this.editorInitialized = false; this.commentBody = ""; this.replyTo = ""; this.editingComment = "";
+        this.selectedForumId = ""; this.forumExplicit = false; this.stampDraftRead = false; this.stampDraft = undefined;
+        await this.discardUploads();
+      }
+      this.readViewer = current;
+      this.phase = "error";
+      this.error = this.label("unavailable", "Unavailable");
+      return false;
+    }
+    return true;
   }
   private publishForumNavigation() {
     const state = this.forumNavigationState;

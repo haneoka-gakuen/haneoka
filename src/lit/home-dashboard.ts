@@ -1,3 +1,4 @@
+import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
 import { announcementPath } from "../lib/announcements";
@@ -186,6 +187,7 @@ export class HomeDashboard extends LitElement {
   private seed?: HomeSeed;
   private catalogRequests = new RequestScope();
   private liveRequests = new RequestScope();
+  private communityViewer?: CommunityViewer;
   declare characters: JsonRecord[];
   declare bands: JsonRecord[];
   private marks = new Map<string, string>();
@@ -268,6 +270,10 @@ export class HomeDashboard extends LitElement {
       void this.load();
       void this.loadProfiles();
     }
+    window.addEventListener("haneoka:session-changed", this.onCommunityContextChange);
+    window.addEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
+    window.addEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
+    window.addEventListener("focus", this.onCommunityFocus);
     void this.loadLivePanels();
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) this.startAuto();
     queueMicrotask(() => this.mountAction());
@@ -275,6 +281,10 @@ export class HomeDashboard extends LitElement {
     void document.fonts?.ready.then(() => this.queueFit());
   }
   disconnectedCallback() {
+    window.removeEventListener("haneoka:session-changed", this.onCommunityContextChange);
+    window.removeEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
+    window.removeEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
+    window.removeEventListener("focus", this.onCommunityFocus);
     this.disposeSongDisplay?.();
     if (this.slideTimer) window.clearInterval(this.slideTimer);
     if (this.clockTimer) window.clearTimeout(this.clockTimer);
@@ -573,10 +583,6 @@ export class HomeDashboard extends LitElement {
         this.marks.set(logical, `/runtime/${this.sourceServer()}/${path.replace(/^runtime\//u, "")}`);
     this.banners = this.carousel(documents["home-banners"], now);
     this.events = values(documents.events, "entries").map((entry) => this.spotlightOf(entry, "events"));
-    if (Array.isArray(documents.posts?.posts)) {
-      this.posts = documents.posts.posts as JsonRecord[];
-      this.communityPhase = "ready";
-    }
     this.phase = "ready";
   }
   private async load() {
@@ -621,25 +627,46 @@ export class HomeDashboard extends LitElement {
     const server = this.sourceServer();
     const locale = this.locale;
     const signal = this.liveRequests.begin();
-    const [posts, news] = await Promise.allSettled([
-      fetchJson<JsonRecord>("/api/v1/community/posts?limit=5&scope=recommended", { signal }),
-      fetchAnnouncements(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]), locale),
-    ]);
-    if (
-      !this.isConnected ||
-      !this.liveRequests.current(signal) ||
-      server !== this.sourceServer() ||
-      locale !== this.locale
-    )
-      return;
-    this.communityPhase = posts.status === "fulfilled" ? "ready" : "error";
-    if (posts.status === "fulfilled")
-      this.posts = Array.isArray(posts.value.posts) ? (posts.value.posts as JsonRecord[]) : [];
-    if (news.status === "fulfilled") {
-      this.announcements = news.value.announcements.slice(0, 5);
-      this.announcementsPhase = "ready";
-    } else this.announcementsPhase = this.announcements.length ? "ready" : "error";
+    const currentPanel = () => this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
+    const newsWork = fetchAnnouncements(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]), locale)
+      .then((news) => {
+        if (!currentPanel()) return;
+        this.announcements = news.announcements.slice(0, 5);
+        this.announcementsPhase = "ready";
+      })
+      .catch(() => { if (currentPanel()) this.announcementsPhase = this.announcements.length ? "ready" : "error"; });
+    try {
+      const viewer = await readCommunityViewer(signal);
+      if (!currentPanel()) return;
+      if (this.communityViewer && this.communityViewer.realm !== viewer.realm) this.posts = [];
+      this.communityViewer = viewer;
+      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?limit=5&scope=recommended", {signal,credentials:"same-origin",cache:"no-store"});
+      const current = await readCommunityViewer(signal);
+      if (!currentPanel()) return;
+      if (current.realm !== viewer.realm) {
+        this.posts = [];
+        this.communityViewer = current;
+        this.communityPhase = "error";
+        return;
+      }
+      this.posts = Array.isArray(posts.posts) ? posts.posts as JsonRecord[] : [];
+      this.communityPhase = "ready";
+    } catch (error) {
+      if (!currentPanel()) return;
+      this.posts = [];
+      this.communityPhase = "error";
+    } finally { await newsWork; }
   }
+  private readonly onCommunityContextChange = () => {
+    this.liveRequests.cancel();
+    this.posts = [];
+    this.communityViewer = undefined;
+    this.communityPhase = "loading";
+    void this.loadLivePanels();
+  };
+  private readonly onCommunityFocus = () => {
+    if (this.isConnected && !document.hidden) void this.loadLivePanels();
+  };
   private spotlightOf(entry: JsonRecord, resource: string): Spotlight {
     return {
       id: String(entry.id || ""),
