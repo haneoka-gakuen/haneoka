@@ -11,6 +11,7 @@ import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
 import { loadSongOptions } from "./song-loader.ts";
 import { searchFingerprint } from "./search-checkpoint.ts";
 import { validateSearchBudget } from "./search-budget.ts";
+import { createPracticalPreparationCache } from "./practical-preparation-cache.ts";
 
 export type NativePracticalChart = { songId: number; difficulty: number } | { challengeMusicId: number; difficulty: number };
 export interface NativePracticalPreparationInput extends Omit<WorkerPreparationInput,
@@ -133,6 +134,7 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
   const contextFingerprint = await searchFingerprint({ kind: "native-practical", request: semantic, charts });
   const byChart = new Map(charts.map(chart => [chart.key, chart]));
   const taskGaps = new Map<string, EvidenceGap[]>();
+  const preparations = createPracticalPreparationCache();
   const failedCandidate = (assignment: TeamAssignment, task: PracticalTask, gaps: EvidenceGap[]): Candidate => ({
     assignment: structuredClone(assignment), songKey: task.songKey,
     metrics: Object.fromEntries(objectives.map(goal => [goal, { ...unavailableMetric("native-practical-task-unavailable", task.key),
@@ -150,9 +152,9 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
         const inventory = { ...request.inventory, members: request.inventory.members.filter(member => memberIds.has(member.instanceId)),
           snapshots: request.inventory.snapshots.filter(photo => photoIds.has(photo.instanceId)) };
         try {
-          const prepared = prepareEvaluationForSearch({ ...request, inventory, songs: [chart.song], mode: task.mode,
+          const prepared = preparations.get(task, assignment, () => prepareEvaluationForSearch({ ...request, inventory, songs: [chart.song!], mode: task.mode,
             scoreDomain: task.mode === "gekiso" ? task.objective === "score" ? request.scoreDomain ?? "personal-live" : "personal-solo" : undefined,
-            objectives: [task.objective], challengeMusicId: "challengeMusicId" in chart.chart ? chart.chart.challengeMusicId : undefined });
+            objectives: [task.objective], challengeMusicId: "challengeMusicId" in chart.chart ? chart.chart.challengeMusicId : undefined }));
           candidate = await prepared.evaluate(assignment, prepareSong(chart.song, prepared.input.evaluation), {
             cancelled, expired, yield: controls.yield ?? (() => new Promise<void>(resolve => setTimeout(resolve, 0))), progress: () => {},
           });
