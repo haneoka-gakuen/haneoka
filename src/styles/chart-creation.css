@@ -25,6 +25,23 @@
     border-block-end: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface-container-low);
   }
+  .chart-studio__zoom-y {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 999px;
+  }
+  .chart-studio__zoom-y > span {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-inline-size: 42px;
+    font-variant-numeric: tabular-nums;
+  }
+  .chart-studio__zoom-y output {
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
   .chart-studio__tools {
     display: flex;
     flex: 1;
@@ -392,4 +409,12 @@
 }
 @layer pages {
   .chart-studio__skin-state { position: absolute; z-index: 1; inset: 0 0 32px; display: grid; place-items: center; background: color-mix(in srgb, var(--md-sys-color-surface-container) 72%, transparent); }
+}
+
+@layer pages {
+  @media (max-width: 599px) {
+    .chart-studio__toolbar { flex-wrap: wrap; }
+    .chart-studio__tools { flex: 1 0 calc(100% - 56px); order: 1; }
+    .chart-studio__toolbar > .chart-studio__drawer-button:last-of-type { order: 1; }
+  }
 }

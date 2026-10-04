@@ -347,16 +347,12 @@ export class ChartCreationWorkspace extends LitElement {
       this.focusedPanel = panel ?? undefined;
       this.releasePanelFocus = panel ? trapFocus(panel, { onDismiss: () => this.closePanels() }) : undefined;
     }
-    // Material resolves value synchronously; newly rendered options must settle first.
-    for (const [selector, value] of [
-      ["[data-window]", String(this.secondsPerScreen)],
-      ["[data-version]", String(this.activeRevision)],
-    ]) {
-      const control = this.querySelector<HTMLElementTagNameMap["md-outlined-select"]>(selector);
-      if (!control) continue;
+    // Material resolves newly rendered version options after its own update.
+    const control = this.querySelector<HTMLElementTagNameMap["md-outlined-select"]>("[data-version]");
+    if (control) {
+      const value = String(this.activeRevision);
       void control.updateComplete.then(() => {
-        const current = selector === "[data-window]" ? String(this.secondsPerScreen) : String(this.activeRevision);
-        if (this.isConnected && current === value && control.value !== value) control.select(value);
+        if (this.isConnected && String(this.activeRevision) === value && control.value !== value) control.select(value);
       });
     }
   }
@@ -881,6 +877,8 @@ export class ChartCreationWorkspace extends LitElement {
       });
     else if (event.key === "Delete" || event.key === "Backspace")
       this.edit((p) => deleteChartSelectionGroup(p, this.selectedIds));
+    else if (!modifier && (event.key === "+" || event.key === "=")) this.setVerticalZoom(this.secondsPerScreen / 2);
+    else if (!modifier && event.key === "-") this.setVerticalZoom(this.secondsPerScreen * 2);
     else if (event.key === " ") this.togglePlayback();
     else if (event.key === "Escape") {
       this.pending = undefined;
@@ -936,6 +934,25 @@ export class ChartCreationWorkspace extends LitElement {
   private clampStart(value: number) {
     return Math.max(0, Math.min(Math.max(0, (this.audio?.analysis.duration ?? 0) - this.secondsPerScreen), value));
   }
+  private setVerticalZoom(span: number, pixel?: number) {
+    if (this.busy || this.gesture || !this.audio || this.stageMode !== "edit" || !Number.isFinite(span)) return;
+    const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
+    if (!canvas?.clientHeight) return;
+    const height = canvas.clientHeight;
+    if (pixel === undefined) {
+      const selected = chartSelectionNodes(this.chart).find((item) => item.note.id === this.selected);
+      const time = selected ? this.map().tickToSeconds(selected.note.tick) : this.seconds;
+      const at = timeToViewportY(time, { startSeconds: this.windowStart, pixelsPerSecond: height / this.secondsPerScreen, height });
+      pixel = at >= 0 && at <= height ? at : height / 2;
+    }
+    const nextSpan = Math.max(0.5, Math.min(16, span));
+    const next = zoomVerticalTimeViewportAtY({
+      startSeconds: this.windowStart, pixelsPerSecond: height / this.secondsPerScreen, height,
+    }, height / nextSpan, pixel);
+    this.secondsPerScreen = nextSpan;
+    this.windowStart = this.clampStart(next.startSeconds);
+    this.requestUpdate();
+  }
   private wheel(event: WheelEvent) {
     if (this.busy || !this.audio) return;
     event.preventDefault();
@@ -960,13 +977,7 @@ export class ChartCreationWorkspace extends LitElement {
       height: canvas.clientHeight,
     };
     if (event.ctrlKey || event.metaKey) {
-      const scale = Math.max(
-        canvas.clientHeight / 16,
-        Math.min(canvas.clientHeight / 0.5, viewport.pixelsPerSecond * Math.exp(-event.deltaY * 0.002)),
-      );
-      const next = zoomVerticalTimeViewportAtY(viewport, scale, event.clientY - canvas.getBoundingClientRect().top);
-      this.secondsPerScreen = canvas.clientHeight / scale;
-      this.windowStart = this.clampStart(next.startSeconds);
+      this.setVerticalZoom(this.secondsPerScreen * Math.exp(event.deltaY * 0.002), event.clientY - canvas.getBoundingClientRect().top);
     } else this.windowStart = this.clampStart(scrollVerticalTimeViewport(viewport, event.deltaY).startSeconds);
     this.requestUpdate();
   }
@@ -2402,27 +2413,6 @@ export class ChartCreationWorkspace extends LitElement {
             )}
         </md-outlined-select>
         <md-outlined-select
-          data-window
-          label=${this.t("creation.zoom")}
-          .value=${String(this.secondsPerScreen)}
-          ?disabled=${this.busy}
-          @change=${(e: Event) => {
-            this.secondsPerScreen = Number((e.target as HTMLSelectElement).value);
-            this.windowStart = this.clampStart(this.windowStart);
-            this.requestUpdate();
-          }}
-        >
-          ${[...new Set([0.5, 1, 2, 4, 8, 16, this.secondsPerScreen])]
-            .sort((a, b) => a - b)
-            .map(
-              (value) => html`
-                <md-select-option value=${String(value)} .selected=${value === this.secondsPerScreen}>
-                  <div slot="headline">${Math.round(value * 100) / 100} s</div>
-                </md-select-option>
-              `,
-            )}
-        </md-outlined-select>
-        <md-outlined-select
           label=${this.t("playbackSpeed")}
           .value=${String(this.rate)}
           ?disabled=${this.busy}
@@ -2558,6 +2548,13 @@ export class ChartCreationWorkspace extends LitElement {
             ${icon("swap_horiz", 18)}${this.defaultWidth}
           </button>
           ${iconButton({ label: this.t(this.stageMode === "preview" ? "edit" : "preview"), className: "chart-studio__preview-inline", icon: this.stageMode === "preview" ? "edit" : "play_circle", pressed: this.stageMode === "preview", disabled: this.busy || !this.audio, onClick: () => void this.switchStage() })}
+          <div class="chart-studio__zoom-y" role="group" aria-label=${this.t("creation.zoom_y")} ?hidden=${this.stageMode !== "edit"}>
+            ${iconButton({ icon: "remove", label: `${this.t("creation.zoom_y")} −`, disabled: this.busy || !this.audio || Boolean(this.gesture) || this.secondsPerScreen >= 16,
+              onClick: () => this.setVerticalZoom(this.secondsPerScreen * 2) })}
+            <span title=${this.t("creation.zoom_y")}>${icon("height", 18)}<output>${Number((4 / this.secondsPerScreen).toFixed(2))}×</output></span>
+            ${iconButton({ icon: "add", label: `${this.t("creation.zoom_y")} +`, disabled: this.busy || !this.audio || Boolean(this.gesture) || this.secondsPerScreen <= 0.5,
+              onClick: () => this.setVerticalZoom(this.secondsPerScreen / 2) })}
+          </div>
           <span class="chart-studio__preview-mode" ?hidden=${this.stageMode !== "preview"}>${this.t(`creation.preview_${this.nativeMode}`)}</span>
           <div class="chart-studio__tools">
             <div class="chart-creation__actions">

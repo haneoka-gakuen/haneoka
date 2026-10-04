@@ -377,7 +377,8 @@
       "custom_division": "自訂細分",
       "snap_absolute": "絕對",
       "snap_relative": "相對",
-      "multi_select": "多選"
+      "multi_select": "多選",
+      "zoom_y": "縱向縮放"
     }
   },
   "storyEditor": "故事編輯器",

@@ -377,7 +377,8 @@
       "custom_division": "사용자 지정 분할",
       "snap_absolute": "절대",
       "snap_relative": "상대",
-      "multi_select": "다중 선택"
+      "multi_select": "다중 선택",
+      "zoom_y": "세로 확대"
     }
   },
   "storyEditor": "스토리 편집기",

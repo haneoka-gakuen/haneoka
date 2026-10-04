@@ -377,7 +377,8 @@
       "custom_division": "Custom division",
       "snap_absolute": "Absolute",
       "snap_relative": "Relative",
-      "multi_select": "Multi-select"
+      "multi_select": "Multi-select",
+      "zoom_y": "Vertical zoom"
     }
   },
   "storyEditor": "Story Editor",

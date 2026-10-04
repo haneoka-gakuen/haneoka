@@ -377,7 +377,8 @@
       "custom_division": "カスタム分割",
       "snap_absolute": "絶対",
       "snap_relative": "相対",
-      "multi_select": "複数選択"
+      "multi_select": "複数選択",
+      "zoom_y": "縦方向のズーム"
     }
   },
   "storyEditor": "ストーリーエディター",
