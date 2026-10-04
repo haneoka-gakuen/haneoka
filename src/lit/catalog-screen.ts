@@ -1152,7 +1152,11 @@ export class CatalogScreen extends LitElement {
   private restoreFacets(params: URLSearchParams) {
     const bandRail = this.hasBandRail();
     const card = ["member", "support"].includes(this.profile.presentation);
-    this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
+    if (this.profile.presentation === "character") {
+      const requested = params.get("band");
+      this.ensureCharacterBandSelection(requested === null ? this.activeBand
+        : /^[1-9]\d*$/u.test(requested) ? Number(requested) : NaN);
+    } else this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
     const typeParam = ["member", "support"].includes(this.profile.presentation)
       ? "cardType"
       : this.profile.presentation === "song"
@@ -2061,6 +2065,7 @@ export class CatalogScreen extends LitElement {
    */
   private resultCache?: { key: string; items: Item[]; source: number };
   private results() {
+    this.ensureCharacterBandSelection();
     const key = [
       this.items.length,
       this.query,
@@ -2118,8 +2123,9 @@ export class CatalogScreen extends LitElement {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
     // A roster shows one band at a time, so that band is the population the
     // result count is measured against — not the whole catalogue.
-    const source =
-      this.hasBandRail() && this.activeBand
+    const source = this.profile.presentation === "character"
+      ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
+      : this.hasBandRail() && this.activeBand
         ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
         : this.expandedItems();
     const faceted = source.filter((item) => this.matchesFacets(item));
@@ -3292,6 +3298,7 @@ export class CatalogScreen extends LitElement {
           ? {
               label: this.label("band", "Band"),
               value: String(this.activeBand),
+              single: kind === "character" && this.railBands().length === 1,
               items: this.railBands().map((band) => {
                 const id = Number(band.bandId || 0);
                 return {
@@ -3301,13 +3308,15 @@ export class CatalogScreen extends LitElement {
                 };
               }),
               onSelect: (value) => {
-                this.activeBand = Number(value);
+                if (kind === "character") this.ensureCharacterBandSelection(Number(value));
+                else this.activeBand = Number(value);
                 this.syncUrl();
               },
             }
           : undefined,
         heading:
-          this.hasBandRail() && this.activeBand
+          this.hasBandRail() && this.activeBand &&
+          (kind !== "character" || this.railBands().some((band) => Number(band.bandId) === this.activeBand))
             ? {
                 title: this.bandName(this.activeBand),
                 titleLanguage: this.localizedLanguage(this.band(this.activeBand)?.bandName),
@@ -3345,10 +3354,30 @@ export class CatalogScreen extends LitElement {
   }
   /** Only bands the collection actually has entries for. */
   private railBands(): Item[] {
-    if (this.profile.presentation === "character") return this.bands;
+    if (this.profile.presentation === "character") {
+      const available = new Set(this.items.map((item) => Number(item.bandId)));
+      return this.bands.filter((band) => Number.isSafeInteger(Number(band.bandId)) &&
+        Number(band.bandId) > 0 && available.has(Number(band.bandId)));
+    }
     const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
     return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
   }
+  private ensureCharacterBandSelection(preferred = this.activeBand) {
+    if (this.profile.presentation !== "character") return;
+    const bands = this.railBands();
+    if (!bands.length) {
+      if (this.phase !== "ready" && Number.isSafeInteger(preferred) && preferred > 0) this.activeBand = preferred;
+      else if (this.phase === "ready") this.activeBand = 0;
+      return;
+    }
+    const valid = (id: number) => Number.isSafeInteger(id) && bands.some((band) => Number(band.bandId) === id);
+    const next = valid(preferred) ? preferred : valid(this.activeBand) ? this.activeBand : Number(bands[0].bandId);
+    if (this.activeBand !== next) {
+      this.activeBand = next;
+      this.resultCache = undefined;
+    }
+  }
+
   /**
    * Page actions sit between the view switch and the filter toggle in the
    * browse bar, which the app bar renders. They used to be a second app-bar
