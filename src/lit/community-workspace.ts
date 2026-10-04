@@ -460,7 +460,6 @@ export class CommunityWorkspace extends LitElement {
   private disposeSongDisplay?: () => void;
   private releaseLocation?: () => void;
   private playlistSequence = 0;
-  private relativeTimeTimer?: number;
   private restorePlaylist = () => {
     if (this.mode !== "playlists") return;
     const id = new URLSearchParams(location.search).get("playlist") || "";
@@ -561,8 +560,6 @@ export class CommunityWorkspace extends LitElement {
     this.reactions.clear();
     this.saveFeedSnapshot();
     this.columnsObserver?.disconnect();
-    window.clearInterval(this.relativeTimeTimer);
-    this.relativeTimeTimer = undefined;
     this.requests.cancel();
     this.commentsRequest.cancel();
     this.cancelReplyRequests();
@@ -598,19 +595,6 @@ export class CommunityWorkspace extends LitElement {
     window.addEventListener("haneoka:session-changed", this.onForumRefresh, {
       signal: this.lifetime.signal,
     });
-    window.addEventListener("focus", this.onForumRefresh, {
-      signal: this.lifetime.signal,
-    });
-    if (
-      this.routeKind !== "post-new" &&
-      this.routeKind !== "post-edit" &&
-      this.mode !== "playlists" &&
-      this.mode !== "tags"
-    ) {
-      this.relativeTimeTimer = window.setInterval(() => {
-        if (this.isConnected && !document.hidden) this.requestUpdate();
-      }, 30_000);
-    }
     this.scrollHost =
       this.closest<HTMLElement>(".app-shell__main") || undefined;
     this.scrollHost?.addEventListener(
