@@ -12,6 +12,7 @@ import type { InventoryV1 } from "../inventory.ts";
 import type { PreparedSong } from "../song-metrics.ts";
 import { calculateNativeSlotPower } from "./native-slot.ts";
 import { floorPowerBP } from "./power.ts";
+import { createFormationLeaderCache } from "../formation-leader-cache";
 import { nativeMusicTypeMatchesCard } from "./native-music-types.ts";
 
 const uniform = (value: number): PowerStats => ({ performance: value, technique: value, visual: value });
@@ -315,6 +316,36 @@ export function createNativeNormalSlotResolver(
       }),
     );
   };
+  const leaderCache = createFormationLeaderCache({ data, inventory, input }, (assignment, skillTargetMusicType) => {
+    const selected = assignment.memberInstanceIds.map(id => members.get(id));
+    const leader = members.get(assignment.leaderInstanceId), local: EvidenceGap[] = [];
+    if (!leader || selected.some(member => !member)) return { value: null, gaps: [] };
+    const team = selected as MemberProfile[];
+      const leaderBonuses = team.map(zero);
+      for (const effect of leader?.leaderEffects ?? []) {
+        const type = Number(effect.skillEffectType);
+        if (type === 0) continue;
+        if (![1000, 1001, 1002, 1003].includes(type)) {
+          local.push(gap("native-cumulative-leader-rule-unresolved", `effect:${effect.id}`));
+          continue;
+        }
+        const condition = leaderCondition(Number(effect.skillConditionGroup), team, skillTargetMusicType, local);
+        if (condition === null) {
+          local.push(gap("native-leader-target-state-unresolved", `effect:${effect.id}`));
+          continue;
+        }
+        if (!condition) continue;
+        const list = targetList(effect.skillTargetIDs, local, `effect:${effect.id}`);
+        if (!list) continue;
+        const value = scalar(effect, "effectValue", local, `effect:${effect.id}`);
+        for (const [slot, member] of team.entries()) {
+          const match = matchesAnyTarget(member, list);
+          if (match === null) local.push(gap("native-leader-target-state-unresolved", `effect:${effect.id}`));
+          else if (match) accumulate(leaderBonuses[slot]!, type, value, false);
+        }
+      }
+    return { value: local.length ? null : leaderBonuses, gaps: local };
+  });
   return {
     gaps,
     resolveSlots(assignment: TeamAssignment, prepared: PreparedSong): (ResolvedSlotProfile | undefined)[] {
@@ -345,29 +376,9 @@ export function createNativeNormalSlotResolver(
       }
       if (!leader || !song || parameterMusicType === null || skillTargetMusicType === null || song.bestMusicTagIds === null)
         local.push(gap("native-normal-formation-or-song-unresolved", prepared.song.key));
-      const leaderBonuses = selected.map(zero);
-      for (const effect of leader?.leaderEffects ?? []) {
-        const type = Number(effect.skillEffectType);
-        if (type === 0) continue;
-        if (![1000, 1001, 1002, 1003].includes(type)) {
-          local.push(gap("native-cumulative-leader-rule-unresolved", `effect:${effect.id}`));
-          continue;
-        }
-        const condition = leaderCondition(Number(effect.skillConditionGroup), selected, skillTargetMusicType, local);
-        if (condition === null) {
-          local.push(gap("native-leader-target-state-unresolved", `effect:${effect.id}`));
-          continue;
-        }
-        if (!condition) continue;
-        const list = targetList(effect.skillTargetIDs, local, `effect:${effect.id}`);
-        if (!list) continue;
-        const value = scalar(effect, "effectValue", local, `effect:${effect.id}`);
-        for (const [slot, member] of selected.entries()) {
-          const match = matchesAnyTarget(member, list);
-          if (match === null) local.push(gap("native-leader-target-state-unresolved", `effect:${effect.id}`));
-          else if (match) accumulate(leaderBonuses[slot]!, type, value, false);
-        }
-      }
+      const preparedLeader = leaderCache.resolve(assignment, skillTargetMusicType);
+      local.push(...preparedLeader.gaps);
+      const leaderBonuses = preparedLeader.value ?? selected.map(zero);
       return selected.map((member, slot) => {
         const profileGaps = [...gaps, ...local, ...member.gaps];
         const snapshotId = assignment.snapshotInstanceIds[slot],
