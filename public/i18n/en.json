@@ -363,7 +363,21 @@
       "project_missing": "Saved chart is missing",
       "revision_missing": "Saved version is missing",
       "save_failed": "Could not save. Check available storage.",
-      "title": "Chart Editor · Beta"
+      "title": "Chart Editor · Beta",
+      "default_width": "New note width",
+      "preview_play": "Play mode",
+      "preview_watch": "Autoplay preview",
+      "preview_chart": "Static chart",
+      "brush": "Property brush",
+      "flip": "Mirror selection",
+      "cut": "Cut selection",
+      "generate_nodes": "Generate slide nodes",
+      "copy_brush": "Use selected properties",
+      "zoom_x": "Horizontal zoom",
+      "custom_division": "Custom division",
+      "snap_absolute": "Absolute",
+      "snap_relative": "Relative",
+      "multi_select": "Multi-select"
     }
   },
   "storyEditor": "Story Editor",

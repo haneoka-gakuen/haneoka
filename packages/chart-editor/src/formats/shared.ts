@@ -11,7 +11,7 @@ import {
 } from "../model";
 import { validateProject } from "../validation";
 
-export type ChartFormat = "project" | "ss" | "usc" | "sus" | "sonolus-level-data" | "unknown";
+export type ChartFormat = "project" | "ss" | "usc" | "sus" | "bestdori" | "sonolus-level-data" | "unknown";
 
 export interface FormatWarning {
   code: string;

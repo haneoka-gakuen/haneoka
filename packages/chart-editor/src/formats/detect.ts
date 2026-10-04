@@ -3,6 +3,7 @@ import { ChartFormatError, isRecord, textInput, type ChartFormat, type ImportRes
 import { importSs } from "./ss";
 import { importSus } from "./sus";
 import { importUsc } from "./usc";
+import { importBestdoriChart, type BestdoriImportOptions } from "./bestdori";
 
 export type ChartInput = string | Uint8Array | unknown;
 
@@ -30,6 +31,15 @@ export const detectChartFormat = (input: ChartInput): ChartFormat => {
   }
 
   const value = parseJsonForDetection(input);
+  if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (entry) =>
+        isRecord(entry) && ["BPM", "System", "Single", "Long", "Slide", "Directional"].includes(String(entry.type)),
+    )
+  )
+    return "bestdori";
   if (!isRecord(value)) return "unknown";
 
   if (
@@ -72,11 +82,16 @@ export const detectChartFormat = (input: ChartInput): ChartFormat => {
 };
 
 /** Import any editable chart format. Sonolus LevelData is deployment-only and is intentionally not reversed. */
-export const importChart = (input: ChartInput): ImportResult => {
+export const importChart = (input: ChartInput, options: { bestdori?: BestdoriImportOptions } = {}): ImportResult => {
   const format = detectChartFormat(input);
   if (format === "project") return importProjectJson(input);
   if (format === "ss") return importSs(input);
   if (format === "usc") return importUsc(input);
+  if (format === "bestdori") {
+    if (!options.bestdori)
+      throw new ChartFormatError("bestdori", "Bestdori import requires its source-format converter");
+    return importBestdoriChart(input, options.bestdori);
+  }
   if (format === "sus") {
     if (typeof input !== "string" && !(input instanceof Uint8Array)) {
       throw new ChartFormatError("sus", "SUS input must be text");

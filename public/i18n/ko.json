@@ -363,7 +363,21 @@
       "project_missing": "저장한 채보가 없습니다",
       "revision_missing": "저장한 버전이 없습니다",
       "save_failed": "저장할 수 없습니다. 남은 저장 공간을 확인해 주세요",
-      "title": "채보 편집기 · Beta"
+      "title": "채보 편집기 · Beta",
+      "default_width": "새 노트 너비",
+      "preview_play": "플레이 모드",
+      "preview_watch": "자동 재생",
+      "preview_chart": "정지 채보",
+      "brush": "속성 브러시",
+      "flip": "선택 반전",
+      "cut": "선택 잘라내기",
+      "generate_nodes": "슬라이드 노드 생성",
+      "copy_brush": "선택한 속성 사용",
+      "zoom_x": "가로 확대",
+      "custom_division": "사용자 지정 분할",
+      "snap_absolute": "절대",
+      "snap_relative": "상대",
+      "multi_select": "다중 선택"
     }
   },
   "storyEditor": "스토리 편집기",

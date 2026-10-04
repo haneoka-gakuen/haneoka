@@ -1,4 +1,5 @@
 export * from "./detect";
+export * from "./bestdori";
 export * from "./diagnostics";
 export * from "./project-json";
 export * from "./shared";

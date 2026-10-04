@@ -33,6 +33,25 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const tick = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
+/** Author extensions must survive JSON storage rather than silently losing values. */
+const jsonValue = (value: unknown, ancestors = new Set<object>(), depth = 0): boolean => {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || !value || depth > 64 || ancestors.has(value)) return false;
+  if (
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) !== Object.prototype &&
+    Object.getPrototypeOf(value) !== null
+  )
+    return false;
+  ancestors.add(value);
+  const valid = (Array.isArray(value) ? Array.from(value) : Object.values(value)).every((child) =>
+    jsonValue(child, ancestors, depth + 1),
+  );
+  ancestors.delete(value);
+  return valid;
+};
+
 export const validateProject = (value: unknown): ProjectValidationResult => {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -72,6 +91,8 @@ export const validateProject = (value: unknown): ProjectValidationResult => {
     }
     if (value.meta.extra !== undefined && !record(value.meta.extra)) {
       add("error", "meta.extra", "$.meta.extra", "Metadata extra must be a JSON object");
+    } else if (value.meta.extra !== undefined && !jsonValue(value.meta.extra)) {
+      add("error", "meta.extraJson", "$.meta.extra", "Metadata extra must contain JSON values");
     }
   }
 
@@ -301,6 +322,8 @@ export const validateProject = (value: unknown): ProjectValidationResult => {
     }
   }
   if (!record(value.extensions)) add("error", "extensions.type", "$.extensions", "Extensions must be a JSON object");
+  else if (!jsonValue(value.extensions))
+    add("error", "extensions.json", "$.extensions", "Extensions must contain finite, acyclic JSON values");
   if (
     value.sourceOrder !== undefined &&
     (!Array.isArray(value.sourceOrder) || value.sourceOrder.some((item) => typeof item !== "string"))

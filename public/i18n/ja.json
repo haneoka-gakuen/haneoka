@@ -363,7 +363,21 @@
       "project_missing": "保存した譜面が見つかりません",
       "revision_missing": "バージョンが見つかりません",
       "save_failed": "保存できませんでした。空き容量を確認してください",
-      "title": "譜面エディター · Beta"
+      "title": "譜面エディター · Beta",
+      "default_width": "作成ノーツの幅",
+      "preview_play": "プレイモード",
+      "preview_watch": "自動再生",
+      "preview_chart": "静止譜面",
+      "brush": "プロパティブラシ",
+      "flip": "選択範囲を反転",
+      "cut": "選択範囲を切り取り",
+      "generate_nodes": "スライドノードを生成",
+      "copy_brush": "選択中の設定を使用",
+      "zoom_x": "横方向のズーム",
+      "custom_division": "カスタム分割",
+      "snap_absolute": "絶対",
+      "snap_relative": "相対",
+      "multi_select": "複数選択"
     }
   },
   "storyEditor": "ストーリーエディター",

@@ -363,7 +363,21 @@
       "project_missing": "找不到已保存谱面",
       "revision_missing": "找不到已保存版本",
       "save_failed": "无法保存，请检查剩余存储空间",
-      "title": "谱面编辑器 · Beta"
+      "title": "谱面编辑器 · Beta",
+      "default_width": "新音符宽度",
+      "preview_play": "游玩模式",
+      "preview_watch": "自动演示",
+      "preview_chart": "静态谱面",
+      "brush": "属性刷",
+      "flip": "镜像所选音符",
+      "cut": "剪切所选音符",
+      "generate_nodes": "生成滑条节点",
+      "copy_brush": "使用所选音符属性",
+      "zoom_x": "横向缩放",
+      "custom_division": "自定义细分",
+      "snap_absolute": "绝对",
+      "snap_relative": "相对",
+      "multi_select": "多选"
     }
   },
   "storyEditor": "故事编辑器",

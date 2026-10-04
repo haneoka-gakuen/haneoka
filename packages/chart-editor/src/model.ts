@@ -184,10 +184,43 @@ export const sortProject = (project: Project): Project => ({
   lines: [...project.lines]
     .map((line) => ({
       ...structuredCloneValue(line),
-      points: [...line.points].sort((a, b) => a.tick - b.tick || a.id.localeCompare(b.id)),
+      // Equal-tick node order identifies authored endpoints and must survive
+      // import/project saves. Stable sort retains that source order.
+      points: [...line.points].sort((a, b) => a.tick - b.tick),
     }))
     .sort((a, b) => (a.points[0]?.tick ?? 0) - (b.points[0]?.tick ?? 0) || a.id.localeCompare(b.id)),
 });
+
+export interface StageSpan {
+  pos: number;
+  size: number;
+  laneX: number;
+  width: number;
+}
+
+/** Map authored left edge/full width to the 24-unit stage and normalized span. */
+export const projectSpanToStage = (lane: number, size: number, laneBasis: number): StageSpan => {
+  if (!Number.isFinite(lane) || !Number.isFinite(size) || size < 0 || !Number.isFinite(laneBasis) || laneBasis <= 0)
+    throw new RangeError("Invalid authored span or lane basis");
+  const pos = (lane / laneBasis) * 24;
+  const stageSize = (size / laneBasis) * 24;
+  if (!Number.isFinite(pos) || !Number.isFinite(stageSize) || !Number.isFinite(pos + stageSize))
+    throw new RangeError("Authored span overflows stage coordinates");
+  return { pos, size: stageSize, laneX: (pos + stageSize / 2) / 12 - 1, width: stageSize / 12 };
+};
+
+/** Map a pointer's canvas-local x to authored lanes without clamping source geometry. */
+export const viewportXToProjectLane = (x: number, viewportWidth: number, laneBasis: number): number => {
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(viewportWidth) ||
+    viewportWidth <= 0 ||
+    !Number.isFinite(laneBasis) ||
+    laneBasis <= 0
+  )
+    throw new RangeError("Invalid lane viewport");
+  return (x / viewportWidth) * laneBasis;
+};
 
 const easeProgress = (ease: EaseType, progress: number): number => {
   if (ease === "in") return progress * progress;
@@ -205,17 +238,17 @@ export const resolveLinePointShape = (points: readonly LinePoint[], index: numbe
   const point = points[index];
   if (!point) throw new RangeError("Line point index is out of range");
   if (typeof point.lane === "number") return { lane: point.lane, size: point.size };
-  if (Number.isFinite(point.resolvedLane) && Number.isFinite(point.resolvedSize)) {
-    return { lane: point.resolvedLane as number, size: point.resolvedSize as number };
-  }
-
   let leftIndex = index - 1;
   while (leftIndex >= 0 && typeof points[leftIndex]?.lane !== "number") leftIndex -= 1;
   let rightIndex = index + 1;
   while (rightIndex < points.length && typeof points[rightIndex]?.lane !== "number") rightIndex += 1;
   const left = leftIndex >= 0 ? points[leftIndex] : undefined;
   const right = rightIndex < points.length ? points[rightIndex] : undefined;
-  if (!left && !right) return { lane: 0, size: point.size };
+  if (!left && !right) {
+    if (Number.isFinite(point.resolvedLane) && Number.isFinite(point.resolvedSize))
+      return { lane: point.resolvedLane as number, size: point.resolvedSize as number };
+    return { lane: 0, size: point.size };
+  }
   if (!left) {
     return { lane: right!.lane as number, size: point.autoSize ? right!.size : point.size };
   }

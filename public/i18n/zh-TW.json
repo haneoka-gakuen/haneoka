@@ -363,7 +363,21 @@
       "project_missing": "找不到已儲存譜面",
       "revision_missing": "找不到已儲存版本",
       "save_failed": "無法儲存，請檢查剩餘儲存空間",
-      "title": "譜面編輯器 · Beta"
+      "title": "譜面編輯器 · Beta",
+      "default_width": "新音符寬度",
+      "preview_play": "遊玩模式",
+      "preview_watch": "自動演示",
+      "preview_chart": "靜態譜面",
+      "brush": "屬性刷",
+      "flip": "鏡像所選音符",
+      "cut": "剪下所選音符",
+      "generate_nodes": "生成滑條節點",
+      "copy_brush": "使用所選音符屬性",
+      "zoom_x": "橫向縮放",
+      "custom_division": "自訂細分",
+      "snap_absolute": "絕對",
+      "snap_relative": "相對",
+      "multi_select": "多選"
     }
   },
   "storyEditor": "故事編輯器",

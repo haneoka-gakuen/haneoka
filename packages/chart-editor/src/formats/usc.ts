@@ -381,7 +381,7 @@ export const projectToUsc = (project: Project): UscChart => {
     objectById.set(note.id, object);
   }
   for (const line of project.lines) {
-    const points = [...line.points].sort((a, b) => a.tick - b.tick || a.id.localeCompare(b.id));
+    const points = [...line.points].sort((a, b) => a.tick - b.tick);
     if (points.length < 2) continue;
     const connections: UscConnection[] = points.map((point, index) => {
       const lane = point.lane === "auto" ? resolveLinePointLane(points, index) : point.lane;

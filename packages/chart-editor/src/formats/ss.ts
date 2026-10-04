@@ -1,6 +1,7 @@
 import {
   importedId,
   resolveLinePointShape,
+  structuredCloneValue,
   tickToBeat,
   type EaseType,
   type JsonValue,
@@ -22,6 +23,8 @@ import {
   type FormatWarning,
   type ImportResult,
 } from "./shared";
+import { restoreSourceRecord, sourceRecord } from "./source-record";
+import { assertValidProject } from "../validation";
 
 export interface SsBpm {
   t: number;
@@ -39,12 +42,13 @@ export interface SsCall {
 }
 
 export interface SsNote {
-  type?: "flick" | "trace" | "long" | "guide";
+  type?: "tap" | "node" | "flick" | "trace" | "long" | "guide";
   t?: number;
   pos?: number | "auto";
   size?: number;
   crit?: boolean;
-  dir?: "left" | "up" | "right";
+  dir?: "left" | "up" | "right" | "down";
+  alpha?: "none" | "in" | "out";
   ease?: EaseType | [EaseType, EaseType];
   visible?: boolean;
   node?: SsNote[];
@@ -94,15 +98,15 @@ const parseSingle = (value: unknown, index: number, warnings: FormatWarning[]): 
     warnings.push({ code: "ss.note.defaultLane", path: `${path}.pos`, message: "Missing lane defaulted to 0" });
   const dir = direction(value.dir);
   const sourceType = noteType(value.type);
-  const type: NoteType = sourceType === "tap" && dir !== "none" ? "flick" : sourceType;
+  const type: NoteType = sourceType;
   return {
     id: importedId("ss", "single", index),
     tick: normalizedTick(value.t, `${path}.t`, warnings),
     lane,
-    size: finiteNumber(value.size, 0),
+    size: finiteNumber(value.size, 6),
     type,
     critical: value.crit === true,
-    direction: type === "flick" && dir === "none" ? "up" : dir,
+    direction: type === "flick" ? (dir === "none" ? "up" : dir) : "none",
     visible: value.visible !== false,
   };
 };
@@ -126,17 +130,17 @@ const parseLine = (value: Record<string, unknown>, index: number, warnings: Form
     }
     const dir = direction(rawPoint.dir);
     const sourceType = noteType(rawPoint.type);
-    const type: NoteType = sourceType === "tap" && dir !== "none" ? "flick" : sourceType;
+    const type: NoteType = sourceType;
     return [
       {
         id: importedId("ss", "line", index, "point", pointIndex),
         tick: normalizedTick(rawPoint.t, `${pointPath}.t`, warnings),
         lane,
-        size: finiteNumber(rawPoint.size, 0),
+        size: finiteNumber(rawPoint.size, 6),
         ...(lane === "auto" && !hasAuthoredSize ? { autoSize: true } : {}),
         type,
         critical: rawPoint.crit === true,
-        direction: type === "flick" && dir === "none" ? "up" : dir,
+        direction: type === "flick" ? (dir === "none" ? "up" : dir) : "none",
         visible: rawPoint.visible !== false,
         ease: easePair(rawPoint.ease, value.ease),
       } satisfies LinePoint,
@@ -257,7 +261,53 @@ export const importSs = (input: string | Uint8Array | unknown): ImportResult => 
     extensions: {},
     sourceOrder,
   });
-  return finishImport("ss", project, warnings);
+  const result = finishImport("ss", project, warnings);
+  const records: Record<string, ReturnType<typeof sourceRecord>> = {};
+  const singlesById = new Map(result.project.singles.map((entry) => [entry.id, entry]));
+  const linesById = new Map(result.project.lines.map((entry) => [entry.id, entry]));
+  rawNotes.forEach((raw, index) => {
+    if (!isRecord(raw)) return;
+    const single = singlesById.get(importedId("ss", "single", index));
+    if (single) records[single.id] = sourceRecord(raw, encodeSingle(single, 1));
+    const connector = linesById.get(importedId("ss", "line", index));
+    if (connector) {
+      const { node: _nodes, ...header } = raw;
+      records[connector.id] = sourceRecord(header, { type: connector.kind, crit: connector.critical });
+      const originals = new Map(
+        (Array.isArray(raw.node) ? raw.node : []).map((entry, at) => [
+          importedId("ss", "line", index, "point", at),
+          entry,
+        ]),
+      );
+      connector.points.forEach((point) => {
+        const original = originals.get(point.id);
+        if (isRecord(original)) records[point.id] = sourceRecord(original, encodePoint(point, 1));
+      });
+    }
+  });
+  const originalBpms = new Map(rawBpms.map((entry, index) => [importedId("ss", "tempo", index), entry]));
+  result.project.tempos.forEach((event) => {
+    const original = originalBpms.get(event.id);
+    if (isRecord(original)) records[event.id] = sourceRecord(original, { t: event.tick, bpm: event.bpm });
+  });
+  const originalMeters = new Map(rawMeters.map((entry, index) => [importedId("ss", "meter", index), entry]));
+  result.project.meters.forEach((event) => {
+    const original = originalMeters.get(event.id);
+    if (isRecord(original))
+      records[event.id] = sourceRecord(original, { t: event.tick, sig: [event.numerator, event.denominator] });
+  });
+  const { score: _score, meta: _meta, ...rootExtras } = root;
+  const { notes: _notes, events: _events, ...scoreExtras } = score;
+  result.project.extensions.ssSource = {
+    schema: "haneoka-ss-source-v1",
+    root: structuredCloneValue(rootExtras) as Record<string, JsonValue>,
+    score: structuredCloneValue(scoreExtras) as Record<string, JsonValue>,
+    meta: sourceRecord(metaRoot, { version: extra.ssVersion }) as unknown as JsonValue,
+    records: records as unknown as JsonValue,
+    events: sourceRecord(events, ssEvents(result.project, records)) as unknown as JsonValue,
+  };
+  assertValidProject(result.project);
+  return result;
 };
 
 const rawType = (type: NoteType): SsNote["type"] => (type === "tap" ? undefined : type);
@@ -269,45 +319,64 @@ const rawDirection = (directionValue: NoteDirection, type: NoteType): SsNote["di
 };
 const rawEase = (ease: LineEase): SsNote["ease"] => (ease.left === ease.right ? ease.left : [ease.left, ease.right]);
 
+const encodeSingle = (note: SingleNote, scale: number): Record<string, unknown> => ({
+  type: rawType(note.type),
+  t: note.tick,
+  pos: note.lane * scale,
+  size: note.size * scale,
+  crit: note.critical ? true : undefined,
+  dir: rawDirection(note.direction, note.type),
+  visible: note.visible ? undefined : false,
+});
+const encodePoint = (point: LinePoint, scale: number): Record<string, unknown> => ({
+  ...encodeSingle({ ...point, lane: typeof point.lane === "number" ? point.lane : 0 }, scale),
+  pos: point.lane === "auto" ? "auto" : point.lane * scale,
+  size: point.autoSize ? undefined : point.size * scale,
+  ease: rawEase(point.ease),
+});
+const restoreNoteSource = (record: unknown, current: Record<string, unknown>): SsNote => {
+  const restored = restoreSourceRecord(record, current);
+  // Direction is interpreted with note type. A type edit must also clear an
+  // old ignored dir when both the new default-up and old tap encode undefined.
+  if (
+    isRecord(record) &&
+    isRecord(record.baseline) &&
+    (record.baseline.type !== current.type || record.baseline.dir !== current.dir)
+  ) {
+    if (current.dir === undefined) delete restored.dir;
+    else restored.dir = current.dir as JsonValue;
+  }
+  return restored as SsNote;
+};
+const ssEvents = (project: Project, records: Record<string, unknown>) => ({
+  bpm: project.tempos.map((tempo) => restoreSourceRecord(records[tempo.id], { t: tempo.tick, bpm: tempo.bpm })),
+  sig: project.meters.map((meter) =>
+    restoreSourceRecord(records[meter.id], { t: meter.tick, sig: [meter.numerator, meter.denominator] }),
+  ),
+  skill: [...project.markers.skill],
+  fever: project.markers.fever.map((pair) => [...pair]),
+  call: project.markers.call.map((item) => ({ t: item.tick, timing: [...item.timing] })),
+});
+
 export const projectToSs = (project: Project): SsDocument => {
   const version = finiteNumber(project.meta.extra?.ssVersion, 1);
   const scale = 24 / project.laneBasis;
+  const snapshot =
+    isRecord(project.extensions.ssSource) && project.extensions.ssSource.schema === "haneoka-ss-source-v1"
+      ? project.extensions.ssSource
+      : undefined;
+  const records = isRecord(snapshot?.records) ? snapshot.records : {};
   const noteById = new Map<string, SsNote>();
   for (const note of project.singles) {
-    const type = rawType(note.type);
-    const dir = rawDirection(note.direction, note.type);
-    noteById.set(note.id, {
-      ...(type === undefined ? {} : { type }),
-      t: note.tick,
-      pos: note.lane * scale,
-      size: note.size * scale,
-      ...(note.critical ? { crit: true } : {}),
-      ...(dir === undefined ? {} : { dir }),
-      ...(note.visible ? {} : { visible: false }),
-    });
+    noteById.set(note.id, restoreNoteSource(records[note.id], encodeSingle(note, scale)));
   }
   for (const line of project.lines) {
     noteById.set(line.id, {
-      type: line.kind,
-      ...(line.critical === undefined ? {} : { crit: line.critical }),
+      ...restoreSourceRecord(records[line.id], { type: line.kind, crit: line.critical }),
       node: [...line.points]
-        .sort((a, b) => a.tick - b.tick || a.id.localeCompare(b.id))
-        .map((point) => {
-          const type = rawType(point.type);
-          const dir = rawDirection(point.direction, point.type);
-          const ease = rawEase(point.ease);
-          return {
-            ...(type === undefined ? {} : { type }),
-            t: point.tick,
-            pos: point.lane === "auto" ? "auto" : point.lane * scale,
-            ...(point.autoSize ? {} : { size: point.size * scale }),
-            ...(point.critical ? { crit: true } : {}),
-            ...(dir === undefined ? {} : { dir }),
-            ...(ease === undefined ? {} : { ease }),
-            ...(point.visible ? {} : { visible: false }),
-          };
-        }),
-    });
+        .sort((a, b) => a.tick - b.tick)
+        .map((point) => restoreNoteSource(records[point.id], encodePoint(point, scale))),
+    } as SsNote);
   }
   const notes: SsNote[] = [];
   for (const id of project.sourceOrder ?? []) {
@@ -318,15 +387,14 @@ export const projectToSs = (project: Project): SsDocument => {
   }
   notes.push(...noteById.values());
   return {
-    meta: { version },
+    ...(isRecord(snapshot?.root) ? structuredCloneValue(snapshot.root) : {}),
+    meta: restoreSourceRecord(snapshot?.meta, { version }) as SsDocument["meta"],
     score: {
-      events: {
-        bpm: project.tempos.map((tempo) => ({ t: tempo.tick, bpm: tempo.bpm })),
-        sig: project.meters.map((meter) => ({ t: meter.tick, sig: [meter.numerator, meter.denominator] })),
-        skill: [...project.markers.skill],
-        fever: project.markers.fever.map((pair) => [...pair]),
-        call: project.markers.call.map((item) => ({ t: item.tick, timing: [...item.timing] })),
-      },
+      ...(isRecord(snapshot?.score) ? structuredCloneValue(snapshot.score) : {}),
+      events: restoreSourceRecord(
+        snapshot?.events,
+        ssEvents(project, records),
+      ) as unknown as SsDocument["score"]["events"],
       notes,
     },
   };
