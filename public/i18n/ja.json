@@ -1205,7 +1205,8 @@
         "copyright": "著作権侵害",
         "misinformation": "誤情報",
         "other": "その他"
-      }
+      },
+      "submitted": "通報を送信しました"
     },
     "commentDeleted": "コメントを削除しました",
     "postDeleted": "投稿を削除しました。すべてのバージョン履歴は管理者の監査用に保持されます。",
@@ -1351,7 +1352,8 @@
       "overview": "コミュニティ概要",
       "mine": "マイページ"
     },
-    "draftNotSaved": "下書き未保存"
+    "draftNotSaved": "下書き未保存",
+    "stickersUnavailable": "スタンプを読み込めませんでした。もう一度お試しください。"
   },
   "adminPage": {
     "title": "管理",

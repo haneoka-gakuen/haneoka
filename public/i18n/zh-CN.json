@@ -1205,7 +1205,8 @@
         "copyright": "侵犯版权",
         "misinformation": "虚假信息",
         "other": "其他"
-      }
+      },
+      "submitted": "举报已提交"
     },
     "commentDeleted": "评论已删除",
     "postDeleted": "帖子已删除；所有历史版本仍会保留供管理员审计。",
@@ -1351,7 +1352,8 @@
       "overview": "社区概览",
       "mine": "我的"
     },
-    "draftNotSaved": "草稿未保存"
+    "draftNotSaved": "草稿未保存",
+    "stickersUnavailable": "无法加载表情，请重试。"
   },
   "adminPage": {
     "title": "管理",

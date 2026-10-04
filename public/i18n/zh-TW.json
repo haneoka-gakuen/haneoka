@@ -1205,7 +1205,8 @@
         "copyright": "侵犯著作權",
         "misinformation": "不實資訊",
         "other": "其他"
-      }
+      },
+      "submitted": "檢舉已送出"
     },
     "commentDeleted": "留言已刪除",
     "postDeleted": "貼文已刪除；所有歷史版本仍會保留供管理員稽核。",
@@ -1351,7 +1352,8 @@
       "overview": "社群總覽",
       "mine": "我的"
     },
-    "draftNotSaved": "草稿未儲存"
+    "draftNotSaved": "草稿未儲存",
+    "stickersUnavailable": "無法載入貼圖，請重試。"
   },
   "adminPage": {
     "title": "管理",

@@ -1205,7 +1205,8 @@
         "copyright": "Copyright violation",
         "misinformation": "Misinformation",
         "other": "Other"
-      }
+      },
+      "submitted": "Report submitted"
     },
     "commentDeleted": "Comment deleted",
     "postDeleted": "Post deleted. Its version history remains available to administrators.",
@@ -1351,7 +1352,8 @@
       "overview": "Community overview",
       "mine": "Mine"
     },
-    "draftNotSaved": "Draft not saved"
+    "draftNotSaved": "Draft not saved",
+    "stickersUnavailable": "Stickers could not be loaded. Try again."
   },
   "adminPage": {
     "title": "Admin",

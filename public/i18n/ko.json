@@ -1205,7 +1205,8 @@
         "copyright": "저작권 침해",
         "misinformation": "허위 정보",
         "other": "기타"
-      }
+      },
+      "submitted": "신고가 접수되었습니다"
     },
     "commentDeleted": "댓글을 삭제했습니다",
     "postDeleted": "게시물을 삭제했습니다. 모든 버전 기록은 관리자 감사용으로 유지됩니다.",
@@ -1351,7 +1352,8 @@
       "overview": "커뮤니티 개요",
       "mine": "내 공간"
     },
-    "draftNotSaved": "초안 저장 안 됨"
+    "draftNotSaved": "초안 저장 안 됨",
+    "stickersUnavailable": "스탬프를 불러오지 못했습니다. 다시 시도해 주세요."
   },
   "adminPage": {
     "title": "관리",

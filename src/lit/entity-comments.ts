@@ -1,7 +1,10 @@
 import "./views/entity-comments-view";
 import { LitElement, nothing } from "lit";
 import { fetchJson, JsonResponseError, preferredLocale, localizedText } from "./shared/catalog";
-import { clientText } from "../i18n/client";
+import { clientText, initializeI18nClient } from "../i18n/client";
+import { catalogLookupKeys } from "../i18n/keys";
+import { normalizeLocale, type Catalog } from "@haneoka/i18n";
+import { loadingState, errorState } from "./ui/state";
 import { RequestScope } from "../lib/request-scope";
 import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { CommunityReactions } from "../lib/community-reaction";
@@ -42,6 +45,8 @@ export class EntityComments extends LitElement {
     loadingMore: { state: true },
     expanded: { state: true },
     replyLoading: { state: true },
+    messagesReady: { state: true },
+    messagesError: { state: true },
   };
   declare entityType: string;
   declare entityId: string;
@@ -63,6 +68,13 @@ export class EntityComments extends LitElement {
   declare loadingMore: boolean;
   declare expanded: Set<string>;
   declare replyLoading: Set<string>;
+  declare messagesReady: boolean;
+  declare messagesError: string;
+  private messagesCatalog?: Catalog;
+  private messagesRequest = new RequestScope();
+  private messagesPending?: Promise<void>;
+  private messagesLocale = "";
+  private messagesVersion = "";
   private requests = new RequestScope();
   private replies = new Map<string, RequestScope>();
   private reactions = new CommunityReactions();
@@ -78,7 +90,7 @@ export class EntityComments extends LitElement {
     super();
     this.entityType = "";
     this.entityId = "";
-    this.locale = "ja";
+    this.locale = preferredLocale("ja");
     this.server = "";
     this.commentId = "";
     this.targetTitle = "";
@@ -96,6 +108,8 @@ export class EntityComments extends LitElement {
     this.loadingMore = false;
     this.expanded = new Set();
     this.replyLoading = new Set();
+    this.messagesReady = false;
+    this.messagesError = "";
   }
   createRenderRoot() {
     return this;
@@ -107,6 +121,8 @@ export class EntityComments extends LitElement {
       signal: this.lifetime.signal,
     });
     window.addEventListener("haneoka:session-changed", this.onSession, { signal: this.lifetime.signal });
+    window.addEventListener("haneoka:locale-ready", this.onLocale, { signal: this.lifetime.signal });
+    void this.prepareMessages().catch(() => {});
     window.addEventListener("haneoka:community-forums-changed", this.onSession, { signal: this.lifetime.signal });
     void Promise.all([
       import("@material/web/textfield/outlined-text-field.js"),
@@ -120,6 +136,8 @@ export class EntityComments extends LitElement {
     ++this.mutationVersion;
     this.busy = "";
     this.rememberDraft();
+    this.messagesRequest.cancel();
+    this.messagesPending = undefined;
     this.requests.cancel();
     this.reactions.clear();
     this.cancelReplies();
@@ -128,8 +146,9 @@ export class EntityComments extends LitElement {
     super.disconnectedCallback();
   }
   protected updated(changed: Map<string, unknown>) {
+    if (changed.has("locale")) void this.prepareMessages().catch(() => {});
     const identity = JSON.stringify([this.entityType, this.entityId]);
-    const context = JSON.stringify([identity, this.server, this.locale, this.focusId()]);
+    const context = JSON.stringify([identity, this.server, this.uiLocale(), this.focusId()]);
     if (this.isConnected && this.entityType && this.entityId && context !== this.context) {
       ++this.mutationVersion;
       this.busy = "";
@@ -154,8 +173,50 @@ export class EntityComments extends LitElement {
     this.invalidate();
     void this.load(false);
   };
-  private label = (key: string, fallback: string) =>
-    clientText(preferredLocale(this.locale), "communityPage." + key, fallback);
+  private onLocale = () => {
+    void this.prepareMessages().catch(() => {});
+    this.requestUpdate();
+  };
+  private uiLocale() { return normalizeLocale(this.locale); }
+  private prepareMessages(force = false): Promise<void> {
+    const client = initializeI18nClient(), locale = this.uiLocale(), version = client.version;
+    if (!force && this.messagesLocale === locale && this.messagesVersion === version) {
+      if (this.messagesReady) return Promise.resolve();
+      if (this.messagesPending) return this.messagesPending;
+    }
+    const signal = this.messagesRequest.begin(), lifetime = this.lifetime;
+    const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted &&
+      this.messagesRequest.current(signal) && this.uiLocale() === locale && client.version === version;
+    this.messagesLocale = locale;
+    this.messagesVersion = version;
+    this.messagesReady = false;
+    this.messagesError = "";
+    this.messagesCatalog = undefined;
+    const pending = client.ensure(locale, ["common", "community"], AbortSignal.any([signal, lifetime.signal]))
+      .then((catalog) => {
+        if (!current()) return;
+        this.messagesCatalog = catalog;
+        this.messagesReady = true;
+      }).catch((error: unknown) => {
+        if (current()) this.messagesError = error instanceof Error ? error.message : String(error);
+        throw error;
+      }).finally(() => {
+        if (this.messagesPending === pending) this.messagesPending = undefined;
+      });
+    this.messagesPending = pending;
+    return pending;
+  }
+  private label = (key: string, fallback: string) => {
+    const catalog = this.messagesCatalog;
+    if (!catalog || !this.messagesReady || catalog.locale !== this.uiLocale()) return "";
+    for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
+      if (catalog.has(candidate)) return catalog.text(candidate, undefined, fallback);
+    return fallback;
+  };
+  private failure(error: unknown, key = "unavailable", fallback = "Unavailable") {
+    const message = this.label(key, fallback);
+    return error instanceof JsonResponseError ? message + " (" + error.status + ")" : message;
+  }
   private focusId() {
     const url = navigationDocumentUrl();
     const value =
@@ -210,7 +271,7 @@ export class EntityComments extends LitElement {
     });
   }
   private query() {
-    const query = new URLSearchParams({ commentsSort: this.sort, locale: preferredLocale(this.locale) });
+    const query = new URLSearchParams({ commentsSort: this.sort, locale: this.uiLocale() });
     if (this.server === "jp" || this.server === "intl") query.set("server", this.server);
     const id = this.focusId();
     if (id) query.set("commentId", id);
@@ -239,6 +300,8 @@ export class EntityComments extends LitElement {
     this.error = "";
     if (!this.document) this.phase = "loading";
     try {
+      await this.prepareMessages();
+      if (!this.requests.current(signal) || context !== this.context || !this.messagesReady) return;
       const viewer = await readCommunityViewer(signal);
       if (!this.requests.current(signal) || context !== this.context) return;
       const changedUser = this.viewer && this.viewer.userId !== viewer.userId;
@@ -309,7 +372,7 @@ export class EntityComments extends LitElement {
           this.viewer = undefined; this.draftIdentity = ""; this.body = ""; this.replyTo = ""; this.busy = "";
         }
       }
-      this.error = error instanceof Error ? error.message : String(error);
+      this.error = this.failure(error);
       if (!this.document) this.phase = "error";
     } finally {
       if (this.requests.current(signal)) {
@@ -327,21 +390,21 @@ export class EntityComments extends LitElement {
     this.rememberDraft();
     const url = navigationDocumentUrl();
     location.assign(
-      "/" + preferredLocale(this.locale) + "/account/?next=" + encodeURIComponent(url.pathname + url.search + url.hash),
+      "/" + this.uiLocale() + "/account/?next=" + encodeURIComponent(url.pathname + url.search + url.hash),
     );
   }
   private async mutate(key: string, work: (current: () => boolean) => Promise<void>) {
     if (this.busy || !this.signedIn()) return;
-    const identity = this.identity, entityType = this.entityType, entityId = this.entityId, realm = this.viewer?.realm, server = this.server, locale = this.locale;
+    const identity = this.identity, entityType = this.entityType, entityId = this.entityId, realm = this.viewer?.realm, server = this.server, locale = this.uiLocale();
     const lifetime = this.lifetime, version = ++this.mutationVersion;
-    const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted && version === this.mutationVersion && identity === this.identity && entityType === this.entityType && entityId === this.entityId && realm === this.viewer?.realm && server === this.server && locale === this.locale;
+    const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted && version === this.mutationVersion && identity === this.identity && entityType === this.entityType && entityId === this.entityId && realm === this.viewer?.realm && server === this.server && locale === this.uiLocale();
     this.busy = key;
     this.error = "";
     try {
       await work(current);
     } catch (error) {
       if (current()) {
-        this.error = error instanceof Error ? error.message : String(error);
+        this.error = this.failure(error, key === "publish" ? "commentFailed" : key.startsWith("edit:") ? "editSaveFailed" : key.startsWith("report:") ? "reportDialog.failed" : key.startsWith("appeal:") ? "appealFailed" : "unavailable");
         if (error instanceof JsonResponseError && [401, 403, 404].includes(error.status)) {
           this.invalidate();
           this.editing = null;
@@ -383,7 +446,7 @@ export class EntityComments extends LitElement {
         };
         this.expanded = new Set([...this.expanded, comment.rootId || comment.parentId || comment.id]);
         this.commentId = comment.id;
-        this.context = JSON.stringify([this.identity, this.server, this.locale, this.focusId()]);
+        this.context = JSON.stringify([this.identity, this.server, this.uiLocale(), this.focusId()]);
       }
       void this.load(false);
     });
@@ -548,7 +611,7 @@ export class EntityComments extends LitElement {
       };
     } catch (error) {
       if (!scope.current(signal) || context !== this.context || realm !== this.viewer?.realm) return;
-      this.error = error instanceof Error ? error.message : String(error);
+      this.error = this.failure(error);
       if (error instanceof CommunityRealmChanged || (error instanceof JsonResponseError && [401, 403, 404].includes(error.status))) {
         this.invalidate();
         if (error instanceof CommunityRealmChanged) {
@@ -661,8 +724,11 @@ export class EntityComments extends LitElement {
   render() {
     const view = entityCommentsPresentation();
     if (!view || !this.entityType || !this.entityId) return nothing;
+    if (!this.messagesReady) return this.messagesError
+      ? errorState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "sourceUnavailable", "") : "", initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "retry", "") : "", () => { void this.prepareMessages(true).then(() => this.load(false)).catch(() => {}); })
+      : loadingState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "loading", "") : "", { local: true });
     const props: EntityCommentsViewProps = {
-      locale: preferredLocale(this.locale),
+      locale: this.uiLocale(),
       phase: this.phase,
       refreshing: this.refreshing,
       loadingMore: this.loadingMore,
@@ -683,9 +749,9 @@ export class EntityComments extends LitElement {
       message: this.message,
       hasMore: Boolean(this.document?.nextCursor),
       label: this.label,
-      time: (value) => formatCommunityTime(value, preferredLocale(this.locale)),
+      time: (value) => formatCommunityTime(value, this.uiLocale()),
       authorHref: (comment) =>
-        "/" + preferredLocale(this.locale) + "/community/users/" + encodeURIComponent(comment.authorUid) + "/",
+        "/" + this.uiLocale() + "/community/users/" + encodeURIComponent(comment.authorUid) + "/",
     };
     return view(props, this.actions);
   }
