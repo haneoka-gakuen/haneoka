@@ -1,3 +1,4 @@
+import { createMemberCompletionCheck } from "./member-completion.ts";
 import type { MemberOption, SearchConstraints, SnapshotOption, TeamAssignment } from "./contracts.ts";
 import { compileSearchRequirements } from "./search-requirements.ts";
 import { canMatchMandatorySlots } from "./mandatory-slot-matching.ts";
@@ -53,6 +54,7 @@ export function createAssignmentCursor(domain: AssignmentCursorDomain, restore?:
   const requiredPhotoOptions = new Map(photos.filter(photo => requiredPhotos.has(photo.instanceId))
     .map(photo => [photo.instanceId, new Set(photo.allowedCharacterIds)]));
   const teamSize = domain.constraints.teamSize;
+  const completion = createMemberCompletionCheck(members);
   let tasks: Task[] = songs.length ? [{ kind: "members", members: [], start: 0 }] : [];
   let completedLeaves = 0, work = 0;
   let boundFingerprint = restore?.fingerprint;
@@ -114,6 +116,7 @@ export function createAssignmentCursor(domain: AssignmentCursorDomain, restore?:
           const remaining = teamSize - task.members.length;
           const missing = requiredMembers.filter(index => !task.members.includes(index));
           if (missing.length > remaining || missing.some(index => index < task.start)) continue;
+          if (!completion.canComplete(task.start, task.members, remaining)) continue;
           if (!remaining) { tasks.push({ kind: "photos", members: task.members, photos: [] }); continue; }
           for (let index = members.length - remaining; index >= task.start; index--) {
             if (task.members.some(value => members[value]!.characterId === members[index]!.characterId)) continue;
