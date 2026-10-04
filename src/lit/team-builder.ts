@@ -81,6 +81,7 @@ import { songJacketCandidates, songTile, liveMusicTypeMark } from "./shared/song
 import { cardTile } from "./shared/card-tile";
 import { SearchCheckpointStore } from "./shared/search-checkpoint-store";
 import { SearchResumeStore, type SearchResumeBookmark } from "./shared/search-resume-store";
+import { createTheoreticalInventory } from "../lib/team-builder/theoretical-inventory";
 import { emptyCandidateScope, resolveCandidateScope, validCandidateScope, type CandidateScope } from "../lib/team-builder/candidate-scope";
 import { searchContinuation } from "../lib/team-builder/search-continuation";
 import { SEARCH_ENGINE_REVISION } from "../lib/team-builder/solver/search-checkpoint";
@@ -655,6 +656,20 @@ export class TeamBuilder extends LitElement {
       }
     } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
   }
+  private createTheoreticalProfile() {
+    if (!this.data || !this.inventory || !this.workspaceDocument || !this.canEdit || !this.canEditWorkspace || this.workspaceDocument.profiles.length >= 32) return;
+    try {
+      const inventory = createTheoreticalInventory(this.inventory, this.data);
+      const profile = createUpgradeProfile(inventory, this.data, this.t("theoreticalPlanName", "All cards at maximum training"), this.storeState?.revision ?? 0);
+      const document = selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id);
+      if (this.changeWorkspace(document)) {
+        this.actualInventoryFallback = false;
+        this.candidateScope = emptyCandidateScope();
+        this.formationChanged(); this.requiredLeader = ""; this.fixedBindings = [];
+        this.refreshWorkspaceInventory(); this.openWorkspace("plan");
+      }
+    } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); this.openWorkspace("sync"); }
+  }
   private updateProfileSource(profile: UpgradeProfile) {
     if (!this.data || !this.workspaceDocument || !this.canEditWorkspace) return;
     try {
@@ -786,6 +801,8 @@ export class TeamBuilder extends LitElement {
           <div class="team-builder__fields">
             <md-outlined-text-field label=${this.t("profileName", "Plan name")} .value=${live(this.profileName)} maxlength="80" @input=${(event: Event) => { this.profileName = (event.currentTarget as Control).value; }}></md-outlined-text-field>
             <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || document.profiles.length >= 32 || !validWorkspaceName(this.profileName.trim())} @click=${() => this.createProfile()}>${this.t("createProfile", "Create planning copy")}</button>
+            <button class="button button--outlined" ?disabled=${!this.canEditWorkspace || !this.canEdit || document.profiles.length >= 32} @click=${() => this.createTheoreticalProfile()}>${this.t("createTheoreticalPlan", "Create all-card plan")}</button>
+            <p class="team-builder__hint team-builder__wide">${this.t("theoreticalPlanHint", "Create a separate plan with every catalog card at the highest training allowed by the current data. Keep the current player bonuses and the actual card library.")}</p>
           </div>
           <div class="stack">${document.profiles.map(profile => html`<div class="team-builder__saved-entry">
             <md-outlined-text-field label=${this.t("profileName", "Plan name")} .value=${live(profile.name)} maxlength="80" ?disabled=${!this.canEditWorkspace} @change=${(event: Event) => this.renameWorkspaceEntry("profiles", profile.id, (event.currentTarget as Control).value)}></md-outlined-text-field>
@@ -6201,7 +6218,8 @@ export class TeamBuilder extends LitElement {
                     this.disclosureStates = {...this.disclosureStates,"team-requirements":true,"candidate-scope":true};
                     void this.updateComplete.then(()=>requestAnimationFrame(()=>this.querySelector<HTMLElement>("[data-candidate-scope]")?.scrollIntoView({block:"start"})));
                   }}>${this.t("candidateScopeCount", "Candidate pool: {count} cards", {count:(this.scopedCandidates?.members.length??0)+(this.scopedCandidates?.snapshots.length??0)})}</button>
-                  <button class="button button--text" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button></div>
+                  <button class="button button--text" @click=${() => this.openMaintenance("cards")}>${this.t("library", "Card library")}</button>
+                  <button class="button button--text" ?disabled=${!this.canEdit || !this.canEditWorkspace || (this.workspaceDocument?.profiles.length ?? 32) >= 32} @click=${() => this.createTheoreticalProfile()}>${this.t("createTheoreticalPlan", "Create all-card plan")}</button></div>
                 </div>
               </section>
               ${this.renderPlanningKind()}
