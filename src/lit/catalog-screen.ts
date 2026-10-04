@@ -824,7 +824,7 @@ export class CatalogScreen extends LitElement {
       this.applyUnionPresentation(cached);
     }
     try {
-      const catalogs = await fetchCrossServerCatalogs([resource, "characters", "bands"], selectedServer, this.settings.locale, { signal });
+      const catalogs = await fetchCrossServerCatalogs([resource, "characters", "bands"], selectedServer, this.settings.locale, { signal, revalidate: !!cached });
       if (!current()) return;
       const dto = catalogs[resource];
       if (!dto || (["jp", "intl"] as const).every((server) => dto.sourceAvailability[server] !== "loaded"))
@@ -879,6 +879,7 @@ export class CatalogScreen extends LitElement {
           catalog?.sourceAvailability[server] === "loaded" && catalog.identities[server]?.releaseId === pin.releaseId &&
           catalog.identities[server]?.sourceId === pin.sourceId));
       });
+      if (cached?.complete && !complete) return;
       const snapshot: UnionPresentationSnapshot = { scopeKey, sourceKey, complete, dto, items, itemEntries, characters, bands, marks, facetKeys };
       for (const [key, previous] of unionPresentations) if (previous.scopeKey === scopeKey) unionPresentations.delete(key);
       unionPresentations.set(sourceKey, snapshot);

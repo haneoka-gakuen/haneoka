@@ -102,7 +102,7 @@ export class CrossServerPublicCache {
     }
   }
 
-  async readIdentity(server: OfficialCatalogServer, signal?: AbortSignal): Promise<CrossCatalogIdentity> {
+  async readIdentity(server: OfficialCatalogServer, signal?: AbortSignal, revalidate = false): Promise<CrossCatalogIdentity> {
     signal?.throwIfAborted();
     const current = this.identities.get(server);
     const age = current ? this.now() - current.observedAt : Infinity;
@@ -116,6 +116,7 @@ export class CrossServerPublicCache {
     const key = JSON.stringify(["current", server]);
     if (current && age >= 0 && age < this.identityStaleMs) {
       if (age >= this.identityFreshMs) {
+        if (revalidate) return await this.observe(key, load, signal) as CrossCatalogIdentity;
         // A background observer holds only this public identity request alive.
         void this.observe(key, load).catch(() => { /* The original observation expires after identityStaleMs. */ });
       }
