@@ -436,7 +436,7 @@
       grid-template-columns: minmax(76px, 0.8fr) minmax(0, 1.6fr);
       gap: 4px;
     }
-    .viewer-parameter-content > label:not(.viewer-part-row) {
+    .viewer-parameter-editor .viewer-parameter-content > label:not(.viewer-part-row) {
       grid-template-columns: minmax(0, 1fr) 44px 48px;
       gap: 4px;
     }
