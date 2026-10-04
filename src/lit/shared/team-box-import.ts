@@ -108,7 +108,11 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
           </div>`)}</div>` }) : nothing}
         ${state.preview.issues.length ? accordion({ id: "team-box-issues", label: t("issues", "Entries needing review"), metadata: state.preview.issues.length,
           expanded: actions.expanded?.("box-issues") ?? false, onExpandedChange: value => actions.expand?.("box-issues", value),
-          content: html`<ul class="list">${state.preview.issues.map(issue => html`<li>${issue.kind === "members" || issue.kind === "snapshots" ? `${actions.text(issue.kind, issue.kind)} #${issue.id}` : actions.mapName(issue.kind as "bandItems" | "characterRanks", issue.id)} · ${actions.fieldName(issue.field)} · ${t("review", "Needs review")}</li>`)}</ul>` }) : nothing}
+          content: html`<ul class="list">${state.preview.issues.map(issue => html`<li>${issue.kind === "input"
+            ? issue.field === "row" ? t("listRow", "Row {row}", { row: issue.id }) : t("review", "Needs review")
+            : issue.kind === "members" || issue.kind === "snapshots" ? `${actions.text(issue.kind, issue.kind)} #${issue.id}` : issue.kind === "bandItems" || issue.kind === "characterRanks" ? actions.mapName(issue.kind, issue.id) : t("review", "Needs review")} · ${issue.field === "row"
+              ? t("listRowCheck", "Check the card ID, name, type and training values in this row.")
+              : html`${actions.fieldName(issue.field)} · ${t("review", "Needs review")}`}</li>`)}</ul>` }) : nothing}
       ` : nothing}
     </div>
     <footer class="selection-pane__footer team-builder__actions">

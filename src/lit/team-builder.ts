@@ -119,6 +119,7 @@ import type { PracticalTaskResult } from "../lib/team-builder/practical-search";
 import { compileSearchRequirements } from "../lib/team-builder/search-requirements";
 import { initializeManualCardPractice } from "../lib/team-builder/manual-card-defaults";
 import { parseBoxLocally } from "../lib/team-builder/box-import/client";
+import { isInventoryListInput, previewInventoryListInput } from "../lib/team-builder/box-import/list";
 import { BoxImportError } from "../lib/team-builder/box-import/types";
 import { previewBoxImport, type BoxReviewContext } from "../lib/team-builder/box-import/preview";
 import { applyConfirmedBoxImport, type BoxConfirmation } from "../lib/team-builder/box-import/merge";
@@ -1923,6 +1924,7 @@ export class TeamBuilder extends LitElement {
     if (code === "box_review_changed" || code === "box_review_context")
       return this.boxText("changed", "Your account, data or inventory changed. Open the import again.");
     if (code === "box_no_player") return this.boxText("empty", "No supported Box records found.");
+    if (code === "box_invalid_list") return this.boxText("invalidList", "Choose one CSV or TSV file up to 1 MiB, or paste a card list with IDs, names and levels.");
     if (code.endsWith("_budget")) return this.boxText("tooLarge", "This file exceeds the supported size or record limit.");
     if (["box_conflict_required", "box_unconfirmed_value", "box_unresolved_values", "box_invalid_confirmed_inventory"].includes(code))
       return this.boxText("reviewValues", "Review the selected training values or exclude the affected entries.");
@@ -1976,6 +1978,14 @@ export class TeamBuilder extends LitElement {
       confirmation: { cards: [], maps: [] }, bindingConfirmed: false, progress: null, error: null, canConfirm: false };
     this.boxLoading = beginLoading(this.boxText("parsing", "Reading Box locally"), { signal: controller.signal, scope: "owner" });
     try {
+      if (isInventoryListInput(input)) {
+        const preview = await previewInventoryListInput(input, this.inventory!, this.data!, this.boxScope!.context, this.kind, { signal: controller.signal });
+        if (generation !== this.boxGeneration || controller.signal.aborted || !this.boxState || !this.boxScopeMatches()) return;
+        this.boxState = { ...this.boxState, phase: "review", candidates: [], selectedCandidateId: preview.candidateId, preview,
+          confirmation: { cards: preview.cards.map(row => ({ key: row.key, include: false })), maps: [] },
+          bindingConfirmed: false, canConfirm: false, progress: null, error: null };
+        return;
+      }
       const parsed = await parseBoxLocally(input, { signal: controller.signal, progress: (completed, total) => {
         if (generation !== this.boxGeneration || controller.signal.aborted || !this.boxState || !this.boxScopeMatches()) return;
         this.boxState = { ...this.boxState, progress: { completed, total } };
