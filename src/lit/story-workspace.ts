@@ -2182,16 +2182,16 @@ export class StoryWorkspace extends LitElement {
         target: names.length === targets.length ? targets[index] : undefined,
       }))
       .filter(({ name }) => name.text);
-    const memberSlots =
-      speaker.formatSource === "separator"
-        ? speaker.parts.map((_, index) => index % 2 === 0)
-        : new Intl.ListFormat(locale, { style: "long", type: "conjunction" })
-            .formatToParts(members.map(({ name }) => name.text))
-            .map((part) => part.type === "element");
+    // Reuse the resolved parts; empty/single speakers need no second formatter.
+    const aligned =
+      speaker.parts.length === members.length * 2 - 1 &&
+      members.every(({ name }, index) => {
+        const part = speaker.parts[index * 2];
+        return part?.text === name.text && part.lang === name.lang;
+      });
     const server = this.dataServer();
-    let memberIndex = 0;
     const content = speaker.parts.map((part, index) => {
-      const target = memberSlots[index] ? members[memberIndex++]?.target : undefined;
+      const target = aligned && index % 2 === 0 ? members[index / 2]?.target : undefined;
       const id = Number(target?.characterId);
       const href =
         !this.isBestdori() && isReleaseServer(server) && Number.isSafeInteger(id) && id > 0 && this.character(id)
