@@ -1,3 +1,13 @@
+import {
+  FORUM_LOCALES,
+  FORUM_ICONS,
+  forumIcon,
+  type ForumLocale,
+  type ForumInput,
+  type CommunityForum,
+  type ForumGroup,
+} from "../lib/community-forums";
+import { localizedText } from "./shared/catalog";
 import { clientText } from "../i18n/client";
 import { LitElement, html, nothing } from "lit";
 import { PaneFocus } from "./ui/pane";
@@ -14,7 +24,7 @@ import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsO
 import "./community-sticker";
 
 type Value = Record<string, unknown>;
-const sections = ["overview", "users", "posts", "reports", "appeals", "operations"] as const;
+const sections = ["overview", "users", "posts", "forums", "reports", "appeals", "operations"] as const;
 type Section = (typeof sections)[number];
 type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
 type HistorySection = "revisions" | "stateEvents" | "comments";
@@ -81,6 +91,17 @@ export class AdminWorkspace extends LitElement {
     mapError: { state: true },
     geoWindow: { state: true },
     analyticsModuleError: { state: true },
+    forums: { state: true },
+    forumGroups: { state: true },
+    forumDraft: { state: true },
+    forumLocale: { state: true },
+    forumFilter: { state: true },
+    movePost: { state: true },
+    moveTarget: { state: true },
+    moveReason: { state: true },
+    forumConflict: { state: true },
+    groupDraft: { state: true },
+    groupConflict: { state: true },
   };
   declare section: Section;
   declare phase: "loading" | "ready" | "error";
@@ -124,6 +145,24 @@ export class AdminWorkspace extends LitElement {
   declare mapError: boolean;
   declare geoWindow: boolean;
   declare analyticsModuleError: string;
+  declare forums: CommunityForum[];
+  declare forumGroups: ForumGroup[];
+  declare forumDraft: (ForumInput & { id?: string; version?: number }) | null;
+  declare forumLocale: ForumLocale;
+  declare forumFilter: string;
+  declare movePost: Value | null;
+  declare moveTarget: string;
+  declare moveReason: string;
+  declare forumConflict: CommunityForum | null;
+  declare groupDraft: {
+    id?: string;
+    version?: number;
+    slug: string;
+    names: Partial<Record<ForumLocale, string>>;
+    sortOrder: number;
+  } | null;
+  declare groupConflict: ForumGroup | null;
+  private readonly forumRequests = new RequestScope();
   private readonly expandedPanels = new Set<string>();
   private readonly listRequests = new RequestScope();
   private readonly sourceRequests = new RequestScope();
@@ -185,6 +224,19 @@ export class AdminWorkspace extends LitElement {
     this.mapError = false;
     this.geoWindow = false;
     this.analyticsModuleError = "";
+    this.forums = [];
+    this.forumGroups = [];
+    this.forumDraft = null;
+    this.forumLocale = FORUM_LOCALES.includes(preferredLocale() as ForumLocale)
+      ? (preferredLocale() as ForumLocale)
+      : "en";
+    this.forumFilter = "";
+    this.movePost = null;
+    this.moveTarget = "";
+    this.moveReason = "";
+    this.forumConflict = null;
+    this.groupDraft = null;
+    this.groupConflict = null;
   }
 
   private paneFocus = new PaneFocus();
@@ -196,7 +248,8 @@ export class AdminWorkspace extends LitElement {
     // The dialog is modal: focus stays inside it and Escape closes it.
     this.syncAnalytics();
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => {
-      this.closeReview();
+      if (this.movePost) this.closeMovePost();
+      else this.closeReview();
       this.closeUserDetails();
     });
   }
@@ -212,8 +265,14 @@ export class AdminWorkspace extends LitElement {
     super.connectedCallback();
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     addEventListener("haneoka:locale-ready", this.onLocale);
+    void Promise.all([
+      import("@material/web/select/outlined-select.js"),
+      import("@material/web/select/select-option.js"),
+      import("@material/web/textfield/outlined-text-field.js"),
+    ]);
     this.query = navigationDocumentUrl().searchParams.get("q") || "";
     const filters = navigationDocumentUrl().searchParams;
+    this.forumFilter = filters.get("forumId") || "";
     const moderation = filters.get("moderationStatus");
     const state = filters.get("status");
     this.userRoleFilter = ["member", "moderator", "admin"].includes(filters.get("role") || "")
@@ -326,6 +385,16 @@ export class AdminWorkspace extends LitElement {
     this.staff = {};
     this.document = {};
     this.cursor = "";
+    this.forumRequests.cancel();
+    this.forums = [];
+    this.forumGroups = [];
+    this.forumDraft = null;
+    this.forumConflict = null;
+    this.groupDraft = null;
+    this.groupConflict = null;
+    this.movePost = null;
+    this.moveTarget = "";
+    this.moveReason = "";
     this.resourceServers = [];
     this.resourceSources = [];
     this.readyPackage = null;
@@ -444,6 +513,7 @@ export class AdminWorkspace extends LitElement {
         for (const key of ADMIN_GEO_FILTERS)
           for (const value of location.searchParams.getAll(key)) query.append(key, value);
       }
+      if (section === "posts" && this.forumFilter) query.set("forumId", this.forumFilter);
       if (section === "posts" && this.postFilter !== "all")
         query.set(
           ["hidden", "draft", "published"].includes(this.postFilter) ? "status" : "moderationStatus",
@@ -461,7 +531,9 @@ export class AdminWorkspace extends LitElement {
               statisticsGeneratedAt: statistics.generatedAt,
               sessionCounts: statistics.sessions,
             }))
-          : await this.request(`/api/v1/admin/${section}?${query}`, { signal });
+          : section === "forums"
+            ? await this.request("/api/v1/admin/forums", { signal })
+              : await this.request(`/api/v1/admin/${section}?${query}`, { signal });
       if (!active()) return;
       if (append) {
         const key = this.section;
@@ -471,6 +543,14 @@ export class AdminWorkspace extends LitElement {
         };
       } else this.document = result;
       this.cursor = String(result.nextCursor || "");
+      if (!append && section === "forums") {
+        this.forums = Array.isArray(result.forums) ? (result.forums as unknown as CommunityForum[]) : [];
+        this.forumGroups = Array.isArray(result.groups) ? (result.groups as unknown as ForumGroup[]) : [];
+      }
+      if (!append && section === "posts" && this.staff.role === "admin")
+        void this.loadAdminForums().catch((error) => {
+          if (this.accessCurrent(generation)) this.error = error instanceof Error ? error.message : String(error);
+        });
       this.phase = "ready";
       if (!append && section === "overview") {
         void this.loadAnalyticsSeries();
@@ -591,6 +671,7 @@ export class AdminWorkspace extends LitElement {
   }
   private closeReview() {
     this.historyRequests.cancel();
+    this.closeMovePost();
     this.reviewPostId = "";
     this.history = null;
     this.commentHistory = null;
@@ -991,6 +1072,23 @@ export class AdminWorkspace extends LitElement {
   private renderPostFilters() {
     return html`
       <div class="admin-filters">
+        <md-outlined-select
+          label=${this.label("sections.forums", "Forums")}
+          .value=${this.forumFilter}
+          @change=${(event: Event) => {
+            this.forumFilter = String((event.target as HTMLElement & { value?: string }).value || "");
+            void this.load(false);
+          }}
+        >
+          <md-select-option value="">
+            <div slot="headline">${this.label("forum.all", "All forums")}</div>
+          </md-select-option>
+          ${this.forums.map(
+            (forum) => html`
+              <md-select-option value=${forum.id}><div slot="headline">${this.forumName(forum)}</div></md-select-option>
+            `,
+          )}
+        </md-outlined-select>
         ${segmented({
           label: this.label("workspace.filterPosts", "Filter posts"),
           value: this.postFilter,
@@ -1010,6 +1108,7 @@ export class AdminWorkspace extends LitElement {
       overview: "space_dashboard",
       users: "group",
       posts: "article",
+      forums: "forum",
       reports: "flag",
       appeals: "gavel",
       operations: "deployed_code_update",
@@ -2751,7 +2850,552 @@ export class AdminWorkspace extends LitElement {
       </section>
     `;
   }
+  private forumName(forum: CommunityForum | ForumGroup) {
+    return localizedText(forum.names, preferredLocale()) || forum.defaultName || forum.slug;
+  }
+  private async loadAdminForums() {
+    const generation = this.privateGeneration;
+    const signal = this.forumRequests.begin();
+    const data = await this.request(this.staff.role === "admin" ? "/api/v1/admin/forums" : "/api/v1/community/forums", {
+      signal,
+    });
+    if (!this.accessCurrent(generation) || !this.forumRequests.current(signal)) return;
+    this.forums = Array.isArray(data.forums) ? (data.forums as unknown as CommunityForum[]) : [];
+    this.forumGroups = Array.isArray(data.groups) ? (data.groups as unknown as ForumGroup[]) : [];
+  }
+  private editForum(forum?: CommunityForum) {
+    this.groupDraft = null;
+    this.groupConflict = null;
+    this.forumConflict = null;
+    this.error = "";
+    this.forumDraft = forum
+      ? structuredClone(forum)
+      : {
+          slug: "",
+          groupId: null,
+          names: {},
+          descriptions: {},
+          icon: "forum",
+          sortOrder: 0,
+          enabled: true,
+          permissions: { read: "public", post: "verified", reply: "verified", manage: "admin" },
+          defaultPurpose: null,
+        };
+    void this.updateComplete.then(() => {
+      const editor = this.querySelector<HTMLElement>(".admin-forum-editor");
+      editor?.scrollIntoView({ block: "nearest" });
+      editor?.querySelector<HTMLElement>("[name=slug]")?.focus();
+    });
+  }
+  private patchForum(patch: Partial<ForumInput>) {
+    if (this.forumDraft) this.forumDraft = { ...this.forumDraft, ...patch };
+  }
+  private saveForum(event: SubmitEvent) {
+    event.preventDefault();
+    const draft = this.forumDraft;
+    if (!draft || this.busy) return;
+    if (!Object.values(draft.names).some((name) => name?.trim())) {
+      this.error = this.label("forum.nameRequired", "Enter a name in at least one language.");
+      return;
+    }
+    const input: ForumInput = {
+      slug: draft.slug.trim(),
+      groupId: draft.groupId || null,
+      names: Object.fromEntries(Object.entries(draft.names).map(([locale, name]) => [locale, name?.trim() || ""])),
+      descriptions: Object.fromEntries(
+        Object.entries(draft.descriptions).map(([locale, value]) => [locale, value?.trim() || ""]),
+      ),
+      icon: draft.icon.trim(),
+      sortOrder: draft.sortOrder,
+      enabled: draft.enabled,
+      permissions: { ...draft.permissions },
+      defaultPurpose: draft.defaultPurpose,
+    };
+    void this.mutate("forum-save", async (assertCurrent) => {
+      try {
+        const data = await this.request(
+          draft.id ? `/api/v1/admin/forums/${encodeURIComponent(draft.id)}` : "/api/v1/admin/forums",
+          {
+            method: draft.id ? "PATCH" : "POST",
+            body: JSON.stringify(draft.id ? { expectedVersion: draft.version, forum: input } : input),
+          },
+        );
+        assertCurrent();
+        this.forumDraft = data.forum as unknown as CommunityForum;
+        this.forumConflict = null;
+        await this.loadAdminForums();
+        assertCurrent();
+        window.dispatchEvent(new Event("haneoka:community-forums-changed"));
+      } catch (error) {
+        if (error instanceof JsonResponseError && error.status === 409) {
+          const body = error.body as Value | null;
+          this.forumConflict = (body?.forum ||
+            body?.current ||
+            (body?.error as Value | undefined)?.current ||
+            null) as CommunityForum | null;
+          throw new Error(
+            this.label(
+              "forum.conflict",
+              "This forum changed. Your edits are preserved; reload the current version before saving.",
+            ),
+          );
+        }
+        throw error;
+      }
+    });
+  }
+  private forumSelect(
+    label: string,
+    value: string,
+    options: { value: string; label: string }[],
+    onChange: (value: string) => void,
+  ) {
+    return html`
+      <md-outlined-select
+        label=${label}
+        .value=${value}
+        ?disabled=${!!this.busy}
+        @change=${(event: Event) => onChange(String((event.target as HTMLElement & { value?: string }).value || ""))}
+      >
+        ${options.map(
+          (option) => html`
+            <md-select-option value=${option.value}><div slot="headline">${option.label}</div></md-select-option>
+          `,
+        )}
+      </md-outlined-select>
+    `;
+  }
+  private renderForums() {
+    const draft = this.forumDraft;
+    const locale = this.forumLocale;
+    const textField = (name: string, label: string, value: string, update: (value: string) => void, extra = "") => html`
+      <md-outlined-text-field
+        name=${name}
+        label=${label}
+        .value=${value}
+        ?disabled=${!!this.busy}
+        @input=${(event: Event) => update(String((event.target as HTMLElement & { value?: string }).value || ""))}
+        supporting-text=${extra}
+      ></md-outlined-text-field>
+    `;
+    const audiences = (values: string[]) =>
+      values.map((value) => ({ value, label: this.label(`forum.audience.${value}`, value) }));
+    return html`
+      <div class="admin-forum-layout">
+        <section class="admin-forum-list surface">
+          <header class="admin-section-heading">
+            <h2>${this.label("sections.forums", "Forums")}</h2>
+            <button
+              class="button button--tonal"
+              type="button"
+              ?disabled=${!!this.busy}
+              @click=${() => this.editForum()}
+            >
+              ${icon("add", 18)}${this.label("forum.create", "Create forum")}
+            </button>
+          </header>
+          <div class="admin-forum-groups">
+            <strong>${this.label("forum.groups", "Groups")}</strong>
+            <button class="button button--text" type="button" @click=${() => this.editForumGroup()}>
+              ${this.label("forum.createGroup", "Create group")}
+            </button>
+            ${this.forumGroups.map(
+              (group) => html`
+                <button class="chip" type="button" ?disabled=${!!this.busy} @click=${() => this.editForumGroup(group)}>
+                  ${this.forumName(group)}
+                </button>
+              `,
+            )}
+          </div>
+          ${this.forums.map(
+            (forum) => html`
+              <button
+                class="admin-forum-row state-layer"
+                type="button"
+                aria-current=${draft?.id === forum.id ? "true" : nothing}
+                ?disabled=${!!this.busy}
+                @click=${() => this.editForum(forum)}
+              >
+                ${icon(forumIcon(forum.icon), 20)}
+                <span class="admin-forum-row__body">
+                  <strong>${this.forumName(forum)}</strong>
+                  <small>${forum.slug} · ${forum.sortOrder}</small>
+                  <small>
+                    ${this.label(forum.enabled ? "forum.enabled" : "forum.disabled", forum.enabled ? "Enabled" : "Disabled")}
+                    · ${this.label(`forum.audience.${forum.permissions.read}`, forum.permissions.read)}
+                  </small>
+                </span>
+              </button>
+            `,
+          )}
+        </section>
+        ${this.groupDraft ? this.renderForumGroupEditor() : nothing}
+        ${
+          draft
+            ? html`
+                <form class="admin-forum-editor surface" @submit=${this.saveForum}>
+                  <header class="admin-section-heading">
+                    <h2>
+                      ${draft.id ? this.label("forum.edit", "Edit forum") : this.label("forum.create", "Create forum")}
+                    </h2>
+                  </header>
+                  ${
+                  this.error
+                    ? html`
+                        <p class="inline-message error" role="alert">${this.error}</p>
+                      `
+                    : nothing
+                }
+                  ${
+                  this.forumConflict
+                    ? html`
+                        <button
+                          class="button button--outlined"
+                          type="button"
+                          @click=${() => this.editForum(this.forumConflict!)}
+                        >
+                          ${this.label("forum.reload", "Reload current version")}
+                        </button>
+                      `
+                    : nothing
+                }
+                  ${
+                  draft.id
+                    ? html`
+                        <p class="admin-forum-id">${draft.id}</p>
+                      `
+                    : nothing
+                }
+                  <div class="admin-forum-fields">
+                    ${textField("slug", this.label("forum.slug", "URL name"), draft.slug, (slug) => this.patchForum({ slug }))}
+                    ${this.forumSelect(this.label("forum.group", "Group"), draft.groupId || "", [{ value: "", label: this.label("forum.ungrouped", "Ungrouped") }, ...this.forumGroups.map((group) => ({ value: group.id, label: this.forumName(group) }))], (groupId) => this.patchForum({ groupId: groupId || null }))}
+                  </div>
+                  ${segmented({
+                  label: this.label("forum.language", "Language"),
+                  value: locale,
+                  options: FORUM_LOCALES.map((value) => ({
+                    value,
+                    label: new Intl.DisplayNames([preferredLocale()], { type: "language" }).of(value) || value,
+                  })),
+                  onSelect: (value) => (this.forumLocale = value as ForumLocale),
+                })}
+                  <div class="admin-forum-fields">
+                    ${textField("name", this.label("forum.name", "Name"), draft.names[locale] || "", (name) => this.patchForum({ names: { ...draft.names, [locale]: name } }))}
+                    ${textField("description", this.label("forum.description", "Description"), draft.descriptions[locale] || "", (description) => this.patchForum({ descriptions: { ...draft.descriptions, [locale]: description } }))}
+                    ${this.forumSelect(
+                    this.label("forum.icon", "Icon"),
+                    forumIcon(draft.icon),
+                    FORUM_ICONS.map((value) => ({
+                      value,
+                      label: this.label(`forum.symbol.${value}`, value.replaceAll("_", " ")),
+                    })),
+                    (icon) => this.patchForum({ icon }),
+                  )}
+                    <md-outlined-text-field
+                      type="number"
+                      label=${this.label("forum.order", "Display order")}
+                      .value=${String(draft.sortOrder)}
+                      ?disabled=${!!this.busy}
+                      @input=${(event: Event) => this.patchForum({ sortOrder: Number((event.target as HTMLElement & { value?: string }).value) })}
+                    ></md-outlined-text-field>
+                    ${(["read", "post", "reply", "manage"] as const).map((permission) =>
+                    this.forumSelect(
+                      this.label(`forum.permission.${permission}`, permission),
+                      draft.permissions[permission],
+                      audiences(
+                        permission === "read"
+                          ? ["public", "member", "verified", "moderator", "admin", "none"]
+                          : permission === "manage"
+                            ? ["moderator", "admin"]
+                            : ["verified", "moderator", "admin", "none"],
+                      ),
+                      (value) =>
+                        this.patchForum({
+                          permissions: { ...draft.permissions, [permission]: value } as ForumInput["permissions"],
+                        }),
+                    ),
+                  )}
+                    ${this.forumSelect(
+                    this.label("forum.purpose", "Default destination"),
+                    draft.defaultPurpose || "",
+                    [
+                      { value: "", label: this.label("forum.noPurpose", "None") },
+                      { value: "general", label: this.label("forum.generalPurpose", "General posts") },
+                      { value: "stamp", label: this.label("forum.stampPurpose", "Stamp maker") },
+                    ],
+                    (value) =>
+                      this.patchForum({ defaultPurpose: value === "general" || value === "stamp" ? value : null }),
+                  )}
+                    ${this.forumSelect(
+                    this.label("forum.availability", "Availability"),
+                    draft.enabled ? "enabled" : "disabled",
+                    [
+                      { value: "enabled", label: this.label("forum.enabled", "Enabled") },
+                      { value: "disabled", label: this.label("forum.disabled", "Disabled") },
+                    ],
+                    (value) => this.patchForum({ enabled: value === "enabled" }),
+                  )}
+                  </div>
+                  <footer class="admin-forum-actions">
+                    <button
+                      class="button button--text"
+                      type="button"
+                      ?disabled=${!!this.busy}
+                      @click=${() => {
+                      this.forumDraft = null;
+                      this.forumConflict = null;
+                    }}
+                    >
+                      ${this.label("cancel", "Cancel")}
+                    </button>
+                    <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
+                  </footer>
+                </form>
+              `
+            : nothing
+        }
+      </div>
+    `;
+  }
+  private editForumGroup(group?: ForumGroup) {
+    this.forumDraft = null;
+    this.forumConflict = null;
+    this.groupConflict = null;
+    this.error = "";
+    this.groupDraft = group ? structuredClone(group) : { slug: "", names: {}, sortOrder: 0 };
+    void this.updateComplete.then(() =>
+      this.querySelector<HTMLElement>(".admin-forum-editor [name=groupSlug]")?.focus(),
+    );
+  }
+  private saveForumGroup(event: SubmitEvent) {
+    event.preventDefault();
+    const draft = this.groupDraft;
+    if (!draft || this.busy) return;
+    const group = {
+      slug: draft.slug.trim(),
+      names: Object.fromEntries(Object.entries(draft.names).map(([locale, name]) => [locale, name?.trim() || ""])),
+      sortOrder: draft.sortOrder,
+    };
+    if (!Object.values(group.names).some(Boolean)) {
+      this.error = this.label("forum.nameRequired", "Enter a name in at least one language.");
+      return;
+    }
+    void this.mutate("forum-group-save", async (assertCurrent) => {
+      try {
+        const data = await this.request(
+          draft.id ? `/api/v1/admin/forum-groups/${encodeURIComponent(draft.id)}` : "/api/v1/admin/forum-groups",
+          {
+            method: draft.id ? "PATCH" : "POST",
+            body: JSON.stringify(draft.id ? { expectedVersion: draft.version, group } : group),
+          },
+        );
+        assertCurrent();
+        this.groupDraft = data.group as unknown as ForumGroup;
+        this.groupConflict = null;
+        await this.loadAdminForums();
+        assertCurrent();
+        window.dispatchEvent(new Event("haneoka:community-forums-changed"));
+      } catch (error) {
+        if (error instanceof JsonResponseError && error.status === 409) {
+          this.groupConflict = ((error.body as Value | null)?.group as ForumGroup) || null;
+          throw new Error(
+            this.label(
+              "forum.groupConflict",
+              "This group changed. Your edits are preserved; reload the current version before saving.",
+            ),
+          );
+        }
+        throw error;
+      }
+    });
+  }
+  private renderForumGroupEditor() {
+    const draft = this.groupDraft!;
+    const locale = this.forumLocale;
+    return html`
+      <form class="admin-forum-editor surface" @submit=${this.saveForumGroup}>
+        <header class="admin-section-heading">
+          <h2>
+            ${this.label(draft.id ? "forum.editGroup" : "forum.createGroup", draft.id ? "Edit group" : "Create group")}
+          </h2>
+        </header>
+        ${
+          this.error
+            ? html`
+                <p class="inline-message error" role="alert">${this.error}</p>
+              `
+            : nothing
+        }
+        ${
+          this.groupConflict
+            ? html`
+                <button
+                  class="button button--outlined"
+                  type="button"
+                  @click=${() => this.editForumGroup(this.groupConflict!)}
+                >
+                  ${this.label("forum.reload", "Reload current version")}
+                </button>
+              `
+            : nothing
+        }
+        ${segmented({ label: this.label("forum.language", "Language"), value: locale, options: FORUM_LOCALES.map((value) => ({ value, label: new Intl.DisplayNames([preferredLocale()], { type: "language" }).of(value) || value })), onSelect: (value) => (this.forumLocale = value as ForumLocale) })}
+        <div class="admin-forum-fields">
+          <md-outlined-text-field
+            name="groupSlug"
+            label=${this.label("forum.slug", "URL name")}
+            .value=${draft.slug}
+            ?disabled=${!!this.busy}
+            @input=${(event: Event) => (this.groupDraft = { ...draft, slug: String((event.target as HTMLElement & { value?: string }).value || "") })}
+          ></md-outlined-text-field>
+          <md-outlined-text-field
+            label=${this.label("forum.name", "Name")}
+            .value=${draft.names[locale] || ""}
+            ?disabled=${!!this.busy}
+            @input=${(event: Event) => (this.groupDraft = { ...draft, names: { ...draft.names, [locale]: String((event.target as HTMLElement & { value?: string }).value || "") } })}
+          ></md-outlined-text-field>
+          <md-outlined-text-field
+            type="number"
+            label=${this.label("forum.order", "Display order")}
+            .value=${String(draft.sortOrder)}
+            ?disabled=${!!this.busy}
+            @input=${(event: Event) => (this.groupDraft = { ...draft, sortOrder: Number((event.target as HTMLElement & { value?: string }).value) })}
+          ></md-outlined-text-field>
+        </div>
+        <footer class="admin-forum-actions">
+          <button
+            class="button button--text"
+            type="button"
+            @click=${() => {
+              this.groupDraft = null;
+              this.groupConflict = null;
+            }}
+          >
+            ${this.label("cancel", "Cancel")}
+          </button>
+          <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
+        </footer>
+      </form>
+    `;
+  }
+  private async openMovePost(post: Value) {
+    if (this.busy) return;
+    try {
+      await this.loadAdminForums();
+      if (!this.isConnected || this.privateAccess.signal.aborted || this.reviewPostId !== String(post.id)) return;
+      this.movePost = { ...post };
+      this.moveTarget = "";
+      this.moveReason = "";
+      this.error = "";
+    } catch (error) {
+      if (!this.privateAccess.signal.aborted) this.error = error instanceof Error ? error.message : String(error);
+    }
+  }
+  private closeMovePost() {
+    this.movePost = null;
+    this.moveTarget = "";
+    this.moveReason = "";
+  }
+  private submitMovePost(event: SubmitEvent) {
+    event.preventDefault();
+    const post = this.movePost;
+    const target = this.forums.find((forum) => forum.id === this.moveTarget && forum.capabilities.canManage);
+    if (!post || !target || this.busy || !this.moveReason.trim()) return;
+    const body = {
+      postId: String(post.id),
+      expectedVersion: Number(post.version),
+      forumId: target.id,
+      reasonCode: this.moveReason.trim(),
+    };
+    void this.mutate("forum-move", async (assertCurrent) => {
+      const data = await this.request("/api/v1/admin/forums/move-post", { method: "POST", body: JSON.stringify(body) });
+      assertCurrent();
+      if (this.movePost?.id !== post.id) return;
+      const updated = data.post as Value;
+      if (this.history?.post && (this.history.post as Value).id === post.id)
+        this.history = { ...this.history, post: { ...(this.history.post as Value), ...updated } };
+      if (Array.isArray(this.document.posts))
+        this.document = {
+          ...this.document,
+          posts: (this.document.posts as Value[]).map((item) => (item.id === post.id ? { ...item, ...updated } : item)),
+        };
+      this.closeMovePost();
+      window.dispatchEvent(new Event("haneoka:community-forums-changed"));
+    });
+  }
+  private renderMovePost() {
+    const post = this.movePost!;
+    const source = this.forums.find((forum) => forum.id === post.forumId);
+    return html`
+      <div class="dialog-host admin-dialog-scrim" role="presentation" @click=${() => this.closeMovePost()}>
+        <form
+          class="admin-forum-move surface"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-move-title"
+          data-overlay-pane
+          tabindex="-1"
+          @click=${(event: Event) => event.stopPropagation()}
+          @submit=${this.submitMovePost}
+        >
+          <header class="admin-section-heading">
+            <h2 id="admin-move-title">${this.label("forum.movePost", "Move post")}</h2>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label=${this.label("cancel", "Cancel")}
+              @click=${() => this.closeMovePost()}
+            >
+              ${icon("close", 24)}
+            </button>
+          </header>
+          <div class="admin-forum-move__body">
+          <strong>${String(post.title || this.label("workspace.untitled", "Untitled post"))}</strong>
+          ${this.postBadges(post)}
+          <p>
+            ${source ? this.forumName(source) : this.label("forum.unknown", "Current forum")}${icon("arrow_forward", 18)}
+          </p>
+          ${this.forumSelect(
+            this.label("forum.destination", "Destination forum"),
+            this.moveTarget,
+            [
+              { value: "", label: this.label("forum.chooseDestination", "Choose a destination") },
+              ...this.forums
+                .filter((forum) => forum.id !== post.forumId && forum.capabilities.canManage)
+                .map((forum) => ({ value: forum.id, label: this.forumName(forum) })),
+            ],
+            (value) => (this.moveTarget = value),
+          )}
+          <md-outlined-text-field
+            label=${this.label("forum.moveReason", "Reason")}
+            .value=${this.moveReason}
+            maxlength="80"
+            required
+            ?disabled=${!!this.busy}
+            @input=${(event: Event) => (this.moveReason = String((event.target as HTMLElement & { value?: string }).value || ""))}
+          ></md-outlined-text-field>
+          ${
+            this.error
+              ? html`
+                  <p class="inline-message error" role="alert">${this.error}</p>
+                `
+              : nothing
+          }
+          </div>
+          <footer class="admin-forum-actions">
+            <button class="button button--text" type="button" @click=${() => this.closeMovePost()}>
+              ${this.label("cancel", "Cancel")}
+            </button>
+            <button class="button" ?disabled=${!!this.busy || !this.moveTarget || !this.moveReason.trim()}>
+              ${this.label("forum.confirmMove", "Move post")}
+            </button>
+          </footer>
+        </form>
+      </div>
+    `;
+  }
   private renderHistory() {
+    if (this.movePost) return this.renderMovePost();
     if (!this.reviewPostId || this.privateAccess.signal.aborted) return nothing;
     const history = this.history;
     const post = (history?.post as Value | undefined) || {};
@@ -2834,6 +3478,14 @@ export class AdminWorkspace extends LitElement {
                           </span>
                         </div>
                         ${this.postBadges(post)}
+                        <button
+                          class="button button--outlined"
+                          type="button"
+                          ?disabled=${!!this.busy || this.historyLoading}
+                          @click=${() => this.openMovePost(post)}
+                        >
+                          ${icon("drive_file_move", 18)}${this.label("forum.movePost", "Move post")}
+                        </button>
                         ${
                           typeof post.body === "string" || revision
                             ? this.renderPostBody(post.body ?? revision?.body)
@@ -3356,109 +4008,111 @@ export class AdminWorkspace extends LitElement {
                     `
                   : this.section === "overview"
                     ? this.renderOverview()
-                    : html`
-                        ${this.section === "operations" ? this.renderResourceConsole() : nothing}
-                        <section
-                          class=${`admin-ledger admin-ledger--${this.section}`}
-                          aria-busy=${String(this.refreshing || this.loadingMore)}
-                        >
-                          <header class="admin-ledger-toolbar">
-                            <span class="admin-loaded-count">
-                              ${this.refreshing ? this.label("loading", "Loading") : this.label("workspace.loadedCount", "{count} loaded").replace("{count}", records.length.toLocaleString(preferredLocale()))}
-                            </span>
-                            ${
-                                this.section === "users" || this.section === "posts"
+                    : this.section === "forums"
+                      ? this.renderForums()
+                      : html`
+                            ${this.section === "operations" ? this.renderResourceConsole() : nothing}
+                            <section
+                              class=${`admin-ledger admin-ledger--${this.section}`}
+                              aria-busy=${String(this.refreshing || this.loadingMore)}
+                            >
+                              <header class="admin-ledger-toolbar">
+                                <span class="admin-loaded-count">
+                                  ${this.refreshing ? this.label("loading", "Loading") : this.label("workspace.loadedCount", "{count} loaded").replace("{count}", records.length.toLocaleString(preferredLocale()))}
+                                </span>
+                                ${
+                                  this.section === "users" || this.section === "posts"
+                                    ? html`
+                                        <form class="field admin-search" role="search" @submit=${this.search}>
+                                          ${icon("search", 20)}
+                                          <input
+                                            name="q"
+                                            type="search"
+                                            maxlength="100"
+                                            .value=${this.query}
+                                            aria-label=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
+                                            placeholder=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
+                                          />
+                                          <button
+                                            class="icon-button"
+                                            type="submit"
+                                            aria-label=${clientText(preferredLocale(), "search", "Search")}
+                                          >
+                                            ${icon("arrow_forward", 20)}
+                                          </button>
+                                        </form>
+                                      `
+                                    : nothing
+                                }
+                              </header>
+                              ${
+                                this.section === "posts"
+                                  ? this.renderPostFilters()
+                                  : this.section === "users"
+                                    ? html`
+                                        ${this.renderUserFilters()}${this.renderGeoFilterSummary()}
+                                      `
+                                    : nothing
+                              }
+                              ${
+                                this.error
                                   ? html`
-                                      <form class="field admin-search" role="search" @submit=${this.search}>
-                                        ${icon("search", 20)}
-                                        <input
-                                          name="q"
-                                          type="search"
-                                          maxlength="100"
-                                          .value=${this.query}
-                                          aria-label=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
-                                          placeholder=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
-                                        />
-                                        <button
-                                          class="icon-button"
-                                          type="submit"
-                                          aria-label=${clientText(preferredLocale(), "search", "Search")}
-                                        >
-                                          ${icon("arrow_forward", 20)}
-                                        </button>
-                                      </form>
+                                      <div class="inline-message error" role="alert">${this.error}</div>
                                     `
                                   : nothing
                               }
-                          </header>
-                          ${
-                              this.section === "posts"
-                                ? this.renderPostFilters()
-                                : this.section === "users"
+                              ${
+                                this.section === "posts"
                                   ? html`
-                                      ${this.renderUserFilters()}${this.renderGeoFilterSummary()}
-                                    `
-                                  : nothing
-                            }
-                          ${
-                              this.error
-                                ? html`
-                                    <div class="inline-message error" role="alert">${this.error}</div>
-                                  `
-                                : nothing
-                            }
-                          ${
-                              this.section === "posts"
-                                ? html`
-                                    <div class="admin-post-columns" aria-hidden="true">
-                                      <span>${this.label("columns.post", "Post")}</span>
-                                      <span>${this.label("columns.status", "Status")}</span>
-                                      <span>${this.label("columns.author", "Author")}</span>
-                                      <span>${this.label("columns.createdAt", "Created")}</span>
-                                    </div>
-                                  `
-                                : nothing
-                            }
-                          ${
-                              this.section === "users"
-                                ? html`
-                                    <div class="admin-user-columns" aria-hidden="true">
-                                      <span>${this.label("columns.user", "User")} / UID</span>
-                                      <span>${this.label("userDetails.email", "Email")}</span>
-                                      <span>${this.label("userDetails.access", "Role and status")}</span>
-                                      <span>${this.label("ip.lastVisit", "Recent visit")}</span>
-                                      <span>${this.label("actions.manage", "Manage")}</span>
-                                    </div>
-                                  `
-                                : nothing
-                            }
-                          <div class="admin-record-list">
-                            ${
-                                records.length
-                                  ? records.map((record) => this.renderRecord(record))
-                                  : html`
-                                      <div class="admin-empty">
-                                        ${icon("inbox", 32)}
-                                        <p>${this.label("empty", "Nothing to display.")}</p>
+                                      <div class="admin-post-columns" aria-hidden="true">
+                                        <span>${this.label("columns.post", "Post")}</span>
+                                        <span>${this.label("columns.status", "Status")}</span>
+                                        <span>${this.label("columns.author", "Author")}</span>
+                                        <span>${this.label("columns.createdAt", "Created")}</span>
                                       </div>
                                     `
+                                  : nothing
                               }
-                          </div>
-                          ${
-                              this.cursor
-                                ? html`
-                                    <button
-                                      class="button button--text admin-more"
-                                      ?disabled=${!!this.busy || this.loadingMore}
-                                      @click=${() => this.load(true)}
-                                    >
-                                      ${this.loadingMore ? this.label("loading", "Loading") : this.label("loadMore", "Load more")}${icon("expand_more", 18)}
-                                    </button>
-                                  `
-                                : nothing
-                            }
-                        </section>
-                      `
+                              ${
+                                this.section === "users"
+                                  ? html`
+                                      <div class="admin-user-columns" aria-hidden="true">
+                                        <span>${this.label("columns.user", "User")} / UID</span>
+                                        <span>${this.label("userDetails.email", "Email")}</span>
+                                        <span>${this.label("userDetails.access", "Role and status")}</span>
+                                        <span>${this.label("ip.lastVisit", "Recent visit")}</span>
+                                        <span>${this.label("actions.manage", "Manage")}</span>
+                                      </div>
+                                    `
+                                  : nothing
+                              }
+                              <div class="admin-record-list">
+                                ${
+                                  records.length
+                                    ? records.map((record) => this.renderRecord(record))
+                                    : html`
+                                        <div class="admin-empty">
+                                          ${icon("inbox", 32)}
+                                          <p>${this.label("empty", "Nothing to display.")}</p>
+                                        </div>
+                                      `
+                                }
+                              </div>
+                              ${
+                                this.cursor
+                                  ? html`
+                                      <button
+                                        class="button button--text admin-more"
+                                        ?disabled=${!!this.busy || this.loadingMore}
+                                        @click=${() => this.load(true)}
+                                      >
+                                        ${this.loadingMore ? this.label("loading", "Loading") : this.label("loadMore", "Load more")}${icon("expand_more", 18)}
+                                      </button>
+                                    `
+                                  : nothing
+                              }
+                            </section>
+                          `
             }
           </main>
         </div>

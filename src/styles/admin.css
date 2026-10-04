@@ -799,11 +799,15 @@
     color: var(--md-sys-color-primary);
   }
   .admin-dialog-scrim {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    min-width: 0;
     padding: 24px;
   }
   .admin-history-dialog {
     display: block;
     width: min(1200px, 100%);
+    max-width: 100%;
     max-height: calc(100dvh - 48px);
     min-width: 0;
     padding: 0;
@@ -1541,5 +1545,167 @@
     justify-content: space-between;
     gap: 12px;
     font: 400 12px/20px var(--app-font);
+  }
+}
+
+@layer pages {
+  .admin-forum-layout {
+    display: grid;
+    min-width: 0;
+    align-items: start;
+    grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.4fr);
+    gap: 20px;
+  }
+  .admin-forum-list,
+  .admin-forum-editor {
+    min-width: 0;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .admin-forum-list > header,
+  .admin-forum-editor > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .admin-forum-editor > header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: inherit;
+    border-start-start-radius: inherit;
+    border-start-end-radius: inherit;
+  }
+  .admin-forum-list h3,
+  .admin-forum-editor h3 {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font: 500 18px/24px var(--app-font);
+  }
+  .admin-forum-row {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border: 0;
+    border-inline-start: 3px solid transparent;
+    background: transparent;
+    color: var(--md-sys-color-on-surface);
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .admin-forum-row + .admin-forum-row {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .admin-forum-row:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .admin-forum-row[aria-current="true"],
+  .admin-forum-row[aria-current="page"] {
+    border-inline-start-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .admin-forum-row__body {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    overflow-wrap: anywhere;
+    font: 500 14px/20px var(--app-font);
+  }
+  .admin-forum-row__body > small {
+    color: var(--md-sys-color-on-surface-variant);
+    font: 400 11px/16px var(--app-font);
+  }
+  .admin-forum-fields {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding: 20px;
+  }
+  .admin-forum-fieldgroup {
+    display: grid;
+    grid-column: 1 / -1;
+    min-width: 0;
+    gap: 12px;
+  }
+  .admin-forum-fieldgroup > h4 {
+    margin: 0;
+    font: 500 14px/20px var(--app-font);
+  }
+  .admin-forum-fields :is(md-outlined-text-field, md-outlined-select) {
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-forum-field--wide {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .admin-forum-permissions {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .admin-forum-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .admin-forum-editor > .inline-message {
+    margin: 16px 20px 0;
+  }
+  .admin-forum-move {
+    width: min(100%, 640px);
+  }
+  .admin-forum-move__body {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+    padding: 20px;
+    overflow-wrap: anywhere;
+  }
+  .admin-forum-move__body md-outlined-select,
+  .admin-forum-move__body md-outlined-text-field {
+    width: 100%;
+    min-width: 0;
+  }
+  @media (max-width: 1099px) {
+    .admin-forum-layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 599px) {
+    .admin-forum-layout {
+      gap: 16px;
+    }
+    .admin-forum-fields,
+    .admin-forum-permissions {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-forum-fields,
+    .admin-forum-move__body {
+      padding: 16px;
+    }
+    .admin-forum-list > header,
+    .admin-forum-editor > header,
+    .admin-forum-row {
+      padding-inline: 16px;
+    }
+    .admin-forum-row {
+      grid-template-columns: 24px minmax(0, 1fr) auto;
+    }
   }
 }

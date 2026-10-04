@@ -1,3 +1,4 @@
+import { forumReadSql } from "./community-forums";
 import { postAttachmentsAllowedSql } from "./moderation";
 
 type Row = Record<string, string | number | null>;
@@ -18,7 +19,7 @@ const error = (request: Request, status: number, code: string, message: string) 
 // These helpers are called only after admin.ts's authoritative administrator check.
 export async function readAdminPost(request: Request, env: Env, id: string): Promise<Response> {
   const post = await env.DB.prepare(
-    `SELECT post.id, post.author_id AS authorId, post.title, post.body,
+    `SELECT post.id, post.forum_id AS forumId, post.author_id AS authorId, post.title, post.body,
     post.status, post.visibility, post.moderation_status AS moderationStatus,
     post.moderation_revision AS moderationRevision, post.version,
     post.created_at AS createdAt, post.updated_at AS updatedAt, post.published_at AS publishedAt,
@@ -29,7 +30,7 @@ export async function readAdminPost(request: Request, env: Env, id: string): Pro
       AND post.deleted_at IS NULL AND post.archived_at IS NULL
       AND profile.status <> 'deleted' AND profile.display_name IS NOT NULL
       AND EXISTS (SELECT 1 FROM community_identity AS identity WHERE identity.user_id=post.author_id)
-      AND ${postAttachmentsAllowedSql} THEN 1 ELSE 0 END AS publicEligible
+      AND ${postAttachmentsAllowedSql} AND ${forumReadSql("post","NULL")} THEN 1 ELSE 0 END AS publicEligible
     FROM community_post AS post
     LEFT JOIN "user" AS account ON account.id=post.author_id
     LEFT JOIN community_profile AS profile ON profile.user_id=post.author_id

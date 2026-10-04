@@ -4,7 +4,7 @@ import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
   return LOCALES.flatMap((locale) =>
-    ["users", "posts", "reports", "appeals", "operations"].map((section) => ({
+    ["users", "posts", "reports", "appeals", "operations", "forums"].map((section) => ({
       params: { locale, section },
       props: { locale, section },
     })),

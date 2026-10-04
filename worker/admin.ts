@@ -293,6 +293,7 @@ interface UserStateRow {
 }
 
 interface PostListRow {
+  forumId: string;
   archivedAt: number | null;
   authorAccountName: string;
   authorHandle: string | null;
@@ -976,8 +977,12 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
   const authorId = url.searchParams.get("authorId");
   if (authorId && !SAFE_ID_PATTERN.test(authorId)) return error(request, 400, "invalid_author", "authorId is invalid");
 
+  const forumValues=url.searchParams.getAll("forumId");
+  if(forumValues.length>1 || (forumValues.length && !UUID_PATTERN.test(forumValues[0]!))) return error(request,400,"invalid_forum","forumId must be a UUID");
+  const forumId=forumValues[0] ?? null;
   const conditions: string[] = [];
   const values: BindValue[] = [];
+  if(forumId){conditions.push("post.forum_id=?");values.push(forumId);}
   if (moderationStatus) {
     conditions.push("post.moderation_status = ?");
     values.push(moderationStatus);
@@ -1002,7 +1007,7 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   values.push(limit);
   const result = await env.DB.prepare(
-    `SELECT post.id, post.author_id AS authorId, account.name AS authorAccountName,
+    `SELECT post.id,post.forum_id AS forumId, post.author_id AS authorId, account.name AS authorAccountName,
             profile.display_name AS authorName, profile.handle AS authorHandle,
             post.title, post.body, post.status, post.visibility, post.version,
             post.moderation_status AS moderationStatus, post.moderation_revision AS moderationRevision,
@@ -1020,6 +1025,7 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
     .all<PostListRow>();
   const last = result.results.at(-1);
   const posts = result.results.map((row) => ({
+    forumId: row.forumId,
     archivedAt: row.archivedAt,
     authorAccountName: row.authorAccountName,
     authorHandle: row.authorHandle,
@@ -1044,6 +1050,7 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
   }));
   return json(request, {
     posts,
+    filters:{forumId},
     nextCursor: last && result.results.length === limit ? encodeCursor({ sort: last.createdAt, id: last.id }) : null,
   });
 };

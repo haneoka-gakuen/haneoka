@@ -1,3 +1,5 @@
+import { writableTeamOwner } from "./team-inventory";
+import { forumReadSql, forumPermissionSql, forumAdminSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
 import { mediaPresentations } from "./community-media";
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { authConfiguration, getAuthSession, type AuthSession } from "./auth";
@@ -84,6 +86,10 @@ interface DeviceFields {
 }
 
 interface PostDatabaseFields extends AuthorFields, DeviceFields {
+  forumId: string;
+  status: "published" | "draft" | "hidden";
+  deletedAt: number | null;
+  authorPublicNameReady: number;
   archivedAt: number | null;
   commentCount: number;
   commentsLockedAt: number | null;
@@ -271,6 +277,8 @@ interface ListOptions {
   scope: PostScope;
   state: ListState;
   tag: string | null;
+  forumId: string | null;
+  tagSelection: ForumTagSelection;
 }
 
 interface SqlCondition {
@@ -651,7 +659,7 @@ const parseLimit = (raw: string | null, fallback: number, maximum: number): numb
 };
 
 const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> => {
-  const names = ["limit", "cursor", "q", "tag", "scope", "state", "seed", "refresh"] as const;
+  const names = ["limit", "cursor", "q", "tag", "scope", "state", "seed", "refresh", "forumId"] as const;
   const values = new Map<string, string | null>();
   for (const name of names) {
     const value = singleSearchParameter(url, name);
@@ -684,6 +692,10 @@ const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> 
     return { ok: false, response: error(request, 400, "invalid_tag", `tag must be 1-${TAG_MAX} characters`) };
   }
 
+  const forumId = values.get("forumId") ?? null;
+  if (forumId !== null && !UUID_PATTERN.test(forumId)) return {ok:false,response:error(request,400,"invalid_forum","forumId must be a UUID")};
+  const tagSelection = parseForumTagQuery(url);
+  if (!tagSelection) return {ok:false,response:error(request,400,"invalid_tags","Use up to ten normalized tags and all/any matching")};
   const scopeValue = values.get("scope") ?? "all";
   if (
     scopeValue !== "all" &&
@@ -727,7 +739,7 @@ const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> 
   }
   return {
     ok: true,
-    value: { cursor, limit, q, refresh: refreshValue === "1", scope: scopeValue, seed, state: stateValue, tag },
+    value: { cursor, limit, q, refresh: refreshValue === "1", scope: scopeValue, seed, state: stateValue, tag, forumId, tagSelection },
   };
 };
 
@@ -764,6 +776,9 @@ END`;
 const postSelect = `
   SELECT
     post.id,
+    post.forum_id AS forumId,
+    post.status,
+    post.deleted_at AS deletedAt,
     post.title,
     post.body,
     post.visibility,
@@ -795,20 +810,22 @@ const postSelect = `
     ${visibleLikeCountSelect} AS likeCount,
     author.id AS authorId,
     author_identity.uid AS authorUid,
-    author_profile.display_name AS authorName,
+    COALESCE(author_profile.display_name, author.name) AS authorName,
+    (author_profile.display_name IS NOT NULL) AS authorPublicNameReady,
     ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
   JOIN community_identity AS author_identity ON author_identity.user_id = post.author_id
-  JOIN community_profile AS author_profile
+  LEFT JOIN community_profile AS author_profile
     ON author_profile.user_id = post.author_id
-   AND author_profile.status <> 'deleted'
-   AND author_profile.display_name IS NOT NULL
 `;
 
 const postListSelect = `
   SELECT
     post.id,
+    post.forum_id AS forumId,
+    post.status,
+    post.deleted_at AS deletedAt,
     post.title,
     post.body,
     post.visibility,
@@ -840,15 +857,14 @@ const postListSelect = `
     ${visibleLikeCountSelect} AS likeCount,
     author.id AS authorId,
     author_identity.uid AS authorUid,
-    author_profile.display_name AS authorName,
+    COALESCE(author_profile.display_name, author.name) AS authorName,
+    (author_profile.display_name IS NOT NULL) AS authorPublicNameReady,
     ${avatarUrlSelect("author")} AS authorImage
   FROM community_post AS post
   JOIN "user" AS author ON author.id = post.author_id
   JOIN community_identity AS author_identity ON author_identity.user_id = post.author_id
-  JOIN community_profile AS author_profile
+  LEFT JOIN community_profile AS author_profile
     ON author_profile.user_id = post.author_id
-   AND author_profile.status <> 'deleted'
-   AND author_profile.display_name IS NOT NULL
 `;
 
 const activePostWhere = `post.status = 'published' AND post.deleted_at IS NULL
@@ -858,7 +874,17 @@ const activePostWhere = `post.status = 'published' AND post.deleted_at IS NULL
       AND post_author_profile.status <> 'deleted'
       AND post_author_profile.display_name IS NOT NULL
   )`;
-const visibleNotificationWhere = `(
+const activePostReadCondition = (userId: string | null): SqlCondition =>
+  userId
+    ? {
+        sql: `(${forumAdminSql("?")} OR ${activePostWhere} OR (post.status = 'published' AND post.deleted_at IS NULL AND post.author_id = ?))`,
+        values: [userId, userId],
+      }
+    : { sql: activePostWhere, values: [] };
+const visibleNotificationWhere = `(notification.post_id IS NULL OR EXISTS (
+  SELECT 1 FROM community_post AS forum_notification_post WHERE forum_notification_post.id=notification.post_id
+    AND ${forumReadSql("forum_notification_post", "notification.recipient_user_id")}
+)) AND (
   notification.kind IN ('follow', 'moderation')
   OR EXISTS (
     SELECT 1 FROM community_post AS notification_post
@@ -926,27 +952,27 @@ const visibleNotificationActorWhere = `(notification.actor_user_id IS NULL OR EX
 const moderationReadableCondition = (userId: string | null): SqlCondition =>
   userId
     ? {
-        sql: `((post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}) OR post.author_id = ?)`,
-        values: [userId],
+        sql: `(${forumAdminSql("?")} OR (post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}) OR post.author_id = ?)`,
+        values: [userId, userId],
       }
     : { sql: `post.moderation_status = 'allow' AND ${postAttachmentsAllowedSql}`, values: [] };
 
 const readablePostCondition = (userId: string | null): SqlCondition =>
   userId
     ? {
-        sql: `(post.visibility IN ('public', 'protected') OR post.author_id = ?)
+        sql: `(${forumAdminSql("?")} OR ((post.visibility IN ('public', 'protected') OR post.author_id = ?)
           AND NOT EXISTS (
             SELECT 1 FROM community_user_block AS viewer_block
             WHERE (viewer_block.blocker_user_id = ? AND viewer_block.blocked_user_id = post.author_id)
                OR (viewer_block.blocker_user_id = post.author_id AND viewer_block.blocked_user_id = ?)
-          )`,
-        values: [userId, userId, userId],
+          ))) AND ${forumReadSql("post", "?")}`,
+        values: [userId, userId, userId, userId, userId],
       }
-    : { sql: "post.visibility = 'public'", values: [] };
+    : { sql: `post.visibility = 'public' AND ${forumReadSql("post", "NULL")}`, values: [] };
 
 const directlyReadableStateCondition = (userId: string | null): SqlCondition =>
   userId
-    ? { sql: "(post.archived_at IS NULL OR post.author_id = ?)", values: [userId] }
+    ? { sql: `(${forumAdminSql("?")} OR post.archived_at IS NULL OR post.author_id = ?)`, values: [userId, userId] }
     : { sql: "post.archived_at IS NULL", values: [] };
 
 const writablePostStateCondition: SqlCondition = {
@@ -974,7 +1000,7 @@ const activePostAuthorProfileWhere = `EXISTS (
 )`;
 
 const requireSession = async (request: Request, env: Env): Promise<Session | null> => {
-  const session = await getAuthSession(request, env);
+  const session = await getAuthSession(request, env, { authoritative: true });
   return session?.user?.id ? session : null;
 };
 
@@ -1033,6 +1059,9 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   if (!rows.length) return [];
   const placeholders = rows.map(() => "?").join(", ");
   const postIds = rows.map((row) => row.id);
+  const forumIds = [...new Set(rows.map(row => row.forumId))];
+  const forumRows = await env.DB.prepare(`SELECT id,slug,names_json AS namesJson FROM community_forum WHERE id IN (${forumIds.map(() => "?").join(",")})`).bind(...forumIds).all<{id:string;slug:string;namesJson:string}>();
+  const forumsById = new Map(forumRows.results.map(row => [row.id,{id:row.id,slug:row.slug,names:JSON.parse(row.namesJson) as Record<string,string>} ]));
   const [tagResult, attachmentResult] = await Promise.all([
     env.DB.prepare(
       `SELECT link.post_id AS postId, tag.normalized_name AS tag
@@ -1107,6 +1136,7 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   }
   return rows.map((row) => ({
     ...row,
+    forum: forumsById.get(row.forumId) ?? null,
     attachments: attachmentsByPost.get(row.id) ?? [],
     state: row.archivedAt === null ? "active" : "archived",
     tags: tagsByPost.get(row.id) ?? [],
@@ -1172,13 +1202,14 @@ const loadViewerPostFlags = async (
 };
 
 const findAccessiblePostRow = async (env: Env, id: string, userId: string | null): Promise<PostRow | null> => {
+  const active = activePostReadCondition(userId);
   const access = readablePostCondition(userId);
   const moderation = moderationReadableCondition(userId);
   const state = directlyReadableStateCondition(userId);
   return env.DB.prepare(
-    `${postSelect} WHERE post.id = ? AND ${activePostWhere} AND ${access.sql} AND ${moderation.sql} AND ${state.sql} LIMIT 1`,
+    `${postSelect} WHERE post.id = ? AND ${active.sql} AND ${access.sql} AND ${moderation.sql} AND ${state.sql} LIMIT 1`,
   )
-    .bind(id, ...access.values, ...moderation.values, ...state.values)
+    .bind(id, ...active.values, ...access.values, ...moderation.values, ...state.values)
     .first<PostRow>();
 };
 
@@ -1268,8 +1299,9 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
     await env.DB.prepare("DELETE FROM community_feed_impression WHERE user_id = ?").bind(userId).run();
   }
 
-  const where = [activePostWhere];
-  const bindings: BindValue[] = [];
+  const active = activePostReadCondition(userId);
+  const where = [active.sql];
+  const bindings: BindValue[] = [...active.values];
   const access = readablePostCondition(userId);
   where.push(access.sql);
   bindings.push(...access.values);
@@ -1277,6 +1309,9 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
   where.push(moderation.sql);
   bindings.push(...moderation.values);
 
+  if (options.forumId) { where.push("post.forum_id = ?"); bindings.push(options.forumId); }
+  const selectedTags = forumTagFilterSql(options.tagSelection, "post");
+  where.push(selectedTags.sql); bindings.push(...selectedTags.values);
   if (options.state === "active") where.push("post.archived_at IS NULL");
   else if (options.state === "archived") where.push("post.archived_at IS NOT NULL");
 
@@ -1312,7 +1347,7 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
     options.scope === "latest" ||
     options.scope === "recommended" ||
     options.scope === "following";
-  if (discoveryScope && userId && !options.q && !options.tag) {
+  if (discoveryScope && userId && !options.q && !options.tag && !options.tagSelection.tags.length) {
     where.push(`NOT EXISTS (
       SELECT 1 FROM community_user_mute AS muted_author
       WHERE muted_author.muter_user_id = ? AND muted_author.muted_user_id = post.author_id
@@ -1337,16 +1372,6 @@ const listPosts = async (request: Request, env: Env, url: URL): Promise<Response
     const pattern = `%${escapeLike(options.q)}%`;
     where.push("(post.title LIKE ? ESCAPE '\\' OR post.body LIKE ? ESCAPE '\\')");
     bindings.push(pattern, pattern);
-  }
-  if (options.tag) {
-    where.push(
-      `EXISTS (
-        SELECT 1 FROM community_post_tag AS post_tag
-        JOIN community_tag AS tag ON tag.id = post_tag.tag_id
-        WHERE post_tag.post_id = post.id AND tag.normalized_name = ? AND tag.status = 'active'
-      )`,
-    );
-    bindings.push(options.tag);
   }
   const rowLimit = options.limit + 1;
   let result: D1Result<PostListRow>;
@@ -1597,6 +1622,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
   const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow], userId))[0] ?? null);
   const post = postWithTags ?? postRow;
+  const forumCanReply = userId !== null && await canAccessPostForum(env,id,userId,"reply");
+  const forumCanPost = userId !== null && await canAccessPostForum(env,id,userId,"post");
+  const forumCanManage = userId !== null && await canAccessPostForum(env,id,userId,"manage");
   let liked = false;
   let bookmarked = false;
   let following = false;
@@ -1629,10 +1657,11 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
         liked,
         bookmarked,
         following,
-        canEdit: Boolean(userId && userId === post.authorId),
-        canDelete: Boolean(userId && userId === post.authorId),
+        canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
+        canPin: forumCanManage && post.deletedAt===null && post.archivedAt===null && post.status==="published" && post.moderationStatus==="allow", canLock: forumCanManage && post.deletedAt===null, canMove: forumCanManage,
+        canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
         canComment: Boolean(
-          userId && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
+          userId && forumCanReply && post.status==="published" && post.deletedAt===null && post.authorPublicNameReady === 1 && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
         ),
       },
     });
@@ -2027,10 +2056,11 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
       liked,
       bookmarked,
       following,
-      canEdit: Boolean(userId && userId === post.authorId),
-      canDelete: Boolean(userId && userId === post.authorId),
+      canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
+        canPin: forumCanManage && post.deletedAt===null && post.archivedAt===null && post.status==="published" && post.moderationStatus==="allow", canLock: forumCanManage && post.deletedAt===null, canMove: forumCanManage,
+      canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
       canComment: Boolean(
-        userId && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
+        userId && forumCanReply && post.status==="published" && post.deletedAt===null && post.authorPublicNameReady === 1 && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
       ),
     },
   });
@@ -2054,6 +2084,16 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
   if (!visibility) {
     return error(request, 422, "invalid_visibility", "visibility must be public, protected, or private");
   }
+  let legacyStampDraft = false;
+  if (payload.value.forumPurpose === undefined && payload.value.kind === undefined) {
+    try { const referer = new URL(request.headers.get("Referer") ?? ""); const draft=referer.searchParams.get("stampDraft");
+      legacyStampDraft=referer.origin===new URL(request.url).origin && /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/posts\/new\/?$/u.test(referer.pathname) && draft!==null && UUID_PATTERN.test(draft);
+    } catch { /* Older requests without a source hint use the configured general forum. */ }
+  }
+  const purpose = payload.value.forumPurpose === "stamp" || (payload.value.forumPurpose===undefined && (payload.value.kind === "stamp" || legacyStampDraft)) ? "stamp" : "general";
+  if (payload.value.forumPurpose !== undefined && payload.value.forumPurpose !== "stamp" && payload.value.forumPurpose !== "general") return error(request,422,"invalid_forum_purpose","Use a supported forum purpose");
+  const forumId = await resolvePostForum(env, payload.value.forumId, purpose, session.user.id);
+  if (!forumId) return error(request,403,"forum_not_writable","Select an enabled forum you can post in");
   const attachmentIds = parseAttachmentIds(payload.value.attachmentIds);
   if (!attachmentIds) {
     return error(
@@ -2091,11 +2131,11 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
   const initialModeration = inspection.verdict === "allow" ? "pending" : inspection.verdict;
   const insert = env.DB.prepare(
     `INSERT INTO community_post
-       (id, author_id, title, body, status, visibility, moderation_status,
+       (id, author_id, title, body, status, visibility, moderation_status, forum_id,
         created_at, updated_at, published_at, ip_country_code, ip_region_code, ip_region_name, ip_address,
         user_agent, browser_family, os_family)
-     SELECT ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-     WHERE ${activeSessionProfileWhere}
+     SELECT ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE ${activeSessionProfileWhere} AND ${forumPermissionSql("?", "?", "post")} AND ${writableTeamOwner}
        AND (
        SELECT COUNT(*) FROM community_post WHERE author_id = ? AND created_at >= ?
      ) < ?
@@ -2109,6 +2149,7 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
     body,
     visibility,
     initialModeration,
+    forumId,
     now,
     now,
     now,
@@ -2120,6 +2161,12 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
     client.browserFamily,
     client.osFamily,
     session.user.id,
+    session.user.id,
+    forumId,
+    session.user.id,
+    session.session.token,
+    new Date(now).toISOString(),
+    now,
     session.user.id,
     now - HOUR_MS,
     POST_HOURLY_LIMIT,
@@ -2171,6 +2218,9 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
     throw batchError;
   }
   if (!results[0]?.meta.changes) {
+    const refreshed=await requireWritableSession(request,env,"Sign in to create a post");
+    if(!refreshed.ok) return refreshed.response;
+    if(!await resolvePostForum(env,forumId,purpose,session.user.id)) return error(request,403,"forum_not_writable","Forum access changed while saving");
     return error(request, 429, "post_quota_exceeded", "The account post quota has been reached", {
       "Retry-After": "3600",
     });
@@ -2197,6 +2247,8 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
 
+  if (payload.value.forumId !== undefined || payload.value.forumPurpose !== undefined) return error(request,422,"forum_move_required","Move the post through the forum management API");
+  if (!await canAccessPostForum(env,id,session.user.id,"post")) return error(request,404,"post_not_found","Post not found");
   const body = cleanText(payload.value.body, POST_BODY_MAX);
   const version = typeof payload.value.version === "number" ? payload.value.version : Number.NaN;
   if (!body || !Number.isSafeInteger(version) || version < 1) {
@@ -2251,7 +2303,7 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
      SELECT id, ?, author_id, ?, ?, COALESCE(?, visibility), ?, 'edit', ?, ?, ?, ?, ?, ?, ?, ?, ?
      FROM community_post
      WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-       AND ${activePostAuthorProfileWhere}`,
+       AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}`,
   ).bind(
     nextRevision,
     title,
@@ -2278,7 +2330,7 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
          ip_country_code = ?, ip_region_code = ?, ip_region_name = ?, ip_address = ?,
          user_agent = ?, browser_family = ?, os_family = ?
      WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-       AND ${activePostAuthorProfileWhere}
+       AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}
        AND EXISTS (
          SELECT 1 FROM community_post_revision
          WHERE post_id = community_post.id AND revision_number = ?
@@ -2383,6 +2435,7 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
 const deletePost = async (request: Request, env: Env, id: string): Promise<Response> => {
   const access = await requireWritableSession(request, env, "Sign in to delete a post", ["sign_in"]);
   if (!access.ok) return access.response;
+  if (!await canAccessPostForum(env,id,access.session.user.id,"post")) return error(request,404,"post_not_found","Post not found");
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
   const version = typeof payload.value.version === "number" ? payload.value.version : Number.NaN;
@@ -2401,7 +2454,7 @@ const deletePost = async (request: Request, env: Env, id: string): Promise<Respo
        SELECT ?, id, ?, 'deleted', moderation_revision, 'user.self_delete', ?, ?, ?, ?, ?, ?
        FROM community_post
        WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-         AND ${activePostAuthorProfileWhere}`,
+         AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}`,
     ).bind(
       eventId,
       session.user.id,
@@ -2420,7 +2473,7 @@ const deletePost = async (request: Request, env: Env, id: string): Promise<Respo
        SET deleted_at = ?, deleted_by_user_id = ?, delete_reason_code = 'user.self_delete',
            pinned_at = NULL, version = version + 1, updated_at = ?
        WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-         AND ${activePostAuthorProfileWhere}
+         AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}
          AND EXISTS (
            SELECT 1 FROM community_post_state_event
            WHERE id = ? AND post_id = community_post.id AND event_kind = 'deleted'
@@ -2434,69 +2487,52 @@ const deletePost = async (request: Request, env: Env, id: string): Promise<Respo
   return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 };
 
-const setPinned = async (request: Request, env: Env, id: string): Promise<Response> => {
-  const access = await requireWritableSession(request, env, "Sign in to pin a post");
+const setForumPostFlag = async (request: Request, env: Env, id: string, flag: "pin" | "lock"): Promise<Response> => {
+  const access = await requireWritableSession(request, env, "Sign in to manage this post");
   if (!access.ok) return access.response;
-  const payload = await readJSON(request);
-  if ("error" in payload) return payloadError(request, payload.error);
-  const version = typeof payload.value.version === "number" ? payload.value.version : Number.NaN;
-  if (typeof payload.value.active !== "boolean" || !Number.isSafeInteger(version) || version < 1) {
-    return error(request, 422, "invalid_pin", "The active boolean and current post version are required");
-  }
   const { session } = access;
-  const active = payload.value.active;
-  const now = Date.now();
-  const ip = requestIpMetadata(request);
-  const eventId = crypto.randomUUID();
-  const results = await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO community_post_state_event
-         (id, post_id, actor_user_id, event_kind, revision_number, reason_code,
-          ip_country_code, ip_region_code, ip_region_name, ip_address, ip_details_json, created_at)
-       SELECT ?, id, ?, ?, moderation_revision, ?, ?, ?, ?, ?, ?, ?
-       FROM community_post
-       WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL AND archived_at IS NULL
-         AND ${activePostAuthorProfileWhere}
-         AND ((? = 1 AND pinned_at IS NULL) OR (? = 0 AND pinned_at IS NOT NULL))`,
-    ).bind(
-      eventId,
-      session.user.id,
-      active ? "pinned" : "unpinned",
-      active ? "user.post_pin" : "user.post_unpin",
-      ip.countryCode,
-      ip.regionCode,
-      ip.regionName,
-      ip.ipAddress,
-      ipDetailsJson(ip),
-      now,
-      id,
-      session.user.id,
-      version,
-      active ? 1 : 0,
-      active ? 1 : 0,
-    ),
-    env.DB.prepare(
-      `UPDATE community_post
-       SET pinned_at = ?, version = version + 1, updated_at = ?
-       WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL AND archived_at IS NULL
-         AND ${activePostAuthorProfileWhere}
-         AND EXISTS (
-           SELECT 1 FROM community_post_state_event
-           WHERE id = ? AND post_id = community_post.id AND event_kind = ?
-         )`,
-    ).bind(active ? now : null, now, id, session.user.id, version, eventId, active ? "pinned" : "unpinned"),
-  ]);
-  if (!results[0]?.meta.changes || !results[1]?.meta.changes) {
-    const denied = await ownershipError(request, env, id, session.user.id);
-    if (denied) return denied;
-    const existing = await readPostOwnership(env, id);
-    if (active && existing && existing.archivedAt !== null) {
-      return error(request, 409, "post_archived", "Restore the post before pinning it");
-    }
-    return error(request, 409, "version_conflict", "The post changed; refresh and try again");
-  }
-  return json(request, { post: await publicAccessiblePost(env, id, session.user.id) });
+  if (!await canAccessPostForum(env,id,session.user.id,"manage")) return error(request,404,"post_not_found","Post not found");
+  const payload = await readJSON(request);
+  if ("error" in payload) return payloadError(request,payload.error);
+  const active = payload.value.active, version = payload.value.version;
+  if (typeof active !== "boolean" || typeof version !== "number" || !Number.isSafeInteger(version) || version < 1 || version >= Number.MAX_SAFE_INTEGER) return error(request,422,"invalid_post_state","Send active and the current post version");
+  const current = await findAccessiblePostRow(env,id,session.user.id);
+  if (!current) return error(request,404,"post_not_found","Post not found");
+  if (current.version !== version) return error(request,409,"version_conflict","The post changed; refresh and try again");
+  if (current.deletedAt !== null || (flag === "pin" && (current.archivedAt !== null || current.status !== "published" || current.moderationStatus !== "allow"))) return error(request,409,"post_state_unavailable","This post cannot use that action in its current state");
+  const column = flag === "pin" ? "pinned_at" : "comments_locked_at";
+  const previous = flag === "pin" ? current.pinnedAt : current.commentsLockedAt;
+  if ((previous !== null) === active) return error(request,409,"post_state_unchanged","The post already has this state");
+  const eventKind = flag === "pin" ? (active ? "pinned" : "unpinned") : (active ? "locked" : "unlocked");
+  const now = Math.max(Date.now(),current.updatedAt+1), ip=requestIpMetadata(request),eventId=crypto.randomUUID();
+  const stateGuard = flag === "pin" ? "AND archived_at IS NULL AND status='published' AND moderation_status='allow'" : "";
+  const event = env.DB.prepare(`INSERT INTO community_post_state_event
+    (id,post_id,actor_user_id,event_kind,revision_number,reason_code,ip_country_code,ip_region_code,ip_region_name,ip_address,ip_details_json,created_at)
+    SELECT ?,id,?,?,moderation_revision,?,?,?,?,?,?,? FROM community_post
+    WHERE id=? AND version=? AND deleted_at IS NULL ${stateGuard}
+      AND ${forumPermissionSql("community_post.forum_id","?","manage")} AND ${writableTeamOwner}
+      AND ((?=1 AND ${column} IS NULL) OR (?=0 AND ${column} IS NOT NULL))`).bind(
+      eventId,session.user.id,eventKind,`forum.post_${eventKind}`,ip.countryCode,ip.regionCode,ip.regionName,ip.ipAddress,ipDetailsJson(ip),now,
+      id,version,session.user.id,session.user.id,session.session.token,new Date(now).toISOString(),now,Number(active),Number(active));
+  const update = env.DB.prepare(`UPDATE community_post SET ${column}=?,version=version+1,updated_at=?
+    ${flag === "lock" ? ",comments_locked_by_user_id=?" : ""}
+    WHERE id=? AND version=? AND deleted_at IS NULL ${stateGuard}
+      AND ${forumPermissionSql("community_post.forum_id","?","manage")}
+      AND EXISTS(SELECT 1 FROM community_post_state_event WHERE id=? AND post_id=community_post.id AND event_kind=?)`).bind(
+      active ? now : null,now,...(flag === "lock" ? [active ? session.user.id : null] : []),id,version,session.user.id,eventId,eventKind);
+  const saved = await env.DB.batch([event,update]);
+  if (!saved[0]?.meta.changes || !saved[1]?.meta.changes) return error(request,409,"version_or_access_conflict","The post or its management permission changed");
+  const post = await findAccessiblePost(env,id,session.user.id);
+  if (!post) return error(request,409,"access_changed","The action succeeded but access changed; reload the post");
+  const flags = (await loadViewerPostFlags(env,[id],session.user.id)).get(id);
+  const canManage = await canAccessPostForum(env,id,session.user.id,"manage"), canPost=await canAccessPostForum(env,id,session.user.id,"post"),canReply=await canAccessPostForum(env,id,session.user.id,"reply");
+  return json(request,{post:publicAuthoredContent(post),viewer:{liked:flags?.liked ?? false,bookmarked:flags?.bookmarked ?? false,following:flags?.following ?? false,
+    canEdit:session.user.id === post.authorId && canPost && post.deletedAt===null,canDelete:session.user.id === post.authorId && canPost && post.deletedAt===null,
+    canPin:canManage && post.deletedAt===null && post.archivedAt===null && post.status==="published" && post.moderationStatus==="allow",canLock:canManage && post.deletedAt===null,canMove:canManage,
+    canComment:canReply && post.authorPublicNameReady===1 && post.status==="published" && post.deletedAt===null && post.archivedAt===null && post.commentsLockedAt===null && post.moderationStatus==="allow"}});
 };
+const setPinned = (request: Request,env:Env,id:string) => setForumPostFlag(request,env,id,"pin");
+const setCommentsLocked = (request: Request,env:Env,id:string) => setForumPostFlag(request,env,id,"lock");
 
 const setArchived = async (request: Request, env: Env, id: string, archived: boolean): Promise<Response> => {
   const access = await requireWritableSession(
@@ -2505,6 +2541,7 @@ const setArchived = async (request: Request, env: Env, id: string, archived: boo
     archived ? "Sign in to archive a post" : "Sign in to restore a post",
   );
   if (!access.ok) return access.response;
+  if (!await canAccessPostForum(env,id,access.session.user.id,"post")) return error(request,404,"post_not_found","Post not found");
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
   const version = typeof payload.value.version === "number" ? payload.value.version : Number.NaN;
@@ -2523,7 +2560,7 @@ const setArchived = async (request: Request, env: Env, id: string, archived: boo
        SELECT ?, id, ?, ?, moderation_revision, ?, ?, ?, ?, ?, ?, ?
        FROM community_post
        WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-         AND ${activePostAuthorProfileWhere}
+         AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}
          AND ((? = 1 AND archived_at IS NULL) OR (? = 0 AND archived_at IS NOT NULL))`,
     ).bind(
       eventId,
@@ -2547,7 +2584,7 @@ const setArchived = async (request: Request, env: Env, id: string, archived: boo
        SET archived_at = ?, pinned_at = CASE WHEN ? = 1 THEN NULL ELSE pinned_at END,
            version = version + 1, updated_at = ?
        WHERE id = ? AND author_id = ? AND version = ? AND deleted_at IS NULL
-         AND ${activePostAuthorProfileWhere}
+         AND ${activePostAuthorProfileWhere} AND ${forumPermissionSql("community_post.forum_id","community_post.author_id","post")}
          AND EXISTS (
            SELECT 1 FROM community_post_state_event
            WHERE id = ? AND post_id = community_post.id AND event_kind = ?
@@ -2606,7 +2643,7 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
             MAX(?, COALESCE((SELECT MAX(created_at) FROM community_comment WHERE post_id = post.id), 0) + 1)
      FROM community_post AS post
      WHERE post.id = ? AND ${activePostWhere} AND post.moderation_status = 'allow'
-       AND ${access.sql} AND ${state.sql}
+       AND ${access.sql} AND ${state.sql} AND ${forumPermissionSql("post.forum_id","?","reply")}
        AND ${activeSessionProfileWhere}
        AND (
          ? IS NULL OR EXISTS (
@@ -2636,6 +2673,7 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
     postId,
     ...access.values,
     ...state.values,
+    session.user.id,
     session.user.id,
     parentId,
     parentId,
@@ -2699,6 +2737,9 @@ const createComment = async (request: Request, env: Env, postId: string): Promis
     if (accessiblePost.moderationStatus !== "allow") {
       return error(request, 409, "post_not_ready", "The post is not open for comments");
     }
+    if (accessiblePost.commentsLockedAt !== null) return error(request,409,"post_comments_locked","Comments are locked on this post");
+    if (accessiblePost.archivedAt !== null) return error(request,409,"post_archived","The post is archived");
+    if (!await canAccessPostForum(env,postId,session.user.id,"reply")) return error(request,403,"forum_reply_restricted","Replies are not enabled for this account in this forum");
     const counts = await env.DB.prepare(
       `SELECT
          (SELECT COUNT(*) FROM community_comment WHERE author_id = ? AND created_at >= ?) AS hourCount,
@@ -3137,7 +3178,7 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
   }
 
   const match = new RegExp(
-    `^${COMMUNITY_PREFIX}/posts/([0-9a-f-]{36})(?:/(comments|reaction|bookmark|pin|archive|restore))?$`,
+    `^${COMMUNITY_PREFIX}/posts/([0-9a-f-]{36})(?:/(comments|reaction|bookmark|pin|lock|archive|restore))?$`,
     "i",
   ).exec(url.pathname);
   if (!match?.[1] || !UUID_PATTERN.test(match[1])) {
@@ -3154,6 +3195,7 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
   if (action === "reaction" && request.method === "PUT") return setReaction(request, env, postId);
   if (action === "bookmark" && request.method === "PUT") return setBookmark(request, env, postId);
   if (action === "pin" && request.method === "PUT") return setPinned(request, env, postId);
+  if (action === "lock" && request.method === "PUT") return setCommentsLocked(request,env,postId);
   if (action === "archive" && request.method === "POST") return setArchived(request, env, postId, true);
   if (action === "restore" && request.method === "POST") return setArchived(request, env, postId, false);
   return error(request, 405, "method_not_allowed", "Method not allowed");

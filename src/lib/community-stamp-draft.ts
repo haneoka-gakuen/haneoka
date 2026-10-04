@@ -7,12 +7,33 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id);
 
+/** The purpose is stable; the server selects the actual board independently of its editable slug. */
+export interface CommunityStampForumTarget {
+  purpose: "stamp";
+  forumId: string | null;
+}
+
+export interface CommunityStampDraft {
+  id: string;
+  file: File;
+  forumTarget: CommunityStampForumTarget;
+}
+
+function validForumTarget(value: unknown): value is CommunityStampForumTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const target = value as CommunityStampForumTarget;
+  return target.purpose === "stamp" && (target.forumId === null || (
+    typeof target.forumId === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(target.forumId)
+  ));
+}
+
 interface StoredDraft {
   id: string;
   png: Blob;
   fileName: string;
   createdAt: number;
   userId: string | null;
+  forumTarget?: CommunityStampForumTarget;
 }
 
 function validDraft(value: unknown): value is StoredDraft {
@@ -23,6 +44,7 @@ function validDraft(value: unknown): value is StoredDraft {
     row.png instanceof Blob && row.png.type === "image/png" && row.png.size > 0 && row.png.size <= MAX_BYTES &&
     typeof row.fileName === "string" && row.fileName.length > 0 && row.fileName.length <= 120 &&
     Number.isFinite(row.createdAt) && row.createdAt <= Date.now() && Date.now() - row.createdAt < MAX_AGE &&
+    (row.forumTarget === undefined || validForumTarget(row.forumTarget)) &&
     (row.userId === null || (typeof row.userId === "string" && row.userId.length > 0))
   );
 }
@@ -98,7 +120,13 @@ function forgetId(id: string) {
   try { if (sessionStorage.getItem(POINTER) === id) sessionStorage.removeItem(POINTER); } catch {}
 }
 
-export async function prepareCommunityStampDraft(png: Blob, fileName = "stamp.png"): Promise<string> {
+export async function prepareCommunityStampDraft(
+  png: Blob,
+  fileName = "stamp.png",
+  forumTarget: CommunityStampForumTarget = { purpose: "stamp", forumId: null },
+): Promise<string> {
+  if (!validForumTarget(forumTarget)) throw new Error("Invalid stamp forum target");
+  const target: CommunityStampForumTarget = { purpose: "stamp", forumId: forumTarget.forumId };
   if (!(png instanceof Blob) || png.type !== "image/png" || png.size < 33 || png.size > MAX_BYTES)
     throw new Error("Invalid stamp PNG");
   const header = new Uint8Array(await png.slice(0, 24).arrayBuffer());
@@ -108,7 +136,10 @@ export async function prepareCommunityStampDraft(png: Blob, fileName = "stamp.pn
     throw new Error("The community stamp canvas must be 512 × 512");
   const id = crypto.randomUUID();
   const safeName = fileName.replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "_").slice(0, 116).replace(/\.png$/iu, "") || "stamp";
-  const draft: StoredDraft = { id, png, fileName: `${safeName}.png`, createdAt: Date.now(), userId: null };
+  const draft: StoredDraft = {
+    id, png, fileName: `${safeName}.png`, createdAt: Date.now(), userId: null,
+    forumTarget: target,
+  };
   await transaction<void>((store, result) => {
     const all = store.getAll();
     all.onsuccess = () => {
@@ -137,7 +168,7 @@ export function communityStampDraftId(url: URL): string | null {
 }
 
 /** The first authenticated composer claims a guest handoff atomically. */
-export async function readCommunityStampDraft(id: string, userId: string): Promise<{ id: string; file: File } | null> {
+export async function readCommunityStampDraft(id: string, userId: string): Promise<CommunityStampDraft | null> {
   if (!validId(id) || !userId) return null;
   const draft = await transaction<StoredDraft | null>((store, result) => {
     const request = store.get(id);
@@ -156,7 +187,11 @@ export async function readCommunityStampDraft(id: string, userId: string): Promi
   });
   if (!draft) return null;
   rememberId(id);
-  return { id, file: new File([draft.png], draft.fileName, { type: "image/png", lastModified: draft.createdAt }) };
+  return {
+    id,
+    file: new File([draft.png], draft.fileName, { type: "image/png", lastModified: draft.createdAt }),
+    forumTarget: { purpose: "stamp", forumId: draft.forumTarget?.forumId ?? null },
+  };
 }
 
 /** Call for explicit attachment removal or successful publication; leaving retains the PNG. */

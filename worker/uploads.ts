@@ -1,3 +1,4 @@
+import { forumReadSql, forumPermissionSql, canAccessAttachmentForum } from "./community-forums";
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
@@ -1706,6 +1707,7 @@ const getMetadata = async (request: Request, env: Env, id: string): Promise<Resp
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const attachment = await findAttachment(env, id);
+  if (!await canAccessAttachmentForum(env,id,access.userId)) return error(request,404,"attachment_not_found","Attachment not found");
   if (
     !attachment ||
     attachment.ownerUserId !== access.userId ||
@@ -1724,6 +1726,7 @@ const retryAttachment = async (request: Request, env: Env, id: string): Promise<
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const attachment = await findAttachment(env, id);
+  if (!await canAccessAttachmentForum(env,id,access.userId)) return error(request,404,"attachment_not_found","Attachment not found");
   if (
     !attachment ||
     attachment.ownerUserId !== access.userId ||
@@ -1771,7 +1774,8 @@ const parseRange = (value: string | null, size: number): ByteRange | "invalid" |
 
 const downloadAttachment = async (request: Request, env: Env, id: string): Promise<Response> => {
   const ownerPreview = new URL(request.url).searchParams.get("preview") === "owner";
-  const session = await getAuthSession(request, env, ownerPreview ? { authoritative: true } : undefined);
+  const session = await getAuthSession(request, env, { authoritative: true });
+  const userId = session?.user?.id || null;
   const row = await env.DB.prepare(
     `SELECT ${attachmentColumns},
        post.author_id AS postAuthorId, post.visibility AS postVisibility,
@@ -1785,9 +1789,9 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
      LEFT JOIN community_profile AS post_author_profile ON post_author_profile.user_id = post.author_id
      LEFT JOIN community_profile AS attachment_owner_profile
        ON attachment_owner_profile.user_id = community_attachment.owner_user_id
-     WHERE community_attachment.id = ? LIMIT 1`,
+     WHERE community_attachment.id = ? AND (post.id IS NULL OR ${forumReadSql("post","?")}) LIMIT 1`,
   )
-    .bind(id)
+    .bind(id,userId)
     .first<DownloadAccessRow>();
   if (
     !row ||
@@ -1800,7 +1804,6 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   ) {
     return error(request, 404, "attachment_not_found", "Attachment not found");
   }
-  const userId = session?.user?.id || null;
   const owner = userId === row.ownerUserId;
   if (
     ownerPreview &&
@@ -1858,12 +1861,9 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   }
   const headers = new Headers({
     "Accept-Ranges": "bytes",
-    // Attachment bytes are immutable per id (the sha256 is re-verified against
-    // R2 above), so the browser may reuse them instead of re-downloading every
-    // feed view. `private` keeps access-controlled bytes out of shared caches;
-    // the id-scoped ETag still revalidates anything older than the hour.
-    "Cache-Control": ownerPreview ? "private, no-store" : "private, max-age=3600, immutable",
-    ...(ownerPreview ? { Vary: "Cookie" } : {}),
+    // Forum permissions are mutable; authorize each request before serving bytes.
+    "Cache-Control": "private, no-store",
+    Vary: "Cookie",
     "Content-Disposition": contentDisposition(row.fileName, row.mediaType),
     "Content-Type": row.mediaType,
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -1991,7 +1991,7 @@ const linkAttachments = async (request: Request, env: Env, postId: string): Prom
   if (!attachmentIds)
     return error(request, 422, "invalid_attachment_ids", `Provide 1-${MAX_ATTACHMENTS_PER_POST} unique attachment IDs`);
   const post = await env.DB.prepare(
-    `SELECT author_id AS authorId FROM community_post WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id","post.author_id","post")} LIMIT 1`,
   )
     .bind(postId)
     .first<PostOwnerRow>();
@@ -2064,7 +2064,7 @@ const unlinkAttachment = async (
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const post = await env.DB.prepare(
-    `SELECT author_id AS authorId FROM community_post WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id","post.author_id","post")} LIMIT 1`,
   )
     .bind(postId)
     .first<PostOwnerRow>();

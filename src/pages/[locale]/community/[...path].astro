@@ -4,7 +4,7 @@ import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
   return LOCALES.flatMap((locale) =>
-    [undefined, "feeds", "latest", "following", "mine", "bookmarks", "notifications", "activity", "tags", "playlists"].map((path) => ({
+    [undefined, "feeds", "latest", "following", "mine", "bookmarks", "notifications", "activity", "tags", "playlists", "forums"].map((path) => ({
       params: { locale, path },
       props: { locale, path },
     })),

@@ -1328,7 +1328,29 @@
     "uploadPolicy": "Up to {count} attachments · {size} MiB per file",
     "uploadFileTooLarge": "Each file must be 128 MiB or smaller.",
     "stampDraftRetained": "Stamp draft saved",
-    "leaveStampDraftBody": "Text and the stamp PNG stay on this device. Unpublished uploads will be removed."
+    "leaveStampDraftBody": "Text and the stamp PNG stay on this device. Unpublished uploads will be removed.",
+    "forums": "Forums",
+    "forumChooseWritable": "Choose a forum where you can post.",
+    "forumPostCount": "{count} topics",
+    "forumEmpty": "No forums available",
+    "forumReadOnly": "You can read this forum. Posting is restricted.",
+    "tagMatch": "Tag matching",
+    "tagMatchAll": "Match all selected tags",
+    "tagMatchAny": "Match any selected tag",
+    "pinnedTopics": "Pinned topics",
+    "topics": "Topics",
+    "topicLocked": "Replies locked",
+    "tagSearch": "Search tags",
+    "lockTopic": "Lock replies",
+    "unlockTopic": "Unlock replies",
+    "movePost": "Move post",
+    "moveDestination": "Destination forum",
+    "moveReason": "Reason",
+    "moveChooseDestination": "Choose a destination",
+    "navigation": {
+      "overview": "Community overview",
+      "mine": "Mine"
+    }
   },
   "adminPage": {
     "title": "Admin",
@@ -1343,7 +1365,8 @@
       "posts": "Posts",
       "reports": "Reports",
       "appeals": "Appeals",
-      "operations": "Operations"
+      "operations": "Operations",
+      "forums": "Forums"
     },
     "metrics": {
       "totalUsers": "Total users",
@@ -1760,7 +1783,69 @@
         "visitedTo": "Latest visit before"
       },
       "pointSize": "Marker size represents user count."
-    }
+    },
+    "forum": {
+      "all": "All forums",
+      "create": "Create forum",
+      "edit": "Edit forum",
+      "nameRequired": "Enter a name in at least one language.",
+      "conflict": "This forum changed. Your edits are preserved; reload the current version before saving.",
+      "reload": "Reload current version",
+      "slug": "URL name",
+      "group": "Group",
+      "ungrouped": "Ungrouped",
+      "language": "Language",
+      "name": "Name",
+      "description": "Description",
+      "icon": "Icon",
+      "order": "Display order",
+      "purpose": "Default destination",
+      "noPurpose": "None",
+      "generalPurpose": "General posts",
+      "stampPurpose": "Stamp maker",
+      "availability": "Availability",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "movePost": "Move post",
+      "unknown": "Current forum",
+      "destination": "Destination forum",
+      "chooseDestination": "Choose a destination",
+      "moveReason": "Reason",
+      "confirmMove": "Move post",
+      "groups": "Groups",
+      "createGroup": "Create group",
+      "editGroup": "Edit group",
+      "groupConflict": "This group changed. Your edits are preserved; reload the current version before saving.",
+      "permission": {
+        "read": "Read",
+        "post": "Post",
+        "reply": "Reply",
+        "manage": "Manage"
+      },
+      "audience": {
+        "public": "Everyone",
+        "member": "Signed-in members",
+        "verified": "Verified members",
+        "moderator": "Moderators",
+        "admin": "Administrators",
+        "none": "No one"
+      },
+      "symbol": {
+        "forum": "Discussion",
+        "chat": "Chat",
+        "style": "Tags",
+        "emoji_emotions": "Stamps",
+        "music_note": "Music",
+        "auto_stories": "Stories",
+        "groups": "People",
+        "menu_book": "Guides",
+        "help": "Help",
+        "lightbulb": "Ideas",
+        "flag": "Feedback"
+      }
+    },
+    "save": "Save",
+    "cancel": "Cancel"
   },
   "aboutPage": {
     "eyebrow": "A living archive and open toolchain",

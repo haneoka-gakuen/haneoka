@@ -23,7 +23,7 @@ interface Props {
 const { locale, route, title, titleKey, server, entity } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
-const itemActive = (target: string) => isRouteActive(target, route);
+const itemActive = (target: string) => target === "/community" ? route === "/community" : isRouteActive(target, route);
 const navigationHref = (target: string) => {
   if (target === "/") return `/${server ?? "intl"}/${locale}/`;
   if (target === "/announcements") return `/${server ?? "intl"}/${locale}/announcements/`;
@@ -139,17 +139,48 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                   {destination.sections.map((section) => {
                     const links = (
                       <ul class="nav__children" role="list">
-                        {section.items.map((item) => (
-                          <li>
-                            <a
-                              class="nav-item"
-                              href={navigationHref(item.route)}
-                              aria-current={itemActive(item.route) ? "page" : undefined}
-                            >
+                        {section.items.map((item, itemIndex) => {
+                          const children = item.children || [];
+                          const childCurrent = children.some((child) => itemActive(child.route));
+                          const open = itemActive(item.route) || childCurrent;
+                          const childId = `nav-${destination.id}-${section.id}-${itemIndex}`;
+                          const link = (
+                            <a class="nav-item" href={navigationHref(item.route)}
+                              aria-current={itemActive(item.route) ? "page" : undefined}>
                               <I18nText keyName={item.label} fallback={item.label} locale={locale} />
                             </a>
-                          </li>
-                        ))}
+                          );
+                          return (
+                            <li>
+                              {children.length ? (
+                                <div class="nav__destination">
+                                  {link}
+                                  <button class="icon-button nav__disclosure" type="button"
+                                    data-nav-branch={childId} aria-controls={childId} aria-expanded={open}
+                                    aria-label={t(locale, item.label, item.label)}
+                                    data-i18n-aria-label={item.label}>
+                                    <Icon name="expand_more" />
+                                  </button>
+                                </div>
+                              ) : link}
+                              {children.length > 0 && (
+                                <div class="nav__branch" id={childId} hidden={!open}>
+                                  <ul class="nav__children" role="list">
+                                    {children.map((child) => (
+                                      <li><a class="nav-item" href={navigationHref(child.route)}
+                                        aria-current={itemActive(child.route) ? "page" : undefined}>
+                                        <I18nText keyName={child.label} fallback={child.label} locale={locale} />
+                                      </a></li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {destination.id === "community" && item.route === "/community/forums" && current && (
+                                <community-forum-navigation locale={locale} data-community-forum-directory></community-forum-navigation>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     );
                     return destination.sections.length === 1 ? (
@@ -319,6 +350,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   </div>
 </div>
 <script>
+  import "../lit/community-forum-navigation";
   import { trapFocus } from "../lib/overlay";
   import { syncEntityNavigation } from "../lib/detail-navigation";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";

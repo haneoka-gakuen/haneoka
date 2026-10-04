@@ -1328,7 +1328,29 @@
     "uploadPolicy": "添付ファイル{count}個まで · 1ファイル{size} MiBまで",
     "uploadFileTooLarge": "1ファイル128 MiB以下にしてください。",
     "stampDraftRetained": "スタンプの下書きを保存しました",
-    "leaveStampDraftBody": "文章とスタンプPNGはこの端末に残ります。未公開のアップロードは削除されます。"
+    "leaveStampDraftBody": "文章とスタンプPNGはこの端末に残ります。未公開のアップロードは削除されます。",
+    "forums": "フォーラム",
+    "forumChooseWritable": "投稿できるフォーラムを選択してください。",
+    "forumPostCount": "{count}件のトピック",
+    "forumEmpty": "利用できるフォーラムはありません",
+    "forumReadOnly": "閲覧できます。投稿には制限があります。",
+    "tagMatch": "タグの一致条件",
+    "tagMatchAll": "選択したすべてのタグに一致",
+    "tagMatchAny": "選択したいずれかのタグに一致",
+    "pinnedTopics": "固定されたトピック",
+    "topics": "トピック",
+    "topicLocked": "返信はロックされています",
+    "tagSearch": "タグを検索",
+    "lockTopic": "返信をロック",
+    "unlockTopic": "返信のロックを解除",
+    "movePost": "投稿を移動",
+    "moveDestination": "移動先のフォーラム",
+    "moveReason": "理由",
+    "moveChooseDestination": "移動先を選択",
+    "navigation": {
+      "overview": "コミュニティ概要",
+      "mine": "マイページ"
+    }
   },
   "adminPage": {
     "title": "管理",
@@ -1343,7 +1365,8 @@
       "posts": "投稿",
       "reports": "報告",
       "appeals": "異議申し立て",
-      "operations": "操作履歴"
+      "operations": "操作履歴",
+      "forums": "フォーラム"
     },
     "metrics": {
       "totalUsers": "総ユーザー",
@@ -1760,7 +1783,69 @@
         "visitedTo": "最新訪問の終了日時（未満）"
       },
       "pointSize": "マーカーの大きさはユーザー数を表します。"
-    }
+    },
+    "forum": {
+      "all": "すべてのフォーラム",
+      "create": "フォーラムを作成",
+      "edit": "フォーラムを編集",
+      "nameRequired": "少なくとも1言語で名前を入力してください。",
+      "conflict": "このフォーラムは変更されました。編集内容は保持されています。保存する前に現在の版を読み直してください。",
+      "reload": "現在の版を読み直す",
+      "slug": "URL名",
+      "group": "グループ",
+      "ungrouped": "グループなし",
+      "language": "言語",
+      "name": "名前",
+      "description": "説明",
+      "icon": "アイコン",
+      "order": "表示順",
+      "purpose": "既定の投稿先",
+      "noPurpose": "なし",
+      "generalPurpose": "通常の投稿",
+      "stampPurpose": "スタンプメーカー",
+      "availability": "利用状態",
+      "enabled": "有効",
+      "disabled": "無効",
+      "movePost": "投稿を移動",
+      "unknown": "現在のフォーラム",
+      "destination": "移動先のフォーラム",
+      "chooseDestination": "移動先を選択",
+      "moveReason": "理由",
+      "confirmMove": "投稿を移動",
+      "groups": "グループ",
+      "createGroup": "グループを作成",
+      "editGroup": "グループを編集",
+      "groupConflict": "このグループは変更されました。編集内容は保持されています。保存する前に現在の版を読み直してください。",
+      "permission": {
+        "read": "閲覧",
+        "post": "投稿",
+        "reply": "返信",
+        "manage": "管理"
+      },
+      "audience": {
+        "public": "すべての人",
+        "member": "ログイン済みメンバー",
+        "verified": "認証済みメンバー",
+        "moderator": "モデレーター",
+        "admin": "管理者",
+        "none": "誰にも許可しない"
+      },
+      "symbol": {
+        "forum": "ディスカッション",
+        "chat": "チャット",
+        "style": "タグ",
+        "emoji_emotions": "スタンプ",
+        "music_note": "音楽",
+        "auto_stories": "ストーリー",
+        "groups": "人",
+        "menu_book": "ガイド",
+        "help": "ヘルプ",
+        "lightbulb": "アイデア",
+        "flag": "フィードバック"
+      }
+    },
+    "save": "保存",
+    "cancel": "キャンセル"
   },
   "aboutPage": {
     "eyebrow": "物語を広げるアーカイブとオープンなツールチェーン",

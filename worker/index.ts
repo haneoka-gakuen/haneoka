@@ -18,6 +18,7 @@ import { rasterizeChartSvg } from "./chart-image-rasterizer";
 import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
+import { handleCommunityForumsRequest } from "./community-forums";
 import { handleCommunityActivityRequest } from "./community-activity";
 import { handleAnnouncementsRequest } from "./announcements";
 import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src/lib/announcement-document";
@@ -3144,8 +3145,16 @@ async function serveStaticAsset(request: Request, env: Env): Promise<Response> {
     if (entry) return entry;
   }
   if (url.pathname.includes("/community/")) {
+    if (/^\/(?:ja|en|zh-TW|zh-CN|ko)\/community\/forums(?:\/[^/]+)?\/?$/u.test(url.pathname)) {
+      const forums = await tryEntry("/community/forums/");
+      if (forums) return forums;
+    }
     const entry = await tryEntry("/community/");
     if (entry) return entry;
+  }
+  if (/^\/(?:ja|en|zh-TW|zh-CN|ko)\/admin\/forums(?:\/[^/]+)?\/?$/u.test(url.pathname)) {
+    const forums = await tryEntry("/admin/forums/");
+    if (forums) return forums;
   }
   return response;
 }
@@ -3334,6 +3343,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (registration) return registration;
     const auth = await handleAuthRequest(request, env);
     if (auth) return auth;
+    const communityForums = await handleCommunityForumsRequest(request, env);
+    if (communityForums) return communityForums;
     const admin = await handleAdminRequest(request, env);
     if (admin) return admin;
     const profile = await handleProfileRequest(request, env);

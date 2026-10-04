@@ -1,3 +1,4 @@
+import { forumReadSql } from "./community-forums";
 import { getAuthSession } from "./auth";
 import { COMMENT_LAST_EDITED_AT_SELECT } from "./community-revision";
 import { publicIpLocation } from "./ip-address";
@@ -137,7 +138,7 @@ const listOwnComments = async (request: Request, env: Env, url: URL): Promise<Re
      FROM community_comment AS comment
      JOIN community_post AS post ON post.id = comment.post_id
      CROSS JOIN viewer
-     WHERE comment.author_id = viewer.user_id
+     WHERE comment.author_id = viewer.user_id AND ${forumReadSql("post","viewer.user_id")}
        ${cursorSql}
      ORDER BY comment.created_at DESC, comment.id DESC
      LIMIT ?`,

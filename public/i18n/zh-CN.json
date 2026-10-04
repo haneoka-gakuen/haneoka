@@ -1328,7 +1328,29 @@
     "uploadPolicy": "最多{count}个附件，每个文件不超过{size} MiB",
     "uploadFileTooLarge": "每个文件不能超过128 MiB。",
     "stampDraftRetained": "表情草稿已保存",
-    "leaveStampDraftBody": "文字和表情 PNG 会保留在此设备，未发布的上传附件会移除。"
+    "leaveStampDraftBody": "文字和表情 PNG 会保留在此设备，未发布的上传附件会移除。",
+    "forums": "板块",
+    "forumChooseWritable": "请选择可发帖的板块。",
+    "forumPostCount": "{count} 个主题",
+    "forumEmpty": "没有可用板块",
+    "forumReadOnly": "你可以阅读此板块，发帖受到限制。",
+    "tagMatch": "标签匹配",
+    "tagMatchAll": "匹配所有所选标签",
+    "tagMatchAny": "匹配任一所选标签",
+    "pinnedTopics": "置顶主题",
+    "topics": "主题",
+    "topicLocked": "回复已锁定",
+    "tagSearch": "搜索标签",
+    "lockTopic": "锁定回复",
+    "unlockTopic": "解除回复锁定",
+    "movePost": "移动帖子",
+    "moveDestination": "目标板块",
+    "moveReason": "原因",
+    "moveChooseDestination": "选择目标板块",
+    "navigation": {
+      "overview": "社区概览",
+      "mine": "我的"
+    }
   },
   "adminPage": {
     "title": "管理",
@@ -1343,7 +1365,8 @@
       "posts": "帖子",
       "reports": "举报",
       "appeals": "申诉",
-      "operations": "操作记录"
+      "operations": "操作记录",
+      "forums": "板块"
     },
     "metrics": {
       "totalUsers": "用户总数",
@@ -1760,7 +1783,69 @@
         "visitedTo": "最近访问早于"
       },
       "pointSize": "标记大小表示用户数。"
-    }
+    },
+    "forum": {
+      "all": "全部板块",
+      "create": "创建板块",
+      "edit": "编辑板块",
+      "nameRequired": "请至少输入一种语言的名称。",
+      "conflict": "此板块已变更。你的编辑已保留，请先重新读取当前版本再保存。",
+      "reload": "重新读取当前版本",
+      "slug": "URL 名称",
+      "group": "分组",
+      "ungrouped": "未分组",
+      "language": "语言",
+      "name": "名称",
+      "description": "简介",
+      "icon": "图标",
+      "order": "显示顺序",
+      "purpose": "默认投递目标",
+      "noPurpose": "无",
+      "generalPurpose": "常规帖子",
+      "stampPurpose": "表情制作工具",
+      "availability": "启用状态",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "movePost": "移动帖子",
+      "unknown": "当前板块",
+      "destination": "目标板块",
+      "chooseDestination": "选择目标板块",
+      "moveReason": "原因",
+      "confirmMove": "移动帖子",
+      "groups": "板块分组",
+      "createGroup": "创建分组",
+      "editGroup": "编辑分组",
+      "groupConflict": "此分组已变更。你的编辑已保留，请先重新读取当前版本再保存。",
+      "permission": {
+        "read": "阅读",
+        "post": "发帖",
+        "reply": "回复",
+        "manage": "管理"
+      },
+      "audience": {
+        "public": "所有人",
+        "member": "已登录用户",
+        "verified": "已验证用户",
+        "moderator": "版主",
+        "admin": "管理员",
+        "none": "不允许任何人"
+      },
+      "symbol": {
+        "forum": "讨论",
+        "chat": "聊天",
+        "style": "标签",
+        "emoji_emotions": "表情",
+        "music_note": "音乐",
+        "auto_stories": "故事",
+        "groups": "成员",
+        "menu_book": "指南",
+        "help": "帮助",
+        "lightbulb": "想法",
+        "flag": "意见反馈"
+      }
+    },
+    "save": "保存",
+    "cancel": "取消"
   },
   "aboutPage": {
     "eyebrow": "让故事延展的档案馆与开放工具链",

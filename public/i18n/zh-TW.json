@@ -1328,7 +1328,29 @@
     "uploadPolicy": "最多{count}個附件，每個檔案不超過{size} MiB",
     "uploadFileTooLarge": "每個檔案不能超過128 MiB。",
     "stampDraftRetained": "表情草稿已儲存",
-    "leaveStampDraftBody": "文字和表情 PNG 會保留在此裝置，未發布的上傳附件會移除。"
+    "leaveStampDraftBody": "文字和表情 PNG 會保留在此裝置，未發布的上傳附件會移除。",
+    "forums": "板塊",
+    "forumChooseWritable": "請選擇可發文的板塊。",
+    "forumPostCount": "{count} 個主題",
+    "forumEmpty": "沒有可用板塊",
+    "forumReadOnly": "你可以閱讀此板塊，發文受到限制。",
+    "tagMatch": "標籤匹配",
+    "tagMatchAll": "匹配所有所選標籤",
+    "tagMatchAny": "匹配任一所選標籤",
+    "pinnedTopics": "置頂主題",
+    "topics": "主題",
+    "topicLocked": "回覆已鎖定",
+    "tagSearch": "搜尋標籤",
+    "lockTopic": "鎖定回覆",
+    "unlockTopic": "解除回覆鎖定",
+    "movePost": "移動貼文",
+    "moveDestination": "目標板塊",
+    "moveReason": "原因",
+    "moveChooseDestination": "選擇目標板塊",
+    "navigation": {
+      "overview": "社群總覽",
+      "mine": "我的"
+    }
   },
   "adminPage": {
     "title": "管理",
@@ -1343,7 +1365,8 @@
       "posts": "貼文",
       "reports": "檢舉",
       "appeals": "申訴",
-      "operations": "操作紀錄"
+      "operations": "操作紀錄",
+      "forums": "板塊"
     },
     "metrics": {
       "totalUsers": "使用者總數",
@@ -1760,7 +1783,69 @@
         "visitedTo": "最近訪問早於"
       },
       "pointSize": "標記大小表示使用者數。"
-    }
+    },
+    "forum": {
+      "all": "全部板塊",
+      "create": "建立板塊",
+      "edit": "編輯板塊",
+      "nameRequired": "請至少輸入一種語言的名稱。",
+      "conflict": "此板塊已變更。你的編輯已保留，請先重新讀取目前版本再儲存。",
+      "reload": "重新讀取目前版本",
+      "slug": "URL 名稱",
+      "group": "分組",
+      "ungrouped": "未分組",
+      "language": "語言",
+      "name": "名稱",
+      "description": "簡介",
+      "icon": "圖示",
+      "order": "顯示順序",
+      "purpose": "預設投遞目標",
+      "noPurpose": "無",
+      "generalPurpose": "一般貼文",
+      "stampPurpose": "表情製作工具",
+      "availability": "啟用狀態",
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "movePost": "移動貼文",
+      "unknown": "目前板塊",
+      "destination": "目標板塊",
+      "chooseDestination": "選擇目標板塊",
+      "moveReason": "原因",
+      "confirmMove": "移動貼文",
+      "groups": "板塊分組",
+      "createGroup": "建立分組",
+      "editGroup": "編輯分組",
+      "groupConflict": "此分組已變更。你的編輯已保留，請先重新讀取目前版本再儲存。",
+      "permission": {
+        "read": "閱讀",
+        "post": "發文",
+        "reply": "回覆",
+        "manage": "管理"
+      },
+      "audience": {
+        "public": "所有人",
+        "member": "已登入使用者",
+        "verified": "已驗證使用者",
+        "moderator": "版主",
+        "admin": "管理員",
+        "none": "不允許任何人"
+      },
+      "symbol": {
+        "forum": "討論",
+        "chat": "聊天",
+        "style": "標籤",
+        "emoji_emotions": "表情",
+        "music_note": "音樂",
+        "auto_stories": "故事",
+        "groups": "成員",
+        "menu_book": "指南",
+        "help": "說明",
+        "lightbulb": "想法",
+        "flag": "意見回饋"
+      }
+    },
+    "save": "儲存",
+    "cancel": "取消"
   },
   "aboutPage": {
     "eyebrow": "讓故事延展的檔案館與開放工具鏈",

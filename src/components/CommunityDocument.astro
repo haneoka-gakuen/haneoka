@@ -6,7 +6,7 @@ import { t } from "../i18n/messages";
 import "../lit/community-workspace";
 import "../styles/catalog.css";
 import "../styles/community.css";
-const { locale, path = "feeds" } = Astro.props as { locale: Locale; path?: string };
+const { locale, path } = Astro.props as { locale: Locale; path?: string };
 const mode = path || "feeds";
 const route = `/community${path ? `/${path}` : ""}`;
 const modeTitleKeys: Record<string, string> = {

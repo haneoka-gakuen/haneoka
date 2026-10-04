@@ -1,3 +1,4 @@
+import { forumReadSql, canAccessPostForum } from "./community-forums";
 import { communityAccessState, type CommunityRestrictionKind } from "./access";
 import { getAuthSession, type AuthSession } from "./auth";
 import { COMMENT_LAST_EDITED_AT_SELECT } from "./community-revision";
@@ -558,6 +559,8 @@ const getTags = async (request: Request, env: Env, url: URL): Promise<Response> 
       "post.archived_at IS NULL",
     );
   }
+  readablePostConditions.push(forumReadSql("post","?"));
+  readablePostValues.push(viewerId);
   const values: BindValue[] = [...readablePostValues, viewerId];
   if (query) {
     conditions.push(
@@ -747,9 +750,9 @@ const accessiblePostForViewer = async (env: Env, postId: string, viewerId: strin
          WHERE (block.blocker_user_id = ? AND block.blocked_user_id = post.author_id)
             OR (block.blocker_user_id = post.author_id AND block.blocked_user_id = ?)
        )
-     LIMIT 1`,
+     AND ${forumReadSql("post","?")} LIMIT 1`,
   )
-    .bind(postId, viewerId, viewerId)
+    .bind(postId, viewerId, viewerId,viewerId)
     .first<AccessiblePostRow>();
 
 const putPostFeedback = async (request: Request, env: Env, postId: string): Promise<Response> => {
@@ -1454,6 +1457,13 @@ export const handleCommunitySocialRequest = async (request: Request, env: Env): 
       status: 204,
       headers: { Allow: "GET, HEAD, POST, PATCH, PUT, DELETE, OPTIONS", "Cache-Control": "no-store" },
     });
+  }
+
+  if (path[0] === "comments" && path[1] && UUID_PATTERN.test(path[1])) {
+    if (!env.DB) return error(request,503,"database_unavailable","Database is not configured");
+    const forumPost = await env.DB.prepare("SELECT post_id AS postId FROM community_comment WHERE id=?").bind(path[1]).first<{postId:string}>();
+    const forumSession = await getAuthSession(request,env,{authoritative:true});
+    if (!forumPost || !await canAccessPostForum(env,forumPost.postId,forumSession?.user?.id ?? null,request.method === "PATCH" ? "reply" : "read")) return error(request,404,"comment_not_found","Comment not found");
   }
 
   if (path.length === 1 && path[0] === "tags") {
