@@ -261,7 +261,7 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
         const intervals = await commandPlans.resolve(song, skills, controls);
         if (!intervals.value) return { value: null, status: "unavailable", assumptions: [], gaps: intervals.gaps };
         let score = input.evaluation.songContexts[song.song.key]!.fixedScore;
-        const timingPrefix = augmentation ? new Float64Array(song.nodes.length + 1) : null;
+        const timingPrefix = augmentation && !augmentation.luckPlay ? new Float64Array(song.nodes.length + 1) : null;
         const luckSamples: { timeMs: number; idleScore: number; rushScore: number }[] = [];
         const accumulate = (sums: Float64Array, start: number, end: number, rush?: Float64Array) => {
           score += sums[end]! - sums[start]!;
