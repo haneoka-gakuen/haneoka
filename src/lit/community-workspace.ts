@@ -90,6 +90,7 @@ const feedSnapshots = new Map<
     scroll: number;
     createdAt: number;
     viewer: string;
+    realm: string;
   }
 >();
 type FeedSnapshotRoute = {
@@ -534,6 +535,7 @@ export class CommunityWorkspace extends LitElement {
             : this.closePlaylist(),
     );
   }
+  private initialFeedSnapshot?: ReturnType<typeof feedSnapshots.get>;
   private saveFeedSnapshot = () => {
     if (this.scrollHost && !this.scrollHost.isConnected) return;
     if (
@@ -552,6 +554,7 @@ export class CommunityWorkspace extends LitElement {
         scroll: this.feedScroll,
         createdAt: Date.now(),
         viewer: String((this.session?.user as Value | undefined)?.id || ""),
+        realm: this.readViewer?.realm || "",
       });
       while (feedSnapshots.size > 3)
         feedSnapshots.delete(feedSnapshots.keys().next().value!);
@@ -797,27 +800,25 @@ export class CommunityWorkspace extends LitElement {
     return `/api/v1/garupa/bestdori/${region}`;
   }
   private async initialize() {
-    const session = await this.request("/api/auth/get-session").catch(
-      () => null,
-    );
-    if (!this.isConnected) return;
-    this.session = session && session.user ? session : null;
-    if (
-      (this.routeKind === "post-new" || this.routeKind === "post-edit") &&
-      !this.session
-    ) {
-      location.replace(
-        `${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
-      );
-      return;
+    if (this.routeKind === "post-new" || this.routeKind === "post-edit") {
+      const session = await this.request("/api/auth/get-session").catch(() => null);
+      if (!this.isConnected) return;
+      this.session = session && session.user ? session : null;
+      if (!this.session) {
+        location.replace(`${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+        return;
+      }
     }
     const snapshot = feedSnapshots.get(this.routeUrl);
+    this.initialFeedSnapshot = snapshot;
     await this.load(false);
     if (
       this.routeKind === "collection" &&
+      !["feeds", "mine", "bookmarks"].includes(this.mode) &&
       this.phase === "ready" &&
       snapshot &&
       snapshot.viewer === this.viewerId() &&
+      snapshot.realm === this.readViewer?.realm &&
       snapshot.endpoint === this.loadedCollectionEndpoint
     ) {
       await this.updateComplete;
@@ -5447,11 +5448,12 @@ export class CommunityWorkspace extends LitElement {
     const directory = await readCommunityForumDirectory(signal, (context) => {
       if (!this.isConnected || !this.requests.current(signal)) return;
     const viewer = this.viewerId();
+    const actorKnown = this.readViewer !== undefined || this.session !== null;
     const realmChanged = this.readViewer && this.readViewer.realm !== context.realm;
     this.session = context.session;
     if (realmChanged) { this.clearForumContent(); this.phase = "loading"; }
     this.readViewer = context;
-    if (viewer !== this.viewerId()) {
+    if (actorKnown && viewer !== this.viewerId()) {
       this.clearForumContent();
       this.editorTitle = "";
       this.editorBody = "";
@@ -5530,6 +5532,24 @@ export class CommunityWorkspace extends LitElement {
         this.routeUrl = `${canonical}${location.search}`;
       }
       this.setDocumentTitle(this.forumName(forum));
+    }
+    const snapshot = this.initialFeedSnapshot;
+    this.initialFeedSnapshot = undefined;
+    if (this.requests.current(signal) && snapshot && this.routeKind === "collection" &&
+      ["feeds", "mine", "bookmarks"].includes(this.mode) && this.phase !== "ready" &&
+      snapshot.viewer === this.viewerId() && snapshot.realm === this.readViewer?.realm &&
+      snapshot.endpoint === this.endpoint(false) &&
+      snapshot.items.every((post) => readable.has(String(post.forumId || "")))) {
+      this.items = snapshot.items;
+      this.cursor = snapshot.cursor;
+      this.feedSeed = snapshot.seed;
+      this.loadedCollectionEndpoint = snapshot.endpoint;
+      this.phase = "ready";
+      this.refreshing = true;
+      await this.updateComplete;
+      if (!this.isConnected || !this.requests.current(signal)) return;
+      if (this.scrollHost) this.scrollHost.scrollTop = snapshot.scroll;
+      this.feedScroll = snapshot.scroll;
     }
     if (this.requests.current(signal)) {
       this.publishForumNavigation();
