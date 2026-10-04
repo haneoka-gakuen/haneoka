@@ -1,3 +1,4 @@
+import { projectInventoryDocument } from "./profile";
 import { isEncryptedBox, decryptBox } from "./crypt";
 import { losslessJson, decompress, zipEntries, readZipEntry } from "./formats";
 import {
@@ -22,6 +23,8 @@ const cardId = (value: unknown) => {
 function project(value: unknown, format: BoxCandidate["format"]): BoxCandidate | null {
   const root = object(value);
   if (!root) return null;
+  const compatible = projectInventoryDocument(root);
+  if (compatible) return compatible;
   const compact = integer(root.v) === 1 && (Array.isArray(root.m) || Array.isArray(root.s));
   const player = compact ? root : object(root._player) || object(root.player) || root;
   if (!compact && !Array.isArray(player._memberCards) && !Array.isArray(player._supportCards)) return null;

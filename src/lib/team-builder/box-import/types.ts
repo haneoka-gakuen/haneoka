@@ -1,6 +1,8 @@
 export interface BoxMember {
   cardId: number;
   exp: string | null;
+  /** Explicit level from a supported inventory/profile document; raw saves use exp. */
+  level?: number | null;
   awakeCount: number | null;
   rank: number | null;
   liveSkillLevel: number | null;
@@ -9,15 +11,19 @@ export interface BoxMember {
 export interface BoxSnapshot {
   cardId: number;
   exp: string | null;
+  /** Explicit level from a supported inventory/profile document; raw saves use exp. */
+  level?: number | null;
   rank: number | null;
 }
 export interface BoxCandidate {
   id: string;
-  format: "player-json" | "onpkg1" | "encrypted-player";
+  format: "player-json" | "onpkg1" | "encrypted-player" | "reference-profile" | "inventory-json";
   members: BoxMember[];
   snapshots: BoxSnapshot[];
-  characters: { id: number; exp: string | null }[];
+  characters: { id: number; exp: string | null; rank?: number | null }[];
   bandItems: { id: number; level: number | null }[];
+  /** Caller still confirms binding to current settings; a declared foreign server is rejected. */
+  declaredIdentity?: { server: string; releaseId?: string };
 }
 export interface BoxParseResult {
   schema: "haneoka-box-import-v1";

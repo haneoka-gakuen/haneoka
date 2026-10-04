@@ -1,5 +1,11 @@
-import { nativeRow, dataRows, type TeamBuilderData } from "../data";
-import { practiceRanges, validateInventory, type InventoryV1, type InventoryKind } from "../inventory";
+import { nativeRow, type TeamBuilderData } from "../data";
+import {
+  bandItemLevelValues,
+  practiceRanges,
+  validateInventory,
+  type InventoryV1,
+  type InventoryKind,
+} from "../inventory";
 import { maximumNewCardPractice } from "../manual-card-defaults";
 import { BoxImportError, decimal, integer, type BoxCandidate } from "./types";
 export interface BoxReviewContext {
@@ -71,6 +77,8 @@ export function previewBoxImport(
 ): BoxPreview {
   if (!sameBoxContext(context, data) || !validateInventory(current, data).valid)
     throw new BoxImportError("box_review_context");
+  if (candidate.declaredIdentity && candidate.declaredIdentity.server !== context.server)
+    throw new BoxImportError("box_review_context");
   const issues: BoxPreview["issues"] = [],
     cards = new Map<string, BoxCardProposal>(),
     maps = new Map<string, BoxMapProposal>();
@@ -87,12 +95,14 @@ export function previewBoxImport(
       // Haneoka stores the native awakeCount/rank domain. The reference's *_count fields are minus-one display counts, a different schema.
       const raw: Partial<Record<BoxPracticeField, number | null>> = {
         awakening: source.rank,
-        level: fromExp(
-          data.progression[kind === "members" ? "memberCardLevels" : "supportCardLevels"] || [],
-          source.exp,
-          card.levelGroup,
-          "level",
-        ),
+        level:
+          source.level ??
+          fromExp(
+            data.progression[kind === "members" ? "memberCardLevels" : "supportCardLevels"] || [],
+            source.exp,
+            card.levelGroup,
+            "level",
+          ),
         ...(member
           ? {
               training: member.awakeCount,
@@ -160,16 +170,18 @@ export function previewBoxImport(
       const value =
         map === "bandItems"
           ? (source as BoxCandidate["bandItems"][number]).level
-          : fromExp(
+          : ((source as BoxCandidate["characters"][number]).rank ??
+            fromExp(
               data.progression.characterRanks || [],
               (source as BoxCandidate["characters"][number]).exp,
               null,
               "rank",
-            );
+            ));
       if (value === null) continue;
-      const allowed = (
-        map === "bandItems" ? dataRows(record.levels).map(nativeRow) : data.progression.characterRanks || []
-      ).map((r) => Number(r[map === "bandItems" ? "level" : "rank"]));
+      const allowed =
+        map === "bandItems"
+          ? bandItemLevelValues(data, source.id)
+          : (data.progression.characterRanks || []).map((r) => Number(r.rank));
       if (!allowed.includes(value)) {
         issues.push({ kind: map, id: source.id, field: "level", code: "out_of_current_range" });
         continue;
