@@ -37,7 +37,7 @@ export async function optimizeFixedResourcePlans(
   const parameters = input.parameters, budget = input.budget;
   if (
     input.schema !== "haneoka-resolved-resource-plan-v1" || !input.server || !input.releaseId || !input.sourceId ||
-    !integer(input.eventId) || input.eventId < 1 || !["nominal-mean", "worst-ap"].includes(input.skillOrderCriterion) ||
+    !integer(input.eventId) || input.eventId < 1 || !["nominal-mean", "worst-ap", "best-ap"].includes(input.skillOrderCriterion) ||
     !input.objectives.length || new Set(input.objectives).size !== input.objectives.length ||
     input.objectives.some(objective => !["event-points", "event-items"].includes(objective)) ||
     !integer(parameters.boostBudget) || parameters.boostBudget > 2000 ||

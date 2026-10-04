@@ -55,7 +55,7 @@ export function getTeamBuilderCapabilities(identity: ReleaseIdentity & { sourceI
             },
           } : {}),
           ...(supported && (normalForecast || gekisoSolo || eventPoints)
-            ? { skillOrderCriteria: ["nominal-mean" as const, "worst-ap" as const] }
+            ? { skillOrderCriteria: ["nominal-mean" as const, "worst-ap" as const, "best-ap" as const] }
             : {}),
           conditions:
             supported && (normalForecast || gekisoSolo || eventPoints)

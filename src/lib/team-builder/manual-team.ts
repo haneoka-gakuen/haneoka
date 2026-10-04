@@ -28,6 +28,8 @@ export interface ManualTeamChartControls {
   now?: () => number;
   yield?: () => Promise<void>;
   progress?: (phase: "loading" | "evaluating" | "complete") => void;
+  /** Actual converted chart after wrapper key/mission normalization. */
+  preparedSong?: (song: PinnedManualTeamSong) => void;
 }
 export interface ManualTeamChartResult {
   schema: "haneoka-manual-team-result-v1";
@@ -61,7 +63,7 @@ export function manualTeamChartInputIssues(request: ManualTeamChartRequest): Inv
     issue("budget", "invalid-manual-budget");
   if (!request.objectives.length || new Set(request.objectives).size !== request.objectives.length ||
       request.objectives.some(value => !objectives.includes(value))) issue("objectives", "invalid-objectives");
-  if (request.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap"].includes(request.skillOrderCriterion))
+  if (request.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap", "best-ap"].includes(request.skillOrderCriterion))
     issue("skillOrderCriterion", "invalid-criterion");
   if (request.scoreDomain !== undefined && (request.mode !== "gekiso" ||
       !["personal-solo", "personal-live"].includes(request.scoreDomain))) issue("scoreDomain", "invalid-score-domain");
@@ -132,7 +134,8 @@ async function runManualTeam(request: ManualTeamChartRequest, controls: ManualTe
   let stop = interrupt(); if (stop) return finish(stop);
   const data = request.data, scene = request.eventScene;
   if (scene) { const gaps = validateNativeEventScene(data, scene); if (gaps.length) return finish("unavailable", gaps); }
-  if ((request.mode === "gekiso" || request.skillOrderCriterion === "worst-ap") && request.constraints.justRate !== 0)
+  if ((request.mode === "gekiso" || request.skillOrderCriterion === "worst-ap" ||
+      request.skillOrderCriterion === "best-ap") && request.constraints.justRate !== 0)
     return finish("unavailable", [gap("native-manual-perfect-timing-required", "selected native AP evaluation scope")]);
   let context: ReturnType<typeof resolveNativeChallengeContext>["value"] = null;
   if ("challengeMusicId" in request.chart) {
@@ -178,6 +181,8 @@ async function runManualTeam(request: ManualTeamChartRequest, controls: ManualTe
     result.issues.push({ path: "chart", code: "excluded-just-mission" }); return finish("invalid");
   }
   stop = interrupt(); if (stop) return finish(stop);
+  controls.preparedSong?.({ identity: { ...data.identity, sourceId: data.identity.sourceId! },
+    song: structuredClone(song!) });
   // Unselected unknown practice cannot block a fixed formation. All player
   // modifiers stay intact; validateAssignment already checked the full locks.
   const memberIds = new Set(request.assignment.memberInstanceIds);

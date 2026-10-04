@@ -7,7 +7,9 @@ import { createSearchCheckpoint, restoreSearchCheckpoint, searchFingerprint } fr
 import { validateSearchBudget } from "./search-budget.ts";
 import { createSearchResumeCheckpoint, restoreSearchResumeCheckpoint, type SearchResumeState } from "../search-resume.ts";
 import { prepareAndOptimizeResourcePlan } from "../resource-plan-runner.ts";
-import { evaluateManualTeam } from "../manual-team.ts";
+import { evaluateManualTeam, type PinnedManualTeamSong } from "../manual-team.ts";
+import { resolveNativeChallengeContext } from "./native-challenge-context.ts";
+import { prepareNativePracticalSearch } from "./native-practical-search.ts";
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<SolverRequest>) => void) | null;
   postMessage(message: SolverResponse): void;
@@ -23,7 +25,7 @@ scope.onmessage = (event) => {
     return;
   }
   if (message.type !== "start" && message.type !== "prepare" && message.type !== "resource-prepare" &&
-      message.type !== "manual-prepare") return;
+      message.type !== "manual-prepare" && message.type !== "practical-prepare") return;
   if (active) {
     active.cancelled = true;
     active.controller.abort();
@@ -31,11 +33,32 @@ scope.onmessage = (event) => {
   const run = { runId: message.runId, cancelled: false, controller: new AbortController() };
   active = run;
   const execute = async () => {
-    if (message.type === "manual-prepare") {
-      const result = await evaluateManualTeam(message.request, {
+    if (message.type === "practical-prepare") {
+      const result = await prepareNativePracticalSearch(message.request, {
         cancelled: () => run.cancelled || active !== run,
-        progress: progress => { if (active === run) scope.postMessage({ type: "manual-progress", runId: run.runId, progress }); },
+        progress: progress => { if (active === run) scope.postMessage({ type: "practical-progress", runId: run.runId, progress }); },
       });
+      if (active === run) {
+        scope.postMessage({ type: "practical-result", runId: run.runId, result });
+        active = null;
+      }
+      return;
+    }
+    if (message.type === "manual-prepare") {
+      const parsedSongs: PinnedManualTeamSong[] = [];
+      const manualControls = {
+        cancelled: () => run.cancelled || active !== run,
+        progress: (progress: import("../contracts.ts").ManualTeamProgress) => { if (active === run) scope.postMessage({ type: "manual-progress", runId: run.runId, progress }); },
+        preparedSong: (song: PinnedManualTeamSong) => { parsedSongs.push(song); },
+      };
+      const result = await evaluateManualTeam(message.request, manualControls);
+      if (parsedSongs.length === message.request.selections.length && result.status !== "cancelled" && result.status !== "budget-limited") {
+        const { assignment: _assignment, budget: _budget, ...semanticRequest } = message.request;
+        const { requiredLeaderId: _leader, requiredBindings: _bindings, lockedMemberIds: _members,
+          lockedSnapshotIds: _photos, resultDistinctCardSets: _count, ...constraints } = semanticRequest.constraints;
+        result.contextFingerprint = await searchFingerprint({ kind: "native-fixed-team-comparison-context",
+          request: { ...semanticRequest, constraints }, parsedSongs });
+      }
       if (active === run) {
         scope.postMessage({ type: "manual-result", runId: run.runId, result });
         active = null;
@@ -59,6 +82,22 @@ scope.onmessage = (event) => {
     let evaluate;
     let fingerprint;
     if (message.type === "prepare") {
+      const request = message.request;
+      let challenge: ReturnType<typeof resolveNativeChallengeContext>["value"] = null;
+      if (request.challengeMusicId !== undefined) {
+        const scene = request.eventScene;
+        if (scene?.kind !== "challenge") throw new RangeError("native-challenge-scenario-required");
+        const resolved = resolveNativeChallengeContext(request.data, request.data.challengeMusicTable, {
+          challengeMusicId: request.challengeMusicId, eventId: scene.eventId,
+          startTimeMs: scene.liveStartServerTime.epochMilliseconds, masterTimeSlot: scene.masterTimeSlot,
+        });
+        if (!resolved.value) throw new RangeError(resolved.gaps[0]?.code ?? "native-challenge-context-unresolved");
+        challenge = resolved.value;
+        if (request.selections.length !== 1 || request.selections[0]?.songId !== challenge.underlyingSongId)
+          throw new RangeError("native-challenge-parent-chart-mismatch");
+        if (request.mode === "gekiso" && request.objectives.includes("score") && request.scoreDomain !== "personal-solo")
+          throw new RangeError("native-challenge-gekiso-live-context-unresolved");
+      }
       scope.postMessage({
         type: "progress",
         runId: run.runId,
@@ -69,6 +108,11 @@ scope.onmessage = (event) => {
           message.request.objectives.includes("score") && message.request.constraints.justRate === 0 &&
           message.request.nativeGekisoPlans === undefined,
       });
+      if (challenge) {
+        songs[0]!.key = `challenge:${challenge.challengeMusicId}:${request.selections[0]!.difficulty}`;
+        if (request.mode === "gekiso") songs[0]!.segments = songs[0]!.segments.map((range, index) =>
+          ({ ...range, mission: challenge!.missionTypes[index]! }));
+      }
       if (active !== run) return;
       if (run.cancelled) {
         scope.postMessage({
@@ -154,9 +198,20 @@ scope.onmessage = (event) => {
       active = null;
     }
   };
-  void execute().catch((error: unknown) => {
+  void execute().catch(async (error: unknown) => {
     if (active === run) {
-      if (run.cancelled && message.type === "manual-prepare")
+      if (run.cancelled && message.type === "practical-prepare") {
+        const contextFingerprint = await searchFingerprint({ kind: "native-practical-cancelled", request: message.request });
+        if (active !== run) return;
+        scope.postMessage({ type: "practical-result", runId: run.runId, result: {
+          ...message.request.data.identity, sourceId: message.request.data.identity.sourceId ?? "",
+          schema: "haneoka-native-practical-result-v1", method: "multidirection-one-neighbour-round-native-refinement",
+          optimality: "heuristic-selected-candidates", contextFingerprint, status: "cancelled",
+          plan: { localRounds: 1, screenOrders: null, finalOrders: 120, finalistLimit: message.request.finalistLimit ?? 6 },
+          tasks: [], generated: 0, neighbourChecks: 0, screened: 0, fullyEvaluated: 0, elapsedMs: 0,
+        } });
+      }
+      else if (run.cancelled && message.type === "manual-prepare")
         scope.postMessage({ type: "manual-result", runId: run.runId, result: {
           ...message.request.data.identity, sourceId: message.request.data.identity.sourceId ?? "",
           schema: "haneoka-manual-team-result-v1", assignment: structuredClone(message.request.assignment),

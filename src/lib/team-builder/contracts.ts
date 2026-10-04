@@ -3,6 +3,7 @@ import type { InventoryV1 } from "./inventory.ts";
 import type { NativeGekisoPlans, NativeGekisoSongPlan } from "./solver/native-gekiso-evaluation.ts";
 import type { ResourcePlannerPreparationInput, ResourcePlannerProgress, ResourcePlannerResult } from "./resource-plan-contract.ts";
 import type { ResourceStagePreparationProgress } from "./solver/native-challenge-stage-adapter.ts";
+import type { NativePracticalPreparationInput, NativePracticalProgress, NativePracticalResult } from "./solver/native-practical-search.ts";
 /** Serializable inputs shared by the inventory adapter, solver worker and UI. */
 export interface ReleaseIdentity {
   server: string;
@@ -34,7 +35,7 @@ export interface NativeRuleEvidence {
 }
 export type Objective = "score" | "ss-ratio" | "ss-surplus" | "event-points" | "event-items" | "base-score";
 export type PlayMode = "normal" | "gekiso" | "multi" | "battle";
-export type SkillOrderCriterion = "nominal-mean" | "worst-ap";
+export type SkillOrderCriterion = "nominal-mean" | "worst-ap" | "best-ap";
 export type PersonalScoreDomain = "personal-solo" | "personal-live";
 export interface EvidenceGap {
   code: string;
@@ -317,7 +318,7 @@ export interface OptimizationInput extends ReleaseIdentity {
 export interface WorkerPreparationInput {
   /** Optional explicit context; the Worker otherwise produces eligible chart plans. */
   nativeGekisoPlans?: NativeGekisoPlans;
-  /** Default mean; worst-ap evaluates the least favorable complete AP order. */
+  /** Default mean; AP endpoints select the lowest/highest complete native order. */
   skillOrderCriterion?: SkillOrderCriterion;
   /** Gekiso personal-live selects the chart/native driver; personal-solo selects its Solo ledger. */
   scoreDomain?: PersonalScoreDomain;
@@ -340,6 +341,8 @@ export interface ManualTeamPreparationInput extends WorkerPreparationInput {
 export interface ManualTeamEvaluationResult extends ReleaseIdentity {
   schema: "haneoka-manual-team-result-v1";
   sourceId: string;
+  /** Shared native parsed-chart context for comparing fixed assignments; absent for an unprepared pool. */
+  contextFingerprint?: string;
   assignment: TeamAssignment;
   status: "complete" | "cancelled" | "budget-limited" | "unavailable";
   /** One fixed-assignment result per completely evaluated chart. */
@@ -370,6 +373,7 @@ export interface NativeEventScene {
   };
 }
 export type SolverRequest =
+  | { type: "practical-prepare"; runId: string; request: NativePracticalPreparationInput }
   | { type: "manual-prepare"; runId: string; request: ManualTeamPreparationInput }
   | { type: "resource-prepare"; runId: string; request: ResourcePlannerPreparationInput }
   | { type: "prepare"; runId: string; request: WorkerPreparationInput; checkpoint?: SearchCheckpoint;
@@ -378,6 +382,8 @@ export type SolverRequest =
       resumeCheckpoint?: SearchResumeCheckpoint }
   | { type: "cancel"; runId: string };
 export type SolverResponse =
+  | { type: "practical-progress"; runId: string; progress: NativePracticalProgress }
+  | { type: "practical-result"; runId: string; result: NativePracticalResult }
   | { type: "manual-progress"; runId: string; progress: ManualTeamProgress }
   | { type: "manual-result"; runId: string; result: ManualTeamEvaluationResult }
   | { type: "resource-progress"; runId: string; progress:

@@ -178,6 +178,8 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
         ...song.gaps,
         ...profiles.flatMap((profile) => profile?.gaps ?? [gap("native-normal-slot-unresolved", song.song.key)]),
       ];
+      if (augmentation?.luckPlay && input.skillOrderCriterion === "best-ap")
+        return unavailableMetric("native-gekiso-luck-maximum-law-unresolved", "complete native Luck paths, beyond order expectations");
       if (augmentation && (augmentation.gekisoComboBonuses.length !== song.nodes.length ||
         augmentation.gekisoComboBonuses.some((value) => !Number.isFinite(f(value)) || value < 0)))
         local.push(gap("native-gekiso-node-combo-unresolved", song.song.key));
@@ -252,7 +254,7 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
       const expectedOrderScores: number[] | null = augmentation?.luckPlay ? [] : null;
       const assumptions = new Set([
         ...input.evaluation.assumptions,
-        input.skillOrderCriterion === "worst-ap"
+        input.skillOrderCriterion === "worst-ap" || input.skillOrderCriterion === "best-ap"
           ? "native-normal-complete-member-order-domain"
           : "native-normal-nominal-uniform-member-shuffle",
         "100-percent-perfect",
@@ -331,7 +333,8 @@ export function createNativeNormalScoreResolver(data: TeamBuilderData, input: Op
           outcomes: [...scores].sort(([a], [b]) => a - b).map(([score, multiplicity]) => ({ score, multiplicity })),
         });
       return {
-        value: input.skillOrderCriterion === "worst-ap" ? minimum : total / orders.length,
+        value: input.skillOrderCriterion === "worst-ap" ? minimum :
+          input.skillOrderCriterion === "best-ap" ? maximum : total / orders.length,
         status: "conditional",
         range: { minimum, maximum },
         bestSkillOrder,

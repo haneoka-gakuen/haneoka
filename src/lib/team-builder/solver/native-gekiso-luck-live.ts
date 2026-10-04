@@ -30,6 +30,8 @@ export function createNativeGekisoLuckLiveScoreResolver(data: TeamBuilderData, i
       rules: GekisoRules, tape: NativeGekisoBasicRuntimeInput, ranges: readonly NativeGekisoScoreRange[],
       controls: SearchEvaluationControls): Promise<MetricValue> {
       const luckIndices = tape.missions.flatMap((mission, index) => mission === 2 ? [index as 0 | 1 | 2] : []);
+      if (input.skillOrderCriterion === "best-ap")
+        return unavailableMetric("native-gekiso-luck-maximum-law-unresolved", "complete native Luck paths, beyond order expectations");
       const threeLuck = luckIndices.length === 3;
       if (input.constraints.justRate !== 0 || ![1, 3].includes(luckIndices.length) ||
         (threeLuck && (!tape.requireNoPendingLots || !nativeGekisoAllComboDriverSupports(data.identity))))

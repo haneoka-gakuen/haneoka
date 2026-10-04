@@ -46,10 +46,10 @@ export function dominates(left: readonly number[], right: readonly number[]): bo
   );
 }
 export function validateOptimizationInput(input: OptimizationInput): void {
-  if (input.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap"].includes(input.skillOrderCriterion))
+  if (input.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap", "best-ap"].includes(input.skillOrderCriterion))
     throw new RangeError("skill-order-criterion");
-  if (input.skillOrderCriterion === "worst-ap" && input.constraints.justRate !== 0)
-    throw new RangeError("worst-ap-requires-perfect-timing");
+  if ((input.skillOrderCriterion === "worst-ap" || input.skillOrderCriterion === "best-ap") && input.constraints.justRate !== 0)
+    throw new RangeError(`${input.skillOrderCriterion}-requires-perfect-timing`);
   if (input.scoreDomain !== undefined && !["personal-solo", "personal-live"].includes(input.scoreDomain))
     throw new RangeError("score-domain");
   if (input.scoreDomain === "personal-live" && input.evaluation.mode !== "gekiso")
@@ -125,8 +125,8 @@ export function validateOptimizationInput(input: OptimizationInput): void {
 export async function optimizeTeams(input: OptimizationInput, hooks: SearchHooks = {}): Promise<SearchResult> {
   validateOptimizationInput(input);
   const requirements = compileSearchRequirements(input);
-  if (input.skillOrderCriterion === "worst-ap" && !hooks.evaluate)
-    throw new RangeError("worst-ap-requires-native-order-factory");
+  if ((input.skillOrderCriterion === "worst-ap" || input.skillOrderCriterion === "best-ap") && !hooks.evaluate)
+    throw new RangeError(`${input.skillOrderCriterion}-requires-native-order-factory`);
   if (input.scoreDomain === "personal-live" && !hooks.evaluate)
     throw new RangeError("personal-live-requires-native-context-factory");
   const now = hooks.now ?? (() => performance.now());

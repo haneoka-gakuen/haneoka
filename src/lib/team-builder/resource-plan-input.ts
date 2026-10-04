@@ -24,7 +24,7 @@ export function resourcePlanInputIssues(input: ResourcePlannerPreparationInput):
   if (!input.objectives.length || new Set(input.objectives).size !== input.objectives.length ||
       input.objectives.some(value => value !== "event-points" && value !== "event-items"))
     issue("objectives", "invalid-objectives");
-  if (!["nominal-mean", "worst-ap"].includes(input.skillOrderCriterion)) issue("skillOrderCriterion", "invalid-criterion");
+  if (!["nominal-mean", "worst-ap", "best-ap"].includes(input.skillOrderCriterion)) issue("skillOrderCriterion", "invalid-criterion");
   if (input.objectives.includes("event-items") && (!input.itemResource ||
       !integer(input.itemResource.type) || !integer(input.itemResource.id))) issue("itemResource", "resource-identity-required");
   for (const kind of ["normal", "challenge"] as const) {

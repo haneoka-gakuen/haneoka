@@ -259,12 +259,12 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
       mode: "normal", scoreDomain: undefined, requireGekisoPractice: true });
     return createNativeGekisoContextEvaluation(request.data, normal, request.nativeGekisoPlans);
   }
-  if (request.nativeRuntime && request.skillOrderCriterion === "worst-ap")
-    throw new RangeError("worst-ap-requires-native-order-factory");
-  if (request.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap"].includes(request.skillOrderCriterion))
+  if (request.nativeRuntime && (request.skillOrderCriterion === "worst-ap" || request.skillOrderCriterion === "best-ap"))
+    throw new RangeError(`${request.skillOrderCriterion}-requires-native-order-factory`);
+  if (request.skillOrderCriterion !== undefined && !["nominal-mean", "worst-ap", "best-ap"].includes(request.skillOrderCriterion))
     throw new RangeError("skill-order-criterion");
-  if (request.skillOrderCriterion === "worst-ap" && request.constraints.justRate !== 0)
-    throw new RangeError("worst-ap-requires-perfect-timing");
+  if ((request.skillOrderCriterion === "worst-ap" || request.skillOrderCriterion === "best-ap") && request.constraints.justRate !== 0)
+    throw new RangeError(`${request.skillOrderCriterion}-requires-perfect-timing`);
   if (request.scoreDomain !== undefined && request.scoreDomain !== "personal-solo")
     throw new RangeError("score-domain");
   if (
@@ -436,6 +436,8 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
             const value =
               request.skillOrderCriterion === "worst-ap"
                 ? minimum
+                : request.skillOrderCriterion === "best-ap"
+                  ? amounts.reduce((best, outcome) => outcome.score > best.score ? outcome : best).points.value!
                 : amounts.reduce((sum, outcome) => sum + outcome.points.value! * outcome.multiplicity, 0) /
                   law.nominalOrders;
             points = {

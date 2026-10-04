@@ -598,3 +598,18 @@
   #team-panel-sync { display: grid; gap: var(--md-sys-spacing-4); }
   #team-panel-sync[hidden] { display: none; }
 }
+
+@layer pages {
+  .team-builder__requirements .team-builder__section { padding: 0; border-radius: 0; background: transparent; }
+  .selection-pane__choice { cursor: pointer; }
+  .selection-pane__choice-label { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: start; gap: 4px; }
+  .selection-pane__choice-label .tile__identity { padding: 8px 0; }
+  .selection-pane__choice:has(md-checkbox:focus-within) { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+  .team-builder__song-pool-summary { display: grid; min-width: 0; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+}
+
+@layer pages {
+  .team-builder__start-hint { min-block-size: 0; }
+  .team-builder__primary-setup { display: grid; min-width: 0; align-items: start; gap: var(--md-sys-spacing-4); }
+  @media (min-width: 1100px) { .team-builder__primary-setup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } }
+}

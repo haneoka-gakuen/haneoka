@@ -31,7 +31,7 @@ export interface ResourceStagePlayLaw {
 }
 
 /** Consume the factory's complete integer score law, never a scalar mean.
- * Worst AP is one complete minimum-score play. Nominal orders are ranked and
+ * AP endpoints select one complete minimum/maximum-score play. Nominal orders are ranked and
  * rounded individually before equal joint reward outcomes are combined.
  * Server-selected item probabilities have their own evidence boundary.
  */
@@ -45,11 +45,13 @@ export function resolveResourceStagePlayLaw(
   if (!law || law.nominalOrders !== 120 || !law.outcomes.length || law.outcomes.length > 120 ||
       law.outcomes.some(row => !integer(row.score) || !integer(row.multiplicity) || row.multiplicity < 1) ||
       law.outcomes.reduce((sum, row) => sum + row.multiplicity, 0) !== law.nominalOrders ||
-      !["nominal-mean", "worst-ap"].includes(criterion))
+      !["nominal-mean", "worst-ap", "best-ap"].includes(criterion))
     return { outcomes: [], completeLaw: false,
       gaps: [gap("native-resource-complete-score-law-required", "120 native member orders")], metricGaps: {} };
   const plays = criterion === "worst-ap"
     ? [{ score: Math.min(...law.outcomes.map(row => row.score)), probability: 1 }]
+    : criterion === "best-ap"
+      ? [{ score: Math.max(...law.outcomes.map(row => row.score)), probability: 1 }]
     : law.outcomes.map(row => ({ score: row.score, probability: row.multiplicity / law.nominalOrders }));
   const pointGaps: EvidenceGap[] = [], cpGaps: EvidenceGap[] = [];
   const joint = new Map<string, ResourcePlayOutcome>();
