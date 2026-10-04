@@ -613,3 +613,8 @@
   .team-builder__primary-setup { display: grid; min-width: 0; align-items: start; gap: var(--md-sys-spacing-4); }
   @media (min-width: 1100px) { .team-builder__primary-setup { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } }
 }
+
+@layer pages {
+  #team-results .team-builder__section-header > .detail-section-title { flex: 1 1 0; min-width: 0; }
+  .team-builder__check > span { min-width: 0; overflow-wrap: anywhere; }
+}

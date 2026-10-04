@@ -110,6 +110,9 @@ import { downloadBlob } from "../lib/canvas-capture";
 import { projectPreparationRequest, type SearchRequestProjection } from "../lib/team-builder/search-request";
 import { requestSearchCancellation } from "../lib/team-builder/search-cancellation";
 import { isUnchangedInventoryConflict } from "../lib/team-builder/sync-review";
+import type { NativePracticalPreparationInput, NativePracticalProgress, NativePracticalResult } from "../lib/team-builder/solver/native-practical-search";
+import { selectNativePortfolio, compareNativePortfolioReplacement, type NativePortfolioInput, type NativePortfolioResult } from "../lib/team-builder/native-portfolio";
+import type { PracticalTaskResult } from "../lib/team-builder/practical-search";
 import { compileSearchRequirements } from "../lib/team-builder/search-requirements";
 import { initializeManualCardPractice } from "../lib/team-builder/manual-card-defaults";
 import { parseBoxLocally } from "../lib/team-builder/box-import/client";
@@ -201,6 +204,21 @@ export class TeamBuilder extends LitElement {
     teamName: { state: true },
     workspaceImport: { state: true },
     workspaceImportPriority: { state: true },
+    portfolioTeams: { state: true },
+    portfolioLimit: { state: true },
+    portfolioWeights: { state: true },
+    portfolioProgress: { state: true },
+    portfolioCompleted: { state: true },
+    portfolioVisible: { state: true },
+    portfolioWeightError: { state: true },
+    replacementBefore: { state: true },
+    replacementAfter: { state: true },
+    searchEffort: { state: true },
+    compareModes: { state: true },
+    practicalBaselineId: { state: true },
+    practicalProgress: { state: true },
+    practicalCompleted: { state: true },
+    practicalCompareKeys: { state: true },
     exportingImage: { state: true },
     manualResult: { state: true },
     manualProgress: { state: true },
@@ -318,6 +336,26 @@ export class TeamBuilder extends LitElement {
   declare workspaceImportPriority: "cloud" | "local";
   private manualScope: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined } | null = null;
   private manualObjectives: Objective[] = [];
+  declare portfolioTeams: Set<string>;
+  declare portfolioLimit: number;
+  declare portfolioWeights: Record<string, number | null>;
+  declare portfolioProgress: { completed: number; total: number } | null;
+  declare portfolioCompleted: { request: WorkerPreparationInput; input: NativePortfolioInput; result: NativePortfolioResult; data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string } | null;
+  declare portfolioVisible: number;
+  declare portfolioWeightError: boolean;
+  declare replacementBefore: string;
+  declare replacementAfter: string;
+  private portfolioActive: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string } | null = null;
+  private portfolioReject?: (reason: Error) => void;
+  declare searchEffort: "practical" | "exact";
+  declare compareModes: boolean;
+  declare practicalBaselineId: string;
+  private practicalBaselineCache?: { data: TeamBuilderData; inventory: InventoryV1; key: string; assignment?: TeamAssignment };
+  declare practicalProgress: NativePracticalProgress | null;
+  declare practicalCompareKeys: string[];
+  private practicalCompareIndex?: { result: NativePracticalResult; byKey: Map<string, { row: PracticalTaskResult; candidate: Candidate; key: string }> };
+  declare practicalCompleted: { request: NativePracticalPreparationInput; result: NativePracticalResult; data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string } | null;
+  private practicalActive: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string } | null = null;
   declare exportingImage: boolean;
   declare manualResult: ManualTeamEvaluationResult | null;
   declare manualProgress: ManualTeamProgress | null;
@@ -1288,7 +1326,7 @@ export class TeamBuilder extends LitElement {
         ${!this.visitedViews.has("growth") ? nothing : ready ? html`<div ?inert=${!this.canEdit}>${this.renderPlayerModifiers()}${this.renderBands()}</div>` : this.renderInventoryAccess()}
       </section>
       <section id="team-panel-sync" class="team-builder__panel" aria-label=${this.t("inventorySyncTab", "Sync")} ?hidden=${this.workspaceView !== "sync"}>
-        ${this.renderWorkspaceManager()}${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}
+        ${this.visitedViews.has("sync") ? html`${this.renderWorkspaceManager()}${this.renderPortfolioControls()}${this.renderStorage()}${this.renderUniqueness()}${this.renderRebase()}` : nothing}
       </section>
     `;
   }
@@ -1512,6 +1550,14 @@ export class TeamBuilder extends LitElement {
     this.teamName = "";
     this.workspaceImport = null;
     this.workspaceImportPriority = "cloud";
+    this.portfolioTeams = new Set(); this.portfolioLimit = 3; this.portfolioWeights = {};
+    this.portfolioProgress = null; this.portfolioCompleted = null; this.portfolioVisible = 10; this.portfolioWeightError = false;
+    this.replacementBefore = ""; this.replacementAfter = "";
+    this.searchEffort = "practical";
+    this.compareModes = false; this.practicalBaselineId = "";
+    this.practicalProgress = null;
+    this.practicalCompareKeys = [];
+    this.practicalCompleted = null;
     this.exportingImage = false;
     this.manualResult = null;
     this.manualProgress = null;
@@ -1632,6 +1678,7 @@ export class TeamBuilder extends LitElement {
     const resourceScope = JSON.stringify([this.data?.identity, this.currentOwner !== undefined, this.currentOwner]);
     if (resourceScope !== this.resourceScope) {
       this.resourceScope = resourceScope;
+      this.portfolioTeams = new Set(); this.portfolioWeights = {}; this.practicalBaselineId = ""; this.practicalBaselineCache = undefined;
       this.requiredLeader = "";
       this.fixedBindings = [];
       this.bonusFloorPoints = null;
@@ -1656,6 +1703,8 @@ export class TeamBuilder extends LitElement {
       this.pendingRebase || this.pendingUniqueness || ["loading", "auth-loading", "conflict", "merge-required", "release-mismatch", "error"].includes(this.saveState)
     )) this.closeScreenshotImport(true);
     if (this.running && this.resourceActive && !this.resourceContextMatches(this.resourceActive)) this.cancelSearch();
+    if (this.practicalActive && !this.practicalContextMatches(this.practicalActive)) this.cancelSearch();
+    if (this.portfolioActive && !this.portfolioContextMatches(this.portfolioActive)) this.cancelSearch();
     if (this.manualScope && (this.manualScope.data !== this.data || this.manualScope.inventory !== this.inventory || this.manualScope.owner !== this.currentOwner || !this.sourceReady)) this.cancelSearch();
     this.reconcileUnchangedConflict();
     this.images.observe(this);
@@ -1975,7 +2024,7 @@ export class TeamBuilder extends LitElement {
       { id: "plan" as const, label: this.t("recommendationTab", "Find teams"), title: this.t("recommendationSetup", "Recommendations"), graphic: icon("tune") },
       { id: "cards" as const, label: this.t("inventoryCardsTab", "Cards"), graphic: icon("style") },
       { id: "growth" as const, label: this.t("inventoryGrowthTab", "Growth"), graphic: icon("trending_up") },
-      { id: "results" as const, label: this.t("resultsTab", "Results"), title: this.t("results", "Candidates"), graphic: icon("leaderboard") },
+      { id: "results" as const, label: this.t("resultsTab", "Results"), title: this.t("resultsTab", "Results"), graphic: icon("leaderboard") },
       { id: "sync" as const, label: this.t("plansAndSync", "Plans & sync"), graphic: icon("refresh") },
     ];
   }
@@ -2001,18 +2050,18 @@ export class TeamBuilder extends LitElement {
   }
   private renderRunActions() {
     const resource = this.planningKind === "resource";
-    const ready = resource ? Boolean(this.resourcePreparation) : this.canOptimize;
+    const ready = resource ? Boolean(this.resourcePreparation) : this.searchEffort === "practical" ? this.canPractical : this.canOptimize;
     return html`<div class="team-builder__run-actions">
       <button type="button" class="button" aria-describedby=${!ready ? "team-builder-start-hint" : nothing}
         ?disabled=${!this.running && !ready || this.cancelling}
         @click=${() => {
           if (this.running) this.requestCancellation();
-          else { if (resource) this.startResourceOptimization(); else this.startOptimization(); this.openWorkspace("results"); }
+          else { if (resource) this.startResourceOptimization(); else if (this.searchEffort === "practical") this.startPractical(); else this.startOptimization(); this.openWorkspace("results"); }
         }}>
         ${this.running ? clientText(this.locale, "cancel", "Cancel") : resource ? this.t("resourceCalculate", "Calculate event plan") : this.t("recommendTeamsSongs", "Recommend")}
       </button>
       ${this.running || !ready ? html`<p id="team-builder-start-hint" class="team-builder__hint team-builder__start-hint" role="status">
-        ${this.running ? this.resourceActive ? this.resourceProgressLabel : this.searchProgressLabel : !ready ? resource ? this.resourceUnavailableHint : this.optimizationHint : nothing}
+        ${this.running ? this.resourceActive ? this.resourceProgressLabel : this.searchProgressLabel : !ready ? resource ? this.resourceUnavailableHint : this.searchEffort === "practical" ? this.practicalHint : this.optimizationHint : nothing}
       </p>` : nothing}
     </div>`;
   }
@@ -2054,11 +2103,12 @@ export class TeamBuilder extends LitElement {
     label: string,
     value: number | null,
     change: (value: number | null) => void,
-    limits: { min?: number; max?: number; step?: number; hint?: string } = {},
+    limits: { min?: number; max?: number; step?: number; hint?: string; disabled?: boolean } = {},
   ) {
     return html`
       <md-outlined-text-field
         type="number"
+        ?disabled=${limits.disabled}
         label=${label}
         .value=${value === null ? "" : String(value)}
         min=${limits.min ?? nothing}
@@ -4276,7 +4326,19 @@ export class TeamBuilder extends LitElement {
         ${this.renderEventConditions()}
       `, !!this.selectedEvent || this.wantsEventScene) : nothing}
       ${this.disclosure("team-requirements", html`${this.t("formationConstraints", "Team requirements")}`, html`${this.renderCardConstraints()}${this.renderFormationConstraints(false)}`, false, "team-builder__options team-builder__requirements")}
-      ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")}${this.skillOrderCriteria.length ? html` · ${this.criterionLabel(this.effectiveSkillOrderCriterion)}` : nothing}</span>`, html`
+      ${this.disclosure("search-options", html`<span>${this.t("searchOptions", "Search options")} · ${this.searchEffort === "practical" ? this.t("practicalSearch", "Practical recommendation") : this.t("exactSearch", "Exact search (budgeted)")}${this.skillOrderCriteria.length ? html` · ${this.criterionLabel(this.effectiveSkillOrderCriterion)}` : nothing}</span>`, html`
+        ${this.select(this.t("searchMethod", "Search method"), this.searchEffort, [
+          { value: "practical", label: this.t("practicalSearch", "Practical recommendation") }, { value: "exact", label: this.t("exactSearch", "Exact search (budgeted)") },
+        ], value => { this.formationChanged(); this.searchEffort = value as "practical" | "exact"; })}
+        ${this.searchEffort === "practical" ? html`
+          ${this.select(this.t("baselineTeam", "Baseline team"), this.practicalBaselineId,
+            [{value:"",label:this.t("noBaseline", "No baseline")}, ...(this.fixedAssignment ? [{value:"fixed",label:this.t("currentFixedTeam", "Current fixed team")}] : []),
+              ...(this.workspaceDocument?.teams ?? []).map(team=>({value:team.id,label:team.name,disabled:!this.profileMatches(team)}))],
+            value=>{this.formationChanged();this.practicalBaselineId=value;})}
+          ${this.practicalBaselineId && this.practicalBaselineId !== "fixed" && (this.requiredLeader || this.fixedBindings.length) ? html`<button class="button button--text" @click=${()=>{this.formationChanged();this.requiredLeader="";this.fixedBindings=[];}}>${this.t("clearFixedRequirements", "Clear fixed requirements")}</button>`:nothing}
+          ${this.check(this.t("comparePlayModes", "Compare normal and GEKISO"), this.compareModes, value => { this.formationChanged(); this.compareModes = value; })}
+          ${this.compareModes && !this.challengeSearch ? this.select(this.t("gekisoScoreType", "GEKISO score type"), this.selectedScoreDomain,
+            [{ value: "personal-solo", label: this.t("personalSoloScore", "Solo score") }, { value: "personal-live", label: this.t("personalLiveScore", "Personal Live score") }], value => { this.formationChanged(); this.selectedScoreDomain = value as PersonalScoreDomain; }) : nothing}` : nothing}
         ${this.renderSkillOrderCriterion()}
         <div class="team-builder__fields">
           ${this.numericField(
@@ -4583,6 +4645,13 @@ export class TeamBuilder extends LitElement {
     };
   }
   cancelSearch() {
+    this.portfolioReject?.(new Error("coverage-context-changed")); this.portfolioReject = undefined;
+    this.portfolioActive = null; this.portfolioProgress = null; this.portfolioCompleted = null; this.portfolioWeightError = false;
+    this.practicalActive = null;
+    this.practicalCompareIndex = undefined;
+    this.practicalCompareKeys = [];
+    this.practicalProgress = null;
+    this.practicalCompleted = null;
     this.manualScope = null;
     this.manualResult = null;
     this.manualProgress = null;
@@ -4748,7 +4817,7 @@ export class TeamBuilder extends LitElement {
     const resumeStore = this.resumeStore;
     const resumeInventory = exportInventory(this.inventory);
     const resumeIdentity = { server: this.data.identity.server, releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId ?? "" };
-    const resumeSettings = this.searchSettings;
+    const resumeSettings = { ...this.searchSettings, searchEffort: "exact" as const, compareModes: false };
     this.rankingLimit = 5;
     const runId = crypto.randomUUID();
     let runRequest: SearchRunRequest;
@@ -4867,15 +4936,353 @@ export class TeamBuilder extends LitElement {
       this.searchError = this.t("unavailable", "Required data or formula is unavailable");
     }
   }
-  private async exportCandidateImage(candidate: Candidate, source: "search" | "manual" = "search") {
-    const current = source === "search" ? this.canCompareCandidates && this.comparableCandidates.some(row => this.resultCandidateKey(row) === this.resultCandidateKey(candidate))
+  private get portfolioSignature() {
+    return JSON.stringify([this.activeProfileId, [...this.portfolioTeams].sort(), this.mode, this.scoreDomain, this.effectiveSkillOrderCriterion,
+      this.chartSelections, this.evaluationBasis, this.portfolioConstraints(), this.wantsEventScene ? this.eventScene : null,
+      this.challengeSearch ? this.selectedChallengeId : null,
+      this.workspaceDocument?.teams.filter(team => this.portfolioTeams.has(team.id)).map(team => ({ id: team.id, identity: team.identity, formation: team.formation }))]);
+  }
+  private portfolioConstraints(): SearchConstraints {
+    return { ...this.constraints, lockedMemberIds: [], lockedSnapshotIds: [], requiredLeaderId: null, requiredBindings: [], resultDistinctCardSets: undefined };
+  }
+  private portfolioContextMatches(context: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string }) {
+    return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.portfolioSignature && this.sourceReady;
+  }
+  private portfolioSongs() {
+    return this.chartSelections.map(chart => { const songKey = this.chartSelectionKey(chart); return { songKey, weight: Object.hasOwn(this.portfolioWeights, songKey) ? this.portfolioWeights[songKey]! : 1 }; });
+  }
+  private get canPortfolio() {
+    const teams = this.workspaceDocument?.teams.filter(team => this.portfolioTeams.has(team.id)) ?? [], songs = this.portfolioSongs();
+    return this.canEdit && !!this.data && teams.length > 0 && teams.length === this.portfolioTeams.size && teams.every(team => this.profileMatches(team)) &&
+      songs.length > 0 && songs.length <= 1000 && songs.length * teams.length <= 100000 && Number.isInteger(this.portfolioLimit) && this.portfolioLimit >= 1 && this.portfolioLimit <= 15 && Number.isFinite(this.budgetSeconds) && this.budgetSeconds >= 1 && this.budgetSeconds <= 60 && !!this.evaluationBasis && this.constraints.justRate === 0 &&
+      songs.every(row => typeof row.weight === "number" && Number.isFinite(row.weight) && row.weight > 0) &&
+      this.objectiveCapability("score")?.bases.includes(this.metricBasis) && (!this.wantsEventScene || !!this.eventScene);
+  }
+  private async startPortfolio() {
+    if (!this.canPortfolio || !this.data || !this.inventory || !this.workspaceDocument || this.running) return;
+    const chosen = this.workspaceDocument.teams.filter(team => this.portfolioTeams.has(team.id));
+    const data = this.data, inventory = this.inventory, owner = this.currentOwner, signature = this.portfolioSignature;
+    let teams: { id: string; assignment: TeamAssignment }[];
+    try { teams = chosen.map(team => ({ id: team.id, assignment: restoreSavedTeam(team, data, inventory).assignment })); }
+    catch { this.workspaceError = this.t("savedTeamUnavailable", "This team needs matching card data and all of its saved cards. Restore its training as a new plan, or review the card library."); return; }
+    const request: WorkerPreparationInput = {
+      data, inventory: structuredClone(inventory), selections: this.chartSelections, mode: this.mode,
+      scoreDomain: this.scoreDomain, objectives: ["score"], skillOrderCriterion: this.effectiveSkillOrderCriterion,
+      constraints: this.portfolioConstraints(),
+      basis: this.evaluationBasis!, budget: { maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxEvaluations: 100000, maxCandidates: 1000 },
+      ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
+      ...(this.challengeSearch && this.challengeContext ? { challengeMusicId: this.challengeContext.challengeMusicId } : {}),
+    };
+    const songs = this.portfolioSongs() as NativePortfolioInput["songs"];
+    this.cancelSearch(); this.result = null; this.searchError = ""; this.workspaceError = "";
+    const generation = this.requestId, started = performance.now();
+    const context = { data, inventory, owner, signature }; let worker: Worker;
+    try { worker = this.worker = new Worker(new URL("../lib/team-builder/solver/worker.ts", import.meta.url), { type: "module" }); }
+    catch { this.searchError = this.t("unavailable", "Required data or formula is unavailable"); return; }
+    this.running = true; this.portfolioActive = context; this.portfolioProgress = { completed: 0, total: teams.length * songs.length };
+    const loading = this.searchLoading = beginLoading(this.t("compareSavedTeams", "Compare saved teams by score"));
+    this.openWorkspace("results"); this.planningKind = "team";
+    const rows: NativePortfolioInput["teams"][number][] = []; let fingerprint: string | undefined;
+    try {
+      for (const [index, team] of teams.entries()) {
+        if (generation !== this.requestId || !this.portfolioContextMatches(context)) return;
+        const remaining = request.budget.maxMilliseconds - (performance.now() - started);
+        if (remaining < 1) { this.searchStatus = this.t("budget-limited", "Search budget reached"); return; }
+        const result = await new Promise<ManualTeamEvaluationResult>((resolve, reject) => {
+          const runId = crypto.randomUUID(); this.searchRunId = runId; this.searchDispatched = true; this.portfolioReject = reject;
+          worker.onmessage = (event: MessageEvent<SolverResponse>) => {
+            const message = event.data;
+            if (generation !== this.requestId || message.runId !== runId || !this.isConnected) return;
+            if (!this.portfolioContextMatches(context)) { this.cancelSearch(); return; }
+            if (message.type === "manual-progress") {
+              this.portfolioProgress = { completed: index * songs.length + message.progress.chartsCompleted, total: teams.length * songs.length };
+              loading.update({ stageLabel: this.searchProgressLabel }); return;
+            }
+            this.clearCancellation?.(); this.clearCancellation = undefined; this.searchRunId = undefined; this.searchDispatched = false; this.portfolioReject = undefined;
+            if (message.type === "manual-result") resolve(message.result); else reject(new Error("coverage-evaluation"));
+          };
+          worker.onerror = () => reject(new Error("coverage-worker"));
+          worker.postMessage({ type: "manual-prepare", runId, request: { ...request, assignment: team.assignment, budget: { ...request.budget, maxMilliseconds: Math.floor(remaining) } } } satisfies SolverRequest);
+        });
+        if (generation !== this.requestId || !this.portfolioContextMatches(context)) return;
+        if (result.status === "cancelled" || result.status === "budget-limited") { this.searchStatus = this.t(result.status, result.status); return; }
+        if (result.status !== "complete" || !result.contextFingerprint || !/^[a-f0-9]{64}$/.test(result.contextFingerprint) ||
+          result.server !== data.identity.server || result.releaseId !== data.identity.releaseId || result.sourceId !== data.identity.sourceId ||
+          fingerprint && fingerprint !== result.contextFingerprint) throw new Error("coverage-native-context");
+        fingerprint = result.contextFingerprint;
+        rows.push({ ...team, contextFingerprint: fingerprint, results: result.candidates });
+      }
+      if (!fingerprint) return;
+      const input: NativePortfolioInput = { evaluation: "complete-native-assignment", contextFingerprint: fingerprint, songs, teams: rows, limit: this.portfolioLimit };
+      const result = selectNativePortfolio(input);
+      this.portfolioCompleted = { ...context, request, input, result };
+      this.replacementBefore = result.selectedIds[0] ?? ""; this.replacementAfter = ""; this.portfolioVisible = 10;
+    } catch {
+      if (generation === this.requestId) this.searchError = this.t("coverageUnavailable", "Some selected teams or charts could not be compared. Check their training and supported rules.");
+    } finally {
+      worker.terminate(); loading.finish();
+      if (this.worker === worker) this.worker = undefined;
+      if (this.searchLoading === loading) this.searchLoading = undefined;
+      if (generation === this.requestId) { this.running = false; this.cancelling = false; this.portfolioActive = null; this.portfolioReject = undefined; this.searchRunId = undefined; this.searchDispatched = false; this.clearCancellation?.(); this.clearCancellation = undefined; }
+    }
+  }
+  private refreshPortfolioSelection() {
+    const completed = this.portfolioCompleted;
+    if (!completed || !this.portfolioContextMatches(completed)) return;
+    try {
+      const input = { ...completed.input, songs: this.portfolioSongs() as NativePortfolioInput["songs"], limit: this.portfolioLimit };
+      this.portfolioCompleted = { ...completed, input, result: selectNativePortfolio(input) };
+      this.replacementBefore = this.portfolioCompleted.result.selectedIds[0] ?? ""; this.replacementAfter = ""; this.portfolioWeightError = false; this.searchError = "";
+    } catch { this.portfolioWeightError = true; this.searchError = this.t("coverageWeights", "Enter a positive weight for every chart."); }
+  }
+  private portfolioTeamName(id: string) { return this.workspaceDocument?.teams.find(team => team.id === id)?.name ?? this.t("unknown", "Unknown or not entered"); }
+  private renderPortfolioControls() {
+    const teams = this.workspaceDocument?.teams ?? [];
+    if (!this.workspaceDocument) return nothing;
+    const songs = this.portfolioSongs();
+    return html`<section class="team-builder__section">
+      ${renderDetailSectionHeading(this.t("songCoverage", "Saved-team song coverage"), "songs", { level: 2 })}
+      <p class="team-builder__hint">${this.t("coverageScope", "Compare saved formations with the current training and Score & SS settings. Each team keeps its leader and snapshot bindings.")}</p>
+      <fieldset class="team-builder__objectives"><legend class="sr-only">${this.t("savedTeams", "Saved teams")}</legend>
+        ${teams.map(team => this.check(team.name, this.portfolioTeams.has(team.id), checked => { this.cancelSearch(); const next = new Set(this.portfolioTeams); if (checked) next.add(team.id); else next.delete(team.id); this.portfolioTeams = next; }, !this.profileMatches(team) || this.running))}
+      </fieldset>
+      <div class="team-builder__fields">${this.numericField(this.t("budget", "Search budget (seconds)"), this.budgetSeconds, value => { this.budgetSeconds = value ?? 5; }, {min:1,max:60,disabled:this.running})}${this.select(this.t("coverageSlots", "Maximum teams to keep"), String(this.portfolioLimit), Array.from({length:15},(_,i)=>({value:String(i+1),label:String(i+1)})), value => { this.portfolioLimit = Number(value); this.refreshPortfolioSelection(); }, this.running)}
+        <button class="button button--outlined" @click=${() => { this.planningKind = "team"; this.openWorkspace("plan"); }}>${this.t("chooseSongPool", "Choose songs to compare")}</button></div>
+      <p>${this.t(this.mode, this.mode)} · ${this.criterionLabel(this.effectiveSkillOrderCriterion)} · ${this.t("comparedChartCount", "{count} charts in comparison", {count:songs.length})}</p>
+      ${this.disclosure("coverage-weights", html`${this.t("chartWeights", "Chart weights")}`, this.disclosureStates["coverage-weights"] ? html`
+        <p class="team-builder__hint">${this.t("chartWeightsHint", "Weights express how much each chart matters in this comparison.")}</p>
+        <div class="team-builder__fields">${songs.slice(0, this.portfolioVisible).map(song => html`<div class="stack stack--tight">${this.resultSongIdentity(song.songKey)}
+          ${this.numericField(this.t("chartWeight", "Weight"), song.weight, value => { this.portfolioWeights = { ...this.portfolioWeights, [song.songKey]: value }; this.refreshPortfolioSelection(); }, { min: 0.001, step: 0.1, disabled: this.running })}</div>`)}</div>
+        ${songs.length > this.portfolioVisible ? html`<button class="button button--text" @click=${() => { this.portfolioVisible += 10; }}>${clientText(this.locale, "more", "More")}</button>` : nothing}
+      ` : nothing, false)}
+      <button class="button" ?disabled=${!this.canPortfolio || this.running} @click=${() => void this.startPortfolio()}>${this.t("compareSavedTeams", "Compare saved teams by score")}</button>
+    </section>`;
+  }
+  private renderPortfolioResults() {
+    const completed = this.portfolioCompleted;
+    if (!completed) return this.portfolioProgress && !this.running ? html`<p role="status">${this.t("coverageProgress", "Team/chart comparisons: {done} / {total}", { done: this.portfolioProgress.completed, total: this.portfolioProgress.total })} · ${this.t("coverageIncomplete", "Complete all comparisons to build song coverage.")}</p>` : nothing;
+    if (!this.portfolioContextMatches(completed)) return html`<p role="status">${this.t("coverageChanged", "Conditions changed. Recalculate the saved-team comparison.")}</p>`;
+    if (this.portfolioWeightError) return html`<p role="status">${this.t("coverageWeights", "Enter a positive weight for every chart.")}</p>`;
+    const { result, input } = completed, value = (number: number | null) => number === null ? this.t("unknown", "Unknown or not entered") : number.toLocaleString(this.locale, { maximumFractionDigits: 2 });
+    const scoreMetric = input.teams[0]?.results[0]?.metrics.score, unit = scoreMetric ? this.metricUnit(scoreMetric) : "";
+    const task = (songKey: string): PracticalTaskResult["task"] => ({ key: songKey, songKey, mode: completed.request.mode, objective: "score" });
+    const replacement = this.replacementBefore && this.replacementAfter ? compareNativePortfolioReplacement(input, result.selectedIds, this.replacementBefore, this.replacementAfter) : null;
+    return html`<section class="stack">
+      <div class="team-builder__section-header">${renderDetailSectionHeading(this.t("songCoverage", "Saved-team song coverage"), "songs", {level:2})}
+        ${iconButton({icon:"download",label:this.t("exportResult","Export result"),onClick:()=>this.exportPortfolioResult()})}</div>
+      <p class="team-builder__hint">${this.t("heuristicRecommendation", "Approximate recommendation from evaluated teams.")}</p>
+      <p class="team-builder__hint">${this.t(completed.request.mode, completed.request.mode)} · ${this.criterionLabel(completed.request.skillOrderCriterion ?? "nominal-mean")} · ${this.metricLabel("score", scoreMetric)} ${unit}</p>
+      ${result.status === "unavailable" ? html`<p>${this.t("coverageUnavailable", "Some selected teams or charts could not be compared. Check their training and supported rules.")}</p>` : html`
+        <strong>${result.selectedIds.map(id=>this.portfolioTeamName(id)).join(" · ")}</strong>
+        ${specList([{label:[this.t("weightedScore","Weighted average score"),unit].filter(Boolean).join(" "),value:value(result.weightedScore)}])}
+        <div class="table-scroll" role="region" aria-label=${this.t("songCoverage", "Saved-team song coverage")} tabindex="0"><table class="data-table"><caption class="sr-only">${this.t("songCoverage", "Saved-team song coverage")}</caption><thead><tr><th scope="col">${clientText(this.locale,"songs","Songs")}</th><th scope="col">${this.t("savedTeams","Saved teams")}</th><th scope="col">${this.t("score","Score")} ${unit}</th></tr></thead>
+          <tbody>${result.rows.slice(0,this.portfolioVisible).map(row=>html`<tr><th scope="row">${this.resultSongIdentity(row.songKey)}</th><td><button class="button button--text" @click=${()=>{ if(this.portfolioCompleted===completed && this.portfolioContextMatches(completed) && !this.running) this.applyEvaluatedTeam(task(row.songKey),row.candidate); }}>${this.portfolioTeamName(row.teamId)}</button></td><td>${value(row.score)}</td></tr>`)}</tbody></table></div>
+        ${result.rows.length > this.portfolioVisible ? html`<button class="button button--text" @click=${()=>{this.portfolioVisible+=10;}}>${clientText(this.locale,"more","More")}</button>`:nothing}
+        ${this.disclosure("coverage-contributions",html`${this.t("coverageContributions","Team contributions")}`,html`<div class="table-scroll" role="region" aria-label=${this.t("coverageContributions", "Team contributions")} tabindex="0"><table class="data-table"><caption class="sr-only">${this.t("coverageContributions", "Team contributions")}</caption><thead><tr><th scope="col">${this.t("savedTeams","Saved teams")}</th><th scope="col">${this.t("coveredCharts","Recommended charts")}</th><th scope="col">${this.t("removalLoss","Loss if removed")}</th></tr></thead><tbody>${result.contributions.map(row=>html`<tr><th scope="row">${this.portfolioTeamName(row.teamId)}</th><td>${row.recommendedSongs}</td><td>${row.removalLoss===null?this.t("notApplicable","Not applicable"):value(row.removalLoss)}</td></tr>`)}</tbody></table></div>`,false)}
+        <div class="team-builder__fields">
+          ${this.select(this.t("replaceTeam","Replace team"),this.replacementBefore,result.selectedIds.map(id=>({value:id,label:this.portfolioTeamName(id)})),id=>{this.replacementBefore=id;this.replacementAfter="";})}
+          ${this.select(this.t("replacementTeam","With team"),this.replacementAfter,[{value:"",label:this.t("notSet","Not set")},...input.teams.filter(team=>!result.selectedIds.includes(team.id)).map(team=>({value:team.id,label:this.portfolioTeamName(team.id)}))],id=>{this.replacementAfter=id;})}
+        </div>
+        ${replacement?.status==="complete"?html`${specList([{label:[this.t("weightedDifference","Weighted score difference"),unit].filter(Boolean).join(" "),value:value(replacement.weightedDelta)},{label:this.t("worsenedCharts","Charts with a lower score"),value:String(replacement.worsenedSongs)}])}
+          <div class="table-scroll" role="region" aria-label=${this.t("replaceTeam", "Replace team")} tabindex="0"><table class="data-table"><caption class="sr-only">${this.t("replaceTeam", "Replace team")}</caption><thead><tr><th scope="col">${clientText(this.locale,"songs","Songs")}</th><th scope="col">${this.t("before","Before")}</th><th scope="col">${this.t("after","After")}</th><th scope="col">${this.t("baselineDifference","Difference from baseline")}</th></tr></thead><tbody>${replacement.rows.map(row=>html`<tr><th scope="row">${this.resultSongIdentity(row.songKey)}</th><td>${value(row.before)}</td><td>${value(row.after)}</td><td class=${row.delta<0?"team-builder__error":""}>${value(row.delta)}</td></tr>`)}</tbody></table></div>`:nothing}
+      `}
+    </section>`;
+  }
+  private get practicalModes(): ("normal" | "gekiso")[] {
+    return this.compareModes ? ["normal", "gekiso"] : this.mode === "normal" || this.mode === "gekiso" ? [this.mode] : [];
+  }
+  private get practicalBaselineAssignment(): TeamAssignment | undefined {
+    if (!this.practicalBaselineId || !this.data || !this.inventory) return;
+    if (this.practicalBaselineId === "fixed") return this.fixedAssignment ?? undefined;
+    const team = this.workspaceDocument?.teams.find(team => team.id === this.practicalBaselineId);
+    if (!team || !this.profileMatches(team)) return;
+    const key = JSON.stringify([team.id, team.identity, team.formation, this.requiredLeader, this.fixedBindings]);
+    if (this.practicalBaselineCache?.data === this.data && this.practicalBaselineCache.inventory === this.inventory && this.practicalBaselineCache.key === key) return this.practicalBaselineCache.assignment;
+    let assignment: TeamAssignment | undefined;
+    try {
+      const value = restoreSavedTeam(team, this.data, this.inventory).assignment;
+      if ((!this.requiredLeader || value.leaderInstanceId === this.requiredLeader) && this.fixedBindings.every(binding => {
+        const slot = value.memberInstanceIds.indexOf(binding.memberInstanceId); return slot >= 0 && value.snapshotInstanceIds[slot] === binding.snapshotInstanceId;
+      })) assignment = value;
+    } catch { /* The selected baseline stays unavailable until its cards are usable. */ }
+    this.practicalBaselineCache = { data: this.data, inventory: this.inventory, key, assignment }; return assignment;
+  }
+  private get practicalSignature() {
+    const team = this.workspaceDocument?.teams.find(team => team.id === this.practicalBaselineId);
+    return JSON.stringify([this.searchSettings, this.activeProfileId, team?.identity, team?.formation]);
+  }
+  private practicalContextMatches(context: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string }) {
+    return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.practicalSignature && this.sourceReady;
+  }
+  private get canPractical() {
+    return this.canOptimize && (!this.practicalBaselineId || !!this.practicalBaselineAssignment) && this.practicalModes.length > 0 && this.constraints.justRate === 0 &&
+      this.chartSelections.length * this.practicalModes.length * this.objectives.length <= 1000 &&
+      this.practicalModes.every(mode => this.objectives.every(goal => this.objectiveCapability(goal, mode)?.bases.includes(this.metricBasis)));
+  }
+  private get practicalHint() {
+    if (!this.canOptimize) return this.optimizationHint;
+    if (this.practicalBaselineId && !this.practicalBaselineAssignment) return this.t("baselineMismatch", "Choose a baseline with usable cards that matches the fixed requirements.");
+    if (this.chartSelections.length * this.practicalModes.length * this.objectives.length > 1000) return this.t("practicalTaskLimit", "Narrow the selection to 1,000 mode, chart and goal combinations.");
+    return this.t("practicalModeUnavailable", "Check which goals are available in the selected modes.");
+  }
+  private startPractical() {
+    if (!this.canPractical || !this.data || !this.inventory) return;
+    this.cancelSearch(); this.result = null; this.searchError = "";
+    const generation = this.requestId, runId = crypto.randomUUID();
+    const context = { data: this.data, inventory: this.inventory, owner: this.currentOwner, signature: this.practicalSignature };
+    const request: NativePracticalPreparationInput = {
+      schema: "haneoka-native-practical-request-v1", data: this.data, inventory: structuredClone(this.inventory),
+      selections: this.challengeSearch ? this.chartSelections.map(chart => ({ challengeMusicId: Number(this.selectedChallengeId), difficulty: chart.difficulty })) : this.chartSelections,
+      modes: this.practicalModes, objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
+      skillOrderCriterion: this.effectiveSkillOrderCriterion, scoreDomain: this.challengeSearch ? "personal-solo" : this.selectedScoreDomain,
+      ...(this.wantsEventScene && this.eventScene ? { eventScene: this.eventScene } : {}),
+      ...(this.practicalBaselineAssignment ? { baseline: this.practicalBaselineAssignment } : {}), finalistLimit: 6,
+      budget: { maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxEvaluations: 100000, maxCandidates: 50 },
+    };
+    let worker: Worker;
+    try { worker = this.worker = new Worker(new URL("../lib/team-builder/solver/worker.ts", import.meta.url), { type: "module" }); }
+    catch { this.searchError = this.t("unavailable", "Required data or formula is unavailable"); return; }
+    this.running = true; this.searchRunId = runId; this.searchDispatched = true; this.practicalActive = context;
+    this.practicalProgress = { phase: "loading", completed: 0, total: request.selections.length, elapsedMs: 0 };
+    this.searchLoading = beginLoading(this.t("practicalSearch", "Practical recommendation"));
+    worker.onmessage = (event: MessageEvent<SolverResponse>) => {
+      const message = event.data;
+      if (generation !== this.requestId || message.runId !== runId || !this.isConnected || !this.practicalContextMatches(context)) return;
+      if (message.type === "practical-progress") { this.practicalProgress = message.progress; this.searchLoading?.update({ stageLabel: this.searchProgressLabel }); return; }
+      if (message.type === "practical-result") this.practicalCompleted = { ...context, request, result: message.result };
+      else this.searchError = this.t("unavailable", "Required data or formula is unavailable");
+      this.clearCancellation?.(); this.clearCancellation = undefined; this.searchRunId = undefined; this.searchDispatched = false;
+      this.running = false; this.cancelling = false; this.practicalActive = null;
+      this.searchLoading?.finish(); this.searchLoading = undefined; worker.terminate(); if (this.worker === worker) this.worker = undefined;
+    };
+    worker.onerror = () => { if (generation === this.requestId) { this.cancelSearch(); this.searchError = this.t("unavailable", "Required data or formula is unavailable"); } };
+    try { worker.postMessage({ type: "practical-prepare", runId, request } satisfies SolverRequest); }
+    catch { this.cancelSearch(); this.searchError = this.t("unavailable", "Required data or formula is unavailable"); }
+  }
+  private usePracticalCandidate(task: PracticalTaskResult["task"], candidate: Candidate, save = false) {
+    const completed = this.practicalCompleted;
+    if (!completed || !this.practicalContextMatches(completed) || this.running) return;
+    this.applyEvaluatedTeam(task, candidate, save);
+  }
+  private applyEvaluatedTeam(task: PracticalTaskResult["task"], candidate: Candidate, save = false) {
+    const chart = this.resolveResultChart(candidate.songKey);
+    if (!chart) return;
+    this.mode = task.mode; this.objectives = [task.objective];
+    if (candidate.metrics.score.scoreDomain === "personal-live" || candidate.metrics.score.scoreDomain === "personal-solo") this.selectedScoreDomain = candidate.metrics.score.scoreDomain;
+    if (chart.challenge) { this.selectedChallengeId = candidate.songKey.split(":")[1]; this.selectedChallengeDifficulty = chart.difficulty; }
+    else { this.selectedSong = chart.songId; this.selectedDifficulty = chart.difficulty; this.lockSong = true; this.lockDifficulty = true; this.songPool = null; }
+    this.useFixedTeam(candidate.assignment); if (save) this.openWorkspace("sync");
+  }
+  private exportPortfolioResult() {
+    const completed = this.portfolioCompleted;
+    if (!completed || this.running || this.portfolioWeightError || !this.portfolioContextMatches(completed)) return;
+    void downloadBlob(new Blob([JSON.stringify({ schema: "haneoka-team-coverage-export-v1", request: completed.request, input: completed.input, result: completed.result }, null, 2)], {type:"application/json"}), "haneoka-team-coverage.json");
+  }
+  private exportPracticalResult() {
+    const completed = this.practicalCompleted;
+    if (!completed || this.running || !this.practicalContextMatches(completed)) return;
+    void downloadBlob(new Blob([JSON.stringify({ schema: "haneoka-practical-export-v1", request: completed.request, result: completed.result, comparison: this.practicalCompareKeys }, null, 2)], {type:"application/json"}), "haneoka-practical-result.json");
+  }
+  private practicalCompareKey(row: PracticalTaskResult, candidate: Candidate) { return JSON.stringify([row.task.mode, row.task.objective, this.resultCandidateKey(candidate)]); }
+  private get practicalCompared() {
+    const completed = this.practicalCompleted;
+    if (!completed || !this.practicalContextMatches(completed)) return [];
+    if (this.practicalCompareIndex?.result !== completed.result) {
+      const byKey = new Map<string, { row: PracticalTaskResult; candidate: Candidate; key: string }>();
+      completed.result.tasks.forEach(row => row.candidates.forEach(candidate => { const key = this.practicalCompareKey(row, candidate); byKey.set(key, { row, candidate, key }); }));
+      this.practicalCompareIndex = { result: completed.result, byKey };
+    }
+    return this.practicalCompareKeys.flatMap(key => { const found = this.practicalCompareIndex?.byKey.get(key); return found ? [found] : []; });
+  }
+  private practicalCompareDisabled(row: PracticalTaskResult, candidate: Candidate) {
+    const first = this.practicalCompared[0], selected = this.practicalCompareKeys.includes(this.practicalCompareKey(row, candidate));
+    return this.running || !selected && (this.practicalCompareKeys.length >= 3 || !!first && (first.row.task.mode !== row.task.mode || first.row.task.objective !== row.task.objective));
+  }
+  private togglePracticalComparison(row: PracticalTaskResult, candidate: Candidate, selected: boolean) {
+    if (!this.practicalCompleted || !this.practicalContextMatches(this.practicalCompleted) || this.practicalCompareDisabled(row, candidate)) return;
+    if (!this.practicalCompleted.result.tasks.some(task => task === row && task.candidates.includes(candidate))) return;
+    const key = this.practicalCompareKey(row, candidate);
+    this.practicalCompareKeys = selected ? [...new Set([...this.practicalCompareKeys, key])] : this.practicalCompareKeys.filter(value => value !== key);
+  }
+  private renderPracticalComparison() {
+    const rows = this.practicalCompared;
+    if (!rows.length) return nothing;
+    return html`<section class="team-builder__section team-builder__comparison">
+      <div class="team-builder__section-header">${renderDetailSectionHeading(this.t("candidateComparison", "Candidate comparison"), "stats", {level:2})}
+        <button class="button button--text" @click=${()=>{this.practicalCompareKeys=[];}}>${this.t("clearComparison","Clear comparison")}</button></div>
+      <p class="team-builder__hint">${this.t("practicalComparisonScope", "Compare up to three candidates within the same mode and goal.")}</p>
+      <div class="table-scroll" role="region" aria-label=${this.t("candidateComparison", "Candidate comparison")} tabindex="0"><table class="data-table" style=${`--comparison-count: ${rows.length}`}><caption class="sr-only">${this.t("practicalComparisonScope", "Compare up to three candidates within the same mode and goal.")}</caption><thead><tr><th scope="col" class="is-sticky">${this.t(rows[0].row.task.mode,rows[0].row.task.mode)}</th>${rows.map((_,i)=>html`<th scope="col">${this.comparisonLabel(i+1)}</th>`)}</tr></thead><tbody>
+        <tr><th scope="row" class="is-sticky">${clientText(this.locale,"songs","Songs")}</th>${rows.map(row=>html`<td>${this.resultSongIdentity(row.candidate.songKey)}</td>`)}</tr>
+        <tr><th scope="row" class="is-sticky">${this.practicalMetricLabel(rows[0].row.task.mode,rows[0].row.task.objective,rows[0].candidate.metrics[rows[0].row.task.objective])}</th>${rows.map(row=>html`<td>${this.comparisonMetric(row.row.task.objective,row.candidate.metrics[row.row.task.objective])}</td>`)}</tr>
+        <tr><th scope="row" class="is-sticky">${this.t("configuration","Team configuration")}</th>${rows.map(row=>html`<td>${this.renderTeamConfiguration(row.candidate.assignment,`practical-compare-${encodeURIComponent(row.key)}`)}</td>`)}</tr>
+      </tbody></table></div>
+    </section>`;
+  }
+  private practicalMetricLabel(mode: PlayMode, objective: Objective, metric?: MetricValue) {
+    if (mode === "gekiso" && objective === "ss-ratio") return this.t("personalSoloSSRatio", "Personal Solo SS attainment");
+    if (mode === "gekiso" && objective === "ss-surplus") return this.t("personalSoloSSSurplus", "Personal Solo SS margin");
+    if (mode === "gekiso" && objective === "score") return (metric?.scoreDomain ?? this.practicalCompleted?.request.scoreDomain) === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score");
+    if (objective === "ss-ratio") {
+      const domain = metric?.breakdown?.find(row => row.key === "ss-ratio-numerator")?.source;
+      if (domain === "room") return this.t("roomSSRatio", "Room SS attainment");
+      if (domain === "personal") return this.t("personalSSRatio", "Personal SS attainment");
+    }
+    if (objective === "score" && metric?.range && metric.skillOrderCriterion !== "worst-ap" && metric.skillOrderCriterion !== "best-ap") return this.t("expectedScore", "Expected score");
+    return this.t(objective, objective);
+  }
+  private renderPracticalCandidate(row: PracticalTaskResult, candidate: Candidate, key: string) {
+    return html`<article class="team-builder__candidate">
+      ${this.check(this.t("compare", "Compare"), this.practicalCompareKeys.includes(this.practicalCompareKey(row, candidate)), selected => this.togglePracticalComparison(row, candidate, selected), this.practicalCompareDisabled(row, candidate))}
+      ${this.resultSongIdentity(candidate.songKey)}
+      ${specList([{ label: this.practicalMetricLabel(row.task.mode, row.task.objective, candidate.metrics[row.task.objective]), value: this.comparisonMetric(row.task.objective, candidate.metrics[row.task.objective]) }])}
+      ${row.baseline && candidate.metrics[row.task.objective].value !== null && row.baseline.metrics[row.task.objective].value !== null ? specList([
+        { label: this.t("baselineScore", "Baseline"), value: this.comparisonMetric(row.task.objective, row.baseline.metrics[row.task.objective]) },
+        { label: this.t("baselineDifference", "Difference from baseline"), value: (candidate.metrics[row.task.objective].value! - row.baseline.metrics[row.task.objective].value!).toLocaleString(this.locale, row.task.objective === "ss-ratio" ? { style: "percent", maximumFractionDigits: 2 } : { maximumFractionDigits: 2 }) },
+      ]) : nothing}
+      <div class="collection collection--member team-builder__team-strip">${candidate.assignment.memberInstanceIds.map(id => this.resultCard(this.inventory?.members.find(entry => entry.instanceId === id), "members", id === candidate.assignment.leaderInstanceId))}</div>
+      ${this.renderTeamConfiguration(candidate.assignment, key)}
+      <div class="team-builder__actions"><button class="button button--text" @click=${() => this.usePracticalCandidate(row.task, candidate)}>${this.t("useFixedTeam", "Use this team")}</button>
+        <button class="button button--text" ?disabled=${!this.canEditWorkspace} @click=${() => this.usePracticalCandidate(row.task, candidate, true)}>${this.t("saveNamedTeam", "Save team")}</button>
+        <button class="button button--text" ?disabled=${this.exportingImage} @click=${() => void this.exportCandidateImage(candidate, "practical")}>${this.t("exportTeamImage", "Export team image")}</button></div>
+    </article>`;
+  }
+  private renderPracticalResults() {
+    const completed = this.practicalCompleted;
+    if (!completed || !this.practicalContextMatches(completed)) return nothing;
+    const { result, request } = completed;
+    return html`<section class="stack">
+      <div class="team-builder__section-header">${renderDetailSectionHeading(this.t("practicalSearch", "Practical recommendation"), "stats", { level: 2 })}
+        ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => this.exportPracticalResult() })}</div>
+      <p class="team-builder__hint">${this.t("heuristicRecommendation", "Approximate recommendation from evaluated teams.")}</p>
+      <p class="team-builder__hint">${this.criterionLabel(request.skillOrderCriterion ?? "nominal-mean")}</p>
+      ${this.renderPracticalComparison()}
+      <p role="status">${result.status === "complete" ? this.t("practicalComplete", "Selected comparisons evaluated") : this.t(result.status, result.status)} · ${this.t("practicalEvaluated", "{count} complete native evaluations", { count: result.fullyEvaluated })}</p>
+      ${request.modes.map(mode => request.objectives.map(objective => {
+        const rows = result.tasks.filter(row => row.task.mode === mode && row.task.objective === objective).sort((a,b) => (b.candidates[0]?.metrics[objective].value ?? -Infinity) - (a.candidates[0]?.metrics[objective].value ?? -Infinity));
+        return html`<section class="stack"><h3>${this.t(mode, mode)} · ${this.practicalMetricLabel(mode, objective, rows.find(row => row.candidates.length)?.candidates[0]?.metrics[objective])}</h3>
+          ${rows.map((row, index) => { const key = `practical-${row.task.key}`, expanded = this.disclosureStates[key] ?? index === 0;
+            return this.disclosure(key, html`${this.resultSongIdentity(row.task.songKey)}<small class="team-builder__hint">${row.status === "complete" ? this.t("practicalChartComplete", "Chart comparison complete") : row.status === "unavailable" ? this.t("goalUnavailable", "Unavailable") : this.t("practicalChartPending", "Chart comparison unfinished")}</small>`, expanded ? html`
+              ${row.gaps.some(gap => gap.code === "native-gekiso-luck-maximum-law-unresolved") ? html`<p>${this.t("maximumLuckPending", "Maximum LUCK score is unavailable. Use average scoring for these charts.")}</p>` : nothing}
+              ${request.baseline && !row.baseline ? html`<p class="team-builder__hint">${this.t("baselineUnavailable", "The baseline could not be evaluated for this chart and goal.")}</p>` : nothing}
+              ${row.candidates[0] ? this.renderPracticalCandidate(row, row.candidates[0], key) : html`<p>${this.t("noRankedCandidates", "No candidates available yet")}</p>`}
+              ${row.candidates.length > 1 ? this.disclosure(`${key}-others`, html`${this.t("otherFormations", "Other formations")}`, this.disclosureStates[`${key}-others`] ? row.candidates.slice(1).map((candidate,i) => this.renderPracticalCandidate(row, candidate, `${key}-${i}`)) : nothing, false) : nothing}
+            ` : nothing, index === 0, "team-builder__chart-results");
+          })}
+        </section>`;
+      }))}
+    </section>`;
+  }
+  private async exportCandidateImage(candidate: Candidate, source: "search" | "manual" | "practical" = "search") {
+    const practical = this.practicalCompleted;
+    const practicalRow = source === "practical" ? practical?.result.tasks.find(row => row.candidates.includes(candidate) || row.baseline === candidate) : undefined;
+    const current = source === "practical" ? !!practical && !!practicalRow && !this.running && this.practicalContextMatches(practical) : source === "search" ? this.canCompareCandidates && this.comparableCandidates.some(row => this.resultCandidateKey(row) === this.resultCandidateKey(candidate))
       : !this.running && !!this.manualScope && !!this.manualResult?.candidates.includes(candidate);
     if (!current || !this.data || !this.inventory || this.exportingImage) return;
     const data = this.data, inventory = this.inventory, owner = this.currentOwner, generation = this.requestId;
-    const result = source === "search" ? this.result! : this.manualResult!;
+    const result = source === "practical" ? practical!.result : source === "search" ? this.result! : this.manualResult!;
     const request = source === "search" ? this.completedSearch!.request : null;
-    const conditions = request?.type === "prepare" ? request.request : request?.type === "start" ? request.input : null;
-    const objectives = source === "search" ? [...this.resultObjectives] : [...this.manualObjectives];
+    const conditions = source === "practical" ? practical!.request : request?.type === "prepare" ? request.request : request?.type === "start" ? request.input : null;
+    const objectives = source === "practical" ? [practicalRow!.task.objective] : source === "search" ? [...this.resultObjectives] : [...this.manualObjectives];
     const format = (value: number | null) => value === null ? this.t("unknown", "Unknown or not entered") : value.toLocaleString(this.locale);
     const card = (id: string, kind: Kind, leader: boolean): ResultImageCard => {
       const entry = inventory[kind].find(row => row.instanceId === id);
@@ -4899,11 +5306,11 @@ export class TeamBuilder extends LitElement {
       const { songId, difficulty } = resolvedChart, song = this.visualSong(songId);
       const chart = dataRows(song.difficulty ?? song.difficulties).find(row => String(row.difficulty) === difficulty);
       const style = getComputedStyle(this), color = (key: string, fallback: string) => style.getPropertyValue(key).trim() || fallback;
-      const imageEventScene = request?.type === "prepare" ? request.request.eventScene : source === "manual" && this.wantsEventScene ? this.eventScene : null;
+      const imageEventScene = source === "practical" ? practical!.request.eventScene : request?.type === "prepare" ? request.request.eventScene : source === "manual" && this.wantsEventScene ? this.eventScene : null;
       const model: TeamResultImage = {
         title: songTitle(song, this.locale).text,
         jacket: songJacketCandidates(song)[0],
-        subtitle: [...(resolvedChart.challenge ? [this.t("eventChallenge", "Challenge play")] : []), difficultyKey({ difficulty }).toUpperCase(), String(chart?.displayLevel ?? chart?.playLevel ?? ""), this.t(this.mode, this.mode)].filter(Boolean).join(" · "),
+        subtitle: [...(resolvedChart.challenge ? [this.t("eventChallenge", "Challenge play")] : []), difficultyKey({ difficulty }).toUpperCase(), String(chart?.displayLevel ?? chart?.playLevel ?? ""), this.t(practicalRow?.task.mode ?? this.mode, practicalRow?.task.mode ?? this.mode)].filter(Boolean).join(" · "),
         membersLabel: this.t("members", "Members"), snapshotsLabel: this.t("snapshots", "Snapshots"),
         leaderLabel: this.t("leader", "Leader"), emptyLabel: clientText(this.locale, "none", "None"), imageUnavailableLabel: this.t("imageUnavailable", "Image unavailable"),
         members: candidate.assignment.memberInstanceIds.map(id => card(id, "members", id === candidate.assignment.leaderInstanceId)),
@@ -4911,11 +5318,11 @@ export class TeamBuilder extends LitElement {
         metrics: objectives.map(objective => {
           const metric = candidate.metrics[objective], number = (value: number) => value.toLocaleString(this.locale, objective === "ss-ratio" ? { style: "percent", maximumFractionDigits: 2 } : { maximumFractionDigits: 2 });
           const available = metric && metric.value !== null && Number.isFinite(metric.value) && metric.status !== "unavailable";
-          return { label: this.metricLabel(objective, metric), value: available ? number(metric.value!) : this.t("goalUnavailable", "Unavailable"),
+          return { label: practicalRow ? this.practicalMetricLabel(practicalRow.task.mode, objective, metric) : this.metricLabel(objective, metric), value: available ? number(metric.value!) : this.t("goalUnavailable", "Unavailable"),
             detail: metric ? [this.t(metric.status, metric.status), this.metricUnit(metric), ...(available && metric.range ? [`${this.t("outcomeRange", "Range")}: ${number(metric.range.minimum)}–${number(metric.range.maximum)}`] : [])].filter(Boolean).join(" · ") : "" };
         }),
         footer: [
-          `${this.criterionLabel(conditions?.skillOrderCriterion ?? this.effectiveSkillOrderCriterion)} · ${"completeness" in result ? this.t(result.completeness, result.completeness) : result.status === "complete" ? this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}`,
+          `${source === "practical" ? this.t("heuristicRecommendation", "Approximate recommendation from evaluated teams.") + " · " : ""}${this.criterionLabel(conditions?.skillOrderCriterion ?? this.effectiveSkillOrderCriterion)} · ${"completeness" in result ? this.t(result.completeness, result.completeness) : result.status === "complete" ? source === "practical" ? this.t("practicalComplete", "Selected comparisons evaluated") : this.t("manualComplete", "Team evaluation complete") : this.t(result.status, result.status)}`,
           ...(imageEventScene ? [`${this.text(data.events[String(imageEventScene.eventId)]?.title ?? data.events[String(imageEventScene.eventId)]?.name)} · ${this.t("eventConsumption", "Actual cost")}: ${imageEventScene.consumedCount} · ${new Date(imageEventScene.liveStartServerTime.epochMilliseconds).toISOString()}`] : []),
           `${this.activeProfile?.name ?? this.t("actualInventory", "Actual card library")} · ${data.identity.server} · ${data.identity.releaseId}`,
           data.identity.sourceId ?? "", "haneoka.org",
@@ -5315,7 +5722,7 @@ export class TeamBuilder extends LitElement {
   private get searchSettings() {
     return {
       mode: this.mode, objectives: [...this.objectives], skillOrderCriterion: this.skillOrderCriterion, selectedScoreDomain: this.selectedScoreDomain,
-      selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
+      searchEffort: this.searchEffort, compareModes: this.compareModes, practicalBaselineId: this.practicalBaselineId, selectedChallengeId: this.selectedChallengeId, selectedChallengeDifficulty: this.selectedChallengeDifficulty,
       songPool: this.songPool ? [...this.songPool] : null, selectedSong: this.selectedSong, selectedDifficulty: this.selectedDifficulty, lockSong: this.lockSong, lockDifficulty: this.lockDifficulty,
       excludedCharts: [...this.excludedCharts], metricBasis: this.metricBasis, songSeconds: { ...this.songSeconds },
       downtimeSeconds: this.downtimeSeconds, consumptionAmount: this.consumptionAmount, consumptionResource: this.consumptionResource,
@@ -5327,13 +5734,14 @@ export class TeamBuilder extends LitElement {
   }
   private validResumeSettings(value: unknown): value is ReturnType<TeamBuilder["captureSearchSettings"]> {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const row: Record<string, unknown> = { songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
+    const row: Record<string, unknown> = { searchEffort: "exact", compareModes: false, practicalBaselineId: "", songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "", ...value as Record<string, unknown> };
     const keys = Object.keys(this.searchSettings);
     if (Object.keys(row).length !== keys.length || keys.some(key => !Object.hasOwn(row, key))) return false;
-    if (!["selectedSong", "selectedDifficulty", "selectedChallengeId", "selectedChallengeDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
-    if (!["lockSong", "lockDifficulty", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
+    if (!["practicalBaselineId", "selectedSong", "selectedDifficulty", "selectedChallengeId", "selectedChallengeDifficulty", "requiredLeader", "selectedEvent", "eventStartText"].every(key => typeof row[key] === "string")) return false;
+    if (!["lockSong", "lockDifficulty", "compareModes", "excludeJust", "applyEventScene", "eventSingleHeld"].every(key => typeof row[key] === "boolean")) return false;
     if (!["downtimeSeconds", "consumptionAmount", "bonusFloorPoints", "bonusFloorItems", "distinctCardSets", "eventConsumption"].every(key => row[key] === null || typeof row[key] === "number" && Number.isFinite(row[key]))) return false;
     if (typeof row.justRate !== "number" || !Number.isFinite(row.justRate)) return false;
+    if (!["exact", "practical"].includes(String(row.searchEffort))) return false;
     if (!MODES.includes(row.mode as PlayMode) || !["nominal-mean", "worst-ap", "best-ap"].includes(String(row.skillOrderCriterion)) ||
       !["personal-solo", "personal-live"].includes(String(row.selectedScoreDomain)) || !["single", "time", "consumption"].includes(String(row.metricBasis)) ||
       !["live-boost", "event-item"].includes(String(row.consumptionResource)) || !["", "normal", "challenge"].includes(String(row.eventFlowKind))) return false;
@@ -5356,8 +5764,8 @@ export class TeamBuilder extends LitElement {
     if (!bookmark || this.running || !this.resumeCompatible(bookmark) || !this.validResumeSettings(bookmark.settings)) return;
     const settings = structuredClone(bookmark.settings);
     this.cancelSearch(); this.result = null; this.optimizationInput = null;
-    Object.assign(this, { songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
-    this.planningKind = "team";
+    Object.assign(this, { searchEffort: "exact", compareModes: false, practicalBaselineId: "", songPool: null, selectedChallengeId: "", selectedChallengeDifficulty: "" }, settings, { excludedCharts: new Set(settings.excludedCharts) });
+    this.planningKind = "team"; this.searchEffort = "exact";
     if (this.canOptimize) { this.startOptimization(bookmark.checkpoint); this.openWorkspace("results"); }
     else this.openWorkspace("plan");
   }
@@ -5394,6 +5802,12 @@ export class TeamBuilder extends LitElement {
     `;
   }
   private get searchProgressLabel(): string {
+    if (this.portfolioProgress) return this.t("coverageProgress", "Team/chart comparisons: {done} / {total}", { done: this.portfolioProgress.completed, total: this.portfolioProgress.total });
+    if (this.practicalProgress) {
+      const labels = { loading: this.t("practicalLoading", "Loading charts"), seeds: this.t("practicalPreparing", "Preparing teams"),
+        neighbours: this.t("practicalImproving", "Improving teams"), screen: this.t("practicalChecking", "Checking candidates"), final: this.t("practicalCalculating", "Calculating scores") };
+      return `${labels[this.practicalProgress.phase]} · ${this.practicalProgress.completed} / ${this.practicalProgress.total}`;
+    }
     if (this.manualProgress) return this.t("manualProgress", "Evaluating charts: {done} / {total}", { done: this.manualProgress.chartsCompleted, total: this.manualProgress.totalCharts });
     if (!this.progress || this.progress.phase === "loading") return this.t("searching", "Finding candidates");
     const labels = [this.t("evaluated", "Evaluated configurations") + ": " + this.progress.evaluated.toLocaleString(this.locale)];
@@ -5410,14 +5824,14 @@ export class TeamBuilder extends LitElement {
         class="team-builder__section team-builder__results"
         aria-label=${this.t("results", "Candidates")}
       >
-        <div class="team-builder__section-header">
+        ${this.result ? html`<div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("results", "Candidates"), "stats", { level: 2 })}
           ${
             this.resultExport()
               ? iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => this.exportResult() })
               : nothing
           }
-        </div>
+        </div>` : nothing}
         ${
           this.searchError
             ? html`
@@ -5436,6 +5850,8 @@ export class TeamBuilder extends LitElement {
         ${this.renderCheckpointStatus()}
         ${this.renderResumeStatus()}
         ${this.renderManualResult()}
+        ${this.renderPracticalResults()}
+        ${this.renderPortfolioResults()}
         ${
           this.result
             ? html`
@@ -5474,7 +5890,7 @@ export class TeamBuilder extends LitElement {
                       `
                 }
               `
-            : this.searchStatus || this.manualResult || this.manualProgress
+            : this.searchStatus || this.manualResult || this.manualProgress || this.practicalCompleted || this.practicalProgress || this.portfolioProgress || this.portfolioCompleted
               ? nothing
               : html`
                   <div class="team-builder__results-empty">
