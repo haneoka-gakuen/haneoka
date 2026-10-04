@@ -1289,6 +1289,7 @@
     "uploadWaiting": "確認中 · 更新して状況を確認",
     "uploadDeleted": "削除済み",
     "invalidBody": "本文は1～20,000文字で入力してください。",
+    "invalidCommentBody": "本文は1～{limit}文字で入力してください。",
     "emptyComments": "最初のコメントを書いてみましょう",
     "leaveEditor": "編集を終了しますか？",
     "keepDraft": "下書きを保存して終了",

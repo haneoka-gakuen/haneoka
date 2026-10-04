@@ -1289,6 +1289,7 @@
     "uploadWaiting": "검토 중 · 새로고침하여 확인",
     "uploadDeleted": "삭제됨",
     "invalidBody": "본문을 1~20,000자로 입력해 주세요.",
+    "invalidCommentBody": "본문을 1~{limit}자로 입력해 주세요.",
     "emptyComments": "첫 댓글을 남겨 보세요",
     "leaveEditor": "편집기를 나갈까요?",
     "keepDraft": "초안을 저장하고 나가기",

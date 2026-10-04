@@ -1,4 +1,5 @@
 import { LitElement, html, nothing } from "lit";
+import type { MessageParams } from "@haneoka/i18n";
 import { Editor, Node, mergeAttributes, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
@@ -33,7 +34,7 @@ export class CommunityEditor extends LitElement {
   declare loading: boolean;
   declare compact: boolean;
   declare maxLength: number;
-  declare labels?: (key: string) => string;
+  declare labels?: (key: string, fallback?: string, params?: MessageParams) => string;
   declare allowStickers: boolean;
   declare menu: "format" | "insert" | null;
   private editor?: Editor;
@@ -68,8 +69,8 @@ export class CommunityEditor extends LitElement {
     if (this.raw) this.querySelector<HTMLTextAreaElement>(".community-source-editor")?.focus();
     else this.editor?.commands.focus();
   }
-  private text(key: string) {
-    return this.labels ? this.labels(key) : clientText(this.locale, `communityPage.${key}`, key);
+  private text(key: string, params?: MessageParams) {
+    return this.labels ? this.labels(key, key, params) : clientText(this.locale, `communityPage.${key}`, key, params);
   }
   protected firstUpdated() {
     this.mount();
@@ -202,7 +203,7 @@ export class CommunityEditor extends LitElement {
   }
   private async toggleSource() {
     if (this.raw && this.value.length > this.maxLength) {
-      this.error = this.text("invalidBody");
+      this.error = this.text(this.compact ? "invalidCommentBody" : "invalidBody", { limit: this.maxLength });
       return;
     }
     if (!this.raw && this.editor)

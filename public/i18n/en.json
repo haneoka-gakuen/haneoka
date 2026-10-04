@@ -1289,6 +1289,7 @@
     "uploadWaiting": "Still under review · refresh to check",
     "uploadDeleted": "Removed",
     "invalidBody": "Write between 1 and 20,000 characters.",
+    "invalidCommentBody": "Write between 1 and {limit} characters.",
     "emptyComments": "Start the conversation",
     "leaveEditor": "Leave the editor?",
     "keepDraft": "Keep draft and leave",

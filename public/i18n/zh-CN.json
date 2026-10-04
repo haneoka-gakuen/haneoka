@@ -1289,6 +1289,7 @@
     "uploadWaiting": "审核仍在进行，可刷新状态",
     "uploadDeleted": "已移除",
     "invalidBody": "正文长度须为1至20,000字。",
+    "invalidCommentBody": "正文长度须为1至{limit}字。",
     "emptyComments": "来聊聊你的想法吧",
     "leaveEditor": "离开编辑器？",
     "keepDraft": "保留草稿并离开",

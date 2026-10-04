@@ -1,4 +1,5 @@
 import { LitElement, html } from "lit";
+import type { MessageParams } from "@haneoka/i18n";
 import { errorState, loadingState } from "./state";
 import "../../styles/components/comment-editor.css";
 
@@ -30,7 +31,7 @@ export class CommunityCommentEditor extends LitElement {
   declare errorLabel: string;
   declare retryLabel: string;
   declare maxLength: number;
-  declare labels: ((key: string) => string) | undefined;
+  declare labels: ((key: string, fallback?: string, params?: MessageParams) => string) | undefined;
   declare allowStickers: boolean;
   declare focusOnReady: boolean;
   declare ready: boolean;

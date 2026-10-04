@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import type { MessageParams } from "@haneoka/i18n";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { communityMarkup, communityExcerpt } from "../../lib/community-markup";
 import { communityCommentName, communityCommentLocation } from "../../lib/community-comment-metadata";
@@ -10,7 +11,7 @@ import "./community-comment-actions";
 import "../ui/comment-editor";
 import "../community-sticker";
 
-export type CommentLabel = (key: string, fallback: string) => string;
+export type CommentLabel = (key: string, fallback: string, params?: MessageParams) => string;
 export interface CommentRecord {
   id?: unknown;
   body?: unknown;
@@ -90,7 +91,7 @@ function editor(
       .value=${value}
       .locale=${locale}
       .maxLength=${5000}
-      .labels=${(key: string) => label(key, key)}
+      .labels=${(key: string, fallback = key, params?: MessageParams) => label(key, fallback, params)}
       .allowStickers=${allowStickers}
       .focusOnReady=${focusOnReady}
       .loadingLabel=${label("loading", "Loading")}
