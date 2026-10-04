@@ -1126,6 +1126,7 @@ export class CatalogScreen extends LitElement {
     this.sort = this.normalizeSort(params.get("sort") || this.profile.defaultSort);
     this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
     this.ensureSongMeta();
+    this.syncBestdoriChartPage(params);
     const id = this.settings.entityId || params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
       this.restoreDetailQuery(true);
@@ -1354,6 +1355,21 @@ export class CatalogScreen extends LitElement {
     if (this.profile.presentation === "song") this.restoreMetaReference(params);
     this.restoreFacets(params);
     this.selectedId = this.settings.entityId || params.get(this.selectionParam()) || "";
+    if (this.settings.origin === "bestdori" && this.profile.presentation === "song") {
+      if (this.settings.entityContext) this.syncBestdoriChartPage(params);
+      else if (this.selectedId) {
+        const href = this.entityLink(this.selectedId);
+        if (href) {
+          const target = new URL(href, documentUrl);
+          const inheritedReturn = entityReturnHref();
+          if (inheritedReturn) target.searchParams.set("return", inheritedReturn);
+          for (const key of new Set(params.keys())) if (key !== "song" && key !== "return") target.searchParams.delete(key);
+          for (const [key, value] of params) if (key !== "song" && key !== "return") target.searchParams.append(key, value);
+          void navigateDetailPage(`${target.pathname}${target.search}`, "replace");
+          return;
+        }
+      }
+    }
     this.activeMedia = params.get("media") || "full";
     this.characterSection = params.get("section") || "profile";
     if (!this.hasAttribute("data-page-data")) this.ensureSongMeta();
@@ -1599,7 +1615,17 @@ export class CatalogScreen extends LitElement {
   }
   private entityLink(id: string, difficulty?: number, server: ReleaseServer = this.dataServer()): string | undefined {
     const kind = this.canonicalKind();
-    if (!kind || this.settings.origin === "bestdori") return undefined;
+    if (!kind) return undefined;
+    if (this.settings.origin === "bestdori") {
+      if (this.profile.presentation !== "song") return undefined;
+      const collection = `/${this.settings.locale}/community/songs-bestdori/`;
+      const returnTo = this.settings.entityContext
+        ? entityReturnHref() || collection
+        : returnStateFromLocation(location.pathname, location.search, kind);
+      const query = new URLSearchParams({ song: id, return: returnTo, chartDifficulty: this.selectedSongDifficulty });
+      if (difficulty !== undefined) query.set("difficulty", String(difficulty));
+      return `/${this.settings.locale}/community/songs-bestdori/detail/?${query}`;
+    }
     const returnTo = returnStateFromLocation(location.pathname, location.search, kind);
     return entityHref({
       server,
@@ -1818,6 +1844,11 @@ export class CatalogScreen extends LitElement {
     });
   }
   private async load() {
+    if (this.settings.entityContext && this.settings.origin === "bestdori" && !this.selectedId) {
+      this.phase = "error";
+      this.setEntityReady(false);
+      return;
+    }
     this.unionRequests.cancel();
     this.unionCatalog = undefined;
     this.unionDetail = undefined;
@@ -3076,6 +3107,7 @@ export class CatalogScreen extends LitElement {
               bandName: detail.bandName || summary.bandName,
             };
             loadedActualDetail = true;
+            if (this.settings.entityContext && this.settings.origin === "bestdori") this.restoreDetailQuery(true);
             if (this.settings.chartPage) {
               await this.ensureChartPlayer();
               // Loading the chart player yields to a dynamic import. The route
@@ -3093,7 +3125,10 @@ export class CatalogScreen extends LitElement {
     // Canonical pages keep their SSR article visible while the actual detail
     // is unavailable. A summary row is a browse projection, not a usable
     // replacement for the page's detail payload.
-    if (this.settings.entityContext && !loadedActualDetail) return;
+    if (this.settings.entityContext && !loadedActualDetail) {
+      if (this.settings.origin === "bestdori") this.phase = "error";
+      return;
+    }
     const views: string[] = [];
     if (!payload) {
       if (this.profile.presentation === "member")
@@ -3279,7 +3314,8 @@ export class CatalogScreen extends LitElement {
           this.label("retry", "Retry"),
           () => void this.load(),
         );
-      // Keep the primary prerendered view until its controller is ready.
+      // GBP details load on demand; canonical archive pages retain SSR content.
+      if (this.settings.origin === "bestdori") return loadingState(this.label("loading", "Loading"));
       return nothing;
     }
     const appliedCount = Object.values(this.facets).reduce((sum, values) => sum + values.length, 0);
@@ -4157,6 +4193,24 @@ export class CatalogScreen extends LitElement {
     history.replaceState(history.state, "", `${location.pathname}?${params}`);
     this.locationStateUrl = `${location.pathname}${location.search}`;
   }
+  private syncBestdoriChartPage(params: URLSearchParams) {
+    if (this.settings.origin !== "bestdori" || this.profile.presentation !== "song" || !this.settings.entityContext) return;
+    const chartPage = params.get("chart") === "1";
+    if (this.settings.chartPage === chartPage) return;
+    this.settings = { ...this.settings, chartPage };
+    this.requestUpdate();
+    if (!chartPage || !this.detailReady) return;
+    const current = () => this.isConnected && this.settings.origin === "bestdori" &&
+      this.profile.presentation === "song" && this.settings.entityContext && this.settings.chartPage;
+    void this.ensureChartPlayer().then(() => {
+      if (current()) this.requestUpdate();
+    }, () => {
+      if (current()) {
+        this.phase = "error";
+        this.setEntityReady(false);
+      }
+    });
+  }
   private chartRow(item: Item) {
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
     return rows[this.detailDifficulty] || rows.find((row) => row.file) || {};
@@ -4230,7 +4284,13 @@ export class CatalogScreen extends LitElement {
     const id = this.profile.perDifficulty ? String(item.musicId || fallback) : fallback;
     const server = this.itemSourceServer(item);
     const locale = this.settings.locale as Locale;
-    const target = new URL(chartPath({ server, locale, id }), location.href);
+    const target = new URL(
+      this.settings.origin === "bestdori"
+        ? this.entityLink(id, this.detailDifficulty) || `/${locale}/community/songs-bestdori/`
+        : chartPath({ server, locale, id }),
+      location.href,
+    );
+    if (this.settings.origin === "bestdori") target.searchParams.set("chart", "1");
     // The child returns to this complete canonical song URL. Its own return
     // query therefore remains intact and takes the user back to the filtered
     // catalogue with the captured scroll snapshot.
@@ -4251,7 +4311,7 @@ export class CatalogScreen extends LitElement {
     return `${target.pathname}${target.search}`;
   }
   private async openChart() {
-    if (this.settings.entityContext && this.settings.origin !== "bestdori" && !this.settings.chartPage) {
+    if (this.settings.entityContext && !this.settings.chartPage) {
       await navigateDetailPage(this.chartPageHref(this.selected || {}), "push");
       return;
     }
@@ -4267,7 +4327,7 @@ export class CatalogScreen extends LitElement {
   openChartFor(item: Item) {
     if (this.pendingNavigation) return;
     const kind = this.canonicalKind();
-    if (this.settings.origin === "bestdori" || !kind) {
+    if (!kind) {
       // No canonical chart page from this origin: open the detail inline and
       // raise the chart on it, as the table did before canonical navigation.
       void this.open(item).then(() => this.openChart());
