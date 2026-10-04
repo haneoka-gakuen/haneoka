@@ -27,7 +27,7 @@ export function chooserHeader(options: {
   closeLabel: string; close: () => void; actions?: unknown;
 }) {
   return html`<header class="sheet__header chooser-header"><strong>${options.title}</strong>
-    <div class="chooser-filter-options">${options.actions ?? nothing}
+    <div class="sheet__actions chooser-header__actions">${options.actions ?? nothing}
       ${iconButton({ label: options.filterLabel, icon: "filter_alt", toggle: true, pressed: options.filtersOpen, onClick: options.toggleFilters })}
       ${iconButton({ label: options.closeLabel, icon: "close", onClick: options.close })}
     </div>

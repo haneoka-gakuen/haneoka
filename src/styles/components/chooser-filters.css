@@ -26,6 +26,9 @@
   .sheet__header.chooser-header,
   .selection-pane > .sheet__header.chooser-header {
     display: flex;
+    inline-size: 100%;
+    box-sizing: border-box;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: space-between;
     gap: 4px;
@@ -36,6 +39,19 @@
     top: 0;
     z-index: 1;
     background: var(--md-sys-color-surface-container-high);
+  }
+  .chooser-header > strong {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+  .chooser-header > .chooser-header__actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    margin-inline-start: auto;
+    gap: var(--md-sys-spacing-2);
   }
 }
 
