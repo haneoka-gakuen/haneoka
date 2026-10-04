@@ -141,6 +141,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                       <ul class="nav__children" role="list">
                         {section.items.map((item, itemIndex) => {
                           const children = item.children || [];
+                          const forums = destination.id === "community" && item.route === "/community/forums";
                           const childCurrent = children.some((child) => itemActive(child.route));
                           const open = itemActive(item.route) || childCurrent;
                           const childId = `nav-${destination.id}-${section.id}-${itemIndex}`;
@@ -152,7 +153,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                           );
                           return (
                             <li>
-                              {children.length ? (
+                              {children.length || forums ? (
                                 <div class="nav__destination">
                                   {link}
                                   <button class="icon-button nav__disclosure" type="button"
@@ -163,7 +164,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                                   </button>
                                 </div>
                               ) : link}
-                              {children.length > 0 && (
+                              {(children.length > 0 || forums) && (
                                 <div class="nav__branch" id={childId} hidden={!open}>
                                   <ul class="nav__children" role="list">
                                     {children.map((child) => (
@@ -173,11 +174,13 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                                       </a></li>
                                     ))}
                                   </ul>
+                                  {forums && current && (
+                                    <community-forum-navigation locale={locale} data-community-forum-directory
+                                      transition:persist="community-forum-navigation"></community-forum-navigation>
+                                  )}
                                 </div>
                               )}
-                              {destination.id === "community" && item.route === "/community/forums" && current && (
-                                <community-forum-navigation locale={locale} data-community-forum-directory></community-forum-navigation>
-                              )}
+
                             </li>
                           );
                         })}

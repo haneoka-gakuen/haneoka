@@ -8,9 +8,10 @@ import {projectForumNavigation, type ForumNavigationSnapshot, type ForumNavigati
 let sequence = 0;
 /** Controlled drawer view; the active community owner supplies fresh ACL DTOs. */
 export class CommunityForumNavigation extends LitElement {
-  static properties = { locale:{}, snapshot:{state:true} };
+  static properties = { locale:{}, snapshot:{state:true}, busy:{state:true} };
   declare locale:string;
   declare private snapshot:ForumNavigationSnapshot;
+  declare private busy:boolean;
   private readonly requests = new RequestScope();
   private readonly instance = 'community-forum-nav-'+ ++sequence;
   private readonly expanded = new Map<string,boolean>();
@@ -24,7 +25,7 @@ export class CommunityForumNavigation extends LitElement {
     'forum','chat','style','emoji_emotions','music_note','auto_stories',
     'groups','menu_book','help','lightbulb','flag',
   ]);
-  constructor() { super();this.locale='ja';this.snapshot={forums:[]}; }
+  constructor() { super();this.locale='ja';this.snapshot={forums:[]};this.busy=false; }
   createRenderRoot() { return this; }
   begin(contextKey:string):AbortSignal {
     let context:unknown;
@@ -37,9 +38,8 @@ export class CommunityForumNavigation extends LitElement {
     if(this.requestedViewer!==this.viewerId) {
       this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
     }
-    if(this.context!==contextKey) {
-      this.snapshot={forums:[]};
-    }
+    if(this.requestedViewer!==this.viewerId) this.snapshot={forums:[]};
+    this.busy=true;
     this.context=contextKey;
     return this.requests.begin();
   }
@@ -49,7 +49,7 @@ export class CommunityForumNavigation extends LitElement {
     if(snapshot.viewerId!==this.viewerId) {
       this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
     }
-    this.viewerId=snapshot.viewerId;this.locale=snapshot.locale;
+    this.viewerId=snapshot.viewerId;this.locale=snapshot.locale;this.busy=false;
     this.snapshot=structuredClone(snapshot);
     const groups=this.groups();
     const active=groups.find(group=>group.links.some(link=>link.active))?.id;
@@ -60,12 +60,24 @@ export class CommunityForumNavigation extends LitElement {
     this.requestUpdate();
     return true;
   }
-  // Revoking DTOs preserves presentation hints until the confirmed viewer/board changes.
-  invalidate():void {this.requests.cancel();this.snapshot={forums:[]};}
+  /** Ordinary same-session refresh cancels old work without removing readable links. */
+  refresh():void {this.requests.cancel();this.busy=true;}
+  /** Transfer a persisted navigation instance to a new page owner, or settle a failure. */
+  release(signal?:AbortSignal):void {
+    if(signal && !this.requests.current(signal))return;
+    this.requests.cancel();this.busy=false;
+  }
+  // Known identity/ACL revocation always removes private DTOs immediately.
+  invalidate():void {this.requests.cancel();this.snapshot={forums:[]};this.busy=false;}
   disconnectedCallback() {
-    this.invalidate();this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
-    this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;
+    this.requests.cancel();
     super.disconnectedCallback();
+    // Astro may synchronously move transition:persist nodes to the incoming document.
+    queueMicrotask(()=>{
+      if(this.isConnected)return;
+      this.invalidate();this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
+      this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;
+    });
   }
   private groups() {
     return projectForumNavigation(this.snapshot,this.locale,
@@ -73,25 +85,23 @@ export class CommunityForumNavigation extends LitElement {
   }
   render() {
     const groups=this.groups();
-    return html`<div class="community-nav-boards">${repeat(groups,group=>group.id,group=>{
+    return html`<div class="community-nav-boards" aria-busy=${String(this.busy)}>${repeat(groups,group=>group.id,group=>{
       const id=this.instance+'-'+encodeURIComponent(group.id),expanded=this.expanded.get(group.id)??false;
-      return html`<div class="community-nav-group" data-community-forum-group=${group.id}>
-        <div class="nav__destination">
-          <span class="nav-item community-nav-group-label" lang=${group.language}>${group.title}</span>
-          <button class="icon-button nav__disclosure" type="button"
+      const links=html`<ul class="nav__children community-nav-links" role="list">
+        ${repeat(group.links,link=>link.id,link=>html`<li><a class="nav-item community-nav-board-link"
+          data-community-forum-id=${link.id} href=${link.href} aria-current=${link.active?'page':nothing}>
+          ${icon(link.icon,18)}<span lang=${link.language}>${link.title}</span>
+        </a></li>`)}</ul>`;
+      if(group.id==='visible-forums')return links;
+      return html`<div class="nav__section community-nav-group" data-community-forum-group=${group.id}>
+          <button class="nav__section-toggle nav__disclosure" type="button"
             data-community-forum-toggle=${group.id} aria-expanded=${String(expanded)}
             aria-controls=${id} aria-label=${group.title}
             @click=${()=>{this.expanded.set(group.id,!expanded);this.requestUpdate();}}>
-            ${icon('expand_more')}
+            <span lang=${group.language}>${group.title}</span>${icon('expand_more')}
           </button>
-        </div>
         <div class="nav__branch" id=${id} ?hidden=${!expanded}>
-          <ul class="nav__children community-nav-links" role="list">
-          ${repeat(group.links,link=>link.id,link=>html`<li><a
-            class="nav-item community-nav-board-link" data-community-forum-id=${link.id}
-            href=${link.href} aria-current=${link.active?'page':nothing}>
-            ${icon(link.icon)}<span lang=${link.language}>${link.title}</span>
-          </a></li>`)}</ul>
+          ${links}
         </div>
       </div>`;
     })}</div>`;

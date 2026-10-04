@@ -147,7 +147,8 @@
   padding-inline-start: 24px;
   font-weight: 400;
 }
-.nav__section > summary {
+.nav__section > summary,
+.nav__section > .nav__section-toggle {
   display: flex;
   min-height: 48px;
   align-items: center;
@@ -166,6 +167,7 @@
   padding-inline-start: 32px;
 }
 .nav__section > summary:hover,
+.nav__section > .nav__section-toggle:hover,
 .nav__children .nav-item:hover {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
@@ -209,4 +211,26 @@
     border: 0;
     background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
   }
+}
+
+/* Controlled dynamic forum groups share the catalogue section treatment. */
+.nav__section > .nav__section-toggle {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: start;
+}
+.nav__section-toggle > span,
+.community-nav-board-link > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.community-nav-board-link {
+  min-width: 0;
+}
+.community-nav-board-link > .material-icon {
+  --icon-size: 18px;
+  flex: none;
 }

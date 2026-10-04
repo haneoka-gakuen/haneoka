@@ -301,6 +301,8 @@ export class CommunityWorkspace extends LitElement {
         },
       ): boolean;
       invalidate(): void;
+      refresh?(): void;
+      release?(signal?: AbortSignal): void;
     };
     signal: AbortSignal;
   };
@@ -336,16 +338,14 @@ export class CommunityWorkspace extends LitElement {
     }
     this.reactions.clear();
     this.requests.cancel();
-    if (editor && event?.type !== "haneoka:session-changed") {
-      // Keep the mounted form while rechecking the current identity and permissions.
-      ++this.forumEpoch;
-      this.forumNavigationState?.host.invalidate();
-      this.forumNavigationState = undefined;
-      this.facetsRequests.cancel();
-      feedSnapshots.clear();
-    } else {
+    const revoke = event?.type === "haneoka:session-changed" || event?.type === "haneoka:community-forums-changed";
+    if (revoke) {
       this.clearForumContent();
       this.phase = "loading";
+    } else {
+      this.forumNavigationState?.host.refresh?.();
+      this.facetsRequests.cancel();
+      feedSnapshots.clear();
     }
     void this.load(false);
   };
@@ -560,7 +560,7 @@ export class CommunityWorkspace extends LitElement {
     this.commentsRequest.cancel();
     this.cancelReplyRequests();
     this.lifetime.abort();
-    this.forumNavigationState?.host.invalidate();
+    this.forumNavigationState?.host.release?.(this.forumNavigationState.signal);
     this.facetsRequests.cancel();
     this.uploadControllers.forEach((controller) => controller.abort());
     this.uploadQueue = [];
@@ -1151,6 +1151,7 @@ export class CommunityWorkspace extends LitElement {
             : "all";
         this.unreadOnly = loaded.get("unread") === "true";
       }
+      if (!(error instanceof JsonResponseError) || ![401,403,404].includes(error.status)) this.forumNavigationState?.host.release?.(this.forumNavigationState.signal);
       this.error = error instanceof Error ? error.message : String(error);
       if (!this.items.length && !this.document) this.phase = "error";
       progress.fail(error);
