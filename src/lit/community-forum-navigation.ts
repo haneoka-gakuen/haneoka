@@ -5,6 +5,8 @@ import {RequestScope} from '../lib/request-scope';
 import {readCommunityForumDirectory} from '../lib/community-forum-directory';
 import {JsonResponseError} from './shared/catalog';
 import {clientText} from '../i18n/client';
+import {localeFromPath} from '../i18n/locales';
+import {navigationDocumentUrl} from '../lib/document-url';
 import {projectForumNavigation, type ForumNavigationSnapshot, type ForumNavigationPayload} from '../lib/community-forum-navigation';
 
 let sequence = 0;
@@ -19,6 +21,8 @@ export class CommunityForumNavigation extends LitElement {
   private realm: string | undefined;
   private directorySignal: AbortSignal | undefined;
   private directoryInitialized = false;
+  private pagePath: string | undefined;
+  private readonly syncPage = () => {this.syncPageContext();};
   private readonly revokeDirectory = () => {this.invalidate();void this.loadDirectory();};
   private readonly instance = 'community-forum-nav-'+ ++sequence;
   private readonly expanded = new Map<string,boolean>();
@@ -36,9 +40,39 @@ export class CommunityForumNavigation extends LitElement {
   createRenderRoot() { return this; }
   connectedCallback() {
     super.connectedCallback();
+    document.addEventListener('astro:page-load', this.syncPage);
+    this.syncPageContext();
     window.addEventListener('haneoka:session-changed', this.revokeDirectory);
     window.addEventListener('haneoka:community-forums-changed', this.revokeDirectory);
     if (!this.directoryInitialized) void this.loadDirectory();
+  }
+  /** Persisted links follow the incoming document without rereading its directory. */
+  private syncPageContext(published = false): void {
+    const url = navigationDocumentUrl();
+    const path = url.pathname.replace(/\/+$/, '');
+    this.locale = localeFromPath(path) ?? this.locale;
+    const parts = path.split('/').filter(Boolean);
+    const community = parts.indexOf('community');
+    let active: string | null = null;
+    if (community >= 0 && parts[community+1] === 'forums' && parts.length === community+3) {
+      const slug = parts[community+2];
+      active = this.snapshot.forums.find(forum => forum.enabled && forum.capabilities.canRead &&
+        encodeURIComponent(forum.slug) === slug)?.id ?? null;
+    } else if (community >= 0 && parts[community+1] === 'posts' && (published || path === this.pagePath)) {
+      active = this.snapshot.activeForumId ?? null;
+    }
+    this.pagePath = path;
+    this.snapshot = {...this.snapshot, activeForumId:active};
+    if (published || this.snapshot.forums.length) this.syncActiveGroup(published);
+    this.requestUpdate();
+  }
+  private syncActiveGroup(prune: boolean): void {
+    const groups=this.groups();
+    const active=groups.find(group=>group.links.some(link=>link.active))?.id;
+    if(active && (active!==this.activeGroup || this.snapshot.activeForumId!==this.activeForum))this.expanded.set(active,true);
+    this.activeGroup=active;
+    this.activeForum=this.snapshot.activeForumId;
+    if(prune) for(const key of this.expanded.keys())if(!groups.some(group=>group.id===key))this.expanded.delete(key);
   }
   private async loadDirectory(): Promise<void> {
     if (this.directorySignal && this.directoryRequests.current(this.directorySignal)) return;
@@ -96,13 +130,7 @@ export class CommunityForumNavigation extends LitElement {
     }
     this.viewerId=snapshot.viewerId;this.locale=snapshot.locale;this.busy=false;
     this.snapshot=structuredClone(snapshot);
-    const groups=this.groups();
-    const active=groups.find(group=>group.links.some(link=>link.active))?.id;
-    if(active && (active!==this.activeGroup || snapshot.activeForumId!==this.activeForum))this.expanded.set(active,true);
-    this.activeGroup=active;
-    this.activeForum=snapshot.activeForumId;
-    for(const key of this.expanded.keys())if(!groups.some(group=>group.id===key))this.expanded.delete(key);
-    this.requestUpdate();
+    this.syncPageContext(true);
     return true;
   }
   /** Ordinary same-session refresh cancels old work without removing readable links. */
@@ -115,6 +143,7 @@ export class CommunityForumNavigation extends LitElement {
   // Known identity/ACL revocation always removes private DTOs immediately.
   invalidate():void {this.requests.cancel();this.directoryRequests.cancel();this.snapshot={forums:[]};this.busy=false;}
   disconnectedCallback() {
+    document.removeEventListener('astro:page-load', this.syncPage);
     window.removeEventListener('haneoka:session-changed', this.revokeDirectory);
     window.removeEventListener('haneoka:community-forums-changed', this.revokeDirectory);
     this.directoryRequests.cancel();
@@ -124,7 +153,7 @@ export class CommunityForumNavigation extends LitElement {
     queueMicrotask(()=>{
       if(this.isConnected)return;
       this.invalidate();this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
-      this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;this.realm=undefined;this.directoryInitialized=false;
+      this.viewerId=undefined;this.requestedViewer=undefined;this.context=undefined;this.realm=undefined;this.directoryInitialized=false;this.pagePath=undefined;
     });
   }
   private groups() {
