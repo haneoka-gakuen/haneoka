@@ -48,6 +48,14 @@ export class AdminWorkspace extends LitElement {
     historyLoading: { state: true },
     historyError: { state: true },
     historyPaging: { state: true },
+    selectedUserId: { state: true },
+    userDocument: { state: true },
+    userLoading: { state: true },
+    userDetailError: { state: true },
+    copiedUserId: { state: true },
+    userCopyState: { state: true },
+    userRoleFilter: { state: true },
+    userStatusFilter: { state: true },
   };
   declare section: Section;
   declare phase: "loading" | "ready" | "error";
@@ -72,11 +80,20 @@ export class AdminWorkspace extends LitElement {
   declare historyLoading: boolean;
   declare historyError: string;
   declare historyPaging: string;
+  declare selectedUserId: string;
+  declare userDocument: Value | null;
+  declare userLoading: boolean;
+  declare userDetailError: string;
+  declare copiedUserId: string;
+  declare userCopyState: "" | "copied" | "manual";
+  declare userRoleFilter: string;
+  declare userStatusFilter: string;
   private readonly expandedPanels = new Set<string>();
   private readonly listRequests = new RequestScope();
   private readonly sourceRequests = new RequestScope();
   private readonly serverRequests = new RequestScope();
   private readonly historyRequests = new RequestScope();
+  private readonly userRequests = new RequestScope();
   private readonly failedPreviews = new Set<string>();
   private lifetime = new AbortController();
   private privateAccess = new AbortController();
@@ -107,6 +124,14 @@ export class AdminWorkspace extends LitElement {
     this.historyLoading = false;
     this.historyError = "";
     this.historyPaging = "";
+    this.selectedUserId = "";
+    this.userDocument = null;
+    this.userLoading = false;
+    this.userDetailError = "";
+    this.copiedUserId = "";
+    this.userCopyState = "";
+    this.userRoleFilter = "";
+    this.userStatusFilter = "";
   }
 
   private paneFocus = new PaneFocus();
@@ -114,9 +139,11 @@ export class AdminWorkspace extends LitElement {
     return this;
   }
   updated() {
+    if (this.selectedUserId && this.section !== "users") this.closeUserDetails();
     // The dialog is modal: focus stays inside it and Escape closes it.
     this.paneFocus.sync(this.querySelector<HTMLElement>("[data-overlay-pane]"), () => {
       this.closeReview();
+      this.closeUserDetails();
     });
   }
   private readonly onLocale = () => this.requestUpdate();
@@ -135,6 +162,10 @@ export class AdminWorkspace extends LitElement {
     const filters = navigationDocumentUrl().searchParams;
     const moderation = filters.get("moderationStatus");
     const state = filters.get("status");
+    this.userRoleFilter = ["member", "moderator", "admin"].includes(filters.get("role") || "")
+      ? filters.get("role")!
+      : "";
+    this.userStatusFilter = ["active", "suspended", "deleted"].includes(state || "") ? state! : "";
     this.postFilter = ["pending", "review", "block"].includes(moderation || "")
       ? (moderation as PostFilter)
       : state === "hidden" || state === "draft"
@@ -223,6 +254,7 @@ export class AdminWorkspace extends LitElement {
     this.sourceRequests.cancel();
     this.serverRequests.cancel();
     this.closeReview();
+    this.closeUserDetails();
     this.expandedPanels.clear();
     this.staff = {};
     this.document = {};
@@ -338,6 +370,10 @@ export class AdminWorkspace extends LitElement {
       const query = new URLSearchParams({ limit: "50" });
       if (append) query.set("cursor", this.cursor);
       if ((this.section === "users" || this.section === "posts") && this.query) query.set("q", this.query);
+      if (section === "users") {
+        if (this.userRoleFilter) query.set("role", this.userRoleFilter);
+        if (this.userStatusFilter) query.set("status", this.userStatusFilter);
+      }
       if (section === "posts" && this.postFilter !== "all")
         query.set(["hidden", "draft"].includes(this.postFilter) ? "status" : "moderationStatus", this.postFilter);
       if (this.section === "reports" || this.section === "appeals") query.set("status", "all");
@@ -364,6 +400,8 @@ export class AdminWorkspace extends LitElement {
       this.cursor = String(result.nextCursor || "");
       this.phase = "ready";
       if (!append && section === "operations") await this.loadResourceServers();
+      if (!append && section === "users" && this.selectedUserId && !this.userLoading)
+        await this.loadUserDetails(this.selectedUserId);
     } catch (error) {
       if (!active()) return;
       this.error = error instanceof Error ? error.message : String(error);
@@ -507,6 +545,7 @@ export class AdminWorkspace extends LitElement {
   private async openHistory(postId: unknown, commentId?: unknown) {
     const generation = this.privateGeneration;
     if (this.busy || !this.accessCurrent(generation)) return;
+    this.closeUserDetails();
     const signal = this.historyRequests.begin();
     const id = String(postId);
     const active = () =>
@@ -1058,7 +1097,573 @@ export class AdminWorkspace extends LitElement {
       `,
     });
   }
+  private selectedUser() {
+    const user = this.userDocument?.user as Value | undefined;
+    if (user && String(user.id) === this.selectedUserId) {
+      const summary = this.userDocument?.restrictions as Value | undefined;
+      // The existing list provides a complete active set, unlike the detail's recent-history slice.
+      const listed = this.records().find(
+        (row) => String(row.id) === this.selectedUserId && row.version === user.version,
+      );
+      return {
+        ...user,
+        lastVisit: this.userDocument?.lastVisit,
+        restrictions: summary?.flags ?? listed?.restrictions,
+        activeRestrictions: this.userDocument?.activeRestrictions ?? listed?.activeRestrictions,
+      } as Value;
+    }
+    return this.section === "users"
+      ? this.records().find((user) => String(user.id) === this.selectedUserId)
+      : undefined;
+  }
+  private closeUserDetails() {
+    this.userRequests.cancel();
+    this.selectedUserId = "";
+    this.userDocument = null;
+    this.userLoading = false;
+    this.userDetailError = "";
+    this.copiedUserId = "";
+    this.userCopyState = "";
+  }
+  private async loadUserDetails(id: string) {
+    const generation = this.privateGeneration;
+    if (!this.accessCurrent(generation) || this.section !== "users" || this.selectedUserId !== id) return;
+    const signal = this.userRequests.begin();
+    const active = () =>
+      this.accessCurrent(generation) && this.userRequests.current(signal) && this.selectedUserId === id;
+    this.userLoading = true;
+    this.userDetailError = "";
+    const progress = beginLoading(this.label("userDetails.title", "User details"), { signal });
+    try {
+      const value = await this.request(`/api/v1/admin/users/${encodeURIComponent(id)}`, { signal });
+      if (!active()) return;
+      if (String((value.user as Value | undefined)?.id) !== id)
+        throw new Error(this.label("loadFailed", "Admin data could not be loaded."));
+      this.userDocument = value;
+    } catch (error) {
+      if (!active()) return;
+      this.userDocument = null;
+      this.userDetailError = error instanceof Error ? error.message : String(error);
+      progress.fail(error);
+    } finally {
+      if (active()) this.userLoading = false;
+      progress.finish();
+    }
+  }
+  private async openUserDetails(id: unknown, manage = false) {
+    const generation = this.privateGeneration;
+    const key = String(id);
+    if (
+      !this.accessCurrent(generation) ||
+      this.staff.role !== "admin" ||
+      this.section !== "users" ||
+      !this.records().some((user) => String(user.id) === key)
+    )
+      return;
+    this.closeReview();
+    this.closeUserDetails();
+    this.selectedUserId = key;
+    if (manage) this.expandedPanels.add(`admin-user-actions-${encodeURIComponent(key)}`);
+    await this.loadUserDetails(key);
+    await this.updateComplete;
+    if (manage && this.accessCurrent(generation) && this.selectedUserId === key) {
+      const trigger = this.querySelector<HTMLElement>(".admin-user-details .admin-action-panel .md-accordion__trigger");
+      trigger?.scrollIntoView({ block: "nearest" });
+      trigger?.focus({ preventScroll: true });
+    }
+  }
+  private async copyUserId(id: string, internal = false) {
+    const generation = this.privateGeneration;
+    const view = this.selectedUserId;
+    const user =
+      String((this.userDocument?.user as Value | undefined)?.id) === id
+        ? (this.userDocument?.user as Value)
+        : this.records().find((user) => String(user.id) === id);
+    const value = internal ? user?.id : user?.publicUid;
+    if (!this.accessCurrent(generation) || this.section !== "users" || value === null || value === undefined) return;
+    const current = () => this.accessCurrent(generation) && this.section === "users" && this.selectedUserId === view;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      if (!current()) return;
+      this.copiedUserId = `${id}:${internal ? "internal" : "public"}`;
+      this.userCopyState = "copied";
+    } catch {
+      if (!current()) return;
+      this.copiedUserId = `${id}:${internal ? "internal" : "public"}`;
+      this.userCopyState = "manual";
+    }
+  }
+  private renderUserId(user: Value, expanded = false, internal = false) {
+    const id = String(user.id || "");
+    const raw = internal ? user.id : user.publicUid;
+    const value =
+      raw === null ? this.label("userDetails.uidUnassigned", "Not assigned") : raw === undefined ? "—" : String(raw);
+    const feedback =
+      this.copiedUserId === `${id}:${internal ? "internal" : "public"}` && (expanded || !this.selectedUserId);
+    const copyLabel = internal
+      ? this.label("userDetails.copyAccountId", "Copy account ID")
+      : this.label("userDetails.copyUid", "Copy UID");
+    return html`
+      <div class=${`admin-user-uid${expanded ? " admin-user-uid--expanded" : ""}`}>
+        <span>${internal ? this.label("userDetails.accountId", "Account ID") : "UID"}</span>
+        <code title=${value}>${value}</code>
+        <button
+          class="icon-button"
+          type="button"
+          ?disabled=${raw === null || raw === undefined}
+          aria-label=${copyLabel}
+          title=${copyLabel}
+          @click=${() => this.copyUserId(id, internal)}
+        >
+          ${icon(feedback && this.userCopyState === "copied" ? "check" : "content_copy", 18)}
+        </button>
+        <span class="admin-user-copy-status" role="status">
+          ${feedback ? (this.userCopyState === "copied" ? this.label("userDetails.copied", "Copied") : this.label("userDetails.copyManually", "Select the identifier to copy it.")) : ""}
+        </span>
+      </div>
+    `;
+  }
+  private fullDate(value: unknown) {
+    if (value === null || value === undefined || value === "") return "—";
+    const date = new Date(typeof value === "number" || /^\d+$/u.test(String(value)) ? Number(value) : String(value));
+    return Number.isFinite(date.getTime())
+      ? new Intl.DateTimeFormat(preferredLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(date)
+      : "—";
+  }
+  private userFields(rows: Array<[string, unknown]>) {
+    return html`
+      <dl class="admin-user-fields">
+        ${rows.map(
+          ([label, value]) => html`
+            <div>
+              <dt>${label}</dt>
+              <dd>${value === null || value === undefined || value === "" ? "—" : value}</dd>
+            </div>
+          `,
+        )}
+      </dl>
+    `;
+  }
+  private verifiedEmail(user: Value) {
+    return html`
+      <span
+        class=${`admin-status${user.emailVerified === true ? " admin-status--positive" : user.emailVerified === false ? " admin-status--attention" : ""}`}
+      >
+        ${typeof user.emailVerified === "boolean" ? (user.emailVerified ? this.label("userDetails.emailVerified", "Email verified") : this.label("userDetails.emailUnverified", "Email not verified")) : this.label("ip.unknown", "Unknown")}
+      </span>
+    `;
+  }
+  private setUserFilter(kind: "role" | "status", value: string) {
+    if (value === "all") value = "";
+    const allowed = kind === "role" ? ["", "member", "moderator", "admin"] : ["", "active", "suspended", "deleted"];
+    if (!allowed.includes(value)) return;
+    if (kind === "role") this.userRoleFilter = value;
+    else this.userStatusFilter = value;
+    this.closeUserDetails();
+    const params = new URLSearchParams(location.search);
+    if (value) params.set(kind, value);
+    else params.delete(kind);
+    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+    void this.load(false);
+  }
+  private renderUserFilters() {
+    return html`
+      <div class="admin-user-filters">
+        <md-outlined-select
+          label=${this.label("columns.role", "Role")}
+          .value=${this.userRoleFilter || "all"}
+          @change=${(event: Event) => this.setUserFilter("role", String((event.target as HTMLElement & { value: string }).value))}
+        >
+          <md-select-option value="all">
+            <div slot="headline">${this.label("userDetails.allRoles", "All roles")}</div>
+          </md-select-option>
+          ${["member", "moderator", "admin"].map(
+            (role) => html`
+              <md-select-option value=${role}>
+                <div slot="headline">${this.label(`roles.${role}`, role)}</div>
+              </md-select-option>
+            `,
+          )}
+        </md-outlined-select>
+        <md-outlined-select
+          label=${this.label("columns.status", "Status")}
+          .value=${this.userStatusFilter || "all"}
+          @change=${(event: Event) => this.setUserFilter("status", String((event.target as HTMLElement & { value: string }).value))}
+        >
+          <md-select-option value="all">
+            <div slot="headline">${this.label("userDetails.allStatuses", "All statuses")}</div>
+          </md-select-option>
+          ${["active", "suspended", "deleted"].map(
+            (status) => html`
+              <md-select-option value=${status}><div slot="headline">${this.valueLabel(status)}</div></md-select-option>
+            `,
+          )}
+        </md-outlined-select>
+      </div>
+    `;
+  }
+  private renderUserCounts() {
+    const counts = this.userDocument?.counts as Value | undefined;
+    if (!counts) return nothing;
+    const groups: Array<[string, string, string]> = [
+      ["posts", this.label("sections.posts", "Posts"), "moderation"],
+      ["comments", this.label("history.comments", "Comments"), "moderation"],
+      ["attachments", this.label("workspace.attachments", "Attachments"), "status"],
+    ];
+    return html`
+      <section class="admin-context-card">
+        <h3>${this.label("userDetails.contentRecords", "Content records")}</h3>
+        ${this.userFields(groups.map(([key, label]) => [label, (counts[key] as Value | undefined)?.total]))}
+        ${this.disclosure({
+          id: `admin-user-counts-${this.selectedUserId}`,
+          label: this.label("userDetails.stateBreakdown", "Status breakdown"),
+          content: html`
+            <div class="admin-user-count-breakdown">
+              ${groups.map(
+                ([key, label, field]) => html`
+                  <section>
+                    <h4>${label}</h4>
+                    ${this.userFields(Object.entries(((counts[key] as Value | undefined)?.[field] as Value | undefined) || {}).map(([state, count]) => [this.valueLabel(state), count]))}
+                  </section>
+                `,
+              )}
+            </div>
+          `,
+        })}
+        <p class="admin-muted">
+          ${this.label("workspace.statisticsNote", "Each status dimension is counted separately, including retained deleted records.")}
+        </p>
+      </section>
+    `;
+  }
+  private renderUserHistorySummaries() {
+    const restrictions = this.userDocument?.restrictions as Value | undefined;
+    const operations = this.userDocument?.operations as Value | undefined;
+    const rows = (value: Value | undefined) => (Array.isArray(value?.items) ? (value.items as Value[]) : []);
+    const summary = (value: Value | undefined) =>
+      this.label("userDetails.recentCount", "Showing {shown} recent records · {total} total")
+        .replace("{shown}", String(rows(value).length))
+        .replace("{total}", typeof value?.total === "number" ? value.total.toLocaleString(preferredLocale()) : "—");
+    return html`
+      ${this.disclosure({
+        id: `admin-user-restriction-history-${this.selectedUserId}`,
+        label: this.label("userDetails.restrictionHistory", "Restriction history"),
+        supportingText: summary(restrictions),
+        content: html`
+          <div class="admin-revision-list">
+            ${rows(restrictions).map(
+              (record) => html`
+                <article class="admin-history-card">
+                  <h4>
+                    ${this.label(`restrictions.${record.kind === "sign_in" ? "signIn" : record.kind}`, String(record.kind))}
+                  </h4>
+                  ${this.userFields([
+                    [
+                      this.label("columns.status", "Status"),
+                      record.active === true
+                        ? this.label("userDetails.restricted", "Restricted")
+                        : record.revokedAt
+                          ? this.label("userDetails.revoked", "Revoked")
+                          : this.valueLabel("expired"),
+                    ],
+                    [this.label("history.reason", "Reason"), record.reasonCode],
+                    [this.label("userDetails.actorUid", "Actor account ID"), record.actorUserId],
+                    [this.label("columns.createdAt", "Created"), this.fullDate(record.createdAt)],
+                    [this.label("workspace.updated", "Updated"), this.fullDate(record.updatedAt)],
+                    [
+                      this.label("userDetails.expires", "Expires"),
+                      record.expiresAt === null
+                        ? this.label("durations.permanent", "Permanent")
+                        : this.fullDate(record.expiresAt),
+                    ],
+                    [this.label("userDetails.revokedAt", "Revoked at"), this.fullDate(record.revokedAt)],
+                    [this.label("userDetails.recordId", "Record ID"), record.id],
+                    [this.label("history.revision", "Version"), record.version],
+                  ])}
+                </article>
+              `,
+            )}
+          </div>
+        `,
+      })}
+      ${this.disclosure({
+        id: `admin-user-operation-history-${this.selectedUserId}`,
+        label: this.label("sections.operations", "Operations"),
+        supportingText: summary(operations),
+        content: html`
+          <p class="admin-muted">
+            ${this.label("userDetails.operationsScope", "Operations performed by this account or directly targeting it.")}
+          </p>
+          <div class="admin-revision-list">
+            ${rows(operations).map(
+              (record) => html`
+                <article class="admin-history-card">
+                  <h4>
+                    ${this.label(`operations.actions.${String(record.action || "").replace(/[._-]([a-z])/g, (_match, letter: string) => letter.toUpperCase())}`, String(record.action || ""))}
+                  </h4>
+                  ${this.statusBadge(record.status)}${this.userFields([
+                    [this.label("userDetails.actorUid", "Actor account ID"), record.actorUserId],
+                    [
+                      this.label("columns.target", "Target"),
+                      `${this.valueLabel(record.targetKind)} · ${String(record.targetId || "—")}`,
+                    ],
+                    [this.label("columns.createdAt", "Created"), this.fullDate(record.createdAt)],
+                    [this.label("userDetails.completed", "Completed"), this.fullDate(record.completedAt)],
+                    [this.label("userDetails.errorCode", "Error code"), record.errorCode],
+                    [this.label("userDetails.recordId", "Record ID"), record.id],
+                  ])}
+                </article>
+              `,
+            )}
+          </div>
+        `,
+      })}
+    `;
+  }
+  private renderUserDetails() {
+    if (
+      !this.selectedUserId ||
+      this.section !== "users" ||
+      this.privateAccess.signal.aborted ||
+      this.staff.role !== "admin"
+    )
+      return nothing;
+    const details = this.userDocument;
+    const user: Value =
+      details || this.userLoading ? this.selectedUser() || { id: this.selectedUserId } : { id: this.selectedUserId };
+    const visit = user.lastVisit as Value | undefined;
+    const location = visit?.ipLocation as Value | undefined;
+    const restrictions = (user.restrictions as Value | undefined) || {};
+    const providers = Array.isArray(details?.providers) ? (details.providers as Value[]) : [];
+    const sessions = details?.sessions as Value | undefined;
+    const profileAvailable = typeof user.version === "number" && typeof user.role === "string";
+    const managementAvailable = !!user.restrictions && Array.isArray(user.activeRestrictions);
+    return html`
+      <div class="dialog-host admin-dialog-scrim" role="presentation" @click=${() => this.closeUserDetails()}>
+        <section
+          class="admin-history-dialog admin-user-details surface"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-user-title"
+          tabindex="-1"
+          data-overlay-pane
+          @click=${(event: Event) => event.stopPropagation()}
+        >
+          <header class="admin-review-header">
+            <div class="admin-user-heading">
+              <span class="admin-eyebrow">${this.label("userDetails.title", "User details")}</span>
+              <h2 id="admin-user-title">
+                ${String(user.publicDisplayName || user.accountName || this.label("userDetails.title", "User details"))}
+              </h2>
+              ${this.renderUserId(user, true)}
+            </div>
+            <button
+              class="icon-button"
+              aria-label=${this.label("history.close", "Close")}
+              @click=${() => this.closeUserDetails()}
+            >
+              ${icon("close", 24)}
+            </button>
+          </header>
+          ${
+            this.error
+              ? html`
+                  <div class="inline-message error" role="alert">
+                    ${this.error}
+                    <button class="button button--text" @click=${() => this.refresh()}>
+                      ${this.label("retry", "Retry")}
+                    </button>
+                  </div>
+                `
+              : nothing
+          }
+          ${this.userLoading ? loadingState(this.label("loading", "Loading")) : nothing}
+          ${
+            this.userDetailError
+              ? html`
+                  <div class="inline-message error" role="alert">
+                    ${this.userDetailError}
+                    <button class="button button--text" @click=${() => this.loadUserDetails(this.selectedUserId)}>
+                      ${this.label("retry", "Retry")}
+                    </button>
+                  </div>
+                `
+              : nothing
+          }
+          ${
+            details
+              ? html`
+                  <div class="admin-review-layout admin-user-layout">
+                    <main class="admin-review-content">
+                      <section class="admin-context-card">
+                        <h3>${this.label("userDetails.identity", "Identity and account")}</h3>
+                        <div class="admin-user-summary">
+                          <span class="admin-avatar">
+                            ${
+                              user.image
+                                ? html`
+                                    <img src=${String(user.image)} alt="" />
+                                  `
+                                : String(user.publicDisplayName || user.accountName || "?").slice(0, 1)
+                            }
+                          </span>
+                          <span class="admin-statuses">
+                            ${this.statusBadge(user.status)}
+                            <span class="admin-status">
+                              ${this.label(`roles.${user.role}`, String(user.role || "—"))}
+                            </span>
+                            ${this.verifiedEmail(user)}
+                          </span>
+                        </div>
+                        ${this.renderUserId(user, true, true)}
+                        <p class="admin-muted">
+                          ${this.label("userDetails.idExplanation", "UID identifies the Haneoka community profile; account ID identifies the internal sign-in account.")}
+                        </p>
+                        ${this.userFields([
+                          [this.label("accountName", "Account name"), user.accountName],
+                          [this.label("publicDisplayName", "Public name"), user.publicDisplayName],
+                          [this.label("userDetails.handle", "Handle"), user.handle ? `@${user.handle}` : null],
+                          [this.label("userDetails.email", "Email"), user.email],
+                          [this.label("userDetails.pendingName", "Pending public name"), user.candidateDisplayName],
+                          [
+                            this.label("userDetails.nameReview", "Public name moderation"),
+                            this.valueLabel(user.displayNameStatus),
+                          ],
+                          [this.label("columns.createdAt", "Created"), this.fullDate(user.createdAt)],
+                          [this.label("workspace.updated", "Updated"), this.fullDate(user.updatedAt)],
+                          [
+                            this.label("userDetails.profileCreated", "Community profile created"),
+                            this.fullDate(user.profileCreatedAt),
+                          ],
+                          [
+                            this.label("userDetails.profileUpdated", "Community profile updated"),
+                            this.fullDate(user.profileUpdatedAt),
+                          ],
+                          [
+                            this.label("userDetails.profileDeleted", "Community profile deleted"),
+                            this.fullDate(user.profileDeletedAt),
+                          ],
+                        ])}
+                        ${
+                          user.bio
+                            ? html`
+                                <h4>${this.label("userDetails.bio", "Biography")}</h4>
+                                <p class="admin-user-biography">${String(user.bio)}</p>
+                              `
+                            : nothing
+                        }
+                      </section>
+                      <section class="admin-context-card">
+                        <h3>${this.label("userDetails.latestVisit", "Latest recorded visit")}</h3>
+                        ${
+                          visit
+                            ? html`
+                                <p class="admin-user-visit-time">${this.fullDate(visit.visitedAt)}</p>
+                                <p class="admin-muted">
+                                  ${this.label("ip.visitSampling", "Authenticated requests are sampled once a minute; IP changes are recorded immediately.")}
+                                </p>
+                                ${this.renderIpAudit(visit)}${this.userFields([
+                                  [this.label("userDetails.countryCode", "Country code"), location?.countryCode],
+                                  [this.label("userDetails.regionCode", "Region code"), location?.regionCode],
+                                  [this.label("userDetails.continent", "Continent code"), location?.continent],
+                                  [this.label("userDetails.browser", "Browser"), visit.browserFamily],
+                                  [this.label("userDetails.platform", "Platform"), visit.osFamily],
+                                  [this.label("history.userAgent", "User agent"), visit.userAgent],
+                                ])}
+                              `
+                            : html`
+                                <p class="admin-muted">
+                                  ${this.label("userDetails.noVisit", "No visit record is available.")}
+                                </p>
+                              `
+                        }
+                      </section>
+                      ${this.renderUserCounts()}
+                      <section class="admin-context-card">
+                        <h3>${this.label("userDetails.signInMethods", "Sign-in methods")}</h3>
+                        ${
+                          providers.length
+                            ? providers.map(
+                                (provider) => html`
+                                  <article class="admin-history-card">
+                                    <h4>
+                                      ${provider.providerId === "credential" ? this.label("userDetails.passwordSignIn", "Password") : String(provider.providerId)}
+                                    </h4>
+                                    ${this.userFields([
+                                      [this.label("userDetails.bindingCount", "Bindings"), provider.bindingCount],
+                                      [
+                                        this.label("userDetails.firstLinked", "First linked"),
+                                        this.fullDate(provider.firstLinkedAt),
+                                      ],
+                                      [
+                                        this.label("userDetails.lastLinkedUpdate", "Last binding update"),
+                                        this.fullDate(provider.lastUpdatedAt),
+                                      ],
+                                      [
+                                        this.label("userDetails.passwordCredential", "Password credential"),
+                                        provider.hasPasswordCredential === true
+                                          ? this.label("userDetails.present", "Present")
+                                          : provider.hasPasswordCredential === false
+                                            ? this.label("userDetails.notPresent", "Not present")
+                                            : "—",
+                                      ],
+                                    ])}
+                                  </article>
+                                `,
+                              )
+                            : html`
+                                <p class="admin-muted">
+                                  ${this.label("userDetails.noBindings", "No sign-in bindings are recorded.")}
+                                </p>
+                              `
+                        }
+                      </section>
+                      ${this.renderUserHistorySummaries()}
+                    </main>
+                    <aside class="admin-review-context admin-user-management">
+                      <section class="admin-context-card">
+                        <h3>${this.label("columns.restrictions", "Restrictions")}</h3>
+                        ${this.userFields((["signIn", "upload", "write"] as const).map((kind) => [this.label(`restrictions.${kind}`, kind), restrictions[kind] === true ? this.label("userDetails.restricted", "Restricted") : restrictions[kind] === false ? this.label("restrictions.none", "None") : this.label("ip.unknown", "Unknown")]))}
+                      </section>
+                      ${
+                        profileAvailable && managementAvailable
+                          ? this.renderUserActions(user)
+                          : html`
+                              <p class="admin-muted">
+                                ${profileAvailable ? this.label("userDetails.managementUnavailable", "Current management state is unavailable. Refresh the user details.") : this.label("userDetails.noProfile", "No community profile is recorded.")}
+                              </p>
+                            `
+                      }
+                      <section class="admin-context-card">
+                        <h3>${this.label("userDetails.sessions", "Sessions")}</h3>
+                        ${this.userFields([
+                          [this.label("userDetails.storedSessions", "Stored sessions"), sessions?.stored],
+                          [this.label("workspace.activeSessions", "Unexpired sessions"), sessions?.active],
+                          [this.label("userDetails.expiredSessions", "Expired sessions"), sessions?.expired],
+                          [this.label("userDetails.unknownExpiry", "Unknown expiry"), sessions?.unknownExpiry],
+                          [
+                            this.label("userDetails.sessionUpdated", "Latest session record update"),
+                            this.fullDate(sessions?.lastSessionUpdatedAt),
+                          ],
+                        ])}
+                        <p class="admin-muted">
+                          ${this.label("userDetails.sessionNote", "Session validity and record updates do not indicate whether a person is online.")}
+                        </p>
+                      </section>
+                      <p class="admin-muted">
+                        ${this.label("userDetails.displayTimezone", "Displayed time zone: {zone}").replace("{zone}", Intl.DateTimeFormat().resolvedOptions().timeZone)}
+                      </p>
+                    </aside>
+                  </div>
+                `
+              : nothing
+          }
+        </section>
+      </div>
+    `;
+  }
   private renderUserActions(user: Value) {
+    const disabled = Boolean(this.busy) || this.refreshing || this.userLoading || this.phase !== "ready";
     const restrictions = Array.isArray(user.activeRestrictions) ? (user.activeRestrictions as Value[]) : [];
     const id = `admin-user-actions-${encodeURIComponent(String(user.id))}`;
     return this.disclosure({
@@ -1078,7 +1683,7 @@ export class AdminWorkspace extends LitElement {
                 `,
               )}
             </md-outlined-select>
-            <button class="button" ?disabled=${Boolean(this.busy)}>${this.label("actions.apply", "Apply")}</button>
+            <button class="button" ?disabled=${disabled}>${this.label("actions.apply", "Apply")}</button>
           </form>
           <div class="admin-restriction-controls">
             <md-outlined-select name="duration" label=${this.label("actions.restrictions", "Restrictions")}>
@@ -1096,7 +1701,7 @@ export class AdminWorkspace extends LitElement {
               (kind) => html`
                 <button
                   class="button button--tonal"
-                  ?disabled=${Boolean((user.restrictions as Value | undefined)?.[kind === "sign_in" ? "signIn" : kind]) || Boolean(this.busy)}
+                  ?disabled=${Boolean((user.restrictions as Value | undefined)?.[kind === "sign_in" ? "signIn" : kind]) || disabled}
                   @click=${(event: Event) => this.addRestriction(user, kind, event)}
                 >
                   ${this.label(`restrictions.${kind === "sign_in" ? "signIn" : kind}`, kind)}
@@ -1106,20 +1711,40 @@ export class AdminWorkspace extends LitElement {
           </div>
           ${restrictions.map(
             (restriction) => html`
-              <div class="admin-active-restriction">
-                <span>
-                  <strong>
-                    ${this.label(`restrictions.${restriction.kind === "sign_in" ? "signIn" : restriction.kind}`, String(restriction.kind))}
-                  </strong>
-                  <small>${this.date(restriction.expiresAt)} · ${String(restriction.reasonCode || "")}</small>
-                </span>
-                <button class="button button--text" @click=${() => this.revokeRestriction(user, restriction)}>
-                  ${this.label("actions.revokeRestriction", "Revoke restriction")}
-                </button>
+              <div class="admin-restriction-record">
+                <div class="admin-active-restriction">
+                  <span>
+                    <strong>
+                      ${this.label(`restrictions.${restriction.kind === "sign_in" ? "signIn" : restriction.kind}`, String(restriction.kind))}
+                    </strong>
+                    <small>
+                      ${restriction.expiresAt === null ? this.label("durations.permanent", "Permanent") : this.fullDate(restriction.expiresAt)}
+                      · ${String(restriction.reasonCode || "")}
+                    </small>
+                  </span>
+                  <button
+                    class="button button--text"
+                    ?disabled=${disabled}
+                    @click=${() => this.revokeRestriction(user, restriction)}
+                  >
+                    ${this.label("actions.revokeRestriction", "Revoke restriction")}
+                  </button>
+                </div>
+                ${this.disclosure({
+                  id: `admin-restriction-meta-${encodeURIComponent(String(restriction.id))}`,
+                  label: this.label("userDetails.restrictionRecord", "Restriction record"),
+                  content: this.userFields([
+                    [this.label("userDetails.recordId", "Record ID"), restriction.id],
+                    [this.label("userDetails.actorUid", "Actor account ID"), restriction.actorUserId],
+                    [this.label("columns.createdAt", "Created"), this.fullDate(restriction.createdAt)],
+                    [this.label("workspace.updated", "Updated"), this.fullDate(restriction.updatedAt)],
+                    [this.label("history.revision", "Version"), restriction.version],
+                  ]),
+                })}
               </div>
             `,
           )}
-          <button class="button button--danger" @click=${() => this.revokeUserSessions(user)}>
+          <button class="button button--danger" ?disabled=${disabled} @click=${() => this.revokeUserSessions(user)}>
             ${icon("logout", 18)}${this.label("actions.revokeSessions", "Revoke sessions")}
           </button>
         </div>
@@ -1127,52 +1752,56 @@ export class AdminWorkspace extends LitElement {
     });
   }
   private renderRecord(record: Value) {
-    if (this.section === "users")
+    if (this.section === "users") {
+      const visit = record.lastVisit as Value | undefined;
       return html`
-        <article class="admin-record">
-          <span class="admin-avatar">
-            ${
-              record.image
-                ? html`
-                    <img src=${String(record.image)} alt="" loading="lazy" />
-                  `
-                : String(record.publicDisplayName || record.accountName || "?").slice(0, 1)
-            }
+        <article class="admin-record admin-user-row">
+          <div class="admin-user-identity">
+            <span class="admin-avatar">
+              ${
+                record.image
+                  ? html`
+                      <img src=${String(record.image)} alt="" loading="lazy" />
+                    `
+                  : String(record.publicDisplayName || record.accountName || "?").slice(0, 1)
+              }
+            </span>
+            <div>
+              <button
+                class="admin-user-title"
+                type="button"
+                aria-haspopup="dialog"
+                @click=${() => this.openUserDetails(record.id)}
+              >
+                <strong>${String(record.publicDisplayName || record.accountName || record.id)}</strong>
+              </button>
+              ${record.handle ? html`<small>@${String(record.handle)}</small>` : nothing}
+              ${this.renderUserId(record)}
+            </div>
+          </div>
+          <span class="admin-user-email">
+            <span title=${String(record.email || "")}>${String(record.email || "—")}</span>
+            ${this.verifiedEmail(record)}
           </span>
-          <span>
-            <strong>${String(record.publicDisplayName || "—")}</strong>
-            <small>${String(record.accountName || "")} · ${String(record.email || "")}</small>
-            <small>
-              ${this.label(`roles.${record.role}`, String(record.role || ""))} · ${this.valueLabel(record.status)}
-            </small>
-            <small class="admin-user-visit">
-              ${this.label("ip.lastVisit", "Recent visit")}:
-              ${record.lastVisit ? this.date((record.lastVisit as Value).visitedAt) : this.label("ip.unknown", "Unknown")}
-              · ${String((record.lastVisit as Value | undefined)?.ipAddress || this.label("ip.unknown", "Unknown"))}
-            </small>
-            ${
-              record.lastVisit
-                ? html`
-                    ${this.disclosure({
-                      id: `admin-user-ip-${encodeURIComponent(String(record.id))}`,
-                      className: "admin-user-ip-details",
-                      label:
-                        this.country(((record.lastVisit as Value).ipLocation as Value | undefined)?.countryCode) ||
-                        this.label("ip.details", "IP details"),
-                      content: html`
-                        <small>
-                          ${this.label("ip.visitSampling", "Authenticated requests are sampled once a minute; IP changes are recorded immediately.")}
-                        </small>
-                        ${this.renderIpAudit(record.lastVisit as Value, false)}
-                      `,
-                    })}
-                  `
-                : nothing
-            }
+          <span class="admin-user-access">
+            <span class="admin-status">${this.label(`roles.${record.role}`, String(record.role || "—"))}</span>
+            ${this.statusBadge(record.status)}
           </span>
-          ${this.renderUserActions(record)}
+          <span class="admin-user-last-visit">
+            <time>${visit ? this.date(visit.visitedAt) : this.label("ip.unknown", "Unknown")}</time>
+            <code>${String(visit?.ipAddress || "—")}</code>
+            <small>${this.country((visit?.ipLocation as Value | undefined)?.countryCode)}</small>
+          </span>
+          <button
+            class="button button--text admin-user-manage"
+            aria-haspopup="dialog"
+            @click=${() => this.openUserDetails(record.id, true)}
+          >
+            ${this.label("actions.manage", "Manage")}${icon("arrow_forward", 18)}
+          </button>
         </article>
       `;
+    }
     if (this.section === "posts")
       return html`
         <article class="admin-record admin-post-row">
@@ -2136,6 +2765,7 @@ export class AdminWorkspace extends LitElement {
                                         <input
                                           name="q"
                                           type="search"
+                                          maxlength="100"
                                           .value=${this.query}
                                           aria-label=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
                                           placeholder=${this.section === "posts" ? this.label("workspace.searchPosts", "Search posts") : this.label("columns.user", "User")}
@@ -2152,7 +2782,7 @@ export class AdminWorkspace extends LitElement {
                                   : nothing
                               }
                           </header>
-                          ${this.section === "posts" ? this.renderPostFilters() : nothing}
+                          ${this.section === "posts" ? this.renderPostFilters() : this.section === "users" ? this.renderUserFilters() : nothing}
                           ${
                               this.error
                                 ? html`
@@ -2168,6 +2798,19 @@ export class AdminWorkspace extends LitElement {
                                       <span>${this.label("columns.status", "Status")}</span>
                                       <span>${this.label("columns.author", "Author")}</span>
                                       <span>${this.label("columns.createdAt", "Created")}</span>
+                                    </div>
+                                  `
+                                : nothing
+                            }
+                          ${
+                              this.section === "users"
+                                ? html`
+                                    <div class="admin-user-columns" aria-hidden="true">
+                                      <span>${this.label("columns.user", "User")} / UID</span>
+                                      <span>${this.label("userDetails.email", "Email")}</span>
+                                      <span>${this.label("userDetails.access", "Role and status")}</span>
+                                      <span>${this.label("ip.lastVisit", "Recent visit")}</span>
+                                      <span>${this.label("actions.manage", "Manage")}</span>
                                     </div>
                                   `
                                 : nothing
@@ -2202,7 +2845,7 @@ export class AdminWorkspace extends LitElement {
             }
           </main>
         </div>
-        ${this.renderHistory()}
+        ${this.renderUserDetails()}${this.renderHistory()}
       </section>
     `;
   }
