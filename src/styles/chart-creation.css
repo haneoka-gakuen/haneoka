@@ -376,18 +376,6 @@
   }
 }
 @layer pages {
-  .chart-studio__preview-inline {
-    display: none;
-  }
-  @media (max-width: 599px) {
-    .chart-studio__preview-header {
-      display: none;
-    }
-    .chart-studio__preview-inline {
-      display: inline-grid;
-      flex: 0 0 auto;
-    }
-  }
   @media (max-width: 359px) {
     .chart-studio__header-save {
       display: none;
@@ -402,7 +390,6 @@
   .chart-studio[data-stage="preview"] .chart-studio__tools,
   .chart-studio[data-stage="preview"] .chart-studio__width-preset,
   .chart-studio[data-stage="preview"] > .chart-studio__toolbar > .chart-studio__drawer-button:first-of-type { display: none; }
-  .chart-studio[data-stage="preview"] .chart-studio__preview-inline,
   .chart-studio[data-stage="preview"] > .chart-studio__toolbar > .chart-studio__drawer-button:last-of-type { display: inline-grid; }
   .chart-studio[data-stage="preview"] > .chart-studio__toolbar > .chart-studio__drawer-button:last-of-type { margin-inline-start: auto; }
   .chart-studio__preview-mode { font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size)/var(--md-sys-typescale-label-large-line-height) var(--app-font); color: var(--md-sys-color-on-surface-variant); }
@@ -417,4 +404,17 @@
     .chart-studio__tools { flex: 1 0 calc(100% - 56px); order: 1; }
     .chart-studio__toolbar > .chart-studio__drawer-button:last-of-type { order: 1; }
   }
+}
+
+@layer pages {
+  .chart-studio__mode-toggle { flex: 0 0 auto; inline-size: clamp(152px, 24vw, 200px); min-inline-size: 0; padding: 0; margin: 0; border: 0; }
+  .chart-studio__cursor {
+    position: absolute; inset-block-start: 8px; inset-inline-start: 8px; z-index: 1;
+    max-inline-size: calc(100% - 16px); padding: 6px 10px; pointer-events: none;
+    border-radius: var(--md-sys-shape-corner-small); border: 1px solid var(--md-sys-color-outline-variant);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 92%, transparent);
+    color: var(--md-sys-color-on-surface); font-variant-numeric: tabular-nums;
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size)/var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .chart-studio__stage[data-mode="preview"] .chart-studio__cursor { display: none; }
 }

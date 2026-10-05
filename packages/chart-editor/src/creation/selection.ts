@@ -7,6 +7,13 @@ import {
   type JsonValue,
 } from "../model";
 import { copyChartSelection, deleteChartSelection, pasteChartSelection, type ChartSelection } from "./editing";
+import {
+  assertEditedChartSpans,
+  authoredSpanOverlaps,
+  constrainLaneValue,
+  selectionLaneDeltaBounds,
+  type LaneGrid,
+} from "./span";
 
 export function chartSelectionNodes(project: Project): { note: SingleNote | LinePoint; lane: number; size: number }[] {
   return [
@@ -41,6 +48,7 @@ export function moveChartSelection(
   ids: ReadonlySet<string>,
   tickDelta: number,
   laneDelta: number,
+  options: { placement?: "overlap"; grid?: LaneGrid } = {},
 ): Project {
   if (!Number.isSafeInteger(tickDelta) || !Number.isFinite(laneDelta)) throw new RangeError("Invalid selection delta");
   if (!tickDelta && !laneDelta) return structuredCloneValue(project);
@@ -61,12 +69,23 @@ export function moveChartSelection(
   const concrete = selected.filter(({ note }) => typeof note.lane === "number");
   const left = Math.min(0, ...concrete.map(({ note }) => note.lane as number));
   const right = Math.max(project.laneBasis, ...concrete.map(({ note }) => (note.lane as number) + note.size));
-  const deltaLane = concrete.length
+  let deltaLane = concrete.length
     ? Math.max(
         Math.max(...concrete.map(({ note }) => left - (note.lane as number))),
         Math.min(Math.min(...concrete.map(({ note }) => right - (note.lane as number) - note.size)), laneDelta),
       )
     : 0;
+  if (options.placement === "overlap" && laneDelta && concrete.length) {
+    const bounds = selectionLaneDeltaBounds(project, ids)!;
+    // Imported off-stage controls may move into overlap, but must never jump against the requested drag direction.
+    if (concrete.some(({ lane, size }) => !authoredSpanOverlaps(lane, size, project.laneBasis))) {
+      concrete.forEach(({ lane, size }) => {
+        if (!authoredSpanOverlaps(lane + laneDelta, size, project.laneBasis))
+          throw new RangeError("authored_span_outside_stage");
+      });
+      deltaLane = laneDelta;
+    } else deltaLane = constrainLaneValue(laneDelta, bounds, options.grid);
+  } else if (options.placement === "overlap") deltaLane = 0;
   if (!deltaTick && !deltaLane) return structuredCloneValue(project);
   const result = structuredCloneValue(project);
   const move = (note: SingleNote | LinePoint) => {
@@ -85,6 +104,7 @@ export function moveChartSelection(
         delete point.resolvedSize;
       }
   }
+  if (options.placement === "overlap") assertEditedChartSpans(project, result);
   return result;
 }
 

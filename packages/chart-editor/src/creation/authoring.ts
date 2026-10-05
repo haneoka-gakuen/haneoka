@@ -8,6 +8,7 @@ import {
   type NoteDirection,
 } from "../model";
 import { assertValidProject } from "../validation";
+import { assertAuthoredSpanOverlap, assertEditedChartSpans, type AuthoredPlacement } from "./span";
 
 export interface AuthoredNoteInput {
   tick: number;
@@ -20,11 +21,11 @@ export interface AuthoredNoteInput {
   critical?: boolean;
   visible?: boolean;
   /** Clamp only the new placement, never alter imported source geometry. */
-  placement?: "stage" | "authored";
+  placement?: AuthoredPlacement;
 }
 export type WidthAnchor = "left" | "center" | "right";
 
-function width(project: Project, value: number, placement: "stage" | "authored") {
+function width(project: Project, value: number, placement: AuthoredPlacement) {
   if (!Number.isFinite(value) || value < 0 || (placement === "stage" && value > project.laneBasis))
     throw new RangeError("invalid_note_width");
   return value;
@@ -36,6 +37,7 @@ export function createAuthoredNote(project: Project, input: AuthoredNoteInput): 
     type = input.type ?? "tap";
   if (!Number.isSafeInteger(input.tick) || input.tick < 0 || !Number.isFinite(input.lane))
     throw new RangeError("invalid_note_position");
+  if (placement === "overlap") assertAuthoredSpanOverlap(input.lane, size, project.laneBasis);
   const note: SingleNote = {
     id: createProjectId("note"),
     tick: input.tick,
@@ -61,7 +63,7 @@ export function resizeChartSelection(
   project: Project,
   ids: ReadonlySet<string>,
   size: number,
-  options: { anchor?: WidthAnchor; placement?: "stage" | "authored"; resolveAutoLane?: boolean } = {},
+  options: { anchor?: WidthAnchor; placement?: AuthoredPlacement; resolveAutoLane?: boolean } = {},
 ): Project {
   const placement = options.placement ?? "stage",
     anchor = options.anchor ?? "left",
@@ -102,6 +104,7 @@ export function resizeChartSelection(
         delete point.resolvedSize;
       }
   }
+  if (placement === "overlap") assertEditedChartSpans(project, result);
   assertValidProject(result);
   return result;
 }

@@ -1,5 +1,5 @@
 import { buildChart, parseScore, OUR_NOTES_BUNDLED_NOTE_ATLASES } from "@haneoka/cassiopeia-plugin-our-notes";
-import type { ChartDocument } from "@haneoka/cassiopeia";
+import { LANE_COUNT, type ChartDocument } from "@haneoka/cassiopeia";
 import { assertValidProject } from "../../../packages/chart-editor/src/validation";
 import { serializeSs } from "../../../packages/chart-editor/src/formats/ss";
 import { getExportDiagnostics } from "../../../packages/chart-editor/src/formats/diagnostics";
@@ -9,6 +9,7 @@ import type { ChartEmbedHandle, ChartSkin, ChartPlaybackOptions } from "../../..
 import type { HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import type { CreationAudio } from "./audio";
 import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
+import { authoredSpanOverlaps } from "../../../packages/chart-editor/src/creation/span";
 
 /** This opt-in target uses the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
 export function compileOurNotesCreation(project: Project) {
@@ -27,6 +28,11 @@ export function compileOurNotesCreation(project: Project) {
     chart.lines.some((line) => line.noteIds.some((id) => !ids.has(id)))
   )
     throw new Error("our_notes_invalid_runtime");
+  const outside = chart.notes.find((note) => note.judged && !authoredSpanOverlaps(note.pos, note.size, LANE_COUNT));
+  if (outside)
+    throw new Error("our_notes_judged_note_outside_stage", {
+      cause: { id: outside.id, tick: outside.tick, lane: outside.pos, size: outside.size },
+    });
   // Musical time stays in the kernel; media zero is represented by the host offset.
   const tempo = new TempoMap(project.tempos, { resolution: project.resolution });
   chart.timeScaleChanges = project.timeScales
@@ -35,11 +41,10 @@ export function compileOurNotesCreation(project: Project) {
   return { ss, chart, bgmOffsetMs: project.audioOffset * 1000, warnings: getExportDiagnostics(project, "ss") };
 }
 
-export interface NativeCreationPreviewOptions extends PublicSongSourceOptions {
+export interface NativeCreationPreviewOptions extends PublicSongSourceOptions, ChartPlaybackOptions {
   identity: HaneokaReleaseIdentity;
   locale?: string;
   skin?: ChartSkin;
-  settings?: ChartPlaybackOptions["settings"];
   signal?: AbortSignal;
   labels: { player: string; pause: string; loading: string };
   onEvent?: import("../../../packages/embed-cassiopeia/src/types").MountChartOptions["onEvent"];
@@ -95,10 +100,14 @@ export async function mountOurNotesCreationPreview(
           : pinnedFetcher(request),
       resolveResource: (key) =>
         /^(blob|data):/u.test(key) || packagedTextures.has(key) ? key : pinnedPublicUrl(key, options.identity, options),
-      mode: "watch",
+      mode: options.mode ?? "watch",
       skin: options.skin ?? { currentQuality: 2 },
       settings: options.settings ?? {},
-      noteSoundEnabled: false,
+      volume: options.volume ?? 1,
+      rate: options.rate ?? 1,
+      loop: options.loop ?? false,
+      noteSoundEnabled: options.noteSoundEnabled ?? false,
+      noteSoundVolume: options.noteSoundVolume ?? 1,
       labels: options.labels,
       ...(options.signal ? { signal: options.signal } : {}),
       ...(options.onEvent ? { onEvent: options.onEvent } : {}),
@@ -107,6 +116,7 @@ export async function mountOurNotesCreationPreview(
     });
 
     await handle.ready;
+    options.signal?.throwIfAborted();
   } catch (error) {
     try {
       await handle?.dispose();
