@@ -3505,7 +3505,9 @@
     "practicalComputeBudget": "計算時間の上限（秒）",
     "practicalScoredComparisons": "スコア算出済みの比較：{done} / {total}",
     "practicalPreparationSummary": "{seconds}秒で譜面を{loaded} / {total}件読み込み",
-    "practicalComputeSummary": "計算：{seconds}秒 / {budget}秒"
+    "practicalComputeSummary": "計算：{seconds}秒 / {budget}秒",
+    "bandRank": "バンドランク",
+    "characterRankTotalRecorded": "記録済みの合計（読み取り専用）"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

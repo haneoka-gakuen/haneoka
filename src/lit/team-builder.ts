@@ -13,6 +13,7 @@ import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { fetchCurrentTeamBuilderIdentity, fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import { resourcePlannerStageData } from "../lib/team-builder/data/resource-stage";
+import { bandRankLabel, bandRankDisplayChoices } from "../lib/team-builder/data/band-rank-display";
 import { resourcePlanInputIssues } from "../lib/team-builder/resource-plan-input";
 import type { ResourcePlannerPreparationInput, ResourcePlannerResult, ResourcePlan, ResourceStageCandidate, ResourcePlanObjective } from "../lib/team-builder/resource-plan-contract";
 import type { NativeResourceTimeRequest, NativeResourceTimeResponse } from "../lib/team-builder/solver/native-resource-time";
@@ -1373,11 +1374,12 @@ export class TeamBuilder extends LitElement {
                       return html`
                         <li>
                           ${this.practiceSlider(name, kind === "bandItems" ? bandItemLevelValues(this.data!, index)
-                            : ((kind === "bandRanks" ? this.data!.progression.bandRanks : this.data!.progression.characterRanks) ?? []).map(row => Number(row.rank)), pending.draft[kind][index] ?? null, (value) => {
+                            : kind === "bandRanks" ? bandRankDisplayChoices(this.data!).map(choice => choice.value)
+                            : (this.data!.progression.characterRanks ?? []).map(row => Number(row.rank)), pending.draft[kind][index] ?? null, (value) => {
                             const draft = { ...pending.draft, [kind]: { ...pending.draft[kind], [index]: value } };
                             this.pendingRebase = { ...pending, draft };
                             this.inventory = draft;
-                          })}
+                          }, kind === "bandRanks" ? value => this.bandRankText(value) : String)}
                         </li>
                       `;
                     }
@@ -2370,7 +2372,7 @@ export class TeamBuilder extends LitElement {
     const status = value === null ? this.t("notSet", "Not set") : `${displayValue(value)} · ${this.t("needsReview", "Needs review")}`;
     return html`<div class="team-builder__practice-control">
       ${legal.length > 1 ? renderLevelSwitch(label, legal, known ? value : null, update, displayValue,
-        { disabled, unknownLabel: status, commitOnChange: true })
+        { disabled, unknownLabel: status, commitOnChange: true, context: this.inventory })
         : legal.length === 1 ? known ? html`<strong>${label}: ${displayValue(value!)}</strong>`
           : html`<p>${label}: ${status}</p><button class="button button--outlined" ?disabled=${disabled} @click=${()=>update(legal[0])}>${label}: ${displayValue(legal[0])}</button>`
           : html`<p role="status">${label}: ${value === null ? status : displayValue(value)}</p>`}
@@ -4928,20 +4930,12 @@ export class TeamBuilder extends LitElement {
     if (!this.inventory || !this.data) return nothing;
     const modifiers = this.playerModifiers;
     const ranges = playerModifierRanges(this.data);
-    const { minimum, maximum } = ranges.characterTotalRank;
-    const nativeTotalRange = minimum !== null && maximum !== null;
     return html`
       <div class="team-builder__modifier-content">
         <div class="team-builder__fields team-builder__modifier-fields">
-          ${this.practiceSlider(this.t("characterTotalRank", "Account-wide character rank total"), nativeTotalRange && maximum! - minimum! <= 10000
-            ? Array.from({ length: maximum! - minimum! + 1 }, (_, index) => minimum! + index) : [], modifiers.characterTotalRank,
-            (value) => this.patchPlayerModifiers({ characterTotalRank: value }))}
           ${this.practiceSlider(this.t("vipRank", "TGW CARD level"), ranges.vipRanks, modifiers.vipRank,
             (value) => this.patchPlayerModifiers({ vipRank: value }))}
         </div>
-        <p class="team-builder__hint">
-          ${this.t("totalRankHint", "Enter the account-wide total shown in the game. Individual character ranks affect that character; the total adds a separate team bonus. Partially entered ranks cannot replace this total.")}
-        </p>
         ${
           !ranges.vipRanks.length
             ? html`
@@ -4967,14 +4961,24 @@ export class TeamBuilder extends LitElement {
       <div>${control}</div>
     </div>`;
   }
+  private bandRankText(value: number | null) {
+    return this.data && bandRankLabel(this.data, value, this.locale) || this.t("unknown", "Unknown or not entered");
+  }
   private renderBands() {
     if (!this.inventory || !this.data) return nothing;
     const data = this.data;
+    const bandRanks = bandRankDisplayChoices(data);
     const bands = Object.entries(data.bands);
     const ungrouped = (bandId: unknown) => !bands.some(([id]) => id === String(bandId));
     const groups = [...bands.map(([id, band]) => ({ id, name: this.text(band.bandName ?? band.name), band })),
       { id: "ungrouped", name: this.t("inventoryGrowthTab", "Growth"), band: null }];
     return html`<div class="team-builder__band-groups">
+      <section class="team-builder__section" aria-label=${this.t("characterRanks", "Character ranks")}>
+        <div class="team-builder__section-header">
+          ${renderDetailSectionHeading(this.t("characterRanks", "Character ranks"), "characters", { level: 2 })}
+          <span class="team-builder__hint" data-character-rank-total>${this.t("characterRankTotalRecorded", "Recorded total (read-only)")}: <strong>${this.playerModifiers.characterTotalRank ?? this.t("unknown", "Unknown or not entered")}</strong></span>
+        </div>
+      </section>
       ${groups.map(({ id, name, band }, index) => {
         const characters = Object.entries(data.characters).filter(([, row]) => band ? String(row.bandId) === id : ungrouped(row.bandId));
         const items = Object.entries(data.bandItems).filter(([, row]) => band ? String(row.bandId) === id : ungrouped(row.bandId));
@@ -4982,9 +4986,9 @@ export class TeamBuilder extends LitElement {
         return this.disclosure(`growth-band-${id}`, html`<span class="team-builder__growth-label">
           ${band?.icon ? html`<img src=${String(band.icon)} alt="" width="32" height="32" loading="lazy" />` : nothing}<span>${name}</span>
         </span>`, html`
-          ${band ? html`<section class="team-builder__growth-group" aria-label=${this.t("bands", "Band upgrades")}>
-            ${this.practiceSlider(this.t("bands", "Band upgrades"), (data.progression.bandRanks ?? []).map(row => Number(row.rank)), this.inventory!.bandRanks[id] ?? null,
-              value => { if (this.inventory) this.replaceInventory({ ...this.inventory, bandRanks: { ...this.inventory.bandRanks, [id]: value } }); })}
+          ${band ? html`<section class="team-builder__growth-group" aria-label=${this.t("bandRank", "Band rank")}>
+            ${this.practiceSlider(this.t("bandRank", "Band rank"), bandRanks.map(choice => choice.value), this.inventory!.bandRanks[id] ?? null,
+              value => { if (this.inventory) this.replaceInventory({ ...this.inventory, bandRanks: { ...this.inventory.bandRanks, [id]: value } }); }, value => this.bandRankText(value))}
           </section>` : nothing}
           ${characters.length ? html`<section class="team-builder__growth-group">
             ${renderDetailSectionHeading(this.t("characterRanks", "Character ranks"), "characters", { level: 3 })}

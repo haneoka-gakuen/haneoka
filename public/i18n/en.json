@@ -3505,7 +3505,9 @@
     "practicalComputeBudget": "Calculation budget (seconds)",
     "practicalScoredComparisons": "Scored comparisons: {done} / {total}",
     "practicalPreparationSummary": "Loaded {loaded} / {total} charts in {seconds}s",
-    "practicalComputeSummary": "Calculation: {seconds}s / {budget}s"
+    "practicalComputeSummary": "Calculation: {seconds}s / {budget}s",
+    "bandRank": "Band rank",
+    "characterRankTotalRecorded": "Recorded total (read-only)"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

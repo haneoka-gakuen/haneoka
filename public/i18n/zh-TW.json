@@ -3505,7 +3505,9 @@
     "practicalComputeBudget": "計算時間預算（秒）",
     "practicalScoredComparisons": "已有得分的比較：{done} / {total}",
     "practicalPreparationSummary": "已載入 {loaded} / {total} 個譜面，用時 {seconds} 秒",
-    "practicalComputeSummary": "計算：{seconds} 秒 / {budget} 秒"
+    "practicalComputeSummary": "計算：{seconds} 秒 / {budget} 秒",
+    "bandRank": "樂隊評級",
+    "characterRankTotalRecorded": "已記錄合計（唯讀）"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

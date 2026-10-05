@@ -3505,7 +3505,9 @@
     "practicalComputeBudget": "계산 시간 제한 (초)",
     "practicalScoredComparisons": "점수가 계산된 비교: {done} / {total}",
     "practicalPreparationSummary": "채보 {loaded} / {total}개 불러옴 · {seconds}초",
-    "practicalComputeSummary": "계산: {seconds}초 / {budget}초"
+    "practicalComputeSummary": "계산: {seconds}초 / {budget}초",
+    "bandRank": "밴드 랭크",
+    "characterRankTotalRecorded": "기록된 합계 (읽기 전용)"
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

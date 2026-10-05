@@ -3505,7 +3505,9 @@
     "practicalComputeBudget": "计算时间预算（秒）",
     "practicalScoredComparisons": "已有得分的比较：{done} / {total}",
     "practicalPreparationSummary": "已载入 {loaded} / {total} 个谱面，用时 {seconds} 秒",
-    "practicalComputeSummary": "计算：{seconds} 秒 / {budget} 秒"
+    "practicalComputeSummary": "计算：{seconds} 秒 / {budget} 秒",
+    "bandRank": "乐队评级",
+    "characterRankTotalRecorded": "已记录合计（只读）"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",
