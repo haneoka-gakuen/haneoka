@@ -22,6 +22,42 @@ interface Match {
   routeId?: string;
   ambiguous?: boolean;
 }
+interface PinnedMatchCache {
+  entries: Map<string, { match: Match; bytes: number }>;
+  bytes: number;
+}
+const pinnedMatches = new WeakMap<R2Bucket, PinnedMatchCache>();
+const TITLE_FIELDS = ["prefix", "musicTitle", "characterName", "title", "name", "live2dName"] as const;
+function matchCache(env: Env): PinnedMatchCache | undefined {
+  if (!env.ASSET_BUCKET || typeof env.ASSET_BUCKET !== "object") return;
+  let cache = pinnedMatches.get(env.ASSET_BUCKET);
+  if (!cache) {
+    cache = { entries: new Map(), bytes: 0 };
+    pinnedMatches.set(env.ASSET_BUCKET, cache);
+  }
+  return cache;
+}
+function rememberMatch(cache: PinnedMatchCache | undefined, key: string, match: Match) {
+  if (!cache || match.status === "unknown" || match.ambiguous) return;
+  const row = match.row && Object.fromEntries(TITLE_FIELDS.map((field) => {
+    const value = match.row![field];
+    return [field, Array.isArray(value) ? value.slice(0, 5).map((label) => typeof label === "string" ? label : null) : typeof value === "string" ? value : undefined];
+  }));
+  const value: Match = { status: match.status, ...(match.routeId ? { routeId: match.routeId } : {}), ...(row ? { row } : {}) };
+  const bytes = (key.length + JSON.stringify(value).length) * 2;
+  if (bytes > 16384) return;
+  const previous = cache.entries.get(key);
+  if (previous) cache.bytes -= previous.bytes;
+  cache.entries.delete(key);
+  cache.entries.set(key, { match: value, bytes });
+  cache.bytes += bytes;
+  while (cache.entries.size > 256 || cache.bytes > 2 * 1024 * 1024) {
+    const oldest = cache.entries.keys().next().value;
+    if (oldest === undefined) break;
+    cache.bytes -= cache.entries.get(oldest)!.bytes;
+    cache.entries.delete(oldest);
+  }
+}
 interface Rule {
   resource: string;
   routeKind: string;
@@ -237,6 +273,15 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
   };
   const locate = (env: Env, pin: Pin, target: CommunityEntityTarget) => {
     const key = `${pin.server}:${pin.releaseId}:${pin.sourceId}:${target.entityType}:${target.originalId}`;
+    // Only completed, immutable public catalogue summaries survive a request.
+    // Current release pins are still read above, and unknown/error results are never retained.
+    const cache = matchCache(env);
+    const cached = cache?.entries.get(key);
+    if (cached) {
+      cache!.entries.delete(key);
+      cache!.entries.set(key, cached);
+      return Promise.resolve(structuredClone(cached.match));
+    }
     let pending = matches.get(key);
     if (!pending) {
       pending = (async (): Promise<Match> => {
@@ -260,7 +305,7 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
         } catch {
           return { status: "unknown" };
         }
-      })();
+      })().then((match) => { rememberMatch(cache, key, match); return match; });
       matches.set(key, pending);
     }
     return pending;

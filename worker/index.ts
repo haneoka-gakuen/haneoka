@@ -1,3 +1,4 @@
+import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ranking";
 import { handleCommunityBootstrap } from "./community-bootstrap";
 import { withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
@@ -3501,7 +3502,9 @@ const worker: ExportedHandler<Env> = {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!env.DB) return;
     const scheduledTask: readonly [string, () => Promise<void>] | null =
-      controller.cron === MEDIA_RECONCILIATION_CRON
+      controller.cron === COMMUNITY_RANKING_CRON
+        ? ["community_ranking", () => refreshCommunityRanking(env)]
+        : controller.cron === MEDIA_RECONCILIATION_CRON
         ? ["community_media_reconciliation", () => reconcileCommunityMedia(env)]
         : controller.cron === MODERATION_RECONCILIATION_CRON
           ? ["moderation_reconciliation", () => reconcileModerationState(env)]

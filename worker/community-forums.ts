@@ -1,3 +1,4 @@
+import { communitySearchCondition } from "./community-search-query";
 import { getAuthSession, type AuthSession } from "./auth";
 import { entityThreadSql } from "./community-entity-guard";
 import { communityAccessState } from "./access";
@@ -619,9 +620,9 @@ async function getTagFacets(request: Request, env: Env, url: URL, userId: string
     values.push(forumId);
   }
   if (postQ) {
-    const pattern = `%${postQ.replace(/[\\%_]/gu, "\\$&")}%`;
-    conditions.push("(post.title LIKE ? ESCAPE '\\' OR post.body LIKE ? ESCAPE '\\')");
-    values.push(pattern, pattern);
+    const search = communitySearchCondition(postQ);
+    conditions.push(search.sql);
+    values.push(...search.values);
   }
   if (state === "active") conditions.push("post.archived_at IS NULL");
   else if (state === "archived") conditions.push("post.archived_at IS NOT NULL");

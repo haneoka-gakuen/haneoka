@@ -1,3 +1,5 @@
+import { communitySearchCondition, communitySearchScore } from "./community-search-query";
+import { recommendationPostPool, diversifyRecommendationPage } from "./community-ranking";
 import { backgroundWork } from "./request-work";
 import { orderedEligible } from "./ordered-read";
 import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./community-entity-guard";
@@ -1281,12 +1283,16 @@ const ownershipError = async (request: Request, env: Env, id: string, userId: st
   return null;
 };
 
-const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: EntityRecommendationHydrator): Promise<Response> => {
+const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: EntityRecommendationHydrator, fullCandidates = false): Promise<Response> => {
   const parsed = parseListOptions(request, url);
   if (!parsed.ok) return parsed.response;
   const options = parsed.value;
   const typedRecommendations = Boolean(hydrateEntity) || options.kind === "post";
   if (options.kind === "post") hydrateEntity = undefined;
+  const searchRanking = options.q && options.scope !== "recommended" && url.searchParams.get("order") === "relevance"
+    ? communitySearchScore(options.q) : null;
+  if (searchRanking && options.cursor && (options.cursor.rankScore === undefined || options.cursor.rankScore < 0 || options.cursor.rankScore > 3))
+    return error(request, 400, "invalid_cursor", "The search cursor is invalid");
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
   const requestTime = Date.now();
@@ -1329,7 +1335,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
     }
     recommendationRankAsOf = options.cursor?.rankAsOf ?? requestTime;
   }
-  const pinFirst = options.scope === "all" || options.scope === "latest" || options.scope === "following";
+  const pinFirst = !searchRanking && (options.scope === "all" || options.scope === "latest" || options.scope === "following");
   if (pinFirst && options.cursor && options.cursor.pinnedAt === undefined) {
     return error(request, 400, "invalid_cursor", "The feed cursor is invalid");
   }
@@ -1413,9 +1419,17 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   }
 
   if (options.q) {
-    const pattern = `%${escapeLike(options.q)}%`;
-    where.push("(post.title LIKE ? ESCAPE '\\' OR post.body LIKE ? ESCAPE '\\')");
-    bindings.push(pattern, pattern);
+    const search = communitySearchCondition(options.q);
+    where.push(search.sql);
+    bindings.push(...search.values);
+  }
+
+  const pooled = !fullCandidates && options.scope === "recommended" && recommendationSeed !== null &&
+    !options.q && !options.forumId && !options.tag && !options.tagSelection.tags.length;
+  if (pooled) {
+    const pool = recommendationPostPool(userId, recommendationSeed!);
+    where.push(pool.sql);
+    bindings.push(...pool.values);
   }
   const rowLimit = options.limit + 1;
   let result: D1Result<PostListRow>;
@@ -1555,7 +1569,23 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
       rankCursorSql = "WHERE rankScore < ? OR (rankScore = ? AND (createdAt < ? OR (createdAt = ? AND id < ?)))";
       rankCursorBindings = [last.rankScore ?? 0, last.rankScore ?? 0, last.createdAt, last.createdAt, last.id];
     }
+    if (pooled && accepted.length < rowLimit) {
+      const fallback = new URL(url);
+      fallback.searchParams.set("seed", String(recommendationSeed));
+      fallback.searchParams.delete("refresh");
+      return listPosts(request, env, fallback, hydrateEntity, true);
+    }
     result = { ...result, results: accepted };
+  } else if (searchRanking) {
+    const cursorSql = options.cursor
+      ? "WHERE rankScore < ? OR (rankScore = ? AND (createdAt < ? OR (createdAt = ? AND id < ?)))" : "";
+    const cursorValues = options.cursor
+      ? [options.cursor.rankScore!, options.cursor.rankScore!, options.cursor.createdAt, options.cursor.createdAt, options.cursor.id] : [];
+    result = await env.DB.prepare(`WITH matched AS (
+      ${postListSelect} WHERE ${where.join(" AND ")}
+    ), searched AS (SELECT matched.*, (${searchRanking.sql}) AS rankScore FROM matched)
+    SELECT * FROM searched ${cursorSql} ORDER BY rankScore DESC,createdAt DESC,id DESC LIMIT ?`)
+      .bind(...bindings, ...searchRanking.values, ...cursorValues, rowLimit).all<PostListRow>();
   } else {
     if (options.cursor && pinFirst && typeof options.cursor.pinnedAt === "number") {
       where.push(`(
@@ -1594,7 +1624,11 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   }
   const hasMore = result.results.length > options.limit;
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
-  const postRows = rows.filter((row) => row.kind !== "entity-comment");
+  const displayRows = options.scope === "recommended" && !options.q
+    ? diversifyRecommendationPage(rows, (row) => row.authorId,
+        (row) => row.kind === "entity-comment" ? `${row.entityType}:${row.originalId}` : row.id)
+    : rows;
+  const postRows = displayRows.filter((row) => row.kind !== "entity-comment");
   const [taggedRows, viewerFlags] = await Promise.all([
     attachPostMetadata(env, postRows, userId),
     loadViewerPostFlags(env, postRows.map((row) => row.id), userId),
@@ -1653,7 +1687,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   return json(request, {
     posts,
     ...(typedRecommendations && options.scope === "recommended" ? {
-      entries: rows.map((row) => row.kind === "entity-comment"
+      entries: displayRows.map((row) => row.kind === "entity-comment"
         ? commentEntries.get(row.id)
         : { kind: "post", id: row.id, post: posts.find((post) => post.id === row.id) }),
     } : {}),
@@ -1663,6 +1697,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
             createdAt: lastRow.createdAt,
             id: lastRow.id,
             ...(pinFirst ? { pinnedAt: lastRow.pinnedAt } : {}),
+            ...(searchRanking ? { rankScore: lastRow.rankScore ?? 0 } : {}),
             ...(options.scope === "recommended" && lastRow.rankScore !== undefined
               ? {
                   rankAsOf: recommendationRankAsOf ?? requestTime,
@@ -1677,7 +1712,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   });
 };
 
-const getPost = async (request: Request, env: Env, id: string, url: URL): Promise<Response> => {
+const getPost = async (request: Request, env: Env, id: string, url: URL, focusedOnly = false): Promise<Response> => {
   if (url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`) && await entityThreadForPost(env,id)) return error(request,404,"post_not_found","Open the catalogue discussion through its entity target");
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
@@ -1701,9 +1736,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
   const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow], userId))[0] ?? null);
   const post = postWithTags ?? postRow;
   const [forumCanReply, forumCanPost, forumCanManage] = await Promise.all([
-    userId !== null && canAccessPostForum(env,id,userId,"reply"),
-    userId !== null && canAccessPostForum(env,id,userId,"post"),
-    userId !== null && canAccessPostForum(env,id,userId,"manage"),
+    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"reply"),
+    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"post"),
+    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"manage"),
   ]);
   let liked = false;
   let bookmarked = false;
@@ -1762,6 +1797,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
     focusedCommentValue === null || UUID_PATTERN.test(focusedCommentValue) ? focusedCommentValue : undefined;
   if (focusedCommentId === undefined) {
     return error(request, 400, "invalid_comment_id", "commentId must be a valid comment identifier");
+  }
+  if (focusedOnly && (!commentsOnly || !focusedCommentId || cursorValue || commentsRootValue)) {
+    return error(request, 400, "invalid_focused_read", "A focused read requires one comment and no pagination");
   }
   const commentsRootId =
     commentsRootValue === null || UUID_PATTERN.test(commentsRootValue) ? commentsRootValue : undefined;
@@ -2061,7 +2099,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
             id,
             ...visibleMembershipBindings,
             ...rootCursorBindings,
-            COMMENT_PAGE_SIZE + 1,
+            focusedOnly ? 0 : COMMENT_PAGE_SIZE + 1,
             focusedCommentId,
             ...commentBindings,
           )
@@ -3306,4 +3344,11 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
   return error(request, 405, "method_not_allowed", "Method not allowed");
 };
 
-export const communityEntityCommentBackend = { read: getPost, create: createComment, recommendations: listPosts };
+export const communityEntityCommentBackend = {
+  read: getPost,
+  // Internal feed hydration keeps canonical visibility, ancestry and serialization,
+  // while excluding unrelated first-page roots and their reply previews.
+  readFocused: (request: Request, env: Env, id: string, url: URL) => getPost(request, env, id, url, true),
+  create: createComment,
+  recommendations: listPosts,
+};

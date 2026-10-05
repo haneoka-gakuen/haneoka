@@ -367,7 +367,7 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
     focus.search = "";
     focus.searchParams.set("commentId", candidate.id);
     focus.searchParams.set("commentsOnly", "true");
-    const response = await communityEntityCommentBackend.read(commentReadRequest(request), env, candidate.postId, focus);
+    const response = await communityEntityCommentBackend.readFocused(commentReadRequest(request), env, candidate.postId, focus);
     if (response.status >= 400) continue;
     const data = (await response.json()) as { comments: Array<{ id: string; rootId?: string }> };
     const comment = data.comments.find((row) => row.id === candidate.id);
@@ -411,7 +411,7 @@ async function recommendations(request: Request, env: Env, url: URL, resolver: C
     const focus = new URL(`${PREFIX}${encodeURIComponent(target.entityType)}/${encodeURIComponent(target.originalId)}`, url);
     focus.searchParams.set("commentId", candidate.id);
     focus.searchParams.set("commentsOnly", "true");
-    const response = await communityEntityCommentBackend.read(commentReadRequest(request), env, candidate.threadId, focus);
+    const response = await communityEntityCommentBackend.readFocused(commentReadRequest(request), env, candidate.threadId, focus);
     if (!response.ok) return null;
     const data = (await response.json()) as { comments?: Array<Record<string, unknown> & { id: string; rootId?: string }> };
     const comment = data.comments?.find((value) => value.id === candidate.id);

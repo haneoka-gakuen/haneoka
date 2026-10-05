@@ -1,3 +1,4 @@
+import { communitySearchTerms } from "./community-search-query";
 import { forumDiscoveryPostSql, forumTagFilterSql } from "./community-forums";
 
 /** Real comments share the recommendation ranking stream, never a public post record. */
@@ -22,8 +23,10 @@ export function entityRecommendationCandidates(options: {
     values.push(options.forumId);
   }
   if (options.q) {
-    conditions.push("comment.body LIKE ? ESCAPE '\\'");
-    values.push(`%${options.q.replace(/[\\%_]/gu, "\\$&")}%`);
+    for (const term of communitySearchTerms(options.q)) {
+      conditions.push("comment.body LIKE ? ESCAPE '\\'");
+      values.push(`%${term.replace(/[\\%_]/gu, "\\$&")}%`);
+    }
   } else if (options.userId && !options.tagSelection.tags.length) {
     conditions.push(`NOT EXISTS(SELECT 1 FROM community_post_tag AS muted_post_tag
       JOIN community_tag_preference AS muted_tag ON muted_tag.tag_id=muted_post_tag.tag_id
