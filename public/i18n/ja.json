@@ -3516,7 +3516,13 @@
     "practicalPreparationSummary": "{seconds}秒で譜面を{loaded} / {total}件読み込み",
     "practicalComputeSummary": "計算：{seconds}秒 / {budget}秒",
     "bandRank": "バンドランク",
-    "characterRankTotalRecorded": "記録済みの合計（読み取り専用）"
+    "characterRankTotalRecorded": "記録済みの合計（読み取り専用）",
+    "characterRankTotalDerived": "計算済みの合計（読み取り専用）",
+    "characterRankScopeUnverified": "現在のデータでは、アカウント内の全キャラクター一覧を確認できません。",
+    "characterRankConfirmRoster": "この一覧には、下記の追加IDを含め、このアカウントの全キャラクターが含まれています。",
+    "characterRankConfirmationScope": "この確認は、現在のセッション・アカウント・育成プラン・ゲームデータのバージョンに適用されます。記録済みの合計は保持します。",
+    "characterRankMasterUnavailable": "このゲームデータのバージョンでは、全キャラクター一覧のデータを利用できません。",
+    "characterRankExtraIds": "追加キャラクターID：{ids}"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

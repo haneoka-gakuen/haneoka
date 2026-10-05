@@ -3516,7 +3516,13 @@
     "practicalPreparationSummary": "已載入 {loaded} / {total} 個譜面，用時 {seconds} 秒",
     "practicalComputeSummary": "計算：{seconds} 秒 / {budget} 秒",
     "bandRank": "樂隊評級",
-    "characterRankTotalRecorded": "已記錄合計（唯讀）"
+    "characterRankTotalRecorded": "已記錄合計（唯讀）",
+    "characterRankTotalDerived": "計算合計（唯讀）",
+    "characterRankScopeUnverified": "目前資料尚無法確認帳號的完整角色清單。",
+    "characterRankConfirmRoster": "此清單包含這個帳號的所有角色，以及下方列出的額外 ID。",
+    "characterRankConfirmationScope": "確認只適用於本次工作階段、帳號、養成方案及遊戲資料版本。已記錄合計會保留。",
+    "characterRankMasterUnavailable": "此遊戲資料版本缺少完整角色清單資料。",
+    "characterRankExtraIds": "額外角色 ID：{ids}"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

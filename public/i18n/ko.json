@@ -3516,7 +3516,13 @@
     "practicalPreparationSummary": "채보 {loaded} / {total}개 불러옴 · {seconds}초",
     "practicalComputeSummary": "계산: {seconds}초 / {budget}초",
     "bandRank": "밴드 랭크",
-    "characterRankTotalRecorded": "기록된 합계 (읽기 전용)"
+    "characterRankTotalRecorded": "기록된 합계 (읽기 전용)",
+    "characterRankTotalDerived": "계산된 합계 (읽기 전용)",
+    "characterRankScopeUnverified": "현재 데이터로는 계정의 전체 캐릭터 목록을 확인할 수 없습니다.",
+    "characterRankConfirmRoster": "이 목록에는 아래에 표시된 추가 ID를 포함해 이 계정의 모든 캐릭터가 들어 있습니다.",
+    "characterRankConfirmationScope": "이 확인은 현재 세션, 계정, 육성 계획과 게임 데이터 버전에 적용됩니다. 기록된 합계는 유지됩니다.",
+    "characterRankMasterUnavailable": "이 게임 데이터 버전에서는 전체 캐릭터 목록 데이터를 사용할 수 없습니다.",
+    "characterRankExtraIds": "추가 캐릭터 ID: {ids}"
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

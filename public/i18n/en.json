@@ -3516,7 +3516,13 @@
     "practicalPreparationSummary": "Loaded {loaded} / {total} charts in {seconds}s",
     "practicalComputeSummary": "Calculation: {seconds}s / {budget}s",
     "bandRank": "Band rank",
-    "characterRankTotalRecorded": "Recorded total (read-only)"
+    "characterRankTotalRecorded": "Recorded total (read-only)",
+    "characterRankTotalDerived": "Calculated total (read-only)",
+    "characterRankScopeUnverified": "The current data does not establish the complete account character roster.",
+    "characterRankConfirmRoster": "This roster includes every character on this account, including the extra IDs listed below.",
+    "characterRankConfirmationScope": "Confirmation is for this session, account, profile and game-data version. The recorded total is kept.",
+    "characterRankMasterUnavailable": "Complete character-roster data is unavailable for this game-data version.",
+    "characterRankExtraIds": "Extra character IDs: {ids}"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

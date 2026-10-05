@@ -3516,7 +3516,13 @@
     "practicalPreparationSummary": "已载入 {loaded} / {total} 个谱面，用时 {seconds} 秒",
     "practicalComputeSummary": "计算：{seconds} 秒 / {budget} 秒",
     "bandRank": "乐队评级",
-    "characterRankTotalRecorded": "已记录合计（只读）"
+    "characterRankTotalRecorded": "已记录合计（只读）",
+    "characterRankTotalDerived": "计算合计（只读）",
+    "characterRankScopeUnverified": "当前数据尚无法确认账号的完整角色列表。",
+    "characterRankConfirmRoster": "此列表包含这个账号的所有角色，以及下方列出的额外 ID。",
+    "characterRankConfirmationScope": "确认仅适用于本次会话、账号、养成方案和游戏数据版本。已记录合计会保留。",
+    "characterRankMasterUnavailable": "此游戏数据版本缺少完整角色列表数据。",
+    "characterRankExtraIds": "额外角色 ID：{ids}"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",

@@ -14,6 +14,8 @@ import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { fetchCurrentTeamBuilderIdentity, fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import { resourcePlannerStageData } from "../lib/team-builder/data/resource-stage";
 import { bandRankLabel, bandRankDisplayChoices } from "../lib/team-builder/data/band-rank-display";
+import { resolveCharacterRankTotal, type CharacterRankTotalResolution } from "../lib/team-builder/data/character-rank-total";
+import { characterRankTotalScope, characterRankInventoryIds, type AccountCharacterRankDeclaration } from "../lib/team-builder/data/character-rank-scope";
 import { resourcePlanInputIssues } from "../lib/team-builder/resource-plan-input";
 import type { ResourcePlannerPreparationInput, ResourcePlannerResult, ResourcePlan, ResourceStageCandidate, ResourcePlanObjective } from "../lib/team-builder/resource-plan-contract";
 import type { NativeResourceTimeRequest, NativeResourceTimeResponse } from "../lib/team-builder/solver/native-resource-time";
@@ -615,6 +617,7 @@ export class TeamBuilder extends LitElement {
         }
         // Session verification establishes visibility before either document
         // returns. Each store callback can now render its accepted version.
+        if (this.currentOwner !== owner) this.rankAccountConfirmation = undefined;
         this.currentOwner = owner;
         this.restoreInventoryViewPreference();
         this.requestUpdate();
@@ -729,7 +732,9 @@ export class TeamBuilder extends LitElement {
     return `haneoka:team-builder:view:v1:${encodeURIComponent(this.data.identity.server)}:${owner}`;
   }
   private rememberActualInventoryView(actual: boolean) {
+    const previousProfile = this.activeProfileId;
     this.actualInventoryFallback = actual;
+    if (previousProfile !== this.activeProfileId) this.rankAccountConfirmation = undefined;
     const key = this.inventoryViewPreferenceKey;
     if (!key) return;
     try {
@@ -758,6 +763,7 @@ export class TeamBuilder extends LitElement {
       if (this.authorityBlocked) { this.requestUpdate(); return; }
       if (["anonymous", "saved", "pending", "saving"].includes(state.phase)) this.workspaceError = "";
       if (previousProfile !== this.activeProfileId) {
+        this.rankAccountConfirmation = undefined;
         this.closePane(); this.formationChanged();
         this.requiredLeader = ""; this.fixedBindings = [];
         this.selectedIds = new Set(); this.bulkPreview = null;
@@ -807,7 +813,7 @@ export class TeamBuilder extends LitElement {
   private createProfile() {
     if (!this.inventory || !this.data || !this.workspaceDocument || !this.canEdit || !validWorkspaceName(this.profileName.trim())) return;
     try {
-      const profile = createUpgradeProfile(this.inventory, this.data, this.profileName, this.storeState?.revision ?? 0);
+      const profile = createUpgradeProfile(this.inventory, this.data, this.profileName, this.storeState?.revision ?? 0, this.characterRankScope);
       if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) {
         this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
         this.profileName = ""; this.openWorkspace("growth");
@@ -835,6 +841,7 @@ export class TeamBuilder extends LitElement {
       if (!preview.canApply) throw new Error("profile-rebase-review");
       const copy = createUpgradeProfile(preview.candidate, this.data, profile.name, profile.baseInventoryRevision);
       if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, copy), copy.id))) {
+        this.revokeAccountRankConfirmation();
         this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
       }
     } catch { this.workspaceError = this.t("profileUpdateBlocked", "Some saved cards or training values are unavailable in this data. Keep the backup and review the card library."); }
@@ -842,7 +849,7 @@ export class TeamBuilder extends LitElement {
   private saveFixedTeam() {
     if (!this.canEdit || !this.fixedAssignment || !this.inventory || !this.data || !this.workspaceDocument || !validWorkspaceName(this.teamName.trim())) return;
     try {
-      const team = createSavedTeam(this.teamName, this.fixedAssignment, this.inventory, this.data, this.activeProfileId);
+      const team = createSavedTeam(this.teamName, this.fixedAssignment, this.inventory, this.data, this.activeProfileId, this.characterRankScope);
       if (this.changeWorkspace(upsertSavedTeam(this.workspaceDocument, team))) this.teamName = "";
     } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
   }
@@ -853,6 +860,7 @@ export class TeamBuilder extends LitElement {
       if (savedTraining) {
         const profile = createUpgradeProfile(restored.inventory, this.data, team.name, this.storeState?.revision ?? 0);
         if (!this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) return;
+        this.revokeAccountRankConfirmation();
         this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
       }
       this.useFixedTeam(restored.assignment);
@@ -890,7 +898,10 @@ export class TeamBuilder extends LitElement {
     if (!draft || !current || draft.scope !== this.workspaceScope || !this.canEditWorkspace) return;
     try {
       const merged = mergeTeamWorkspaces(current, draft.document, this.workspaceImportPriority);
-      if (this.changeWorkspace({ ...merged, activeProfileId: current.activeProfileId })) this.workspaceImport = null;
+      if (this.changeWorkspace({ ...merged, activeProfileId: current.activeProfileId })) {
+        this.revokeAccountRankConfirmation();
+        this.workspaceImport = null;
+      }
     } catch { this.workspaceError = this.t("workspaceInvalid", "Check the name, card data and saved plan limits."); }
   }
   private resolveWorkspace(strategy: "remote" | "local" | "merge") {
@@ -899,6 +910,7 @@ export class TeamBuilder extends LitElement {
       if (this.workspaceState.phase === "conflict") this.workspaceStore.resolveConflict(strategy, this.workspaceImportPriority);
       else if (this.workspaceState.phase === "merge-required") this.workspaceStore.resolveAnonymous(strategy === "remote" ? "cloud" : strategy, this.workspaceImportPriority);
       else return;
+      this.revokeAccountRankConfirmation();
       if (strategy === "remote") {
         this.rememberActualInventoryView(false);
         this.requiredLeader = ""; this.fixedBindings = [];
@@ -1154,6 +1166,7 @@ export class TeamBuilder extends LitElement {
   private suspendAccountAuthority(_error: { status: number; code: string }) {
     if (this.authorityBlocked) return;
     this.authorityBlocked = true;
+    this.rankAccountConfirmation = undefined;
     ++this.authGeneration; this.authController?.abort();
     this.accountCheckTask = undefined;
     this.currentOwner = undefined;
@@ -1182,7 +1195,13 @@ export class TeamBuilder extends LitElement {
       { id: "pending", label: this.t("recoveryPending", "Unsaved changes in this tab"), value: pending },
       { id: "local", label: this.t("recoveryLocal", "Saved in this browser"), value: local },
       { id: "cloud", label: this.t("recoveryCloud", "Saved in your account"), value: remote },
-    ].map(row => ({ ...row, usable: !!row.value && (kind !== "inventory" || validateInventory(row.value, this.data!).valid) })) };
+    ].map(row => {
+      // Read existing recovery records without granting a complete account scope.
+      const ranks = kind === "inventory" && row.value ? (row.value as InventoryV1).characterRanks : undefined;
+      const recordedIds = ranks && typeof ranks === "object" && !Array.isArray(ranks)
+        ? Object.keys(ranks).filter(id => /^[1-9]\d*$/u.test(id) && Number.isSafeInteger(Number(id))).map(Number) : [];
+      return { ...row, usable: !!row.value && (kind !== "inventory" || validateInventory(row.value, this.data!, { accountCharacterIds: recordedIds }).valid) };
+    }) };
   }
   private recoveryMatches(kind: "inventory" | "workspace", context: NonNullable<ReturnType<TeamBuilder["localRecovery"]>>) {
     const current = this.localRecovery(kind);
@@ -1201,6 +1220,7 @@ export class TeamBuilder extends LitElement {
     try {
       if (kind === "inventory") this.store?.resolveLocalConflict(structuredClone(row.value as InventoryV1));
       else this.workspaceStore?.resolveLocalConflict(structuredClone(row.value as TeamWorkspaceV1));
+      this.revokeAccountRankConfirmation();
       this.rememberActualInventoryView(kind === "inventory");
       this.refreshWorkspaceInventory();
       this.recoveryChoices = { ...this.recoveryChoices, [kind]: undefined };
@@ -1310,6 +1330,7 @@ export class TeamBuilder extends LitElement {
       this.pendingRebase = null;
       if (state.phase === "release-mismatch") this.store.resolveRelease(next);
       else this.store.edit(next);
+      this.revokeAccountRankConfirmation();
       this.inventory = next;
       this.error = "";
     } catch {
@@ -1440,10 +1461,11 @@ export class TeamBuilder extends LitElement {
       if (this.uniquenessFromStore) {
         if (!this.store) return;
         this.store.resolveUniqueness(this.uniquenessChoices);
+        this.revokeAccountRankConfirmation();
       } else {
         const checked = importInventory(JSON.stringify(candidate), this.data);
         this.pendingUniqueness = null;
-        this.replaceInventory(checked);
+        this.replaceInventory(checked, { documentReplacement: true });
         if (this.error) {
           this.pendingUniqueness = preview;
           return;
@@ -1726,6 +1748,7 @@ export class TeamBuilder extends LitElement {
       else if (this.saveState === "conflict")
         store.resolveConflict(strategy === "cloud" ? "remote" : "merge", strategy === "merge" ? this.mergePriority : undefined);
       else return;
+      this.revokeAccountRankConfirmation();
       if (strategy === "cloud") {
         this.rememberActualInventoryView(true);
         this.requiredLeader = ""; this.fixedBindings = [];
@@ -1752,7 +1775,7 @@ export class TeamBuilder extends LitElement {
       originalText = await file.text();
       if (generation !== this.authGeneration || !this.isConnected || this.activeProfileId) return;
       const next = importInventory(originalText, this.data);
-      this.replaceInventory(next);
+      this.replaceInventory(next, { documentReplacement: true });
     } catch (error) {
       if (error instanceof InventoryUniquenessError) {
         this.pendingUniqueness = error.preview;
@@ -1949,6 +1972,8 @@ export class TeamBuilder extends LitElement {
     super.disconnectedCallback();
   }
   protected updated() {
+    // Revoke stale declarations even while Growth is not the visible workspace.
+    void this.rankAccountDeclaration;
     if (!this.isConnected) return;
     this.syncResumeStore();
     if (this.comparisonResult && this.comparisonResult !== this.result) this.clearComparison();
@@ -2447,30 +2472,38 @@ export class TeamBuilder extends LitElement {
       </label>
     `;
   }
-  private replaceInventory(next: InventoryV1) {
+  private replaceInventory(next: InventoryV1, options: { documentReplacement?: boolean } = {}) {
     this.bulkPreview = null;
+    const replacingDocument = !!options.documentReplacement && (!this.inventory || exportInventory(this.inventory) !== exportInventory(next));
     if (this.pendingRebase) {
       this.pendingRebase = { ...this.pendingRebase, draft: next };
       this.inventory = next;
+      if (replacingDocument) this.revokeAccountRankConfirmation();
       this.error = "";
       return;
     }
     this.cancelSearch();
     this.result = null;
     this.optimizationInput = null;
-    if (!this.data || !validateInventory(next, this.data).valid) {
+    const owner = this.currentOwner;
+    if (owner === undefined) { this.error = this.t("authUnavailable", "Sign-in status could not be checked."); return; }
+    const candidateScope = !replacingDocument && this.data ? characterRankTotalScope(this.data, this.rankAccountDeclaration) : undefined;
+    const rankTotal = this.data ? resolveCharacterRankTotal(this.data, next, candidateScope) : null;
+    if (!this.data || !validateInventory(next, this.data, { accountCharacterIds: rankTotal ? characterRankInventoryIds(rankTotal) : [] }).valid) {
       this.error = this.t("incomplete", "Some training values or rules are unresolved.");
       return;
     }
     try {
       if (this.activeProfileId) {
-        if (!this.canEditWorkspace || !this.workspaceState?.workspace || !this.workspaceStore || !this.data) return;
-        this.workspaceStore.edit(updateUpgradeProfile(this.workspaceState.workspace, this.activeProfileId, next, this.data));
+        if (!this.canEditWorkspace || !this.workspaceState?.workspace || !this.workspaceStore || this.workspaceStore.state.ownerId !== owner || !this.data) return;
+        this.workspaceStore.edit(updateUpgradeProfile(this.workspaceState.workspace, this.activeProfileId, next, this.data, candidateScope));
+        if (replacingDocument) this.revokeAccountRankConfirmation();
         this.refreshWorkspaceInventory();
         this.error = "";
         return;
       }
-      this.store?.edit(next);
+      this.store?.edit(next, false, candidateScope, owner);
+      if (replacingDocument) this.revokeAccountRankConfirmation();
       this.inventory = next;
       this.error = "";
     } catch {
@@ -4003,7 +4036,7 @@ export class TeamBuilder extends LitElement {
     `;
   }
   private get resourceSignature() {
-    return JSON.stringify([this.selectedEvent, this.resourceSelection, this.resourceConstraints("normal"), this.resourceConstraints("challenge"), this.resourceBudget, this.resourceObjectives, this.resourceCriterion, this.resourceSingleHeld, this.budgetSeconds, this.activeProfileId ?? null, this.resourceRanking, this.resourceTimes, this.resourceDowntime, this.resourceTimeSource]);
+    return JSON.stringify([this.selectedEvent, this.resourceSelection, this.resourceConstraints("normal"), this.resourceConstraints("challenge"), this.resourceBudget, this.resourceObjectives, this.resourceCriterion, this.resourceSingleHeld, this.budgetSeconds, this.activeProfileId ?? null, this.resourceRanking, this.resourceTimes, this.resourceDowntime, this.resourceTimeSource, this.rankAccountDeclaration]);
   }
   private resourceContextMatches(context: ResourceRunContext) {
     return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.resourceSignature && this.sourceReady && this.canEdit;
@@ -4187,7 +4220,7 @@ export class TeamBuilder extends LitElement {
     const charts = (kind: ResourceStage) => this.resourceSelectedCharts(kind);
     const item = this.resourceData?.items.selectedResource ?? undefined;
     const request: ResourcePlannerPreparationInput = {
-      schema: "haneoka-resource-plan-request-v1", data: this.data, inventory: this.inventory,
+      schema: "haneoka-resource-plan-request-v1", data: this.data, inventory: this.inventory, characterRankTotalScope: this.characterRankScope,
       parameters: { boostBudget: boost, boostPerNormalPlay: perPlay, initialChallengePoints: initialCP, challengePointCost: challengeCost },
       objectives: this.resourceObjectives.filter(objective => objective === "event-points" || item !== undefined), skillOrderCriterion: this.resourceCriterion,
       ...(item ? { itemResource: item } : {}),
@@ -4541,7 +4574,7 @@ export class TeamBuilder extends LitElement {
     try {
       worker = this.worker = new Worker(new URL("../lib/team-builder/solver/worker.ts", import.meta.url), { type: "module" });
       const request: Extract<SolverRequest, { type: "manual-prepare" }> = { type: "manual-prepare", runId, request: {
-        data, inventory: structuredClone(inventory), assignment, selections: this.chartSelections,
+        data, inventory: structuredClone(inventory), characterRankTotalScope: this.characterRankScope, assignment, selections: this.chartSelections,
         ...(this.challengeSearch && this.challengeContext ? { challengeMusicId: this.challengeContext.challengeMusicId } : {}),
         mode: this.mode, scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}), skillOrderCriterion: this.effectiveSkillOrderCriterion,
         objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
@@ -4900,6 +4933,70 @@ export class TeamBuilder extends LitElement {
       </div>` , false, "team-builder__options")}
     `;
   }
+  private rankAccountConfirmation?: { data: TeamBuilderData; owner: string | null; profile: string | null; inventoryIdentity: string; extras: string; declaration: AccountCharacterRankDeclaration };
+  private rankScopeCache?: { data: TeamBuilderData; declaration: AccountCharacterRankDeclaration | null; scope: ReturnType<typeof characterRankTotalScope> };
+  private characterRankTotalCache?: { data: TeamBuilderData; inventory: InventoryV1; scope: ReturnType<typeof characterRankTotalScope>; resolution: CharacterRankTotalResolution };
+  private get rankExtraKey() {
+    const required = new Set(this.data?.masterCharacterRoster?.rows.map(row => String(row.characterId ?? row.id ?? row._id)) ?? []);
+    return JSON.stringify(Object.keys(this.inventory?.characterRanks ?? {}).filter(id => !required.has(id)).sort());
+  }
+  private get rankAccountDeclaration(): AccountCharacterRankDeclaration | null {
+    const saved = this.rankAccountConfirmation;
+    if (!saved) return null;
+    if (!this.canEdit || saved.data !== this.data || saved.owner !== this.currentOwner || saved.profile !== this.activeProfileId ||
+      saved.inventoryIdentity !== JSON.stringify([this.inventory?.server, this.inventory?.releaseId]) || saved.extras !== this.rankExtraKey) {
+      this.rankAccountConfirmation = undefined;
+      return null;
+    }
+    return saved.declaration;
+  }
+  private get characterRankScope() {
+    if (!this.data) return undefined;
+    const declaration = this.rankAccountDeclaration, cached = this.rankScopeCache;
+    if (cached?.data === this.data && cached.declaration === declaration) return cached.scope;
+    const scope = characterRankTotalScope(this.data, declaration);
+    this.rankScopeCache = { data: this.data, declaration, scope };
+    return scope;
+  }
+  private get characterRankTotal(): CharacterRankTotalResolution | null {
+    if (!this.data || !this.inventory) return null;
+    const scope = this.characterRankScope!, cached = this.characterRankTotalCache;
+    if (cached?.data === this.data && cached.inventory === this.inventory && cached.scope === scope) return cached.resolution;
+    const resolution = resolveCharacterRankTotal(this.data, this.inventory, scope);
+    this.characterRankTotalCache = { data: this.data, inventory: this.inventory, scope, resolution };
+    return resolution;
+  }
+  private revokeAccountRankConfirmation() {
+    if (!this.rankAccountConfirmation) return;
+    this.rankAccountConfirmation = undefined;
+    this.formationChanged();
+  }
+  private confirmAccountRankRoster(complete: boolean) {
+    if (!this.canEdit || !this.data || !this.inventory || this.currentOwner === undefined) return;
+    const total = this.characterRankTotal;
+    if (complete && (this.data.masterCharacterRoster?.status !== "complete" || !total || total.invalidIds.length)) return;
+    this.formationChanged();
+    this.rankAccountConfirmation = complete ? { data: this.data, owner: this.currentOwner, profile: this.activeProfileId,
+      inventoryIdentity: JSON.stringify([this.inventory.server, this.inventory.releaseId]), extras: this.rankExtraKey,
+      declaration: { identity: { ...this.data.identity }, complete: true, extraCharacterIds: [...total!.extraIds] } } : undefined;
+    this.requestUpdate();
+  }
+  private renderAccountRankDeclaration() {
+    const total = this.characterRankTotal, masterReady = this.data?.masterCharacterRoster?.status === "complete";
+    return html`<div class="stack stack--tight" data-account-rank-declaration>
+      ${this.check(this.t("characterRankConfirmRoster", "This roster includes every character on this account, including the extra IDs listed below."),
+        !!this.rankAccountDeclaration, complete => this.confirmAccountRankRoster(complete), !this.canEdit || !masterReady || !!total?.invalidIds.length)}
+      <small class="team-builder__hint">${masterReady ? this.t("characterRankConfirmationScope", "Confirmation is for this session, account, profile and game-data version. The recorded total is kept.") : this.t("characterRankMasterUnavailable", "Complete character-roster data is unavailable for this game-data version.")}</small>
+      ${total?.extraIds.length ? html`<small class="team-builder__hint">${this.t("characterRankExtraIds", "Extra character IDs: {ids}", { ids: total.extraIds.map(id => `${id} (${this.inventory?.characterRanks[String(id)] ?? this.t("unknown", "Unknown or not entered")})`).join(", ") })}</small>` : nothing}
+    </div>`;
+  }
+  private renderCharacterRankTotal(total: CharacterRankTotalResolution | null = this.characterRankTotal) {
+    if (!total) return nothing;
+    return html`<span class="team-builder__hint" data-character-rank-total>
+      ${total.effectiveSource === "derived" ? this.t("characterRankTotalDerived", "Calculated total (read-only)") : this.t("characterRankTotalRecorded", "Recorded total (read-only)")}: <strong>${total.effective ?? this.t("unknown", "Unknown or not entered")}</strong>
+      ${total.effectiveSource === "derived" && total.observed !== null && total.observed !== total.effective ? html` · ${this.t("characterRankTotalRecorded", "Recorded total (read-only)")}: ${total.observed}` : nothing}
+    </span>`;
+  }
   private get playerModifiers(): PlayerModifiers {
     return this.inventory?.schema === "haneoka-team-inventory-v2"
       ? this.inventory.playerModifiers
@@ -4976,8 +5073,9 @@ export class TeamBuilder extends LitElement {
       <section class="team-builder__section" aria-label=${this.t("characterRanks", "Character ranks")}>
         <div class="team-builder__section-header">
           ${renderDetailSectionHeading(this.t("characterRanks", "Character ranks"), "characters", { level: 2 })}
-          <span class="team-builder__hint" data-character-rank-total>${this.t("characterRankTotalRecorded", "Recorded total (read-only)")}: <strong>${this.playerModifiers.characterTotalRank ?? this.t("unknown", "Unknown or not entered")}</strong></span>
+          ${this.renderCharacterRankTotal()}
         </div>
+        ${this.renderAccountRankDeclaration()}
       </section>
       ${groups.map(({ id, name, band }, index) => {
         const characters = Object.entries(data.characters).filter(([, row]) => band ? String(row.bandId) === id : ungrouped(row.bandId));
@@ -5186,7 +5284,7 @@ export class TeamBuilder extends LitElement {
       );
     return (
       this.objectives.every((objective) => this.supportsObjective(objective)) &&
-      validateInventory(this.inventory, this.data).valid
+      validateInventory(this.inventory, this.data, { accountCharacterIds: this.characterRankTotal ? characterRankInventoryIds(this.characterRankTotal) : [] }).valid
     );
   }
   private get optimizationHint(): string {
@@ -5422,7 +5520,7 @@ export class TeamBuilder extends LitElement {
         runRequest = { type: "start", runId, input: structuredClone(input) };
       } else {
         const request: WorkerPreparationInput = {
-          data: this.data,
+          data: this.data, characterRankTotalScope: this.characterRankScope,
           scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}),
           skillOrderCriterion: this.effectiveSkillOrderCriterion,
           inventory: structuredClone(this.inventory),
@@ -5467,7 +5565,7 @@ export class TeamBuilder extends LitElement {
     return JSON.stringify([this.activeProfileId, [...this.portfolioTeams].sort(), this.mode, this.scoreDomain, this.nativeRankScenario, this.effectiveSkillOrderCriterion,
       this.chartSelections, this.evaluationBasis, this.portfolioConstraints(), this.wantsEventScene ? this.eventScene : null,
       this.challengeSearch ? this.selectedChallengeId : null,
-      this.workspaceDocument?.teams.filter(team => this.portfolioTeams.has(team.id)).map(team => ({ id: team.id, identity: team.identity, formation: team.formation }))]);
+      this.workspaceDocument?.teams.filter(team => this.portfolioTeams.has(team.id)).map(team => ({ id: team.id, identity: team.identity, formation: team.formation })), this.rankAccountDeclaration]);
   }
   private portfolioConstraints(): SearchConstraints {
     return { ...this.constraints, lockedMemberIds: [], lockedSnapshotIds: [], requiredLeaderId: null, requiredBindings: [], resultDistinctCardSets: undefined };
@@ -5493,7 +5591,7 @@ export class TeamBuilder extends LitElement {
     try { teams = chosen.map(team => ({ id: team.id, assignment: restoreSavedTeam(team, data, inventory).assignment })); }
     catch { this.workspaceError = this.t("savedTeamUnavailable", "This team needs matching card data and all of its saved cards. Restore its training as a new plan, or review the card library."); return; }
     const request: WorkerPreparationInput = {
-      data, inventory: structuredClone(inventory), selections: this.chartSelections, mode: this.mode,
+      data, inventory: structuredClone(inventory), characterRankTotalScope: this.characterRankScope, selections: this.chartSelections, mode: this.mode,
       scoreDomain: this.scoreDomain, ...(this.nativeRankScenario ? { nativeGekisoRankingScenario: this.nativeRankScenario } : {}), objectives: ["score"], skillOrderCriterion: this.effectiveSkillOrderCriterion,
       constraints: this.portfolioConstraints(),
       basis: this.evaluationBasis!, budget: { maxMilliseconds: Math.round(this.budgetSeconds * 1000), maxEvaluations: 100000, maxCandidates: 1000 },
@@ -5637,7 +5735,7 @@ export class TeamBuilder extends LitElement {
   }
   private get practicalSignature() {
     const team = this.workspaceDocument?.teams.find(team => team.id === this.practicalBaselineId);
-    return JSON.stringify([this.searchSettings, this.activeProfileId, team?.identity, team?.formation]);
+    return JSON.stringify([this.searchSettings, this.activeProfileId, team?.identity, team?.formation, this.rankAccountDeclaration]);
   }
   private practicalContextMatches(context: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string }) {
     return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.practicalSignature && this.sourceReady;
@@ -5645,8 +5743,15 @@ export class TeamBuilder extends LitElement {
   private get practicalInputGaps(): EvidenceGap[] {
     if (!this.data || !this.inventory) return [];
     const gaps: EvidenceGap[] = [];
-    if (this.playerModifiers.characterTotalRank === null)
-      gaps.push({ code: "unknown-character-total-rank", source: "playerModifiers.characterTotalRank" });
+    const rankTotal = this.characterRankTotal;
+    if (rankTotal?.effective === null) {
+      const scopeMissing = rankTotal.reasons.some(reason => ["identity-unavailable", "identity-mismatch", "master-incomplete", "account-incomplete", "invalid-master-id", "invalid-account-id", "account-domain-mismatch"].includes(reason));
+      if (scopeMissing) gaps.push({ code: "account-character-rank-scope-unverified", source: "playerModifiers.characterTotalRank" });
+      gaps.push(...rankTotal.missingIds.map(id => ({ code: "unknown-character-rank", source: `character:${id}/rank` })),
+        ...rankTotal.invalidRankIds.map(id => ({ code: "invalid-character-rank", source: `character:${id}/rank` })));
+      if (!scopeMissing && !rankTotal.missingIds.length && !rankTotal.invalidRankIds.length)
+        gaps.push({ code: "unknown-character-total-rank", source: "playerModifiers.characterTotalRank" });
+    }
     const vipBonuses = this.data.runtimeRules?.tables.vipRankBonuses;
     if (vipBonuses?.status === "ready" && vipBonuses.rows.length && this.playerModifiers.vipRank === null)
       gaps.push({ code: "unknown-vip-rank", source: "playerModifiers.vipRank" });
@@ -5660,6 +5765,7 @@ export class TeamBuilder extends LitElement {
     return gaps;
   }
   private practicalGapLabel(code: string, source = "") {
+    if (code === "account-character-rank-scope-unverified") return this.t("characterRankScopeUnverified", "The current data does not establish the complete account character roster.");
     if (code === "unknown-vip-rank") return this.t("practicalTGWRequired", "Set your TGW CARD level in Growth.");
     if (code === "unknown-character-total-rank") return this.t("practicalRanksRequired", "Complete your account’s character ranks in Growth to determine the total.");
     if (code === "unknown-member-practice" || code === "member-growth-row-missing" || code === "unresolved-member-power")
@@ -5713,7 +5819,7 @@ export class TeamBuilder extends LitElement {
     const generation = this.requestId, runId = crypto.randomUUID();
     const context = { data: this.data, inventory: this.inventory, owner: this.currentOwner, signature: this.practicalSignature };
     const request: NativePracticalPreparationInput = {
-      schema: "haneoka-native-practical-request-v1", data: this.data, inventory: structuredClone(this.inventory),
+      schema: "haneoka-native-practical-request-v1", data: this.data, inventory: structuredClone(this.inventory), characterRankTotalScope: this.characterRankScope,
       selections: this.challengeSearch ? this.chartSelections.map(chart => ({ challengeMusicId: chart.challengeMusicId ?? Number(this.selectedChallengeId), difficulty: chart.difficulty })) : this.chartSelections,
       modes: this.practicalModes, objectives: [...this.objectives], constraints: this.constraints, basis: this.evaluationBasis!,
       skillOrderCriterion: this.effectiveSkillOrderCriterion, scoreDomain: this.challengeSearch ? "personal-solo" : this.selectedScoreDomain,
