@@ -38,7 +38,7 @@ function commentView(comment: EntityComment, props: RichProps, actions: RichActi
     focused: comment.id === props.focusedCommentId,
     replyToName: reply && parent?.parentId ? commentAuthorName(parent, props.label) : undefined,
     canReply: props.canComment || !props.signedIn,
-    allowStickers: false,
+    allowStickers: true,
     editing: editing
       ? {
           body: editing.body,
@@ -66,7 +66,7 @@ function composer(props: RichProps, actions: RichActions) {
         label: props.label,
         body: props.body,
         open: props.composerOpen,
-        allowStickers: false,
+        allowStickers: true,
         signedIn: props.signedIn,
         canComment: props.canComment,
         busy: Boolean(props.busy),
