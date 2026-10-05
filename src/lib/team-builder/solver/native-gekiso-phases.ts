@@ -1,6 +1,7 @@
 import type { EvidenceGap, OptimizationInput, TeamAssignment } from "../contracts.ts";
 import { dataRows, nativeRow, type TeamBuilderData } from "../data.ts";
 import { nativeGekisoAllComboDriverSupports } from "./native-gekiso-driver-profile.ts";
+import { resolveDormantNativeLuckRushSupports } from "./native-gekiso-dormant-rush-support.ts";
 import { createNativePerfectCumulativeJustResolver,
   type NativePerfectCumulativeJustEffect } from "./native-gekiso-cumulative-just.ts";
 import {
@@ -233,7 +234,7 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
       assignment: TeamAssignment,
       expectedIdentity: GekisoRuleIdentity,
       frames: readonly NativeGekisoPhaseFrame[],
-      options?: { perfectCumulativeJust: boolean },
+      options?: { perfectCumulativeJust: boolean; dormantRushSupports?: { missions: readonly number[]; freshStart: boolean } },
     ): GekisoResolved<NativeGekisoBasicPhasePlan> {
       const selected = this.select(assignment, expectedIdentity);
       if (!selected.value) return { value: null, gaps: selected.gaps };
@@ -262,8 +263,13 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
         )
       )
         return fail("native-gekiso-phase-frames-unresolved", "actual ordered range updates");
-      if (selected.value.supports.length)
-        return fail("native-gekiso-support-phase-factory-unresolved", "selected parent/live-start/rank support timing");
+      if (selected.value.supports.length) {
+        if (!options?.dormantRushSupports)
+          return fail("native-gekiso-support-phase-factory-unresolved", "selected parent/live-start/rank support timing");
+        const dormant = resolveDormantNativeLuckRushSupports(data, selected.value.supports,
+          options.dormantRushSupports.missions, options.dormantRushSupports.freshStart);
+        if (dormant.value === null) return { value: null, gaps: dormant.gaps };
+      }
       const bindings = [...new Set(Object.values(selected.value.membersByMission).flat())];
       const windows: NativeGekisoBasicWindow[] = [],
         gaps: EvidenceGap[] = [];
@@ -419,7 +425,8 @@ export function createNativeGekisoPhaseResolver(data: TeamBuilderData, input: Op
             value: {
               windows,
               verifiedThroughMs: frames.at(-1)?.timeMs ?? 0,
-              assumptions: ["complete-native-update-frame-tape", "basic-GK-timed-and-sustained-member-effects"],
+              assumptions: ["complete-native-update-frame-tape", "basic-GK-timed-and-sustained-member-effects",
+                ...(selected.value.supports.length ? ["native-fresh-no-LUCK-dormant-Rush-photo-supports"] : [])],
               ...(perfectCumulativeJust.length ? { perfectCumulativeJust } : {}),
             },
             gaps: [],

@@ -130,6 +130,9 @@ export function createNativeGekisoContextEvaluation(
             frames: context.plan.frames, randomLaw: { kind: "uniform-residue" },
             projection: "expectations-only", budget: { maxStates: 10000, maxTransitions: threeLuck ? 500000 : 100000 },
             requireNoPendingLots: singleLuck || threeLuck,
+            freshNativeLiveStart: ["native-no-luck-ap-event-reduction-v1", "native-all-combo-ap-event-reduction-v1"]
+              .includes(context.plan.producer ?? "") &&
+              nativeGekisoAllComboDriverSupports(data.identity),
           }, context.ranking?.ranges ?? context.plan.ranges, controls);
           if (context.ranking?.assumptions.length)
             metric.assumptions.push(...context.ranking.assumptions);

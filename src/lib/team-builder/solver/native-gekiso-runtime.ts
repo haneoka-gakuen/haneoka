@@ -45,6 +45,8 @@ export interface NativeGekisoBasicRuntimeInput {
   /** Isolated expectation for one native per-range LuckScore. The basic
    * selected-family path has no shared minimum/probability modifiers. */
   isolatedLuckRangeIndex?: 0 | 1 | 2;
+  /** Only the qualified fresh no-LUCK chart producer supplies this condition. */
+  freshNativeLiveStart?: boolean;
 }
 export interface NativeGekisoBasicRuntimeResult {
   phases: NativeGekisoBasicPhasePlan;
@@ -69,7 +71,14 @@ export function createNativeGekisoBasicRuntimeResolver(data: TeamBuilderData, in
       : Promise<GekisoResolved<NativeGekisoBasicRuntimeResult>> {
       const perfectCumulativeJust = input.constraints.justRate === 0 && runtime.isolatedLuckRangeIndex === undefined &&
         Array.isArray(runtime.missions) && runtime.missions.filter(mission => mission === 2).length === 1;
-      const phase = phases.compileBasic(runtime.assignment, runtime.expectedIdentity, runtime.frames, { perfectCumulativeJust });
+      const dormantRushSupports = runtime.freshNativeLiveStart === true && input.constraints.justRate === 0 &&
+        Array.isArray(runtime.missions) && runtime.missions.length === 3 && runtime.missions.every(mission => [1, 3].includes(mission)) &&
+        Array.isArray(runtime.frames) && runtime.frames[0]?.timeMs === 0 && runtime.frames[0]?.judgementSequenceBeforePhase2 === 0 &&
+        runtime.frames[0]?.notes?.length === 0 && runtime.frames[0]?.rangeUpdates?.length === 0 &&
+        runtime.frames.every(frame => Array.isArray(frame.notes) &&
+          frame.notes.every((note: NativeGekisoAdmittedPerfectNote) => note.judgement === 5))
+        ? { missions: runtime.missions, freshStart: true } : undefined;
+      const phase = phases.compileBasic(runtime.assignment, runtime.expectedIdentity, runtime.frames, { perfectCumulativeJust, dormantRushSupports });
       if (!phase.value) return { value: null, gaps: phase.gaps };
       if (
         rules.server !== runtime.expectedIdentity.server ||
