@@ -1620,9 +1620,10 @@ For both text and images, set realPersonPornography=true only for explicit porno
 const moderationModelOutput = (result: unknown): unknown => {
   if (typeof result === "string") return result;
   if (!isJsonValue(result) || !isJsonObject(result)) return null;
-  if ("response" in result) return result.response;
-  if ("answer" in result) return result.answer;
-  if ("description" in result) return result.description;
+  for (const key of ["response", "answer", "description"] as const) {
+    const output = result[key];
+    if ((typeof output === "string" && output.trim()) || (output !== undefined && isJsonObject(output))) return output;
+  }
   const choices = result.choices;
   if (Array.isArray(choices) && choices.length) {
     const first = choices[0];
@@ -1632,6 +1633,12 @@ const moderationModelOutput = (result: unknown): unknown => {
         return first.message.content;
       }
     }
+  }
+  // Moondream returns its task output inside a model-specific result envelope.
+  if (result.result !== undefined && isJsonObject(result.result)) {
+    const output = result.result.answer;
+    if (typeof output === "string" && output.trim()) return output;
+    return result.result;
   }
   return result;
 };
@@ -1652,7 +1659,7 @@ const runTextModerationModel = async (env: Env, model: TextModel, input: string)
   if (model === "@cf/qwen/qwen3-30b-a3b-fp8") {
     return env.AI.run(model, {
       messages,
-      max_tokens: 260,
+      max_tokens: 2048,
       temperature: 0,
       response_format: { type: "json_schema", json_schema: POLICY_OUTPUT_SCHEMA },
     });
