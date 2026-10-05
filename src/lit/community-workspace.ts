@@ -1,5 +1,5 @@
-import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
+import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { interpolateMessage, type MessageParams } from "@haneoka/i18n";
 import { renderEntityCommentActivity } from "./views/entity-comment-activity";
 import { renderCommunityComment, renderCommentComposer, renderCommentReplies, commentAuthorName } from "./views/community-comment-content";
@@ -870,10 +870,15 @@ export class CommunityWorkspace extends LitElement {
     this.error = "";
     let bootstrapped: Value | undefined;
     try {
-      const canBootstrap = !append && this.routeKind === "collection" && this.mode === "feeds" &&
-        !this.forumSlug && !this.selectedForumId && ["recommended", "latest"].includes(this.feedScope);
+      const postDetail = this.routeKind === "post-detail" || this.routeKind === "post-edit";
+      const canBootstrap = !append && (postDetail || (this.routeKind === "collection" && this.mode === "feeds" &&
+        !this.forumSlug && !this.selectedForumId && ["recommended", "latest", "following"].includes(this.feedScope)));
       if (canBootstrap) {
-        const bootstrap = await readCommunityBootstrap<Value>(this.endpoint(false, refresh), signal, true);
+        const query = new URLSearchParams({ commentsSort: this.commentSort });
+        const focusedId = navigationDocumentUrl().hash.match(/^#comment-([0-9a-f-]{36})$/iu)?.[1];
+        if (focusedId) query.set("commentId", focusedId);
+        const path = postDetail ? `/api/v1/community/posts/${encodeURIComponent(this.entityId)}?${query}` : this.endpoint(false, refresh);
+        const bootstrap = await readCommunityBootstrap<Value>(path, signal, true);
         const latest = await readCommunityViewer(signal);
         if (!this.requests.current(signal)) return;
         if (latest.realm !== bootstrap.viewer.realm) throw new CommunityRealmChanged();
@@ -916,6 +921,8 @@ export class CommunityWorkspace extends LitElement {
         const query = new URLSearchParams({ commentsSort: this.commentSort });
         const focusedId = navigationDocumentUrl().hash.match(/^#comment-([0-9a-f-]{36})$/iu)?.[1];
         if (focusedId) query.set("commentId", focusedId);
+        let detail = bootstrapped;
+        if (!detail) {
         const response = await fetch(`/api/v1/community/posts/${encodeURIComponent(this.entityId)}?${query}`, {
           headers: { accept: "application/json" },
           credentials: "same-origin",
@@ -935,9 +942,10 @@ export class CommunityWorkspace extends LitElement {
           }
           throw new JsonResponseError(response.status, null);
         }
-        const detail = (await response.json()) as Value;
+        detail = (await response.json()) as Value;
+        }
         if (!this.requests.current(signal)) return;
-        if (!await this.confirmReadViewer(signal)) return;
+        if (!bootstrapped && !await this.confirmReadViewer(signal)) return;
         const rawPost = ((detail.post as Value | undefined) || detail) as Value;
         const mergedPost = this.mergeReaction("post", { ...rawPost, viewer: detail.viewer || rawPost.viewer }, reactionMark);
         this.document = detail.post

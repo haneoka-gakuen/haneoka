@@ -1,3 +1,4 @@
+import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { communityStickerPreview } from "../lib/community-markup";
 import { renderLazyEntityCommentActivity } from "./views/entity-comment-activity-lazy";
 import "../styles/home-community-comments.css";
@@ -653,11 +654,12 @@ export class HomeDashboard extends LitElement {
       })
       .catch(() => { if (currentPanel()) this.announcementsPhase = this.announcements.length ? "ready" : "error"; });
     try {
-      const viewer = await readCommunityViewer(signal);
+      const bootstrap = await readCommunityBootstrap<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), signal);
       if (!currentPanel()) return;
+      const viewer = bootstrap.viewer;
       if (this.communityViewer && this.communityViewer.realm !== viewer.realm) this.posts = [];
       this.communityViewer = viewer;
-      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), {signal,credentials:"same-origin",cache:"no-store"});
+      const posts = bootstrap.data;
       const current = await readCommunityViewer(signal);
       if (!currentPanel()) return;
       if (current.realm !== viewer.realm) {
