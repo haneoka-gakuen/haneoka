@@ -62,6 +62,7 @@ interface Cursor {
   rankAsOf?: number;
   rankScore?: number;
   recommendationSeed?: number;
+  recommendationKind?: "post";
 }
 
 interface CommunityProfileRow {
@@ -283,6 +284,7 @@ interface PreferenceResponse {
 }
 
 interface ListOptions {
+  kind: "post" | null;
   cursor: Cursor | null;
   limit: number;
   q: string | null;
@@ -601,6 +603,7 @@ const encodeCursor = (row: Cursor): string =>
       ...(row.rankAsOf === undefined ? {} : { a: row.rankAsOf }),
       ...(row.rankScore === undefined ? {} : { r: row.rankScore }),
       ...(row.recommendationSeed === undefined ? {} : { s: row.recommendationSeed }),
+      ...(row.recommendationKind === undefined ? {} : { k: row.recommendationKind }),
     }),
   )
     .replace(/\+/g, "-")
@@ -620,6 +623,7 @@ const decodeCursor = (value: string | null): Cursor | null => {
       const rankAsOf = Reflect.get(parsed, "a");
       const rankScore = Reflect.get(parsed, "r");
       const recommendationSeed = Reflect.get(parsed, "s");
+      const recommendationKind = Reflect.get(parsed, "k");
       if (
         typeof createdAt !== "number" ||
         !Number.isSafeInteger(createdAt) ||
@@ -635,7 +639,8 @@ const decodeCursor = (value: string | null): Cursor | null => {
           (typeof recommendationSeed !== "number" ||
             !Number.isSafeInteger(recommendationSeed) ||
             recommendationSeed < 0 ||
-            recommendationSeed > 2_147_483_647))
+            recommendationSeed > 2_147_483_647)) ||
+        (recommendationKind !== undefined && recommendationKind !== "post")
       ) {
         return null;
       }
@@ -646,6 +651,7 @@ const decodeCursor = (value: string | null): Cursor | null => {
         ...(rankAsOf === undefined ? {} : { rankAsOf }),
         ...(rankScore === undefined ? {} : { rankScore }),
         ...(recommendationSeed === undefined ? {} : { recommendationSeed }),
+        ...(recommendationKind === undefined ? {} : { recommendationKind }),
       };
     }
     const separator = decoded.indexOf(":");
@@ -673,7 +679,7 @@ const parseLimit = (raw: string | null, fallback: number, maximum: number): numb
 };
 
 const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> => {
-  const names = ["limit", "cursor", "q", "tag", "scope", "state", "seed", "refresh", "forumId"] as const;
+  const names = ["limit", "cursor", "q", "tag", "scope", "state", "seed", "refresh", "forumId", "kind"] as const;
   const values = new Map<string, string | null>();
   for (const name of names) {
     const value = singleSearchParameter(url, name);
@@ -730,6 +736,13 @@ const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> 
     };
   }
   const stateValue = values.get("state") ?? "active";
+  const kind = values.get("kind") ?? null;
+  if (kind !== null && kind !== "post")
+    return { ok: false, response: error(request, 400, "invalid_kind", "kind must be post when supplied") };
+  if (kind !== null && scopeValue !== "recommended")
+    return { ok: false, response: error(request, 400, "invalid_kind_scope", "kind is supported for recommendations") };
+  if (cursor && (cursor.recommendationKind ?? null) !== kind)
+    return { ok: false, response: error(request, 400, "cursor_kind_mismatch", "Keep the same recommendation kind when continuing") };
   if (stateValue !== "active" && stateValue !== "archived" && stateValue !== "all") {
     return { ok: false, response: error(request, 400, "invalid_state", "state must be active, archived, or all") };
   }
@@ -753,7 +766,7 @@ const parseListOptions = (request: Request, url: URL): ParseResult<ListOptions> 
   }
   return {
     ok: true,
-    value: { cursor, limit, q, refresh: refreshValue === "1", scope: scopeValue, seed, state: stateValue, tag, forumId, tagSelection },
+    value: { kind, cursor, limit, q, refresh: refreshValue === "1", scope: scopeValue, seed, state: stateValue, tag, forumId, tagSelection },
   };
 };
 
@@ -1270,6 +1283,8 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   const parsed = parseListOptions(request, url);
   if (!parsed.ok) return parsed.response;
   const options = parsed.value;
+  const typedRecommendations = Boolean(hydrateEntity) || options.kind === "post";
+  if (options.kind === "post") hydrateEntity = undefined;
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
   const requestTime = Date.now();
@@ -1635,7 +1650,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   const lastRow = rows.at(-1);
   return json(request, {
     posts,
-    ...(hydrateEntity && options.scope === "recommended" ? {
+    ...(typedRecommendations && options.scope === "recommended" ? {
       entries: rows.map((row) => row.kind === "entity-comment"
         ? commentEntries.get(row.id)
         : { kind: "post", id: row.id, post: posts.find((post) => post.id === row.id) }),
@@ -1651,6 +1666,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
                   rankAsOf: recommendationRankAsOf ?? requestTime,
                   rankScore: lastRow.rankScore,
                   recommendationSeed: recommendationSeed ?? 0,
+                  ...(options.kind === "post" ? { recommendationKind: "post" } : {}),
                 }
               : {}),
           })
