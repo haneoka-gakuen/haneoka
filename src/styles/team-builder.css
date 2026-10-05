@@ -606,8 +606,18 @@
 @layer pages {
   .team-builder__requirements .team-builder__section { padding: 0; border-radius: 0; background: transparent; }
   .selection-pane__choice { cursor: pointer; }
-  .selection-pane__choice-label { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: start; gap: 4px; }
-  .selection-pane__choice-label .tile__identity { padding: 8px 0; }
+  .selection-pane__choice:has(md-checkbox[disabled]) { cursor: default; }
+  .selection-pane__choice-media { position: relative; display: grid; min-width: 0; }
+  .selection-pane__choice-checkbox {
+    position: absolute;
+    z-index: 2;
+    inset-inline-end: 4px;
+    inset-block-end: 4px;
+    background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
+  }
+  .selection-pane__choice-media .tile__mark--bottom-end,
+  .selection-pane__choice-media .tile__server-mark { inset-inline-end: 52px; }
+  .selection-pane__choice-media .tile__media--server-mark .tile__mark--bottom-end { inset-inline-end: 78px; }
   .selection-pane__choice:has(md-checkbox:focus-within) { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
   .team-builder__song-pool-summary { display: grid; min-width: 0; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 }

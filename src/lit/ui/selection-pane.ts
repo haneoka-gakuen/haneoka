@@ -21,7 +21,9 @@ export function selectionPane(options: {
   /** Stamp-style chip groups; existing other callers may still supply fields. */
   filterLayout?: "facets" | "fields";
   kind: "member" | "support" | "song" | "system";
-  items: ReadonlyArray<TileOptions & { value: string }>;
+  items: ReadonlyArray<TileOptions & { value: string; disabled?: boolean }>;
+  /** Keeps unavailable choices visible with the native disabled state. */
+  disabled?: boolean;
   selected: string;
   /** Multi-select uses native checkboxes; ordinary choosers retain tab navigation. */
   selectedValues?: ReadonlySet<string>;
@@ -70,14 +72,14 @@ export function selectionPane(options: {
         >
           ${options.items.map((item, index) => options.selectedValues ? html`
             <label class=${`tile tile--${item.kind ?? options.kind} selection-pane__choice${options.selectedValues.has(item.value) ? " is-selected" : ""}`} style=${item.style || nothing}>
-              ${tileMedia(item)}
-              <span class="selection-pane__choice-label">
-                <md-checkbox .checked=${options.selectedValues.has(item.value)} aria-label=${item.label}
-                  @change=${() => options.select(item.value)}></md-checkbox>
-                <span class="tile__identity">
-                  <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
-                  ${item.subtitle === undefined || item.subtitle === null ? nothing : html`<small class="tile__subtitle">${item.adornment ?? nothing}<span>${item.subtitle}</span></small>`}
-                </span>
+              <span class="selection-pane__choice-media">
+                ${tileMedia(item)}
+                <md-checkbox class="selection-pane__choice-checkbox" touch-target="wrapper" ?disabled=${options.disabled || item.disabled} .checked=${live(options.selectedValues.has(item.value))} aria-label=${item.label}
+                  @change=${() => { if (!options.disabled && !item.disabled) options.select(item.value); }}></md-checkbox>
+              </span>
+              <span class="tile__identity">
+                <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
+                ${item.subtitle === undefined || item.subtitle === null ? nothing : html`<small class="tile__subtitle">${item.adornment ?? nothing}<span>${item.subtitle}</span></small>`}
               </span>
             </label>` : tile({
               ...item,

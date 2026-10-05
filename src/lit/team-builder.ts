@@ -2640,11 +2640,7 @@ export class TeamBuilder extends LitElement {
       this.closeOwnedEditor();
       return;
     }
-    const keys = this.selectedCards.size
-      ? [...this.selectedCards]
-      : this.picker
-        ? [this.batchKey(Number(this.picker))]
-        : [];
+    const keys = [...this.selectedCards];
     const requests = keys.map((key) => {
       const [kind, cardId] = key.split(":");
       return { kind: kind as Kind, cardId: Number(cardId) };
@@ -2909,8 +2905,17 @@ export class TeamBuilder extends LitElement {
           },
         kind: this.kind === "members" ? "member" : "support",
         selected: this.picker,
+        selectedValues: this.screenshotCorrection ? undefined : new Set([...this.selectedCards]
+          .filter(key => key.startsWith(`${this.kind}:`)).map(key => key.slice(this.kind.length + 1))),
+        disabled: !this.canEdit,
         select: (value) => {
+          if (!this.canEdit) return;
           this.picker = value;
+          if (!this.screenshotCorrection) {
+            const key = this.batchKey(Number(value)), next = new Set(this.selectedCards);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            this.selectedCards = next;
+          }
         },
         countLabel: this.t("pickerCount", "{count} matching entries", { count: matching.length }),
         emptyLabel: this.t("pickerEmpty", "No matches. Adjust the search or filters."),
@@ -2926,7 +2931,8 @@ export class TeamBuilder extends LitElement {
           ${this.screenshotCorrection ? nothing : html`<div class="chooser-facet"><div class="chooser-filter-options">
             <button
               class="button button--text"
-              @click=${() => (this.selectedCards = new Set([...this.selectedCards, ...matching.map((card) => this.batchKey(card.id))]))}
+              ?disabled=${!this.canEdit}
+              @click=${() => { if (this.canEdit) this.selectedCards = new Set([...this.selectedCards, ...matching.map((card) => this.batchKey(card.id))]); }}
             >
               ${this.t("selectMatching", "Select matching cards")}
             </button>
@@ -2951,16 +2957,7 @@ export class TeamBuilder extends LitElement {
                     ${this.cardOptions(chosen).adornment}${this.characterNames(chosen)} · ${this.rarityMark(chosen)} ·
                     ${this.attributeName(chosen)}
                   </span>
-                  ${this.screenshotCorrection ? nothing : this.check(
-                    this.t("selectCard", "Select card"),
-                    this.selectedCards.has(this.batchKey(chosen.id)),
-                    (checked) => {
-                      const next = new Set(this.selectedCards);
-                      if (checked) next.add(this.batchKey(chosen.id));
-                      else next.delete(this.batchKey(chosen.id));
-                      this.selectedCards = next;
-                    },
-                  )}
+
                 `
               : html`
                   <span>${this.t("choose", "Choose card")}</span>
@@ -2984,10 +2981,10 @@ export class TeamBuilder extends LitElement {
           }
           <button
             class="button"
-            ?disabled=${(!chosen && !this.selectedCards.size) || !this.canEdit}
+            ?disabled=${(this.screenshotCorrection ? !chosen : !this.selectedCards.size) || !this.canEdit}
             @click=${() => this.addPickedCards()}
           >
-            ${this.screenshotCorrection ? this.t("selectCard", "Select card") : this.selectedCards.size ? this.t("addSelectedCards", "Use selected cards") : chosen && this.inventory?.[this.kind].some((entry) => entry.cardId === chosen.id) ? this.t("editOwnedCard", "Edit owned card") : this.t("add", "Add card")}
+            ${this.screenshotCorrection ? this.t("selectCard", "Select card") : this.t("addSelectedCards", "Use selected cards")}
           </button>
         `,
       });
