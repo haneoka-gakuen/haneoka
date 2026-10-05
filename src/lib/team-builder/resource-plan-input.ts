@@ -1,4 +1,6 @@
 import { validateInventory } from "./inventory.ts";
+import { resolveCharacterRankTotal } from "./data/character-rank-total.ts";
+import { characterRankInventoryIds } from "./data/character-rank-scope.ts";
 import type { ResourcePlannerPreparationInput } from "./resource-plan-contract.ts";
 
 const integer = (value: unknown, minimum = 0): value is number =>
@@ -15,7 +17,10 @@ export function resourcePlanInputIssues(input: ResourcePlannerPreparationInput):
   if (input.schema !== "haneoka-resource-plan-request-v1") issue("schema", "unsupported-schema");
   const data = input.data;
   if (!data.identity.sourceId) issue("data.identity.sourceId", "source-required");
-  issues.push(...validateInventory(input.inventory, data).issues);
+  const totalRank = resolveCharacterRankTotal(data, input.inventory, input.characterRankTotalScope);
+  issues.push(...validateInventory(input.inventory, data, {
+    accountCharacterIds: characterRankInventoryIds(totalRank),
+  }).issues);
   const parameters = input.parameters;
   for (const [key, minimum] of [
     ["boostBudget", 0], ["boostPerNormalPlay", 1], ["initialChallengePoints", 0], ["challengePointCost", 1],

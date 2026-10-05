@@ -1,12 +1,17 @@
 import type { EvidenceGap } from "../contracts";
 import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { createUnknownPlayerModifiers, playerModifierRanges, validateInventory, type InventoryV1 } from "../inventory";
+import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./character-rank-total";
+import { characterRankInventoryIds } from "./character-rank-scope";
 
 /** Same-release raw rows for the native factory. Effect/target enums and
  * threshold selection remain with the native formula owner.
  */
-export function nativeConditionSources(data: TeamBuilderData, inventory: InventoryV1) {
-  const validation = validateInventory(inventory, data);
+export function nativeConditionSources(data: TeamBuilderData, inventory: InventoryV1, rankScope?: CharacterRankTotalScope | null) {
+  const totalRank = resolveCharacterRankTotal(data, inventory, rankScope);
+  const validation = validateInventory(inventory, data, {
+    accountCharacterIds: characterRankInventoryIds(totalRank),
+  });
   if (!validation.valid) throw new Error(`Invalid condition inventory:${validation.issues[0]?.path}`);
   const gaps: EvidenceGap[] = [];
   const gap = (code: string, source: string) => gaps.push({ code, source });
@@ -93,8 +98,8 @@ export function nativeConditionSources(data: TeamBuilderData, inventory: Invento
       return [id, { musicType, bestMusicTagIds }] as const;
     }),
   );
-  const playerModifiers =
-    inventory.schema === "haneoka-team-inventory-v2" ? inventory.playerModifiers : createUnknownPlayerModifiers();
+  const observedPlayerModifiers = inventory.schema === "haneoka-team-inventory-v2" ? inventory.playerModifiers : createUnknownPlayerModifiers();
+  const playerModifiers = { ...observedPlayerModifiers, characterTotalRank: totalRank.effective };
   const modifierRanges = playerModifierRanges(data);
   if (playerModifiers.characterTotalRank === null)
     gap("unknown-character-total-rank", "playerModifiers.characterTotalRank");
@@ -107,6 +112,7 @@ export function nativeConditionSources(data: TeamBuilderData, inventory: Invento
   return {
     identity: { ...data.identity },
     playerModifiers,
+    characterRankTotal: totalRank,
     modifierRanges,
     vipRankRows,
     members,

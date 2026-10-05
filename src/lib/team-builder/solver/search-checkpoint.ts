@@ -1,7 +1,7 @@
 import type { SearchCheckpoint, SearchResult } from "../contracts.ts";
 
 /** Bump whenever scoring, adaptation, chart interpretation or enumeration changes. */
-export const SEARCH_ENGINE_REVISION = "native-fresh-no-luck-rush-support-search-v17";
+export const SEARCH_ENGINE_REVISION = "native-qualified-account-character-rank-total-search-v18";
 
 function canonical(value: unknown): string {
   if (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))

@@ -70,10 +70,16 @@ export async function readRuntimeRulesDocument(identity: RuntimeRulesIdentity, r
     [key, { ...await readTable(table), identity: { ...pin } }] as const));
   const gekiso = await Promise.all(Object.entries(GEKISO_TIMELINE_MASTER_TABLES).map(async ([key, table]) =>
     [key, { ...await readTable(table), identity: { ...pin } }] as const));
+  // Optional compatibility with dispatchers deployed before this selected table was allowed.
+  let characterRows: RuntimeRuleTable;
+  try { characterRows = await readTable("MasterCharacter"); }
+  catch { characterRows = { sourceTable: "MasterCharacter", status: "missing", rows: [] }; }
   return {
     schema: "haneoka-team-runtime-rules-v1", ...pin, tables, challengePointTable, challengeMusicTable,
     boostTables: Object.fromEntries(boosts),
     gekisoTables: Object.fromEntries(gekiso),
+    masterCharacterRoster: { ...pin, sourceTable: "MasterCharacter",
+      status: characterRows.status === "missing" ? "missing" : "complete", rows: characterRows.rows },
   };
 }
 

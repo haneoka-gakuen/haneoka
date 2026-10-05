@@ -2,6 +2,8 @@ import { addPower, floorPowerBP } from "./power.ts";
 import type { Candidate, EvidenceGap, Objective, SongOption, TeamAssignment, WorkerPreparationInput } from "../contracts.ts";
 import { nativeSnapshotEquipRuleKnown } from "../data.ts";
 import { inventoryOptions } from "../data/solver-input.ts";
+import { resolveCharacterRankTotal } from "../data/character-rank-total.ts";
+import { characterRankInventoryIds } from "../data/character-rank-scope.ts";
 import { validateInventory } from "../inventory.ts";
 import { refinePracticalCandidates, type PracticalControls,
   type PracticalTask, type PracticalSearchResult } from "../practical-search.ts";
@@ -71,7 +73,11 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
     new Set(request.objectives).size !== request.objectives.length || request.objectives.some(goal => !objectives.includes(goal)) ||
     request.selections.length * request.modes.length * request.objectives.length > 1000)
     throw new RangeError("native-practical-domain");
-  const validation = validateInventory(request.inventory, request.data);
+  // Resolve the complete account before preparing any selected formation.
+  const totalRank = resolveCharacterRankTotal(request.data, request.inventory, request.characterRankTotalScope);
+  const validation = validateInventory(request.inventory, request.data, {
+    accountCharacterIds: characterRankInventoryIds(totalRank),
+  });
   if (!validation.valid) throw new RangeError(`native-practical-inventory:${validation.issues[0]?.code}`);
   let computeStarted: number | undefined;
   const cancelled = () => Boolean(controls.cancelled?.());
@@ -148,7 +154,8 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
     if (!chart.song && !chart.gaps.length)
       chart.gaps.push({ code: cancelled() ? "native-practical-preparation-cancelled"
         : "native-practical-preparation-time-limit", source: chart.key });
-  const options = inventoryOptions(request.inventory, request.data, nativeGrowthPowerResolver, { requiredMode: "normal" });
+  const options = inventoryOptions(request.inventory, request.data, nativeGrowthPowerResolver,
+    { requiredMode: "normal" }, request.characterRankTotalScope);
   const availableMembers = options.members.filter(member =>
     !request.constraints.excludedMemberIds.includes(member.instanceId));
   const formationGaps: EvidenceGap[] = new Set(availableMembers.map(member => member.characterId)).size < 5

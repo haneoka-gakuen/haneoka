@@ -333,6 +333,8 @@ export function validateInventory(
     requireModifiers?: boolean;
     allowDifferentRelease?: boolean;
     allowDuplicateCards?: boolean;
+    /** Retained account IDs qualified against this exact Master/account scope. */
+    accountCharacterIds?: readonly number[];
   } = {},
 ): { valid: boolean; issues: InventoryIssue[] } {
   const issues: InventoryIssue[] = [];
@@ -423,7 +425,9 @@ export function validateInventory(
     for (const [id, level] of Object.entries(map)) {
       const record =
         field === "bandItems" ? data.bandItems[id] : field === "characterRanks" ? data.characters[id] : data.bands[id];
-      if (!/^[1-9]\d*$/u.test(id) || !record) {
+      const accountCharacter = field === "characterRanks" && Number.isSafeInteger(Number(id)) &&
+        options.accountCharacterIds?.includes(Number(id));
+      if (!/^[1-9]\d*$/u.test(id) || (!record && !accountCharacter)) {
         problem(`${field}.${id}`, "unknown-entity");
         continue;
       }

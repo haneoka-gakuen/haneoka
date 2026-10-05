@@ -1,5 +1,7 @@
 import type { EvidenceGap, MemberOption, PowerStats, SnapshotOption } from "../contracts";
 import { nativeSnapshotEquipRuleKnown, type MemberCatalog, type SnapshotCatalog, type TeamBuilderData } from "../data";
+import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./character-rank-total";
+import { characterRankInventoryIds } from "./character-rank-scope";
 import {
   snapshotSkillLevels,
   validateInventory,
@@ -30,12 +32,16 @@ export function inventoryOptions(
   data: TeamBuilderData,
   resolver: PowerResolver,
   requirements?: InventoryOptionsRequirements,
+  characterRankTotalScope?: CharacterRankTotalScope,
 ): {
   members: MemberOption[];
   snapshots: SnapshotOption[];
   gaps: EvidenceGap[];
 } {
-  const validation = validateInventory(inventory, data);
+  const totalRank = resolveCharacterRankTotal(data, inventory, characterRankTotalScope);
+  const validation = validateInventory(inventory, data, {
+    accountCharacterIds: characterRankInventoryIds(totalRank),
+  });
   if (!validation.valid)
     throw new Error(`Invalid inventory: ${validation.issues.map((issue) => issue.path).join(",")}`);
   const members: MemberOption[] = [],

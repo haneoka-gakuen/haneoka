@@ -113,8 +113,9 @@ export function createNativeNormalSlotResolver(
   eventPower?: NativeEventPowerResolver,
   musicTypes?: ReadonlyMap<number, { parameterMusicType: number; skillTargetMusicType: number;
     musicTypeBaseBonusBP?: number; musicTagBaseBonusBP?: number }>,
+  characterRankTotalScope?: import("../data/character-rank-total.ts").CharacterRankTotalScope,
 ) {
-  const sources = nativeConditionSources(data, inventory);
+  const sources = nativeConditionSources(data, inventory, characterRankTotalScope);
   const gaps: EvidenceGap[] = [];
   if (
     eventPower &&

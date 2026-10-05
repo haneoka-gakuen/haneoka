@@ -2371,6 +2371,7 @@ const recognitionReferenceProvider = createRecognitionReferenceProvider({
 });
 
 const TEAM_BUILDER_RUNTIME_MASTER_TABLES: ReadonlySet<string> = new Set([
+  "MasterCharacter",
   "MasterParameter",
   "MasterVip",
   "MasterVipRankBonus",

@@ -2,6 +2,7 @@ import type { PowerStats, ReleaseIdentity } from "./contracts";
 import { projectEventDetail } from "./data/events";
 import { adaptChallengeMusicTable, type ChallengeMusicTable } from "./data/resource-stage";
 import { adaptRuntimeRules, adaptChallengePointTable, adaptBoostTables, adaptGekisoTimelineTables, GEKISO_TIMELINE_MASTER_TABLES, type RuntimeRules, type LiveChallengePointTable } from "./data/runtime-rules";
+import { adaptMasterCharacterRoster } from "./data/character-rank-scope";
 import { nativeRuleSupports } from "./solver/native-rule-profile";
 import { withNativeRuleEvidence } from "./data/native-rule-evidence";
 
@@ -66,6 +67,8 @@ export interface TeamBuilderData {
   challengePointTable?: LiveChallengePointTable;
   challengeMusicTable?: ChallengeMusicTable;
   gaps: string[];
+  /** Complete source Master box; account completeness is a separate private declaration. */
+  masterCharacterRoster?: import("./data/character-rank-scope").MasterCharacterRosterSource;
 }
 export const objectRow = (value: unknown): DataRow =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as DataRow) : {};
@@ -240,6 +243,7 @@ export function adaptTeamBuilderData(
   return {
     schema: "haneoka-team-builder-data-v1",
     identity: { ...identity },
+    masterCharacterRoster: adaptMasterCharacterRoster(identity, objectRow(documents["runtime-rules"]).masterCharacterRoster),
     members,
     snapshots,
     characters: Object.fromEntries(

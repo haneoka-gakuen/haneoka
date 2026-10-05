@@ -12,6 +12,7 @@ export interface ResourcePlanParameters {
   challengePointCost: number;
 }
 export interface ResourcePlannerPreparationInput {
+  characterRankTotalScope?: import("./data/character-rank-total.ts").CharacterRankTotalScope;
   schema: "haneoka-resource-plan-request-v1";
   data: TeamBuilderData;
   inventory: InventoryV1;

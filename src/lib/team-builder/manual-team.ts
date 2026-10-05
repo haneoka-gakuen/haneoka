@@ -4,6 +4,8 @@ import type {
   ManualTeamEvaluationResult, ManualTeamProgress,
 } from "./contracts.ts";
 import { validateAssignment, validateInventory, type InventoryIssue, type MemberEntry, type SnapshotEntry } from "./inventory.ts";
+import { resolveCharacterRankTotal } from "./data/character-rank-total.ts";
+import { characterRankInventoryIds } from "./data/character-rank-scope.ts";
 import { prepareSong } from "./song-metrics.ts";
 import { unavailableMetric } from "./score.ts";
 import { prepareEvaluationForSearch } from "./solver/evaluation.ts";
@@ -53,7 +55,10 @@ const objectives: Objective[] = ["score", "ss-ratio", "ss-surplus", "event-point
  * Practice is required only by the selected native mode, after selection.
  */
 export function manualTeamChartInputIssues(request: ManualTeamChartRequest): InventoryIssue[] {
-  const issues = validateInventory(request.inventory, request.data).issues;
+  const totalRank = resolveCharacterRankTotal(request.data, request.inventory, request.characterRankTotalScope);
+  const issues = validateInventory(request.inventory, request.data, {
+    accountCharacterIds: characterRankInventoryIds(totalRank),
+  }).issues;
   if (issues.length) return issues;
   const issue = (path: string, code: string) => issues.push({ path, code });
   if (request.schema !== "haneoka-manual-team-request-v1") issue("schema", "unsupported-schema");

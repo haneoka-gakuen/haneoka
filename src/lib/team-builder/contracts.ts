@@ -317,6 +317,8 @@ export interface OptimizationInput extends ReleaseIdentity {
   basis?: EvaluationBasisRequest;
 }
 export interface WorkerPreparationInput {
+  /** Complete Master box and explicit account declaration, pinned to this request. */
+  characterRankTotalScope?: import("./data/character-rank-total").CharacterRankTotalScope;
   /** Explicit confirmed section ranks for GK personal Live; Solo score/SS/PT are unaffected. */
   nativeGekisoRankingScenario?: NativeGekisoRankingScenario;
   /** Optional explicit context; the Worker otherwise produces eligible chart plans. */

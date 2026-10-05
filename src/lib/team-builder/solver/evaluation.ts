@@ -83,6 +83,7 @@ export const nativeGrowthPowerResolver: PowerResolver = {
 };
 
 export interface EvaluationRequest {
+  characterRankTotalScope?: import("../data/character-rank-total.ts").CharacterRankTotalScope;
   nativeGekisoRankingScenario?: NativeGekisoRankingScenario;
   /** Internal explicit native playback provider, carried in the Worker request fingerprint. */
   nativeGekisoPlans?: NativeGekisoPlans;
@@ -119,7 +120,8 @@ export function prepareEvaluation(request: EvaluationRequest): OptimizationInput
       : request.mode === "normal"
         ? { requiredMode: "normal" as const }
         : undefined;
-  const options = inventoryOptions(inventory, data, nativeGrowthPowerResolver, requirements);
+  const options = inventoryOptions(inventory, data, nativeGrowthPowerResolver,
+    requirements, request.characterRankTotalScope);
   if (request.nativeRuntime) {
     if (
       request.nativeRuntime.server !== data.identity.server ||
@@ -360,7 +362,7 @@ export function prepareEvaluationForSearch(request: EvaluationRequest): Prepared
   if (scene && !eventPower) input.evaluation.gaps.push(gap("native-event-chart-required", "selected canonical chart"));
   if (eventPower) input.evaluation.gaps.push(...eventPower.powerGaps);
   const native = createNativeNormalSlotResolver(request.data, request.inventory, input, eventPower,
-    challenge?.value ? new Map([[challenge.value.underlyingSongId, challenge.value]]) : undefined);
+    challenge?.value ? new Map([[challenge.value.underlyingSongId, challenge.value]]) : undefined, request.characterRankTotalScope);
   const score = createNativeNormalScoreResolver(request.data, input);
   input.evaluation.gaps.push(...native.gaps, ...score.gaps);
   const lifeRow = dataRows(request.data.liveTools.liveSettings)

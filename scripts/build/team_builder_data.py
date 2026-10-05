@@ -91,6 +91,9 @@ def build_team_builder_data(data: Any, source_id: str) -> dict[str, Any]:
         "schema": "haneoka-team-builder-source-v1", "server": data.server, "sourceId": source_id,
         "documents": {"cards": members, "support-cards": snapshots,
             "runtime-rules": {"schema": "haneoka-team-runtime-rules-v1", "server": data.server, "sourceId": source_id,
+                "masterCharacterRoster": {"server": data.server, "sourceId": source_id,
+                    "sourceTable": "MasterCharacter", "status": "complete" if "MasterCharacter" in data.tables else "missing",
+                    "rows": exact("MasterCharacter")},
                 "tables": {key: {"sourceTable": table, "status": "ready" if data.rows(table) else "empty" if table in data.tables else "missing", "rows": exact(table)}
                     for key, table in RUNTIME_TABLES.items()}},
             "characters": characters, "bands": bands, "band-items": {"items": band_items}, "songs": songs,
@@ -107,5 +110,5 @@ def build_team_builder_data(data: Any, source_id: str) -> dict[str, Any]:
                 "liveBoostBonuses": "MasterLiveMusicBoostBonus", "challengeBoostBonuses": "MasterChallengeMusicBoostBonus",
                 "expRewards": "MasterLiveMusicExpReward"}.items()},
             "progression": {key: exact(table) for key, table in TABLES.items()}, **skills},
-        "sourceTables": ["MasterMemberCard", "MasterSupportCard", *TABLES.values(), *RUNTIME_TABLES.values()],
+        "sourceTables": ["MasterMemberCard", "MasterSupportCard", "MasterCharacter", *TABLES.values(), *RUNTIME_TABLES.values()],
     }

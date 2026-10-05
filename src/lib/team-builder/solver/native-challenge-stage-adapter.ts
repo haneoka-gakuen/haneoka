@@ -176,6 +176,7 @@ export async function prepareResourcePlanStages(
       // Normal mode consumes the parent's actual chart skill timestamps. GK
       // wrapper mission overrides are deliberately not interpreted as normal skills.
       const prepared = prepareEvaluationForSearch({ data, inventory: request.inventory, songs: [song],
+        characterRankTotalScope: request.characterRankTotalScope,
         mode: "normal", requireGekisoPractice: selection.mode === "gekiso" ? true : undefined,
         objectives: ["score"], skillOrderCriterion: request.skillOrderCriterion,
         constraints: selection.constraints, budget: { maxMilliseconds: Math.max(1, Math.floor(stageRemaining())),
@@ -191,7 +192,7 @@ export async function prepareResourcePlanStages(
       // and supplies its two native base bonuses (both zero). Parent chart,
       // tags and rank stay on the original same-pin data object.
       const musicTypes = context ? new Map([[songId, context]]) : undefined;
-      const slots = createNativeNormalSlotResolver(data, request.inventory, input, payout, musicTypes);
+      const slots = createNativeNormalSlotResolver(data, request.inventory, input, payout, musicTypes, request.characterRankTotalScope);
       const scorer = selection.mode === "gekiso" ? createNativeGekisoResourceScoreResolver(data,input)
         : createNativeNormalScoreResolver(data, input);
       input.evaluation.gaps.push(...payout.powerGaps, ...slots.gaps, ...scorer.gaps);
