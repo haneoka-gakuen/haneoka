@@ -234,8 +234,13 @@ export class TgwCardWorkspace extends LitElement {
     )
       return { label };
     if (kind === 9) {
-      // A present zero-valued row is an unlock; positive cap semantics are reviewed separately.
-      return { label: rawValue === 0 ? this.text("boostConsumptionUnlocked", label) : label };
+      // A zero row unlocks the setting; a positive value is the absolute per-play cap.
+      return {
+        label:
+          rawValue === 0
+            ? this.text("boostConsumptionUnlocked", label)
+            : this.text("boostConsumptionLimit", label, { count: new Intl.NumberFormat(this.locale).format(rawValue) }),
+      };
     }
     const number = new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2 });
     const countKeys: Readonly<Partial<Record<number, string>>> = {

@@ -2398,7 +2398,8 @@
       "bandFormationBonus": "バンド編成数＋{count}",
       "boostAutoRecoveryLimitBonus": "LIVE BOOST自動回復上限＋{count}",
       "eventGachaFreeCountBonus": "イベントガチャ無料回数＋{count}",
-      "durationSeconds": "{count}秒"
+      "durationSeconds": "{count}秒",
+      "boostConsumptionLimit": "1回のLIVE BOOST消費上限：{count}"
     },
     "system": {
       "ongoing": "開催中",

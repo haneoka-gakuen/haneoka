@@ -2398,7 +2398,8 @@
       "bandFormationBonus": "樂隊編隊數量增加{count}",
       "boostAutoRecoveryLimitBonus": "LIVE BOOST自動回復上限增加{count}",
       "eventGachaFreeCountBonus": "活動招募免費次數增加{count}次",
-      "durationSeconds": "{count}秒"
+      "durationSeconds": "{count}秒",
+      "boostConsumptionLimit": "單次 LIVE BOOST 消耗上限：{count}"
     },
     "system": {
       "ongoing": "進行中",

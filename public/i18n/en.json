@@ -2398,7 +2398,8 @@
       "bandFormationBonus": "Band formations +{count}",
       "boostAutoRecoveryLimitBonus": "LIVE BOOST auto-recovery cap +{count}",
       "eventGachaFreeCountBonus": "Free event gacha draws +{count}",
-      "durationSeconds": "{count}s"
+      "durationSeconds": "{count}s",
+      "boostConsumptionLimit": "LIVE BOOST consumption limit per play: {count}"
     },
     "system": {
       "ongoing": "Ongoing",

@@ -2398,7 +2398,8 @@
       "bandFormationBonus": "밴드 편성 수 +{count}",
       "boostAutoRecoveryLimitBonus": "LIVE BOOST 자동 회복 상한 +{count}",
       "eventGachaFreeCountBonus": "이벤트 뽑기 무료 횟수 +{count}회",
-      "durationSeconds": "{count}초"
+      "durationSeconds": "{count}초",
+      "boostConsumptionLimit": "1회 LIVE BOOST 소모량 상한: {count}"
     },
     "system": {
       "ongoing": "진행 중",
