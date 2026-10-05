@@ -1,10 +1,13 @@
 import { practiceRanges, updateInventoryEntries, validateInventory, type InventoryKind, type InventoryV1, type MemberEntry, type SnapshotEntry } from "./inventory";
 import type { TeamBuilderData } from "./data";
+import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./data/character-rank-total";
+import { characterRankInventoryIds } from "./data/character-rank-scope";
 
 /** Maximum legal new-card preset. Only IDs absent from the pre-add inventory
  * and null fields are initialized. Existing cards and supplied values stay intact.
  */
-export function initializeNewCardPractice(before: InventoryV1, added: InventoryV1, data: TeamBuilderData): InventoryV1 {
+export function initializeNewCardPractice(before: InventoryV1, added: InventoryV1, data: TeamBuilderData,
+  scope?: CharacterRankTotalScope): InventoryV1 {
   let next = added;
   for (const kind of ["members", "snapshots"] as const satisfies readonly InventoryKind[]) {
     const owned = new Set(before[kind].map(entry => entry.cardId));
@@ -13,7 +16,8 @@ export function initializeNewCardPractice(before: InventoryV1, added: InventoryV
       next = updateInventoryEntries(next, kind, [entry.instanceId], maximumNewCardPractice(data, kind, entry.cardId, entry));
     }
   }
-  if (!validateInventory(next, data).valid) throw new RangeError("manual-card-default-practice");
+  const ids = scope ? characterRankInventoryIds(resolveCharacterRankTotal(data, next, scope)) : [];
+  if (!validateInventory(next, data, { accountCharacterIds: ids }).valid) throw new RangeError("manual-card-default-practice");
   return next;
 }
 

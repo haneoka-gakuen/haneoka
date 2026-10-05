@@ -54,12 +54,11 @@ const name = (value: string) => {
   return value;
 };
 
-export function createUpgradeProfile(
-  inventory: InventoryV1,
+function profileFromCheckedInventory(
+  inventory: InventoryV2,
   data: TeamBuilderData,
   label: string,
   baseInventoryRevision: number,
-  scope?: CharacterRankTotalScope,
 ): UpgradeProfile {
   if (!revision(baseInventoryRevision)) throw new TypeError("team-workspace-invalid-revision");
   return {
@@ -68,8 +67,35 @@ export function createUpgradeProfile(
     kind: "upgrade-planning",
     identity: pin(data),
     baseInventoryRevision,
-    inventory: checkedInventory(inventory, data, scope),
+    inventory,
   };
+}
+export function createUpgradeProfile(
+  inventory: InventoryV1,
+  data: TeamBuilderData,
+  label: string,
+  baseInventoryRevision: number,
+  scope?: CharacterRankTotalScope,
+): UpgradeProfile {
+  return profileFromCheckedInventory(checkedInventory(inventory, data, scope), data, label, baseInventoryRevision);
+}
+
+/** Copy only the selected existing record; the new profile has no account attestation. */
+export function copyUpgradeProfileToCurrentData(workspace: TeamWorkspaceV1, profileId: string, data: TeamBuilderData): UpgradeProfile {
+  checkTeamWorkspace(workspace, data.identity.server);
+  const profile = workspace.profiles.find(row => row.id === profileId);
+  if (!profile) throw new TypeError("team-workspace-profile-missing");
+  return profileFromCheckedInventory(checkedInventory(profile.inventory, data, undefined, true), data, profile.name, profile.baseInventoryRevision);
+}
+
+/** Canonical workspace lookup keeps recovered training and formation on the same record. */
+export function restoreSavedTeamAsProfile(workspace: TeamWorkspaceV1, teamId: string, data: TeamBuilderData,
+  baseInventoryRevision: number): { inventory: InventoryV2; assignment: TeamAssignment; profile: UpgradeProfile } {
+  checkTeamWorkspace(workspace, data.identity.server);
+  const team = workspace.teams.find(row => row.id === teamId);
+  if (!team) throw new TypeError("team-workspace-team-missing");
+  const restored = restoreSavedTeam(team, data);
+  return { ...restored, profile: profileFromCheckedInventory(restored.inventory, data, team.name, baseInventoryRevision) };
 }
 export function upsertUpgradeProfile(workspace: TeamWorkspaceV1, profile: UpgradeProfile): TeamWorkspaceV1 {
   return checkTeamWorkspace(

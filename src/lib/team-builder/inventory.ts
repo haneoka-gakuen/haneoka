@@ -1,4 +1,6 @@
 import type { ReleaseIdentity, TeamAssignment } from "./contracts";
+import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./data/character-rank-total";
+import { characterRankInventoryIds } from "./data/character-rank-scope";
 import { dataRows, nativeRow, type TeamBuilderData } from "./data";
 import { createUnknownPlayerModifiers, validatePlayerModifiers, type PlayerModifiers } from "./data/player-modifiers";
 import { InventoryUniquenessError, previewInventoryUniqueness } from "./data/inventory-unique";
@@ -124,6 +126,7 @@ export function addInventoryEntries(
   kind: InventoryKind,
   requests: readonly InventoryAddition[],
   data?: TeamBuilderData,
+  scope?: CharacterRankTotalScope,
 ): InventoryV1 {
   if (requests.length > MAX_INVENTORY_ENTRIES) throw new RangeError("inventory-entry-limit");
   const preview = previewInventoryUniqueness(inventory);
@@ -184,7 +187,8 @@ export function addInventoryEntries(
   )
     throw new RangeError("inventory-byte-limit");
   if (data) {
-    const result = validateInventory(next, data);
+    const ids = scope ? characterRankInventoryIds(resolveCharacterRankTotal(data, next, scope)) : [];
+    const result = validateInventory(next, data, { accountCharacterIds: ids });
     if (!result.valid) throw new Error(`invalid-inventory:${result.issues[0]?.path}`);
   }
   return next;

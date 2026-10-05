@@ -111,7 +111,7 @@ import {
   type InventoryStoreState,
 } from "../lib/team-builder/storage";
 import {
-  createUpgradeProfile, upsertUpgradeProfile, updateUpgradeProfile, selectWorkspaceProfile,
+  createUpgradeProfile, copyUpgradeProfileToCurrentData, restoreSavedTeamAsProfile, upsertUpgradeProfile, updateUpgradeProfile, selectWorkspaceProfile,
   getWorkspaceInventory, workspaceProfileCompatible, removeUpgradeProfile, createSavedTeam, upsertSavedTeam,
   restoreSavedTeam, removeSavedTeam, exportTeamWorkspace, importTeamWorkspace,
   type TeamWorkspaceV1, type UpgradeProfile, type SavedTeam,
@@ -823,8 +823,9 @@ export class TeamBuilder extends LitElement {
   private createTheoreticalProfile() {
     if (!this.data || !this.inventory || !this.workspaceDocument || !this.canEdit || !this.canEditWorkspace || this.workspaceDocument.profiles.length >= 32) return;
     try {
-      const inventory = createTheoreticalInventory(this.inventory, this.data);
-      const profile = createUpgradeProfile(inventory, this.data, this.t("theoreticalPlanName", "All cards at maximum training"), this.storeState?.revision ?? 0);
+      const scope = this.characterRankScope;
+      const inventory = createTheoreticalInventory(this.inventory, this.data, scope);
+      const profile = createUpgradeProfile(inventory, this.data, this.t("theoreticalPlanName", "All cards at maximum training"), this.storeState?.revision ?? 0, scope);
       const document = selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id);
       if (this.changeWorkspace(document)) {
         this.rememberActualInventoryView(false);
@@ -837,9 +838,7 @@ export class TeamBuilder extends LitElement {
   private updateProfileSource(profile: UpgradeProfile) {
     if (!this.data || !this.workspaceDocument || !this.canEditWorkspace) return;
     try {
-      const preview = rebaseInventory(profile.inventory, this.data);
-      if (!preview.canApply) throw new Error("profile-rebase-review");
-      const copy = createUpgradeProfile(preview.candidate, this.data, profile.name, profile.baseInventoryRevision);
+      const copy = copyUpgradeProfileToCurrentData(this.workspaceDocument, profile.id, this.data);
       if (this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, copy), copy.id))) {
         this.revokeAccountRankConfirmation();
         this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
@@ -856,9 +855,11 @@ export class TeamBuilder extends LitElement {
   private loadSavedTeam(team: SavedTeam, savedTraining: boolean) {
     if (!this.data || !this.workspaceDocument || !this.canEditWorkspace || !this.canEdit) return;
     try {
-      const restored = restoreSavedTeam(team, this.data, savedTraining ? undefined : this.inventory ?? undefined);
-      if (savedTraining) {
-        const profile = createUpgradeProfile(restored.inventory, this.data, team.name, this.storeState?.revision ?? 0);
+      const restored = savedTraining
+        ? restoreSavedTeamAsProfile(this.workspaceDocument, team.id, this.data, this.storeState?.revision ?? 0)
+        : { ...restoreSavedTeam(team, this.data, this.inventory ?? undefined), profile: null };
+      if (restored.profile) {
+        const profile = restored.profile;
         if (!this.changeWorkspace(selectWorkspaceProfile(upsertUpgradeProfile(this.workspaceDocument, profile), profile.id))) return;
         this.revokeAccountRankConfirmation();
         this.rememberActualInventoryView(false); this.refreshWorkspaceInventory();
@@ -2696,9 +2697,9 @@ export class TeamBuilder extends LitElement {
     try {
       for (const kind of ["members", "snapshots"] as const) {
         const rows = missing.filter((row) => row.kind === kind).map((row) => ({ cardId: row.cardId }));
-        if (rows.length) next = addInventoryEntries(next, kind, rows, this.data ?? undefined);
+        if (rows.length) next = addInventoryEntries(next, kind, rows, this.data ?? undefined, this.characterRankScope);
       }
-      if (this.data) next = initializeManualCardPractice(this.inventory, next, this.data);
+      if (this.data) next = initializeManualCardPractice(this.inventory, next, this.data, this.characterRankScope);
     } catch {
       this.error = this.t("addFailed", "Could not add the selected cards. Check your inventory.");
       return;
