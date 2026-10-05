@@ -71,7 +71,7 @@ export interface PracticalSearchResult {
   method: "multidirection-one-neighbour-round-native-refinement";
   optimality: "heuristic-selected-candidates";
   contextFingerprint: string;
-  status: "complete" | "cancelled" | "budget-limited";
+  status: "complete" | "unavailable" | "cancelled" | "budget-limited";
   plan: { localRounds: 1; screenOrders: 10 | null; finalOrders: 120; finalistLimit: number };
   tasks: PracticalTaskResult[];
   generated: number;
@@ -208,6 +208,45 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
     winners.forEach(value => add(value.assignment, seed.direction.id, value.feature));
   }
   output.generated = prepared.size;
+  if (stopped()) return output;
+  if (!prepared.size) {
+    const characters = new Set(members.map(member => member.characterId)).size;
+    output.status = "unavailable";
+    for (const row of output.tasks) {
+      row.status = "unavailable";
+      row.gaps.push({ code: characters < 5 ? "practical-five-distinct-characters-required" : "practical-no-legal-seed",
+        source: characters < 5 ? "available:" + characters : row.task.key });
+    }
+    return output;
+  }
+  type PreparedCandidate = { assignment: TeamAssignment; origins: Set<string>; byDirection: Map<string, number> };
+  const plans: { row: PracticalTaskResult; finalists: { candidate: PreparedCandidate; value: number }[]; completed: number }[] = [];
+  const evaluateNext = async (plan: typeof plans[number]) => {
+    const { row, finalists } = plan, finalist = finalists[plan.completed]!;
+    const evaluated = await evaluators.full(finalist.candidate.assignment, row.task, controls);
+    if (evaluated.contextFingerprint !== request.contextFingerprint || evaluated.orders !== 120 ||
+      evaluated.candidate.songKey !== row.task.songKey || key(evaluated.candidate.assignment) !== key(finalist.candidate.assignment))
+      throw new RangeError("practical-native-context");
+    if (!evaluated.complete && stopped()) return;
+    plan.completed++;
+    if (!evaluated.complete) row.gaps.push({ code: "practical-native-incomplete", source: row.task.key });
+    else {
+      const candidate = evaluated.candidate, metric = candidate.metrics[row.task.objective], floors = candidateMeetsBonusFloors(candidate, request.constraints);
+      row.gaps.push(...metric.gaps, ...floors.gaps); output.fullyEvaluated++;
+      if (metric.value !== null && Number.isFinite(metric.value) && metric.status !== "unavailable" && !metric.gaps.length && floors.eligible) {
+        const completed = structuredClone(candidate); row.candidates.push(completed);
+        if (finalist.candidate.origins.has("current")) row.baseline = completed;
+      }
+    }
+    row.candidates.sort((a, b) => b.metrics[row.task.objective].value! - a.metrics[row.task.objective].value! || key(a.assignment).localeCompare(key(b.assignment), "en"));
+    if (plan.completed === finalists.length) {
+      row.status = row.candidates.length ? "complete" : "unavailable";
+      if (!row.candidates.length && !row.gaps.length)
+        row.gaps.push({ code: "practical-no-eligible-native-candidate", source: row.task.key });
+    }
+    controls.progress?.({ phase: "final", taskKey: row.task.key, completed: plan.completed, total: finalists.length });
+    await yieldWork();
+  };
   for (const row of output.tasks) {
     if (stopped()) return output;
     const screened: { candidate: typeof prepared extends Map<string, infer T> ? T : never; value: number }[] = [];
@@ -238,26 +277,22 @@ export async function refinePracticalCandidates(input: PracticalSearchInput, eva
       choose(representatives[0]);
     }
     screened.forEach(choose);
-    let completedFinalists = 0;
-    for (const finalist of finalists) {
-      if (stopped()) return output;
-      const evaluated = await evaluators.full(finalist.candidate.assignment, row.task, controls);
-      if (evaluated.contextFingerprint !== request.contextFingerprint || evaluated.orders !== 120 ||
-        evaluated.candidate.songKey !== row.task.songKey || key(evaluated.candidate.assignment) !== key(finalist.candidate.assignment))
-        throw new RangeError("practical-native-context");
-      completedFinalists++;
-      if (!evaluated.complete) { if (stopped()) return output; row.gaps.push({ code: "practical-native-incomplete", source: row.task.key });
-        controls.progress?.({ phase: "final", taskKey: row.task.key, completed: completedFinalists, total: finalists.length }); continue; }
-      const candidate = evaluated.candidate, metric = candidate.metrics[row.task.objective], floors = candidateMeetsBonusFloors(candidate, request.constraints);
-      row.gaps.push(...metric.gaps, ...floors.gaps); output.fullyEvaluated++;
-      if (metric.value !== null && Number.isFinite(metric.value) && metric.status !== "unavailable" && !metric.gaps.length && floors.eligible) {
-        const completed = structuredClone(candidate); row.candidates.push(completed);
-        if (finalist.candidate.origins.has("current")) row.baseline = completed;
-      }
-      controls.progress?.({ phase: "final", taskKey: row.task.key, completed: completedFinalists, total: finalists.length }); await yieldWork();
+    const plan = { row, finalists, completed: 0 };
+    plans.push(plan);
+    // Establish one complete native comparison per task before refining the
+    // next formation. A limited run retains real candidates and pending tasks.
+    if (finalists.length) await evaluateNext(plan);
+    else {
+      row.status = "unavailable";
+      row.gaps.push({ code: "practical-no-eligible-native-candidate", source: row.task.key });
     }
-    row.candidates.sort((a, b) => b.metrics[row.task.objective].value! - a.metrics[row.task.objective].value! || key(a.assignment).localeCompare(key(b.assignment), "en"));
-    row.status = row.candidates.length ? "complete" : "unavailable";
   }
-  stopped(); return output;
+  for (let round = 1; round < limit; round++) for (const plan of plans) {
+    if (plan.completed >= plan.finalists.length) continue;
+    if (stopped()) return output;
+    await evaluateNext(plan);
+  }
+  stopped();
+  if (output.status === "complete" && !output.tasks.some(row => row.candidates.length)) output.status = "unavailable";
+  return output;
 }

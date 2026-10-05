@@ -37,12 +37,25 @@ export interface NativePracticalResult extends PracticalSearchResult {
   releaseId: string;
   sourceId: string;
   elapsedMs: number;
+  preparation?: {
+    elapsedMs: number;
+    maxMilliseconds: number;
+    concurrency: number;
+    requestedCharts: number;
+    loadedCharts: number;
+    failedCharts: number;
+    notLoadedCharts: number;
+    timedOut: boolean;
+  };
+  compute?: { elapsedMs: number; budgetMilliseconds: number; attemptedEvaluations: number };
 }
 export interface NativePracticalControls extends Omit<PracticalControls, "progress" | "expired"> {
   now?: () => number;
   progress?: (progress: NativePracticalProgress) => void;
 }
 const objectives: Objective[] = ["score", "ss-ratio", "ss-surplus", "event-points", "event-items", "base-score"];
+const preparationMilliseconds = 30000;
+const loadingConcurrency = 4;
 
 /** Feature priorities choose a bounded heuristic pool. Each published result
  * is evaluated by the native factory over its full member-order domain. */
@@ -60,10 +73,13 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
     throw new RangeError("native-practical-domain");
   const validation = validateInventory(request.inventory, request.data);
   if (!validation.valid) throw new RangeError(`native-practical-inventory:${validation.issues[0]?.code}`);
-  const cancelled = () => Boolean(controls.cancelled?.()), expired = () => elapsed() >= request.budget.maxMilliseconds;
+  let computeStarted: number | undefined;
+  const cancelled = () => Boolean(controls.cancelled?.());
+  const preparationExpired = () => elapsed() >= preparationMilliseconds;
+  const computeElapsed = () => computeStarted === undefined ? 0 : Math.max(0, now() - computeStarted);
+  const expired = () => computeElapsed() >= request.budget.maxMilliseconds;
   let evaluated = 0;
   const progress = (value: Omit<NativePracticalProgress, "elapsedMs">) => controls.progress?.({ ...value, elapsedMs: elapsed() });
-  progress({ phase: "loading", completed: 0, total: request.selections.length });
   const charts: { key: string; chart: NativePracticalChart; parent: number; song?: SongOption; gaps: EvidenceGap[] }[] = [];
   for (const chart of request.selections) {
     let parent = "songId" in chart ? chart.songId : 0;
@@ -86,12 +102,19 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
     charts.push({ key, chart, parent, gaps });
   }
   if (new Set(charts.map(chart => chart.key)).size !== charts.length) throw new RangeError("native-practical-duplicate-chart");
+  const eligibleCharts = charts.filter(chart =>
+    !request.constraints.excludedSongKeys.includes(chart.key) &&
+    (!request.constraints.lockedSongKey || request.constraints.lockedSongKey === chart.key));
+  if (!eligibleCharts.length) throw new RangeError("native-practical-no-eligible-task");
+  progress({ phase: "loading", completed: 0, total: eligibleCharts.length });
   const loading = new AbortController();
-  const timer = setTimeout(() => loading.abort(), Math.max(1, request.budget.maxMilliseconds - elapsed()));
+  const timer = setTimeout(() => loading.abort(), Math.max(1, preparationMilliseconds - elapsed()));
   const cancellation = setInterval(() => { if (cancelled()) loading.abort(); }, 100);
-  try {
-    for (const [index, chart] of charts.entries()) {
-      if (cancelled() || expired()) break;
+  let nextChart = 0, completedCharts = 0;
+  const loadNext = async () => {
+    while (!cancelled() && !preparationExpired() && !loading.signal.aborted) {
+      const chart = eligibleCharts[nextChart++];
+      if (!chart) return;
       if (!chart.gaps.length) {
         try {
           [chart.song] = await loadSongOptions(request.data, [{ songId: chart.parent, difficulty: chart.chart.difficulty }], loading.signal,
@@ -108,12 +131,29 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
               ({ ...range, mission: context.value!.missionTypes[position]! }));
             else chart.gaps.push(...context.gaps);
           }
-        } catch { chart.gaps.push({ code: "native-practical-chart-load-unresolved", source: chart.key }); }
+        } catch (error) {
+          chart.gaps.push({ code: "native-practical-chart-load-unresolved", source: chart.key });
+          if (error instanceof Error)
+            chart.gaps.push({ code: error.message, source: chart.key });
+        }
       }
-      progress({ phase: "loading", completed: index + 1, total: charts.length });
+      progress({ phase: "loading", completed: ++completedCharts, total: eligibleCharts.length });
     }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(loadingConcurrency, eligibleCharts.length) }, loadNext));
   } finally { clearTimeout(timer); clearInterval(cancellation); }
+  const preparationTimedOut = preparationExpired();
+  for (const chart of eligibleCharts)
+    if (!chart.song && !chart.gaps.length)
+      chart.gaps.push({ code: cancelled() ? "native-practical-preparation-cancelled"
+        : "native-practical-preparation-time-limit", source: chart.key });
   const options = inventoryOptions(request.inventory, request.data, nativeGrowthPowerResolver, { requiredMode: "normal" });
+  const availableMembers = options.members.filter(member =>
+    !request.constraints.excludedMemberIds.includes(member.instanceId));
+  const formationGaps: EvidenceGap[] = new Set(availableMembers.map(member => member.characterId)).size < 5
+    ? [...options.gaps, { code: "native-practical-five-usable-characters-required", source: "inventory.members" }]
+    : [];
   if (!nativeSnapshotEquipRuleKnown(request.data.identity)) options.snapshots.forEach(photo => { delete photo.allowedCharacterIds; });
   const directions = createNativePracticalFeatureDirections(request.data, request.inventory,
     options.members, options.snapshots, request.eventScene);
@@ -134,6 +174,8 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
     metrics: Object.fromEntries(objectives.map(goal => [goal, { ...unavailableMetric("native-practical-task-unavailable", task.key),
       gaps: [...gaps] }])) as Candidate["metrics"], vector: [NaN],
   });
+  const preparationElapsedMs = elapsed();
+  computeStarted = now();
   const result = await refinePracticalCandidates({ contextFingerprint, ...options, constraints: request.constraints,
     tasks, directions, baseline: request.baseline, finalistLimit: request.finalistLimit }, {
     async priority(assignment, task) {
@@ -184,9 +226,19 @@ export async function prepareNativePracticalSearch(input: NativePracticalPrepara
   // incomplete-cell marker, without assigning them a zero feature score.
   for (const row of result.tasks) {
     const chart = byChart.get(row.task.songKey)!;
-    row.gaps.push(...chart.gaps, ...(taskGaps.get(row.task.key) ?? []));
+    row.gaps.push(...chart.gaps, ...formationGaps, ...(taskGaps.get(row.task.key) ?? []));
     row.gaps = [...new Map(row.gaps.map(gap => [`${gap.code}:${gap.source}`, gap])).values()];
   }
+  if (preparationTimedOut && eligibleCharts.some(chart => !chart.song) && result.status === "complete")
+    result.status = "budget-limited";
   return { ...result, schema: "haneoka-native-practical-result-v1", server: request.data.identity.server,
-    releaseId: request.data.identity.releaseId, sourceId: request.data.identity.sourceId!, elapsedMs: elapsed() };
+    releaseId: request.data.identity.releaseId, sourceId: request.data.identity.sourceId!, elapsedMs: elapsed(),
+    preparation: { elapsedMs: preparationElapsedMs, maxMilliseconds: preparationMilliseconds,
+      concurrency: loadingConcurrency, requestedCharts: eligibleCharts.length,
+      loadedCharts: eligibleCharts.filter(chart => chart.song).length,
+      failedCharts: eligibleCharts.filter(chart => !chart.song && chart.gaps.some(gap =>
+        gap.code !== "native-practical-preparation-time-limit" && gap.code !== "native-practical-preparation-cancelled")).length,
+      notLoadedCharts: eligibleCharts.filter(chart => !chart.song).length, timedOut: preparationTimedOut },
+    compute: { elapsedMs: computeElapsed(), budgetMilliseconds: request.budget.maxMilliseconds,
+      attemptedEvaluations: evaluated } };
 }

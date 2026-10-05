@@ -48,6 +48,7 @@ import type {
   WorkerPreparationInput,
   EvaluationBasisRequest,
   MetricValue,
+  EvidenceGap,
   SearchResumeCheckpoint,
   ManualTeamEvaluationResult,
   ManualTeamProgress,
@@ -2345,6 +2346,7 @@ export class TeamBuilder extends LitElement {
       ${this.running || !ready ? html`<p id="team-builder-start-hint" class="team-builder__hint team-builder__start-hint" role="status">
         ${this.running ? this.resourceActive ? this.resourceProgressLabel : this.searchProgressLabel : !ready ? resource ? this.resourceUnavailableHint : this.searchEffort === "practical" ? this.practicalHint : this.optimizationHint : nothing}
       </p>` : nothing}
+      ${!resource && this.searchEffort === "practical" && !this.running && !ready ? this.renderPracticalInputActions(this.practicalInputGaps) : nothing}
     </div>`;
   }
   private text(value: unknown) {
@@ -4873,7 +4875,7 @@ export class TeamBuilder extends LitElement {
         ${this.searchEffort === "exact" ? this.check(this.t("exactAutoContinue", "Continue automatically until the complete search finishes"), this.exactAutoContinue, value => { this.cancelSearch(); this.exactAutoContinue = value; }) : nothing}
         <div class="team-builder__fields">
           ${this.numericField(
-            this.searchEffort === "exact" && this.exactAutoContinue ? this.t("exactSliceBudget", "Time per search step (seconds)") : this.t("budget", "Search budget (seconds)"),
+            this.searchEffort === "exact" && this.exactAutoContinue ? this.t("exactSliceBudget", "Time per search step (seconds)") : this.searchEffort === "practical" ? this.t("practicalComputeBudget", "Calculation budget (seconds)") : this.t("budget", "Search budget (seconds)"),
             this.budgetSeconds,
             (value) => {
               this.budgetSeconds = value ?? 5;
@@ -5636,13 +5638,67 @@ export class TeamBuilder extends LitElement {
   private practicalContextMatches(context: { data: TeamBuilderData; inventory: InventoryV1; owner: string | null | undefined; signature: string }) {
     return context.data === this.data && context.inventory === this.inventory && context.owner === this.currentOwner && context.signature === this.practicalSignature && this.sourceReady;
   }
+  private get practicalInputGaps(): EvidenceGap[] {
+    if (!this.data || !this.inventory) return [];
+    const gaps: EvidenceGap[] = [];
+    if (this.playerModifiers.characterTotalRank === null)
+      gaps.push({ code: "unknown-character-total-rank", source: "playerModifiers.characterTotalRank" });
+    const vipBonuses = this.data.runtimeRules?.tables.vipRankBonuses;
+    if (vipBonuses?.status === "ready" && vipBonuses.rows.length && this.playerModifiers.vipRank === null)
+      gaps.push({ code: "unknown-vip-rank", source: "playerModifiers.vipRank" });
+    const excluded = new Set(this.constraints.excludedMemberIds);
+    const eligible = this.inventory.members.filter(entry => !entry.excluded && !excluded.has(entry.instanceId));
+    const unknown = eligible.filter(entry => [entry.level, entry.training, entry.awakening, entry.liveSkillLevel].some(value => value === null));
+    const unknownIds = new Set(unknown.map(entry => entry.instanceId));
+    const usable = eligible.filter(entry => !unknownIds.has(entry.instanceId));
+    if (new Set(usable.map(entry => this.data!.members[String(entry.cardId)]?.characterId).filter(Boolean)).size < 5)
+      gaps.push(...unknown.map(entry => ({ code: "unknown-member-practice", source: entry.instanceId })));
+    return gaps;
+  }
+  private practicalGapLabel(code: string, source = "") {
+    if (code === "unknown-vip-rank") return this.t("practicalTGWRequired", "Set your TGW CARD level in Growth.");
+    if (code === "unknown-character-total-rank") return this.t("practicalRanksRequired", "Complete your account’s character ranks in Growth to determine the total.");
+    if (code === "unknown-member-practice" || code === "member-growth-row-missing" || code === "unresolved-member-power")
+      return this.t("practicalMemberPracticeRequired", "Complete card levels, training, awakening and LIVE skills for at least five different characters.");
+    if (code === "native-practical-five-usable-characters-required") return this.t("fiveCharactersRequired", "Add cards for at least five different characters.");
+    if (code === "native-gekiso-luck-maximum-law-unresolved") return this.t("maximumLuckPending", "Maximum LUCK score is unavailable. Use average scoring for these charts.");
+    if (code === "unknown-or-missing-band-upgrade") return this.t("practicalBandItemsRequired", "Set the levels of the affected band items in Growth.");
+    if (source.startsWith("character:")) return this.t("practicalCharacterRankRequired", "Set the affected character’s rank in Growth.");
+    if (code.includes("chart")) return this.t("practicalChartDataRequired", "A selected chart could not be loaded or verified against the current game data.");
+    return this.t("unavailable", "Required data or formula is unavailable");
+  }
+  private renderPracticalInputActions(gaps: EvidenceGap[]) {
+    const cards = [...new Set(gaps.filter(gap => this.inventory?.members.some(entry => entry.instanceId === gap.source)).map(gap => gap.source))];
+    return html`<div class="team-builder__actions">
+      ${gaps.some(gap => gap.source.startsWith("playerModifiers.") || gap.source.startsWith("character:") || gap.source.startsWith("band-item:")) ? html`
+        <button class="button button--text" @click=${() => {
+          const states = { ...this.disclosureStates };
+          for (const gap of gaps) {
+            const id = gap.source.split(":")[1]?.split("/")[0];
+            const row = gap.source.startsWith("character:") ? this.data?.characters[id] : gap.source.startsWith("band-item:") ? this.data?.bandItems[id] : undefined;
+            if (row?.bandId) states[`growth-band-${row.bandId}`] = true;
+          }
+          this.disclosureStates = states; this.openWorkspace("growth");
+        }}>${this.t("inventoryGrowthTab", "Growth")}</button>` : nothing}
+      ${cards.map(id => { const entry = this.inventory!.members.find(entry => entry.instanceId === id)!; const card = this.data?.members[String(entry.cardId)];
+        return html`<button class="button button--text" @click=${() => { this.openWorkspace("cards"); this.openOwnedCard(id, "members"); }}>${this.text(card?.name) || this.t("members", "Members")}</button>`; })}
+    </div>`;
+  }
+  private qualifiedPracticalCandidates(row: PracticalTaskResult) {
+    return row.candidates.filter(candidate => {
+      const metric = candidate.metrics[row.task.objective];
+      return candidate.songKey === row.task.songKey && metric && metric.status !== "unavailable" &&
+        typeof metric.value === "number" && Number.isFinite(metric.value) && metric.gaps.length === 0;
+    }).sort((a, b) => b.metrics[row.task.objective].value! - a.metrics[row.task.objective].value!);
+  }
   private get canPractical() {
-    return this.canOptimize && (!this.practicalBaselineId || !!this.practicalBaselineAssignment) && this.practicalModes.length > 0 && this.constraints.justRate === 0 &&
+    return this.canOptimize && !this.practicalInputGaps.length && (!this.practicalBaselineId || !!this.practicalBaselineAssignment) && this.practicalModes.length > 0 && this.constraints.justRate === 0 &&
       this.chartSelections.length * this.practicalModes.length * this.objectives.length <= 1000 &&
       this.practicalModes.every(mode => this.objectives.every(goal => this.objectiveCapability(goal, mode)?.bases.includes(this.metricBasis)));
   }
   private get practicalHint() {
     if (!this.canOptimize) return this.optimizationHint;
+    if (this.practicalInputGaps.length) return [...new Set(this.practicalInputGaps.map(gap => this.practicalGapLabel(gap.code, gap.source)))].join(" ");
     if (this.practicalBaselineId && !this.practicalBaselineAssignment) return this.t("baselineMismatch", "Choose a baseline with usable cards that matches the fixed requirements.");
     if (this.chartSelections.length * this.practicalModes.length * this.objectives.length > 1000) return this.t("practicalTaskLimit", "Narrow the selection to 1,000 mode, chart and goal combinations.");
     return this.t("practicalModeUnavailable", "Check which goals are available in the selected modes.");
@@ -5775,26 +5831,46 @@ export class TeamBuilder extends LitElement {
     const completed = this.practicalCompleted;
     if (!completed || !this.practicalContextMatches(completed)) return nothing;
     const { result, request } = completed;
+    const evaluated = result.fullyEvaluated > 0 ? result.tasks.map(row => ({ row, candidates: this.qualifiedPracticalCandidates(row) })).filter(row => row.candidates.length) : [];
+    const evaluatedKeys = new Set(evaluated.map(({ row }) => row.task.key));
+    const unavailable = result.tasks.filter(row => !evaluatedKeys.has(row.task.key));
+    const gaps = [...new Map(result.tasks.flatMap(row => [...row.gaps, ...row.candidates.flatMap(candidate => candidate.metrics[row.task.objective]?.gaps ?? [])]).map(gap => [`${gap.code}:${gap.source}`, gap])).values()];
+    const gapGroups = [...new Set(gaps.map(gap => this.practicalGapLabel(gap.code, gap.source)))];
+    const complete = result.status === "complete" && evaluated.length > 0 && !unavailable.length && evaluated.every(({ row }) => row.status === "complete");
+    const status = complete ? this.t("practicalComplete", "Selected comparisons evaluated")
+      : result.status === "cancelled" || result.status === "budget-limited" ? this.t(result.status, result.status)
+      : evaluated.length ? this.t("practicalPartial", "Some comparisons could not be evaluated")
+      : this.t("practicalNoEvaluation", "No recommendation could be evaluated. Review the required inputs and data below.");
     return html`<section class="stack">
       <div class="team-builder__section-header">${renderDetailSectionHeading(this.t("practicalSearch", "Practical recommendation"), "stats", { level: 2 })}
         ${iconButton({ icon: "download", label: this.t("exportResult", "Export result"), onClick: () => this.exportPracticalResult() })}</div>
-      <p class="team-builder__hint">${this.t("heuristicRecommendation", "Approximate recommendation from evaluated teams.")}</p>
-      <p class="team-builder__hint">${this.criterionLabel(request.skillOrderCriterion ?? "nominal-mean")}</p>
-      ${this.renderPracticalComparison()}
-      <p role="status">${result.status === "complete" ? this.t("practicalComplete", "Selected comparisons evaluated") : this.t(result.status, result.status)} · ${this.t("practicalEvaluated", "{count} complete native evaluations", { count: result.fullyEvaluated })}</p>
+      <p role="status">${status} · ${this.t("practicalEvaluated", "{count} complete native evaluations", { count: result.fullyEvaluated })}</p>
+      <p class="team-builder__hint">${[
+        this.t("practicalScoredComparisons", "Scored comparisons: {done} / {total}", { done: evaluated.length, total: result.tasks.length }),
+        ...(result.preparation ? [this.t("practicalPreparationSummary", "Loaded {loaded} / {total} charts in {seconds}s", { loaded: result.preparation.loadedCharts, total: result.preparation.requestedCharts, seconds: (result.preparation.elapsedMs / 1000).toLocaleString(this.locale, { maximumFractionDigits: 1 }) })] : []),
+        ...(result.compute ? [this.t("practicalComputeSummary", "Calculation: {seconds}s / {budget}s", { seconds: (result.compute.elapsedMs / 1000).toLocaleString(this.locale, { maximumFractionDigits: 1 }), budget: result.compute.budgetMilliseconds / 1000 })] : []),
+      ].join(" · ")}</p>
+      ${evaluated.length ? html`<p class="team-builder__hint">${this.t("heuristicRecommendation", "Approximate recommendation from evaluated teams.")} · ${this.criterionLabel(request.skillOrderCriterion ?? "nominal-mean")}</p>${this.renderPracticalComparison()}` : nothing}
       ${request.modes.map(mode => request.objectives.map(objective => {
-        const rows = result.tasks.filter(row => row.task.mode === mode && row.task.objective === objective).sort((a,b) => (b.candidates[0]?.metrics[objective].value ?? -Infinity) - (a.candidates[0]?.metrics[objective].value ?? -Infinity));
-        return html`<section class="stack"><h3>${this.t(mode, mode)} · ${this.practicalMetricLabel(mode, objective, rows.find(row => row.candidates.length)?.candidates[0]?.metrics[objective])}</h3>
-          ${rows.map((row, index) => { const key = `practical-${row.task.key}`, expanded = this.disclosureStates[key] ?? index === 0;
-            return this.disclosure(key, html`${this.resultSongIdentity(row.task.songKey)}<small class="team-builder__hint">${row.status === "complete" ? this.t("practicalChartComplete", "Chart comparison complete") : row.status === "unavailable" ? this.t("goalUnavailable", "Unavailable") : this.t("practicalChartPending", "Chart comparison unfinished")}</small>`, expanded ? html`
-              ${row.gaps.some(gap => gap.code === "native-gekiso-luck-maximum-law-unresolved") ? html`<p>${this.t("maximumLuckPending", "Maximum LUCK score is unavailable. Use average scoring for these charts.")}</p>` : nothing}
+        const rows = evaluated.filter(({ row }) => row.task.mode === mode && row.task.objective === objective)
+          .sort((a,b) => b.candidates[0]!.metrics[objective].value! - a.candidates[0]!.metrics[objective].value!);
+        if (!rows.length) return nothing;
+        return html`<section class="stack"><h3>${this.t(mode, mode)} · ${this.practicalMetricLabel(mode, objective, rows[0]!.candidates[0]!.metrics[objective])}</h3>
+          ${rows.map(({ row, candidates }, index) => { const key = `practical-${row.task.key}`, expanded = this.disclosureStates[key] ?? index === 0;
+            return this.disclosure(key, html`${this.resultSongIdentity(row.task.songKey)}<small class="team-builder__hint">${row.status === "complete" ? this.t("practicalChartComplete", "Chart comparison complete") : this.t("practicalChartPending", "Chart comparison unfinished")}</small>`, expanded ? html`
               ${request.baseline && !row.baseline ? html`<p class="team-builder__hint">${this.t("baselineUnavailable", "The baseline could not be evaluated for this chart and goal.")}</p>` : nothing}
-              ${row.candidates.length ? row.candidates.slice(0, 3).map((candidate, index) => this.renderPracticalCandidate(row, candidate, `${key}-${index}`)) : html`<p>${this.t("noRankedCandidates", "No candidates available yet")}</p>`}
-              ${row.candidates.length > 3 ? this.disclosure(`${key}-others`, html`${this.t("otherFormations", "Other formations")}`, this.disclosureStates[`${key}-others`] ? row.candidates.slice(3).map((candidate,i) => this.renderPracticalCandidate(row, candidate, `${key}-other-${i}`)) : nothing, false) : nothing}
+              ${candidates.slice(0, 3).map((candidate, index) => this.renderPracticalCandidate(row, candidate, `${key}-${index}`))}
+              ${candidates.length > 3 ? this.disclosure(`${key}-others`, html`${this.t("otherFormations", "Other formations")}`, this.disclosureStates[`${key}-others`] ? candidates.slice(3).map((candidate,i) => this.renderPracticalCandidate(row, candidate, `${key}-other-${i}`)) : nothing, false) : nothing}
             ` : nothing, index === 0, "team-builder__chart-results");
           })}
         </section>`;
       }))}
+      ${unavailable.length || gaps.length ? this.disclosure("practical-unavailable", html`${this.t("practicalUnavailableComparisons", "Comparisons requiring attention")} · ${unavailable.length}`, html`
+        <ul>${gapGroups.map(label => html`<li>${label}</li>`)}</ul>
+        ${this.renderPracticalInputActions(gaps)}
+        ${!gaps.length ? html`<p>${this.t("practicalChartPending", "Chart comparison unfinished")}</p>` : nothing}
+        ${this.disclosure("practical-gap-details", html`${this.t("practicalDiagnosticDetails", "Data details")}`, html`<ul>${gaps.map(gap => html`<li><code>${gap.code}</code> · ${gap.source}</li>`)}</ul>`, false)}
+      `, !evaluated.length) : nothing}
     </section>`;
   }
   private async exportCandidateImage(candidate: Candidate, source: "search" | "manual" | "practical" = "search") {
