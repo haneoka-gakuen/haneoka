@@ -52,7 +52,15 @@ import { storyCastMedia } from "./ui/story-media";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { dialogueRow } from "./ui/dialogue-row";
 import { characterPair } from "./ui/character-pair";
-import { entityHref, isReleaseServer, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
+import {
+  entityHref,
+  isReleaseServer,
+  isStoryMode,
+  legacyCollectionRedirectTarget,
+  parseEntitySelection,
+  parseResourceRoute,
+  returnStateFromLocation,
+} from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import type { Locale } from "@haneoka/i18n";
@@ -134,6 +142,8 @@ export class StoryWorkspace extends LitElement {
     detailLoading: { state: true },
     detailError: { state: true },
     detailMode: { state: true },
+    storyCommentsReady: { state: true },
+    storyCommentsFailed: { state: true },
     limit: { state: true },
   };
   declare locale: string;
@@ -160,6 +170,10 @@ export class StoryWorkspace extends LitElement {
   declare detailLoading: boolean;
   declare detailError: string;
   declare detailMode: "text" | "play";
+  declare private storyCommentsReady: boolean;
+  declare private storyCommentsFailed: boolean;
+  private storyCommentsImport?: Promise<void>;
+  private storyCommentsTextChoice = false;
   declare limit: number;
   private detailRequests = new RequestScope();
   private catalogRequests = new RequestScope();
@@ -172,6 +186,12 @@ export class StoryWorkspace extends LitElement {
   private releaseLocation?: () => void;
   private initializationTimer?: number;
   private restoreLocation = () => {
+    if (this.storyCommentFocus()) {
+      this.storyCommentsTextChoice = true;
+      this.detailMode = "text";
+      this.stopStoryPlayback();
+    }
+    this.requestUpdate();
     const params = new URLSearchParams(location.search);
     this.view = collectionView(params.get("view"));
     this.facets = Object.fromEntries(
@@ -241,6 +261,8 @@ export class StoryWorkspace extends LitElement {
     this.detailCard = null;
     this.detailLoading = false;
     this.detailMode = "text";
+    this.storyCommentsReady = false;
+    this.storyCommentsFailed = false;
     this.detailError = "";
     this.limit = 120;
   }
@@ -275,6 +297,110 @@ export class StoryWorkspace extends LitElement {
   }
   private dataServer(): string {
     return this.pageServer || currentReleaseServer();
+  }
+  private storyCommentFocus(): string {
+    const url = navigationDocumentUrl();
+    const query = url.searchParams.get("commentId")?.trim();
+    if (query) return query;
+    const match = /^#comment-(.+)$/u.exec(url.hash);
+    try {
+      return match ? decodeURIComponent(match[1]!) : "";
+    } catch {
+      return "";
+    }
+  }
+  private storyAutoPlayRequested(): boolean {
+    return (
+      !this.storyCommentsTextChoice &&
+      !this.storyCommentFocus() &&
+      navigationDocumentUrl().searchParams.get("playback") === "play"
+    );
+  }
+  private storyCommentsTarget(episode: JsonRecord) {
+    const server = this.dataServer(),
+      id = episode.advId;
+    if (
+      this.origin !== "release" ||
+      !["jp", "intl"].includes(server) ||
+      episode.sourceTable !== "MasterAdv" ||
+      typeof id !== "number" ||
+      !Number.isSafeInteger(id) ||
+      id <= 0
+    )
+      return undefined;
+    return { id: String(id), server };
+  }
+  private storyCommentsRouteAllowed(): boolean {
+    const view = this.ownerDocument.defaultView;
+    if (!view || view.top !== view) return false;
+    const logical = this.closest<HTMLElement>("[data-shell]")?.dataset.route;
+    if (
+      logical !== "/catalog/stories" &&
+      !(logical?.startsWith("/catalog/stories/") && isStoryMode(logical.slice("/catalog/stories/".length)))
+    )
+      return false;
+    const url = navigationDocumentUrl();
+    const route = parseResourceRoute(url.pathname);
+    if (route?.kind === "stories" && ["jp", "intl"].includes(route.server)) return true;
+    const legacy = parseEntitySelection(url.pathname, url.search);
+    if (legacy?.source === "legacy" && legacy.route.kind === "stories" && ["jp", "intl"].includes(legacy.route.server))
+      return true;
+    const redirected = legacyCollectionRedirectTarget(url.pathname, url.search);
+    const archive = redirected ? parseResourceRoute(new URL(redirected, url).pathname) : undefined;
+    return archive?.kind === "stories" && ["jp", "intl"].includes(archive.server);
+  }
+  private canActivateStoryComments(): boolean {
+    return (
+      this.isConnected &&
+      this.storyCommentsRouteAllowed() &&
+      this.detailMode === "text" &&
+      !this.detailLoading &&
+      !this.detailError &&
+      Boolean(this.detailEpisode && this.storyCommentsTarget(this.detailEpisode)) &&
+      !this.storyAutoPlayRequested()
+    );
+  }
+  private async ensureStoryComments(): Promise<void> {
+    if (this.storyCommentsReady || this.storyCommentsFailed || !this.canActivateStoryComments()) return;
+    if (this.storyCommentsImport) return this.storyCommentsImport;
+    this.storyCommentsImport = (async () => {
+      try {
+        await Promise.all([import("./entity-comments"), import("./views/entity-comments-view")]);
+        if (this.isConnected) this.storyCommentsReady = true;
+      } catch {
+        if (this.isConnected) this.storyCommentsFailed = true;
+      } finally {
+        this.storyCommentsImport = undefined;
+      }
+    })();
+    return this.storyCommentsImport;
+  }
+  private renderStoryComments(episode: JsonRecord) {
+    if (!this.canActivateStoryComments()) return nothing;
+    const target = this.storyCommentsTarget(episode)!;
+    return html`
+      <div class="detail-layout__comments" id="entity-comments">
+        ${
+          this.storyCommentsReady
+            ? html`
+                <entity-comments
+                  entity-type="stories"
+                  entity-id=${target.id}
+                  server=${target.server}
+                  locale=${this.locale}
+                  comment-id=${this.storyCommentFocus()}
+                  target-title=${this.episodeTitle(episode)}
+                ></entity-comments>
+              `
+            : this.storyCommentsFailed
+              ? errorState(uiText(this.locale, "unavailable"), uiText(this.locale, "retry"), () => {
+                  this.storyCommentsFailed = false;
+                  void this.ensureStoryComments();
+                })
+              : loadingState(uiText(this.locale, "loading"))
+        }
+      </div>
+    `;
   }
   private onLocale = () => {
     const locale = preferredLocale(this.locale);
@@ -337,6 +463,7 @@ export class StoryWorkspace extends LitElement {
     super.disconnectedCallback();
   }
   updated() {
+    if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
     if (this.entityId && this.detailEpisode) {
       const title = this.episodeTitleValue(this.detailEpisode);
@@ -408,7 +535,7 @@ export class StoryWorkspace extends LitElement {
       await this.updateComplete;
       if (!active()) return;
       this.dataset.entityReady = "true";
-      if (new URLSearchParams(location.search).get("playback") === "play") await this.openVegaPlayer();
+      if (this.storyAutoPlayRequested()) await this.openVegaPlayer();
       return;
     }
     this.phase = "loading";
@@ -1117,6 +1244,8 @@ export class StoryWorkspace extends LitElement {
       (episode) => `card.${episode.resourceSetName || this.detailCard?.resourceSetName}.${episode.scenarioId}` === id,
     );
     const known = { ...(source || this.episodes[id] || cardEpisode || {}), storyId: id };
+    this.storyCommentsTextChoice = false;
+    this.storyCommentsFailed = false;
     this.detailMode = "text";
     this.stopStoryPlayback();
     this.detailEpisode = known || null;
@@ -1139,7 +1268,7 @@ export class StoryWorkspace extends LitElement {
         await this.updateComplete;
         if (this.detailRequests.current(signal) && !this.detailError && this.isConnected) {
           this.dataset.entityReady = "true";
-          if (new URLSearchParams(location.search).get("playback") === "play") await this.openVegaPlayer();
+          if (this.storyAutoPlayRequested()) await this.openVegaPlayer();
         }
       }
     }
@@ -1203,6 +1332,7 @@ export class StoryWorkspace extends LitElement {
   }
   private async openVegaPlayer() {
     const episode = this.detailEpisode;
+    this.storyCommentsTextChoice = false;
     this.detailMode = "play";
     this.stopStoryPlayback();
     document.querySelector<HTMLElement & { pausePlayback?: () => void }>("audio-dock")?.pausePlayback?.();
@@ -1873,8 +2003,10 @@ export class StoryWorkspace extends LitElement {
       onSelect: (mode) => {
         if (mode === "play") void this.openVegaPlayer();
         else {
+          this.storyCommentsTextChoice = true;
           this.detailMode = "text";
           this.stopStoryPlayback();
+          this.requestUpdate();
         }
       },
     });
@@ -1991,7 +2123,11 @@ export class StoryWorkspace extends LitElement {
                           .providerBase=${this.isBestdori() ? this.bestdoriBase() : ""}
                           server=${this.dataServer()}
                           .locale=${this.locale}
-                          @open-text=${() => (this.detailMode = "text")}
+                          @open-text=${() => {
+                            this.storyCommentsTextChoice = true;
+                            this.detailMode = "text";
+                            this.requestUpdate();
+                          }}
                           @haneoka-story-finished=${(event: CustomEvent<{ storyId: string }>) => void this.continueStory(event)}
                           @haneoka-story-interrupt=${() => this.closeDetail()}
                         ></vega-story-stage>
@@ -2064,6 +2200,7 @@ export class StoryWorkspace extends LitElement {
                           `
                         : nothing
                   }
+                  ${this.renderStoryComments(episode)}
                 </div>
               `
         }

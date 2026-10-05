@@ -1,3 +1,5 @@
+import { ref } from "lit/directives/ref.js";
+import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import {
@@ -577,6 +579,14 @@ export class CatalogScreen extends LitElement {
   declare commentsCompact: boolean;
   private commentsRequested = false;
   private commentsModuleError = false;
+  private commentsActivationKey = "";
+  private commentsActivated = false;
+  private commentsGeneration = 0;
+  private commentsAnchor?: HTMLElement;
+  private commentsObservers: IntersectionObserver[] = [];
+  private commentsNearMain = false;
+  private commentsNearLeft = false;
+  private onCommentsAuthorityChange = () => { this.resetCommentsActivation(); this.requestUpdate(); };
   declare density: Density;
   /** Gacha simulator session for the open detail; owned here so the module stays stateless. */
   declare sim: import("./game-system-detail").GachaSimState | null;
@@ -1295,6 +1305,8 @@ export class CatalogScreen extends LitElement {
   };
   connectedCallback() {
     super.connectedCallback();
+    window.addEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
+    window.addEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);
     this.disposeDifficultyDisplay = observeDifficultyDisplay(() => {
       this.resultCache = undefined;
       this.requestUpdate();
@@ -1385,6 +1397,9 @@ export class CatalogScreen extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    window.removeEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
+    window.removeEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);
+    this.resetCommentsActivation();
     this.unionRequests.cancel();
     this.catalogRequests.cancel();
     this.nativeReferenceRequests.cancel();
@@ -3236,6 +3251,7 @@ export class CatalogScreen extends LitElement {
     }
   }
   private close() {
+    this.resetCommentsActivation();
     this.detailRequests.cancel();
     this.selected = null;
     this.selectedId = "";
@@ -4854,18 +4870,87 @@ export class CatalogScreen extends LitElement {
     if (!id || (raw?._id !== undefined && decimal(raw._id) !== id)) return null;
     return { type, id };
   }
-  private renderEntityDiscussion(item: Item) {
+  private stopCommentsObservers() {
+    for (const observer of this.commentsObservers) observer.disconnect();
+    this.commentsObservers = [];
+    this.commentsAnchor = undefined;
+  }
+  private resetCommentsActivation() {
+    ++this.commentsGeneration;
+    this.stopCommentsObservers();
+    this.commentsActivationKey = "";
+    this.commentsActivated = false;
+    this.commentsNearMain = false;
+    this.commentsNearLeft = false;
+    this.commentsRequested = false;
+    this.commentsModuleError = false;
+  }
+  private commentsFocusRequested(): boolean {
+    const url = navigationDocumentUrl();
+    const value = url.searchParams.get("commentId") || url.hash.match(/^#comment-(.*)$/u)?.[1] || "";
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
+  }
+  private commentsTargetCurrent(key: string, generation: number, element?: HTMLElement): boolean {
+    if (!this.isConnected || generation !== this.commentsGeneration || key !== this.commentsActivationKey || (element && !element.isConnected) || !this.selected) return false;
+    const target = this.detailCommentTarget(this.selected);
+    return !!target && JSON.stringify([target.type, target.id]) === key;
+  }
+  private activateComments(key: string, generation: number, element: HTMLElement) {
+    if (!this.commentsTargetCurrent(key, generation, element) || this.commentsActivated || this.phase !== "ready" || !this.commentsNearMain || !this.commentsNearLeft) return;
+    this.commentsActivated = true;
+    this.stopCommentsObservers();
+    this.requestUpdate();
+  }
+  private observeCommentsPlaceholder(element: HTMLElement, key: string, generation: number) {
+    if (!this.commentsTargetCurrent(key, generation, element) || this.commentsActivated) return;
+    if (this.commentsAnchor === element) { this.activateComments(key, generation, element); return; }
+    this.stopCommentsObservers();
+    this.commentsAnchor = element;
+    const left = element.closest<HTMLElement>(".detail-layout__left");
+    this.commentsNearMain = false;
+    this.commentsNearLeft = !left;
+    if (typeof IntersectionObserver === "undefined") {
+      this.commentsNearMain = this.commentsNearLeft = true;
+      this.activateComments(key, generation, element);
+      return;
+    }
+    const main = new IntersectionObserver((entries) => {
+      if (!this.commentsTargetCurrent(key, generation, element)) return;
+      this.commentsNearMain = entries.some((entry) => entry.isIntersecting);
+      this.activateComments(key, generation, element);
+    }, { root: this.scrollHost || null, rootMargin: "320px" });
+    this.commentsObservers.push(main);
+    main.observe(left || element);
+    if (left) {
+      const inner = new IntersectionObserver((entries) => {
+        if (!this.commentsTargetCurrent(key, generation, element)) return;
+        this.commentsNearLeft = entries.some((entry) => entry.isIntersecting);
+        this.activateComments(key, generation, element);
+      }, { root: left, rootMargin: "240px" });
+      this.commentsObservers.push(inner);
+      inner.observe(element);
+    }
+  }
+    private renderEntityDiscussion(item: Item) {
     const target = this.detailCommentTarget(item);
     if (!target || typeof window === "undefined" || !this.isConnected) return nothing;
-    if (!customElements.get("entity-comments")) {
-      if (this.commentsModuleError) return errorState(this.label("unavailable", "Unavailable"), this.label("retry", "Retry"), () => { this.commentsModuleError = false; this.commentsRequested = false; this.requestUpdate(); });
-      if (!this.commentsRequested) {
-        this.commentsRequested = true;
-        void import("./entity-comments").then(() => { if (this.isConnected) this.requestUpdate(); }).catch(() => { this.commentsModuleError = true; this.commentsRequested = false; if (this.isConnected) this.requestUpdate(); });
+    const key = JSON.stringify([target.type, target.id]);
+    if (this.commentsActivationKey !== key) { this.resetCommentsActivation(); this.commentsActivationKey = key; }
+    const generation = this.commentsGeneration;
+    if (this.commentsFocusRequested()) { this.commentsActivated = true; this.stopCommentsObservers(); }
+    let content: unknown;
+    if (!this.commentsActivated) content = renderCommentsState({ phase: "deferred" });
+    else if (!customElements.get("entity-comments")) {
+      if (this.commentsModuleError) content = renderCommentsState({ phase: "error", title: this.label("unavailable", "Unavailable"), retryLabel: this.label("retry", "Retry"), onRetry: () => { this.commentsModuleError = false; this.commentsRequested = false; this.requestUpdate(); } });
+      else {
+        if (!this.commentsRequested) {
+          this.commentsRequested = true;
+          void import("./entity-comments").then(() => { if (this.commentsTargetCurrent(key, generation)) this.requestUpdate(); }).catch(() => { if (!this.commentsTargetCurrent(key, generation)) return; this.commentsModuleError = true; this.commentsRequested = false; this.requestUpdate(); });
+        }
+        content = renderCommentsState({ phase: "loading", label: clientText(this.settings.locale, "loading", "Loading") });
       }
-      return loadingState(clientText(this.settings.locale, "communityPage.comments", "Comments"), { local: true });
-    }
-    return html`<entity-comments class="detail-comments" entity-type=${target.type} entity-id=${target.id} locale=${this.settings.locale} server=${this.itemSourceServer(item)} target-title=${this.itemTitle(item)} comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}></entity-comments>`;
+    } else content = html`<entity-comments class="detail-comments" entity-type=${target.type} entity-id=${target.id} locale=${this.settings.locale} server=${this.itemSourceServer(item)} target-title=${this.itemTitle(item)} comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}></entity-comments>`;
+    return html`<div ${ref((element) => { if (element instanceof HTMLElement) queueMicrotask(() => this.observeCommentsPlaceholder(element, key, generation)); })}>${content}</div>`;
   }
   private detailDiscussion(item: Item) {
     if (!this.detailCommentTarget(item) || typeof window === "undefined" || !this.isConnected) return undefined;

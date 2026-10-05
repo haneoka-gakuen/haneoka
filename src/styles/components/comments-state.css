@@ -1,0 +1,6 @@
+@layer components {
+  .comments-state {
+    min-inline-size: 0;
+    min-block-size: 1px;
+  }
+}

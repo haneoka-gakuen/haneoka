@@ -107,7 +107,7 @@ import {
 } from "../lib/team-builder/storage";
 import {
   createUpgradeProfile, upsertUpgradeProfile, updateUpgradeProfile, selectWorkspaceProfile,
-  getWorkspaceInventory, removeUpgradeProfile, createSavedTeam, upsertSavedTeam,
+  getWorkspaceInventory, workspaceProfileCompatible, removeUpgradeProfile, createSavedTeam, upsertSavedTeam,
   restoreSavedTeam, removeSavedTeam, exportTeamWorkspace, importTeamWorkspace,
   type TeamWorkspaceV1, type UpgradeProfile, type SavedTeam,
 } from "../lib/team-builder/workspace";
@@ -616,8 +616,8 @@ export class TeamBuilder extends LitElement {
         this.restoreInventoryViewPreference();
         this.requestUpdate();
         await Promise.all([
-          reloadInventory ? store.setAccount(owner) : Promise.resolve(),
-          reloadWorkspace ? workspace!.setAccount(owner) : Promise.resolve(),
+          reloadInventory ? store.setAccount(owner, task.force) : Promise.resolve(),
+          reloadWorkspace ? workspace!.setAccount(owner, task.force) : Promise.resolve(),
         ]);
         if (generation !== this.authGeneration || !current()) return;
         const denied = store.state.authorityError ?? workspace?.state.authorityError;
@@ -714,9 +714,11 @@ export class TeamBuilder extends LitElement {
   private get workspaceScope() {
     return JSON.stringify([this.data?.identity, this.currentOwner, this.workspaceState?.revision, this.workspaceDocument]);
   }
-  private profileMatches(value: Pick<UpgradeProfile, "identity">) {
-    return !!value && !!this.data && value.identity.server === this.data.identity.server &&
-      value.identity.releaseId === this.data.identity.releaseId && value.identity.sourceId === this.data.identity.sourceId;
+  private profileMatches(value: UpgradeProfile | SavedTeam) {
+    if (!value || !this.data) return false;
+    if ("kind" in value) return workspaceProfileCompatible(value, this.data);
+    try { restoreSavedTeam(value, this.data); return true; }
+    catch { return false; }
   }
   private get inventoryViewPreferenceKey(): string | null {
     if (!this.data || this.currentOwner === undefined) return null;
