@@ -20,6 +20,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urljoin
 
 # Allow running both as `python -m scripts.publish.sonolus` and as a direct
 # `python scripts/publish/sonolus.py` invocation.
@@ -58,10 +59,89 @@ def _content_type(key: str) -> str:
     return _JSON
 
 
-def publish_sonolus_payload(store: R2Store, payload_dir: Path) -> dict:
-    """Upload every file under ``payload_dir`` to R2 key ``sonolus/<relative>``."""
+def _validate_skin_catalog(payload_dir: Path, catalog_dir: Path | None = None) -> None:
+    """Keep resource snapshots consistent before the first remote write."""
+    roots = [payload_dir] + ([catalog_dir] if catalog_dir is not None else [])
+
+    def files(group: str) -> list[Path]:
+        return sorted({path.relative_to(root) for root in roots
+                       for path in (root / group).rglob("*") if path.is_file()})
+
+    if not any((root / "skins").is_dir() for root in roots):
+        if files("engines"):
+            raise ValueError("Engine publication requires the complete skins catalog")
+        return
+
+    def load(relative_path: Path) -> dict:
+        path = next((root / relative_path for root in roots
+                     if (root / relative_path).is_file()), payload_dir / relative_path)
+        value = json.loads(path.read_bytes())
+        if not isinstance(value, dict):
+            raise ValueError(f"Invalid Sonolus document: {path}")
+        return value
+
+    def binding(item: dict) -> dict:
+        value = dict(item)
+        for key in ("data", "texture", "thumbnail"):
+            reference = item.get(key)
+            if not isinstance(reference, dict) or not isinstance(reference.get("url"), str):
+                raise ValueError(f"Invalid skin {key} reference: {item.get('name')}")
+            value[key] = {**reference, "url": urljoin(item.get("source") or "", reference["url"])}
+        return value
+
+    pages = [path for path in files("skins/list") if path.name.startswith("page-")]
+    if not pages:
+        raise ValueError("Skin publication requires list pages")
+    canonical = {}
+    for path in pages:
+        for item in load(path)["items"]:
+            name = item["name"]
+            if name in canonical:
+                raise ValueError(f"Duplicate skin in list pages: {name}")
+            canonical[name] = binding(item)
+
+    def validate(item: dict, location: str) -> None:
+        if canonical.get(item.get("name")) != binding(item):
+            raise ValueError(f"Inconsistent skin snapshot: {location}/{item.get('name')}")
+
+    def sections(document: dict, location: str) -> None:
+        for section in document.get("sections", []):
+            if section.get("itemType") == "skin":
+                for item in section.get("items", []):
+                    validate(item, location)
+
+    sections(load(Path("skins/info")), "skins/info")
+    for name in canonical:
+        details = load(Path("skins") / name)
+        validate(details["item"], f"skins/{name}")
+        sections(details, f"skins/{name}/sections")
+
+    load(Path("engines/info"))
+    engine_pages = [path for path in files("engines/list") if path.name.startswith("page-")]
+    if not engine_pages:
+        raise ValueError("Skin publication requires the current engine catalog")
+    for path in engine_pages:
+        for item in load(path)["items"]:
+            load(Path("engines") / item["name"])
+
+    def embedded(value, location: str) -> None:
+        if isinstance(value, dict):
+            if "playData" in value and isinstance(value.get("skin"), dict):
+                validate(value["skin"], location)
+            for child in value.values():
+                embedded(child, location)
+        elif isinstance(value, list):
+            for child in value:
+                embedded(child, location)
+
+    for group in ("engines", "levels", "playlists"):
+        for path in files(group):
+            embedded(load(path), path.as_posix())
+def publish_sonolus_payload(store: R2Store, payload_dir: Path, catalog_dir: Path | None = None) -> dict:
+    """Validate final metadata, then upload only the supplied payload files."""
     if not payload_dir.is_dir():
         raise FileNotFoundError(f"Sonolus payload directory not found: {payload_dir}")
+    _validate_skin_catalog(payload_dir, catalog_dir)
     files = sorted(path for path in payload_dir.rglob("*") if path.is_file())
     digest = hashlib.sha256()
     for path in files:
@@ -103,10 +183,14 @@ def main() -> int:
         help="R2 bucket (default: R2_BUCKET environment variable).",
     )
     parser.add_argument("--concurrency", type=int, default=16)
+    parser.add_argument(
+        "--catalog-dir", type=Path, default=None,
+        help="Fresh verified current raw Sonolus metadata snapshot for checking metadata-only updates; never uploaded.",
+    )
     args = parser.parse_args()
 
     result = publish_sonolus_payload(
-        _store(args.r2_bucket, args.concurrency), args.payload_dir
+        _store(args.r2_bucket, args.concurrency), args.payload_dir, args.catalog_dir
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
