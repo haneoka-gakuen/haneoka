@@ -15,13 +15,24 @@ export interface PublicSongSourceOptions {
   apiBase?: string;
   fetcher?: EmbedFetcher;
 }
-export interface PublicCreationSong {
+export interface PublicCreationDifficulty extends Record<string, unknown> {
+  difficultyName: string;
+  file: string;
+  displayLevel?: number;
+  playLevel?: number;
+}
+export interface PublicCreationSong extends Record<string, unknown> {
   musicId: number;
   musicTitle: unknown;
   bandName: unknown;
   musicUrl: string;
   jacketUrl?: string;
-  difficulty: { difficultyName: string; file: string; displayLevel?: number }[];
+  jacketThumbUrl?: string;
+  bandId?: number;
+  bandIds?: number[];
+  musicType?: number;
+  vocalCharacterIds?: number[];
+  difficulty: PublicCreationDifficulty[];
 }
 function song(value: unknown): PublicCreationSong {
   if (!value || typeof value !== "object") throw new Error("invalid_song");
@@ -301,7 +312,7 @@ export function listPublicCreationSongCatalogue(
 /** Picker-owned generation rejects late server/source/provider responses even if a transport ignores abort. */
 export class PublicCreationCatalogueReader {
   private generation = 0;
-  private controller?: AbortController;
+  private controller: AbortController | undefined;
   async load(options: PublicCreationCatalogueOptions) {
     this.cancel();
     const generation = this.generation,
