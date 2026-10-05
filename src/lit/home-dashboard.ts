@@ -1,3 +1,4 @@
+import { communityStickerPreview } from "../lib/community-markup";
 import { renderLazyEntityCommentActivity } from "./views/entity-comment-activity-lazy";
 import "../styles/home-community-comments.css";
 import { CommunityReactions } from "../lib/community-reaction";
@@ -2328,6 +2329,7 @@ export class HomeDashboard extends LitElement {
         canReply: Boolean(href),
         allowStickers: true,
         preview: true,
+        previewStickers: communityStickerPreview(entry.comment.body, 1),
         actions: {
           like: () => this.likeRecommendedComment(entry),
           reply: href ? () => this.openRecommendedComment(entry, "reply") : undefined,

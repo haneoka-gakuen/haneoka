@@ -1,5 +1,7 @@
 import { parse } from "@bbob/parser";
 import type { JSONContent } from "@tiptap/core";
+import { validStickerToken } from "./community-sticker-token";
+export { validStickerToken } from "./community-sticker-token";
 
 type Tag = { tag: string; attrs: Record<string, unknown>; content: Tree[] };
 type Tree = string | Tag;
@@ -34,8 +36,6 @@ export const safeCommunityLink = (value: string): string => {
     return "";
   }
 };
-export const validStickerToken = (value: string) =>
-  /^[a-z0-9][a-z0-9-]{0,31}:\d{1,12}(?::[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*)?$/.test(value);
 const attribute = (node: Tag) => String(Object.values(node.attrs)[0] || "");
 const tree = (source: string): Tree[] => {
   if (source.length > 20000) return [source];
@@ -126,6 +126,33 @@ export function communityMarkup(source: string, spoiler = "Spoiler", locale = "e
   return flow(tree(source));
 }
 export const communityExcerpt = (source: string) => literal(tree(source)).replace(/\s+/g, " ").trim();
+/** Bounded built-in sticker preview; code and spoilers never reveal their contents. */
+export function communityStickerPreview(source: string, limit = 1): Array<{ token: string; label: string }> {
+  const maximum = Math.min(1, Math.max(0, Math.trunc(limit)));
+  if (!maximum) return [];
+  const found: Array<{ token: string; label: string }> = [];
+  const visibleCaption = (nodes: Tree[]): Tree[] => nodes.flatMap((node): Tree[] => {
+    if (typeof node === "string") return [node];
+    if (node.tag.toLowerCase() === "code" || node.tag.toLowerCase() === "spoiler") return [];
+    return [{ ...node, content: visibleCaption(node.content) }];
+  });
+  const pending = [...tree(source)].reverse();
+  while (pending.length && found.length < maximum) {
+    const node = pending.pop()!;
+    if (typeof node === "string") continue;
+    const tag = node.tag.toLowerCase();
+    if (tag === "code" || tag === "spoiler") continue;
+    if (tag === "sticker") {
+      const token = attribute(node);
+      if (validStickerToken(token)) {
+        found.push({ token, label: literal(visibleCaption(node.content)) });
+        continue;
+      }
+    }
+    pending.push(...[...node.content].reverse());
+  }
+  return found;
+}
 const escapeText = (text: string) => text.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 export function communityDocument(node: JSONContent): string {
   const children = (separator = "") => (node.content || []).map(communityDocument).join(separator);

@@ -53,6 +53,7 @@ export interface CommentContentView {
   canReply?: boolean;
   allowStickers?: boolean;
   preview?: boolean;
+  previewStickers?: ReadonlyArray<{ token: string; label?: string }>;
   editing?: CommentEditView;
   actions: CommentActions;
 }
@@ -194,6 +195,15 @@ export function renderCommunityComment(view: CommentContentView) {
               ? communityExcerpt(String(record.body || ""))
               : unsafeHTML(communityMarkup(String(record.body || ""), label("spoiler", "Spoiler"), view.locale, { allowStickers: view.allowStickers !== false }))}
           </div>
+          ${view.preview && view.allowStickers !== false
+            ? view.previewStickers?.slice(0, 1).map((sticker) => html`
+                <community-sticker
+                  .token=${sticker.token}
+                  .locale=${view.locale}
+                  .label=${sticker.label || label("stickers", "Stickers")}
+                ></community-sticker>
+              `)
+            : nothing}
         `,
     context: html`
       ${time(record.createdAt, view.locale)}

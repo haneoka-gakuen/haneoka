@@ -1,3 +1,6 @@
+import { validStickerToken } from "../src/lib/community-sticker-token";
+import { isReleaseServer } from "../src/lib/resource-route";
+
 /** Thread identity never includes a server, locale, build or presentation key. */
 export interface CommunityEntityTarget {
   entityType: string;
@@ -22,17 +25,37 @@ export function entityThreadSql(postIdExpression: string): string {
   return `EXISTS (SELECT 1 FROM community_entity_thread AS entity_thread_guard WHERE entity_thread_guard.post_id=${postIdExpression})`;
 }
 
+/** Built-in stickers carry catalogue tokens, never user-supplied media URLs. */
+function withoutBuiltInStickerTags(value: string): string | null {
+  let open = false;
+  let valid = true;
+  const text = value.replace(/\[(\/?)sticker(?:=([^[\]\r\n]*))?\]/giu, (_tag, closing: string, token: string | undefined) => {
+    if (closing) {
+      if (!open || token !== undefined) valid = false;
+      open = false;
+    } else {
+      if (open || token === undefined || !validStickerToken(token) || !isReleaseServer(token.split(":")[0])) valid = false;
+      open = true;
+    }
+    return "";
+  });
+  return valid && !open ? text : null;
+}
+
 /** Reused by create/edit and the generic legacy endpoints, not just the detail widget. */
 export function entityCommentTextOnly(payload: Record<string, unknown>, edit = false): boolean {
   const fields = edit ? ["body", "version", "editReason"] : ["body", "parentId"];
   if (Object.keys(payload).some((key) => !fields.includes(key)) || typeof payload.body !== "string") return false;
-  const body = payload.body.normalize("NFKC").replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/gu, "");
+  const text = withoutBuiltInStickerTags(payload.body);
+  if (text === null) return false;
+  const body = text.normalize("NFKC").replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/gu, "");
   return (
+    !/\[\/?sticker\b/iu.test(body) &&
     !/\[\/?(?:img|image|file|attachment|attach|sticker|stamp|video|audio|media|model|chart)(?:[\s=:/\]])/iu.test(
       body,
     ) &&
     !/!\[[^\]]*\]\s*\(/u.test(body) &&
-    !/<\/?(?:img|image|svg|audio|video|iframe|object|embed|canvas|picture|source|attachment|model-viewer|chart-viewer)(?:\s|\/?>)/iu.test(
+    !/<\/?(?:img|image|svg|audio|video|iframe|object|embed|canvas|picture|source|attachment|model-viewer|chart-viewer|community-sticker)(?:\s|\/?>)/iu.test(
       body,
     ) &&
     !/\/api\/v1\/(?:community\/attachments|admin\/attachments)\/[a-f\d-]{36}(?:[\s/#?)]|$)/iu.test(body)
