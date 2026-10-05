@@ -1,3 +1,4 @@
+import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import "./views/entity-comments-view";
 import { LitElement, nothing } from "lit";
 import { fetchJson, JsonResponseError, preferredLocale, localizedText } from "./shared/catalog";
@@ -306,10 +307,16 @@ export class EntityComments extends LitElement {
     this.loadingMore = append;
     this.error = "";
     if (!this.document) this.phase = "loading";
+    const dictionary = this.prepareMessages();
     try {
-      await this.prepareMessages();
+      const query = this.query();
+      if (append && this.document?.nextCursor) query.set("commentsCursor", this.document.nextCursor);
+      const [, bootstrap] = await Promise.all([
+        dictionary,
+        readCommunityBootstrap<EntityCommentsResponse>(this.endpoint() + "?" + query, signal),
+      ]);
       if (!this.requests.current(signal) || context !== this.context || !this.messagesReady) return;
-      const viewer = await readCommunityViewer(signal);
+      const viewer = bootstrap.viewer;
       if (!this.requests.current(signal) || context !== this.context) return;
       const changedUser = this.viewer && this.viewer.userId !== viewer.userId;
       const changedRealm = this.viewer && this.viewer.realm !== viewer.realm;
@@ -333,9 +340,8 @@ export class EntityComments extends LitElement {
         this.restoreDraft();
         this.draftIdentity = draftIdentity;
       }
-      const query = this.query();
-      if (append && this.document?.nextCursor) query.set("commentsCursor", this.document.nextCursor);
-      const data = (await this.request(this.endpoint() + "?" + query, { signal })) as unknown as EntityCommentsResponse;
+      if (changedRealm && append) { void this.load(false); return; }
+      const data = bootstrap.data;
       const latest = await readCommunityViewer(signal);
       if (!this.requests.current(signal) || context !== this.context || identity !== this.identity) return;
       if (latest.realm !== viewer.realm) {
@@ -394,6 +400,8 @@ export class EntityComments extends LitElement {
           this.viewer = undefined; this.draftIdentity = ""; this.body = ""; this.replyTo = ""; this.busy = "";
         }
       }
+      await dictionary.catch(() => {});
+      if (!this.requests.current(signal) || context !== this.context) return;
       this.error = this.failure(error);
       if (!this.document) this.phase = "error";
     } finally {
@@ -617,13 +625,13 @@ export class EntityComments extends LitElement {
     const mark = this.reactions.mark();
     this.replyLoading = new Set([...this.replyLoading, id]);
     try {
-      const verified = await readCommunityViewer(signal);
-      if (!scope.current(signal) || context !== this.context || realm !== this.viewer?.realm) return;
-      if (verified.realm !== realm) throw new CommunityRealmChanged();
       const query = this.query();
       query.set("commentsRoot", id);
       query.set("commentsCursor", root.replyCursor);
-      const data = (await this.request(this.endpoint() + "?" + query, { signal })) as unknown as EntityCommentsResponse;
+      const bootstrap = await readCommunityBootstrap<EntityCommentsResponse>(this.endpoint() + "?" + query, signal);
+      if (!scope.current(signal) || context !== this.context || realm !== this.viewer?.realm) return;
+      if (bootstrap.viewer.realm !== realm) throw new CommunityRealmChanged();
+      const data = bootstrap.data;
       const latest = await readCommunityViewer(signal);
       if (!scope.current(signal) || context !== this.context || realm !== this.viewer?.realm || !this.document) return;
       if (latest.realm !== realm) throw new CommunityRealmChanged();

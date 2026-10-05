@@ -1,3 +1,5 @@
+import { readCommunityBootstrap } from "../lib/community-bootstrap";
+import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { interpolateMessage, type MessageParams } from "@haneoka/i18n";
 import { renderEntityCommentActivity } from "./views/entity-comment-activity";
 import { renderCommunityComment, renderCommentComposer, renderCommentReplies, commentAuthorName } from "./views/community-comment-content";
@@ -866,8 +868,19 @@ export class CommunityWorkspace extends LitElement {
     const readyCollection = this.routeKind === "collection" && this.phase === "ready";
     this.phase = append || this.document || this.items.length || activeEditor || readyCollection ? this.phase : "loading";
     this.error = "";
+    let bootstrapped: Value | undefined;
     try {
-      if (!append && this.usesForums()) {
+      const canBootstrap = !append && this.routeKind === "collection" && this.mode === "feeds" &&
+        !this.forumSlug && !this.selectedForumId && ["recommended", "latest"].includes(this.feedScope);
+      if (canBootstrap) {
+        const bootstrap = await readCommunityBootstrap<Value>(this.endpoint(false, refresh), signal, true);
+        const latest = await readCommunityViewer(signal);
+        if (!this.requests.current(signal)) return;
+        if (latest.realm !== bootstrap.viewer.realm) throw new CommunityRealmChanged();
+        await this.loadForums(signal, { viewer: latest, forums: bootstrap.directory!.forums, groups: bootstrap.directory!.groups });
+        if (!this.requests.current(signal)) return;
+        bootstrapped = bootstrap.data;
+      } else if (!append && this.usesForums()) {
         await this.loadForums(signal);
         if (!this.requests.current(signal)) return;
       }
@@ -1022,16 +1035,16 @@ export class CommunityWorkspace extends LitElement {
       }
       const collectionEndpoint = this.endpoint(false);
       const collectionRoute = this.collectionUrl();
-      const response = await fetch(this.endpoint(append, refresh), {
-        headers: { accept: "application/json" },
-        credentials: "same-origin",
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) throw new JsonResponseError(response.status, null);
-      const data = (await response.json()) as Value;
+      let data = bootstrapped;
+      if (!data) {
+        const response = await fetch(this.endpoint(append, refresh), {
+          headers: { accept: "application/json" }, credentials: "same-origin", cache: "no-store", signal,
+        });
+        if (!response.ok) throw new JsonResponseError(response.status, null);
+        data = (await response.json()) as Value;
+      }
       if (!this.requests.current(signal)) return;
-      if (this.usesForums() && !await this.confirmReadViewer(signal)) return;
+      if (!bootstrapped && this.usesForums() && !await this.confirmReadViewer(signal)) return;
       const next = Array.isArray(data.entries)
         ? communityRecommendationItems(data)
         : Array.isArray(data.posts)
@@ -4932,9 +4945,9 @@ export class CommunityWorkspace extends LitElement {
     this.facetsRequests.cancel();
     feedSnapshots.clear();
   }
-  private async loadForums(signal: AbortSignal) {
+  private async loadForums(signal: AbortSignal, prefetched?: CommunityForumDirectory) {
     let cleanup: Promise<void> | undefined;
-    const directory = await readCommunityForumDirectory(signal, (context) => {
+    const observeViewer = (context: CommunityViewer) => {
       if (!this.isConnected || !this.requests.current(signal)) return;
     const viewer = this.viewerId();
     const actorKnown = this.readViewer !== undefined || this.session !== null;
@@ -4960,7 +4973,9 @@ export class CommunityWorkspace extends LitElement {
       this.stampDraft = undefined;
       cleanup = this.discardUploads();
     }
-    });
+    };
+    const directory = prefetched ?? await readCommunityForumDirectory(signal, observeViewer);
+    if (prefetched) observeViewer(prefetched.viewer);
     if (cleanup) await cleanup;
     if (!this.requests.current(signal)) return;
     const navigation = this.closest(".app-shell")?.querySelector(
