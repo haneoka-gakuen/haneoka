@@ -53,7 +53,7 @@ jobs:
           BIRTHDAY_INPUT_GZIP_BASE64: ${{ inputs.input_gzip_base64 }}
           PUBLISH: ${{ inputs.publish }}
         run: python scripts/publish/story_birthdays.py --output "$RUNNER_TEMP/birthday-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: story-birthday-${{ matrix.server }}-${{ github.run_id }}

@@ -37,7 +37,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
           READER_PIN: ${{ inputs.reader_pin }}
         run: python scripts/verify/selected_addressables_settings.py --output "$RUNNER_TEMP/settings-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: selected-initial-settings-${{ github.run_id }}

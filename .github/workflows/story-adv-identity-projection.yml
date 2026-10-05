@@ -60,7 +60,7 @@ jobs:
           STORY_ADV_CURRENT_IDENTITY_JSON: ${{ inputs.identity_json }}
           PUBLISH: ${{ inputs.publish }}
         run: python scripts/publish/story_adv_identity.py --output "$RUNNER_TEMP/story-adv-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: story-adv-${{ inputs.server }}-${{ github.run_id }}

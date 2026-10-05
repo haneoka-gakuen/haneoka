@@ -51,7 +51,7 @@ jobs:
           GACHA_RATE_INPUT_JSON: ${{ inputs.projection_json }}
           PUBLISH: ${{ inputs.publish }}
         run: python scripts/publish/gacha_rates.py --output "$RUNNER_TEMP/gacha-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gacha-rates-intl-${{ github.run_id }}

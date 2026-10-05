@@ -70,7 +70,7 @@ jobs:
           RECOGNITION_CURRENT_IDENTITY_JSON: ${{ inputs.identity_json }}
           PUBLISH: ${{ inputs.publish }}
         run: python scripts/publish/card_recognition_source.py --output "$RUNNER_TEMP/reference-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: card-recognition-source-${{ inputs.server }}-${{ github.run_id }}

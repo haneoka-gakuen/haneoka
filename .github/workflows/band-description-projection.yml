@@ -53,7 +53,7 @@ jobs:
           BAND_DESCRIPTION_PROJECTION_JSON: ${{ inputs.projection_json }}
           PUBLISH: ${{ inputs.publish }}
         run: python scripts/publish/band_descriptions.py --output "$RUNNER_TEMP/band-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: band-description-${{ matrix.server }}-${{ github.run_id }}
