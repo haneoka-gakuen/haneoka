@@ -644,7 +644,6 @@ export class HomeDashboard extends LitElement {
     const server = this.sourceServer();
     const locale = this.locale;
     const signal = this.liveRequests.begin();
-    const reactionMark = this.communityReactions.mark();
     const currentPanel = () => this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
     const newsWork = fetchAnnouncements(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]), locale)
       .then((news) => {
@@ -658,7 +657,7 @@ export class HomeDashboard extends LitElement {
       if (!currentPanel()) return;
       if (this.communityViewer && this.communityViewer.realm !== viewer.realm) this.posts = [];
       this.communityViewer = viewer;
-      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",server,locale}), {signal,credentials:"same-origin",cache:"no-store"});
+      const posts = await fetchJson<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), {signal,credentials:"same-origin",cache:"no-store"});
       const current = await readCommunityViewer(signal);
       if (!currentPanel()) return;
       if (current.realm !== viewer.realm) {
@@ -667,20 +666,7 @@ export class HomeDashboard extends LitElement {
         this.communityPhase = "error";
         return;
       }
-      const next = communityRecommendationItems(posts);
-      if (next.some(isEntityCommentRecommendation)) {
-        const client = initializeI18nClient(), version = client.version;
-        const messages = await client.ensure(locale as Parameters<typeof client.ensure>[0], ["common", "community"], signal);
-        if (!currentPanel() || client.version !== version) return;
-        this.communityMessages = messages;
-      }
-      this.posts = next.map((entry) => {
-        if (!isEntityCommentRecommendation(entry)) return entry;
-        const comment = entry.comment;
-        if (comment.viewer.canLike === false) { this.communityReactions.forget(comment.id); return entry; }
-        const state = this.communityReactions.merge(comment.id, {active:Boolean(comment.viewer.liked),likeCount:Number(comment.likeCount||0)}, reactionMark);
-        return {...entry,comment:{...comment,likeCount:state.likeCount,viewer:{...comment.viewer,liked:state.active}}};
-      });
+      this.posts = Array.isArray(posts.posts) ? posts.posts as JsonRecord[] : [];
       this.communityPhase = "ready";
     } catch (error) {
       if (!currentPanel()) return;
