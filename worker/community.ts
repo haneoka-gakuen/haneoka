@@ -1,3 +1,4 @@
+import { measureCommunityRead } from "./community-read-timing";
 import { communitySearchCondition, communitySearchScore } from "./community-search-query";
 import { recommendationPostPool, diversifyRecommendationPage } from "./community-ranking";
 import { backgroundWork } from "./request-work";
@@ -1550,11 +1551,11 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
     // Resolve current original targets and canonical comment visibility before
     // page length/hasMore/cursor, filling past stale or unreadable targets.
     for (;;) {
-      result = await env.DB.prepare(`${rankedSql} ${rankCursorSql}
+      result = await measureCommunityRead("feed_query", () => env.DB.prepare(`${rankedSql} ${rankCursorSql}
         ORDER BY rankScore DESC, createdAt DESC, id DESC LIMIT ?`)
         .bind(...bindings, ...(commentCandidates?.values ?? []), ...scoreBindings, ...rankCursorBindings, scanLimit)
-        .all<PostListRow>();
-      const eligible = await orderedEligible(result.results, rowLimit - accepted.length, async (candidate) => {
+        .all<PostListRow>());
+      const eligible = await measureCommunityRead("hydrate", () => orderedEligible(result.results, rowLimit - accepted.length, async (candidate) => {
         if (candidate.kind !== "entity-comment") return true;
         if (!hydrateEntity || !candidate.entityType || !candidate.originalId || !candidate.threadId) return false;
         const entry = await hydrateEntity({ id: candidate.id, entityType: candidate.entityType,
@@ -1562,7 +1563,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
         if (!entry) return false;
         commentEntries.set(candidate.id, entry);
         return true;
-      });
+      }));
       accepted.push(...eligible);
       if (!hydrateEntity || accepted.length === rowLimit || result.results.length < scanLimit) break;
       const last = result.results.at(-1)!;
@@ -1630,7 +1631,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
     : rows;
   const postRows = displayRows.filter((row) => row.kind !== "entity-comment");
   const [taggedRows, viewerFlags] = await Promise.all([
-    attachPostMetadata(env, postRows, userId),
+    measureCommunityRead("metadata", () => attachPostMetadata(env, postRows, userId)),
     loadViewerPostFlags(env, postRows.map((row) => row.id), userId),
   ]);
   const posts = taggedRows.map(({ body, rankScore, kind: _kind, entityType: _entityType, originalId: _originalId, threadId: _threadId, ...post }) => {
@@ -1731,20 +1732,16 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     return error(request, 400, "conflicting_post_query", "Comments cannot be both excluded and requested alone");
   }
   const commentsOnly = commentsOnlyValue === "true";
-  const postRow = await findAccessiblePostRow(env, id, userId);
+  const postRow = await measureCommunityRead("post", () => findAccessiblePostRow(env, id, userId));
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
-  const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow], userId))[0] ?? null);
-  const post = postWithTags ?? postRow;
-  const [forumCanReply, forumCanPost, forumCanManage] = await Promise.all([
+  const [postWithTags, capabilities, flags] = await Promise.all([
+    commentsOnly ? Promise.resolve(null) : measureCommunityRead("metadata", async () => (await attachPostMetadata(env, [postRow], userId))[0] ?? null),
+    Promise.all([
     !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"reply"),
     !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"post"),
     !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"manage"),
-  ]);
-  let liked = false;
-  let bookmarked = false;
-  let following = false;
-  if (userId && !commentsOnly) {
-    const flags = await env.DB.batch<ViewerFlagRow>([
+  ]),
+    userId && !commentsOnly ? env.DB.batch<ViewerFlagRow>([
       env.DB.prepare(
         "SELECT 1 AS active FROM community_reaction WHERE post_id = ? AND user_id = ? AND kind = 'like' LIMIT 1",
       ).bind(id, userId),
@@ -1754,12 +1751,14 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       ),
       env.DB.prepare(
         "SELECT 1 AS active FROM community_user_follow WHERE follower_user_id = ? AND followed_user_id = ? LIMIT 1",
-      ).bind(userId, post.authorId),
-    ]);
-    liked = Boolean(flags[0]?.results[0]);
-    bookmarked = Boolean(flags[1]?.results[0]);
-    following = Boolean(flags[2]?.results[0]);
-  }
+      ).bind(userId, postRow.authorId),
+    ]) : Promise.resolve<D1Result<ViewerFlagRow>[]>([]),
+  ]);
+  const post = postWithTags ?? postRow;
+  const [forumCanReply, forumCanPost, forumCanManage] = capabilities;
+  const liked = Boolean(flags[0]?.results[0]);
+  const bookmarked = Boolean(flags[1]?.results[0]);
+  const following = Boolean(flags[2]?.results[0]);
 
   if (includeCommentsValue === "false") {
     if (!postWithTags) return error(request, 500, "post_metadata_unavailable", "Post metadata is unavailable");
@@ -1924,7 +1923,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
        ON author_profile.user_id = comment.author_id
       AND author_profile.status <> 'deleted'
 `;
-  const commentsResult =
+  const commentsResult = await measureCommunityRead("comments", async () =>
     commentsRootId !== null
       ? await env.DB.prepare(
           `WITH RECURSIVE comment_floors AS (
@@ -2103,7 +2102,8 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
             focusedCommentId,
             ...commentBindings,
           )
-          .all<CommentRow>();
+          .all<CommentRow>(),
+  );
 
   if (commentsRootId !== null) {
     const replyRows = commentsResult.results;

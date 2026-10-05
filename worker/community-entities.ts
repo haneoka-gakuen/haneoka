@@ -1,3 +1,4 @@
+import { measureCommunityRead } from "./community-read-timing";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { communityEntityCommentBackend, type CommunityCommentInitializer } from "./community";
@@ -403,7 +404,7 @@ async function recommendations(request: Request, env: Env, url: URL, resolver: C
     const key = JSON.stringify([target.entityType, target.originalId]);
     let resolved = descriptors.get(key);
     if (!resolved) {
-      resolved = resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale });
+      resolved = measureCommunityRead("catalog", () => resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale }));
       descriptors.set(key, resolved);
     }
     const descriptor = await resolved;
@@ -512,13 +513,18 @@ export async function handleCommunityEntityRequest(
     ["server", "locale"].some((key) => url.searchParams.getAll(key).length > 1)
   )
     return error(request, 400, "invalid_context", "Use a supported display server and locale");
-  const descriptor = await resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale });
+  const [resolved, sessionRead, threadRead] = await Promise.allSettled([
+    measureCommunityRead("catalog", () => resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale })),
+    getAuthSession(request, env, { authoritative: true }),
+    measureCommunityRead("thread", () => thread(env, target)),
+  ]);
+  if (resolved.status === "rejected") throw resolved.reason;
+  const descriptor = resolved.value;
   if (!descriptor || descriptor.type !== target.entityType || descriptor.originalId !== target.originalId)
     return error(request, 404, "entity_not_found", "The original entity is unavailable or unresolved");
-  const [session, existing] = await Promise.all([
-    getAuthSession(request, env, { authoritative: true }),
-    thread(env, target),
-  ]);
+  if (sessionRead.status === "rejected") throw sessionRead.reason;
+  if (threadRead.status === "rejected") throw threadRead.reason;
+  const session = sessionRead.value, existing = threadRead.value;
   const userId = session?.user?.id ?? null;
   const forumId = existing?.forumId ?? (await defaultForum(env, userId));
   if (

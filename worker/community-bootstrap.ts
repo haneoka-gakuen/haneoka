@@ -1,3 +1,4 @@
+import { withCommunityReadTiming } from "./community-read-timing";
 import { handleAuthRequest } from "./auth";
 import { handleAdminRequest } from "./admin";
 import { handleCommunityForumsRequest } from "./community-forums";
@@ -60,6 +61,7 @@ export async function handleCommunityBootstrap(
   if (target.origin !== url.origin ||
       !/^\/api\/v1\/community\/(?:posts(?:\/[a-f0-9-]{36})?|entity-threads\/[a-z][a-z0-9-]{0,63}\/[^/]+)$/iu.test(target.pathname))
     return json({ error: { code: "invalid_bootstrap_target" } }, 400);
+  return withCommunityReadTiming(async () => {
   const started = performance.now();
   const identity = await viewer(request, env);
   if ("response" in identity) return identity.response!;
@@ -80,4 +82,5 @@ export async function handleCommunityBootstrap(
   for (const cookie of identity.cookies) response.headers.append("Set-Cookie", cookie);
   response.headers.append("Server-Timing", `identity;dur=${(identified - started).toFixed(1)},content;dur=${(performance.now() - identified).toFixed(1)}`);
   return response;
+  });
 }
