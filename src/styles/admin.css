@@ -678,7 +678,8 @@
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
   .admin-filters .segmented {
-    width: max-content;
+    width: 100%;
+    min-width: max-content;
     max-width: none;
   }
   .admin-post-columns,

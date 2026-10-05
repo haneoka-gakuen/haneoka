@@ -90,9 +90,6 @@ const COLUMNS: Record<string, Column[]> = {
   background: [column("title", "entity", "title", true)],
   song: [
     column("title", "entity", "title", true),
-    column("play", "action"),
-    column("chart", "action"),
-    column("sonolus", "action"),
     column("attribute", "mark", "musicType"),
     column("band", "entity", "band"),
     column("difficulty", "numeric", "level"),
@@ -109,15 +106,15 @@ const COLUMNS: Record<string, Column[]> = {
     column("lyricist", "text", "lyrics"),
     column("arranger", "text", "arrangement"),
     column("release", "text", "release"),
+    column("play", "action"),
+    column("chart", "action"),
+    column("sonolus", "action"),
   ],
   // The meta table is the songs table flattened by difficulty. Chart metrics
   // are the point, so the credit columns drop away and the difficulty cell is
   // plain text — each row already is one difficulty.
   "song-meta": [
     column("title", "entity", "title", true),
-    column("play", "action"),
-    column("chart", "action"),
-    column("sonolus", "action"),
     column("attribute", "mark", "musicType"),
     column("band", "entity", "band"),
     column("difficulty", "numeric", "level"),
@@ -131,14 +128,14 @@ const COLUMNS: Record<string, Column[]> = {
     column("sr", "numeric", "sr"),
     column("category", "text", "category"),
     column("release", "text", "release"),
+    column("play", "action"),
+    column("chart", "action"),
+    column("sonolus", "action"),
   ],
   // The gekisou view of the meta table keeps the identity columns and swaps
   // the live score metrics for the per-segment just/luck model.
   "song-meta-gekisou": [
     column("title", "entity", "title", true),
-    column("play", "action"),
-    column("chart", "action"),
-    column("sonolus", "action"),
     column("attribute", "mark", "musicType"),
     column("band", "entity", "band"),
     column("difficulty", "numeric", "level"),
@@ -153,6 +150,9 @@ const COLUMNS: Record<string, Column[]> = {
     column("nps", "numeric", "nps"),
     column("category", "text", "category"),
     column("release", "text", "release"),
+    column("play", "action"),
+    column("chart", "action"),
+    column("sonolus", "action"),
   ],
   band: [column("title", "entity", "title", true)],
   "band-item": [
@@ -230,7 +230,11 @@ export class CatalogTable extends LitElement {
           : c.profile.presentation
       ] || COLUMNS.item;
     const visibleColumns = columns.filter((entry) => entry.key !== "nativeScore" || c.hasNativeMetaReference());
-    const label = (key: string) => key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
+    const metricLabels: Record<string, [string, string]> = {
+      time: ["metaTime", "Song Duration"], eff: ["metaEff", "Efficiency"], bpm: ["metaBpm", "Beats per Minute"],
+      n: ["metaN", "Note Count"], nps: ["metaNps", "Notes per Second"], sr: ["metaSr", "Skill Coverage Rate"],
+    };
+    const label = (key: string) => (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
     return html`
       <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("table", "Table")} data-scroll-region>
         <table class="data-table">

@@ -170,8 +170,8 @@
   }
   .admin-forum-section > .segmented > button,
   .admin-forum-editor__body > .segmented > button {
-    flex: none;
-    min-height: 40px;
+    flex: 1 1 0;
+    min-height: inherit;
   }
   .admin-forum-workspace .admin-forum-fields [name="name"],
   .admin-forum-workspace .admin-forum-fields [name="description"] {

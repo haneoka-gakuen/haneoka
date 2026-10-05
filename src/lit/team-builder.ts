@@ -5745,6 +5745,7 @@ export class TeamBuilder extends LitElement {
     </section>`;
   }
   private practicalMetricLabel(mode: PlayMode, objective: Objective, metric?: MetricValue) {
+    if (objective === "score" && metric?.basis?.kind === "time") return clientText(this.locale, "metaEff", "Efficiency");
     if (mode === "gekiso" && objective === "ss-ratio") return this.t("personalSoloSSRatio", "Personal Solo SS attainment");
     if (mode === "gekiso" && objective === "ss-surplus") return this.t("personalSoloSSSurplus", "Personal Solo SS margin");
     if (mode === "gekiso" && objective === "score") return (metric?.scoreDomain ?? this.practicalCompleted?.request.scoreDomain) === "personal-live" ? this.t("personalLiveScore", "Personal Live score") : this.t("personalSoloScore", "Solo score");
@@ -5870,6 +5871,7 @@ export class TeamBuilder extends LitElement {
       : "";
   }
   private metricLabel(objective: Objective, metric?: MetricValue): string {
+    if (objective === "score" && metric?.basis?.kind === "time") return clientText(this.locale, "metaEff", "Efficiency");
     if (objective === "score" && (metric ? metric.scoreDomain === "personal-live" : this.scoreDomain === "personal-live"))
       return this.t("personalLiveScore", "Personal Live score");
     if (objective === "score" && (metric ? metric.scoreDomain === "personal-solo" : this.scoreDomain === "personal-solo"))

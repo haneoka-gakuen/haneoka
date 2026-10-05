@@ -101,6 +101,7 @@ export interface SegmentedOptions<T extends string> {
   onSelect: (value: T) => void;
   /** Icon-only segments keep their label in the accessibility tree. */
   iconOnly?: boolean;
+  /** Text segments fill available space by default; false opts into a compact group. */
   grow?: boolean;
 }
 
@@ -110,7 +111,7 @@ export interface SegmentedOptions<T extends string> {
  * which is what the catalog view switch used to be.
  */
 export function segmented<T extends string>(options: SegmentedOptions<T>): TemplateResult {
-  const classes = ["segmented", options.iconOnly ? "segmented--icon" : "", options.grow ? "segmented--grow" : ""]
+  const classes = ["segmented", options.iconOnly ? "segmented--icon" : "", options.grow === false ? "segmented--compact" : options.grow ? "segmented--grow" : ""]
     .filter(Boolean)
     .join(" ");
   return html`

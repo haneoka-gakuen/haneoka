@@ -164,34 +164,38 @@
    secondary-container. Markup must carry role="group" and each segment
    aria-pressed (multi-select) or aria-checked with role="radio" (single). */
 .segmented {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
-  height: var(--control-height);
-  flex: 0 0 auto;
+  min-height: var(--control-height);
+  height: auto;
+  flex: 1 1 auto;
   overflow: hidden;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-full);
 }
 .segmented > button {
   display: inline-flex;
+  flex: 1 1 0;
   min-width: 0;
+  min-height: var(--control-height);
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding-inline: 12px;
+  padding: 4px 12px;
   color: var(--md-sys-color-on-surface-variant);
   background: transparent;
   font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
     var(--md-sys-typescale-label-large-line-height) var(--app-font);
-  white-space: nowrap;
+  white-space: normal;
   cursor: pointer;
   transition:
     background-color var(--md-sys-motion-duration-short3) linear,
     color var(--md-sys-motion-duration-short3) linear;
 }
 .segmented > button + button {
-  border-left: 1px solid var(--md-sys-color-outline-variant);
+  border-inline-start: 1px solid var(--md-sys-color-outline-variant);
 }
 .segmented > button > .material-icon {
   --icon-size: 18px;
@@ -200,6 +204,15 @@
   color: var(--md-sys-color-on-secondary-container);
   background: var(--md-sys-color-secondary-container);
 }
+/* Compact toolbar controls keep their intrinsic width. */
+.segmented--icon,
+.segmented--compact {
+  display: inline-flex;
+  width: auto;
+  flex: 0 0 auto;
+}
+.segmented--icon > button,
+.segmented--compact > button { flex: 0 1 auto; white-space: nowrap; }
 /* Icon-only segments are square; the label stays in the accessibility tree. */
 .segmented--icon > button {
   width: var(--control-height);
@@ -215,7 +228,16 @@
 .segmented--grow > button {
   flex: 1 1 0;
 }
-.segmented--grow > button > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.segmented > button > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse) {
+  .segmented,
+  .segmented > button {
+    min-height: var(--md-comp-control-height-touch);
+  }
+  .segmented--icon > button {
+    width: var(--md-comp-control-height-touch);
+  }
 }

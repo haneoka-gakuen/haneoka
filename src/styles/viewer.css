@@ -271,12 +271,13 @@
     font-weight: 500;
   }
   .viewer-parameter-toolbar .segmented {
-    width: max-content;
+    width: auto;
+    flex: 1 1 0;
     max-width: 100%;
     margin-inline-start: auto;
   }
   .viewer-parameter-toolbar .segmented button {
-    min-width: 64px;
+    min-width: 0;
   }
   .viewer-parameter-actions {
     display: flex;
