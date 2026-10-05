@@ -89,6 +89,7 @@ import { restrictToSelectedCardPool, validSelectedCardPool, type SelectedCardPoo
 import { createTheoreticalInventory } from "../lib/team-builder/theoretical-inventory";
 import { emptyCandidateScope, resolveCandidateScope, validCandidateScope, type CandidateScope } from "../lib/team-builder/candidate-scope";
 import { searchContinuation } from "../lib/team-builder/search-continuation";
+import { restoreSearchResumeCheckpoint } from "../lib/team-builder/search-resume";
 import { SEARCH_ENGINE_REVISION } from "../lib/team-builder/solver/search-checkpoint";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
 import { uiText, gameDateTimeRange } from "./shared/catalog";
@@ -1370,7 +1371,8 @@ export class TeamBuilder extends LitElement {
                         this.t("unavailable", "Required data or formula is unavailable");
                       return html`
                         <li>
-                          ${this.numericField(name, pending.draft[kind][index] ?? null, (value) => {
+                          ${this.practiceSlider(name, kind === "bandItems" ? bandItemLevelValues(this.data!, index)
+                            : ((kind === "bandRanks" ? this.data!.progression.bandRanks : this.data!.progression.characterRanks) ?? []).map(row => Number(row.rank)), pending.draft[kind][index] ?? null, (value) => {
                             const draft = { ...pending.draft, [kind]: { ...pending.draft[kind], [index]: value } };
                             this.pendingRebase = { ...pending, draft };
                             this.inventory = draft;
@@ -2362,15 +2364,14 @@ export class TeamBuilder extends LitElement {
   private practiceSlider(label: string, levels: number[], value: number | null, update: (value: number | null) => void, displayValue: (value: number) => string = String) {
     const legal = [...new Set(levels)].filter(Number.isSafeInteger).sort((a, b) => a - b);
     const disabled = !this.sourceReady || this.dataLoading || !legal.length;
+    const known = value !== null && legal.includes(value);
+    const status = value === null ? this.t("notSet", "Not set") : `${displayValue(value)} · ${this.t("needsReview", "Needs review")}`;
     return html`<div class="team-builder__practice-control">
-      ${value === null
-        ? this.select(label, "unset", [{ value: "unset", label: this.t("notSet", "Not set") },
-            ...legal.map(level => ({ value: String(level), label: displayValue(level) }))], selected => { if (selected !== "unset") update(Number(selected)); }, disabled)
-        : !legal.includes(value)
-          ? html`<p role="status" class="team-builder__hint">${label}: ${value} · ${this.t("needsReview", "Needs review")}</p>`
-          : legal.length > 1
-            ? html`<div ?inert=${disabled}>${renderLevelSwitch(label, legal, value, update, displayValue)}</div>`
-            : html`<strong>${label}: ${displayValue(value)}</strong>`}
+      ${legal.length > 1 ? renderLevelSwitch(label, legal, known ? value : null, update, displayValue,
+        { disabled, unknownLabel: status, commitOnChange: true })
+        : legal.length === 1 ? known ? html`<strong>${label}: ${displayValue(value!)}</strong>`
+          : html`<p>${label}: ${status}</p><button class="button button--outlined" ?disabled=${disabled} @click=${()=>update(legal[0])}>${label}: ${displayValue(legal[0])}</button>`
+          : html`<p role="status">${label}: ${value === null ? status : displayValue(value)}</p>`}
       ${!legal.length ? html`<span class="team-builder__hint">${this.t("modifierDomainUnavailable", "Rank rules unavailable")}</span>` : nothing}
     </div>`;
   }
@@ -3079,9 +3080,10 @@ export class TeamBuilder extends LitElement {
           <div class="team-builder__actions">
           ${iconButton({icon:"filter_alt",label:clientText(this.locale,"filter","Filter"),toggle:true,pressed:this.ownedFiltersOpen,onClick:()=>{this.ownedFiltersOpen=!this.ownedFiltersOpen;}})}
           <button class="button button--outlined team-builder__box-action" ?disabled=${!this.boxContext()} @click=${() => this.openBoxImport()}>${this.boxText("title", "Import Box")}</button>
-          ${iconButton({ icon: "image", label: !this.currentOwner ? this.t("signIn", "Sign in to Haneoka") : this.screenshotContext()
-              ? this.screenshotText("title", "Import screenshots") : this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data."),
-            disabled: !this.canEdit || !this.screenshotContext(), className: "team-builder__screenshot-action", onClick: () => this.openScreenshotImport() })}
+          <button class="button button--outlined team-builder__screenshot-action"
+            ?disabled=${!this.canEdit || !this.screenshotContext()}
+            title=${!this.currentOwner ? this.t("signIn", "Sign in to Haneoka") : this.screenshotContext() ? this.screenshotText("title", "Import screenshots") : this.t("screenshotImport.unavailable", "Screenshot recognition is unavailable for the loaded card data.")}
+            @click=${() => this.openScreenshotImport()}>${this.screenshotText("title", "Import screenshots")}</button>
           <button
             class="button"
             ?disabled=${!this.canEdit}
@@ -4923,110 +4925,6 @@ export class TeamBuilder extends LitElement {
       )
     );
   }
-  private renderMemoryFields(field: "musicMemoryPoints" | "characterMemoryPoints") {
-    if (!this.data) return nothing;
-    const music = field === "musicMemoryPoints";
-    const selected = music ? this.memorySong : this.memoryCharacter;
-    const entities = music ? this.data.songs : this.data.characters;
-    const values = this.playerModifiers[field];
-    const limits = playerModifierRanges(this.data).memoryPoints;
-    const options = Object.keys(entities).map((value) => ({ value, label: this.memoryName(field, value) }));
-    const setSelected = (id: string) => {
-      if (music) this.memorySong = id;
-      else this.memoryCharacter = id;
-    };
-    return html`
-      ${this.disclosure(`memory-${field}`, html`${this.t(field, music ? "Song memory" : "Character memory")}`, html`
-        <div class="team-builder__modifier-content" data-memory-kind=${field}>
-          <p class="team-builder__hint">
-            ${this.t("memoryPointsHint", "Enter direct integer points added to each power stat. 0 means no bonus; blank means unknown.")}
-          </p>
-          <p class="team-builder__hint">
-            ${this.t("memoryRulesPending", "Memory progression rules are not yet verified. Entered points are retained for review.")}
-          </p>
-          <div class="team-builder__fields team-builder__modifier-fields">
-            ${this.select(
-              music ? this.t("song", "Song") : this.t("memoryCharacter", "Character"),
-              selected,
-              [
-                {
-                  value: "",
-                  label: this.t(music ? "chooseSong" : "chooseCharacter", music ? "Choose song" : "Choose character"),
-                },
-                ...options,
-              ],
-              setSelected,
-            )}
-            ${
-              selected && Object.hasOwn(entities, selected)
-                ? this.numericField(
-                    this.t("memoryPoints", "Memory points per stat"),
-                    values[selected] ?? null,
-                    (value) => {
-                      this.patchPlayerModifiers({ [field]: { ...values, [selected]: value } });
-                    },
-                    { min: limits.minimum ?? undefined, max: limits.maximum ?? undefined },
-                  )
-                : nothing
-            }
-          </div>
-          ${
-            Object.keys(values).length
-              ? html`
-                  <ul class="list team-builder__owned">
-                    ${Object.entries(values).map(([id, value]) => {
-                      const name = this.memoryName(field, id);
-                      return html`
-                        <li class="team-builder__owned-row">
-                          <div class="team-builder__identity">
-                            <span class="list-item__body">
-                              <strong class="list-item__headline">${name}</strong>
-                              <span class="list-item__supporting">
-                                ${this.t("memoryPoints", "Memory points per stat")}:
-                                ${value?.toLocaleString(this.locale) ?? this.t("notSet", "Not set")}
-                              </span>
-                            </span>
-                            ${
-                              Object.hasOwn(entities, id)
-                                ? iconButton({
-                                    icon: "edit",
-                                    label: this.t("editMemory", "Edit memory points") + ": " + name,
-                                    onClick: async () => {
-                                      setSelected(id);
-                                      await this.updateComplete;
-                                      const input = this.querySelector<HTMLElement>(
-                                        `[data-memory-kind="${field}"] md-outlined-text-field`,
-                                      );
-                                      requestAnimationFrame(() => {
-                                        if (!input?.isConnected) return;
-                                        input.focus();
-                                        input.scrollIntoView({ block: "nearest" });
-                                      });
-                                    },
-                                  })
-                                : nothing
-                            }
-                            ${iconButton({
-                              icon: "delete",
-                              label: this.t("removeMemory", "Remove saved memory entry") + ": " + name,
-                              onClick: () => {
-                                const next = { ...values };
-                                delete next[id];
-                                this.patchPlayerModifiers({ [field]: next });
-                              },
-                            })}
-                          </div>
-                        </li>
-                      `;
-                    })}
-                  </ul>
-                `
-              : nothing
-          }
-        </div>
-      `, false)}
-    `;
-  }
   private renderPlayerModifierFields() {
     if (!this.inventory || !this.data) return nothing;
     const modifiers = this.playerModifiers;
@@ -5036,25 +4934,24 @@ export class TeamBuilder extends LitElement {
     return html`
       <div class="team-builder__modifier-content">
         <div class="team-builder__fields team-builder__modifier-fields">
-          ${this.practiceSlider(this.t("characterTotalRank", "All-character total rank"), nativeTotalRange && maximum! - minimum! <= 10000
+          ${this.practiceSlider(this.t("characterTotalRank", "Account-wide character rank total"), nativeTotalRange && maximum! - minimum! <= 10000
             ? Array.from({ length: maximum! - minimum! + 1 }, (_, index) => minimum! + index) : [], modifiers.characterTotalRank,
             (value) => this.patchPlayerModifiers({ characterTotalRank: value }))}
-          ${this.practiceSlider(this.t("vipRank", "Actual VIP rank"), ranges.vipRanks, modifiers.vipRank,
+          ${this.practiceSlider(this.t("vipRank", "TGW CARD level"), ranges.vipRanks, modifiers.vipRank,
             (value) => this.patchPlayerModifiers({ vipRank: value }))}
         </div>
         <p class="team-builder__hint">
-          ${this.t("totalRankHint", "Enter the all-character total rank shown in the game.")}
+          ${this.t("totalRankHint", "Enter the account-wide total shown in the game. Individual character ranks affect that character; the total adds a separate team bonus. Partially entered ranks cannot replace this total.")}
         </p>
         ${
           !ranges.vipRanks.length
             ? html`
                 <p class="team-builder__hint">
-                  ${this.t("vipRulesPending", "VIP ranks are not available yet. Existing entries are retained for review.")}
+                  ${this.t("vipRulesPending", "TGW CARD levels are not available yet. Existing entries are retained for review.")}
                 </p>
               `
             : nothing
         }
-        ${this.renderMemoryFields("musicMemoryPoints")} ${this.renderMemoryFields("characterMemoryPoints")}
       </div>
     `;
   }
@@ -5340,7 +5237,11 @@ export class TeamBuilder extends LitElement {
     const resumeInventory = exportInventory(this.inventory);
     const resumeIdentity = { server: this.data.identity.server, releaseId: this.data.identity.releaseId, sourceId: this.data.identity.sourceId ?? "" };
     const resumeSettings = { ...this.searchSettings, searchEffort: "exact" as const, compareModes: false };
-    const continuationContext = { data: this.data, inventory: this.inventory, owner: this.currentOwner, settings: JSON.stringify(this.searchSettings) };
+    const continuationContext = { data: this.data, inventory: this.inventory, owner: this.currentOwner,
+      profile: this.activeProfileId, budgetSeconds: this.budgetSeconds, resumeKey: resumeStore?.key,
+      settings: JSON.stringify(this.searchSettings) };
+    let completeExecution = false, lastSlice = 0, sliceSaving = false, slicePersistenceFailed = false;
+    let sliceFingerprint = resumeCheckpoint?.fingerprint;
     let resumeSaved: Promise<void> = Promise.resolve();
     this.rankingLimit = 5;
     const runId = crypto.randomUUID();
@@ -5363,9 +5264,74 @@ export class TeamBuilder extends LitElement {
     this.running = true;
     this.searchRunId = runId;
     this.searchLoading = beginLoading(this.t("searching", "Finding candidates"));
+    const ownsRun = () => generation === this.requestId && this.worker === worker && this.searchRunId === runId && this.isConnected;
+    const currentContext = () => ownsRun() && this.sourceReady && this.canEdit &&
+      continuationContext.data === this.data && continuationContext.inventory === this.inventory &&
+      continuationContext.owner === this.currentOwner && continuationContext.profile === this.activeProfileId &&
+      continuationContext.budgetSeconds === this.budgetSeconds && resumeStore === this.resumeStore &&
+      continuationContext.resumeKey === resumeStore?.key && readReleaseServer() === resumeIdentity.server &&
+      this.data?.identity.server === resumeIdentity.server && this.data.identity.releaseId === resumeIdentity.releaseId &&
+      this.data.identity.sourceId === resumeIdentity.sourceId &&
+      continuationContext.settings === JSON.stringify(this.searchSettings) &&
+      !!this.inventory && exportInventory(this.inventory) === resumeInventory;
+    const abandonRun = () => { if (ownsRun()) { this.cancelSearch(); this.result = null; } };
+    const acceptSlice = async (message: Extract<SolverResponse, { type: "slice-result" }>) => {
+      if (!completeExecution || runRequest.type !== "prepare" || !resumeStore) { abandonRun(); return; }
+      if (this.cancelling) return;
+      if (!currentContext()) { abandonRun(); return; }
+      if (Number.isSafeInteger(message.slices) && message.slices >= 1 && message.slices <= lastSlice) return;
+      if (!Number.isSafeInteger(message.slices) || message.slices !== lastSlice + 1 || sliceSaving ||
+        message.result.completeness !== "budget-limited") { abandonRun(); return; }
+      // The saved checkpoint and its ACK token belong to this exact message,
+      // even if callers change controls or another save replaces store.value.
+      const slice = structuredClone(message);
+      lastSlice = slice.slices; sliceSaving = true;
+      try {
+        sliceFingerprint ??= slice.resumeCheckpoint.fingerprint;
+        if (!await restoreSearchResumeCheckpoint(slice.resumeCheckpoint, sliceFingerprint)) {
+          abandonRun(); return;
+        }
+        if (this.cancelling) return;
+        if (!currentContext()) { abandonRun(); return; }
+        const bookmark: SearchResumeBookmark = {
+          schema: "haneoka-team-resume-bookmark-v1", identity: resumeIdentity, inventoryText: resumeInventory,
+          settings: resumeSettings, checkpoint: slice.resumeCheckpoint, result: slice.result, savedAt: new Date().toISOString(),
+        };
+        this.result = slice.result;
+        this.completedSearch = { request: runRequest, result: slice.result, completedAt: bookmark.savedAt,
+          reusedCheckpoint: false, ...(preparation ? { preparation } : {}) };
+        this.searchStatus = this.t("exactContinuing", "Saving progress and continuing the complete search…");
+        const previous = resumeStore.value;
+        resumeSaved = resumeStore.save(bookmark);
+        const staged = resumeStore.value;
+        await resumeSaved;
+        if (this.cancelling) return;
+        if (!currentContext()) { abandonRun(); return; }
+        const durable = resumeStore.status === "saved" && staged !== previous && staged !== null &&
+          resumeStore.value === staged && staged.checkpoint.stateDigest === slice.resumeCheckpoint.stateDigest;
+        const action = !durable ? "persistence-failed" : document.visibilityState === "hidden" ? "pause" : "continue";
+        slicePersistenceFailed = !durable;
+        this.searchStatus = !durable ? this.t("resumeSaveFailed", "Search progress could not be saved.")
+          : action === "pause" ? this.t("exactPaused", "Progress saved. Continue when you are ready.") : "";
+        worker.postMessage({ type: "slice-ack", runId, slices: slice.slices,
+          stateDigest: slice.resumeCheckpoint.stateDigest, action } satisfies SolverRequest);
+      } catch {
+        if (this.cancelling) return;
+        if (!currentContext()) { abandonRun(); return; }
+        slicePersistenceFailed = true;
+        this.searchStatus = this.t("resumeSaveFailed", "Search progress could not be saved.");
+        worker.postMessage({ type: "slice-ack", runId, slices: slice.slices,
+          stateDigest: slice.resumeCheckpoint.stateDigest, action: "persistence-failed" } satisfies SolverRequest);
+      } finally { sliceSaving = false; }
+    };
     worker.onmessage = (event: MessageEvent<SolverResponse>) => {
       const message = event.data;
-      if (generation !== this.requestId || message.runId !== runId || !this.isConnected) return;
+      if (!ownsRun() || message.runId !== runId) return;
+      if (message.type === "slice-result") {
+        void acceptSlice(message).catch(() => { abandonRun(); });
+        return;
+      }
+      if (message.type !== "progress" && completeExecution && !currentContext()) { abandonRun(); return; }
       if (message.type === "progress") {
         this.progress = message.progress;
         this.searchLoading?.update({ stageLabel: this.searchProgressLabel });
@@ -5387,10 +5353,15 @@ export class TeamBuilder extends LitElement {
             ...(preparation ? { preparation } : {}),
           };
           if (message.checkpoint) void checkpointCache?.save(message.checkpoint);
-          if (resumeStore === this.resumeStore) resumeSaved = resumeStore?.save(message.resumeCheckpoint && runRequest.type === "prepare" ? {
+          if (!slicePersistenceFailed && resumeStore === this.resumeStore) resumeSaved = resumeStore?.save(message.resumeCheckpoint && runRequest.type === "prepare" ? {
             schema: "haneoka-team-resume-bookmark-v1", identity: resumeIdentity, inventoryText: resumeInventory,
             settings: resumeSettings, checkpoint: message.resumeCheckpoint, result: message.result, savedAt: new Date().toISOString(),
           } : null) ?? Promise.resolve();
+          if (completeExecution && message.continuation?.stopReason === "persistence-unavailable") this.searchStatus = this.t("resumeSaveFailed", "Search progress could not be saved.");
+          else if (completeExecution && message.continuation?.stopReason === "paused") this.searchStatus = this.t("exactPaused", "Progress saved. Continue when you are ready.");
+          else if (completeExecution && message.continuation?.stopReason === "memory-limit") this.searchStatus = this.t("exactCapacityPause", "Progress saved. The candidate memory limit was reached; narrow the goals or card pool to continue.");
+          else if (completeExecution && message.continuation?.stopReason === "no-progress") this.searchStatus = this.t("exactNoProgress", "Progress saved. Increase the time budget to finish the next evaluation.");
+          else if (completeExecution) this.searchStatus = message.result.completeness === "cancelled" ? this.t("cancelled", "Search cancelled") : "";
           if (message.reusedCheckpoint) this.searchStatus = this.t("checkpointReused", "Reused a complete result");
         } else this.searchError = this.t("unavailable", "Required data or formula is unavailable");
         void checkpointCache?.flush();
@@ -5399,7 +5370,7 @@ export class TeamBuilder extends LitElement {
         this.searchLoading = undefined;
         worker.terminate();
         if (this.worker === worker) this.worker = undefined;
-        if (message.type === "result" && message.result.completeness === "budget-limited" &&
+        if (!completeExecution && message.type === "result" && message.result.completeness === "budget-limited" &&
           runRequest.type === "prepare" && this.exactAutoContinue && !wasCancelling) {
           this.running = true;
           this.searchStatus = this.t("exactContinuing", "Saving progress and continuing the complete search…");
@@ -5467,6 +5438,9 @@ export class TeamBuilder extends LitElement {
       }
       const dispatch = () => {
         if (generation !== this.requestId || !this.isConnected || this.checkpointCache !== checkpointCache) return;
+        completeExecution = runRequest.type === "prepare" && this.exactAutoContinue && !!resumeStore && resumeStore.status !== "error";
+        if (completeExecution && !currentContext()) { abandonRun(); return; }
+        runRequest = { ...runRequest, execution: completeExecution ? "complete" : "bounded" };
         this.searchDispatched = true;
         worker.postMessage({
           ...runRequest,

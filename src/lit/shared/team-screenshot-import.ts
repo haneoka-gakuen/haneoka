@@ -6,6 +6,7 @@ import type { ScreenshotImportPreview, ScreenshotCardConfirmation, ScreenshotRec
 import { tile, tileMedia, type TileOptions } from "../ui/tile";
 import { iconButton } from "../ui/controls";
 import { accordion } from "../ui/accordion";
+import { renderLevelSwitch } from "../ui/level-switch";
 
 export interface ScreenshotImportDialogState {
   phase: "select" | "uploading" | "queued" | "processing" | "review" | "failed";
@@ -83,6 +84,13 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
             ${state.preview.cards.map(proposal => {
               const options = actions.card(proposal.kind, proposal.cardId);
               const choice = state.confirmations.find(value => value.key === proposal.key);
+              const existing = proposal.existingInstanceId !== null;
+              const conflict = !existing && proposal.observedLevels.length > 1;
+              const defaultLevel = existing ? proposal.existingLevel : conflict ? null :
+                proposal.observedLevels.length === 1 ? proposal.observedLevels[0]! : proposal.defaultPractice?.level ?? null;
+              const defaultLabel = existing ? t("keepLevel", "Keep saved level") : conflict ? t("chooseLevel", "Choose level") :
+                proposal.observedLevels.length === 1 ? t("observedLevel", "Screenshot level") : t("defaultLevel", "Default level");
+              const defaultText = defaultLevel === null ? defaultLabel : `${defaultLabel}: ${defaultLevel}`;
               return html`<div role="group" aria-label=${options?.label ?? t("reviewCard", "Review card")}>
                 ${options ? tile({ ...options, href: undefined, onOpen: () => {
                   const first = proposal.observations[0]!; actions.correct(first.image, first.index);
@@ -93,15 +101,21 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                     @change=${(event: Event) => actions.include(proposal.key, (event.target as HTMLInputElement).checked)}></md-checkbox>
                   <span>${t("include", "Include card")}</span>
                 </label>
-                <md-outlined-select label=${t("level", "Visible level")} .value=${choice?.level === undefined ? "keep" : String(choice.level)}
-                  .displayText=${choice?.level === undefined ? t("keepLevel", "Keep saved level") : String(choice.level)}
-                  @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value;
-                    actions.level(proposal.key, value === "keep" ? undefined : Number(value), proposal.observedLevels.includes(Number(value)) ? "observed" : "manual"); }}>
-                  <md-select-option value="keep"><span slot="headline">${t("keepLevel", "Keep saved level")}</span></md-select-option>
-                  ${[...new Set([...proposal.observedLevels, ...actions.levels?.(proposal.kind, proposal.cardId) ?? []])].sort((a,b)=>a-b)
-                    .map(level => html`<md-select-option value=${String(level)}><span slot="headline">${level}</span></md-select-option>`)}
-                </md-outlined-select>
+                <div class="team-builder__practice-control">
+                  <p class="team-builder__hint">${defaultText}</p>
+                  ${(() => {
+                    const levels = [...new Set(actions.levels?.(proposal.kind, proposal.cardId) ?? [])].filter(Number.isSafeInteger).sort((a,b)=>a-b);
+                    const selectedLevel = choice?.level === undefined ? defaultLevel : choice.level;
+                    const value = selectedLevel !== null && levels.includes(selectedLevel) ? selectedLevel : null;
+                    const change = (level: number) => actions.level(proposal.key, level, proposal.observedLevels.includes(level) ? "observed" : "manual");
+                    return levels.length > 1 ? renderLevelSwitch(t("level", "Visible level"), levels, value, change, String,
+                      { unknownLabel: selectedLevel === null ? t("chooseLevel", "Choose level") : String(selectedLevel), commitOnChange: true })
+                      : levels.length === 1 ? html`<button class="button button--outlined" @click=${()=>change(levels[0])}>${t("level", "Visible level")}: ${levels[0]}</button>` : nothing;
+                  })()}
+                  ${choice?.level !== undefined ? html`<button class="button button--text" @click=${()=>actions.level(proposal.key, undefined, "manual")}>${defaultText}</button>` : nothing}
+                </div>
                 ${!proposal.observedLevels.length ? html`<small>${t("levelUnknown", "Level not recognized")}</small>` : nothing}
+                ${conflict && choice?.include && choice.level === undefined ? html`<small role="status">${t("chooseLevel", "Choose level")}</small>` : nothing}
                 ${accordion({ id: `team-screenshot-${proposal.key}`, label: t("sourceImages", "Screenshots"),
                   expanded: actions.expandedSource?.(proposal.key) ?? false,
                   onExpandedChange: expanded => actions.expandSource?.(proposal.key, expanded),
