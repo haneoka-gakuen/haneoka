@@ -80,7 +80,7 @@ export function recommendationPostPool(userId: string | null, seed: number): Poo
     SELECT 1 FROM community_post_rank WHERE algorithm_version=?
   )`);
   values.push(VERSION);
-  return { sql: `post.id IN (${branches.join(" UNION ")})`, values };
+  return { sql: `(${branches.map((branch) => `post.id IN (${branch})`).join(" OR ")})`, values };
 }
 
 /** Keep page membership and the rank cursor unchanged while reducing adjacent repeated authors/targets. */
