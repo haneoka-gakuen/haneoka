@@ -1,3 +1,5 @@
+import { handleCommunityBootstrap } from "./community-bootstrap";
+import { withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
 import { version } from "@sonolus/core";
 export { CommunityMediaContainer } from "./community-media-container";
@@ -3348,6 +3350,11 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     const resolveCommunityEntity = createCommunityEntityResolver((catalogEnv, catalogRequest) =>
       handleCatalogApi(catalogEnv, ctx, catalogRequest, new URL(catalogRequest.url).pathname),
     );
+    const bootstrap = await handleCommunityBootstrap(request, env, async (readRequest) =>
+      (await handleCommunityEntityRequest(readRequest, env, resolveCommunityEntity)) ??
+      (await handleCommunityRequest(readRequest, env)),
+    );
+    if (bootstrap) return bootstrap;
     const communityEntity = await handleCommunityEntityRequest(request, env, resolveCommunityEntity);
     if (communityEntity) return communityEntity;
     const communityForums = await handleCommunityForumsRequest(request, env);
@@ -3486,7 +3493,7 @@ async function cleanupDatabase(env: Env): Promise<void> {
 const worker: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
-      return await handleRequest(request, env, ctx);
+      return await withRequestWork(ctx, () => handleRequest(request, env, ctx));
     } catch (error) {
       return internalErrorResponse(request, error);
     }

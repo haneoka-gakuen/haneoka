@@ -1,3 +1,4 @@
+import { backgroundWork } from "./request-work";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError } from "better-auth/api";
 import { captcha } from "better-auth/plugins";
@@ -1198,17 +1199,17 @@ const observeAuthenticatedVisit = async (request: Request, env: Env, userId: str
     path.startsWith("/api/v1/account/avatar/")
   )
     return;
-  try {
-    await recordAuthenticatedVisit(request, env, userId, token);
-  } catch (failure) {
-    // Visit telemetry does not turn an otherwise valid account request into a failure.
-    console.warn(
-      JSON.stringify({
+  await backgroundWork("visit:" + userId, async () => {
+    try {
+      await recordAuthenticatedVisit(request, env, userId, token);
+    } catch (failure) {
+      // Visit telemetry does not turn an otherwise valid account request into a failure.
+      console.warn(JSON.stringify({
         event: "auth.visit_record_failed",
         error: failure instanceof Error ? failure.name : "UnknownError",
-      }),
-    );
-  }
+      }));
+    }
+  });
 };
 
 export const handleAccountRegistrationRequest = async (request: Request, env: Env): Promise<Response | null> => {

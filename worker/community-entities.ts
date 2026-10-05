@@ -515,10 +515,12 @@ export async function handleCommunityEntityRequest(
   const descriptor = await resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale });
   if (!descriptor || descriptor.type !== target.entityType || descriptor.originalId !== target.originalId)
     return error(request, 404, "entity_not_found", "The original entity is unavailable or unresolved");
-  const session = await getAuthSession(request, env, { authoritative: true }),
-    userId = session?.user?.id ?? null;
-  const existing = await thread(env, target),
-    forumId = existing?.forumId ?? (await defaultForum(env, userId));
+  const [session, existing] = await Promise.all([
+    getAuthSession(request, env, { authoritative: true }),
+    thread(env, target),
+  ]);
+  const userId = session?.user?.id ?? null;
+  const forumId = existing?.forumId ?? (await defaultForum(env, userId));
   if (
     !forumId ||
     !(await env.DB.prepare(`SELECT 1 WHERE ${forumPermissionSql("?", "?", "read")}`)

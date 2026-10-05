@@ -1,3 +1,5 @@
+import { backgroundWork } from "./request-work";
+import { orderedEligible } from "./ordered-read";
 import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./community-entity-guard";
 import { entityRecommendationCandidates } from "./community-entity-recommendations";
 import { writableTeamOwner } from "./team-inventory";
@@ -1088,9 +1090,8 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   const placeholders = rows.map(() => "?").join(", ");
   const postIds = rows.map((row) => row.id);
   const forumIds = [...new Set(rows.map(row => row.forumId))];
-  const forumRows = await env.DB.prepare(`SELECT id,slug,names_json AS namesJson FROM community_forum WHERE id IN (${forumIds.map(() => "?").join(",")})`).bind(...forumIds).all<{id:string;slug:string;namesJson:string}>();
-  const forumsById = new Map(forumRows.results.map(row => [row.id,{id:row.id,slug:row.slug,names:JSON.parse(row.namesJson) as Record<string,string>} ]));
-  const [tagResult, attachmentResult] = await Promise.all([
+  const [forumRows, tagResult, attachmentResult] = await Promise.all([
+    env.DB.prepare(`SELECT id,slug,names_json AS namesJson FROM community_forum WHERE id IN (${forumIds.map(() => "?").join(",")})`).bind(...forumIds).all<{id:string;slug:string;namesJson:string}>(),
     env.DB.prepare(
       `SELECT link.post_id AS postId, tag.normalized_name AS tag
        FROM community_post_tag AS link
@@ -1119,6 +1120,7 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
       .bind(Number(adminContext),...postIds, viewerUserId,Number(adminContext),Number(adminContext))
       .all<PostAttachmentRow>(),
   ]);
+  const forumsById = new Map(forumRows.results.map(row => [row.id,{id:row.id,slug:row.slug,names:JSON.parse(row.namesJson) as Record<string,string>} ]));
   const tagsByPost = new Map<string, string[]>();
   for (const row of tagResult.results) {
     const tags = tagsByPost.get(row.postId);
@@ -1538,17 +1540,16 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
         ORDER BY rankScore DESC, createdAt DESC, id DESC LIMIT ?`)
         .bind(...bindings, ...(commentCandidates?.values ?? []), ...scoreBindings, ...rankCursorBindings, scanLimit)
         .all<PostListRow>();
-      for (const candidate of result.results) {
-        if (candidate.kind === "entity-comment") {
-          if (!hydrateEntity || !candidate.entityType || !candidate.originalId || !candidate.threadId) continue;
-          const entry = await hydrateEntity({ id: candidate.id, entityType: candidate.entityType,
-            originalId: candidate.originalId, threadId: candidate.threadId, visibility: candidate.visibility });
-          if (!entry) continue;
-          commentEntries.set(candidate.id, entry);
-        }
-        accepted.push(candidate);
-        if (accepted.length === rowLimit) break;
-      }
+      const eligible = await orderedEligible(result.results, rowLimit - accepted.length, async (candidate) => {
+        if (candidate.kind !== "entity-comment") return true;
+        if (!hydrateEntity || !candidate.entityType || !candidate.originalId || !candidate.threadId) return false;
+        const entry = await hydrateEntity({ id: candidate.id, entityType: candidate.entityType,
+          originalId: candidate.originalId, threadId: candidate.threadId, visibility: candidate.visibility });
+        if (!entry) return false;
+        commentEntries.set(candidate.id, entry);
+        return true;
+      });
+      accepted.push(...eligible);
       if (!hydrateEntity || accepted.length === rowLimit || result.results.length < scanLimit) break;
       const last = result.results.at(-1)!;
       rankCursorSql = "WHERE rankScore < ? OR (rankScore = ? AND (createdAt < ? OR (createdAt = ? AND id < ?)))";
@@ -1593,12 +1594,11 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   }
   const hasMore = result.results.length > options.limit;
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
-  const taggedRows = await attachPostMetadata(env, rows.filter((row) => row.kind !== "entity-comment"), userId);
-  const viewerFlags = await loadViewerPostFlags(
-    env,
-    taggedRows.map((row) => row.id),
-    userId,
-  );
+  const postRows = rows.filter((row) => row.kind !== "entity-comment");
+  const [taggedRows, viewerFlags] = await Promise.all([
+    attachPostMetadata(env, postRows, userId),
+    loadViewerPostFlags(env, postRows.map((row) => row.id), userId),
+  ]);
   const posts = taggedRows.map(({ body, rankScore, kind: _kind, entityType: _entityType, originalId: _originalId, threadId: _threadId, ...post }) => {
     void rankScore;
     const value = publicAuthoredContent<PostListWithTags>({
@@ -1621,31 +1621,33 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   if (userId && options.scope === "recommended" && taggedRows.length) {
     const seenAt = Date.now();
     const impressionRows = taggedRows.map(() => "(?)").join(", ");
-    try {
-      await env.DB.prepare(
-        `WITH impressions(post_id) AS (VALUES ${impressionRows})
-         INSERT INTO community_feed_impression
-           (user_id, post_id, first_seen_at, last_seen_at, seen_count)
-         SELECT ?, impressions.post_id, ?, ?, 1
-         FROM impressions
-         WHERE ${activeSessionProfileWhere}
-         ON CONFLICT(user_id, post_id) DO UPDATE SET
-           last_seen_at = excluded.last_seen_at,
-           seen_count = community_feed_impression.seen_count + 1`,
-      )
-        .bind(...taggedRows.map((row) => row.id), userId, seenAt, seenAt, userId)
-        .run();
-    } catch (impressionError) {
-      console.error(
-        JSON.stringify({
-          event: "community.recommendation.impression_write_failed",
-          error:
-            impressionError instanceof Error
-              ? { name: impressionError.name, message: impressionError.message }
-              : String(impressionError),
-        }),
-      );
-    }
+    await backgroundWork("feed-impression:" + userId + ":" + recommendationSeed, async () => {
+      try {
+        await env.DB.prepare(
+          `WITH impressions(post_id) AS (VALUES ${impressionRows})
+           INSERT INTO community_feed_impression
+             (user_id, post_id, first_seen_at, last_seen_at, seen_count)
+           SELECT ?, impressions.post_id, ?, ?, 1
+           FROM impressions
+           WHERE ${activeSessionProfileWhere}
+           ON CONFLICT(user_id, post_id) DO UPDATE SET
+             last_seen_at = excluded.last_seen_at,
+             seen_count = community_feed_impression.seen_count + 1`,
+        )
+          .bind(...taggedRows.map((row) => row.id), userId, seenAt, seenAt, userId)
+          .run();
+      } catch (impressionError) {
+        console.error(
+          JSON.stringify({
+            event: "community.recommendation.impression_write_failed",
+            error:
+              impressionError instanceof Error
+                ? { name: impressionError.name, message: impressionError.message }
+                : String(impressionError),
+          }),
+        );
+      }
+    });
   }
   const lastRow = rows.at(-1);
   return json(request, {
@@ -1698,9 +1700,11 @@ const getPost = async (request: Request, env: Env, id: string, url: URL): Promis
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
   const postWithTags = commentsOnly ? null : ((await attachPostMetadata(env, [postRow], userId))[0] ?? null);
   const post = postWithTags ?? postRow;
-  const forumCanReply = userId !== null && await canAccessPostForum(env,id,userId,"reply");
-  const forumCanPost = userId !== null && await canAccessPostForum(env,id,userId,"post");
-  const forumCanManage = userId !== null && await canAccessPostForum(env,id,userId,"manage");
+  const [forumCanReply, forumCanPost, forumCanManage] = await Promise.all([
+    userId !== null && canAccessPostForum(env,id,userId,"reply"),
+    userId !== null && canAccessPostForum(env,id,userId,"post"),
+    userId !== null && canAccessPostForum(env,id,userId,"manage"),
+  ]);
   let liked = false;
   let bookmarked = false;
   let following = false;
