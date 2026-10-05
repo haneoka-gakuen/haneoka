@@ -378,7 +378,8 @@
       "snap_absolute": "绝对",
       "snap_relative": "相对",
       "multi_select": "多选",
-      "zoom_y": "纵向缩放"
+      "zoom_y": "纵向缩放",
+      "outside_stage": "轨道外"
     }
   },
   "storyEditor": "故事编辑器",

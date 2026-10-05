@@ -378,7 +378,8 @@
       "snap_absolute": "Absolute",
       "snap_relative": "Relative",
       "multi_select": "Multi-select",
-      "zoom_y": "Vertical zoom"
+      "zoom_y": "Vertical zoom",
+      "outside_stage": "Outside the lanes"
     }
   },
   "storyEditor": "Story Editor",
