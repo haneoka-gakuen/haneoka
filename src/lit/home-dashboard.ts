@@ -2326,7 +2326,7 @@ export class HomeDashboard extends LitElement {
         label: (key, fallback, params?: MessageParams) => this.communityLabel(key, fallback, params),
         authorHref: `/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
         canReply: Boolean(href),
-        allowStickers: false,
+        allowStickers: true,
         preview: true,
         actions: {
           like: () => this.likeRecommendedComment(entry),

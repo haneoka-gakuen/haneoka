@@ -6594,7 +6594,7 @@ export class CommunityWorkspace extends LitElement {
         label: (key, fallback, params?: MessageParams) => this.label(key, fallback, params),
         authorHref: this.detailHref(`/community/users/${comment.authorUid}`),
         canReply: Boolean(href),
-        allowStickers: false,
+        allowStickers: true,
         editing: edit ? {
           body: edit.body, busy: this.busy,
           onBody: (body) => this.changeCommentEditBody(id, body),
