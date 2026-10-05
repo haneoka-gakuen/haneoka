@@ -191,7 +191,11 @@ export function addInventoryEntries(
 }
 
 /** Dry-run only. Out-of-range practice and missing cards are retained for an explicit choice. */
-export function rebaseInventory(inventory: InventoryV1, nextData: TeamBuilderData): InventoryRebasePreview {
+export function rebaseInventory(
+  inventory: InventoryV1,
+  nextData: TeamBuilderData,
+  options: { accountCharacterIds?: readonly number[] } = {},
+): InventoryRebasePreview {
   const candidate = structuredClone(inventory);
   if (inventory.server !== nextData.identity.server)
     return {
@@ -211,7 +215,7 @@ export function rebaseInventory(inventory: InventoryV1, nextData: TeamBuilderDat
     for (const entry of candidate[kind])
       if (!(kind === "members" ? nextData.members : nextData.snapshots)[String(entry.cardId)])
         unknownCards.push({ kind, instanceId: entry.instanceId, cardId: entry.cardId });
-  const { issues } = validateInventory(candidate, nextData);
+  const { issues } = validateInventory(candidate, nextData, options);
   return { candidate, changes, unknownCards, issues, canApply: issues.length === 0 };
 }
 

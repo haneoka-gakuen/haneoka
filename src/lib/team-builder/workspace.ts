@@ -1,5 +1,7 @@
 import type { TeamAssignment } from "./contracts";
 import type { TeamBuilderData } from "./data";
+import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./data/character-rank-total";
+import { characterRankInventoryIds } from "./data/character-rank-scope";
 import {
   upgradeInventory,
   validateAssignment,
@@ -38,8 +40,11 @@ const current = (identity: WorkspaceIdentity, data: TeamBuilderData) => {
   if (identity.server !== data.identity.server || identity.sourceId !== pin(data).sourceId)
     throw new TypeError("team-workspace-rebase-required");
 };
-const checkedInventory = (inventory: InventoryV1, data: TeamBuilderData) => {
-  const rebased = rebaseInventory(inventory, data);
+const checkedInventory = (inventory: InventoryV1, data: TeamBuilderData, scope?: CharacterRankTotalScope, recorded = false) => {
+  // Saved profile reads retain historical records without declaring a complete account.
+  const ids = scope ? characterRankInventoryIds(resolveCharacterRankTotal(data, inventory, scope))
+    : recorded ? Object.keys(inventory.characterRanks).filter(id => /^[1-9]\d*$/u.test(id) && Number.isSafeInteger(Number(id))).map(Number) : [];
+  const rebased = rebaseInventory(inventory, data, { accountCharacterIds: ids });
   if (!rebased.canApply) throw new TypeError("team-workspace-invalid-inventory");
   return upgradeInventory(rebased.candidate);
 };
@@ -54,6 +59,7 @@ export function createUpgradeProfile(
   data: TeamBuilderData,
   label: string,
   baseInventoryRevision: number,
+  scope?: CharacterRankTotalScope,
 ): UpgradeProfile {
   if (!revision(baseInventoryRevision)) throw new TypeError("team-workspace-invalid-revision");
   return {
@@ -62,7 +68,7 @@ export function createUpgradeProfile(
     kind: "upgrade-planning",
     identity: pin(data),
     baseInventoryRevision,
-    inventory: checkedInventory(inventory, data),
+    inventory: checkedInventory(inventory, data, scope),
   };
 }
 export function upsertUpgradeProfile(workspace: TeamWorkspaceV1, profile: UpgradeProfile): TeamWorkspaceV1 {
@@ -79,11 +85,12 @@ export function updateUpgradeProfile(
   profileId: string,
   inventory: InventoryV1,
   data: TeamBuilderData,
+  scope?: CharacterRankTotalScope,
 ): TeamWorkspaceV1 {
   const profile = workspace.profiles.find((value) => value.id === profileId);
   if (!profile) throw new TypeError("team-workspace-profile-missing");
   current(profile.identity, data);
-  return upsertUpgradeProfile(workspace, { ...profile, identity: pin(data), inventory: checkedInventory(inventory, data) });
+  return upsertUpgradeProfile(workspace, { ...profile, identity: pin(data), inventory: checkedInventory(inventory, data, scope) });
 }
 export function selectWorkspaceProfile(workspace: TeamWorkspaceV1, profileId: string | null): TeamWorkspaceV1 {
   return checkTeamWorkspace({ ...workspace, activeProfileId: profileId }, workspace.server);
@@ -92,19 +99,19 @@ export function getWorkspaceInventory(
   workspace: TeamWorkspaceV1,
   actual: InventoryV1,
   data: TeamBuilderData,
+  scope?: CharacterRankTotalScope,
 ): InventoryV2 {
   checkTeamWorkspace(workspace, data.identity.server);
-  if (workspace.activeProfileId === null) return checkedInventory(actual, data);
+  if (workspace.activeProfileId === null) return checkedInventory(actual, data, scope, true);
   const profile = workspace.profiles.find((value) => value.id === workspace.activeProfileId)!;
   if (profile.identity.server !== data.identity.server || profile.identity.sourceId !== data.identity.sourceId)
     throw new TypeError("team-workspace-rebase-required");
-  const rebased = rebaseInventory(profile.inventory, data);
-  if (!rebased.canApply) throw new TypeError("team-workspace-invalid-inventory");
-  return checkedInventory(rebased.candidate, data);
+  return checkedInventory(profile.inventory, data, scope, true);
 }
-export function workspaceProfileCompatible(profile: UpgradeProfile, data: TeamBuilderData): boolean {
-  return profile.identity.server === data.identity.server && profile.identity.sourceId === data.identity.sourceId &&
-    rebaseInventory(profile.inventory, data).canApply;
+export function workspaceProfileCompatible(profile: UpgradeProfile, data: TeamBuilderData, scope?: CharacterRankTotalScope): boolean {
+  if (profile.identity.server !== data.identity.server || profile.identity.sourceId !== data.identity.sourceId) return false;
+  try { checkedInventory(profile.inventory, data, scope, true); return true; }
+  catch { return false; }
 }
 export function removeUpgradeProfile(workspace: TeamWorkspaceV1, profileId: string): TeamWorkspaceV1 {
   return checkTeamWorkspace(
@@ -122,8 +129,9 @@ export function createSavedTeam(
   inventory: InventoryV1,
   data: TeamBuilderData,
   profileId: string | null = null,
+  scope?: CharacterRankTotalScope,
 ): SavedTeam {
-  const captured = checkedInventory(inventory, data);
+  const captured = checkedInventory(inventory, data, scope);
   if (
     validateAssignment(assignment, captured).length ||
     assignment.memberInstanceIds.length !== 5 ||
@@ -160,9 +168,10 @@ export function restoreSavedTeam(
   team: SavedTeam,
   data: TeamBuilderData,
   targetInventory?: InventoryV1,
+  scope?: CharacterRankTotalScope,
 ): { inventory: InventoryV2; assignment: TeamAssignment } {
   current(team.identity, data);
-  const inventory = checkedInventory(targetInventory ?? team.inventory, data);
+  const inventory = checkedInventory(targetInventory ?? team.inventory, data, scope, true);
   const member = (cardId: number) => {
     const row = inventory.members.find((entry) => entry.cardId === cardId);
     if (!row) throw new TypeError("team-workspace-team-card-missing");
