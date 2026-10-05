@@ -19,6 +19,23 @@ on:
           - jp-cbt
           - intl-cbt
           - all
+      tgw_mode:
+        description: Manual current TGW projection; normal keeps the resource build path
+        required: false
+        default: normal
+        type: choice
+        options:
+          - normal
+          - preflight
+          - publish-reviewed
+      tgw_input_json:
+        description: Exact current identity and reviewed API raw-pointer SHA/length
+        required: false
+        type: string
+      tgw_approval_json:
+        description: Root-reviewed candidate hash and actual strong S3 ETag; publish mode only
+        required: false
+        type: string
       github_environment:
         description: GitHub Actions environment for the run
         required: false
@@ -59,7 +76,7 @@ concurrency:
 jobs:
   pipeline_intl:
     name: Build and publish Intl resources
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.server == 'intl' || inputs.server == 'all')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && (inputs.server == 'intl' || inputs.server == 'all')) }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
@@ -84,7 +101,7 @@ jobs:
 
   pipeline_jp:
     name: Build and publish JP resources
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.server == 'jp' || inputs.server == 'all')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && (inputs.server == 'jp' || inputs.server == 'all')) }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
@@ -107,7 +124,7 @@ jobs:
 
   pipeline_manual:
     name: Build and publish manually selected resources
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.server != 'intl' && inputs.server != 'jp' && inputs.server != 'all' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && inputs.server != 'intl' && inputs.server != 'jp' && inputs.server != 'all' }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
@@ -127,6 +144,52 @@ jobs:
       resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
       secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
       jp_version_subscription: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
+
+  current_tgw_projection:
+    name: Prepare or publish reviewed current TGW entities
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.tgw_mode && inputs.tgw_mode != 'normal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    environment: ${{ inputs.server == 'jp' && 'resource-jp' || 'resource-intl' }}
+    steps:
+      - name: Require one production server
+        env:
+          RESOURCE_SERVER: ${{ inputs.server }}
+        run: |
+          case "$RESOURCE_SERVER" in jp|intl) ;; *) echo "TGW projection requires jp or intl" >&2; exit 1 ;; esac
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install the existing small R2/compiler import closure
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/tgw-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/tgw-dependencies/requirements.txt"
+      - name: Prepare current TGW entities or publish the exact reviewed candidate
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ github.sha }}
+          RESOURCE_SERVER: ${{ inputs.server }}
+          TGW_MODE: ${{ inputs.tgw_mode }}
+          TGW_INPUT_JSON: ${{ inputs.tgw_input_json }}
+          TGW_APPROVAL_JSON: ${{ inputs.tgw_approval_json }}
+        run: python scripts/publish/tgw_current.py --output "$RUNNER_TEMP/tgw-output"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: tgw-current-${{ inputs.server }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/tgw-output/*.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   rebuild-site:
     name: Rebuild site pages
