@@ -46,6 +46,7 @@ def build_tgw_card(data: Any, documents: dict[str, Any], resource_types: dict[in
         rank = int(row.get("_vipRank") or 0)
         kind = int(row.get("_vipBonusType") or 0)
         benefits[rank].append({
+            "vipBonusType": kind,
             "name": data.text(f"ui_vip_bonus_type_{kind}"),
             "value": int(row.get("_value") or 0),
         })

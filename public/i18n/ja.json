@@ -2389,7 +2389,16 @@
       "rankRewards": "ランクアップ報酬",
       "dailyRewards": "デイリー報酬",
       "empty": "この版にはランクデータがありません。",
-      "reward": "報酬"
+      "reward": "報酬",
+      "allParametersBoost": "全パラメータ＋{percent}%",
+      "boostRecoveryTimeReduction": "LIVE BOOSTの回復時間を{percent}%短縮",
+      "studioRewardBonus": "スタジオ練習報酬＋{percent}%",
+      "studioTimeExtension": "スタジオ練習時間の上限＋{duration}",
+      "boostConsumptionUnlocked": "LIVE BOOST消費数設定を解放",
+      "bandFormationBonus": "バンド編成数＋{count}",
+      "boostAutoRecoveryLimitBonus": "LIVE BOOST自動回復上限＋{count}",
+      "eventGachaFreeCountBonus": "イベントガチャ無料回数＋{count}",
+      "durationSeconds": "{count}秒"
     },
     "system": {
       "ongoing": "開催中",

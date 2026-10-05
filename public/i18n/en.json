@@ -2389,7 +2389,16 @@
       "rankRewards": "Rank-up rewards",
       "dailyRewards": "Daily rewards",
       "empty": "No rank data in this release.",
-      "reward": "Reward"
+      "reward": "Reward",
+      "allParametersBoost": "All stats +{percent}%",
+      "boostRecoveryTimeReduction": "LIVE BOOST recovery time reduced by {percent}%",
+      "studioRewardBonus": "Studio practice rewards +{percent}%",
+      "studioTimeExtension": "Studio practice time limit +{duration}",
+      "boostConsumptionUnlocked": "Unlock LIVE BOOST consumption settings",
+      "bandFormationBonus": "Band formations +{count}",
+      "boostAutoRecoveryLimitBonus": "LIVE BOOST auto-recovery cap +{count}",
+      "eventGachaFreeCountBonus": "Free event gacha draws +{count}",
+      "durationSeconds": "{count}s"
     },
     "system": {
       "ongoing": "Ongoing",

@@ -2389,7 +2389,16 @@
       "rankRewards": "升级奖励",
       "dailyRewards": "每日奖励",
       "empty": "此版本没有等级资料。",
-      "reward": "奖励"
+      "reward": "奖励",
+      "allParametersBoost": "所有能力值增加{percent}%",
+      "boostRecoveryTimeReduction": "LIVE BOOST恢复时间缩短{percent}%",
+      "studioRewardBonus": "录音室练习奖励增加{percent}%",
+      "studioTimeExtension": "录音室练习时间上限增加{duration}",
+      "boostConsumptionUnlocked": "解锁LIVE BOOST消耗数量设置",
+      "bandFormationBonus": "乐队编队数量增加{count}",
+      "boostAutoRecoveryLimitBonus": "LIVE BOOST自动恢复上限增加{count}",
+      "eventGachaFreeCountBonus": "活动招募免费次数增加{count}次",
+      "durationSeconds": "{count}秒"
     },
     "system": {
       "ongoing": "正在进行",

@@ -2389,7 +2389,16 @@
       "rankRewards": "랭크업 보상",
       "dailyRewards": "일일 보상",
       "empty": "이 버전에는 랭크 정보가 없습니다.",
-      "reward": "보상"
+      "reward": "보상",
+      "allParametersBoost": "전체 능력치 +{percent}%",
+      "boostRecoveryTimeReduction": "LIVE BOOST 회복 시간 {percent}% 단축",
+      "studioRewardBonus": "스튜디오 연습 보상 +{percent}%",
+      "studioTimeExtension": "스튜디오 연습 시간 상한 +{duration}",
+      "boostConsumptionUnlocked": "LIVE BOOST 소모량 설정 해금",
+      "bandFormationBonus": "밴드 편성 수 +{count}",
+      "boostAutoRecoveryLimitBonus": "LIVE BOOST 자동 회복 상한 +{count}",
+      "eventGachaFreeCountBonus": "이벤트 뽑기 무료 횟수 +{count}회",
+      "durationSeconds": "{count}초"
     },
     "system": {
       "ongoing": "진행 중",

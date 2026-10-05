@@ -24,15 +24,19 @@ import { emptyState, errorState, loadingState } from "./ui/state";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
 import { icon } from "./ui/icon";
 import { clientText } from "../i18n/client";
-import type { Locale } from "@haneoka/i18n";
+import type { Locale, MessageParams } from "@haneoka/i18n";
 import "../styles/tgw-card.css";
 
 type Reward = JsonRecord;
+interface Benefit extends JsonRecord {
+  vipBonusType?: number;
+  value?: number;
+}
 interface Tier extends JsonRecord {
   id: string;
   rank: number;
   pointsRequired?: number;
-  benefits?: JsonRecord[];
+  benefits?: Benefit[];
   dailyRewards?: Array<{ day: number; reward: Reward }>;
   rankRewards?: Reward[];
   image?: string;
@@ -89,8 +93,8 @@ export class TgwCardWorkspace extends LitElement {
     removeEventListener("haneoka:locale-ready", this.localeListener);
     super.disconnectedCallback();
   }
-  private text(key: string, fallback: string) {
-    return clientText(this.locale, `tgw.${key}`, fallback);
+  private text(key: string, fallback: string, params?: MessageParams) {
+    return clientText(this.locale, `tgw.${key}`, fallback, params);
   }
   private name(value: unknown) {
     return localizedText(value, this.locale);
@@ -216,6 +220,58 @@ export class TgwCardWorkspace extends LitElement {
           <span class="tgw-chip">${body}</span>
         `;
   }
+  private benefitDisplay(benefit: Benefit): { label: string; value?: string } {
+    const label = this.name(benefit.name);
+    const kind = benefit.vipBonusType;
+    const rawValue = benefit.value;
+    // Older DTOs have no enum; preserve their label without guessing a unit.
+    if (
+      typeof kind !== "number" ||
+      !Number.isInteger(kind) ||
+      typeof rawValue !== "number" ||
+      !Number.isSafeInteger(rawValue) ||
+      rawValue < 0
+    )
+      return { label };
+    if (kind === 9) {
+      // A present zero-valued row is an unlock; positive cap semantics are reviewed separately.
+      return { label: rawValue === 0 ? this.text("boostConsumptionUnlocked", label) : label };
+    }
+    const number = new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2 });
+    const countKeys: Readonly<Partial<Record<number, string>>> = {
+      1: "bandFormationBonus",
+      3: "boostAutoRecoveryLimitBonus",
+      8: "eventGachaFreeCountBonus",
+    };
+    const countKey = countKeys[kind];
+    if (countKey) return { label: this.text(countKey, label, { count: number.format(rawValue) }) };
+    if (kind === 6) {
+      return { label: this.text("studioTimeExtension", label, { duration: this.benefitDuration(rawValue) }) };
+    }
+    const percentKeys: Readonly<Partial<Record<number, string>>> = {
+      2: "boostRecoveryTimeReduction",
+      5: "studioRewardBonus",
+      7: "allParametersBoost",
+    };
+    const percentKey = percentKeys[kind];
+    return percentKey ? { label: this.text(percentKey, label, { percent: number.format(rawValue / 100) }) } : { label };
+  }
+  private benefitDuration(seconds: number): string {
+    const number = new Intl.NumberFormat(this.locale);
+    const parts: string[] = [];
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainder = seconds % 60;
+    if (hours)
+      parts.push(clientText(this.locale, "spanHours", `${number.format(hours)} h`, { count: number.format(hours) }));
+    if (minutes)
+      parts.push(
+        clientText(this.locale, "spanMinutes", `${number.format(minutes)} m`, { count: number.format(minutes) }),
+      );
+    if (remainder || !parts.length)
+      parts.push(this.text("durationSeconds", `${number.format(remainder)} s`, { count: number.format(remainder) }));
+    return parts.join(" ");
+  }
   private tier(tier: Tier) {
     const benefits = Array.isArray(tier.benefits) ? tier.benefits : [];
     const daily = Array.isArray(tier.dailyRewards) ? tier.dailyRewards : [];
@@ -240,19 +296,16 @@ export class TgwCardWorkspace extends LitElement {
               ? html`
                   <ul class="tgw-rung__benefits" role="list">
                     ${benefits.map((benefit) => {
-                      const label = this.name(benefit.name);
-                      const rawValue = benefit.value;
-                      const value = Number(rawValue);
-                      const hasValue = rawValue !== undefined && Number.isFinite(value);
+                      const { label, value } = this.benefitDisplay(benefit);
                       return label
                         ? html`
                             <li>
                               <span class="tgw-rung__mark">${icon("check_circle", 18)}</span>
                               <span>${label}</span>
                               ${
-                                hasValue
+                                value !== undefined
                                   ? html`
-                                      <b class="tabular">+${value.toLocaleString(this.locale)}</b>
+                                      <b class="tabular">${value}</b>
                                     `
                                   : nothing
                               }
