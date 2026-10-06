@@ -66,8 +66,15 @@ if (BESTDORI_RAW_MIRROR_ROOT && !fs.statSync(BESTDORI_RAW_MIRROR_ROOT, { throwIf
   throw new Error(`BESTDORI_RAW_MIRROR_ROOT is not a directory: ${BESTDORI_RAW_MIRROR_ROOT}`);
 }
 const BESTDORI_PROVIDER_ORIGIN = configuredHttpOrigin("BESTDORI_PROVIDER_ORIGIN");
-const APPLICATION_WORKER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_ORIGIN");
-const APPLICATION_WORKER_BROWSER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_BROWSER_ORIGIN");
+// CLOUD_DATA_ORIGIN (e.g. https://haneoka.org) lets a local preview read the
+// deployed data: Application Worker routes go there unless a local Worker is
+// configured, and release data for servers without a local workspace is
+// proxied instead of answering 404.
+const CLOUD_DATA_ORIGIN = configuredHttpOrigin("CLOUD_DATA_ORIGIN");
+const APPLICATION_WORKER_ORIGIN = configuredHttpOrigin("APPLICATION_WORKER_ORIGIN") ?? CLOUD_DATA_ORIGIN;
+const APPLICATION_WORKER_BROWSER_ORIGIN =
+  configuredHttpOrigin("APPLICATION_WORKER_BROWSER_ORIGIN") ??
+  (configuredHttpOrigin("APPLICATION_WORKER_ORIGIN") ? undefined : CLOUD_DATA_ORIGIN);
 const RELEASE_SERVERS = (process.env.RELEASE_SERVERS ?? "intl,jp-cbt,intl-cbt")
   .split(",")
   .map((value) => value.trim())
@@ -334,8 +341,20 @@ async function requestBody(req: IncomingMessage): Promise<Buffer | undefined> {
   return Buffer.concat(chunks);
 }
 
-async function proxyApplicationWorker(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-  if (!APPLICATION_WORKER_ORIGIN) {
+function isCloudDataRequest(pathname: string): boolean {
+  if (!CLOUD_DATA_ORIGIN) return false;
+  if (pathname.startsWith("/api/v1/team-builder/") && !WORKSPACES.size) return true;
+  const match = /^\/(?:api\/v1\/servers|assets|runtime|objects)\/([^/]+)\//u.exec(pathname);
+  return Boolean(match && !WORKSPACES.has(decodeURIComponent(match[1]!)));
+}
+
+async function proxyApplicationWorker(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  origin = APPLICATION_WORKER_ORIGIN,
+): Promise<void> {
+  if (!origin) {
     json(res, 503, {
       error: {
         code: "application_worker_unavailable",
@@ -344,7 +363,7 @@ async function proxyApplicationWorker(req: IncomingMessage, res: ServerResponse,
     });
     return;
   }
-  const target = new URL(`${url.pathname}${url.search}`, APPLICATION_WORKER_ORIGIN);
+  const target = new URL(`${url.pathname}${url.search}`, origin);
   const body = await requestBody(req);
   const headers = Object.fromEntries(forwardedApplicationHeaders(req));
   if (body !== undefined) headers["content-length"] = String(body.byteLength);
@@ -1172,6 +1191,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     await proxyApplicationWorker(req, res, url);
     return;
   }
+  if (isCloudDataRequest(url.pathname)) {
+    await proxyApplicationWorker(req, res, url, CLOUD_DATA_ORIGIN);
+    return;
+  }
   if (!allowedMethods.has(req.method ?? "GET")) {
     json(res, 405, { error: { code: "method_not_allowed", message: "Method not allowed" } });
     return;
@@ -1551,6 +1574,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
     )
   ) {
+    if (CLOUD_DATA_ORIGIN) {
+      await proxyApplicationWorker(req, res, url, CLOUD_DATA_ORIGIN);
+      return;
+    }
     json(res, 404, { error: { code: "not_found", message: "Route not found" } });
     return;
   }
