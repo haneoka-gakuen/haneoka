@@ -1,5 +1,6 @@
 import { LitElement, html } from "lit";
 import type { Material, Mesh, Object3D } from "three";
+import { loadingIndicator } from "../ui/loading-indicator";
 
 export class ModelPreviewStage extends LitElement {
   static properties = { src: { type: String }, phase: { state: true }, error: { state: true } };
@@ -155,7 +156,7 @@ export class ModelPreviewStage extends LitElement {
           this.phase === "loading"
             ? html`
                 <div class="model-preview-stage__state">
-                  <md-circular-progress indeterminate></md-circular-progress>
+                  ${loadingIndicator()}
                 </div>
               `
             : this.phase === "error"

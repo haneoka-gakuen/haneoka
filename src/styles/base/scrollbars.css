@@ -30,7 +30,7 @@
 
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  border-radius: 9999px;
+  border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-highest);
   background-clip: padding-box;
 }
@@ -51,7 +51,7 @@ progress {
   height: 4px;
   margin: 4px 0;
   border: none;
-  border-radius: 9999px;
+  border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-highest);
   overflow: hidden;
 }
@@ -61,12 +61,12 @@ progress::-webkit-progress-bar {
 }
 
 progress::-webkit-progress-value {
-  border-radius: 9999px;
+  border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-primary);
   transition: inline-size var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
 }
 
 progress::-moz-progress-bar {
-  border-radius: 9999px;
+  border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-primary);
 }

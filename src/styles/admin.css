@@ -480,7 +480,7 @@
   .admin-eyebrow {
     display: block;
     color: var(--md-sys-color-primary);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
     margin-bottom: 4px;
   }
   .admin-workspace-header h2,
@@ -493,7 +493,7 @@
   .admin-workspace-header p {
     margin: 6px 0 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-toolbar {
     align-items: center;
@@ -512,13 +512,13 @@
     min-width: 0;
   }
   .admin-session strong {
-    font: 500 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .admin-session small,
   .admin-author-link small,
   .admin-muted {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-session .admin-avatar {
     width: 36px;
@@ -542,11 +542,11 @@
   .admin-context-card h3,
   .admin-attachments h3 {
     margin: 0;
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .admin-section-heading > span {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-attention-grid,
   .admin-summary-grid {
@@ -571,10 +571,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font: 500 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .admin-metric > strong {
-    font: 500 36px/44px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-display-weight) var(--md-sys-typescale-display-small-size) / var(--md-sys-typescale-display-small-line-height) var(--app-font);
   }
   .admin-metric__link {
     justify-content: space-between;
@@ -600,7 +600,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-summary dt {
     min-width: 0;
@@ -633,7 +633,7 @@
   .admin-review-entry p {
     margin: 4px 0 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-review-entry__icon {
     display: grid;
@@ -658,7 +658,7 @@
   }
   .admin-loaded-count {
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
   .admin-search {
     display: flex;
@@ -694,7 +694,7 @@
     padding-block: 10px;
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container-low);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
   .admin-record-list {
     border: 0;
@@ -708,7 +708,7 @@
     background: transparent;
     text-align: start;
     color: var(--md-sys-color-on-surface);
-    font: 500 15px/22px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
     cursor: pointer;
     overflow-wrap: anywhere;
   }
@@ -727,14 +727,14 @@
     margin: 6px 0;
     overflow-wrap: anywhere;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-post-row__engagement {
     display: flex;
     align-items: center;
     gap: 5px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-post-row__engagement svg:nth-of-type(2) {
     margin-inline-start: 8px;
@@ -759,7 +759,7 @@
     border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
     overflow-wrap: anywhere;
   }
   .admin-status--critical {
@@ -777,7 +777,7 @@
   .admin-post-row__author,
   .admin-post-row__time {
     min-width: 0;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-post-row__time .button {
     justify-self: start;
@@ -855,7 +855,7 @@
   .admin-post-body {
     min-width: 0;
     overflow-wrap: anywhere;
-    font: 400 15px/25px var(--app-font);
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) / var(--md-sys-typescale-body-large-line-height) var(--app-font);
   }
   .admin-post-body p:first-child {
     margin-top: 0;
@@ -892,7 +892,7 @@
   }
   .admin-author-link strong {
     overflow-wrap: anywhere;
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .admin-context-card dl > div {
     display: grid;
@@ -900,11 +900,11 @@
   }
   .admin-context-card dt {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-context-card dd {
     margin: 0;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-review-actions {
     display: grid;
@@ -917,7 +917,7 @@
   .admin-review-reason {
     margin: 4px 0 12px;
     overflow-wrap: anywhere;
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-timeline {
     display: grid;
@@ -945,16 +945,16 @@
     overflow-wrap: anywhere;
   }
   .admin-timeline strong {
-    font: 500 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .admin-timeline time,
   .admin-timeline small {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-timeline p {
     margin: 4px 0;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-revision-list {
     display: grid;
@@ -972,7 +972,7 @@
   }
   .admin-history-card > header time {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-history-card .admin-post-body p {
     white-space: normal;
@@ -1010,7 +1010,7 @@
     gap: 8px;
     padding: 12px;
     overflow-wrap: anywhere;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-attachment figcaption > span {
     display: flex;
@@ -1155,7 +1155,7 @@
   .admin-user-columns {
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container-low);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
   .admin-user-identity,
   .admin-user-summary {
@@ -1176,7 +1176,7 @@
     background: transparent;
     text-align: start;
     color: var(--md-sys-color-on-surface);
-    font: 500 15px/22px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
     cursor: pointer;
     overflow-wrap: anywhere;
   }
@@ -1191,7 +1191,7 @@
     gap: 4px;
     min-width: 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-user-uid > code {
     display: block;
@@ -1222,7 +1222,7 @@
   .admin-user-copy-status {
     grid-column: 1 / -1;
     color: var(--md-sys-color-primary);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-user-copy-status:empty {
     display: none;
@@ -1232,7 +1232,7 @@
   .admin-record-list .admin-user-last-visit {
     min-width: 0;
     gap: 5px;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-user-email > span:first-child {
     overflow: hidden;
@@ -1279,13 +1279,13 @@
   }
   .admin-user-fields dt {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-user-fields dd {
     min-width: 0;
     margin: 0;
     overflow-wrap: anywhere;
-    font: 400 14px/22px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-user-management .admin-user-fields,
   .admin-restriction-record .admin-user-fields {
@@ -1293,7 +1293,7 @@
   }
   .admin-user-visit-time {
     margin: 8px 0 0;
-    font: 500 14px/22px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .admin-restriction-record {
     min-width: 0;
@@ -1353,7 +1353,7 @@
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font: 400 14px/22px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-user-count-breakdown {
     display: grid;
@@ -1399,7 +1399,7 @@
   }
   .admin-chart-card h4 {
     margin: 0;
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .admin-chart-card md-outlined-select {
     width: min(100%, 360px);
@@ -1432,7 +1432,7 @@
     align-items: center;
     gap: 8px;
     margin-top: 12px;
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .admin-map-actions {
     display: flex;
@@ -1448,15 +1448,15 @@
     display: grid;
     gap: 4px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-geo-totals strong {
     color: var(--md-sys-color-on-surface);
-    font: 500 22px/28px var(--app-font);
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .admin-map-credit {
     margin-bottom: 0;
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-map-credit a {
     color: var(--md-sys-color-on-surface-variant);
@@ -1468,7 +1468,7 @@
     gap: 8px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-geo-filter-summary > span:nth-child(2) {
     display: flex;
@@ -1545,7 +1545,7 @@
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    font: 400 12px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
 }
 
@@ -1586,7 +1586,7 @@
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
-    font: 500 18px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .admin-forum-row {
     display: grid;
@@ -1621,11 +1621,11 @@
     min-width: 0;
     gap: 3px;
     overflow-wrap: anywhere;
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .admin-forum-row__body > small {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-forum-fields {
     display: grid;
@@ -1642,7 +1642,7 @@
   }
   .admin-forum-fieldgroup > h4 {
     margin: 0;
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .admin-forum-fields :is(md-outlined-text-field, md-outlined-select) {
     width: 100%;

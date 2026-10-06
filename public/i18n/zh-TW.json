@@ -1858,27 +1858,10 @@
     "cancel": "取消"
   },
   "aboutPage": {
-    "eyebrow": "讓故事延展的檔案館與開放工具鏈",
+    "eyebrow": "BanG Dream! Our Notes 資料庫",
     "title": "關於 Haneoka",
-    "description": "Haneoka 將 BanG Dream! Our Notes 延展為一段完整的瀏覽器體驗：從故事場景與可搜尋目錄，到社群空間、譜面工具，以及創作與發佈的工作流程。",
-    "experienceTitle": "從瀏覽世界開始，把故事留在手邊",
-    "experienceIntro": "瀏覽器就是第一座舞台：故事播放器、深度目錄與社群層圍繞同一份資料彼此連接。",
-    "experience": [
-      {
-        "title": "跟隨故事展開",
-        "body": "在瀏覽器故事播放器中開啟對話、選擇、場景演出、動畫、音訊與影片，再沿著歷史記錄、存檔、設定和分支場景繼續前進。"
-      },
-      {
-        "title": "沿著每條線索探索",
-        "body": "從多語言資料中搜尋角色、卡片、樂曲、故事、活動與系統目錄，再從詳細頁面進入音訊、漫畫、資源、Live2D、Spine 與譜面體驗。"
-      },
-      {
-        "title": "讓它成為共同空間",
-        "body": "帳號與社群工作區把資訊流、貼文、留言、反應、收藏、標籤、通知、個人資料、附件和播放清單匯入同一座檔案館。"
-      }
-    ],
+    "description": "樂曲、譜面、卡牌、劇情與活動，隨每次版本更新同步；配隊、劇情播放與社群也一應俱全。",
     "ecosystemTitle": "為組合而生的生態",
-    "ecosystemIntro": "體驗透過清晰的契約持續延伸：宿主、渲染器、執行環境、外掛、資料發佈與介面各自帶來專注的能力，共同搭起舞台。",
     "ecosystem": [
       {
         "title": "Haneoka・瀏覽器舞台",
@@ -1898,7 +1881,6 @@
       }
     ],
     "toolchainTitle": "從閱讀到創作，再到發佈",
-    "toolchainIntro": "周邊工具把一份精確的專案模型一路連接到製作、本地化、驗證與發行目標。",
     "toolchain": [
       {
         "title": "Schedar・塑造譜面",
@@ -1914,7 +1896,6 @@
       }
     ],
     "repositoriesTitle": "公開專案的星座",
-    "repositoriesIntro": "從瀏覽器檔案館到背後的引擎與創作工具，每個儲存庫都承載著體驗的一部分。",
     "repositories": [
       {
         "title": "Haneoka",
@@ -1945,13 +1926,66 @@
         "body": "專案校驗、外掛解析，以及 Web、PWA、桌面與行動平台發行工程。"
       }
     ],
-    "footerBody": "Haneoka 將資料、演出與創作串連成一套開放的作品體系。每個引擎都有獨立的介面與工具，每個外掛都能成為新作品的一部分。",
     "sourceLink": "查看 Haneoka 原始碼",
     "noticesLink": "第三方聲明",
     "licenseLink": "MPL-2.0 授權",
     "contactLink": "開啟 GitHub Issue",
-    "heroTitle": "讓每一段故事，都有更大的舞台",
-    "apiLink": "API 文件"
+    "heroTitle": "Our Notes 的一切，都在這裡。",
+    "apiLink": "API 文件",
+    "ctaPrimary": "瀏覽圖鑑",
+    "stats": {
+      "songs": "首樂曲",
+      "cards": "張卡牌",
+      "stories": "段劇情",
+      "voices": "條語音",
+      "models": "個模型"
+    },
+    "features": [
+      {
+        "eyebrow": "圖鑑",
+        "title": "每張卡、每首歌，都有完整檔案。",
+        "body": "屬性、技能、養成材料、譜面資料與獎勵一目了然，多語言名稱與各服差異並排呈現。",
+        "cta": "瀏覽圖鑑"
+      },
+      {
+        "eyebrow": "樂曲與譜面",
+        "title": "先看懂譜面，再去挑戰。",
+        "body": "譜面預覽與播放器、難度推算、激奏段與排行榜，還能直接在 Sonolus 中遊玩。",
+        "cta": "查看樂曲"
+      },
+      {
+        "eyebrow": "配隊工具",
+        "title": "最強隊伍，幾秒算出。",
+        "body": "依遊戲客戶端的公式精確計算綜合力與分數，涵蓋最高分、激奏、活動獎勵與資源規劃；卡庫可上傳或截圖辨識，多裝置同步。",
+        "cta": "開始配隊"
+      },
+      {
+        "eyebrow": "劇情與模型",
+        "title": "重溫每一段故事。",
+        "body": "劇情播放器還原場景、配音與演出；Live2D 與 Spine 模型可切換動作、表情並匯出。",
+        "cta": "閱讀劇情"
+      },
+      {
+        "eyebrow": "活動",
+        "title": "活動進度，隨時掌握。",
+        "body": "日曆彙整活動、生日與線下演出，活動追蹤即時顯示排行榜與分數線。",
+        "cta": "活動追蹤"
+      },
+      {
+        "eyebrow": "社群",
+        "title": "和同好一起記錄。",
+        "body": "發布動態與貼圖，在每個條目下留言，收藏、追蹤與通知讓交流不中斷。",
+        "cta": "進入社群"
+      }
+    ],
+    "openTitle": "開源，可擴充。",
+    "openBody": "haneoka 與背後的劇情引擎、節奏核心與創作工具全部公開原始碼。",
+    "closingTitle": "現在就開始探索。",
+    "suites": {
+      "platform": "網站與擴充",
+      "story": "劇情引擎與創作工具",
+      "rhythm": "節奏引擎與譜面工具"
+    }
   },
   "bandItemsPage": {
     "title": "樂團道具",
@@ -3738,5 +3772,6 @@
   "metaOfficialLevel": "官方難度",
   "difficultyEstimatedConstant": "估算定數",
   "difficultyEstimateLowConfidence": "低可信度",
-  "difficultyEstimateScope": "FC 操作負擔估算；得分、SS 與活動收益為其他指標。"
+  "difficultyEstimateScope": "FC 操作負擔估算；得分、SS 與活動收益為其他指標。",
+  "moreActions": "更多選項"
 }

@@ -42,9 +42,9 @@
 }
 
 /* ---------- Hub link ----------
-   Destination tile: icon, label, count. The icon's shape morphs from 12dp to
-   a circle on hover — the one shape transition outside of buttons, and it
-   costs nothing because border-radius does not trigger layout. */
+   Destination tile: icon, label, count. The icon badge morphs from a rounded
+   square into a cookie on hover or press (Expressive shape morph); clip-path
+   interpolates between the library's polygons without layout. */
 .hub-link {
   display: grid;
   min-width: 0;
@@ -63,14 +63,30 @@
   height: 40px;
   place-items: center;
   color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-secondary-container);
-  transition: border-radius var(--md-sys-motion-duration-medium2) var(--ease-emphasized);
+  clip-path: var(--shape-square);
+  transition:
+    clip-path var(--motion-spatial),
+    rotate var(--motion-spatial),
+    background-color var(--motion-effects);
 }
-@media (hover: hover) {
-  .hub-link:hover .hub-link__icon {
-    border-radius: var(--md-sys-shape-corner-full);
-  }
+.hub-link:is(:hover, :focus-visible, :active) .hub-link__icon {
+  clip-path: var(--shape-cookie-9);
+  rotate: 20deg;
+}
+.hub-link__icon > * {
+  transition: rotate var(--motion-spatial);
+}
+.hub-link:is(:hover, :focus-visible, :active) .hub-link__icon > * {
+  rotate: -20deg;
+}
+.hub-link {
+  transition:
+    border-radius var(--motion-spatial),
+    background-color var(--motion-effects);
+}
+.hub-link:active {
+  border-radius: var(--md-sys-shape-corner-extra-large);
 }
 .hub-link__label {
   min-width: 0;

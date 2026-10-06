@@ -339,7 +339,7 @@ filter-facet {
   min-height: 48px;
   gap: 8px;
   cursor: pointer;
-  font: 500 14px/20px var(--app-font);
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
 }
 .filter-facet__summary {
   color: var(--md-sys-color-on-surface-variant);
@@ -351,7 +351,7 @@ filter-facet {
   margin-block: 4px 8px;
   padding: 8px 12px;
   border: 1px solid var(--md-sys-color-outline);
-  border-radius: 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-surface);
 }
 .filter-facet__options {
@@ -392,7 +392,7 @@ filter-facet {
   min-width: 0;
   gap: 6px;
   color: var(--md-sys-color-on-surface-variant);
-  font: 400 12px/18px var(--app-font);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
 }
 .filter-range input {
   width: 100%;
@@ -400,6 +400,6 @@ filter-facet {
   min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--md-sys-color-outline);
-  border-radius: 8px;
+  border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface);
 }

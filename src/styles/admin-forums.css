@@ -56,13 +56,13 @@
   .admin-forum-workspace .admin-forum-list > header h2,
   .admin-forum-workspace .admin-forum-editor > header h2 {
     margin: 0;
-    font: 500 18px/26px var(--app-font);
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .admin-forum-total {
     display: inline-block;
     margin-inline-start: 4px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .admin-forum-workspace .admin-forum-groups {
@@ -76,7 +76,7 @@
   .admin-forum-workspace .admin-forum-groups > strong {
     flex: 1;
     min-width: 0;
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
   .admin-forum-workspace .admin-forum-group-action {
     max-width: 100%;
@@ -101,11 +101,11 @@
   }
   .admin-forum-workspace .admin-forum-row__body {
     gap: 4px;
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .admin-forum-workspace .admin-forum-row__body > small {
     overflow-wrap: anywhere;
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .admin-forum-workspace .admin-forum-editor {
     display: flex;
@@ -141,7 +141,7 @@
   }
   .admin-forum-workspace .admin-forum-id {
     user-select: all;
-    font: 400 11px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     overflow-wrap: anywhere;
   }
   .admin-forum-workspace .admin-forum-fields {
@@ -158,7 +158,7 @@
     margin: 0;
     padding: 16px 20px 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .admin-forum-section > .segmented,
   .admin-forum-editor__body > .segmented {
@@ -202,10 +202,10 @@
   }
   .admin-forum-empty h3 {
     color: var(--md-sys-color-on-surface);
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .admin-forum-empty p {
-    font: 400 13px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   @media (max-width: 899px) {
     .admin-forum-workspace.admin-forum-layout {

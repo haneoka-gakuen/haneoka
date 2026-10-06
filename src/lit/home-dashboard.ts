@@ -36,6 +36,7 @@ import {
   type JsonRecord,
 } from "./shared/catalog";
 import { tile } from "./ui/tile";
+import { wavyProgress } from "./ui/wavy-progress";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { serverAvailabilityImage, serverAvailabilityLabel } from "./shared/server-availability";
 import {
@@ -1239,6 +1240,21 @@ export class HomeDashboard extends LitElement {
                         –
                         <time datetime=${new Date(event.endAt).toISOString()}>${this.formatDate(event.endAt)}</time>
                       </p>
+                      ${
+                        event.endAt > event.startAt
+                          ? html`
+                              <div class="home-event__progress">
+                                ${wavyProgress({
+                                  value: (Date.now() - event.startAt) / (event.endAt - event.startAt),
+                                  thickness: 4,
+                                  amplitude: 3,
+                                  wavelength: 28,
+                                  label: countdown,
+                                })}
+                              </div>
+                            `
+                          : nothing
+                      }
                     </header>
                     <div class="home-event__bonuses">${bonusContents}</div>
                     <nav class="home-event__links" aria-label=${uiText(this.locale, "events")}>

@@ -99,7 +99,9 @@ const parseSeed = (value: unknown): ParsedSeed | null => {
 };
 
 export const readI18nSeed = (document: Document = globalThis.document): ParsedSeed | null => {
-  const element = document?.getElementById(SEED_ID);
+  // Server renderers may expose a document shim without element lookup.
+  if (typeof document?.getElementById !== "function") return null;
+  const element = document.getElementById(SEED_ID);
   if (!element?.textContent) return null;
   try {
     return parseSeed(JSON.parse(element.textContent));
@@ -149,7 +151,7 @@ export class MainI18nClient {
     this.catalogVersion = options.version || seed?.version || UNSEEDED_I18N_VERSION;
     this.allowedNamespaces = new Set(options.namespaces || [...I18N_NAMESPACES]);
     this.loader = options.load;
-    const documentLocale = typeof document === "undefined" ? undefined : document.documentElement?.dataset.locale;
+    const documentLocale = typeof document === "undefined" ? undefined : document.documentElement?.dataset?.locale;
     this.currentLocale = seed?.locale || normalizeLocale(documentLocale);
     const initialNamespaces = seed?.requiredNamespaces?.length
       ? seed.requiredNamespaces

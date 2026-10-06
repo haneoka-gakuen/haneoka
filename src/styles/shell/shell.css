@@ -97,51 +97,33 @@
   clip-path: inset(50%);
 }
 /* The trailing slot. Pages render their page-level actions here through
-   lib/app-bar.ts. Controls take priority over decorative context and title;
-   the row scrolls only after those optional elements have yielded space. */
+   lib/app-bar.ts. When they do not fit beside the title, lib/app-bar-overflow
+   hides the lowest-priority ones and lists them in a ⋮ overflow menu
+   (Material 3: a top app bar shows a few actions and overflows the rest). */
 .top-app-bar__actions {
   justify-self: end;
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  width: max-content;
   max-width: 100%;
   margin-inline-start: auto;
-  overflow-x: auto;
-  overflow-y: clip;
-  scrollbar-width: none;
-  overscroll-behavior-inline: contain;
-  touch-action: pan-x;
 }
-.top-app-bar__actions::-webkit-scrollbar {
-  display: none;
+.top-app-bar__actions [data-app-bar-overflowed] {
+  display: none !important;
 }
 .top-app-bar__actions:has(.top-app-bar__search[data-search-expanded="true"]) {
-  overflow: visible;
-  width: auto;
+  flex: 1 1 auto;
   max-width: none;
 }
-.top-app-bar__actions {
-  --action-fade-start: #000;
-  --action-fade-end: #000;
-  mask-image: linear-gradient(
-    to right,
-    var(--action-fade-start),
-    #000 8px,
-    #000 calc(100% - 8px),
-    var(--action-fade-end)
-  );
+.top-app-bar__overflow[hidden] {
+  display: none;
 }
-.top-app-bar__actions[data-app-bar-scroll-start="true"] {
-  --action-fade-start: transparent;
-}
-.top-app-bar__actions[data-app-bar-scroll-end="true"] {
-  --action-fade-end: transparent;
-}
-.top-app-bar__actions:has(.top-app-bar__search[data-search-expanded="true"]) {
-  mask-image: none;
+.top-app-bar__overflow-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
 }
 .top-app-bar__secondary-actions {
   display: flex;
@@ -413,11 +395,17 @@
   animation: none;
   mix-blend-mode: normal;
 }
+.app-shell__main {
+  view-transition-name: page;
+}
+::view-transition-group(page) {
+  animation-duration: 300ms;
+}
 ::view-transition-old(page) {
-  animation: md-fade-out 90ms linear both;
+  animation: md-fade-out 90ms var(--md-sys-motion-easing-standard-accelerate) both;
 }
 ::view-transition-new(page) {
-  animation: md-fade-through-in 210ms var(--ease-decelerate) 90ms both;
+  animation: md-fade-through-in 260ms var(--motion-spring-spatial-default) 60ms both;
 }
 @keyframes md-fade-out {
   to {
@@ -427,7 +415,7 @@
 @keyframes md-fade-through-in {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateY(var(--motion-enter-distance)) scale(0.985);
   }
 }
 
@@ -449,4 +437,7 @@
     animation: none;
     transform: translateX(0);
   }
+}
+.top-app-bar__overflow {
+  order: 99;
 }

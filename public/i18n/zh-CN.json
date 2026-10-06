@@ -1858,27 +1858,10 @@
     "cancel": "取消"
   },
   "aboutPage": {
-    "eyebrow": "让故事延展的档案馆与开放工具链",
+    "eyebrow": "BanG Dream! Our Notes 资料库",
     "title": "关于 Haneoka",
-    "description": "Haneoka 将 BanG Dream! Our Notes 延展为一段完整的浏览器体验：从故事场景与可搜索目录，到社区空间、谱面工具，以及创作与发布的工作流。",
-    "experienceTitle": "从浏览世界开始，把故事留在手边",
-    "experienceIntro": "浏览器就是第一座舞台：故事播放器、深度目录与社区层围绕同一份资料彼此连接。",
-    "experience": [
-      {
-        "title": "跟随故事展开",
-        "body": "在浏览器故事播放器中打开对话、选择、场景演出、动画、音频与视频，再沿着历史记录、存档、设置和分支场景继续前进。"
-      },
-      {
-        "title": "沿着每条线索探索",
-        "body": "从多语言数据中搜索角色、卡片、歌曲、故事、活动与系统目录，再从详情页进入音频、漫画、资源、Live2D、Spine 和谱面体验。"
-      },
-      {
-        "title": "让它成为共同空间",
-        "body": "账户与社区工作区把信息流、帖子、评论、反应、收藏、标签、通知、个人资料和附件汇入同一座档案馆。"
-      }
-    ],
+    "description": "乐曲、谱面、卡牌、剧情与活动，随每次版本更新同步；配队、剧情播放和社区也一应俱全。",
     "ecosystemTitle": "为组合而生的生态",
-    "ecosystemIntro": "体验通过清晰的契约持续扩展：宿主、渲染器、运行时、插件、数据发布与界面各自带来专注的能力，共同搭起舞台。",
     "ecosystem": [
       {
         "title": "Haneoka・浏览器舞台",
@@ -1898,7 +1881,6 @@
       }
     ],
     "toolchainTitle": "从阅读到创作，再到发布",
-    "toolchainIntro": "故事与谱面的创作工具覆盖编辑、本地化、预览、校验和发行，让想法沿着同一条工作流成为作品。",
     "toolchain": [
       {
         "title": "Schedar・塑造谱面",
@@ -1914,7 +1896,6 @@
       }
     ],
     "repositoriesTitle": "公开项目的星座",
-    "repositoriesIntro": "从浏览器档案馆到背后的引擎与创作工具，每个仓库都承载着体验的一部分。",
     "repositories": [
       {
         "title": "Haneoka",
@@ -1945,13 +1926,66 @@
         "body": "项目校验、插件解析，以及 Web、PWA、桌面与移动端发行工程。"
       }
     ],
-    "footerBody": "Haneoka 把资料、演出与创作连接成一套开放的作品体系。每个引擎都拥有独立的接口与工具，每个插件都能成为新作品的一部分。",
     "sourceLink": "查看 Haneoka 源代码",
     "noticesLink": "第三方声明",
     "licenseLink": "MPL-2.0 许可证",
     "contactLink": "打开 GitHub Issue",
-    "heroTitle": "让每一段故事，都有更大的舞台",
-    "apiLink": "API 文档"
+    "heroTitle": "Our Notes 的一切，都在这里。",
+    "apiLink": "API 文档",
+    "ctaPrimary": "浏览图鉴",
+    "stats": {
+      "songs": "首乐曲",
+      "cards": "张卡牌",
+      "stories": "段剧情",
+      "voices": "条语音",
+      "models": "个模型"
+    },
+    "features": [
+      {
+        "eyebrow": "图鉴",
+        "title": "每张卡、每首歌，都有完整档案。",
+        "body": "属性、技能、养成材料、谱面数据与奖励一目了然，多语言名称与各服差异并排呈现。",
+        "cta": "浏览图鉴"
+      },
+      {
+        "eyebrow": "乐曲与谱面",
+        "title": "先看懂谱面，再去挑战。",
+        "body": "谱面预览与播放器、难度推算、激奏段和排行榜，还能直接在 Sonolus 中游玩。",
+        "cta": "查看乐曲"
+      },
+      {
+        "eyebrow": "配队工具",
+        "title": "最强队伍，几秒算出。",
+        "body": "按游戏客户端的公式精确计算综合力与分数，覆盖最高分、激奏、活动奖励与资源规划；卡库可上传或截图识别，多设备同步。",
+        "cta": "开始配队"
+      },
+      {
+        "eyebrow": "剧情与模型",
+        "title": "重温每一段故事。",
+        "body": "剧情播放器还原场景、配音与演出；Live2D 与 Spine 模型可切换动作、表情并导出。",
+        "cta": "阅读剧情"
+      },
+      {
+        "eyebrow": "活动",
+        "title": "活动进度，随时掌握。",
+        "body": "日历汇总活动、生日与线下演出，活动追踪实时显示排行榜与分数线。",
+        "cta": "活动追踪"
+      },
+      {
+        "eyebrow": "社区",
+        "title": "和同好一起记录。",
+        "body": "发布动态与表情，在每个条目下评论，收藏、关注与通知让交流不断线。",
+        "cta": "进入社区"
+      }
+    ],
+    "openTitle": "开源，可扩展。",
+    "openBody": "haneoka 与背后的剧情引擎、节奏核心和创作工具全部公开源代码。",
+    "closingTitle": "现在就开始探索。",
+    "suites": {
+      "platform": "网站与扩展",
+      "story": "剧情引擎与创作工具",
+      "rhythm": "节奏引擎与谱面工具"
+    }
   },
   "bandItemsPage": {
     "title": "乐队道具",
@@ -3738,5 +3772,6 @@
   "metaOfficialLevel": "官方难度",
   "difficultyEstimatedConstant": "估算定数",
   "difficultyEstimateLowConfidence": "低可信度",
-  "difficultyEstimateScope": "FC 操作负担估算；得分、SS 与活动收益为其他指标。"
+  "difficultyEstimateScope": "FC 操作负担估算；得分、SS 与活动收益为其他指标。",
+  "moreActions": "更多选项"
 }

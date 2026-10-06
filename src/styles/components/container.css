@@ -6,11 +6,13 @@
    ========================================================================== */
 
 /* ---------- Surface ----------
-   A plain tonal panel. The default block for "a group of related content". */
+   A plain tonal panel. The default block for "a group of related content".
+   Panels take the extra-large (28dp) corner; cards and tiles inside them the
+   medium/large corners, so nesting reads from the shape alone. */
 .surface {
   min-width: 0;
   padding: var(--surface-padding, clamp(16px, 3vw, 24px));
-  border-radius: var(--md-sys-shape-corner-large);
+  border-radius: var(--md-sys-shape-corner-extra-large);
   background: var(--md-sys-color-surface-container-low);
 }
 .surface--outlined {

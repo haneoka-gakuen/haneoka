@@ -99,7 +99,7 @@
 .section-heading > :where(h2, h3) {
   min-width: 0;
   margin: 0;
-  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+  font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
     var(--md-sys-typescale-title-large-line-height) var(--app-font);
   overflow-wrap: break-word;
 }

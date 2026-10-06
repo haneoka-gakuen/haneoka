@@ -26,9 +26,10 @@
     color: var(--md-sys-color-on-surface-variant);
     font-size: var(--md-sys-typescale-label-medium-size);
   }
-  .community-mutation-progress md-circular-progress {
+  .community-mutation-progress :is(md-circular-progress, .loading-indicator) {
     flex: 0 0 24px;
     --md-circular-progress-size: 24px;
+    --loading-size: 24px;
   }
   .community-page > :is(.list, .community-stack, .community-list-actions, .state, .load-more),
   .community-page > .async-region > .async-region__content > :is(.list, .community-stack, .community-list-actions, .state, .load-more) {
@@ -89,7 +90,7 @@
   .community-pin__media:not([data-state="ready"]) img {
     opacity: 0;
   }
-  .community-pin__media[data-state] md-circular-progress {
+  .community-pin__media[data-state] :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
   .community-pin__failure {
@@ -295,7 +296,7 @@
   .community-gallery__slide:not([data-state="ready"]) img {
     opacity: 0;
   }
-  .community-gallery__slide[data-state] md-circular-progress {
+  .community-gallery__slide[data-state] :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
   .community-gallery__failure {
@@ -1136,7 +1137,7 @@
     max-width: 96px;
     margin-inline-end: 12px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-pin__meta {
     flex-wrap: nowrap;
@@ -1509,7 +1510,7 @@
     border: 0;
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -1522,13 +1523,41 @@
     border: 0;
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     white-space: normal;
     overflow-wrap: anywhere;
   }
   @media (min-width: 840px) {
     .has-media .community-post-discussion:has(> .community-forum-link) {
       grid-template-rows: auto auto minmax(0, 1fr) auto;
+    }
+  }
+}
+
+/* Compact windows: the create action becomes the screen's FAB (Material 3:
+ * 56dp, 16dp corner, primary container, level 3), bottom trailing, above the
+ * navigation bar and the audio dock. */
+@layer pages {
+  @media (max-width: 599px) {
+    .top-app-bar .community-compose {
+      position: fixed;
+      z-index: var(--md-sys-z-index-local-sticky, 5);
+      right: max(16px, env(safe-area-inset-right));
+      bottom: calc(16px + var(--shell-bottom-inset, 0px) + var(--audio-dock-height, 0px) + env(safe-area-inset-bottom));
+      width: 56px;
+      height: 56px;
+      padding: 0;
+      color: var(--md-sys-color-on-primary-container);
+      border-radius: var(--md-sys-shape-corner-large);
+      background: var(--md-sys-color-primary-container);
+      box-shadow: var(--md-sys-elevation-level3);
+      animation: motion-rise var(--motion-spatial) backwards;
+    }
+    .top-app-bar .community-compose .material-icon {
+      --icon-size: 24px;
+    }
+    .top-app-bar .community-compose:active {
+      border-radius: var(--md-sys-shape-corner-extra-large);
     }
   }
 }

@@ -13,7 +13,7 @@
     padding: 6px 10px;
     gap: 2px;
     border: 1px solid color-mix(in srgb, var(--chart-color) 70%, var(--md-sys-color-outline));
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: color-mix(in srgb, var(--chart-color) 18%, var(--md-sys-color-surface));
     color: var(--md-sys-color-on-surface);
     cursor: pointer;
@@ -22,7 +22,7 @@
   .difficulty-picker > button[aria-checked="true"] {
     background: var(--chart-color);
     color: #121318;
-    border-radius: 10px;
+    border-radius: var(--md-sys-shape-corner-medium);
     box-shadow: inset 0 0 0 1px #121318;
   }
   .difficulty-picker > button:focus-visible {
@@ -30,15 +30,15 @@
     outline-offset: 3px;
   }
   .difficulty-picker small {
-    font: 500 9px/12px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
   .difficulty-picker b {
-    font: 700 16px/22px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .difficulty-constant,
   .difficulty-picker .difficulty-constant {
     display: block;
-    font: 400 10px/14px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .song-tile__difficulty {
@@ -54,7 +54,7 @@
     min-width: 48px;
     min-height: 48px;
     padding: 4px 6px;
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   /* The static variant reads exactly like an unchecked compact picker button
      but is not a control: the meta table's difficulty column, one row per
@@ -74,7 +74,7 @@
     padding: 4px 6px;
     gap: 2px;
     border: 1px solid color-mix(in srgb, var(--chart-color) 70%, var(--md-sys-color-outline));
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: color-mix(in srgb, var(--chart-color) 18%, var(--md-sys-color-surface));
     color: var(--md-sys-color-on-surface);
     font-variant-numeric: tabular-nums;

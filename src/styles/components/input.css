@@ -27,32 +27,38 @@ md-switch {
   --md-switch-selected-track-color: var(--md-sys-color-primary);
   --md-switch-selected-handle-color: var(--md-sys-color-on-primary);
 }
-md-circular-progress {
+:is(md-circular-progress, .loading-indicator) {
   width: 40px;
   height: 40px;
   --md-circular-progress-active-indicator-color: var(--md-sys-color-primary);
   --md-circular-progress-size: 40px;
+  --loading-size: 40px;
 }
+/* Material 3 Expressive slider (SliderTokens): 16dp full-round track, a
+ * 4×44dp bar handle. Material Web cannot cut the 6dp gaps beside the handle,
+ * so the inactive track sits on surface-container-highest for contrast. */
 .md3-slider {
   width: 100%;
   min-width: 48px;
-  height: 32px;
+  height: 44px;
   --md-slider-active-track-color: var(--md-sys-color-primary);
   --md-slider-inactive-track-color: var(--md-sys-color-secondary-container);
   --md-slider-handle-color: var(--md-sys-color-primary);
   --md-slider-focus-handle-color: var(--md-sys-color-primary);
   --md-slider-hover-handle-color: var(--md-sys-color-primary);
   --md-slider-pressed-handle-color: var(--md-sys-color-primary);
-  --md-slider-hover-state-layer-color: var(--md-sys-color-primary);
-  --md-slider-pressed-state-layer-color: var(--md-sys-color-primary);
-  --md-slider-handle-height: 20px;
+  --md-slider-hover-state-layer-color: transparent;
+  --md-slider-pressed-state-layer-color: transparent;
+  --md-slider-handle-height: 44px;
   --md-slider-handle-width: 4px;
-  --md-slider-state-layer-size: 32px;
-  --md-slider-active-track-height: 6px;
-  --md-slider-inactive-track-height: 6px;
+  --md-slider-state-layer-size: 44px;
+  --md-slider-active-track-height: 16px;
+  --md-slider-inactive-track-height: 16px;
   --md-slider-active-track-shape: var(--md-sys-shape-corner-full);
   --md-slider-inactive-track-shape: var(--md-sys-shape-corner-full);
   --md-slider-handle-shape: var(--md-sys-shape-corner-full);
+  --md-slider-with-tick-marks-active-container-color: var(--md-sys-color-on-primary);
+  --md-slider-with-tick-marks-inactive-container-color: var(--md-sys-color-on-secondary-container);
 }
 .md3-slider--runtime {
   --md-slider-active-track-color: var(--md-comp-runtime-primary, var(--md-sys-color-primary));
@@ -60,11 +66,16 @@ md-circular-progress {
   --md-slider-handle-color: var(--md-comp-runtime-primary, var(--md-sys-color-primary));
 }
 .md3-slider--compact {
-  height: 20px;
-  --md-slider-active-track-height: 4px;
-  --md-slider-inactive-track-height: 4px;
-  --md-slider-handle-height: 14px;
-  --md-slider-state-layer-size: 20px;
+  height: 28px;
+  --md-slider-active-track-height: 8px;
+  --md-slider-inactive-track-height: 8px;
+  --md-slider-handle-height: 24px;
+  --md-slider-state-layer-size: 28px;
+}
+
+/* Native checkboxes and radios take the primary role (forms inside dialogs). */
+:where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--md-sys-color-primary);
 }
 
 /* ---------- Field stack ----------

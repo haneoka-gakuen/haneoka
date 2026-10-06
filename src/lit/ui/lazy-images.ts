@@ -1,5 +1,4 @@
-import "@material/web/progress/circular-progress.js";
-import { prepareMaterialProgress } from "../../lib/loading-progress";
+import { createLoadingIndicator } from "./loading-indicator";
 
 /**
  * Deferred artwork for collections.
@@ -93,12 +92,7 @@ function syncMediaFrame(image: HTMLImageElement, frame = image.closest<HTMLEleme
   );
   frame.setAttribute("aria-busy", String(pending));
   if (!pending || frame.querySelector(":scope > .media-loading__progress")) return;
-  const progress = document.createElement("md-circular-progress");
-  progress.className = "media-loading__progress";
-  progress.setAttribute("indeterminate", "");
-  progress.setAttribute("aria-hidden", "true");
-  frame.append(progress);
-  prepareMaterialProgress(progress);
+  frame.append(createLoadingIndicator({ className: "media-loading__progress" }));
 }
 
 function finishImage(image: HTMLImageElement, state: "loaded" | "error" | "cancelled") {

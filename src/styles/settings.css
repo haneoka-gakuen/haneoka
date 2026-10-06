@@ -8,7 +8,7 @@
   .settings-card {
     min-width: 0;
     padding: 8px 24px;
-    border-radius: 28px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-low);
   }
   .settings-group + .settings-group {
@@ -39,13 +39,13 @@
   .settings-row h2 {
     margin: 0;
     color: var(--md-sys-color-on-surface);
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .settings-current {
     min-height: 20px;
     margin: 4px 0 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
     overflow-wrap: anywhere;
   }
   .settings-options {
@@ -81,7 +81,7 @@
     height: 100%;
     place-items: center;
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 28px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface-variant);
     transition:
@@ -91,7 +91,7 @@
   }
   .settings-option input:checked + .settings-option__face {
     border-color: var(--md-sys-color-primary);
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
   }
@@ -100,7 +100,7 @@
     outline-offset: 4px;
   }
   .settings-option input:active + .settings-option__face {
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   .settings-content:not([data-ready]) .settings-option__face {
     transition: none;
@@ -161,7 +161,7 @@
     border-radius: 6px;
     background: var(--md-sys-color-inverse-surface);
     color: var(--md-sys-color-inverse-on-surface);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     text-align: center;
     pointer-events: none;
     transform: translateX(-50%);
@@ -191,7 +191,7 @@
     align-items: center;
     gap: 20px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
     cursor: pointer;
   }
   .settings-toggle label svg {
@@ -227,7 +227,7 @@
     }
     .settings-card {
       padding: 0 16px;
-      border-radius: 24px;
+      border-radius: var(--md-sys-shape-corner-extra-large);
     }
     .settings-row {
       gap: 16px;

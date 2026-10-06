@@ -4,7 +4,7 @@
     margin-top: 12px;
     padding: 16px;
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-surface-container-low);
   }
   .upgrade-cost header {
@@ -13,7 +13,7 @@
     align-items: center;
     gap: 12px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .upgrade-cost header > span {
     display: inline-flex;
@@ -39,9 +39,9 @@
     min-height: 40px;
     max-width: 100%;
     padding: 4px 8px;
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container);
-    font: 400 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .upgrade-cost img {
     width: 32px;

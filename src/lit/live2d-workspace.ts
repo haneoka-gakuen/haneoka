@@ -22,6 +22,7 @@ import { viewerBufferSize } from "./runtime/viewer-resolution";
 import { segmented } from "./ui/controls";
 import { CUBISM_CORE_URLS, CUBISM_WEB_RUNTIME_URL } from "../lib/cubism-runtime";
 import type { CubismTextureVariant } from "@haneoka/vega-plugin-cubism";
+import { loadingIndicator } from "./ui/loading-indicator";
 
 type Value = Record<string, unknown>;
 type Parameter = { id: string; value: number; minimum: number; maximum: number; defaultValue: number };
@@ -1673,7 +1674,7 @@ export class Live2DWorkspace extends LitElement {
               this.modelPhase === "loading"
                 ? html`
                     <div class="viewer-state" role="status" aria-live="polite">
-                      <md-circular-progress indeterminate aria-hidden="true"></md-circular-progress>
+                      ${loadingIndicator()}
                       <span>${uiText(this.locale, "loading")}</span>
                     </div>
                   `

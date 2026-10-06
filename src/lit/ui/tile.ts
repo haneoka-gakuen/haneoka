@@ -2,19 +2,20 @@ import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { prepareMaterialProgress } from "../../lib/loading-progress";
 import { icon } from "./icon";
+import { loadingIndicator } from "./loading-indicator";
 import { nextImageCandidate } from "./lazy-images";
 import "@material/web/progress/circular-progress.js";
 
-/** Native Material progress; decorative by default inside a named media frame. */
+/** Media loading state: the Expressive loading indicator while waiting, native determinate progress once a value is known. */
 export function mediaProgress(options: { label?: string; value?: number } = {}): TemplateResult {
   const value = typeof options.value === "number" && Number.isFinite(options.value)
     ? Math.min(1, Math.max(0, options.value)) : undefined;
+  if (value === undefined) return loadingIndicator({ label: options.label, className: "media-loading__progress" });
   return html`
     <md-circular-progress
       ${ref(prepareMaterialProgress)}
       class="media-loading__progress"
-      ?indeterminate=${value === undefined}
-      .value=${value ?? 0}
+      .value=${value}
       aria-label=${options.label ?? nothing}
       aria-hidden=${options.label ? nothing : "true"}
     ></md-circular-progress>

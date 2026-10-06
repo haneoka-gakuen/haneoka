@@ -1,4 +1,4 @@
-@layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
+@layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
 
 /* 1 — tokens */
 @import "@haneoka/design-tokens/tokens.css" layer(tokens);
@@ -25,6 +25,8 @@
 @import "./components/feedback.css" layer(components);
 @import "./components/wavy-progress.css" layer(components);
 @import "./components/playback.css" layer(components);
+@import "./components/shapes.css" layer(components);
+@import "./components/motion.css" layer(motion);
 
 /* 5 — shell */
 @import "./shell/navigation.css" layer(shell);

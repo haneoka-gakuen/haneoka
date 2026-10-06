@@ -1,0 +1,246 @@
+/* ==========================================================================
+   Motion — Material 3 Expressive
+   Every component's movement in one place, on the spring tokens from
+   base/tokens.css: spatial springs (position, size, shape) may overshoot,
+   effects springs (colour, opacity) never do.
+
+     · press: containers morph their corner (shape morph), not their size,
+       so a dense grid never reflows under the pointer;
+     · selection: selected toggles and segments trade a round corner for a
+       square one, chips and tabs slide their indicator on a spatial spring;
+     · arrival: surfaces, tiles and rows rise 16dp and fade in, staggered
+       through the first screenful only;
+     · overlays: menus unfold from their anchor, dialogs grow from 90%.
+
+   Reduced motion drops every distance to zero (tokens.css) and shell.css
+   clamps durations, so nothing here needs its own media query.
+   ========================================================================== */
+
+/* ---------- Press and selection: shape morph ---------- */
+.button {
+  transition:
+    border-radius var(--motion-spatial-fast),
+    background-color var(--motion-effects),
+    color var(--motion-effects),
+    box-shadow var(--motion-effects);
+}
+.button:active {
+  border-radius: var(--md-sys-shape-corner-small);
+}
+.icon-button,
+.fab {
+  transition:
+    border-radius var(--motion-spatial-fast),
+    background-color var(--motion-effects),
+    color var(--motion-effects);
+}
+.icon-button:active {
+  border-radius: var(--md-sys-shape-corner-small);
+}
+.fab:active {
+  border-radius: var(--md-sys-shape-corner-extra-large);
+}
+/* A selected toggle is the square of the pair (Expressive toggle buttons). */
+.icon-button--toggle[aria-pressed="true"] {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+.icon-button--toggle[aria-pressed="true"]:active {
+  border-radius: var(--md-sys-shape-corner-full);
+}
+.segmented > button {
+  transition:
+    border-radius var(--motion-spatial-fast),
+    background-color var(--motion-effects),
+    color var(--motion-effects);
+}
+.segmented > button > .material-icon {
+  transition: transform var(--motion-spatial-fast);
+}
+.segmented > button:active > .material-icon {
+  transform: scale(0.88);
+}
+.chip {
+  transition:
+    border-radius var(--motion-spatial-fast),
+    background-color var(--motion-effects),
+    color var(--motion-effects),
+    border-color var(--motion-effects);
+}
+.chip:active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+.card--interactive,
+.tile--interactive,
+.list-item--interactive {
+  transition:
+    border-radius var(--motion-spatial),
+    background-color var(--motion-effects),
+    box-shadow var(--motion-effects);
+}
+.card--interactive:active,
+.tile--interactive:active {
+  border-radius: var(--md-sys-shape-corner-large);
+}
+@media (hover: hover) {
+  .card--elevated.card--interactive:hover {
+    box-shadow: var(--md-sys-elevation-level2);
+  }
+}
+/* Tile artwork drifts a little towards the pointer's press, under the clip. */
+.tile--interactive :where(img, .tile__media > *) {
+  transition: transform var(--motion-spatial);
+}
+.tile--interactive:active :where(img, .tile__media > *) {
+  transform: scale(1.03);
+}
+
+/* ---------- Tabs ---------- */
+.tab {
+  transition: color var(--motion-effects);
+}
+.tab__indicator {
+  transition: transform var(--motion-spatial);
+}
+.tabs--pills .tab {
+  transition:
+    background-color var(--motion-effects),
+    color var(--motion-effects),
+    border-radius var(--motion-spatial-fast);
+}
+.tabs--pills .tab:active {
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+/* ---------- Navigation: the active indicator stretches in from its centre ---------- */
+.rail-item__indicator,
+.nav-bar__indicator {
+  transition:
+    background-color var(--motion-effects),
+    transform var(--motion-spatial);
+}
+:is(.rail-item, .nav-bar__item):active :is(.rail-item__indicator, .nav-bar__indicator) {
+  transform: scaleX(0.92);
+}
+:is(.rail-item, .nav-bar__item):is([aria-current="page"], .is-active) :is(.rail-item__indicator, .nav-bar__indicator) {
+  animation: motion-indicator-in var(--motion-spatial) backwards;
+}
+@keyframes motion-indicator-in {
+  from {
+    transform: scaleX(0.4);
+  }
+}
+.nav-item {
+  transition:
+    background-color var(--motion-effects),
+    color var(--motion-effects),
+    border-radius var(--motion-spatial-fast);
+}
+
+/* ---------- Arrival ----------
+   The first screenful of a collection, list or page section rises into
+   place. Items beyond it arrive with no delay, so a long result set never
+   waits on its own animation. */
+@keyframes motion-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-enter-distance));
+  }
+}
+@keyframes motion-fade {
+  from {
+    opacity: 0;
+  }
+}
+:where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(-n + 24),
+:where(.page-stage) :where(.surface, .card):not(.collection *, .list *) {
+  animation:
+    motion-rise var(--motion-spring-spatial-default-duration) var(--motion-spring-spatial-default) backwards,
+    motion-fade var(--motion-spring-effects-slow-duration) var(--motion-spring-effects-slow) backwards;
+  animation-delay: calc(var(--motion-index, 0) * var(--motion-stagger));
+}
+@supports (width: calc(sibling-index() * 1px)) {
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(-n + 24) {
+    --motion-index: calc(sibling-index() - 1);
+  }
+}
+@supports not (width: calc(sibling-index() * 1px)) {
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(2) { --motion-index: 1; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(3) { --motion-index: 2; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(4) { --motion-index: 3; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(5) { --motion-index: 4; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(6) { --motion-index: 5; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(7) { --motion-index: 6; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(8) { --motion-index: 7; }
+  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(n + 9) { --motion-index: 8; }
+}
+/* Content swapped into a region after a request (results, filtered sets). */
+[aria-busy="false"] > :where(.results, .async-region__content) {
+  animation: motion-fade var(--motion-effects) backwards;
+}
+
+/* ---------- Overlays ---------- */
+.menu,
+[popover].menu {
+  transform-origin: top center;
+  transition:
+    opacity var(--motion-effects-fast),
+    transform var(--motion-spatial-fast),
+    overlay var(--motion-effects-fast) allow-discrete,
+    display var(--motion-effects-fast) allow-discrete;
+}
+@starting-style {
+  .menu,
+  [popover].menu:popover-open {
+    opacity: 0;
+    transform: scaleY(0.8);
+  }
+}
+[popover].menu:not(:popover-open) {
+  opacity: 0;
+  transform: scaleY(0.9);
+}
+.dialog-host > *,
+.dialog[open] .dialog__surface {
+  animation:
+    motion-dialog-in var(--motion-spatial) backwards,
+    motion-fade var(--motion-effects) backwards;
+}
+@keyframes motion-dialog-in {
+  from {
+    transform: scale(0.9);
+  }
+}
+.dialog::backdrop {
+  animation: motion-fade var(--motion-effects-fast) backwards;
+}
+.sheet.is-open {
+  transition:
+    transform var(--motion-spatial),
+    opacity var(--motion-effects),
+    visibility 0s;
+}
+.snackbar,
+.toast {
+  animation: motion-rise var(--motion-spatial) backwards;
+}
+
+/* ---------- Disclosure ---------- */
+details > summary .material-icon:last-child,
+.accordion__icon {
+  transition: transform var(--motion-spatial);
+}
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  details::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size var(--motion-spatial),
+      content-visibility var(--motion-spring-spatial-default-duration) allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
+  }
+}

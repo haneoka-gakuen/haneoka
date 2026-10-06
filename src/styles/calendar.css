@@ -31,6 +31,9 @@ calendar-page {
   width: 176px;
   flex: 0 0 176px;
 }
+.calendar-date-button {
+  display: none;
+}
 .calendar-native-date {
   position: absolute;
   width: 1px;
@@ -292,24 +295,26 @@ calendar-page {
 }
 @media (max-width: 640px) {
   .calendar-toolbar {
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
   }
   .calendar-toolbar h2 {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: var(--md-sys-typescale-title-large-size);
+    line-height: var(--md-sys-typescale-title-large-line-height);
   }
   .calendar-month-actions {
-    flex-wrap: wrap;
     gap: 0;
-    width: 100%;
-    justify-content: space-between;
   }
   .calendar-month-actions .button {
     padding-inline: 12px;
   }
   .calendar-date-field {
-    width: 100%;
-    flex-basis: 100%;
-    margin-block-start: 8px;
+    display: none;
+  }
+  .calendar-date-button {
+    display: contents;
   }
   .calendar-week {
     height: 140px;

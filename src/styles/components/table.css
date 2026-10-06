@@ -6,7 +6,7 @@
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 16px;
+  border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface);
   scrollbar-width: thin;
 }
@@ -15,7 +15,7 @@
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font: 400 14px/20px var(--app-font);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   color: var(--md-sys-color-on-surface);
 }
 .data-table :where(th, td) {
@@ -33,7 +33,7 @@
   background: var(--md-sys-color-surface-container);
   color: var(--md-sys-color-on-surface-variant);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  font: 500 12px/18px var(--app-font);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   white-space: nowrap;
 }
 .data-table tbody :where(th, td) {

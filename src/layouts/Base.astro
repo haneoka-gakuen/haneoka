@@ -65,7 +65,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
 <html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" transition:animate="none">
   <head>
     <style is:inline>
-      @layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
+      @layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
     </style>
     <meta charset="utf-8" />
     {uiFontStyles(locale).map((font) => <link rel="stylesheet" href={font.href} data-ui-font={font.key} />)}
@@ -192,8 +192,6 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       import { installLoadingProgress } from "../lib/loading-progress";
       installLoadingProgress();
       installRipple();
-      // Page changes swap instantly: no view-transition name is projected onto
-      // the content pane, so there is no cross-fade to watch between routes.
       type ThemeWindow = Window & { __haneokaApplyTheme?: () => void };
       const themeMedia = matchMedia("(prefers-color-scheme: dark)");
       const applyTheme = () => {

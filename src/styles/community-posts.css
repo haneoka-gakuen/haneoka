@@ -42,7 +42,7 @@
     color: var(--md-sys-color-on-surface-variant);
     white-space: normal;
     overflow-wrap: anywhere;
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-post-card__visibility {
     display: inline-flex;
@@ -55,7 +55,7 @@
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
     overflow-wrap: anywhere;
-    font: 500 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
   .community-post-card__visibility .material-icon {
     flex: none;
@@ -68,12 +68,12 @@
     text-decoration: none;
   }
   .community-post-card .community-pin__title {
-    font: 500 15px/22px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .community-post-card .community-pin__note {
     -webkit-line-clamp: 7;
     line-clamp: 7;
-    font: 400 13px/21px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .community-post-card--text .community-pin__body {
     padding-top: 16px;
@@ -90,7 +90,7 @@
     padding: 4px 8px 8px 14px;
   }
   .community-post-card .community-pin__author {
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-post-card .community-pin__avatar {
     width: 22px;
@@ -103,7 +103,7 @@
     min-height: 40px;
     gap: 4px;
     padding-inline: 4px;
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-post-card .community-pin__like .tabular {
     min-width: 1ch;
@@ -175,7 +175,7 @@
     border: 0;
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -200,7 +200,7 @@
   }
   .community-post-page .community-post-title {
     margin: 0 0 12px;
-    font: 500 24px/32px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) / var(--md-sys-typescale-headline-small-line-height) var(--app-font);
     text-wrap: pretty;
   }
   .community-post-visibility {
@@ -209,7 +209,7 @@
   .community-post-page .community-bbcode {
     min-width: 0;
     overflow-wrap: anywhere;
-    font: 400 15px/25px var(--app-font);
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) / var(--md-sys-typescale-body-large-line-height) var(--app-font);
   }
   .community-post-page .community-bbcode :is(img, video) {
     max-width: 100%;
@@ -222,7 +222,7 @@
   }
   .community-post-page .community-post-date {
     margin-top: 12px;
-    font: 400 11px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-post-page .community-comments__heading {
     gap: 8px;

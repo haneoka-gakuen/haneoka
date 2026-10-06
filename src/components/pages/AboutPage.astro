@@ -2,32 +2,36 @@
 import Icon from "../Icon.astro";
 import I18nText from "../I18nText.astro";
 import { group } from "../../i18n/messages";
-import type { Locale } from "../../i18n/locales";
+import { localeTag, type Locale } from "../../i18n/locales";
 import { SONOLUS_SERVER_LINK } from "../../config/sonolus";
+import { resourceCollectionHref } from "../../lib/resource-route";
+import { fetchOptionalStaticCatalog } from "../../lib/static-catalog-source";
 
 interface AboutItem {
   title: string;
   body: string;
 }
-
+interface AboutFeature {
+  eyebrow: string;
+  title: string;
+  body: string;
+  cta: string;
+}
 interface AboutCopy {
   eyebrow: string;
   title: string;
-  description: string;
   heroTitle: string;
-  experienceTitle: string;
-  experienceIntro: string;
-  experience: AboutItem[];
-  ecosystemTitle: string;
-  ecosystemIntro: string;
+  description: string;
+  ctaPrimary: string;
+  stats: Record<"songs" | "cards" | "stories" | "voices" | "models", string>;
+  features: AboutFeature[];
+  openTitle: string;
+  openBody: string;
   ecosystem: AboutItem[];
-  toolchainTitle: string;
-  toolchainIntro: string;
   toolchain: AboutItem[];
-  repositoriesTitle: string;
-  repositoriesIntro: string;
   repositories: AboutItem[];
-  footerBody: string;
+  suites: Record<"platform" | "story" | "rhythm", string>;
+  closingTitle: string;
   apiLink: string;
   sourceLink: string;
   noticesLink: string;
@@ -37,200 +41,273 @@ interface AboutCopy {
 
 const { locale } = Astro.props as { locale: Locale };
 const copy = group<AboutCopy>(locale, "aboutPage");
+const server = "intl";
+const href = (route: string, fallback: string) => resourceCollectionHref(route, server, locale) ?? fallback;
 
-const repositories = [
-  { href: "https://github.com/haneoka-gakuen/haneoka", icon: "archive" },
-  { href: "https://github.com/haneoka-gakuen/vega", icon: "auto_stories" },
-  { href: "https://github.com/haneoka-gakuen/cassiopeia", icon: "music_note" },
-  { href: "https://github.com/haneoka-gakuen/cassiopeia-plugin-sonolus", icon: "sports_esports" },
-  { href: "https://github.com/haneoka-gakuen/sonolus-our-notes", icon: "sports_esports" },
-  { href: "https://github.com/haneoka-gakuen/altair", icon: "edit" },
-  { href: "https://github.com/haneoka-gakuen/deneb", icon: "inventory_2" },
+// Live counts from the current release; the strip is omitted if the catalog is unreachable at build.
+const summary = (await fetchOptionalStaticCatalog("catalog/summary", server).catch(() => ({ value: null }))).value as
+  | { resources?: Record<string, { count?: number }> }
+  | null;
+const count = (...keys: string[]) =>
+  keys.reduce((total, key) => total + (Number(summary?.resources?.[key]?.count) || 0), 0);
+const number = new Intl.NumberFormat(localeTag(locale));
+const stats = summary
+  ? ([
+      ["songs", count("songs")],
+      ["cards", count("cards", "support-cards")],
+      ["stories", count("stories")],
+      ["voices", count("voices")],
+      ["models", count("live2d", "spine")],
+    ] as const).filter(([, value]) => value > 0)
+  : [];
+
+const cast = [
+  { slug: "tomori_takamatsu", shape: "cookie-12" },
+  { slug: "uika_misumi", shape: "arch" },
+  { slug: "arale_nakamachi", shape: "pill" },
+  { slug: "hotaru_shiomi", shape: "flower" },
+  { slug: "raika_suga", shape: "slanted" },
 ] as const;
+
+const features = [
+  { icon: "auto_stories", shape: "cookie-9", portrait: "tomori_takamatsu", href: href("/catalog", `/${locale}/`) },
+  { icon: "music_note", shape: "sunny", portrait: "uika_misumi", href: href("/catalog/songs", `/${locale}/`) },
+  { icon: "groups", shape: "clover-4", portrait: "arale_nakamachi", href: `/${locale}/team-builder/` },
+  { icon: "theater_comedy", shape: "flower", portrait: "hotaru_shiomi", href: href("/catalog/stories/event", `/${locale}/`) },
+  { icon: "monitoring", shape: "soft-burst", portrait: "raika_suga", href: `/${server}/${locale}/events/tracker/` },
+  { icon: "forum", shape: "cookie-6", portrait: "tomori_takamatsu", href: `/${locale}/community/` },
+] as const;
+
+const SUITE_ICONS = {
+  site: "archive",
+  extension: "extension",
+  vega: "auto_stories",
+  altair: "edit",
+  deneb: "inventory_2",
+  cassiopeia: "music_note",
+  schedar: "edit_note",
+  sonolus: "sports_esports",
+};
+const repo = (name: string) => `https://github.com/haneoka-gakuen/${name}`;
+interface SuiteItem {
+  icon: string;
+  href: string;
+  external: boolean;
+  titleKey: string;
+  title: string;
+  bodyKey?: string;
+  body?: string;
+  detailKey?: string;
+  detail?: string;
+}
+const repositoryItem = (index: number, icon: string, href: string, detail?: ["ecosystem" | "toolchain", number]): SuiteItem => ({
+  icon,
+  href,
+  external: true,
+  titleKey: `aboutPage.repositories.${index}.title`,
+  title: copy.repositories[index]?.title ?? "",
+  bodyKey: `aboutPage.repositories.${index}.body`,
+  body: copy.repositories[index]?.body,
+  ...(detail ? { detailKey: `aboutPage.${detail[0]}.${detail[1]}.body`, detail: copy[detail[0]][detail[1]]?.body } : {}),
+});
+const textItem = (list: "ecosystem" | "toolchain", index: number, icon: string, href: string, external: boolean): SuiteItem => ({
+  icon,
+  href,
+  external,
+  titleKey: `aboutPage.${list}.${index}.title`,
+  title: copy[list][index]?.title ?? "",
+  detailKey: `aboutPage.${list}.${index}.body`,
+  detail: copy[list][index]?.body,
+});
+// Two product suites share the site: Vega · Altair · Deneb tell stories; Cassiopeia · Schedar play and chart them.
+const suites = [
+  {
+    key: "platform" as const,
+    items: [repositoryItem(0, SUITE_ICONS.site, repo("haneoka"), ["ecosystem", 0]), textItem("ecosystem", 3, SUITE_ICONS.extension, repo("haneoka"), true)],
+  },
+  {
+    key: "story" as const,
+    items: [
+      repositoryItem(1, SUITE_ICONS.vega, repo("vega"), ["ecosystem", 1]),
+      repositoryItem(5, SUITE_ICONS.altair, repo("altair"), ["toolchain", 1]),
+      repositoryItem(6, SUITE_ICONS.deneb, repo("deneb"), ["toolchain", 2]),
+    ],
+  },
+  {
+    key: "rhythm" as const,
+    items: [
+      repositoryItem(2, SUITE_ICONS.cassiopeia, repo("cassiopeia"), ["ecosystem", 2]),
+      textItem("toolchain", 0, SUITE_ICONS.schedar, `/${locale}/chart-editor/`, false),
+      repositoryItem(3, SUITE_ICONS.sonolus, repo("cassiopeia-plugin-sonolus")),
+      repositoryItem(4, SUITE_ICONS.sonolus, repo("sonolus-our-notes")),
+    ],
+  },
+];
 
 const sourceHref = "https://github.com/haneoka-gakuen/haneoka";
 const contactHref = "https://github.com/haneoka-gakuen/haneoka/issues";
 const licenseHref = "https://github.com/haneoka-gakuen/haneoka/blob/main/LICENSE";
 const noticesHref = "https://github.com/haneoka-gakuen/haneoka/blob/main/THIRD_PARTY_NOTICES.md";
+const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https://docs.haneoka.org/";
 ---
 
-<section class="page about-page" aria-labelledby="about-heading">
-  <header class="about-hero surface surface--outlined">
+<article class="about" aria-labelledby="about-heading">
+  <header class="about-hero">
     <div class="about-hero__copy">
-      <p class="about-eyebrow">
-        <I18nText keyName="aboutPage.eyebrow" fallback={copy.eyebrow} locale={locale} />
-      </p>
-      <h2 id="about-heading">
+      <p class="about-eyebrow"><I18nText keyName="aboutPage.eyebrow" fallback={copy.eyebrow} locale={locale} /></p>
+      <h2 id="about-heading" class="about-display">
         <I18nText keyName="aboutPage.heroTitle" fallback={copy.heroTitle} locale={locale} />
       </h2>
-      <p class="about-lede">
-        <I18nText keyName="aboutPage.description" fallback={copy.description} locale={locale} />
-      </p>
+      <p class="about-lede"><I18nText keyName="aboutPage.description" fallback={copy.description} locale={locale} /></p>
+      <div class="about-actions">
+        <a class="button about-cta" href={features[0].href}>
+          <I18nText keyName="aboutPage.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
+          <Icon name="arrow_forward" size={20} />
+        </a>
+      </div>
     </div>
-    <div class="about-hero__mark" aria-hidden="true">
-      <span class="about-hero__mark-ring about-hero__mark-ring--outer"></span>
-      <span class="about-hero__mark-ring about-hero__mark-ring--inner"></span>
-      <span class="about-hero__mark-name">haneoka</span>
-      <span class="about-hero__mark-rule"></span>
-      <span class="about-hero__mark-label">Our Notes</span>
+    <div class="about-cast" aria-hidden="true">
+      {
+        cast.map((member, index) => (
+          <span class={`about-cast__member about-cast__member--${index + 1}`} style={`--i:${index}`}>
+            <img
+              class={`shape-${member.shape}`}
+              src={`/images/about/${member.slug}.webp`}
+              width="480"
+              height="600"
+              alt=""
+              loading={index < 3 ? "eager" : "lazy"}
+              decoding="async"
+              fetchpriority={index === 0 ? "high" : undefined}
+            />
+          </span>
+        ))
+      }
     </div>
   </header>
 
-  <section class="about-section" aria-labelledby="about-experience-heading">
-    <div class="about-section__heading">
-      <div>
-        <p class="about-section__eyebrow">01</p>
-        <h2 id="about-experience-heading">
-          <I18nText keyName="aboutPage.experienceTitle" fallback={copy.experienceTitle} locale={locale} />
-        </h2>
-      </div>
-      <p>
-        <I18nText keyName="aboutPage.experienceIntro" fallback={copy.experienceIntro} locale={locale} />
-      </p>
-    </div>
-    <div class="about-feature-grid">
-      {copy.experience.map((item, index) => (
-        <article class="about-feature">
-          <span class="about-feature__index">{String(index + 1).padStart(2, "0")}</span>
-          <h3>
-            <I18nText keyName={`aboutPage.experience.${index}.title`} fallback={item.title} locale={locale} />
-          </h3>
-          <p>
-            <I18nText keyName={`aboutPage.experience.${index}.body`} fallback={item.body} locale={locale} />
-          </p>
-        </article>
-      ))}
-    </div>
-  </section>
+  {
+    stats.length > 0 && (
+      <ul class="about-stats">
+        {stats.map(([key, value]) => (
+          <li>
+            <strong>{number.format(value)}</strong>
+            <span><I18nText keyName={`aboutPage.stats.${key}`} fallback={copy.stats[key]} locale={locale} /></span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
-  <section class="about-section" aria-labelledby="about-ecosystem-heading">
-    <div class="about-section__heading">
-      <div>
-        <p class="about-section__eyebrow">02</p>
-        <h2 id="about-ecosystem-heading">
-          <I18nText keyName="aboutPage.ecosystemTitle" fallback={copy.ecosystemTitle} locale={locale} />
-        </h2>
-      </div>
-      <p>
-        <I18nText keyName="aboutPage.ecosystemIntro" fallback={copy.ecosystemIntro} locale={locale} />
-      </p>
-    </div>
-    <div class="about-ecosystem-grid">
-      {copy.ecosystem.map((item, index) => (
-        <article class="about-ecosystem">
-          <span class="about-ecosystem__index">{String(index + 1).padStart(2, "0")}</span>
-          <div>
-            <h3>
-              <I18nText keyName={`aboutPage.ecosystem.${index}.title`} fallback={item.title} locale={locale} />
-            </h3>
-            <p>
-              <I18nText keyName={`aboutPage.ecosystem.${index}.body`} fallback={item.body} locale={locale} />
-            </p>
-          </div>
-        </article>
-      ))}
-    </div>
-  </section>
-
-  <section class="about-section" aria-labelledby="about-toolchain-heading">
-    <div class="about-section__heading">
-      <div>
-        <p class="about-section__eyebrow">03</p>
-        <h2 id="about-toolchain-heading">
-          <I18nText keyName="aboutPage.toolchainTitle" fallback={copy.toolchainTitle} locale={locale} />
-        </h2>
-      </div>
-      <p>
-        <I18nText keyName="aboutPage.toolchainIntro" fallback={copy.toolchainIntro} locale={locale} />
-      </p>
-    </div>
-    <div class="about-toolchain-grid">
-      {copy.toolchain.map((item, index) => (
-        <article class="about-tool">
-          <span class="about-tool__index">{String(index + 1).padStart(2, "0")}</span>
-          <h3>
-            <I18nText keyName={`aboutPage.toolchain.${index}.title`} fallback={item.title} locale={locale} />
-          </h3>
-          <p>
-            <I18nText keyName={`aboutPage.toolchain.${index}.body`} fallback={item.body} locale={locale} />
-          </p>
-        </article>
-      ))}
-    </div>
-  </section>
-
-  <section class="about-section" aria-labelledby="about-repositories-heading">
-    <div class="about-section__heading">
-      <div>
-        <p class="about-section__eyebrow">04</p>
-        <h2 id="about-repositories-heading">
-          <I18nText keyName="aboutPage.repositoriesTitle" fallback={copy.repositoriesTitle} locale={locale} />
-        </h2>
-      </div>
-      <p>
-        <I18nText keyName="aboutPage.repositoriesIntro" fallback={copy.repositoriesIntro} locale={locale} />
-      </p>
-    </div>
-    <div class="about-repository-grid">
-      {copy.repositories.map((item, index) => {
-        const repository = repositories[index];
-        return (
-          <a
-            class="about-repository surface surface--outlined"
-            href={repository.href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span class="about-repository__icon"><Icon name={repository.icon} size={20} /></span>
-            <span class="about-repository__copy">
-              <strong>
-                <I18nText keyName={`aboutPage.repositories.${index}.title`} fallback={item.title} locale={locale} />
-              </strong>
-              <span>
-                <I18nText keyName={`aboutPage.repositories.${index}.body`} fallback={item.body} locale={locale} />
-              </span>
+  {
+    copy.features.map((feature, index) => {
+      const visual = features[index];
+      if (!visual) return null;
+      return (
+        <section class="about-feature" aria-labelledby={`about-feature-${index}`}>
+          <div class="about-feature__media" aria-hidden="true">
+            <span class={`about-feature__shape shape-${visual.shape}`}>
+              <Icon name={visual.icon} size={56} />
             </span>
-            <Icon name="open_in_new" size={18} />
-          </a>
-        );
-      })}
+            <img
+              class="about-feature__portrait shape-arch"
+              src={`/images/about/${visual.portrait}.webp`}
+              width="480"
+              height="600"
+              alt=""
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <div class="about-feature__copy">
+            <p class="about-eyebrow">
+              <I18nText keyName={`aboutPage.features.${index}.eyebrow`} fallback={feature.eyebrow} locale={locale} />
+            </p>
+            <h2 id={`about-feature-${index}`} class="about-headline">
+              <I18nText keyName={`aboutPage.features.${index}.title`} fallback={feature.title} locale={locale} />
+            </h2>
+            <p class="about-body">
+              <I18nText keyName={`aboutPage.features.${index}.body`} fallback={feature.body} locale={locale} />
+            </p>
+            <a class="button button--text about-link" href={visual.href}>
+              <I18nText keyName={`aboutPage.features.${index}.cta`} fallback={feature.cta} locale={locale} />
+              <Icon name="arrow_forward" size={20} />
+            </a>
+          </div>
+        </section>
+      );
+    })
+  }
+
+  <section class="about-open" aria-labelledby="about-open-heading">
+    <header class="about-open__header">
+      <h2 id="about-open-heading" class="about-headline">
+        <I18nText keyName="aboutPage.openTitle" fallback={copy.openTitle} locale={locale} />
+      </h2>
+      <p class="about-body"><I18nText keyName="aboutPage.openBody" fallback={copy.openBody} locale={locale} /></p>
+    </header>
+
+    {
+      suites.map((suite) => (
+        <section class="about-suite" aria-labelledby={`about-suite-${suite.key}`}>
+          <h3 id={`about-suite-${suite.key}`} class="about-open__title">
+            <I18nText keyName={`aboutPage.suites.${suite.key}`} fallback={copy.suites[suite.key]} locale={locale} />
+          </h3>
+          <ul class="about-repositories">
+            {suite.items.map((item) => (
+              <li>
+                <a class="about-repository" href={item.href} target={item.external ? "_blank" : undefined} rel={item.external ? "noreferrer" : undefined}>
+                  <span class="about-repository__icon">
+                    <Icon name={item.icon} size={20} />
+                  </span>
+                  <span class="about-repository__copy">
+                    <strong><I18nText keyName={item.titleKey} fallback={item.title} locale={locale} /></strong>
+                    {item.bodyKey && <span><I18nText keyName={item.bodyKey} fallback={item.body ?? ""} locale={locale} /></span>}
+                    {item.detailKey && (
+                      <small><I18nText keyName={item.detailKey} fallback={item.detail ?? ""} locale={locale} /></small>
+                    )}
+                  </span>
+                  <Icon name={item.external ? "open_in_new" : "arrow_forward"} size={18} />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))
+    }
+  </section>
+
+  <section class="about-closing" aria-labelledby="about-closing-heading">
+    <h2 id="about-closing-heading" class="about-display about-display--small">
+      <I18nText keyName="aboutPage.closingTitle" fallback={copy.closingTitle} locale={locale} />
+    </h2>
+    <div class="about-actions">
+      <a class="button about-cta" href={features[0].href}>
+        <I18nText keyName="aboutPage.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
+        <Icon name="arrow_forward" size={20} />
+      </a>
     </div>
   </section>
 
-  <footer class="about-footer surface surface--tonal">
-    <p>
-      <I18nText keyName="aboutPage.footerBody" fallback={copy.footerBody} locale={locale} />
-    </p>
-    <nav class="about-link-row" aria-labelledby="about-repositories-heading">
-      <a class="text-link" href={SONOLUS_SERVER_LINK} target="_blank" rel="noreferrer">
-        <Icon name="sports_esports" size={20} /> Sonolus
-        <Icon name="open_in_new" size={16} />
+  <footer class="about-footer">
+    <nav class="about-footer__links" aria-label={copy.title}>
+      <a href={SONOLUS_SERVER_LINK} target="_blank" rel="noreferrer"><Icon name="sports_esports" size={18} />Sonolus</a>
+      <a href="https://bdon.moe" target="_blank" rel="noreferrer"><Icon name="favorite" size={18} />MoeNotes</a>
+      <a href={docsHref} target="_blank" rel="noreferrer">
+        <Icon name="code" size={18} /><I18nText keyName="aboutPage.apiLink" fallback={copy.apiLink} locale={locale} />
       </a>
-      <a class="text-link" href="https://bdon.moe" target="_blank" rel="noreferrer">
-        <Icon name="favorite" size={20} /> MoeNotes
-        <Icon name="open_in_new" size={16} />
-      </a>
-      <a class="text-link" href={locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https://docs.haneoka.org/"} target="_blank" rel="noreferrer">
-        <Icon name="code" size={20} />
-        <I18nText keyName="aboutPage.apiLink" fallback={copy.apiLink} locale={locale} />
-        <Icon name="open_in_new" size={16} />
-      </a>
-      <a class="text-link" href={sourceHref} target="_blank" rel="noreferrer">
+      <a href={sourceHref} target="_blank" rel="noreferrer">
         <I18nText keyName="aboutPage.sourceLink" fallback={copy.sourceLink} locale={locale} />
-        <Icon name="open_in_new" size={16} />
       </a>
-      <a class="text-link" href={licenseHref} target="_blank" rel="noreferrer">
+      <a href={licenseHref} target="_blank" rel="noreferrer">
         <I18nText keyName="aboutPage.licenseLink" fallback={copy.licenseLink} locale={locale} />
-        <Icon name="open_in_new" size={16} />
       </a>
-      <a class="text-link" href={noticesHref} target="_blank" rel="noreferrer">
+      <a href={noticesHref} target="_blank" rel="noreferrer">
         <I18nText keyName="aboutPage.noticesLink" fallback={copy.noticesLink} locale={locale} />
-        <Icon name="open_in_new" size={16} />
       </a>
-      <a class="text-link" href={contactHref} target="_blank" rel="noreferrer">
+      <a href={contactHref} target="_blank" rel="noreferrer">
         <I18nText keyName="aboutPage.contactLink" fallback={copy.contactLink} locale={locale} />
-        <Icon name="open_in_new" size={16} />
       </a>
     </nav>
   </footer>
-</section>
+</article>

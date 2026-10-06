@@ -18,27 +18,16 @@
   padding: 0;
   list-style: none;
 }
-/* Distribute spare width to cards with the ordinary gap. A small preferred
- * width reduction admits the next column without squeezing below two mobile results. */
+/* auto-fill, not auto-fit: a grid holding three songs keeps the tracks a
+ * full grid would have, so its tiles are the same size as everywhere else and
+ * sit at the leading edge instead of stretching across the pane. */
 .collection:not(.collection--rail) {
-  --collection-tile-max: 312px;
-  --collection-visible-limit: 8;
   width: 100%;
-  max-width: calc(var(--collection-visible-limit) * var(--collection-tile-max) + (var(--collection-visible-limit) - 1) * var(--tile-gap));
-  margin-inline: auto;
   grid-template-columns: repeat(
-    auto-fit,
+    auto-fill,
     minmax(min(calc(var(--tile-min) * 0.9), 200px, calc((100% - var(--tile-gap)) / 2)), 1fr)
   );
-  justify-content: center;
 }
-.collection:not(.collection--rail):has(> :nth-child(1):last-child) { --collection-visible-limit: 1; }
-.collection:not(.collection--rail):has(> :nth-child(2):last-child) { --collection-visible-limit: 2; }
-.collection:not(.collection--rail):has(> :nth-child(3):last-child) { --collection-visible-limit: 3; }
-.collection:not(.collection--rail):has(> :nth-child(4):last-child) { --collection-visible-limit: 4; }
-.collection:not(.collection--rail):has(> :nth-child(5):last-child) { --collection-visible-limit: 5; }
-.collection:not(.collection--rail):has(> :nth-child(6):last-child) { --collection-visible-limit: 6; }
-.collection:not(.collection--rail):has(> :nth-child(7):last-child) { --collection-visible-limit: 7; }
 /* Presentation sizes. One line each, because the only thing that changes
  * between resources is how wide a tile wants to be. */
 .collection--member {
@@ -76,7 +65,7 @@
   .collection:not(.collection--rail) {
     --collection-columns: 3;
     grid-template-columns: repeat(
-      auto-fit,
+      auto-fill,
       minmax(calc((100% - (var(--collection-columns) - 1) * var(--tile-gap)) / var(--collection-columns)), 1fr)
     );
   }
@@ -366,18 +355,19 @@
   animation: none;
 }
 .media-loading > .media-loading__progress {
+  --loading-size: 32px;
   position: absolute;
   z-index: 0;
   top: 50%;
   left: 50%;
-  width: 24px;
-  height: 24px;
+  width: var(--loading-size);
+  height: var(--loading-size);
   transform: translate(-50%, -50%);
   display: none;
   pointer-events: none;
 }
 .media-loading:has(img[data-src]:not([data-cancelled]):not(.is-error), img[data-loading]) > .media-loading__progress {
-  display: block;
+  display: grid;
 }
 .media-loading img.is-loaded {
   position: relative;
@@ -414,7 +404,7 @@
 }
 .collection-list .list-item {
   width: 100%;
-  border-radius: 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 12px 16px;
 }
 .collection-list .list-item:hover {
@@ -428,7 +418,7 @@
   width: 64px;
   height: 56px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--md-sys-shape-corner-small);
 }
 .collection-list .list-item__headline {
   font-weight: 500;

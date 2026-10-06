@@ -111,8 +111,8 @@
   }
   .story-scene__runtime.ready > .progress,
   .story-scene__runtime.failed > .progress,
-  .story-scene__runtime.ready > md-circular-progress,
-  .story-scene__runtime.failed > md-circular-progress {
+  .story-scene__runtime.ready > :is(md-circular-progress, .loading-indicator),
+  .story-scene__runtime.failed > :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
   .story-scene__replay {
@@ -345,7 +345,7 @@
   }
   .story-transcript__speaker {
     color: var(--md-sys-color-primary);
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .story-transcript__text {
     margin: 0;
@@ -379,7 +379,7 @@
   }
   .story-transcript__scene > figcaption {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     padding-inline: 12px;
   }
   .story-transcript__chapter {
@@ -394,7 +394,7 @@
   .story-transcript__chapter > h3,
   .story-transcript__choices > h3 {
     margin: 0;
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .story-transcript__choices {
     margin: 16px 24px;
@@ -442,7 +442,7 @@
   .story-reading-info > summary {
     display: list-item;
     cursor: pointer;
-    font: 500 14px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
     color: var(--md-sys-color-on-surface);
   }
   .story-reading-info > summary > span {
@@ -468,7 +468,7 @@
     padding: 12px 20px;
     cursor: pointer;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
     list-style: none;
   }
   .story-transcript__media > summary::-webkit-details-marker {
@@ -520,10 +520,10 @@
     align-items: center;
     gap: 12px;
     margin: 8px 0 16px;
-    font: 500 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .story-episode-group > h3 small {
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     color: var(--md-sys-color-on-surface-variant);
   }
   .story-table-media {

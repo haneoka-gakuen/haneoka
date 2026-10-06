@@ -51,6 +51,8 @@
 .detail-columns > * {
   min-width: 0;
 }
+/* The one section title: emphasized title type beside a 36dp cookie badge.
+ * Home panels, detail sections and tool panels all render this anatomy. */
 .detail-section-title {
   display: flex;
   min-width: 0;
@@ -58,22 +60,22 @@
   align-items: center;
   gap: 12px;
   margin: 0;
-  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+  font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) /
     var(--md-sys-typescale-title-medium-line-height) var(--app-font);
 }
 .detail-section-title--h2 {
-  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+  font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
     var(--md-sys-typescale-title-large-line-height) var(--app-font);
 }
 .detail-section-title__icon {
   display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   place-items: center;
   color: var(--md-sys-color-on-secondary-container);
-  border-radius: var(--md-sys-shape-corner-medium);
   background: var(--md-sys-color-secondary-container);
+  clip-path: var(--shape-cookie-9);
 }
 .detail-section-title__icon .material-icon {
   --icon-size: 20px;
@@ -89,7 +91,7 @@
   color: var(--md-sys-color-on-surface-variant);
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-surface-container-highest);
-  font: 500 var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -118,14 +120,14 @@
 .spec-list :where(dt) {
   margin: 0;
   color: var(--md-sys-color-on-surface-variant);
-  font: 400 12px/18px var(--app-font);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   overflow-wrap: anywhere;
 }
 .spec-list :where(dd) {
   min-width: 0;
   margin: 0;
   color: var(--md-sys-color-on-surface);
-  font: 500 15px/24px var(--app-font);
+  font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   overflow-wrap: anywhere;
 }
 .spec-list--numeric dd {
@@ -183,11 +185,11 @@
 .detail-object > span {
   min-width: 0;
   flex: 1;
-  font: 500 14px/20px var(--app-font);
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
 }
 .detail-object > strong {
   flex: 0 0 auto;
-  font: 600 15px/24px var(--app-font);
+  font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   font-variant-numeric: tabular-nums;
 }
 .detail-object > span > small {
@@ -230,7 +232,7 @@
   display: none;
 }
 a.detail-object {
-  border-radius: 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
   padding: 4px 8px;
   margin-inline: -8px;
 }
@@ -258,11 +260,11 @@ a.detail-object:hover {
   gap: 4px;
 }
 .detail-ability strong {
-  font: 600 16px/24px var(--app-font);
+  font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
 }
 .detail-ability p {
   margin: 0;
-  font: 400 15px/24px var(--app-font);
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) / var(--md-sys-typescale-body-large-line-height) var(--app-font);
 }
 
 /* ---------- The pane's clef ----------

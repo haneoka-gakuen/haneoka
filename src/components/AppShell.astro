@@ -356,6 +356,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   import "../lit/community-forum-navigation";
   import { trapFocus } from "../lib/overlay";
   import { syncEntityNavigation } from "../lib/detail-navigation";
+  import { fitAppBarActions } from "../lib/app-bar-overflow";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
   const persistentQuery = matchMedia("(min-width: 1200px)");
   const root = document.documentElement;
@@ -462,24 +463,21 @@ const inInformation = route === "/about" || informationPages.some((item) => item
     // actions exceed the available app-bar width. Lit replaces this subtree
     // as entities load, so watch both its box and its children.
     const actions = host.querySelector<HTMLElement>("[data-top-app-bar-actions]");
+    let fitting = false;
     const syncActionOverflow = () => {
-      if (!actions || !bar) return;
-      const title = bar.querySelector<HTMLElement>("h1");
-      const identity = bar.querySelector<HTMLElement>("[data-top-app-bar-identity]");
-      const leading = bar.querySelector<HTMLElement>("[data-top-app-bar-leading]");
-      if (identity) identity.hidden = false;
-      title?.classList.remove("top-app-bar__title--omitted");
-      const style = getComputedStyle(bar);
-      const width = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const gap = parseFloat(style.columnGap) || 0;
-      const remaining = () => width - (leading?.getBoundingClientRect().width || 0) - actions.scrollWidth - gap * 2;
-      // Page controls own the available width. Identity marks and the heading
-      // are progressively omitted before the action row starts scrolling.
-      if (identity && remaining() < 96) identity.hidden = true;
-      title?.classList.toggle("top-app-bar__title--omitted", remaining() < 64);
-      actions.dataset.appBarOverflow = String(actions.scrollWidth > actions.clientWidth + 1);
-      actions.dataset.appBarScrollStart = String(actions.scrollLeft > 1);
-      actions.dataset.appBarScrollEnd = String(actions.scrollLeft + actions.clientWidth < actions.scrollWidth - 1);
+      if (!actions || !bar || fitting) return;
+      fitting = true;
+      try {
+        const identity = bar.querySelector<HTMLElement>("[data-top-app-bar-identity]");
+        if (identity) identity.hidden = false;
+        fitAppBarActions(bar, actions);
+        // Identity marks go before any further squeeze of the title.
+        const title = bar.querySelector<HTMLElement>("h1");
+        if (identity && title && title.getBoundingClientRect().width < 96) identity.hidden = true;
+        actions.dataset.appBarOverflow = "false";
+      } finally {
+        fitting = false;
+      }
     };
     if (actions && bar) {
       releaseActionObservers?.();

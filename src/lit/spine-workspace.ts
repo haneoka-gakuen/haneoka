@@ -19,6 +19,7 @@ import { entityHref, parseEntitySelection, returnStateFromLocation } from "../li
 import { readReleaseServer } from "../lib/release-server";
 import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
+import { loadingIndicator } from "./ui/loading-indicator";
 type Value = Record<string, unknown>;
 
 export class SpineWorkspace extends LitElement {
@@ -903,7 +904,7 @@ export class SpineWorkspace extends LitElement {
               this.modelPhase === "loading"
                 ? html`
                     <div class="viewer-state" role="status" aria-live="polite">
-                      <md-circular-progress indeterminate aria-hidden="true"></md-circular-progress>
+                      ${loadingIndicator()}
                       <span>${uiText(this.locale, "loading")}</span>
                     </div>
                   `

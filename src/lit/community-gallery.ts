@@ -6,6 +6,7 @@ import { icon } from "./ui/icon";
 import type PhotoSwipe from "photoswipe";
 import "photoswipe/style.css";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
+import { loadingIndicator } from "./ui/loading-indicator";
 export { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 export class CommunityGallery extends LitElement {
   static properties = {
@@ -164,7 +165,7 @@ export class CommunityGallery extends LitElement {
                       aria-label=${this.text("zoom")}
                       @click=${(event: MouseEvent) => this.zoom(index, event)}
                     >
-                      <md-circular-progress indeterminate aria-label=${this.text("loading")}></md-circular-progress>
+                      ${loadingIndicator({ label: this.text("loading") })}
                       <img
                         src=${this.displaySource(image)}
                         data-index=${index}

@@ -1,4 +1,4 @@
-@layer tokens, reset, base, layout, components, shell, patterns, pages, utilities, accessibility;
+@layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
 
 @layer components {
   .rarity-icon {

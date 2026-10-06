@@ -125,6 +125,7 @@
 
   .dialogue-row__progress {
     --md-circular-progress-size: var(--md-sys-spacing-4);
+    --loading-size: var(--md-sys-spacing-4);
     width: var(--md-sys-spacing-4);
     height: var(--md-sys-spacing-4);
     flex: 0 0 var(--md-sys-spacing-4);

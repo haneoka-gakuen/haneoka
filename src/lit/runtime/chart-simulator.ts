@@ -43,6 +43,7 @@ import {
   downloadChartOverviewImage,
   type ChartOverviewExportMeta,
 } from "./chart-image-export";
+import { loadingIndicator } from "../ui/loading-indicator";
 
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
 type RuntimeDescriptor = {
@@ -1074,7 +1075,7 @@ export class ChartSimulator extends LitElement {
                 ? html`
                     <div class="chart-runtime__setting" role="status" aria-live="polite" aria-busy="true">
                       <span>${this.ui("noteSeLoading")}</span>
-                      <md-circular-progress indeterminate aria-label=${this.ui("loading")}></md-circular-progress>
+                      ${loadingIndicator({ label: this.ui("loading") })}
                     </div>
                   `
                 : this.noteSoundStatus === "error"

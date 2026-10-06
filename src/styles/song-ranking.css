@@ -98,14 +98,14 @@
     height: 100%;
     object-fit: contain;
   }
-  .song-ranking__player-media md-circular-progress,
-  .song-ranking__profile-card md-circular-progress {
+  .song-ranking__player-media :is(md-circular-progress, .loading-indicator),
+  .song-ranking__profile-card :is(md-circular-progress, .loading-indicator) {
     position: absolute;
     width: 24px;
     height: 24px;
   }
-  .song-ranking__player-media:is(.is-loaded, .is-error) md-circular-progress,
-  .song-ranking__profile-card:is(.is-loaded, .is-error) md-circular-progress {
+  .song-ranking__player-media:is(.is-loaded, .is-error) :is(md-circular-progress, .loading-indicator),
+  .song-ranking__profile-card:is(.is-loaded, .is-error) :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
   .song-ranking__player-media.is-error img,
@@ -223,7 +223,7 @@
       0 0 2px #000;
     paint-order: stroke fill;
     -webkit-text-stroke: 0.35px #000;
-    font: 600 11px/14px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .song-ranking__regions.settings-options {

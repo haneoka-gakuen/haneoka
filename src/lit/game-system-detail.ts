@@ -30,7 +30,6 @@ import { episodeArtwork } from "../lib/story-artwork";
 import { storyTile } from "./shared/story-tile";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
-import "@material/web/progress/circular-progress.js";
 
 type Item = Record<string, unknown>;
 type Controller = Record<string, any>;
@@ -429,9 +428,6 @@ function renderSimulator(c: Controller, item: Item) {
   return html`
     <section class="detail-section" data-gacha-simulator>
       ${renderDetailSectionHeading(c.label("simulator", "Simulator"), "difficulty")}
-      <p class="detail-copy">
-        ${c.label("simulatorNote", "Draw using the published rates. Results and costs apply to this simulation.")}
-      </p>
       <div class="field-stack">
         <md-outlined-select
           label=${c.label("drawOptions", "Draw options")}
@@ -1122,9 +1118,6 @@ function renderEventRecruitments(c: Controller, item: Item) {
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(c.label("eventRecruitments", "Related recruitments"), "content", { count: recruitments.length })}
-      <p class="detail-copy">
-        ${c.label("eventRecruitmentRelation", "Recruitments featuring cards with event bonuses.")}
-      </p>
       <div class="collection collection--system">
         ${recruitments.map((gacha) => {
           const title = c.localized(gacha.title);

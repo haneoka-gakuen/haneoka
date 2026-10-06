@@ -197,3 +197,9 @@
   font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
     var(--md-sys-typescale-label-medium-line-height) var(--app-font);
 }
+.menu-item > img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: var(--md-sys-shape-corner-full);
+}

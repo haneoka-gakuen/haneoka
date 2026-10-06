@@ -9,6 +9,7 @@ import { communityMarkup, communityDocument, safeCommunityLink } from "../lib/co
 import { communityStamps, stampServers } from "./community-sticker";
 import { currentReleaseServer, localizedText, type JsonRecord } from "./shared/catalog";
 import { icon } from "./ui/icon";
+import { loadingIndicator } from "./ui/loading-indicator";
 
 export class CommunityEditor extends LitElement {
   static properties = {
@@ -453,7 +454,7 @@ export class CommunityEditor extends LitElement {
                   ${
                     this.loading
                       ? html`
-                          <md-circular-progress indeterminate aria-label=${this.text("loading")}></md-circular-progress>
+                          ${loadingIndicator({ label: this.text("loading") })}
                         `
                       : nothing
                   }

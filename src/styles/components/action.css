@@ -1,7 +1,8 @@
 /* ==========================================================================
    Actions — button, icon button, FAB, segmented button
-   Material 3 metrics: 40dp default height, 48dp minimum touch target on
-   coarse pointers, label-large, 18dp icon inside a button, 24dp standalone.
+   Material 3 Expressive small size (ButtonSmallTokens): 40dp height, 16dp
+   leading/trailing space, 20dp icon with an 8dp gap, label-large; 48dp
+   minimum touch target on coarse pointers.
    ========================================================================== */
 
 /* ---------- Button ----------
@@ -16,7 +17,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding-inline: 24px;
+  padding-inline: 16px;
   color: var(--md-sys-color-on-primary);
   border-radius: var(--md-sys-shape-corner-full);
   background: var(--md-sys-color-primary);
@@ -28,15 +29,8 @@
     border-radius var(--md-sys-motion-duration-short4) var(--ease-standard),
     background-color var(--md-sys-motion-duration-short3) linear;
 }
-/* A leading icon tightens the start padding to 16dp (spec). */
-.button:has(> .material-icon:first-child) {
-  padding-inline: 16px 24px;
-}
-.button:has(> .material-icon:last-child) {
-  padding-inline: 24px 16px;
-}
 .button > .material-icon {
-  --icon-size: 18px;
+  --icon-size: 20px;
 }
 .button > span {
   min-width: 0;
@@ -159,10 +153,13 @@
   cursor: pointer;
 }
 
-/* ---------- Segmented button ----------
-   Outlined container, 40dp tall, 1dp separators, selected segment on
-   secondary-container. Markup must carry role="group" and each segment
-   aria-pressed (multi-select) or aria-checked with role="radio" (single). */
+/* ---------- Segmented button → connected button group ----------
+   Material 3 Expressive replaces the outlined segmented button with a
+   connected button group (ConnectedButtonGroupSmallTokens): 40dp segments
+   2dp apart, full outer corners, 8dp inner corners that tighten to 4dp
+   while pressed, and a selected segment that rounds into a full pill.
+   Markup must carry role="group" and each segment aria-pressed
+   (multi-select) or aria-checked with role="radio" (single). */
 .segmented {
   display: flex;
   width: 100%;
@@ -171,38 +168,44 @@
   min-height: var(--control-height);
   height: auto;
   flex: 1 1 auto;
-  overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-full);
+  gap: 2px;
 }
 .segmented > button {
+  --segment-inner: var(--md-sys-shape-corner-small);
   display: inline-flex;
   flex: 1 1 0;
   min-width: 0;
   min-height: var(--control-height);
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 4px 12px;
+  gap: 8px;
+  padding: 4px 16px;
   color: var(--md-sys-color-on-surface-variant);
-  background: transparent;
+  border-radius: var(--segment-inner);
+  background: var(--md-sys-color-surface-container-high);
   font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
     var(--md-sys-typescale-label-large-line-height) var(--app-font);
   white-space: normal;
   cursor: pointer;
-  transition:
-    background-color var(--md-sys-motion-duration-short3) linear,
-    color var(--md-sys-motion-duration-short3) linear;
 }
-.segmented > button + button {
-  border-inline-start: 1px solid var(--md-sys-color-outline-variant);
+.segmented > button:first-child {
+  border-start-start-radius: var(--md-sys-shape-corner-full);
+  border-end-start-radius: var(--md-sys-shape-corner-full);
+}
+.segmented > button:last-child {
+  border-start-end-radius: var(--md-sys-shape-corner-full);
+  border-end-end-radius: var(--md-sys-shape-corner-full);
+}
+.segmented > button:active {
+  --segment-inner: var(--md-sys-shape-corner-extra-small);
 }
 .segmented > button > .material-icon {
-  --icon-size: 18px;
+  --icon-size: 20px;
 }
 .segmented > button:is([aria-pressed="true"], [aria-checked="true"]) {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
+  --segment-inner: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-on-secondary);
+  background: var(--md-sys-color-secondary);
 }
 /* Compact toolbar controls keep their intrinsic width. */
 .segmented--icon,
@@ -217,9 +220,6 @@
 .segmented--icon > button {
   width: var(--control-height);
   padding-inline: 0;
-}
-.segmented--icon > button > .material-icon {
-  --icon-size: 20px;
 }
 .segmented--grow {
   display: flex;
@@ -240,4 +240,14 @@
   .segmented--icon > button {
     width: var(--md-comp-control-height-touch);
   }
+}
+
+/* In a top app bar or toolbar an icon-only connected group sits on the bar's
+ * own surface: unselected segments are transparent so only the selection
+ * carries a container. */
+.top-app-bar .segmented--icon > button:not([aria-pressed="true"], [aria-checked="true"]) {
+  background: transparent;
+}
+.top-app-bar .segmented > button {
+  white-space: nowrap;
 }

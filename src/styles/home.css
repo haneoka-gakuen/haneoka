@@ -134,7 +134,7 @@
     border-radius: var(--md-sys-shape-corner-full);
     background: rgb(0 0 0 / 55%);
     color: #fff;
-    font: 500 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
   .home-carousel__dots {
     position: absolute;
@@ -245,7 +245,7 @@
   .home-event__range {
     margin: 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-event__overline,
   .home-event__countdown {
@@ -257,7 +257,7 @@
     border-radius: var(--md-sys-shape-corner-small);
     color: var(--md-sys-color-on-surface);
     background: var(--md-sys-color-surface-container-low);
-    font: 500 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
   .home-event__overline {
     top: 10px;
@@ -283,7 +283,7 @@
     min-width: 0;
     align-items: center;
     gap: 4px;
-    font: 500 13px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .home-event__target > span {
     min-width: 0;
@@ -326,7 +326,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-event__links {
     display: flex;
@@ -381,14 +381,14 @@
     overflow: hidden;
     white-space: normal;
     overflow-wrap: anywhere;
-    font: 500 14px/18px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .home-info .list-item__supporting {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 400 11px/14px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-info .announcement-row__meta {
     display: flex;
@@ -456,7 +456,7 @@
     align-items: center;
     gap: 5px;
     color: var(--md-sys-color-primary);
-    font: 500 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
   .home-birthday-name {
     display: inline-flex;
@@ -489,7 +489,7 @@
     max-width: 100%;
     gap: 5px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-birthday-band img {
     flex: none;
@@ -508,13 +508,13 @@
     flex-wrap: wrap;
   }
   .home-birthday-due b {
-    font: 600 24px/28px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) / var(--md-sys-typescale-headline-small-line-height) var(--app-font);
     color: var(--md-sys-color-primary);
   }
   .home-birthday-due time,
   .home-birthday-recruitment-time {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-birthday-calendar {
     grid-column: 2;
@@ -586,10 +586,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 400 10px/13px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-birthday-avatar-days {
-    font: 500 11px/14px var(--app-font);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
     color: var(--md-sys-color-on-surface-variant);
     white-space: nowrap;
   }
@@ -652,7 +652,7 @@
     padding: 12px;
   }
   .home-community-lead .list-item__headline {
-    font: 500 16px/22px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .home-community-excerpt {
     display: -webkit-box;
@@ -660,12 +660,12 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow: hidden;
-    font: 400 12px/17px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .community-hot-list .list-item__marker {
     width: 28px;
     height: 28px;
-    font: 500 14px/28px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .home-community-lead .list-item__marker {
     color: var(--md-sys-color-on-primary);
@@ -676,7 +676,7 @@
     align-items: center;
     gap: 4px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 11px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-community-lead .community-hot-list__score {
     color: inherit;
@@ -709,7 +709,7 @@
     gap: 8px 24px;
     padding: 16px 8px 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-footer p {
     margin: 0;
@@ -794,7 +794,7 @@
       display: none;
     }
     .home-event__target {
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 14px;
     }
     .home-event__characters {
@@ -845,7 +845,7 @@
     }
     .community-hot-list__score {
       gap: 2px;
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
     }
     .home-fan-lead .home-fan-info__image {
       width: 72px;
@@ -892,7 +892,7 @@
     .home-event__countdown {
       left: 6px;
       max-width: calc(100% - 12px);
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 14px;
       padding: 2px 4px;
     }
@@ -917,7 +917,7 @@
       line-height: 18px;
     }
     .home-birthday-band {
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 12px;
       gap: 3px;
     }
@@ -934,7 +934,7 @@
       line-height: 20px;
     }
     .home-birthday-due time {
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 14px;
     }
     .home-birthday-bottom {
@@ -959,7 +959,7 @@
       border-width: 1px;
     }
     .home-birthday-avatar-days {
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 12px;
     }
     .home-info .list-item {
@@ -970,7 +970,7 @@
       line-height: 16px;
     }
     .home-info .list-item__supporting {
-      font-size: 10px;
+      font-size: var(--md-sys-typescale-label-small-size);
       line-height: 12px;
     }
     .home-info__body {
@@ -1057,4 +1057,307 @@
   justify-content: start;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
+}
+
+/* ==========================================================================
+   Home — Material 3 Expressive layer
+   Hierarchy comes from emphasized type, tonal containers and one shape per
+   role instead of more boxes:
+     · section headers: title-large emphasized beside a cookie-9 icon badge;
+     · the live event: a tonal hero with a headline, a countdown pill and the
+       elapsed share of the event as a wavy progress line;
+     · birthdays: the countdown as display type, the celebrant in a sunny
+       badge;
+     · rankings: numerals in shapes, the leader in the primary role;
+     · the banner carousel: an elongating pill page indicator.
+   ========================================================================== */
+@layer pages {
+  .home-card {
+    background: var(--md-sys-color-surface-container-low);
+    transition: background-color var(--motion-effects);
+  }
+  .home-card__header {
+    min-height: 56px;
+    padding: 8px 8px 4px 12px;
+  }
+  .home-card__header h2 {
+    gap: 12px;
+    font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .home-card__header h2 .material-icon {
+    --icon-size: 20px;
+    box-sizing: content-box;
+    padding: 8px;
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    clip-path: var(--shape-cookie-9);
+  }
+  .home-card__actions .button {
+    min-height: 40px;
+    padding-inline: 12px;
+  }
+
+  /* ---- Carousel ---- */
+  .home-carousel__track {
+    transition: transform var(--motion-spring-spatial-slow-duration) var(--motion-spring-spatial-slow);
+  }
+  .home-carousel__copy small {
+    padding: 4px 12px;
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .home-carousel__dots {
+    bottom: 10px;
+    align-items: center;
+    gap: 6px;
+  }
+  .home-carousel__dots button {
+    flex: none;
+    width: 8px;
+    max-width: none;
+    height: 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: rgb(255 255 255 / 55%);
+    transition:
+      width var(--motion-spatial),
+      background-color var(--motion-effects);
+  }
+  .home-carousel__dots button::after {
+    content: none;
+  }
+  .home-carousel__dots button[aria-selected="true"] {
+    width: 24px;
+    background: #fff;
+  }
+  .home-carousel__nav {
+    color: var(--md-sys-color-on-surface);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-highest) 88%, transparent);
+    opacity: 0;
+    transition:
+      opacity var(--motion-effects),
+      border-radius var(--motion-spatial-fast);
+  }
+  .home-carousel:is(:hover, :focus-within) .home-carousel__nav {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .home-carousel__nav {
+      display: none;
+    }
+  }
+
+  /* ---- Live event: a tonal hero ---- */
+  .home-event {
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .home-event__media {
+    margin: 8px 0 8px 8px;
+    border-radius: var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-large-increased)
+      var(--md-sys-shape-corner-large-increased) var(--md-sys-shape-corner-extra-large);
+    transition: border-radius var(--motion-spatial);
+  }
+  .home-event__media:active {
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+  .home-event__heading h3 {
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
+      var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  }
+  .home-event__range {
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .home-event__progress {
+    margin-block-start: 4px;
+    color: var(--md-sys-color-primary);
+  }
+  .home-event__overline,
+  .home-event__countdown {
+    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-full);
+    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .home-event__overline {
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .home-event__countdown {
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+  .home-event__character img {
+    clip-path: var(--shape-cookie-9);
+    border-radius: 0;
+    background: var(--md-sys-color-surface-container-highest);
+    transition: clip-path var(--motion-spatial);
+  }
+  .home-event__character:is(:hover, :focus-visible) img {
+    clip-path: var(--shape-sunny);
+  }
+  .home-event__links {
+    gap: 4px;
+  }
+  .home-event__action {
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+  .home-event__action:first-child {
+    border-start-start-radius: var(--md-sys-shape-corner-full);
+    border-end-start-radius: var(--md-sys-shape-corner-full);
+  }
+  .home-event__action:last-child {
+    border-start-end-radius: var(--md-sys-shape-corner-full);
+    border-end-end-radius: var(--md-sys-shape-corner-full);
+  }
+  .home-event__action:first-child {
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+
+  /* ---- Birthdays ---- */
+  .home-birthday-art {
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    background: var(--md-sys-color-surface-container);
+  }
+  .home-birthday-eyebrow {
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .home-birthday-name {
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
+      var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  }
+  .home-birthday-name img {
+    width: 40px;
+    height: 40px;
+    border-radius: 0;
+    background: var(--md-sys-color-surface-container-highest);
+    clip-path: var(--shape-sunny);
+  }
+  .home-birthday-due b {
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-emphasized-display-weight) var(--md-sys-typescale-display-small-size) /
+      var(--md-sys-typescale-display-small-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .home-birthday-portrait {
+    transition:
+      clip-path var(--motion-spatial),
+      scale var(--motion-spatial-fast);
+  }
+  .home-birthday-avatars li > a:is(:hover, :focus-visible) .home-birthday-portrait {
+    scale: 1.08;
+  }
+  .home-birthday-avatars li:first-child .home-birthday-portrait {
+    border-radius: 0;
+    clip-path: var(--shape-cookie-9);
+  }
+  .home-birthday-avatar-days {
+    font-weight: var(--md-sys-typescale-emphasized-label-weight);
+  }
+
+  /* ---- Rankings ---- */
+  .community-hot-list .list-item__marker {
+    width: 32px;
+    height: 32px;
+    color: var(--md-sys-color-on-secondary-container);
+    border-radius: 0;
+    background: var(--md-sys-color-secondary-container);
+    clip-path: var(--shape-cookie-9);
+    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-large-size) / 32px var(--app-font);
+  }
+  .home-community-lead .list-item {
+    color: var(--md-sys-color-on-surface);
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .home-community-lead .list-item__marker {
+    clip-path: var(--shape-sunny);
+  }
+  .home-community-lead .list-item__headline {
+    font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+  .home-fan-lead .list-item {
+    border-radius: var(--md-sys-shape-corner-large-increased);
+  }
+  .home-fan-info__image {
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+}
+
+/* ---- Compact spotlight and panels ----
+   The event hero stacks (artwork over details) once its column is narrower
+   than ~440px: below that, side by side leaves the title one word wide. */
+@layer pages {
+  .home-spotlight {
+    container: spotlight / inline-size;
+    align-items: start;
+  }
+  @container spotlight (max-width: 895px) {
+    .home-event {
+      aspect-ratio: auto;
+    }
+    .home-event__card {
+      position: relative;
+      inset: auto;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto;
+    }
+    .home-event__media {
+      aspect-ratio: 2 / 1;
+      margin: 8px 8px 0;
+      border-radius: var(--md-sys-shape-corner-large-increased);
+    }
+    .home-event__body {
+      padding: 12px 16px 16px;
+      gap: 12px;
+    }
+    .home-event__heading h3 {
+      white-space: normal;
+    }
+    .home-event__action > span {
+      display: inline;
+    }
+    .home-event__action {
+      inline-size: auto;
+      padding-inline: 12px;
+    }
+    .home-event__range {
+      display: block;
+    }
+  }
+  @container (max-width: 559px) {
+    .home-birthday-name {
+      font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
+        var(--md-sys-typescale-title-large-line-height) var(--app-font);
+    }
+    .home-birthday-name img {
+      width: 32px;
+      height: 32px;
+    }
+    .home-birthday-due b {
+      font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
+        var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+      white-space: nowrap;
+    }
+    .home-card__header h2 {
+      font-size: var(--md-sys-typescale-title-medium-size);
+      line-height: var(--md-sys-typescale-title-medium-line-height);
+    }
+  }
+  @container (max-width: 399px) {
+    .home-birthday-feature {
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    }
+    .home-birthday-due b {
+      font-size: var(--md-sys-typescale-title-large-size);
+      line-height: var(--md-sys-typescale-title-large-line-height);
+    }
+  }
 }

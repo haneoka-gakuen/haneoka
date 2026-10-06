@@ -54,6 +54,47 @@
   --ease-emphasized: var(--md-sys-motion-easing-emphasized);
   --ease-decelerate: var(--md-sys-motion-easing-emphasized-decelerate);
   --ease-accelerate: var(--md-sys-motion-easing-emphasized-accelerate);
+
+  /* ---- Material 3 Expressive motion physics ----
+   * The spring tokens (spatial: position, size, shape; effects: colour,
+   * opacity) sampled into linear() so CSS transitions follow the same curve
+   * Compose's MotionScheme.expressive() integrates. Each spring carries the
+   * duration it needs to settle. */
+  --motion-spring-spatial-fast: linear(0, 0.028, 0.099, 0.2, 0.317, 0.44, 0.561, 0.674, 0.775, 0.862, 0.934, 0.991, 1.034, 1.064, 1.083, 1.092, 1.095, 1.091, 1.084, 1.074, 1.063, 1.051, 1.04, 1.03, 1.02, 1.012, 1.005, 1, 0.996, 0.994, 0.992, 0.991, 0.991, 0.991, 0.992, 0.993, 0.994, 0.995, 0.996, 0.997, 1);
+  --motion-spring-spatial-fast-duration: 350ms;
+  --motion-spring-spatial-default: linear(0, 0.019, 0.067, 0.135, 0.215, 0.301, 0.387, 0.471, 0.551, 0.624, 0.69, 0.749, 0.8, 0.844, 0.882, 0.913, 0.938, 0.959, 0.975, 0.988, 0.997, 1.004, 1.009, 1.012, 1.014, 1.015, 1.015, 1.015, 1.014, 1.013, 1.011, 1.01, 1.009, 1.007, 1.006, 1.005, 1.004, 1.003, 1.003, 1.002, 1);
+  --motion-spring-spatial-default-duration: 420ms;
+  --motion-spring-spatial-slow: linear(0, 0.018, 0.065, 0.132, 0.21, 0.294, 0.379, 0.463, 0.541, 0.614, 0.681, 0.74, 0.791, 0.836, 0.874, 0.906, 0.933, 0.954, 0.971, 0.984, 0.995, 1.002, 1.008, 1.011, 1.014, 1.015, 1.015, 1.015, 1.014, 1.013, 1.012, 1.011, 1.009, 1.008, 1.007, 1.006, 1.005, 1.004, 1.003, 1.002, 1);
+  --motion-spring-spatial-slow-duration: 570ms;
+  --motion-spring-effects-fast: linear(0, 0.102, 0.293, 0.481, 0.635, 0.751, 0.833, 0.891, 0.929, 0.954, 0.971, 0.982, 0.988, 0.993, 0.996, 0.997, 1);
+  --motion-spring-effects-fast-duration: 140ms;
+  --motion-spring-effects-default: linear(0, 0.106, 0.301, 0.491, 0.645, 0.76, 0.841, 0.897, 0.934, 0.958, 0.973, 0.983, 0.99, 0.994, 0.996, 0.998, 1);
+  --motion-spring-effects-default-duration: 220ms;
+  --motion-spring-effects-slow: linear(0, 0.1, 0.287, 0.472, 0.626, 0.742, 0.826, 0.885, 0.925, 0.951, 0.969, 0.98, 0.987, 0.992, 0.995, 0.997, 1);
+  --motion-spring-effects-slow-duration: 300ms;
+  --motion-spatial: var(--motion-spring-spatial-default) var(--motion-spring-spatial-default-duration);
+  --motion-spatial-fast: var(--motion-spring-spatial-fast) var(--motion-spring-spatial-fast-duration);
+  --motion-effects: var(--motion-spring-effects-default) var(--motion-spring-effects-default-duration);
+  --motion-effects-fast: var(--motion-spring-effects-fast) var(--motion-spring-effects-fast-duration);
+  /* Emphasized type (Material 3 Expressive TypeScaleTokens): the same sizes
+   * as the baseline scale at a heavier weight, for the one line per surface
+   * that should lead — a hero headline, a countdown, a selected label. */
+  --md-sys-typescale-emphasized-display-weight: 500;
+  --md-sys-typescale-emphasized-headline-weight: 500;
+  --md-sys-typescale-emphasized-title-large-weight: 500;
+  --md-sys-typescale-emphasized-title-weight: 700;
+  --md-sys-typescale-emphasized-body-weight: 500;
+  --md-sys-typescale-emphasized-label-weight: 700;
+  /* Entrance offsets and the per-item stagger of a collection. */
+  --motion-enter-distance: 16px;
+  --motion-stagger: 24ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-enter-distance: 0px;
+    --motion-stagger: 0ms;
+  }
 }
 
 /* Density −1: the reader asked to see more rows at once. Text keeps its

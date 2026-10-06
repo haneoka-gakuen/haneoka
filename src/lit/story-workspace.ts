@@ -66,6 +66,7 @@ import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
 import type { StoryPayload } from "../lib/entity-graph";
+import { loadingIndicator } from "./ui/loading-indicator";
 
 /** Sections of the archive's own story catalogue. */
 type ReleaseMode = "event" | "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial";
@@ -1901,7 +1902,7 @@ export class StoryWorkspace extends LitElement {
             : nothing
         }
         <div class="story-scene__runtime" data-home-spine-stage>
-          <md-circular-progress indeterminate></md-circular-progress>
+          ${loadingIndicator()}
         </div>
         <button
           class="icon-button story-scene__replay"
@@ -2195,7 +2196,7 @@ export class StoryWorkspace extends LitElement {
                       : this.detailLoading
                         ? html`
                             <div class="state state--inline">
-                              <md-circular-progress indeterminate></md-circular-progress>
+                              ${loadingIndicator()}
                             </div>
                           `
                         : nothing

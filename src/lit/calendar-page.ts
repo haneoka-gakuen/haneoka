@@ -499,6 +499,15 @@ export class CalendarPage extends LitElement {
             </button>
             ${iconButton({ label: this.t("previous"), icon: "chevron_left", onClick: () => this.select(shiftCalendarMonth(this.selected, -1)) })}
             ${iconButton({ label: this.t("next"), icon: "chevron_right", onClick: () => this.select(shiftCalendarMonth(this.selected, 1)) })}
+            <span class="calendar-date-button">${iconButton({
+              label: this.t("chooseDate"),
+              icon: "event",
+              onClick: () => {
+                const input = this.querySelector<HTMLInputElement>("input[data-native-date]");
+                if (input?.showPicker) input.showPicker();
+                else input?.focus();
+              },
+            })}</span>
             <md-outlined-text-field class="calendar-date-field" type="text" label=${this.t("chooseDate")}
               .value=${this.selected} inputmode="text" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
               @change=${(event: Event) => {

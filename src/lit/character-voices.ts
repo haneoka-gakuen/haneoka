@@ -1,5 +1,4 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
-import "@material/web/progress/circular-progress.js";
 import { repeat } from "lit/directives/repeat.js";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { isLocale, localePath } from "../i18n/locales";
@@ -18,6 +17,7 @@ import { icon } from "./ui/icon";
 import { dialogueRow, type DialogueRowState } from "./ui/dialogue-row";
 import { emptyState } from "./ui/state";
 import "../styles/character-voices.css";
+import { loadingIndicator } from "./ui/loading-indicator";
 
 type PlaybackState = Extract<DialogueRowState, "idle" | "loading" | "playing" | "error" | "cancelled">;
 
@@ -242,11 +242,7 @@ export class CharacterVoices extends LitElement {
         ${
           loading
             ? html`
-                <md-circular-progress
-                  class="dialogue-row__progress"
-                  indeterminate
-                  aria-hidden="true"
-                ></md-circular-progress>
+                ${loadingIndicator({ className: "dialogue-row__progress" })}
               `
             : icon(playing ? "stop" : status.state === "error" ? "refresh" : "play_arrow", 24)
         }

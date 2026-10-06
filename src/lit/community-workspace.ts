@@ -5246,7 +5246,7 @@ export class CommunityWorkspace extends LitElement {
       ${
         composer
           ? html`
-              <a class="button button--tonal button--small community-compose" href=${this.composeHref()}>
+              <a class="button button--tonal button--small community-compose" data-app-bar-keep href=${this.composeHref()}>
                 ${icon("edit", 18)}
                 <span class="community-compose__label">${this.label("newPost", "New post")}</span>
               </a>

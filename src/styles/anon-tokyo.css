@@ -57,14 +57,14 @@
     min-width: 0;
     padding: 12px 8px;
     border: 2px solid transparent;
-    border-radius: 24px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-low);
     color: var(--md-sys-color-on-surface);
     cursor: pointer;
   }
   .outfit-characters button[aria-pressed="true"] {
     border-color: var(--md-sys-color-primary);
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
   }
@@ -74,7 +74,7 @@
     object-fit: contain;
   }
   .outfit-characters span {
-    font: 500 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
     text-align: center;
   }
   .outfit-preview {
@@ -91,7 +91,7 @@
     height: clamp(320px, 58dvh, 660px);
     min-width: 0;
     overflow: hidden;
-    border-radius: 28px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-low);
   }
   .outfit-stage > img {

@@ -4,7 +4,7 @@
     grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.15fr);
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 24px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
     overflow: hidden;
   }
   .character-profile__visual {
@@ -33,7 +33,7 @@
     margin-top: 12px;
     background: var(--md-sys-color-surface);
     border: 0;
-    border-radius: 20px;
+    border-radius: var(--md-sys-shape-corner-large-increased);
   }
   .character-profile__visual .image-gallery__thumbnails {
     padding: 12px 0 0;
@@ -71,7 +71,7 @@
   }
   .character-profile__alternate {
     margin: 8px 0 0;
-    font: 400 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
     letter-spacing: 0.06em;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -118,7 +118,7 @@
   @media (max-width: 839px) {
     .character-profile {
       grid-template-columns: minmax(0, 1fr);
-      border-radius: 20px;
+      border-radius: var(--md-sys-shape-corner-large-increased);
     }
     .character-profile__visual {
       padding: 16px;

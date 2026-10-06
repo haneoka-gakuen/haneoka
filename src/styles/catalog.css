@@ -165,16 +165,16 @@
   .song-data-grid dt {
     margin: 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .song-data-grid dd {
     margin: 0;
     min-width: 0;
-    font: 500 15px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
     overflow-wrap: anywhere;
   }
   .song-meta-strip dd {
-    font: 600 22px/28px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .song-detail-facts {
@@ -184,7 +184,7 @@
   .song-detail-subheading {
     margin: 12px 0 4px;
     color: var(--md-sys-color-on-surface-variant);
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .song-reward-list {
     display: grid;
@@ -214,18 +214,18 @@
     gap: 2px;
   }
   .song-reward-list__condition strong {
-    font: 600 16px/24px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) / var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   .song-reward-list__condition small {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .song-reward-list .song-reward-value {
     display: flex;
     gap: 8px;
     align-items: center;
     justify-content: flex-start;
-    font: 400 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .song-combo-list > li {
     grid-template-columns: minmax(90px, max-content) minmax(0, 1fr);

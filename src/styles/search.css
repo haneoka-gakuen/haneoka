@@ -83,7 +83,7 @@
     width: 64px;
     height: 64px;
     flex: none;
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
     overflow: hidden;
     background: var(--md-sys-color-surface-container);
   }
@@ -93,11 +93,12 @@
     height: 100%;
     object-fit: contain;
   }
-  .search-result__image md-circular-progress {
+  .search-result__image :is(md-circular-progress, .loading-indicator) {
     grid-area: 1 / 1;
     --md-circular-progress-size: 24px;
+    --loading-size: 24px;
   }
-  .search-result__image:not(:has(img[data-loading])) md-circular-progress {
+  .search-result__image:not(:has(img[data-loading])) :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
   .search-result__image img[data-loading] {

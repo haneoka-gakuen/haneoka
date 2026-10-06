@@ -157,10 +157,10 @@
   .card-stat-grid span,
   .card-stat-section > small {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/18px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .card-stat-grid strong {
-    font: 600 22px/28px var(--app-font);
+    font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .detail-fact-mark {

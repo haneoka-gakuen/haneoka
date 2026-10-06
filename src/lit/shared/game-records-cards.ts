@@ -11,6 +11,7 @@ import type {
   RankingCardArtwork,
   SongRankingRowDto,
 } from "../../lib/game-records";
+import { loadingIndicator } from "../ui/loading-indicator";
 type RankingEntry = SongRankingRowDto;
 /** Card artwork and native progression shared by rankings and the independent public player view. */
 export abstract class GameRecordsCardsElement extends LitElement {
@@ -47,10 +48,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
             ${
               !this.readyImages.has(image)
                 ? html`
-                    <md-circular-progress
-                      indeterminate
-                      aria-label=${this.label("loading", "Loading")}
-                    ></md-circular-progress>
+                    ${loadingIndicator({ label: this.label("loading", "Loading") })}
                   `
                 : nothing
             }

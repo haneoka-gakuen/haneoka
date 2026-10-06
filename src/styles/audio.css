@@ -30,7 +30,7 @@
     min-width: 0;
     padding: 4px;
     color: inherit;
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: transparent;
     text-align: start;
   }
@@ -41,7 +41,7 @@
     flex: 0 0 40px;
     place-items: center;
     overflow: hidden;
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container-highest);
   }
   .player__cover > img {
@@ -56,14 +56,14 @@
   }
   .player__copy > strong {
     overflow: hidden;
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .player__copy > small {
     overflow: hidden;
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -80,7 +80,7 @@
     flex: 0 0 auto;
     padding: 0;
     place-items: center;
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
     cursor: pointer;
@@ -90,7 +90,7 @@
     border-radius: 50%;
   }
   .player__play:active {
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   .player__play:focus-visible {
     outline: 3px solid var(--md-sys-color-primary);
@@ -98,7 +98,7 @@
   }
   .player__time {
     padding-inline: 8px;
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     color: var(--md-sys-color-on-surface-variant);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -157,12 +157,12 @@
     width: 40px;
     height: 40px;
     flex-basis: 40px;
-    border-radius: 10px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   .player--compact .player__play {
     width: 48px;
     height: 48px;
-    border-radius: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
   }
   .player--compact .player__play[data-playing="true"] {
     border-radius: 50%;
@@ -194,7 +194,7 @@
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
   .audio-queue-panel > header strong {
-    font: 500 18px/24px var(--app-font);
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .audio-queue-panel__list {
     min-height: 0;
@@ -212,7 +212,7 @@
     gap: 4px;
     min-height: 72px;
     padding: 4px;
-    border-radius: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   .audio-queue-panel__row.selected {
     background: var(--md-sys-color-secondary-container);
@@ -239,7 +239,7 @@
     width: 44px;
     height: 44px;
     flex: 0 0 44px;
-    border-radius: 8px;
+    border-radius: var(--md-sys-shape-corner-small);
     object-fit: cover;
     place-items: center;
     background: var(--md-sys-color-surface-container-highest);
@@ -250,7 +250,7 @@
     gap: 4px;
   }
   .audio-queue-panel__select strong {
-    font: 500 14px/20px var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -258,7 +258,7 @@
   .audio-queue-panel__select small,
   .audio-queue-panel__row > small {
     color: var(--md-sys-color-on-surface-variant);
-    font: 400 12px/16px var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

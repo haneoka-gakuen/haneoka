@@ -30,7 +30,7 @@
     flex: 0 0 auto;
     align-items: center;
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-full);
   }
   .chart-studio__zoom-y > span {
     display: flex;

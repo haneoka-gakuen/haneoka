@@ -1858,27 +1858,10 @@
     "cancel": "Cancel"
   },
   "aboutPage": {
-    "eyebrow": "A living archive and open toolchain",
+    "eyebrow": "BanG Dream! Our Notes database",
     "title": "About Haneoka",
-    "description": "Haneoka turns BanG Dream! Our Notes into a browser experience that moves from story scenes and searchable catalogues to community spaces, chart tools, and the craft of making and publishing.",
-    "experienceTitle": "Read the world, then stay in it",
-    "experienceIntro": "The browser is the first stage: a story player, a deep catalogue, and a social layer meet around the same material.",
-    "experience": [
-      {
-        "title": "Follow the story",
-        "body": "Open dialogue, choices, scene direction, animation, audio, and video in a browser story player, then carry the thread through history, saves, settings, and branching scenes."
-      },
-      {
-        "title": "Explore every thread",
-        "body": "Search multilingual game data across characters, cards, songs, stories, events, and system collections, then move from detail pages into audio, comic, asset, Live2D, Spine, and chart experiences."
-      },
-      {
-        "title": "Make it a shared place",
-        "body": "Accounts and community workspaces bring feeds, posts, comments, reactions, bookmarks, tags, notifications, profiles and attachments into the same archive."
-      }
-    ],
+    "description": "Songs, charts, cards, stories and events, updated with every release. Team building, a story player and a community, too.",
     "ecosystemTitle": "An ecosystem built to compose",
-    "ecosystemIntro": "The experience grows through explicit contracts: hosts, renderers, runtimes, plugins, data releases, and interfaces each bring a focused capability to the stage.",
     "ecosystem": [
       {
         "title": "Haneoka · the browser stage",
@@ -1898,7 +1881,6 @@
       }
     ],
     "toolchainTitle": "From reading to making to publishing",
-    "toolchainIntro": "The surrounding tools carry an idea from a precise project model through authoring, localization, validation, and release targets.",
     "toolchain": [
       {
         "title": "Schedar · shape the chart",
@@ -1914,7 +1896,6 @@
       }
     ],
     "repositoriesTitle": "The public constellation",
-    "repositoriesIntro": "Each repository carries a distinct piece of the experience, from the browser archive to the engines and authoring tools behind it.",
     "repositories": [
       {
         "title": "Haneoka",
@@ -1945,13 +1926,66 @@
         "body": "Project validation, plugin resolution, and release projects for web, PWA, desktop and mobile targets."
       }
     ],
-    "footerBody": "Haneoka connects reference, performance and creation through an open collection of engines and tools. Each engine has its own interfaces and workflow; each plugin can become part of a new work.",
     "sourceLink": "Browse the Haneoka source",
     "noticesLink": "Third-party notices",
     "licenseLink": "MPL-2.0 license",
     "contactLink": "Open a GitHub issue",
-    "heroTitle": "Give every story a bigger stage",
-    "apiLink": "API documentation"
+    "heroTitle": "Everything in Our Notes, in one place.",
+    "apiLink": "API documentation",
+    "ctaPrimary": "Explore the catalog",
+    "stats": {
+      "songs": "songs",
+      "cards": "cards",
+      "stories": "stories",
+      "voices": "voice lines",
+      "models": "models"
+    },
+    "features": [
+      {
+        "eyebrow": "Catalog",
+        "title": "Every card and song, fully documented.",
+        "body": "Attributes, skills, training materials, chart data and rewards at a glance, with every language's names and every server's differences side by side.",
+        "cta": "Explore the catalog"
+      },
+      {
+        "eyebrow": "Songs and charts",
+        "title": "Know the chart before you play it.",
+        "body": "Chart previews and a player, difficulty estimates, Gekisou sections and rankings — and play any chart in Sonolus.",
+        "cta": "Browse songs"
+      },
+      {
+        "eyebrow": "Team builder",
+        "title": "Your strongest team, in seconds.",
+        "body": "Power and score computed exactly as the game client does, for high score, Gekisou, event rewards and resource planning. Upload your box or import it from screenshots, synced across devices.",
+        "cta": "Build a team"
+      },
+      {
+        "eyebrow": "Stories and models",
+        "title": "Relive every story.",
+        "body": "The story player restages scenes, voices and direction. Switch motions and expressions on Live2D and Spine models, then export them.",
+        "cta": "Read stories"
+      },
+      {
+        "eyebrow": "Events",
+        "title": "Every event, always in view.",
+        "body": "A calendar of events, birthdays and live shows, and an event tracker with live rankings and borders.",
+        "cta": "Event tracker"
+      },
+      {
+        "eyebrow": "Community",
+        "title": "Keep notes together.",
+        "body": "Share posts and stickers, comment on any entry, and follow along with bookmarks, follows and notifications.",
+        "cta": "Join the community"
+      }
+    ],
+    "openTitle": "Open, and built to extend.",
+    "openBody": "haneoka and the story engine, rhythm core and creation tools behind it are all open source.",
+    "closingTitle": "Start exploring.",
+    "suites": {
+      "platform": "Site and extensions",
+      "story": "Story engine and authoring",
+      "rhythm": "Rhythm engine and charting"
+    }
   },
   "bandItemsPage": {
     "title": "Band Items",
@@ -3738,5 +3772,6 @@
   "metaOfficialLevel": "Official level",
   "difficultyEstimatedConstant": "Estimated constant",
   "difficultyEstimateLowConfidence": "Low confidence",
-  "difficultyEstimateScope": "FC operation load estimate; score, SS and event rewards are separate metrics."
+  "difficultyEstimateScope": "FC operation load estimate; score, SS and event rewards are separate metrics.",
+  "moreActions": "More options"
 }

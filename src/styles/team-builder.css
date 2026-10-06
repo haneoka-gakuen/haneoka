@@ -181,10 +181,12 @@
   .tb p {
     margin: 0;
   }
+  /* The content pane (#main-content) is the scroller, so sticky offsets are
+   * measured from the pane's top, not the window's. */
   .tb-header {
     position: sticky;
     z-index: 3;
-    top: var(--app-bar-height, 64px);
+    top: 0;
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
@@ -262,8 +264,8 @@
     }
     .tb-config {
       position: sticky;
-      top: calc(var(--app-bar-height, 64px) + 72px);
-      max-height: calc(100dvh - var(--app-bar-height, 64px) - 88px);
+      top: 72px;
+      max-height: calc(var(--shell-stage-block) - 88px);
       overflow: auto;
       overscroll-behavior: contain;
       scrollbar-width: thin;
@@ -452,7 +454,7 @@
   .tb-results-column,
   .tb-results {
     min-width: 0;
-    scroll-margin-top: calc(var(--app-bar-height, 64px) + 80px);
+    scroll-margin-top: 80px;
   }
   .tb-results--empty {
     display: grid;
@@ -764,7 +766,7 @@
     --surface-padding: 12px;
     position: sticky;
     z-index: 2;
-    top: calc(var(--app-bar-height, 64px) + 64px);
+    top: 64px;
     display: grid;
     gap: var(--md-sys-spacing-2);
     box-shadow: var(--md-sys-elevation-level1);

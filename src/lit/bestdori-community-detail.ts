@@ -8,6 +8,7 @@ import "../styles/bestdori-detail.css";
 import { html, nothing, type TemplateResult } from "lit";
 import { localizedText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { loadingIndicator } from "./ui/loading-indicator";
 type Value = Record<string, unknown>;
 export interface BestdoriDetailState {
   locale: string;
@@ -78,10 +79,7 @@ export function renderBestdoriDetail(
             ${
               state.busy
                 ? html`
-                    <md-circular-progress
-                      indeterminate
-                      aria-label=${label("loading", "Loading")}
-                    ></md-circular-progress>
+                    ${loadingIndicator({ label: label("loading", "Loading") })}
                   `
                 : nothing
             }
@@ -110,7 +108,7 @@ export function renderBestdoriDetail(
   if (!detail)
     return state.busy
       ? html`
-          <div class="bestdori-detail-loading"><md-circular-progress indeterminate></md-circular-progress></div>
+          <div class="bestdori-detail-loading">${loadingIndicator()}</div>
         `
       : nothing;
   if (state.routeKind === "bestdori-songs") {

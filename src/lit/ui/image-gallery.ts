@@ -1,6 +1,5 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import type PhotoSwipe from "photoswipe";
-import "@material/web/progress/circular-progress.js";
 import { AlphaVideo, alphaVideoSource, type AlphaVideoSource } from "../runtime/alpha-video";
 import { trapFocus } from "../../lib/overlay";
 import { uiText } from "../shared/catalog";
@@ -9,6 +8,7 @@ import { icon } from "./icon";
 import { nextImageCandidate } from "./lazy-images";
 import "../../styles/image-gallery.css";
 import "photoswipe/style.css";
+import { loadingIndicator } from "./loading-indicator";
 
 export interface GalleryClip extends AlphaVideoSource {
   loop?: boolean;
@@ -451,11 +451,7 @@ export class ImageGallery extends LitElement {
               ${
                 this.movieBusy
                   ? html`
-                      <md-circular-progress
-                        class="image-gallery__cinema-loading"
-                        indeterminate
-                        aria-label=${uiText(this.locale, "loading")}
-                      ></md-circular-progress>
+                      ${loadingIndicator({ className: "image-gallery__cinema-loading", label: uiText(this.locale, "loading") })}
                     `
                   : nothing
               }
