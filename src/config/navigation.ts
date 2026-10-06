@@ -214,9 +214,7 @@ const sections: NavSection[] = [
 // of the same catalogue, not a separate wing with its own headline. The order
 // is editorial: the archive's spine first (songs, characters, cards), then
 // the dated game systems, then the economies, then collectibles and materials.
-export const NAV_SECTIONS = sections
-  .filter((section) => section.id !== "anon-tokyo")
-  .map((section) => ({ ...section, items: section.items.filter((item) => item.route !== "/team-builder") }));
+export const NAV_SECTIONS = sections.filter((section) => section.id !== "anon-tokyo");
 
 /** Catalog hub cards: every browsable collection with the catalog resource that counts it. */
 const catalogHub: Array<NavItem & { resource?: string; countKey?: string }> = [
