@@ -490,10 +490,36 @@ def _native_variant_file_errors(
                         errors.append(
                             f"{location}.source KTX2 must describe one 2D non-array, non-cubemap texture: {source_path}"
                         )
-                    if levels != 1:
+                    max_levels = max(width, height).bit_length()
+                    if levels < 1 or levels > max_levels or (vk_format != KTX2_ASTC_6X6_UNORM and levels != 1):
                         errors.append(
-                            f"{location}.source KTX2 must contain one level: {source_path}"
+                            f"{location}.source KTX2 mip count is invalid: {source_path}"
                         )
+                    elif vk_format == KTX2_ASTC_6X6_UNORM:
+                        # Original Unity ASTC pages can carry mip chains. Check
+                        # every index entry without decoding or re-encoding them.
+                        index_end = 80 + 24 * levels
+                        with source_file.open("rb") as stream:
+                            stream.seek(80)
+                            level_index = stream.read(24 * levels)
+                        ranges = []
+                        if len(level_index) != 24 * levels:
+                            errors.append(f"{location}.source KTX2 mip index is truncated: {source_path}")
+                        else:
+                            for level in range(levels):
+                                entry = level_index[24 * level : 24 * (level + 1)]
+                                mip_offset = int.from_bytes(entry[:8], "little")
+                                mip_length = int.from_bytes(entry[8:16], "little")
+                                mip_uncompressed = int.from_bytes(entry[16:24], "little")
+                                mip_width, mip_height = max(1, width >> level), max(1, height >> level)
+                                expected_size = ((mip_width + 5) // 6) * ((mip_height + 5) // 6) * 16
+                                if (mip_offset < index_end or mip_offset + mip_length > source_file.stat().st_size
+                                        or mip_length != expected_size or mip_uncompressed != expected_size):
+                                    errors.append(f"{location}.source ASTC mip-{level} range or size is invalid: {source_path}")
+                                ranges.append((mip_offset, mip_offset + mip_length))
+                            ranges.sort()
+                            if any(left[1] > right[0] for left, right in zip(ranges, ranges[1:])):
+                                errors.append(f"{location}.source KTX2 mip ranges overlap: {source_path}")
                     if (
                         offset < KTX2_HEADER_BYTES
                         or length <= 0
@@ -525,6 +551,9 @@ def _native_variant_file_errors(
                 uncompressed,
                 flip_y,
             ) = cached
+            mip_count = variant.get("mipCount", levels)
+            if not isinstance(mip_count, int) or isinstance(mip_count, bool) or mip_count != levels:
+                errors.append(f"{location}.mipCount does not match KTX2 header: {source_path}")
             if variant.get("flipY") is not bool(flip_y):
                 errors.append(
                     f"{location}.flipY does not match KTX2 orientation: {source_path}"
