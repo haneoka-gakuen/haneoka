@@ -44,7 +44,14 @@ export async function fetchTeamBuilderData(
   validServer(server);
   const prefix = `/api/v1/servers/${encodeURIComponent(server)}/`;
   signal?.throwIfAborted();
-  const compact = await fetcher(`/api/v1/team-builder/${encodeURIComponent(server)}`, { cache: "no-store", signal });
+  // The DTO of a release never changes: ask which release is current, then
+  // fetch the release-pinned URL, which the Worker marks immutable, so a repeat
+  // visit is served from the browser cache.
+  const current = await fetchCurrentTeamBuilderIdentity(server, signal, fetcher).catch(() => null);
+  const compact = await fetcher(
+    `/api/v1/team-builder/${encodeURIComponent(server)}${current ? `?release=${encodeURIComponent(current.releaseId)}` : ""}`,
+    current ? { signal } : { cache: "no-store", signal },
+  );
   if (compact.ok) {
     const identity = responseIdentity(compact, server);
     const data = (await compact.json()) as TeamBuilderData;

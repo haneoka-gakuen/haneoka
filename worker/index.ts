@@ -2446,6 +2446,7 @@ async function handleTeamBuilderDataApi(
       }
       return readR2Json(env, `${pinnedServer.resourcePrefix}/sources/${pinned.sourceId}/native-rule-evidence.json`);
     },
+    (promise) => ctx.waitUntil(promise),
   );
 }
 
