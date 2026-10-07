@@ -29,7 +29,8 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
   const player = view.player;
   const characters = [...master.characters.values()].filter((character) => catalog.characterName(character.id));
   const maxRank = master.maxCharacterRank;
-  const sum = characters.reduce((total, character) => total + (player.characterRanks[String(character.id)] ?? 1), 0);
+  // Every character counts, unranked ones at 1, exactly as the engine sums them.
+  const total = [...master.characters.keys()].reduce((sum, id) => sum + (player.characterRanks[String(id)] ?? 1), 0);
   const bands = [...new Set(characters.map((character) => character.bandId))].filter(Boolean);
   const vipRanks = [...master.vipBonus.keys()].sort((a, b) => a - b);
   const maxVip = Math.max(1, ...vipRanks, 1);
@@ -40,18 +41,13 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
     max: Math.max(0, ...((item.levels as { level?: number }[] | undefined) ?? []).map((row) => Number(row.level) || 0)),
   }));
   const setAllRanks = (value: number) => host.write(characters.map((character) => ({ key: `cr.${character.id}`, value })));
-  const effectiveTotal = player.characterTotalRank ?? sum;
   return html`
     <div class="tb-account stack stack--loose">
       <section class="surface stack">
         ${sectionHeading({ icon: "trending_up", label: host.t("accountTitle", "Account bonuses") })}
         <div class="tb-account__summary">
-          <div class="tb-metric"><span class="tb-metric__label">${host.t("totalRank", "Total character rank")}</span><strong class="tb-metric__value tabular">${effectiveTotal}</strong>
-            <span class="tb-metric__detail">${player.characterTotalRank === null ? host.t("totalRankAuto", "Sum of the ranks below") : host.t("totalRankManual", "Entered manually")}</span></div>
-          <div class="tb-field">
-            <span class="tb-field__label">${host.t("totalRankOverride", "Total rank (enter if some characters are not listed)")}</span>
-            ${stepper(host, host.t("totalRank", "Total character rank"), player.characterTotalRank, 0, maxRank * Math.max(characters.length, 1), (value) => host.write([{ key: "p.total", value }]))}
-          </div>
+          <div class="tb-metric"><span class="tb-metric__label">${host.t("totalRank", "Total character rank")}</span><strong class="tb-metric__value tabular">${total}</strong>
+            <span class="tb-metric__detail">${host.t("totalRankAuto", "Sum of the ranks below")}</span></div>
           <div class="tb-field">
             <span class="tb-field__label">${host.t("vipRank", "T.G.W card rank")}</span>
             ${stepper(host, host.t("vipRank", "T.G.W card rank"), player.vipRank, 1, maxVip, (value) => host.write([{ key: "p.vip", value }]))}
