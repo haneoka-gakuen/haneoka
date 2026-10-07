@@ -40,7 +40,7 @@ import { buildLevelMetas, type BandRow, type LevelMeta, type MusicRow, type Scor
 import { resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
 
 // Repo root: the server is run from the repo root (cwd), or set OUR_NOTES_ROOT.
-const engineRoot = dirname(fileURLToPath(import.meta.resolve("@haneoka/sonolus-our-notes/package.json")));
+const engineRoot = process.env.SONOLUS_ENGINE_ROOT ?? dirname(fileURLToPath(import.meta.resolve("@haneoka/sonolus-our-notes/package.json")));
 
 const ROOT = process.env.OUR_NOTES_ROOT ?? process.cwd();
 const PORT = Number(process.env.PORT ?? 3000);
