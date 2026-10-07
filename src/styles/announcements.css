@@ -29,6 +29,13 @@
     border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-surface-container-high);
   }
+  /* A loaded banner replaces the placeholder: no tinted box or glyph around a banner that is not 16:9. */
+  .announcement-row__thumbnail[data-loaded] {
+    background: none;
+  }
+  .announcement-row__thumbnail[data-loaded] > .material-icon {
+    visibility: hidden;
+  }
   .announcement-row__thumbnail img {
     position: absolute;
     inset: 0;

@@ -38,6 +38,9 @@ export function announcementRow(entry: Announcement, server: ReleaseServer, loca
                     height="64"
                     loading="lazy"
                     decoding="async"
+                    @load=${(event: Event) => {
+                      (event.currentTarget as HTMLElement).parentElement?.setAttribute("data-loaded", "");
+                    }}
                     @error=${(event: Event) => {
                       (event.currentTarget as HTMLElement).hidden = true;
                     }}
