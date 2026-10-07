@@ -181,7 +181,7 @@ export function maxAssignment(weights: readonly Float64Array[], columns: number,
 }
 
 /** Default limit for objectives whose bounds cannot be made tight. */
-export const HARD_TIME_LIMIT_MS = 15_000;
+export const HARD_TIME_LIMIT_MS = 5_000;
 
 /** Keeps the K best distinct member sets by a lower key. */
 class Frontier {

@@ -74,6 +74,8 @@ function chooseEvenly(n: number, count: number, select: (i: number) => void) {
 export interface Accuracy {
   great: number;
   just: number;
+  /** Pattern play: after Great/Just, every Nth judged note (1-based, native stream order) is a Miss. */
+  missEvery?: number;
 }
 export interface LivePlay {
   frames: PlayFrame[];
@@ -114,6 +116,8 @@ export function judgementStream(master: EngineMaster, chart: FullChart, gekisou:
   chooseEvenly(total, Math.round(total * accuracy.great), (i) => (grade[i] = 4));
   const eligible = rows.map((_, i) => i).filter((i) => grade[i] !== 4 && rows[i]!.best === 6);
   chooseEvenly(eligible.length, Math.round(eligible.length * accuracy.just), (k) => (grade[eligible[k]!] = 6));
+  const every = Math.floor(accuracy.missEvery ?? 0);
+  if (every > 0) for (let i = every - 1; i < total; i += every) grade[i] = 1;
   const out: PlayFrame[] = times.map((timeMs) => ({ timeMs, judged: [] }));
   rows.forEach((r, i) => out[r.frame]!.judged.push({ noteId: r.note.id, judgement: grade[i]!, timeMs: r.note.timeMs }));
   return { frames: out, dt: times.map(() => DT) };

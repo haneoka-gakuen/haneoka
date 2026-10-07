@@ -3763,7 +3763,8 @@
     "correctCard": "올바른 카드 선택",
     "importFailed": "가져오기를 적용하지 못했습니다.",
     "gekisoRankHint": "미션 라이브는 항상 1위이며, 배틀 라이브는 각 구간 순위에 따른 순위 보너스를 받습니다.",
-    "noSavedTeamsShort": "저장된 팀이 없습니다"
+    "noSavedTeamsShort": "저장된 팀이 없습니다",
+    "missEvery": "N노트마다 Miss"
   },
   "characterRankRewards": "캐릭터 랭크 보상",
   "characterRank": "캐릭터 랭크",

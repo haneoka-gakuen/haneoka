@@ -3763,7 +3763,8 @@
     "correctCard": "選擇正確的卡牌",
     "importFailed": "無法套用匯入內容。",
     "gekisoRankHint": "任務 Live 始終為第 1 名；對戰 Live 按你在每個區間的名次發放名次加成。",
-    "noSavedTeamsShort": "沒有已儲存的隊伍"
+    "noSavedTeamsShort": "沒有已儲存的隊伍",
+    "missEvery": "每 N 個音符 Miss 一次"
   },
   "characterRankRewards": "角色等級獎勵",
   "characterRank": "角色等級",

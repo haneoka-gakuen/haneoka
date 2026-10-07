@@ -196,6 +196,12 @@ export function liveScoreObjective(context: LiveContext, criterion: Criterion): 
     preferSnap: core.drains ? (member, snap) => core.slotSkill(member, snap).recovery : undefined,
     interval(team, totals) {
       if (criterion === "mean" && !core.play) return [core.scoreLow(totals), core.scoreHigh(totals)];
+      // Converting a Miss or Bad also spares its damage and combo: those teams take the exact score.
+      if (core.play && team.members.some((member, slot) => core.slotSkill(member, team.snaps[slot]!).convert?.judgements.some((j) => j <= 2))) {
+        const scores = core.evaluate(team, totals.power).scores;
+        const key = criterion === "min" ? scores.min : criterion === "max" ? scores.max : scores.mean;
+        return [key, key];
+      }
       const { lows, highs } = core.orderBounds(team, totals.power);
       if (criterion === "mean") return [lows.reduce((a, b) => a + b, 0) / lows.length, highs.reduce((a, b) => a + b, 0) / highs.length];
       const pick = criterion === "min" ? Math.min : Math.max;

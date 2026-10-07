@@ -11,6 +11,8 @@ export interface BuildSettings {
   great: number;
   good: number;
   miss: number;
+  /** Pattern play: every Nth note is a Miss (0 none). */
+  missEvery: number;
   eventId: number | null;
   measure: "points" | "items" | "challenge-points";
   route: "live" | "challenge" | "skip";
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   great: 3,
   good: 0,
   miss: 0,
+  missEvery: 0,
   eventId: null,
   measure: "points",
   route: "live",

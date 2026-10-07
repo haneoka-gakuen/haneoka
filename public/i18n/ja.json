@@ -3763,7 +3763,8 @@
     "correctCard": "正しいカードを選ぶ",
     "importFailed": "インポートを適用できませんでした。",
     "gekisoRankHint": "ミッションライブは常に1位です。バトルライブでは各区間の順位に応じた順位ボーナスが入ります。",
-    "noSavedTeamsShort": "保存した編成はありません"
+    "noSavedTeamsShort": "保存した編成はありません",
+    "missEvery": "N ノーツごとに Miss"
   },
   "characterRankRewards": "キャラクターランク報酬",
   "characterRank": "キャラクターランク",

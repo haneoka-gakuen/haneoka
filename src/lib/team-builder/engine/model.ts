@@ -1,7 +1,7 @@
 /** Per-chart linear skill model: the uniform-order mean of a play is
  * P·(W + Σ g_i)/divisor up to binary32 rounding and one floor per note. */
 import type { CompiledChart } from "./chart";
-import type { PreparedLive } from "./live";
+import { orderLives, type PreparedLive } from "./live";
 import type { SlotSkill } from "./skills";
 import { windowMs } from "./skills";
 
@@ -69,7 +69,8 @@ export function linearPlayChart(
     const time = chart.times[i]!;
     while (cursor < chart.skillOrder.length && chart.skillTimes[chart.skillOrder[cursor]!]! <= time) {
       lifeAt[chart.skillOrder[cursor]!] = side === "high" ? master.live.lifeBase : life;
-      if (side === "high") life = Math.min(master.live.lifeBase, life + maxRecovery);
+      // Recoveries over-heal up to twice the gauge (native LifeController), so the bound may too.
+      if (side === "high") life = Math.min(2 * master.live.lifeBase, life + maxRecovery);
       cursor++;
     }
     if (time !== last) {
@@ -228,106 +229,101 @@ export function playBoundsChart(live: PreparedLive, judgements: Int8Array): Play
   return { live, raw, perfectLow, perfectBase, judgements, total: raw[n]!, damage, eventIndex, relativeError: 2e-6, absoluteError: n + 1 };
 }
 /** [low, high] score of one order. `slots` are indexed by formation slot; `order[event]` is the slot. */
+/** Penalized prefix sums and per-slot window contributions under one life trajectory, shared by every order and team
+ * with the same recovery tuple. */
+interface LifeBounds {
+  raw: Float64Array;
+  perfect: Float64Array;
+  penalty: Float32Array;
+  contributions: Map<number, WeakMap<SlotSkill, { value: number; windows: { start: number; end: number; general: number; perfect: number }[] }>>;
+}
+const lifeBoundsCache = new WeakMap<PlayBoundsChart, WeakMap<object, LifeBounds>>();
+
+/** Lower and upper bounds of one order's score under a non-AP play. Life and life gates are exact (orderLives, the
+ * same walk the exact scorer uses); only conversions are bracketed: none on the low side, and on the high side each
+ * converter takes its best eligible notes in its (frame-widened) window at the largest factor it can see. */
 export function playOrderBounds(model: PlayBoundsChart, slots: readonly SlotSkill[], order: readonly number[], power: number): [number, number] {
   const { live } = model;
   const { chart, master } = live;
   const n = chart.count;
   const onus = master.live.lifeOnus;
   const events = Math.min(chart.skillTimes.length, 5);
-  // Life walk: penalty spans [start, end) of note indices scored at 0 life.
-  const spans: number[] = [];
-  const gates: boolean[][] = [];
-  let life = master.live.lifeBase,
-    damageAt = 0,
-    spanStart = -1;
-  const advanceTo = (index: number) => {
-    while (damageAt < model.damage.length && model.damage[damageAt]!.index < index) {
-      const row = model.damage[damageAt++]!;
-      if (life <= 0 && spanStart < 0) spanStart = row.index;
-      life = Math.max(0, life - row.amount);
-      if (life <= 0 && spanStart < 0) spanStart = row.index + 1;
+  const lives = orderLives(live, model.judgements, slots, order);
+  let perLives = lifeBoundsCache.get(model);
+  if (!perLives) lifeBoundsCache.set(model, (perLives = new WeakMap()));
+  let bounds = perLives.get(lives);
+  if (!bounds) {
+    const raw = new Float64Array(n + 1),
+      perfect = new Float64Array(n + 1),
+      penalty = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const factor = lives.note[i]! > 0 ? 1 : onus;
+      penalty[i] = factor;
+      raw[i + 1] = raw[i]! + factor * (model.raw[i + 1]! - model.raw[i]!);
+      perfect[i + 1] = perfect[i]! + factor * (model.perfectLow[i + 1]! - model.perfectLow[i]!);
     }
-  };
-  const firing = chart.skillOrder.filter((event) => event < events);
-  for (const event of firing) {
-    const index = model.eventIndex[event]!;
-    advanceTo(index);
-    const slot = slots[order[event]!];
-    gates[event] = (slot?.effects ?? []).map((effect) => effect.gate.kind !== "life-at-least" || (life >= effect.gate.value) === effect.gate.positive);
-    if (slot?.recovery) {
-      life = Math.min(master.live.lifeBase, life + slot.recovery);
-      if (life > 0 && spanStart >= 0) {
-        spans.push(spanStart, index);
-        spanStart = -1;
-      }
-    }
+    perLives.set(lives, (bounds = { raw, perfect, penalty, contributions: new Map() }));
   }
-  advanceTo(n);
-  if (spanStart >= 0 && spanStart < n) spans.push(spanStart, n);
-  const weight = (prefix: Float64Array, start: number, end: number) => {
-    if (end <= start) return 0;
-    let value = prefix[end]! - prefix[start]!;
-    for (let i = 0; i < spans.length; i += 2) {
-      const a = Math.max(start, spans[i]!),
-        b = Math.min(end, spans[i + 1]!);
-      if (b > a) value -= (1 - onus) * (prefix[b]! - prefix[a]!);
+  const contribution = (event: number, slot: SlotSkill) => {
+    let bySlot = bounds!.contributions.get(event);
+    if (!bySlot) bounds!.contributions.set(event, (bySlot = new WeakMap()));
+    let value = bySlot.get(slot);
+    if (value) return value;
+    const start = model.eventIndex[event]!;
+    const windows: { start: number; end: number; general: number; perfect: number }[] = [];
+    let total = 0;
+    for (const effect of slot.effects) {
+      if (effect.gate.kind === "life-at-least" && (lives.gate[event]! >= effect.gate.value) !== effect.gate.positive) continue;
+      if (effect.type === 2004 && !effect.judgements.includes(5)) continue;
+      const end = lowerIndex(chart.times, chart.skillTimes[event]! + windowMs(effect.seconds, slot.extensionMs));
+      const factor = f(effect.delta / 100000);
+      const prefix = effect.type === 2000 ? bounds!.raw : bounds!.perfect;
+      if (end > start) total += factor * (prefix[end]! - prefix[start]!);
+      windows.push(effect.type === 2000 ? { start, end, general: factor, perfect: 0 } : { start, end, general: 0, perfect: factor });
     }
+    bySlot.set(slot, (value = { value: total, windows }));
     return value;
   };
-  let value = weight(model.raw, 0, n);
-  // Active windows of this order, for the factor a converted note is scored with.
-  const windows: { start: number; end: number; general: number; perfect: number }[] = [];
+  let low = bounds.raw[n]!;
+  let converting = false;
   for (let event = 0; event < events; event++) {
     const slot = slots[order[event]!];
     if (!slot) continue;
-    const start = model.eventIndex[event]!;
-    slot.effects.forEach((effect, index) => {
-      if (!gates[event]![index]) return;
-      if (effect.type === 2004 && !effect.judgements.includes(5)) return;
-      const end = lowerIndex(chart.times, chart.skillTimes[event]! + windowMs(effect.seconds, slot.extensionMs));
-      const factor = f(effect.delta / 100000);
-      if (effect.type === 2000) {
-        value += factor * weight(model.raw, start, end);
-        windows.push({ start, end, general: factor, perfect: 0 });
-      } else {
-        value += factor * weight(model.perfectLow, start, end);
-        windows.push({ start, end, general: 0, perfect: factor });
+    low += contribution(event, slot).value;
+    if (slot.convert) converting = true;
+  }
+  let high = low;
+  if (converting) {
+    const windows = [];
+    for (let event = 0; event < events; event++) {
+      const slot = slots[order[event]!];
+      if (slot) windows.push(...contribution(event, slot).windows);
+    }
+    const perfectFrac = live.judgeFrac[5]!;
+    for (let event = 0; event < events; event++) {
+      const slot = slots[order[event]!];
+      if (!slot?.convert) continue;
+      const start = model.eventIndex[event]!;
+      const end = lowerIndex(chart.times, chart.skillTimes[event]! + windowMs(slot.effects[0]?.seconds ?? 5, slot.extensionMs) + 17);
+      const gains: number[] = [];
+      for (let i = start; i < end; i++) {
+        const judgement = model.judgements[i]!;
+        if (!slot.convert.judgements.includes(judgement)) continue;
+        let general = 1,
+          perfectUp = 0;
+        for (const window of windows)
+          if (window.start <= i && i < window.end) {
+            general += window.general;
+            perfectUp += window.perfect;
+          }
+        const base = model.perfectBase[i]! / perfectFrac;
+        gains.push(bounds.penalty[i]! * base * ((perfectFrac - live.judgeFrac[judgement]!) * general + perfectFrac * perfectUp));
       }
-    });
-  }
-  // Conversions are deterministic: the first `limit` eligible notes of the converting member's
-  // window, a later activation replacing an earlier one, as the live simulation does.
-  const converters: { start: number; end: number; slot: SlotSkill }[] = [];
-  for (const event of firing) {
-    const slot = slots[order[event]!];
-    if (!slot?.convert) continue;
-    const start = model.eventIndex[event]!;
-    const previous = converters.at(-1);
-    if (previous && previous.end > start) previous.end = start;
-    converters.push({ start, end: lowerIndex(chart.times, chart.skillTimes[event]! + windowMs(slot.effects[0]?.seconds ?? 5, slot.extensionMs)), slot });
-  }
-  const perfect = live.judgeFrac[5]!;
-  for (const { start, end, slot } of converters) {
-    let left = slot.convert!.limit;
-    for (let i = start; i < end && left > 0; i++) {
-      const judgement = model.judgements[i]!;
-      if (!slot.convert!.judgements.includes(judgement)) continue;
-      left--;
-      let general = 1,
-        perfectUp = 0;
-      for (const window of windows)
-        if (window.start <= i && i < window.end) {
-          general += window.general;
-          perfectUp += window.perfect;
-        }
-      let penalty = 1;
-      for (let span = 0; span < spans.length; span += 2) if (spans[span]! <= i && i < spans[span + 1]!) penalty = onus;
-      const base = model.perfectBase[i]! / perfect;
-      value += penalty * base * ((perfect - live.judgeFrac[judgement]!) * general + perfect * perfectUp);
+      gains.sort((x, y) => y - x);
+      const limit = Math.min(gains.length, slot.convert.limit);
+      for (let k = 0; k < limit; k++) high += gains[k]!;
     }
   }
-  const low = value,
-    high = value;
   const divisor = chart.convertedCount;
   return [Math.max(0, ((power * low) / divisor) * (1 - model.relativeError) - model.absoluteError), ((power * high) / divisor) * (1 + model.relativeError)];
 }

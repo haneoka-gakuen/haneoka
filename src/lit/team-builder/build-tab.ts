@@ -107,6 +107,11 @@ function playSection(host: TeamBuilder): TemplateResult {
         @change=${(e: Event) => set({ [key]: Number((e.target as HTMLInputElement).value) } as Partial<BuildSettings>)}></md-slider>
     </div>
   `;
+  const missEvery = html`
+    <md-outlined-text-field class="tb-miss-every" type="number" min="0" step="1" inputmode="numeric"
+      label=${host.t("missEvery", "Miss every N notes")} .value=${String(s.missEvery || "")} placeholder="0"
+      @change=${(e: Event) => set({ missEvery: Math.max(0, Math.floor(Number((e.target as HTMLInputElement).value) || 0)) })}></md-outlined-text-field>
+  `;
   return html`
     ${segmented({
       label: host.t("play", "Play"),
@@ -119,7 +124,7 @@ function playSection(host: TeamBuilder): TemplateResult {
     })}
     ${s.goal === "gekiso"
       ? html`<div class="tb-sliders">
-            ${s.playMode === "custom" ? slider("GREAT", "great", 40) : nothing}
+            ${s.playMode === "custom" ? html`${slider("GREAT", "great", 40)}${missEvery}` : nothing}
             <div class="tb-field">
               <span class="tb-field__label">JUST<output>${s.just}%</output></span>
               <md-slider class="md3-slider" labeled min="0" max="100" step="1" .value=${s.just} aria-label="JUST"
@@ -127,7 +132,7 @@ function playSection(host: TeamBuilder): TemplateResult {
             </div>
           </div>`
       : s.playMode === "custom"
-      ? html`<div class="tb-sliders">${slider("GREAT", "great", 40)}${slider("GOOD", "good", 20)}${slider("MISS", "miss", 20)}</div>`
+      ? html`<div class="tb-sliders">${slider("GREAT", "great", 40)}${slider("GOOD", "good", 20)}${slider("MISS", "miss", 20)}${missEvery}</div>`
       : nothing}
   `;
 }

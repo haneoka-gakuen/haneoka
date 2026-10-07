@@ -3763,7 +3763,8 @@
     "correctCard": "Choose the right card",
     "importFailed": "The import could not be applied.",
     "gekisoRankHint": "Mission lives always place 1st; battle lives pay the rank bonus of your placement in each range.",
-    "noSavedTeamsShort": "No saved teams"
+    "noSavedTeamsShort": "No saved teams",
+    "missEvery": "Miss every N notes"
   },
   "characterRankRewards": "Character rank rewards",
   "characterRank": "Character rank",

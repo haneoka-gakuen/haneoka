@@ -177,7 +177,7 @@ export class ChartCache {
   }
   /** The Gekisou chart of a song at a stated accuracy and assumed range rank. */
   gekiso(ref: SongRef, accuracy: Accuracy, rank: number): Promise<GekisoChart> {
-    const key = `${ref.songId}:${ref.difficulty}:${accuracy.great}:${accuracy.just}:${rank}`;
+    const key = `${ref.songId}:${ref.difficulty}:${accuracy.great}:${accuracy.just}:${accuracy.missEvery ?? 0}:${rank}`;
     let value = this.gekisoCharts.get(key);
     if (!value) {
       value = (async () => {

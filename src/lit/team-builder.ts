@@ -217,7 +217,7 @@ export class TeamBuilder extends LitElement {
   }
   goal(): Goal | null {
     const s = this.settings;
-    const play = s.playMode === "ap" ? { great: 0, good: 0, bad: 0, miss: 0 } : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100 };
+    const play = s.playMode === "ap" ? { great: 0, good: 0, bad: 0, miss: 0 } : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 };
     const challengeId = s.challengeRules && s.eventId !== null ? s.eventId : null;
     switch (s.goal) {
       case "power":
@@ -230,7 +230,7 @@ export class TeamBuilder extends LitElement {
               kind: "gekiso",
               songs: s.songs,
               criterion: s.criterion,
-              accuracy: { great: s.playMode === "ap" ? 0 : s.great / 100, just: s.just / 100 },
+              accuracy: { great: s.playMode === "ap" ? 0 : s.great / 100, just: s.just / 100, missEvery: s.playMode === "ap" ? 0 : s.missEvery || 0 },
               rank: s.gekisoRank,
               seeds: 0,
             }

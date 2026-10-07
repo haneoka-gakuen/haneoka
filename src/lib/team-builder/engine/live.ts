@@ -20,35 +20,48 @@ export interface PlayModel {
   good: number;
   bad: number;
   miss: number;
+  /** Pattern play: after the shares above, every Nth judged note (1-based, chart order) is a Miss. 0 or absent: none. */
+  missEvery?: number;
 }
 export const AP: PlayModel = { great: 0, good: 0, bad: 0, miss: 0 };
-export const isAllPerfect = (play: PlayModel) => !play.great && !play.good && !play.bad && !play.miss;
+export const isAllPerfect = (play: PlayModel) => !play.great && !play.good && !play.bad && !play.miss && !(play.missEvery! > 0);
 
-/** Evenly spread judgements, deterministic for a given chart and play. */
+/** Picks `count` of `n` positions evenly (the native accuracy builder's spread). */
+function chooseEvenly(n: number, count: number, select: (i: number) => void) {
+  let remainder = 0;
+  for (let i = 0; i < n; i++) {
+    remainder += count;
+    if (remainder >= n) {
+      remainder -= n;
+      select(i);
+    }
+  }
+}
+
+/** Judgements of a stated play in chart order, built like the native accuracy builder: `round(n·great)` Greats
+ * spread evenly over all notes, then Good, Bad and Miss shares spread over the notes still Perfect, then the
+ * pattern's every-Nth Miss. Matches full/play.ts `judgementStream` for Gekisou-off plays. */
 export function playJudgements(count: number, play: PlayModel): Int8Array {
   const out = new Int8Array(count).fill(5);
-  const kinds: [number, number][] = [
-    [1, play.miss],
-    [2, play.bad],
+  const clamp = (x: number) => Math.max(0, Math.min(1, x));
+  chooseEvenly(count, Math.round(clamp(play.great) * count), (i) => (out[i] = 4));
+  for (const [judgement, fraction] of [
     [3, play.good],
-    [4, play.great],
-  ];
-  let offset = 0;
-  for (const [judgement, fraction] of kinds) {
-    const wanted = Math.round(Math.max(0, Math.min(1, fraction)) * count);
-    let placed = 0;
-    for (let i = 0; i < count && placed < wanted; i++) {
-      // Low-discrepancy positions; a later kind skips notes an earlier kind took.
-      const index = Math.floor(((placed + 0.5 + offset * 0.37) * count) / Math.max(wanted, 1)) % count;
-      let probe = index;
-      while (out[probe] !== 5) probe = (probe + 1) % count;
-      out[probe] = judgement;
-      placed++;
-    }
-    offset++;
+    [2, play.bad],
+    [1, play.miss],
+  ] as const) {
+    const wanted = Math.round(clamp(fraction) * count);
+    if (!wanted) continue;
+    const open: number[] = [];
+    for (let i = 0; i < count; i++) if (out[i] === 5) open.push(i);
+    chooseEvenly(open.length, Math.min(wanted, open.length), (k) => (out[open[k]!] = judgement));
   }
+  const every = Math.floor(play.missEvery ?? 0);
+  if (every > 0) for (let i = every - 1; i < count; i += every) out[i] = 1;
   return out;
 }
+
+const FPS_LIFE = 60;
 
 export interface LiveSettings {
   /** 1 normally; assist mode multiplies by its percent. */
@@ -213,6 +226,103 @@ function summarize(power: number, scores: Float64Array): OrderScores {
 }
 
 /** General play: combo breaks, life, Great→Perfect conversion and life-gated skills, per order. */
+/** The gauge of one order under a play, exactly as the live simulation sees it: `note[i]` is the life note i is
+ * scored with (after its own damage), `gate[event]` the life a life condition of that skill reads. Life depends only
+ * on the judgements and the recoveries of the order, never on the score (conversions to Perfect only touch Good and
+ * Great, which deal no damage; callers fall back to the full scorer otherwise). */
+export function orderLives(prepared: PreparedLive, judgements: Int8Array, slots: readonly (SlotSkill | undefined)[], order: readonly number[]) {
+  // Life is a function of the recovery each skill event brings: memoize by that tuple.
+  const recoveries = [0, 1, 2, 3, 4].map((event) => slots[order[event]!]?.recovery ?? 0);
+  const key = recoveries.join(",");
+  let byPlay = livesCache.get(prepared);
+  if (!byPlay) livesCache.set(prepared, (byPlay = new WeakMap()));
+  let byKey = byPlay.get(judgements);
+  if (!byKey) byPlay.set(judgements, (byKey = new Map()));
+  let value = byKey.get(key);
+  if (!value) byKey.set(key, (value = computeLives(prepared, judgements, recoveries)));
+  return value;
+}
+const livesCache = new WeakMap<PreparedLive, WeakMap<Int8Array, Map<string, { note: Float64Array; gate: number[] }>>>();
+
+function computeLives(prepared: PreparedLive, judgements: Int8Array, recoveries: readonly number[]) {
+  const { chart, master } = prepared;
+  const n = chart.count;
+  const damage = master.live.damage;
+  const firing = chart.skillOrder.filter((event) => event < 5);
+  const overHealCap = master.live.lifeBase * 2;
+  const note = new Float64Array(n);
+  const gate: number[] = [];
+  let life = master.live.lifeBase;
+  // Recoveries are filed at their skill's time after that frame's notes were scored: later frames read the
+  // gauge replayed in time order (recovery at its time, then the damage of notes after it).
+  const pending: { time: number; frame: number; amount: number }[] = [];
+  let processed = 0;
+  const settle = (noteTime: number) => {
+    for (let r = 0; r < pending.length; ) {
+      const rec = pending[r]!;
+      if (rec.frame >= noteTime) {
+        r++;
+        continue;
+      }
+      pending.splice(r, 1);
+      let from = processed;
+      while (from > 0 && chart.times[from - 1]! > rec.time) from--;
+      let value = from > 0 ? note[from - 1]! : master.live.lifeBase;
+      if (value > 0) value = Math.min(overHealCap, value + rec.amount);
+      for (let j = from; j < processed; j++) {
+        const d = damage[judgements[j]!] ?? 0;
+        if (d) value = Math.max(0, value - d);
+        note[j] = value;
+      }
+      life = value;
+    }
+  };
+  let cursor = 0;
+  for (let i = 0; i <= n; i++) {
+    const time = i < n ? chart.times[i]! : Infinity;
+    while (cursor < firing.length && chart.skillTimes[firing[cursor]!]! <= time) {
+      const event = firing[cursor]!;
+      const start = chart.skillTimes[event]!;
+      const recovery = recoveries[event] ?? 0;
+      // Phase 1 files the recovery before the phase-2 score-ups check their life condition in the same frame.
+      if (recovery) pending.push({ time: start, frame: frameTime(start), amount: recovery });
+      let gateLife = life;
+      {
+        // The condition reads the gauge at the firing frame: that frame's notes and recoveries filed by then.
+        const frame = frameTime(start);
+        settle(frame);
+        const due = pending.filter((rec) => rec.frame <= frame).sort((a, b) => a.time - b.time);
+        gateLife = life;
+        let r = 0;
+        for (let j = i; j < n && chart.times[j]! <= frame; j++) {
+          for (; r < due.length && due[r]!.time < chart.times[j]!; r++)
+            if (gateLife > 0) gateLife = Math.min(overHealCap, gateLife + due[r]!.amount);
+          const d = damage[judgements[j]!] ?? 0;
+          if (d) gateLife = Math.max(0, gateLife - d);
+        }
+        for (; r < due.length; r++) if (gateLife > 0) gateLife = Math.min(overHealCap, gateLife + due[r]!.amount);
+      }
+      gate[event] = gateLife;
+      cursor++;
+    }
+    if (i === n) break;
+    settle(time);
+    // The note's own damage lands before its score reads the gauge (native: noteDamage, then lifeAt).
+    const d = damage[judgements[i]!] ?? 0;
+    if (d) life = Math.max(0, life - d);
+    note[i] = life;
+    processed = i + 1;
+  }
+  return { note, gate };
+}
+
+/** The 60 fps frame a time is processed in: the first frame time at or after it. */
+export function frameTime(time: number) {
+  let k = Math.max(0, Math.ceil((time * FPS_LIFE) / 1000) - 1);
+  while (Math.floor((k * 1000) / FPS_LIFE) < time) k++;
+  return Math.floor((k * 1000) / FPS_LIFE);
+}
+
 export function scoreOrdersPlay(
   prepared: PreparedLive,
   power: number,
@@ -247,8 +357,10 @@ export function scoreOrdersPlay(
       pending = judgements[i]! <= 2 ? 0 : pending + 1;
     }
   }
+  const convertsBreaks = slots.some((slot) => slot?.convert?.judgements.some((j) => j <= 2));
+  if (convertsBreaks || damage[3] || damage[4]) throw new Error("conversions that change damage need the full simulation");
   ORDERS.forEach((order, orderIndex) => {
-    let life = master.live.lifeBase;
+    const lives = orderLives(prepared, judgements, slots, order);
     let combo = 0,
       pendingCombo = 0,
       lastTime = -1;
@@ -257,7 +369,10 @@ export function scoreOrdersPlay(
     const active: { end: number; channel: number; delta: number }[] = [];
     let factor = f(1);
     let cursor = 0;
-    let convert: { end: number; judgements: readonly number[]; left: number } | null = null;
+    // Registered conversions, most recent first. A conversion is registered in the skill phase of the frame its
+    // skill fires in, after that frame's notes were judged, and unregistered in the frame its window ends in, after
+    // that frame's notes: it converts notes with (registration frame) < time <= (end frame).
+    const converts: { from: number; until: number; judgements: readonly number[]; left: number }[] = [];
     let score = 0;
     const expire = (time: number) => {
       for (let i = active.length - 1; i >= 0; i--)
@@ -268,7 +383,6 @@ export function scoreOrdersPlay(
           else channel[which] = f(channel[which]! - diff);
           active.splice(i, 1);
         }
-      if (convert && convert.end <= time) convert = null;
     };
     for (let i = 0; i <= n; i++) {
       const time = i < n ? chart.times[i]! : Infinity;
@@ -278,8 +392,9 @@ export function scoreOrdersPlay(
         expire(start);
         const slot = slots[order[event]!];
         if (slot) {
+          const gateLife = lives.gate[event]!;
           for (const effect of slot.effects) {
-            if (effect.gate.kind === "life-at-least" && (life >= effect.gate.value) !== effect.gate.positive) continue;
+            if (effect.gate.kind === "life-at-least" && (gateLife >= effect.gate.value) !== effect.gate.positive) continue;
             const end = start + windowMs(effect.seconds, slot.extensionMs);
             const diff = f(effect.delta / 100000);
             for (const which of effect.type === 2000 ? [0] : effect.judgements) {
@@ -288,13 +403,13 @@ export function scoreOrdersPlay(
               active.push({ end, channel: which, delta: effect.delta });
             }
           }
-          if (slot.recovery) life = Math.min(master.live.lifeBase, life + slot.recovery);
           if (slot.convert)
-            convert = {
-              end: start + windowMs(slot.effects[0]?.seconds ?? 5, slot.extensionMs),
+            converts.unshift({
+              from: frameTime(start),
+              until: frameTime(start + windowMs(slot.effects[0]?.seconds ?? 5, slot.extensionMs)),
               judgements: slot.convert.judgements,
               left: slot.convert.limit,
-            };
+            });
         }
         cursor++;
       }
@@ -305,19 +420,26 @@ export function scoreOrdersPlay(
         lastTime = time;
       }
       let judgement = judgements[i]!;
-      if (convert && convert.left > 0 && convert.judgements.includes(judgement)) {
+      for (let c = 0; c < converts.length; c++) {
+        const conv = converts[c]!;
+        if (conv.until < time) {
+          converts.splice(c--, 1);
+          continue;
+        }
+        if (time <= conv.from || !conv.judgements.includes(judgement)) continue;
         judgement = 5;
-        convert.left--;
+        if (--conv.left <= 0) converts.splice(c, 1);
+        break;
       }
       const judge = prepared.judgeFrac[judgement]!;
       const comboFactor = comboFactors[i]!;
       const up = f(factor + channel[judgement]!);
+      const life = lives.note[i]!;
       let x = Math.floor(f(f(luck * f(f(f(judge * noteA[i]!) * comboFactor) * up)) / count));
       if (life <= 0) x = Math.floor(f(onus * x));
       if (assist !== 1) x = Math.floor(f(assist * x));
       score += x;
       pendingCombo = judgement <= 2 ? 0 : pendingCombo + 1;
-      if (damage[judgement]) life = Math.max(0, life - damage[judgement]!);
     }
     scores[orderIndex] = score;
   });

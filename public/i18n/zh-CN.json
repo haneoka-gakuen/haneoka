@@ -3763,7 +3763,8 @@
     "correctCard": "选择正确的卡牌",
     "importFailed": "无法应用导入内容。",
     "gekisoRankHint": "任务 Live 始终为第 1 名；对战 Live 按你在每个区间的名次发放名次加成。",
-    "noSavedTeamsShort": "没有已保存的队伍"
+    "noSavedTeamsShort": "没有已保存的队伍",
+    "missEvery": "每 N 个音符 Miss 一次"
   },
   "characterRankRewards": "角色等级奖励",
   "characterRank": "角色等级",
