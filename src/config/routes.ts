@@ -115,6 +115,7 @@ export const ROUTES: RouteDefinition[] = [
     titleKey,
   })),
   { route: "/about", kind: "legal", key: "about", page: "aboutPage", titleKey: "aboutPage.title" },
+  { route: "/join", kind: "legal", key: "join", page: "joinPage", titleKey: "joinPage.title" },
   { route: "/license", kind: "legal", key: "license", page: "licensePage", titleKey: "licensePage.title" },
   { route: "/terms", kind: "legal", key: "terms", page: "termsPage", titleKey: "termsPage.title" },
   { route: "/privacy", kind: "legal", key: "privacy", page: "privacyPage", titleKey: "privacyPage.title" },

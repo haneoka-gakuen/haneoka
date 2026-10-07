@@ -201,7 +201,7 @@ const ACCOUNT_ROOT_KEYS = ["account", "accountPage", "publicProfilePage"] as con
 // GBP story readers share community routes and use the central text-view label.
 const COMMUNITY_ROOT_KEYS = ["community", "communityPage", "storyText"] as const;
 const EDITOR_ROOT_KEYS = ["chartEditor", "chartEditorPage", "storyEditor", "storyEditorPage", "chartPlayer", "liveMusicTypes", "songTypes"] as const;
-const LEGAL_ROOT_KEYS = ["about", "aboutPage", "privacyPage", "termsPage", "licensePage"] as const;
+const LEGAL_ROOT_KEYS = ["about", "aboutPage", "joinPage", "privacyPage", "termsPage", "licensePage"] as const;
 const ADMIN_ROOT_KEYS = ["adminPage"] as const;
 const ANON_ROOT_KEYS = ["anonTokyo", "anonTokyoPage"] as const;
 const SPINE_ROOT_KEYS = ["spine", "spinePage"] as const;
@@ -336,7 +336,7 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
         .join("/")}`
     : pathname;
   if (calendarPath === "/calendar" || calendarPath.startsWith("/calendar/")) return CALENDAR_I18N_NAMESPACE;
-  if (pathname === "/about" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {
+  if (pathname === "/about" || pathname === "/join" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {
     return LEGAL_I18N_NAMESPACE;
   }
   if (pathname === "/account" || pathname.startsWith("/account/")) return ACCOUNT_I18N_NAMESPACE;
