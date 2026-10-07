@@ -23,6 +23,7 @@ import { segmented } from "./ui/controls";
 import { CUBISM_CORE_URLS, CUBISM_WEB_RUNTIME_URL } from "../lib/cubism-runtime";
 import type { CubismTextureVariant } from "@haneoka/vega-plugin-cubism";
 import { loadingIndicator } from "./ui/loading-indicator";
+import { StageFullscreen, StageGestures } from "./ui/stage-fullscreen";
 
 type Value = Record<string, unknown>;
 type Parameter = { id: string; value: number; minimum: number; maximum: number; defaultValue: number };
@@ -99,7 +100,7 @@ export class Live2DWorkspace extends LitElement {
     sway: { state: true },
     loopMotion: { state: true },
     selectedMotion: { state: true },
-    dragEnabled: { state: true },
+    stageFullscreen: { state: true },
     backgroundTransparent: { state: true },
     backgroundColor: { state: true },
     error: { state: true },
@@ -147,7 +148,7 @@ export class Live2DWorkspace extends LitElement {
   declare sway: boolean;
   declare loopMotion: boolean;
   declare selectedMotion: string;
-  declare dragEnabled: boolean;
+  declare stageFullscreen: boolean;
   declare backgroundTransparent: boolean;
   declare backgroundColor: string;
   declare error: string;
@@ -192,9 +193,30 @@ export class Live2DWorkspace extends LitElement {
   private initialPartOpacities: Record<string, number> = {};
   private partOverrides: Record<string, number> = {};
   private dragging = false;
-  private dragPointerId: number | null = null;
-  private dragLastX = 0;
-  private dragLastY = 0;
+  private fullscreen = new StageFullscreen((active) => (this.stageFullscreen = active));
+  /** Drag to pan, wheel and two-finger pinch to zoom: always on once the model is ready. */
+  private gestures = new StageGestures({
+    enabled: () => this.modelPhase === "ready",
+    pan: (dx, dy) => {
+      // Unbounded: the stage projection keeps the model centered, so dragging
+      // past the canvas edge is a legitimate placement.
+      this.offsetX += dx;
+      this.offsetY += dy;
+      this.applyTransform();
+    },
+    zoom: (ratio, x, y) => {
+      const scale = Math.min(4, Math.max(0.25, this.modelScale * ratio));
+      const applied = scale / this.modelScale;
+      this.offsetX = x - (x - this.offsetX) * applied;
+      this.offsetY = y - (y - this.offsetY) * applied;
+      this.modelScale = scale;
+      this.applyTransform();
+    },
+    onDraggingChange: (dragging) => {
+      this.dragging = dragging;
+      this.requestUpdate();
+    },
+  });
   private initializationTimer?: number;
   private ssrStageRemoved = false;
   private readonly editorId = `live2d-editor-${++live2dAccordionId}`;
@@ -222,7 +244,7 @@ export class Live2DWorkspace extends LitElement {
     this.sway = false;
     this.loopMotion = false;
     this.selectedMotion = "";
-    this.dragEnabled = false;
+    this.stageFullscreen = false;
     this.backgroundTransparent = true;
     this.backgroundColor = "#ecf0f1";
     this.error = "";
@@ -292,6 +314,7 @@ export class Live2DWorkspace extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.fullscreen.connect();
     const selection = parseEntitySelection(navigationDocumentUrl().pathname);
     if (selection?.source === "canonical" && selection.route.kind === "live2d") this.entityId = selection.route.id;
     this.locale = preferredLocale(this.locale);
@@ -341,6 +364,7 @@ export class Live2DWorkspace extends LitElement {
     this.selectionAbortController = undefined;
     this.abortPackaging();
     this.endDrag();
+    this.fullscreen.disconnect();
     this.releaseViewer();
     this.loopMotion = false;
     this.selectedMotion = "";
@@ -841,7 +865,7 @@ export class Live2DWorkspace extends LitElement {
   private applyLook() {
     this.viewer?.setLookPosition(this.lookX, this.lookY);
   }
-  private toggle(kind: "breath" | "blink" | "sway" | "loop" | "drag" | "transparent" | "paused") {
+  private toggle(kind: "breath" | "blink" | "sway" | "loop" | "transparent" | "paused") {
     if (kind === "breath") {
       this.breath = !this.breath;
       this.viewer?.setBreathEnabled(this.breath);
@@ -864,12 +888,6 @@ export class Live2DWorkspace extends LitElement {
         if (this.parameterMode === "pose") this.setParameterMode("none");
         this.loopMotion = true;
         this.viewer?.setLoopMotion(this.selectedMotion);
-      }
-    }
-    if (kind === "drag") {
-      this.dragEnabled = !this.dragEnabled;
-      if (!this.dragEnabled) {
-        this.endDrag();
       }
     }
     if (kind === "transparent") {
@@ -1011,53 +1029,8 @@ export class Live2DWorkspace extends LitElement {
     this.renamingPose = false;
     this.poseNameDraft = "";
   }
-  private beginDrag(event: PointerEvent) {
-    if (this.modelPhase !== "ready" || !this.dragEnabled || !event.isPrimary || event.button !== 0) return;
-    event.preventDefault();
-    this.dragging = true;
-    this.dragPointerId = event.pointerId;
-    this.requestUpdate();
-    this.dragLastX = event.clientX;
-    this.dragLastY = event.clientY;
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-  }
-  private moveDrag(event: PointerEvent) {
-    if (!this.dragging || event.pointerId !== this.dragPointerId) return;
-    const canvas = event.currentTarget as HTMLElement;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      // Unbounded: the stage projection keeps the model centered, so dragging
-      // past the canvas edge is a legitimate placement.
-      this.offsetX += ((event.clientX - this.dragLastX) / rect.width) * 2;
-      this.offsetY += ((event.clientY - this.dragLastY) / rect.height) * 2;
-      this.applyTransform();
-    }
-    this.dragLastX = event.clientX;
-    this.dragLastY = event.clientY;
-  }
-  private endDrag(event?: PointerEvent) {
-    if (event && event.pointerId !== this.dragPointerId) return;
-    const canvas = this.querySelector<HTMLCanvasElement>(".viewer-detail__runtime canvas");
-    const pointerId = this.dragPointerId;
-    this.dragging = false;
-    this.dragPointerId = null;
-    if (pointerId !== null && canvas?.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
-    this.requestUpdate();
-  }
-  private zoomAtPointer(event: WheelEvent) {
-    if (!this.dragEnabled || this.modelPhase !== "ready" || !Number.isFinite(event.deltaY)) return;
-    event.preventDefault();
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
-    const scale = Math.min(4, Math.max(0.25, this.modelScale * Math.exp(-delta * 0.002)));
-    const ratio = scale / this.modelScale;
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
-    this.offsetX = x - (x - this.offsetX) * ratio;
-    this.offsetY = y - (y - this.offsetY) * ratio;
-    this.modelScale = scale;
-    this.applyTransform();
+  private endDrag() {
+    this.gestures.cancel();
   }
   private resetTransform() {
     this.endDrag();
@@ -1652,18 +1625,18 @@ export class Live2DWorkspace extends LitElement {
               html`
                 <canvas
                   aria-label=${uiText(this.locale, "live2d")}
-                  style=${this.dragEnabled ? `touch-action: none; cursor: ${this.dragging ? "grabbing" : "grab"}` : ""}
-                  @pointerdown=${this.beginDrag}
+                  style=${modelReady ? `touch-action: none; cursor: ${this.dragging ? "grabbing" : "grab"}` : ""}
+                  @pointerdown=${this.gestures.down}
                   @pointermove=${(event: PointerEvent) => {
-                    this.moveDrag(event);
+                    this.gestures.move(event);
                     if (!this.dragging && this.sway && this.parameterMode !== "pose") {
                       this.viewer?.setLookAtClientPosition(event.clientX, event.clientY);
                     }
                   }}
-                  @pointerup=${this.endDrag}
-                  @pointercancel=${this.endDrag}
-                  @lostpointercapture=${this.endDrag}
-                  @wheel=${this.zoomAtPointer}
+                  @pointerup=${this.gestures.up}
+                  @pointercancel=${this.gestures.up}
+                  @lostpointercapture=${this.gestures.up}
+                  @wheel=${this.gestures.wheel}
                   @pointerleave=${() => {
                     if (this.sway && this.parameterMode !== "pose") this.applyLook();
                   }}
@@ -1735,13 +1708,16 @@ export class Live2DWorkspace extends LitElement {
                       </button>
                       <button
                         class="icon-button runtime-button"
-                        aria-pressed=${this.dragEnabled}
-                        @click=${() => this.toggle("drag")}
-                        aria-label=${uiText(this.locale, "drag")}
-                        title=${uiText(this.locale, "drag")}
+                        aria-pressed=${this.stageFullscreen}
+                        @click=${(event: Event) =>
+                          void this.fullscreen.toggle(
+                            (event.currentTarget as HTMLElement).closest<HTMLElement>(".viewer-stage"),
+                          )}
+                        aria-label=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
+                        title=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
                       >
                         <svg class="material-icon" width="22" height="22">
-                          <use href="/icons.svg#pan_tool"></use>
+                          <use href=${this.stageFullscreen ? "/icons.svg#fullscreen_exit" : "/icons.svg#fullscreen"}></use>
                         </svg>
                       </button>
                       <button

@@ -8,7 +8,7 @@ export async function fetchCatalogVisuals(
   const read = async (resource: string) => {
     const response = await fetch(
       `/api/v1/servers/${encodeURIComponent(identity.server)}/${resource}?release=${encodeURIComponent(identity.releaseId)}`,
-      { cache: "no-store", signal },
+      { signal },
     );
     if (
       !response.ok ||

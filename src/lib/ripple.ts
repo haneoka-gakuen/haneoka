@@ -22,9 +22,9 @@ export function installRipple() {
   if (root.dataset.ripple === "true") return;
   root.dataset.ripple = "true";
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  addEventListener(
+  window.addEventListener(
     "pointerdown",
-    (event) => {
+    (event: PointerEvent) => {
       if (reduced.matches || event.button !== 0) return;
       const target = (event.target as Element | null)?.closest<HTMLElement>(RIPPLE_TARGETS);
       if (!target || target.matches(":disabled, [aria-disabled='true']")) return;
@@ -43,9 +43,9 @@ export function installRipple() {
     },
     { passive: true, capture: true },
   );
-  addEventListener(
+  window.addEventListener(
     "animationend",
-    (event) => {
+    (event: AnimationEvent) => {
       if (event.animationName === "md-ripple") (event.target as HTMLElement).classList.remove("is-rippling");
     },
     { passive: true },

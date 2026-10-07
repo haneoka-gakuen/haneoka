@@ -1,8 +1,8 @@
 /* ==========================================================================
    T.G.W CARD — membership benefits ladder
-   A single list: one rung per rank, hairline-separated, every value a design
-   token — surfaces, typescale, shape, and system colours. No custom colour,
-   no gradients, no imagery: the tiers speak for themselves.
+   A rank picker grouped by card tier, then the chosen rank: its card art and
+   points threshold, its benefits and its grants. Tier accents come only from
+   the game's own card art; every surface and type value is a design token.
    ========================================================================== */
 
 @layer pages {
@@ -11,118 +11,262 @@
     width: min(100%, var(--content-max));
     margin-inline: auto;
     align-content: start;
+    gap: 16px;
     padding: 8px var(--md-comp-page-inline-space) 24px;
   }
 
-  .tgw-ladder {
+  /* ---- Rank picker: one group per card tier ---- */
+  .tgw-picker {
     display: grid;
-    margin: 0;
-    padding: 8px 0;
-    list-style: none;
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    background: var(--md-sys-color-surface-container-low);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 248px), 1fr));
+    gap: 12px;
   }
-
-  .tgw-rung {
-    display: grid;
-    grid-template-columns: 72px minmax(0, 1fr);
-    gap: 4px 16px;
-    padding: 16px 20px 16px 12px;
-  }
-  .tgw-rung + .tgw-rung {
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-  }
-
-  /* Rank numeral: the ladder's axis. */
-  .tgw-rung__rank {
-    display: grid;
-    width: 48px;
-    height: 48px;
-    margin-inline: auto;
-    place-items: center;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container-highest);
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
-  }
-
-  .tgw-rung__body {
+  .tgw-tier {
     display: grid;
     align-content: start;
     gap: 12px;
     min-width: 0;
+    padding: 12px;
+    border-radius: var(--md-sys-shape-corner-large-increased, 20px);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .tgw-tier__head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+  }
+  .tgw-tier__head img {
+    flex: none;
+    width: 52px;
+    height: auto;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+  }
+  .tgw-tier__head strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--md-sys-typescale-emphasized-title-weight, 600) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .tgw-tier__head small {
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  /* Connected button group: inner corners small, outer corners full. */
+  .tgw-tier__ranks {
+    display: flex;
+    gap: 2px;
+  }
+  .tgw-rank-button {
+    display: grid;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-small);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-highest);
+    text-decoration: none;
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    transition:
+      border-radius var(--motion-spatial-fast, 200ms),
+      background-color var(--motion-effects, 150ms),
+      color var(--motion-effects, 150ms);
+  }
+  .tgw-rank-button:first-child {
+    border-start-start-radius: var(--md-sys-shape-corner-full);
+    border-end-start-radius: var(--md-sys-shape-corner-full);
+  }
+  .tgw-rank-button:last-child {
+    border-start-end-radius: var(--md-sys-shape-corner-full);
+    border-end-end-radius: var(--md-sys-shape-corner-full);
+  }
+  .tgw-rank-button:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-highest));
+  }
+  .tgw-rank-button[aria-current="true"] {
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+  @media (pointer: coarse) {
+    .tgw-rank-button {
+      min-height: 48px;
+    }
   }
 
-  .tgw-rung__head {
+  /* ---- Selected rank ---- */
+  .tgw-rank {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .tgw-summary {
     display: flex;
-    min-height: 48px;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 4px 16px;
+    align-items: center;
+    gap: clamp(20px, 4vw, 40px);
   }
-  .tgw-rung__title {
-    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
-    color: var(--md-sys-color-on-surface);
+  /* The game's card: face, rank plate and rank numeral layered as in-game. */
+  .tgw-art {
+    position: relative;
+    flex: none;
+    width: min(320px, 100%);
+    aspect-ratio: 980 / 630;
+    margin: 0;
+    filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.18));
   }
-  .tgw-rung__points {
+  .tgw-art img {
+    position: absolute;
+    display: block;
+  }
+  .tgw-art__face {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .tgw-art__plate,
+  .tgw-art__number {
+    left: 50%;
+    width: auto;
+    object-fit: contain;
+    translate: -50% 0;
+  }
+  .tgw-art__plate {
+    top: 32%;
+    height: 6%;
+  }
+  .tgw-art__number {
+    top: 42%;
+    height: 14.4%;
+  }
+  .tgw-summary__copy {
+    display: grid;
+    min-width: 0;
+    align-content: center;
+    gap: 4px;
+  }
+  .tgw-summary__title {
+    margin: 0;
+    font: var(--md-sys-typescale-emphasized-title-large-weight, 600) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .tgw-summary__tier {
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-emphasized-label-weight, 600) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .tgw-summary__points {
+    display: grid;
+    gap: 2px;
+    margin: 12px 0 0;
+  }
+  .tgw-summary__points dt {
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
+  .tgw-summary__points dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+  }
+  .tgw-summary__points b {
+    font: var(--md-sys-typescale-emphasized-display-weight, 600) var(--md-sys-typescale-display-small-size) /
+      var(--md-sys-typescale-display-small-line-height) var(--app-font);
+  }
+  .tgw-summary__points span {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .tgw-summary__next {
+    margin: 4px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
 
-  /* Benefits: leading check, value trailing. */
-  .tgw-rung__benefits {
+  .tgw-panels {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+    gap: 16px;
+    align-items: stretch;
+  }
+  .tgw-panel {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+  .tgw-panel__empty {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
+
+  /* Benefits: a list, leading check, value trailing. */
+  .tgw-benefits {
+    display: grid;
+    gap: 2px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .tgw-rung__benefits li {
+  .tgw-benefits li {
     display: flex;
-    min-height: 44px;
+    min-height: 48px;
     align-items: center;
     gap: 12px;
     padding: 4px 12px;
     border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface);
-    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
-      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+      var(--md-sys-typescale-body-large-line-height) var(--app-font);
   }
-  .tgw-rung__mark {
+  .tgw-benefits li:first-child {
+    border-start-start-radius: var(--md-sys-shape-corner-large);
+    border-start-end-radius: var(--md-sys-shape-corner-large);
+  }
+  .tgw-benefits li:last-child {
+    border-end-start-radius: var(--md-sys-shape-corner-large);
+    border-end-end-radius: var(--md-sys-shape-corner-large);
+  }
+  .tgw-benefits__mark {
     display: inline-flex;
     flex: 0 0 auto;
     color: var(--md-sys-color-primary);
   }
-  .tgw-rung__benefits b {
+  .tgw-benefits b {
     margin-inline-start: auto;
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
 
-  .tgw-rung__grants {
+  .tgw-grants {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-    gap: 8px 20px;
+    gap: 16px;
     margin: 0;
   }
-  .tgw-rung__grants > div {
+  .tgw-grants > div {
     display: grid;
     align-content: start;
     gap: 8px;
   }
-  .tgw-rung__grants dt {
+  .tgw-grants dt {
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
-  .tgw-rung__grants dd {
+  .tgw-grants dd {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -156,17 +300,40 @@
   }
 
   @media (max-width: 599px) {
-    .tgw-rung {
-      grid-template-columns: 48px minmax(0, 1fr);
-      gap: 4px 12px;
-      padding: 12px 12px 12px 8px;
+    .tgw-picker {
+      gap: 8px;
     }
-    .tgw-rung__rank {
-      width: 40px;
-      height: 40px;
+    /* Compact: one row per tier, the tier's card and name leading its ranks. */
+    .tgw-tier {
+      grid-template-columns: 64px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
     }
-    .tgw-rung__benefits {
-      grid-template-columns: minmax(0, 1fr);
+    .tgw-tier__head {
+      display: grid;
+      justify-items: center;
+      gap: 2px;
+    }
+    .tgw-tier__head small {
+      display: none;
+    }
+    .tgw-tier__head strong {
+      max-width: 100%;
+      font-size: var(--md-sys-typescale-label-medium-size);
+      line-height: var(--md-sys-typescale-label-medium-line-height);
+    }
+    .tgw-summary {
+      flex-direction: column;
+      align-items: stretch;
+      text-align: center;
+    }
+    .tgw-art {
+      align-self: center;
+      width: min(280px, 100%);
+    }
+    .tgw-summary__points dd {
+      justify-content: center;
     }
   }
 }

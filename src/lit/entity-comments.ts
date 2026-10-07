@@ -342,18 +342,9 @@ export class EntityComments extends LitElement {
       }
       if (changedRealm && append) { void this.load(false); return; }
       const data = bootstrap.data;
-      const latest = await readCommunityViewer(signal);
+      // The bootstrap read identity and comments in one request with this
+      // browser's cookie; a second session read only delayed the thread.
       if (!this.requests.current(signal) || context !== this.context || identity !== this.identity) return;
-      if (latest.realm !== viewer.realm) {
-        this.viewer = latest;
-        this.body = "";
-        this.replyTo = "";
-        this.editing = null;
-        this.invalidate();
-        this.phase = "error";
-        this.error = this.label("unavailable", "Unavailable");
-        return;
-      }
       if (
         data.entity?.type !== this.entityType ||
         String(data.entity.originalId) !== String(this.entityId) ||

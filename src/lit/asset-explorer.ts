@@ -27,7 +27,7 @@ export class AssetExplorer extends LitElement {
   declare phase: "loading" | "ready" | "error";
   declare error: string;
   declare textPreview: string;
-  private mobileColumnSignature = "";
+  private columnSignature = "";
   constructor() {
     super();
     this.tree = {};
@@ -42,10 +42,10 @@ export class AssetExplorer extends LitElement {
     return this;
   }
   updated() {
-    if (innerWidth > 760) return;
+    // Miller columns: keep the newest column in view at every width.
     const signature = JSON.stringify([this.phase, this.path, this.selected, this.files.length]);
-    if (signature === this.mobileColumnSignature) return;
-    this.mobileColumnSignature = signature;
+    if (signature === this.columnSignature) return;
+    this.columnSignature = signature;
     requestAnimationFrame(() => {
       const columns = this.querySelector<HTMLElement>(".asset-columns");
       if (columns && (this.path.length || this.selected))
@@ -145,14 +145,44 @@ export class AssetExplorer extends LitElement {
     }
     return current;
   }
+  /** Language marks never appear in a shown name: `foo(zh-Hans).png` reads as `foo.png`. */
+  private static plainName(name: string) {
+    return name.replace(/\((?:en|ko|zh-Hans|zh-Hant|zh-CN|zh-TW)\)(?=\.|--|\/|$)/gu, "");
+  }
+  /** The visitor language's variant among several, else the first one. */
+  private static pickVariant(files: readonly string[]) {
+    for (const language of localizedFallbacks(preferredLocale())) {
+      const hit = files.find((file) => AssetExplorer.parseVariant(file)?.mark === language);
+      if (hit) return hit;
+    }
+    return files[0] || "";
+  }
+  /**
+   * One entry per logical file. A source with variants lists once, under its
+   * own name; a file that exists only as language variants lists once too,
+   * under the plain name, opening the visitor language's variant.
+   */
   private entries(parts: string[]) {
     const node = this.node(parts);
-    return node && typeof node === "object"
-      ? Object.entries(node)
-          .filter(([name]) => !AssetExplorer.parseVariant(name))
-          .map(([name, value]) => ({ name, value }))
-          .sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }))
-      : [];
+    if (!node || typeof node !== "object") return [];
+    const names = Object.keys(node);
+    const plain = new Set(names.filter((name) => !AssetExplorer.parseVariant(name)));
+    const orphans = new Map<string, string[]>();
+    for (const name of names) {
+      const variant = AssetExplorer.parseVariant(name);
+      if (!variant) continue;
+      const base = `${variant.base}${variant.ext}`;
+      if (plain.has(base)) continue;
+      const group = orphans.get(base);
+      if (group) group.push(name);
+      else orphans.set(base, [name]);
+    }
+    const entries = [...plain].map((name) => ({ name, label: name, value: node[name] as AssetNode }));
+    for (const [base, group] of orphans) {
+      const name = AssetExplorer.pickVariant(group);
+      entries.push({ name, label: base, value: node[name] as AssetNode });
+    }
+    return entries.sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
   }
   private async loadTree() {
     try {
@@ -229,7 +259,7 @@ export class AssetExplorer extends LitElement {
     if (this.kind(file) === "model") await import("./runtime/model-preview");
   }
   render() {
-    const columns: Array<{ parts: string[]; entries: Array<{ name: string; value: AssetNode }> }> = [];
+    const columns: Array<{ parts: string[]; entries: Array<{ name: string; label: string; value: AssetNode }> }> = [];
     for (let depth = 0; depth <= this.path.length; depth++) {
       const parts = this.path.slice(0, depth),
         entries = this.entries(parts);
@@ -257,7 +287,9 @@ export class AssetExplorer extends LitElement {
                       ${this.path.map(
                         (part, index) => html`
                           <span>/</span>
-                          <button @click=${() => this.choose(this.path.slice(0, index + 1))}>${part}</button>
+                          <button @click=${() => this.choose(this.path.slice(0, index + 1))}>
+                            ${AssetExplorer.plainName(part)}
+                          </button>
                         `,
                       )}
                     </nav>
@@ -269,9 +301,11 @@ export class AssetExplorer extends LitElement {
                     ${columns.map(
                       (column, index) => html`
                         <section class="asset-column">
-                          <header>${column.parts.at(-1) || "Assets"}</header>
+                          <header>
+                            ${AssetExplorer.plainName(column.parts.at(-1) || uiText(preferredLocale(), "assets"))}
+                          </header>
                           ${column.entries.map(
-                            ({ name, value }) => html`
+                            ({ name, label, value }) => html`
                               <button
                                 class=${this.path[index] === name ? "selected" : ""}
                                 @click=${() => this.choose([...column.parts, name])}
@@ -281,7 +315,7 @@ export class AssetExplorer extends LitElement {
                                     href=${typeof value === "number" ? "/icons.svg#inventory_2" : "/icons.svg#folder"}
                                   ></use>
                                 </svg>
-                                <span>${name}</span>
+                                <span>${label}</span>
                                 <small>${typeof value === "number" ? value : Object.keys(value).length}</small>
                                 <svg class="material-icon" width="18" height="18">
                                   <use href="/icons.svg#chevron_right"></use>
@@ -295,7 +329,7 @@ export class AssetExplorer extends LitElement {
                       typeof this.node() === "number"
                         ? html`
                             <section class="asset-column">
-                              <header>Files</header>
+                              <header>${uiText(preferredLocale(), "files")}</header>
                               ${this.files.map(
                                 (file) => html`
                                   <button
@@ -307,7 +341,7 @@ export class AssetExplorer extends LitElement {
                                         href=${`/icons.svg#${this.kind(file) === "image" ? "image" : this.kind(file) === "audio" ? "graphic_eq" : this.kind(file) === "video" ? "movie" : this.kind(file) === "model" ? "view_in_ar" : this.kind(file) === "text" ? "data_object" : "draft"}`}
                                       ></use>
                                     </svg>
-                                    <span>${this.displayName(file).split("/").at(-1)}</span>
+                                    <span>${AssetExplorer.plainName(this.displayName(file).split("/").at(-1) || "")}</span>
                                   </button>
                                 `,
                               )}
@@ -327,7 +361,7 @@ export class AssetExplorer extends LitElement {
     return html`
       <section class="asset-preview">
         <header>
-          <strong>${this.selected.split("/").at(-1)}</strong>
+          <strong>${AssetExplorer.plainName(this.selected.split("/").at(-1) || "")}</strong>
           <a class="button button--text" href=${url} download>${uiText(preferredLocale(), "download")}</a>
         </header>
         <div>

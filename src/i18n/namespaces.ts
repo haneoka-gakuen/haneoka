@@ -123,6 +123,13 @@ const COMMON_FLAT_KEYS = [
   "themeLight",
   "themeSystem",
   "themeDark",
+  // Settings page group labels and current-value summaries (common-only route).
+  "appearance",
+  "themeColor",
+  "tuneDefault",
+  "density",
+  "comfortable",
+  "compact",
   "language",
   "server",
   "releaseServer",

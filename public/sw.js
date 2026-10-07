@@ -5,14 +5,17 @@
 //   cached document from referencing a previous deployment's hashed assets.
 // - Hashed build output (/_astro/*): cache-first. URLs are immutable.
 // - Icon sprite: stale-while-revalidate with an HTTP cache validation.
-// - Current-release media: validate over the network; images retain an offline
-//   fallback with an entry cap. Stable URLs can change after a release update.
+// - Release-pinned media (?release=): images cache-first, everything else is
+//   left to the HTTP cache (immutable for a year).
+// - Current-release media: images stale-while-revalidate with an entry cap (a
+//   release update shows the new artwork on the next view); other media is
+//   validated over the network.
 // - Other images: cache-first with an entry cap, evicting the oldest first.
 // - Build-time entity payloads (/entity-data/v1/*): content-addressed, cache-first
 //   with an entry cap.
 // - Everything else (API, auth, worker routes): network only.
 
-const VERSION = "v6";
+const VERSION = "v7";
 const PAGES_CACHE = `haneoka.pages.${VERSION}`;
 const ASSETS_CACHE = `haneoka.assets.${VERSION}`;
 const IMAGES_CACHE = `haneoka.images.${VERSION}`;
@@ -131,9 +134,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (/^\/(?:assets|runtime|objects)\//.test(url.pathname)) {
+    // A release-pinned URL can never change: the HTTP cache keeps it as
+    // immutable, and range/media requests must reach it untouched.
+    if (url.searchParams.has("release")) {
+      if (request.destination === "image") event.respondWith(cacheFirst(request, IMAGES_CACHE, MAX_IMAGES));
+      return;
+    }
+    // Current-release artwork paints from the cache at once and refreshes
+    // behind it, so a repeat visit never waits on a revalidation per image.
     event.respondWith(
       request.destination === "image"
-        ? networkFirst(request, IMAGES_CACHE, MAX_IMAGES)
+        ? staleWhileRevalidate(event, request, IMAGES_CACHE, MAX_IMAGES)
         : fetch(request, { cache: "no-cache" }),
     );
     return;

@@ -1143,6 +1143,8 @@
     "clearTagFilter": "Clear tag filter",
     "followingFeedEmpty": "Follow people or tags to build this feed",
     "signInToFollowing": "Sign in to view your following feed",
+    "signInToViewPersonal": "Sign in to see your posts, bookmarks and notifications",
+    "signInAction": "Sign in",
     "searchPosts": "Search posts",
     "searchPostsPlaceholder": "Search titles and posts",
     "clearSearch": "Clear search",
@@ -2361,6 +2363,7 @@
       "favoriteCard": "Favorite member card"
     },
     "eventLogo": "Event logo",
+    "eventBanner": "Event banner",
     "eventPoints": "{points} pt",
     "eventLoopCondition": "Every {every} pt after {from} pt",
     "eventRankN": "Rank {rank}",
@@ -2433,7 +2436,19 @@
       "boostAutoRecoveryLimitBonus": "LIVE BOOST auto-recovery cap +{count}",
       "eventGachaFreeCountBonus": "Free event gacha draws +{count}",
       "durationSeconds": "{count}s",
-      "boostConsumptionLimit": "LIVE BOOST consumption limit per play: {count}"
+      "boostConsumptionLimit": "LIVE BOOST consumption limit per play: {count}",
+      "rank": "Rank",
+      "tierNormal": "Normal",
+      "tierGold": "Gold",
+      "tierPlatinum": "Platinum",
+      "tierBlack": "Black",
+      "benefits": "Rank benefits",
+      "rewards": "Rewards",
+      "requiredPoints": "Total points required",
+      "toNextRank": "{points} to the next rank",
+      "maxRank": "Highest rank",
+      "noBenefits": "No benefits at this rank",
+      "noRewards": "No rewards at this rank"
     },
     "system": {
       "ongoing": "Ongoing",
@@ -2492,7 +2507,17 @@
       "simulationUnavailable": "Complete rates are required to simulate this recruitment.",
       "simulationLimitReached": "This option has reached its limit. Choose another option or reset the simulation.",
       "simulationComplete": "Simulated {count} draws; {total} draws in total.",
-      "latestDrawResults": "Latest draw results"
+      "latestDrawResults": "Latest draw results",
+      "missionDaily": "Daily missions",
+      "missionUnlocks": "Song & scene unlocks",
+      "missionStory": "Story reading",
+      "missionPerformance": "Performance challenges",
+      "missionGrowth": "Growth",
+      "missionHidden": "Hidden missions",
+      "missionCount": "{count} missions",
+      "missionNoEnd": "No end date",
+      "missionDailyReset": "Resets daily",
+      "missionRewardTotal": "Total rewards"
     },
     "gachaType": {
       "stars": "Stars",
@@ -3774,5 +3799,9 @@
   "difficultyEstimatedConstant": "Estimated constant",
   "difficultyEstimateLowConfidence": "Low confidence",
   "difficultyEstimateScope": "FC operation load estimate; score, SS and event rewards are separate metrics.",
-  "moreActions": "More options"
+  "moreActions": "More options",
+  "themeColor": "Theme color",
+  "tuneDefault": "Original key",
+  "manual": "Manual",
+  "loadingTips": "Loading tips"
 }

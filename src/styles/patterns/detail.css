@@ -430,3 +430,62 @@ a.detail-object:hover {
     var(--md-sys-typescale-body-small-line-height) var(--app-font);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Reference list ----------
+   Rows that point at another entity or source: leading art or icon, a
+   two-line label, a trailing amount. Columns fill the pane so a long list
+   (an item's hundred reward sources) reads as a grid, not one tall column. */
+.reference-list {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 4px 12px;
+}
+.reference-list > div {
+  display: grid;
+  min-width: 0;
+  min-height: 56px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+}
+.reference-list > div > img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.reference-list > div > .material-icon {
+  justify-self: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.reference-list > div > span {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.reference-list > div > span > :is(strong, a) {
+  color: var(--md-sys-color-on-surface);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+}
+.reference-list > div > span > a {
+  color: var(--md-sys-color-primary);
+  text-decoration: none;
+}
+.reference-list > div > span > a:hover {
+  text-decoration: underline;
+}
+.reference-list > div > span > small {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+    var(--md-sys-typescale-body-small-line-height) var(--app-font);
+}
+.reference-list > div > b {
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  font-variant-numeric: tabular-nums;
+}

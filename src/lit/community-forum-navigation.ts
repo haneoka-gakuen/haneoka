@@ -22,8 +22,9 @@ export class CommunityForumNavigation extends LitElement {
   private directorySignal: AbortSignal | undefined;
   private directoryInitialized = false;
   private pagePath: string | undefined;
-  private readonly syncPage = () => {this.syncPageContext();};
-  private readonly revokeDirectory = () => {this.invalidate();void this.loadDirectory();};
+  private readonly syncPage = () => {this.syncPageContext();this.scheduleDirectory();};
+  private readonly revokeDirectory = () => {this.invalidate();this.directoryInitialized=false;this.scheduleDirectory();};
+  private visibility: IntersectionObserver | undefined;
   private readonly instance = 'community-forum-nav-'+ ++sequence;
   private readonly expanded = new Map<string,boolean>();
   private context: string | null | undefined;
@@ -44,7 +45,24 @@ export class CommunityForumNavigation extends LitElement {
     this.syncPageContext();
     window.addEventListener('haneoka:session-changed', this.revokeDirectory);
     window.addEventListener('haneoka:community-forums-changed', this.revokeDirectory);
-    if (!this.directoryInitialized) void this.loadDirectory();
+    this.scheduleDirectory();
+  }
+  /**
+   * The drawer's board list sits in a collapsed branch on most pages; reading
+   * it costs a session, staff and directory request on every page view. Load
+   * it when the branch is actually shown. A community page publishes its own
+   * bootstrap directory here, so the drawer never repeats that read.
+   */
+  private scheduleDirectory(): void {
+    if (this.directoryInitialized || this.directorySignal || this.visibility || !this.isConnected) return;
+    if (document.querySelector('community-workspace')) return;
+    if (typeof IntersectionObserver !== 'function') {void this.loadDirectory();return;}
+    this.visibility = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      this.visibility?.disconnect();this.visibility = undefined;
+      if (this.isConnected && !this.directoryInitialized) void this.loadDirectory();
+    });
+    this.visibility.observe(this);
   }
   /** Persisted links follow the incoming document without rereading its directory. */
   private syncPageContext(published = false): void {
@@ -128,7 +146,7 @@ export class CommunityForumNavigation extends LitElement {
     if(snapshot.viewerId!==this.viewerId) {
       this.expanded.clear();this.activeGroup=undefined;this.activeForum=undefined;
     }
-    this.viewerId=snapshot.viewerId;this.locale=snapshot.locale;this.busy=false;
+    this.viewerId=snapshot.viewerId;this.locale=snapshot.locale;this.busy=false;this.directoryInitialized=true;
     this.snapshot=structuredClone(snapshot);
     this.syncPageContext(true);
     return true;
@@ -148,6 +166,7 @@ export class CommunityForumNavigation extends LitElement {
     window.removeEventListener('haneoka:community-forums-changed', this.revokeDirectory);
     this.directoryRequests.cancel();
     this.requests.cancel();
+    this.visibility?.disconnect();this.visibility = undefined;
     super.disconnectedCallback();
     // Astro may synchronously move transition:persist nodes to the incoming document.
     queueMicrotask(()=>{

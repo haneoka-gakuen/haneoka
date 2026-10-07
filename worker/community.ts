@@ -7,7 +7,7 @@ import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./c
 import { entityRecommendationCandidates } from "./community-entity-recommendations";
 import { writableTeamOwner } from "./team-inventory";
 import { forumReadSql, forumPermissionSql, forumAdminSql, forumDiscoveryPostSql, canAccessPostForum, resolvePostForum, forumTagFilterSql, parseForumTagQuery, type ForumTagSelection } from "./community-forums";
-import { mediaPresentations } from "./community-media";
+import { mediaPresentationsForPosts } from "./community-media";
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { authConfiguration, getAuthSession, type AuthSession } from "./auth";
 import { communityAccessState } from "./access";
@@ -1089,11 +1089,16 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
   viewerUserId: string | null = null,
 ): Promise<Array<T & { attachments: PostAttachment[]; state: PostState; tags: string[] }>> => {
   if (!rows.length) return [];
-  const adminContext=viewerUserId !== null && !!await env.DB.prepare(`SELECT 1 WHERE ${forumAdminSql("?")}`).bind(viewerUserId).first();
   const placeholders = rows.map(() => "?").join(", ");
   const postIds = rows.map((row) => row.id);
   const forumIds = [...new Set(rows.map(row => row.forumId))];
-  const [forumRows, tagResult, attachmentResult] = await Promise.all([
+  // One parallel round of reads: D1 sits a network hop away, so each serial
+  // step cost the feed ~200 ms. The attachment query evaluates the admin
+  // context itself, and media presentations are selected by post.
+  const [adminContext, forumRows, tagResult, attachmentResult, presentations] = await Promise.all([
+    viewerUserId !== null
+      ? env.DB.prepare(`SELECT 1 WHERE ${forumAdminSql("?")}`).bind(viewerUserId).first().then(Boolean)
+      : Promise.resolve(false),
     env.DB.prepare(`SELECT id,slug,names_json AS namesJson FROM community_forum WHERE id IN (${forumIds.map(() => "?").join(",")})`).bind(...forumIds).all<{id:string;slug:string;namesJson:string}>(),
     env.DB.prepare(
       `SELECT link.post_id AS postId, tag.normalized_name AS tag
@@ -1105,23 +1110,26 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
       .bind(...postIds)
       .all<PostTagRow>(),
     env.DB.prepare(
-      `SELECT link.post_id AS postId, attachment.id, attachment.original_name AS fileName,
+      `WITH viewer_context AS (SELECT CASE WHEN ${forumAdminSql("?")} THEN 1 ELSE 0 END AS admin)
+       SELECT link.post_id AS postId, attachment.id, attachment.original_name AS fileName,
               attachment.media_type AS mediaType, attachment.byte_size AS size,
               attachment.width, attachment.height, link.position, attachment.status,
               attachment.moderation_status AS moderationStatus, attachment.failure_code AS failureCode
-       FROM community_post_attachment AS link
+       FROM viewer_context
+       CROSS JOIN community_post_attachment AS link
        JOIN community_attachment AS attachment ON attachment.id = link.attachment_id
        JOIN community_profile AS attachment_owner_profile
          ON attachment_owner_profile.user_id = attachment.owner_user_id
-        AND (attachment_owner_profile.status <> 'deleted' OR ?=1)
+        AND (attachment_owner_profile.status <> 'deleted' OR viewer_context.admin=1)
        WHERE link.post_id IN (${placeholders})
          AND ((attachment.status = 'ready' AND attachment.moderation_status = 'allow')
-              OR attachment.owner_user_id = ? OR ?=1)
-         AND (attachment.deleted_at IS NULL OR ?=1) AND attachment.byte_size IS NOT NULL
+              OR attachment.owner_user_id = ? OR viewer_context.admin=1)
+         AND (attachment.deleted_at IS NULL OR viewer_context.admin=1) AND attachment.byte_size IS NOT NULL
        ORDER BY link.post_id, link.position`,
     )
-      .bind(Number(adminContext),...postIds, viewerUserId,Number(adminContext),Number(adminContext))
+      .bind(viewerUserId, ...postIds, viewerUserId)
       .all<PostAttachmentRow>(),
+    mediaPresentationsForPosts(env, postIds),
   ]);
   const forumsById = new Map(forumRows.results.map(row => [row.id,{id:row.id,slug:row.slug,names:JSON.parse(row.namesJson) as Record<string,string>} ]));
   const tagsByPost = new Map<string, string[]>();
@@ -1130,10 +1138,6 @@ const attachPostMetadata = async <T extends PostDatabaseFields>(
     if (tags) tags.push(row.tag);
     else tagsByPost.set(row.postId, [row.tag]);
   }
-  const presentations = await mediaPresentations(
-    env,
-    attachmentResult.results.map((row) => row.id),
-  );
   const attachmentsByPost = new Map<string, PostAttachment[]>();
   for (const row of attachmentResult.results) {
     const allowed = row.status === "ready" && row.moderationStatus === "allow";
@@ -1714,7 +1718,8 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
 };
 
 const getPost = async (request: Request, env: Env, id: string, url: URL, focusedOnly = false): Promise<Response> => {
-  if (url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`) && await entityThreadForPost(env,id)) return error(request,404,"post_not_found","Open the catalogue discussion through its entity target");
+  const threadCheck = url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`) ? entityThreadForPost(env,id) : Promise.resolve(false);
+  threadCheck.catch(() => undefined);
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
   const includeCommentsValue = singleSearchParameter(url, "includeComments");
@@ -1732,9 +1737,15 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     return error(request, 400, "conflicting_post_query", "Comments cannot be both excluded and requested alone");
   }
   const commentsOnly = commentsOnlyValue === "true";
-  const postRow = await measureCommunityRead("post", () => findAccessiblePostRow(env, id, userId));
+  const [entityThread, postRow] = await Promise.all([
+    threadCheck,
+    measureCommunityRead("post", () => findAccessiblePostRow(env, id, userId)),
+  ]);
+  if (entityThread) return error(request,404,"post_not_found","Open the catalogue discussion through its entity target");
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
-  const [postWithTags, capabilities, flags] = await Promise.all([
+  // Metadata, capabilities and viewer flags read while the comments query
+  // below runs: each is a separate D1 round trip, so serial reads added up.
+  const detailReads = Promise.all([
     commentsOnly ? Promise.resolve(null) : measureCommunityRead("metadata", async () => (await attachPostMetadata(env, [postRow], userId))[0] ?? null),
     Promise.all([
     !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"reply"),
@@ -1754,13 +1765,24 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       ).bind(userId, postRow.authorId),
     ]) : Promise.resolve<D1Result<ViewerFlagRow>[]>([]),
   ]);
-  const post = postWithTags ?? postRow;
-  const [forumCanReply, forumCanPost, forumCanManage] = capabilities;
-  const liked = Boolean(flags[0]?.results[0]);
-  const bookmarked = Boolean(flags[1]?.results[0]);
-  const following = Boolean(flags[2]?.results[0]);
+  // Early validation returns must not leave a rejected read unobserved.
+  detailReads.catch(() => undefined);
+  // The metadata row spreads the post row; every field read from `post`
+  // (authorship, state, counts) is the post row's own.
+  const post = postRow;
+  const readDetail = async () => {
+    const [postWithTags, capabilities, flags] = await detailReads;
+    const [forumCanReply, forumCanPost, forumCanManage] = capabilities;
+    return {
+      postWithTags, forumCanReply, forumCanPost, forumCanManage,
+      liked: Boolean(flags[0]?.results[0]),
+      bookmarked: Boolean(flags[1]?.results[0]),
+      following: Boolean(flags[2]?.results[0]),
+    };
+  };
 
   if (includeCommentsValue === "false") {
+    const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } = await readDetail();
     if (!postWithTags) return error(request, 500, "post_metadata_unavailable", "Post metadata is unavailable");
     return json(request, {
       post: publicAuthoredContent(postWithTags),
@@ -2168,6 +2190,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     commentsSort,
   };
   if (commentsOnly) return json(request, commentResponse);
+  const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } = await readDetail();
   if (!postWithTags) return error(request, 500, "post_metadata_unavailable", "Post metadata is unavailable");
   return json(request, {
     post: publicAuthoredContent(postWithTags),

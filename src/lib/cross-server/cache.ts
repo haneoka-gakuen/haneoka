@@ -140,7 +140,8 @@ export class CrossServerPublicCache {
     return this.observe(key, async (sharedSignal) => {
       const fetcher = this.fetcher;
       const response = await fetcher(`${path}?release=${encodeURIComponent(identity.releaseId)}`, {
-        signal: sharedSignal, cache: "no-store",
+        // The URL pins one release, so the HTTP cache may answer it.
+        signal: sharedSignal,
       });
       if (!response.ok) throw new Error(`Cross-server data unavailable:${path}/${response.status}`);
       if (response.headers.get("x-haneoka-release-id") !== identity.releaseId ||

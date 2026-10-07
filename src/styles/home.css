@@ -341,8 +341,11 @@
     font-size: 12px;
   }
 
-  .home-info {
+  .home-info,
+  .home-birthdays {
     aspect-ratio: 7 / 3;
+    min-height: 0;
+    overflow: hidden;
     grid-template-rows: auto minmax(0, 1fr);
   }
   .home-info__body {
@@ -1291,73 +1294,55 @@
   }
 }
 
-/* ---- Compact spotlight and panels ----
-   The event hero stacks (artwork over details) once its column is narrower
-   than ~440px: below that, side by side leaves the title one word wide. */
+/* ---- Spotlight container ----
+   Every Home panel keeps the same 7:3 frame at every width; the compact
+   container rules above tighten the contents instead of growing the panel. */
 @layer pages {
   .home-spotlight {
     container: spotlight / inline-size;
     align-items: start;
   }
-  @container spotlight (max-width: 895px) {
-    .home-event {
-      aspect-ratio: auto;
-    }
-    .home-event__card {
-      position: relative;
-      inset: auto;
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto auto;
-    }
-    .home-event__media {
-      aspect-ratio: 2 / 1;
-      margin: 8px 8px 0;
-      border-radius: var(--md-sys-shape-corner-large-increased);
-    }
-    .home-event__body {
-      padding: 12px 16px 16px;
-      gap: 12px;
-    }
+  @container spotlight (max-width: 559px) {
     .home-event__heading h3 {
-      white-space: normal;
+      font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-medium-size) /
+        var(--md-sys-typescale-title-medium-line-height) var(--app-font);
     }
-    .home-event__action > span {
-      display: inline;
-    }
-    .home-event__action {
-      inline-size: auto;
-      padding-inline: 12px;
-    }
-    .home-event__range {
-      display: block;
+    .home-event__overline,
+    .home-event__countdown {
+      padding: 2px 8px;
+      font-size: var(--md-sys-typescale-label-small-size);
+      line-height: var(--md-sys-typescale-label-small-line-height);
     }
   }
-  @container (max-width: 559px) {
+  /* Touch: small avatars get a 44dp+ hit area without growing; rows reach 48dp. */
+  @media (pointer: coarse) {
+    .home-event__character,
     .home-birthday-name {
-      font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
-        var(--md-sys-typescale-title-large-line-height) var(--app-font);
+      position: relative;
+    }
+    .home-event__character::before {
+      content: "";
+      position: absolute;
+      inset: -8px -4px;
+    }
+    .home-info .list-item {
+      min-height: 48px;
+    }
+  }
+  /* Narrow birthday panels scale the emphasized type down to stay inside 7:3. */
+  @container (max-width: 459px) {
+    .home-birthday-name {
+      font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-medium-size) /
+        var(--md-sys-typescale-title-medium-line-height) var(--app-font);
     }
     .home-birthday-name img {
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
     }
     .home-birthday-due b {
-      font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
-        var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+      font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-title-large-size) /
+        var(--md-sys-typescale-title-large-line-height) var(--app-font);
       white-space: nowrap;
-    }
-    .home-card__header h2 {
-      font-size: var(--md-sys-typescale-title-medium-size);
-      line-height: var(--md-sys-typescale-title-medium-line-height);
-    }
-  }
-  @container (max-width: 399px) {
-    .home-birthday-feature {
-      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    }
-    .home-birthday-due b {
-      font-size: var(--md-sys-typescale-title-large-size);
-      line-height: var(--md-sys-typescale-title-large-line-height);
     }
   }
 }

@@ -1,6 +1,6 @@
 /* ==========================================================================
-   Missions — a help-style page: grouped one-line conditions with rewards.
-   Only design tokens: surfaces, typescale, shape and hairlines.
+   Missions — a grid of mission groups, then one group's one-line conditions
+   with rewards. Only design tokens: surfaces, typescale, shape, hairlines.
    ========================================================================== */
 
 @layer pages {
@@ -21,18 +21,114 @@
     border-radius: var(--md-sys-shape-corner-extra-large);
     background: var(--md-sys-color-surface-container-low);
   }
+  /* ---- Overview: one card per group ---- */
+  .mission-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .mission-cards > li {
+    display: grid;
+    min-width: 0;
+  }
+  .mission-card {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-width: 0;
+    padding: 16px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-low);
+    text-decoration: none;
+    transition:
+      background-color var(--motion-effects, 150ms),
+      border-radius var(--motion-spatial, 300ms);
+  }
+  .mission-card:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-low));
+  }
+  .mission-card:active {
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+  .mission-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .mission-card__icon,
+  .mission-group__icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    flex: none;
+    place-items: center;
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    clip-path: var(--shape-cookie-9);
+  }
+  .mission-card[data-category="limited"] .mission-card__icon {
+    color: var(--md-sys-color-on-tertiary-container);
+    background: var(--md-sys-color-tertiary-container);
+  }
+  .mission-card__count {
+    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container-highest);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .mission-card__title {
+    font: var(--md-sys-typescale-emphasized-title-large-weight, 600) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .mission-card__window {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
+  .mission-card__rewards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .mission-card__rewards .mission-chip {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .mission-card__more {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+
+  /* ---- One group ---- */
   .mission-group__header {
     display: flex;
-    min-height: 48px;
+    min-height: 56px;
     align-items: center;
     gap: 12px;
   }
-  .mission-group__header h2 {
-    margin: 0;
-    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  .mission-group__icon {
+    width: 40px;
+    height: 40px;
   }
-  .mission-group__header > span {
+  .mission-group__heading {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+  }
+  .mission-group__count {
     padding: 2px 10px;
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-secondary-container);
@@ -40,8 +136,23 @@
     font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
       var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
-  .mission-group__window {
+  .mission-group__header h2 {
+    margin: 0;
+    font: var(--md-sys-typescale-emphasized-title-large-weight, 600) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .mission-group--entity .mission-group__header > span {
+    padding: 2px 10px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .mission-group--entity .mission-group__window {
     margin-inline-start: auto;
+  }
+  .mission-group__window {
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
       var(--md-sys-typescale-label-medium-line-height) var(--app-font);

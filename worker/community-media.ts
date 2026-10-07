@@ -105,17 +105,32 @@ function presentation(id: string, job: MediaJobRow | undefined, entries: MediaVa
 }
 export async function mediaPresentations(env: Env, ids: readonly string[]) {
   const unique = [...new Set(ids)];
+  if (!unique.length) return new Map<string, ReturnType<typeof presentation>>();
+  return readMediaPresentations(env, "SELECT value FROM json_each(?)", JSON.stringify(unique), unique);
+}
+/**
+ * Presentations for every attachment linked to these posts, selected by post
+ * so a feed can read them in the same round as its attachment rows.
+ */
+export async function mediaPresentationsForPosts(env: Env, postIds: readonly string[]) {
+  const unique = [...new Set(postIds)];
+  if (!unique.length) return new Map<string, ReturnType<typeof presentation>>();
+  return readMediaPresentations(
+    env,
+    "SELECT attachment_id FROM community_post_attachment WHERE post_id IN (SELECT value FROM json_each(?))",
+    JSON.stringify(unique),
+  );
+}
+async function readMediaPresentations(env: Env, idsSql: string, keys: string, known?: readonly string[]) {
   const result = new Map<string, ReturnType<typeof presentation>>();
-  if (!unique.length) return result;
-  const keys = JSON.stringify(unique);
   const [jobs, variants] = await Promise.all([
     env.DB.prepare(
-      "SELECT attachment_id AS id,state,progress,attempts,error FROM community_media_job WHERE attachment_id IN (SELECT value FROM json_each(?))",
+      `SELECT attachment_id AS id,state,progress,attempts,error FROM community_media_job WHERE attachment_id IN (${idsSql})`,
     )
       .bind(keys)
       .all<MediaJobRow & { id: string }>(),
     env.DB.prepare(
-      "SELECT attachment_id AS id,kind,object_key AS objectKey,media_type AS mediaType,byte_size AS byteSize,width,height,duration_seconds AS durationSeconds,sha256 FROM community_attachment_variant WHERE attachment_id IN (SELECT value FROM json_each(?))",
+      `SELECT attachment_id AS id,kind,object_key AS objectKey,media_type AS mediaType,byte_size AS byteSize,width,height,duration_seconds AS durationSeconds,sha256 FROM community_attachment_variant WHERE attachment_id IN (${idsSql})`,
     )
       .bind(keys)
       .all<MediaVariantRow & { id: string }>(),
@@ -127,6 +142,7 @@ export async function mediaPresentations(env: Env, ids: readonly string[]) {
     group.push(row);
     byVariant.set(row.id, group);
   }
+  const unique = known ?? [...new Set([...byJob.keys(), ...byVariant.keys()])];
   for (const id of unique) result.set(id, presentation(id, byJob.get(id), byVariant.get(id) || []));
   return result;
 }

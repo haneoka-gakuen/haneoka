@@ -1143,6 +1143,8 @@
     "clearTagFilter": "태그 필터 지우기",
     "followingFeedEmpty": "사용자나 태그를 팔로우하면 관련 게시물이 여기에 표시됩니다",
     "signInToFollowing": "로그인하고 팔로잉 피드 보기",
+    "signInToViewPersonal": "로그인하면 내 게시물, 북마크, 알림을 볼 수 있습니다",
+    "signInAction": "로그인",
     "searchPosts": "게시물 검색",
     "searchPostsPlaceholder": "제목과 본문 검색",
     "clearSearch": "검색 지우기",
@@ -2361,6 +2363,7 @@
       "favoriteCard": "즐겨찾는 멤버 카드"
     },
     "eventLogo": "이벤트 로고",
+    "eventBanner": "이벤트 배너",
     "eventPoints": "{points}pt",
     "eventLoopCondition": "{from}pt 이후 {every}pt마다",
     "eventRankN": "랭크 {rank}",
@@ -2433,7 +2436,19 @@
       "boostAutoRecoveryLimitBonus": "LIVE BOOST 자동 회복 상한 +{count}",
       "eventGachaFreeCountBonus": "이벤트 뽑기 무료 횟수 +{count}회",
       "durationSeconds": "{count}초",
-      "boostConsumptionLimit": "1회 LIVE BOOST 소모량 상한: {count}"
+      "boostConsumptionLimit": "1회 LIVE BOOST 소모량 상한: {count}",
+      "rank": "랭크",
+      "tierNormal": "노멀",
+      "tierGold": "골드",
+      "tierPlatinum": "플래티넘",
+      "tierBlack": "블랙",
+      "benefits": "랭크 혜택",
+      "rewards": "보상",
+      "requiredPoints": "필요 누적 포인트",
+      "toNextRank": "다음 랭크까지 {points}",
+      "maxRank": "최고 랭크",
+      "noBenefits": "이 랭크의 혜택이 없습니다",
+      "noRewards": "이 랭크의 보상이 없습니다"
     },
     "system": {
       "ongoing": "진행 중",
@@ -2492,7 +2507,17 @@
       "simulationUnavailable": "전체 확률 데이터가 있으면 시뮬레이션할 수 있습니다.",
       "simulationLimitReached": "이 옵션의 이용 횟수를 모두 사용했습니다. 다른 옵션을 선택하거나 시뮬레이션을 초기화하세요.",
       "simulationComplete": "이번 {count}회, 누적 {total}회 시뮬레이션했습니다.",
-      "latestDrawResults": "이번 결과"
+      "latestDrawResults": "이번 결과",
+      "missionDaily": "일일 미션",
+      "missionUnlocks": "악곡·장면 해금",
+      "missionStory": "스토리 감상",
+      "missionPerformance": "라이브 챌린지",
+      "missionGrowth": "육성",
+      "missionHidden": "히든 미션",
+      "missionCount": "미션 {count}개",
+      "missionNoEnd": "기한 없음",
+      "missionDailyReset": "매일 갱신",
+      "missionRewardTotal": "보상 합계"
     },
     "gachaType": {
       "stars": "스타 뽑기",
@@ -3774,5 +3799,9 @@
   "difficultyEstimatedConstant": "추정 상수",
   "difficultyEstimateLowConfidence": "낮은 신뢰도",
   "difficultyEstimateScope": "FC 조작 부담 추정. 점수·SS·이벤트 보상은 별도 지표입니다.",
-  "moreActions": "옵션 더보기"
+  "moreActions": "옵션 더보기",
+  "themeColor": "테마 색상",
+  "tuneDefault": "기본",
+  "manual": "매뉴얼",
+  "loadingTips": "로딩 팁"
 }

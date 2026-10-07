@@ -1,10 +1,11 @@
 /**
  * T.G.W CARD — the game's membership benefits ladder.
  *
- * Pure Material: one rung per rank on a surface, separated by hairlines —
- * rank numeral, tier name and points threshold, benefit rows with values,
- * and the tier's daily and rank-up grants. Every property below is a
- * design token; the game's data is rendered exactly as authored.
+ * A rank picker grouped by card tier (Normal, Gold, Platinum, Black) selects
+ * one rank; the page then shows that rank's composed card art with its points
+ * threshold, its benefits, and its daily and rank-up grants. Each rank button
+ * is also a link to the rank's own page, so the ladder stays crawlable and
+ * opens in a new tab like any link.
  */
 
 import { LitElement, html, nothing } from "lit";
@@ -50,7 +51,9 @@ export class TgwCardWorkspace extends LitElement {
     phase: { state: true },
     tiers: { state: true },
     pointName: { state: true },
+    selectedRank: { state: true },
   };
+  declare selectedRank: number;
   declare locale: string;
   declare entityId: string;
   declare phase: "loading" | "ready" | "error";
@@ -71,6 +74,7 @@ export class TgwCardWorkspace extends LitElement {
     this.phase = "loading";
     this.tiers = [];
     this.pointName = [];
+    this.selectedRank = 0;
   }
   createRenderRoot() {
     return this;
@@ -171,6 +175,8 @@ export class TgwCardWorkspace extends LitElement {
       }
       this.tiers = entities;
       this.pointName = pointName;
+      const hashed = Number(/^#tgw-rank-(\d+)$/u.exec(location.hash)?.[1] || 0);
+      this.selectedRank = entities.some((tier) => tier.rank === hashed) ? hashed : entities[0]?.rank || 0;
       this.phase = "ready";
       this.syncEntityHeading();
       progress.finish();
@@ -277,81 +283,182 @@ export class TgwCardWorkspace extends LitElement {
       parts.push(this.text("durationSeconds", `${number.format(remainder)} s`, { count: number.format(remainder) }));
     return parts.join(" ");
   }
+  /** Card tier from the rank art's file name: `tgwcard_gold_7.png` → gold. */
+  private cardTier(tier: Tier): "normal" | "gold" | "platinum" | "black" {
+    const match = /tgwcard_(normal|gold|platinum|black)_\d+\./u.exec(String(tier.image || ""));
+    if (match) return match[1] as "normal" | "gold" | "platinum" | "black";
+    return tier.rank >= 16 ? "black" : tier.rank >= 11 ? "platinum" : tier.rank >= 6 ? "gold" : "normal";
+  }
+  /** Sibling art in the rank image's folder: the tier's card face, rank plate and badge. */
+  private cardArt(tier: Tier, suffix: "" | "_rank" | "_small") {
+    const source = String(tier.image || "");
+    const slash = source.lastIndexOf("/");
+    if (slash < 0) return "";
+    return `${source.slice(0, slash + 1)}tgwcard_${this.cardTier(tier)}${suffix}.png`;
+  }
+  private tierLabel(kind: ReturnType<TgwCardWorkspace["cardTier"]>) {
+    const keys = { normal: "tierNormal", gold: "tierGold", platinum: "tierPlatinum", black: "tierBlack" } as const;
+    const fallback = { normal: "Normal", gold: "Gold", platinum: "Platinum", black: "Black" } as const;
+    return this.text(keys[kind], fallback[kind]);
+  }
+  private select(event: MouseEvent, rank: number) {
+    // Plain clicks select in place; modified clicks keep the link behaviour.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.selectedRank = rank;
+    history.replaceState(history.state, "", `${location.pathname}${location.search}#tgw-rank-${rank}`);
+  }
+  private picker() {
+    const groups = new Map<ReturnType<TgwCardWorkspace["cardTier"]>, Tier[]>();
+    for (const tier of this.tiers) {
+      const kind = this.cardTier(tier);
+      const group = groups.get(kind);
+      if (group) group.push(tier);
+      else groups.set(kind, [tier]);
+    }
+    const pad = (rank: number) => String(rank).padStart(2, "0");
+    return html`
+      <nav class="tgw-picker" aria-label=${this.text("rank", "Rank")}>
+        ${[...groups].map(([kind, tiers]) => {
+          const first = tiers[0]!;
+          const last = tiers[tiers.length - 1]!;
+          return html`
+            <section class="tgw-tier" data-tier=${kind}>
+              <header class="tgw-tier__head">
+                <img src=${this.cardArt(first, "_small")} alt="" width="60" height="28" decoding="async" />
+                <strong>${this.tierLabel(kind)}</strong>
+                <small class="tabular">${pad(first.rank)}–${pad(last.rank)}</small>
+              </header>
+              <div class="tgw-tier__ranks">
+                ${tiers.map(
+                  (tier) => html`
+                    <a
+                      class="tgw-rank-button tabular"
+                      href=${this.entityLink(tier.id)}
+                      aria-current=${tier.rank === this.selectedRank ? "true" : nothing}
+                      aria-label=${this.name(tier.title)}
+                      @click=${(event: MouseEvent) => this.select(event, tier.rank)}
+                    >
+                      ${pad(tier.rank)}
+                    </a>
+                  `,
+                )}
+              </div>
+            </section>
+          `;
+        })}
+      </nav>
+    `;
+  }
   private tier(tier: Tier) {
     const benefits = Array.isArray(tier.benefits) ? tier.benefits : [];
     const daily = Array.isArray(tier.dailyRewards) ? tier.dailyRewards : [];
     const rankRewards = Array.isArray(tier.rankRewards) ? tier.rankRewards : [];
     const points = Number(tier.pointsRequired || 0);
+    const index = this.tiers.indexOf(tier);
+    const next = this.entityId ? undefined : this.tiers[index + 1];
+    const pointName = this.name(this.pointName);
+    const kind = this.cardTier(tier);
+    const labels = benefits.map((benefit) => this.benefitDisplay(benefit)).filter((entry) => entry.label);
     return html`
-      <li class="tgw-rung" id=${`tgw-rank-${tier.rank}`}>
-        <span class="tgw-rung__rank tabular">${tier.rank}</span>
-        <div class="tgw-rung__body">
-          <div class="tgw-rung__head">
+      <article class="tgw-rank" id=${`tgw-rank-${tier.rank}`} aria-labelledby=${`tgw-rank-title-${tier.rank}`}>
+        <section class="tgw-summary surface" data-tier=${kind}>
+          <figure class="tgw-art" role="img" aria-label=${this.name(tier.title)}>
+            <img class="tgw-art__face" src=${this.cardArt(tier, "")} alt="" width="980" height="630" decoding="async" />
+            <img class="tgw-art__plate" src=${this.cardArt(tier, "_rank")} alt="" decoding="async" />
+            <img class="tgw-art__number" src=${String(tier.image || "")} alt="" decoding="async" />
+          </figure>
+          <div class="tgw-summary__copy">
+            <h2 class="tgw-summary__title" id=${`tgw-rank-title-${tier.rank}`}>${this.name(tier.title)}</h2>
+            <span class="tgw-summary__tier">${this.tierLabel(kind)}</span>
+            <dl class="tgw-summary__points">
+              <dt>${this.text("requiredPoints", "Total points required")}</dt>
+              <dd class="tabular">
+                <b>${points.toLocaleString(this.locale)}</b>
+                <span>${pointName}</span>
+              </dd>
+            </dl>
             ${
               this.entityId
-                ? html`<strong class="tgw-rung__title">${this.name(tier.title)}</strong>`
-                : html`<a class="tgw-rung__title" href=${this.entityLink(tier.id)}>${this.name(tier.title)}</a>`
+                ? nothing
+                : html`
+                    <p class="tgw-summary__next">
+                      ${
+                        next
+                          ? this.text("toNextRank", "{points} to the next rank", {
+                              points: `${(Number(next.pointsRequired || 0) - points).toLocaleString(this.locale)} ${pointName}`,
+                            })
+                          : this.text("maxRank", "Highest rank")
+                      }
+                    </p>
+                  `
             }
-            <small class="tgw-rung__points tabular">
-              ${points.toLocaleString(this.locale)} ${this.name(this.pointName)}
-            </small>
           </div>
-          ${
-            benefits.length
-              ? html`
-                  <ul class="tgw-rung__benefits" role="list">
-                    ${benefits.map((benefit) => {
-                      const { label, value } = this.benefitDisplay(benefit);
-                      return label
-                        ? html`
-                            <li>
-                              <span class="tgw-rung__mark">${icon("check_circle", 18)}</span>
-                              <span>${label}</span>
-                              ${
-                                value !== undefined
-                                  ? html`
-                                      <b class="tabular">${value}</b>
-                                    `
-                                  : nothing
-                              }
-                            </li>
-                          `
-                        : nothing;
-                    })}
-                  </ul>
-                `
-              : nothing
-          }
-          ${
-            daily.length || rankRewards.length
-              ? html`
-                  <dl class="tgw-rung__grants">
-                    ${
-                      daily.length
-                        ? html`
-                            <div>
-                              <dt>${this.text("dailyRewards", "Daily rewards")}</dt>
-                              <dd>${daily.map((slot) => this.rewardItem((slot.reward || {}) as Reward))}</dd>
-                            </div>
-                          `
-                        : nothing
-                    }
-                    ${
-                      rankRewards.length
-                        ? html`
-                            <div>
-                              <dt>${this.text("rankRewards", "Rank-up rewards")}</dt>
-                              <dd>${rankRewards.map((reward) => this.rewardItem(reward))}</dd>
-                            </div>
-                          `
-                        : nothing
-                    }
-                  </dl>
-                `
-              : nothing
-          }
+        </section>
+        <div class="tgw-panels">
+          <section class="tgw-panel surface">
+            <h3 class="detail-section-title">${this.text("benefits", "Rank benefits")}</h3>
+            ${
+              labels.length
+                ? html`
+                    <ul class="tgw-benefits" role="list">
+                      ${labels.map(
+                        ({ label, value }) => html`
+                          <li>
+                            <span class="tgw-benefits__mark">${icon("check_circle", 20)}</span>
+                            <span>${label}</span>
+                            ${
+                              value !== undefined
+                                ? html`
+                                    <b class="tabular">${value}</b>
+                                  `
+                                : nothing
+                            }
+                          </li>
+                        `,
+                      )}
+                    </ul>
+                  `
+                : html`
+                    <p class="tgw-panel__empty">${this.text("noBenefits", "No benefits at this rank")}</p>
+                  `
+            }
+          </section>
+          <section class="tgw-panel surface">
+            <h3 class="detail-section-title">${this.text("rewards", "Rewards")}</h3>
+            ${
+              daily.length || rankRewards.length
+                ? html`
+                    <dl class="tgw-grants">
+                      ${
+                        daily.length
+                          ? html`
+                              <div>
+                                <dt>${this.text("dailyRewards", "Daily rewards")}</dt>
+                                <dd>${daily.map((slot) => this.rewardItem((slot.reward || {}) as Reward))}</dd>
+                              </div>
+                            `
+                          : nothing
+                      }
+                      ${
+                        rankRewards.length
+                          ? html`
+                              <div>
+                                <dt>${this.text("rankRewards", "Rank-up rewards")}</dt>
+                                <dd>${rankRewards.map((reward) => this.rewardItem(reward))}</dd>
+                              </div>
+                            `
+                          : nothing
+                      }
+                    </dl>
+                  `
+                : html`
+                    <p class="tgw-panel__empty">${this.text("noRewards", "No rewards at this rank")}</p>
+                  `
+            }
+          </section>
         </div>
-      </li>
+      </article>
     `;
   }
   render() {
@@ -369,9 +476,8 @@ export class TgwCardWorkspace extends LitElement {
                 )
               : this.tiers.length
                 ? html`
-                    <ol class="tgw-ladder" role="list">
-                      ${this.tiers.map((tier) => this.tier(tier))}
-                    </ol>
+                    ${this.entityId || this.tiers.length < 2 ? nothing : this.picker()}
+                    ${this.tier(this.tiers.find((tier) => tier.rank === this.selectedRank) || this.tiers[0]!)}
                   `
                 : emptyState({ title: this.text("empty", "No rank data in this release"), icon: "credit_card" })
         }

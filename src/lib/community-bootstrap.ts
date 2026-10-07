@@ -1,5 +1,5 @@
 import { fetchJson, JsonResponseError } from "../lit/shared/catalog";
-import { CommunityRealmChanged, type CommunityViewer } from "./community-viewer";
+import { CommunityRealmChanged, rememberSignedIn, type CommunityViewer } from "./community-viewer";
 import type { CommunityForum, ForumGroup } from "./community-forums";
 
 export interface CommunityBootstrap<T> {
@@ -31,5 +31,6 @@ export async function readCommunityBootstrap<T>(path: string, signal: AbortSigna
       result.data === null || typeof result.data !== "object" || Array.isArray(result.data) ||
       (forums && (!Array.isArray(result.directory?.forums) || !Array.isArray(result.directory?.groups))))
     throw new CommunityRealmChanged();
+  rememberSignedIn(Boolean(viewer.userId));
   return result;
 }

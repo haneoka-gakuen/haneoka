@@ -1143,6 +1143,8 @@
     "clearTagFilter": "タグ絞り込みを解除",
     "followingFeedEmpty": "ユーザーやタグをフォローすると、関連する投稿がここに表示されます",
     "signInToFollowing": "ログインしてフォローフィードを見る",
+    "signInToViewPersonal": "サインインすると、自分の投稿・ブックマーク・通知を確認できます",
+    "signInAction": "ログイン",
     "searchPosts": "投稿を検索",
     "searchPostsPlaceholder": "タイトルと本文を検索",
     "clearSearch": "検索をクリア",
@@ -2361,6 +2363,7 @@
       "favoriteCard": "お気に入りメンバー"
     },
     "eventLogo": "イベントロゴ",
+    "eventBanner": "イベントバナー",
     "eventPoints": "{points}pt",
     "eventLoopCondition": "{from}pt以降、{every}ptごと",
     "eventRankN": "ランク {rank}",
@@ -2433,7 +2436,19 @@
       "boostAutoRecoveryLimitBonus": "LIVE BOOST自動回復上限＋{count}",
       "eventGachaFreeCountBonus": "イベントガチャ無料回数＋{count}",
       "durationSeconds": "{count}秒",
-      "boostConsumptionLimit": "1回のLIVE BOOST消費上限：{count}"
+      "boostConsumptionLimit": "1回のLIVE BOOST消費上限：{count}",
+      "rank": "ランク",
+      "tierNormal": "ノーマル",
+      "tierGold": "ゴールド",
+      "tierPlatinum": "プラチナ",
+      "tierBlack": "ブラック",
+      "benefits": "ランク特典",
+      "rewards": "報酬",
+      "requiredPoints": "必要累計ポイント",
+      "toNextRank": "次のランクまで {points}",
+      "maxRank": "最高ランク",
+      "noBenefits": "このランクの特典はありません",
+      "noRewards": "このランクの報酬はありません"
     },
     "system": {
       "ongoing": "開催中",
@@ -2492,7 +2507,17 @@
       "simulationUnavailable": "完全な提供割合データでシミュレーションできます。",
       "simulationLimitReached": "この選択肢の利用回数に達しました。他の選択肢を選ぶか、シミュレーションをリセットしてください。",
       "simulationComplete": "今回{count}回、累計{total}回シミュレートしました。",
-      "latestDrawResults": "今回の結果"
+      "latestDrawResults": "今回の結果",
+      "missionDaily": "デイリーミッション",
+      "missionUnlocks": "楽曲・シーン解放",
+      "missionStory": "ストーリー閲覧",
+      "missionPerformance": "ライブチャレンジ",
+      "missionGrowth": "育成",
+      "missionHidden": "シークレットミッション",
+      "missionCount": "{count} 件",
+      "missionNoEnd": "期限なし",
+      "missionDailyReset": "毎日更新",
+      "missionRewardTotal": "報酬合計"
     },
     "gachaType": {
       "stars": "スター",
@@ -3774,5 +3799,9 @@
   "difficultyEstimatedConstant": "推定定数",
   "difficultyEstimateLowConfidence": "低信頼度",
   "difficultyEstimateScope": "FC操作負担の推定。スコア・SS・イベント報酬とは別の指標です。",
-  "moreActions": "その他のオプション"
+  "moreActions": "その他のオプション",
+  "themeColor": "テーマカラー",
+  "tuneDefault": "オリジナル",
+  "manual": "マニュアル",
+  "loadingTips": "ロード中のヒント"
 }

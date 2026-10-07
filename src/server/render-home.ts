@@ -5,6 +5,7 @@ import { parseFragment, serialize, type DefaultTreeAdapterMap } from "parse5";
 import { characterProfiles } from "../data/characterProfiles";
 import { castProfiles } from "../data/castProfiles";
 import { HomeDashboard, type HomeSeed } from "../lit/home-dashboard";
+import { localizedAssetUrl } from "../lit/ui/lazy-images";
 import { createServerI18nContext } from "../i18n/server";
 import { initializeI18nClient } from "../i18n/client";
 import { fetchOptionalStaticCatalog, staticCatalogRelease } from "../lib/static-catalog-source";
@@ -195,7 +196,9 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
     if ("tagName" in node && node.tagName === "img") {
       const source = node.attrs.find((attribute) => attribute.name === "data-src");
       if (source && !node.attrs.some((attribute) => attribute.name === "src")) {
-        node.attrs.push({ name: "src", value: source.value });
+        // The client's lazy loader asks for the locale-tagged variant first;
+        // prerender the same URL so hydration reuses the request.
+        node.attrs.push({ name: "src", value: localizedAssetUrl(source.value, locale) });
         if (!node.attrs.some((attribute) => attribute.name === "loading"))
           node.attrs.push({ name: "loading", value: "lazy" });
       }

@@ -1089,19 +1089,21 @@ export async function handleCommunityForumsRequest(request: Request, env: Env): 
       (purposes.length && !["general", "stamp"].includes(purposes[0]!))
     )
       return error(request, 400, "invalid_query", "Use a single supported purpose");
-    const rows = await readForums(
-      env,
-      userId,
-      `${purposes.length ? "forum.default_purpose = ?" : "1"} AND NOT ${internalEntityForumSql}`,
-      purposes.length ? [purposes[0]!] : [],
-    );
+    // Groups are few: read them beside the forums (one D1 round instead of
+    // two) and keep only the ones a readable forum belongs to.
+    const [rows, allGroups] = await Promise.all([
+      readForums(
+        env,
+        userId,
+        `${purposes.length ? "forum.default_purpose = ?" : "1"} AND NOT ${internalEntityForumSql}`,
+        purposes.length ? [purposes[0]!] : [],
+      ),
+      groups(env, "community_forum_group"),
+    ]);
+    const visibleGroups = new Set(rows.map((row) => row.groupId).filter((id): id is string => id !== null));
     return json(request, {
       forums: rows.map(forumValue),
-      groups: await groups(
-        env,
-        "community_forum_group",
-        rows.map((row) => row.groupId),
-      ),
+      groups: allGroups.filter((group) => visibleGroups.has(group.id)),
     });
   }
   if (url.searchParams.size)

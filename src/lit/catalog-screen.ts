@@ -853,6 +853,15 @@ export class CatalogScreen extends LitElement {
       const characters: UnionPresentationSnapshot["characters"] = {}, bands: UnionPresentationSnapshot["bands"] = {}, marks: UnionPresentationSnapshot["marks"] = {};
       const facetKeys = { character: new Map<string, string>(), collectionBand: new Map<string, string>() };
       this.indexUnionFacets(catalogs.characters, catalogs.bands, dto, facetKeys);
+      // Both servers' marks are independent: start them together.
+      const markReads = new Map((["jp", "intl"] as const).map((server) => {
+        const identity = dto.identities[server];
+        if (!identity || unionPresentationMarks.has(JSON.stringify([server, identity.releaseId, identity.sourceId])))
+          return [server, null] as const;
+        const read = fetch(`/api/v1/servers/${server}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`, { signal });
+        read.catch(() => undefined);
+        return [server, read] as const;
+      }));
       for (const server of ["jp", "intl"] as const) {
         const identity = dto.identities[server];
         if (!identity) continue;
@@ -873,7 +882,7 @@ export class CatalogScreen extends LitElement {
         const cachedMarks = unionPresentationMarks.get(markKey);
         if (cachedMarks) { marks[server] = cachedMarks; continue; }
         try {
-          const response = await fetch(`/api/v1/servers/${server}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`, { signal });
+          const response = await (markReads.get(server) ?? fetch(`/api/v1/servers/${server}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`, { signal }));
           if (response.ok && response.headers.get("x-haneoka-release-id") === identity.releaseId && response.headers.get("x-haneoka-source-id") === identity.sourceId) {
             const raw = await response.json() as Record<string, string>;
             if (!current()) return;
@@ -2870,6 +2879,8 @@ export class CatalogScreen extends LitElement {
       attribute: "attribute",
       levels: "level",
       maximum: "size",
+      itemTypeName: "type",
+      max: "size",
     };
     const label = aliases[key] || key;
     return this.label(
@@ -4120,10 +4131,19 @@ export class CatalogScreen extends LitElement {
                 ...(this.settings.resource === "events" && item.logo
                   ? [{ id: "logo", label: this.label("eventLogo", "Event logo"), source: item.logo }]
                   : []),
+                ...(this.settings.resource === "events" && item.image
+                  ? [{ id: "banner", label: this.label("eventBanner", "Event banner"), source: item.image }]
+                  : []),
               ];
     const seen = new Set<string>();
     const imageVariants = (item.imageVariants || {}) as Record<string, Record<string, string>>;
-    const languages = ["ja", "en", "zh-Hant", "zh-Hans", "ko"];
+    // The current locale's own artwork leads its group; the rest keep a stable order.
+    const localeTag = (
+      { ja: "ja", en: "en", ko: "ko", "zh-CN": "zh-Hans", "zh-TW": "zh-Hant" } as Record<string, string>
+    )[this.settings.locale];
+    const languages = ["ja", "en", "zh-Hant", "zh-Hans", "ko"].sort(
+      (a, b) => Number(b === localeTag) - Number(a === localeTag),
+    );
     const languageNames = new Intl.DisplayNames([this.settings.locale], { type: "language" });
     return candidates.flatMap((entry) => {
       // The gacha-movie entry uses the card thumbnail as its poster; that
@@ -4133,7 +4153,8 @@ export class CatalogScreen extends LitElement {
       const source = typeof entry.source === "string" ? entry.source : "";
       if (!source || seen.has(source)) return [];
       seen.add(source);
-      const variants = imageVariants[source];
+      // Variant keys are the bare asset paths; sources may carry a release query.
+      const variants = imageVariants[source] || imageVariants[source.split("?")[0] || source];
       if (variants)
         return languages.flatMap((language) => {
           const variant = variants[language];
@@ -5262,11 +5283,11 @@ export class CatalogScreen extends LitElement {
                           : nothing
                       }
                       <div class="song-detail-mv__stage">
-                        <img class="song-detail-mv__poster" src=${String(item.jacketUrl || "")} alt="" />
+                        <img class="song-detail-mv__poster" src=${item.jacketUrl ? this.imageForLocale(String(item.jacketUrl)) : ""} alt="" />
                         <video
                           class=${this.detailVideoPlaying ? "is-visible" : ""}
                           controls
-                          preload="metadata"
+                          preload="none"
                           playsinline
                           src=${String(videos[this.detailVideo]?.playableUrl || videos[0]?.playableUrl || "")}
                           @play=${() => (this.detailVideoPlaying = true)}

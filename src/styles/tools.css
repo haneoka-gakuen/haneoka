@@ -184,6 +184,11 @@
     white-space: pre-wrap;
   }
 
+  @media (pointer: coarse) {
+    .asset-toolbar nav button {
+      min-height: 48px;
+    }
+  }
   @media (max-width: 760px) {
     body:has(asset-explorer) .top-app-bar h1 {
       display: none;

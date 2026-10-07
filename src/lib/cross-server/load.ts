@@ -37,9 +37,18 @@ export async function loadCrossServerCatalog(
       return;
     }
     const snapshot: CrossCatalogSnapshot = { identity, collections: {} };
-    for (const name of resources) {
-      try { snapshot.collections[name] = collection(name, await options.reader.readCollection(name, identity)); }
-      catch (error) { failures.push({ server, resource: name, message: error instanceof Error ? error.message : String(error) }); }
+    // Every collection is pinned to the same identity: request them together
+    // instead of one round trip after another, then record results in order.
+    const reads = resources.map((name) => options.reader.readCollection(name, identity).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ));
+    for (const [index, name] of resources.entries()) {
+      const read = await reads[index]!;
+      try {
+        if (!read.ok) throw read.error;
+        snapshot.collections[name] = collection(name, read.value);
+      } catch (error) { failures.push({ server, resource: name, message: error instanceof Error ? error.message : String(error) }); }
     }
     if (resource === "events" && snapshot.collections.events && options.reader.readEntity) {
       const entries = Object.entries(snapshot.collections.events).filter(([, row]) => row.kind === "game-event");

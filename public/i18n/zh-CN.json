@@ -1143,6 +1143,8 @@
     "clearTagFilter": "清除标签筛选",
     "followingFeedEmpty": "关注用户或标签后，相关内容会出现在这里",
     "signInToFollowing": "登录后查看关注内容",
+    "signInToViewPersonal": "登录后即可查看你的帖子、收藏和通知",
+    "signInAction": "登录",
     "searchPosts": "搜索帖子",
     "searchPostsPlaceholder": "搜索标题和正文",
     "clearSearch": "清除搜索",
@@ -2361,6 +2363,7 @@
       "favoriteCard": "最爱成员卡"
     },
     "eventLogo": "活动标志",
+    "eventBanner": "活动横幅",
     "eventPoints": "{points} pt",
     "eventLoopCondition": "达到 {from} pt 后，每 {every} pt",
     "eventRankN": "阶级 {rank}",
@@ -2433,7 +2436,19 @@
       "boostAutoRecoveryLimitBonus": "LIVE BOOST自动恢复上限增加{count}",
       "eventGachaFreeCountBonus": "活动招募免费次数增加{count}次",
       "durationSeconds": "{count}秒",
-      "boostConsumptionLimit": "单次 LIVE BOOST 消耗上限：{count}"
+      "boostConsumptionLimit": "单次 LIVE BOOST 消耗上限：{count}",
+      "rank": "等级",
+      "tierNormal": "普通卡",
+      "tierGold": "金卡",
+      "tierPlatinum": "白金卡",
+      "tierBlack": "黑卡",
+      "benefits": "等级特典",
+      "rewards": "奖励",
+      "requiredPoints": "累计所需积分",
+      "toNextRank": "距下一等级还需 {points}",
+      "maxRank": "已是最高等级",
+      "noBenefits": "本等级无特典",
+      "noRewards": "本等级无奖励"
     },
     "system": {
       "ongoing": "正在进行",
@@ -2492,7 +2507,17 @@
       "simulationUnavailable": "完整概率数据加载后可进行模拟。",
       "simulationLimitReached": "本轮模拟已用完此选项的次数，可选择其他选项或重置模拟。",
       "simulationComplete": "本次模拟 {count} 次，累计模拟 {total} 次。",
-      "latestDrawResults": "本次结果"
+      "latestDrawResults": "本次结果",
+      "missionDaily": "每日任务",
+      "missionUnlocks": "乐曲与场景解锁",
+      "missionStory": "剧情阅读",
+      "missionPerformance": "演出挑战",
+      "missionGrowth": "综合养成",
+      "missionHidden": "隐藏任务",
+      "missionCount": "{count} 项任务",
+      "missionNoEnd": "无固定时限",
+      "missionDailyReset": "每日重置",
+      "missionRewardTotal": "奖励合计"
     },
     "gachaType": {
       "stars": "星钻招募",
@@ -3774,5 +3799,9 @@
   "difficultyEstimatedConstant": "估算定数",
   "difficultyEstimateLowConfidence": "低可信度",
   "difficultyEstimateScope": "FC 操作负担估算；得分、SS 与活动收益为其他指标。",
-  "moreActions": "更多选项"
+  "moreActions": "更多选项",
+  "themeColor": "主题色",
+  "tuneDefault": "原色",
+  "manual": "说明",
+  "loadingTips": "加载提示"
 }

@@ -20,6 +20,7 @@ import { readReleaseServer } from "../lib/release-server";
 import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { loadingIndicator } from "./ui/loading-indicator";
+import { StageFullscreen, StageGestures } from "./ui/stage-fullscreen";
 type Value = Record<string, unknown>;
 
 export class SpineWorkspace extends LitElement {
@@ -41,7 +42,7 @@ export class SpineWorkspace extends LitElement {
     playbackSpeed: { state: true },
     skins: { state: true },
     skin: { state: true },
-    dragEnabled: { state: true },
+    stageFullscreen: { state: true },
     backgroundTransparent: { state: true },
     backgroundColor: { state: true },
     zoom: { state: true },
@@ -75,7 +76,7 @@ export class SpineWorkspace extends LitElement {
   declare playbackSpeed: number;
   declare skins: string[];
   declare skin: string;
-  declare dragEnabled: boolean;
+  declare stageFullscreen: boolean;
   declare backgroundTransparent: boolean;
   declare backgroundColor: string;
   declare zoom: number;
@@ -101,9 +102,34 @@ export class SpineWorkspace extends LitElement {
   private initializationTimer?: number;
   private ssrStageRemoved = false;
   private dragging = false;
-  private dragPointer?: number;
-  private dragLastX = 0;
-  private dragLastY = 0;
+  private fullscreen = new StageFullscreen((active) => (this.stageFullscreen = active));
+  /** Drag to pan, wheel and two-finger pinch to zoom: always on once the model is ready. */
+  private gestures = new StageGestures({
+    enabled: () => this.modelPhase === "ready",
+    pan: (dx, dy) => {
+      this.placement = {
+        ...this.placement,
+        offsetX: this.placement.offsetX + dx / this.placement.scale,
+        offsetY: this.placement.offsetY + dy / this.placement.scale,
+      };
+      this.applyPlacement(false);
+    },
+    zoom: (ratio, x, y) => {
+      const previous = this.placement.scale;
+      const scale = Math.min(4, Math.max(0.25, previous * ratio));
+      this.placement = {
+        scale,
+        offsetX: this.placement.offsetX + x * (1 / scale - 1 / previous),
+        offsetY: this.placement.offsetY + y * (1 / scale - 1 / previous),
+      };
+      this.applyPlacement(!this.dragging);
+    },
+    onDraggingChange: (dragging) => {
+      this.dragging = dragging;
+      this.setDragCursor();
+      if (!dragging) this.applyPlacement(true);
+    },
+  });
   private placement = { offsetX: 0, offsetY: 0, scale: 1 };
   constructor() {
     super();
@@ -124,7 +150,7 @@ export class SpineWorkspace extends LitElement {
     this.playbackSpeed = 1;
     this.skins = [];
     this.skin = "";
-    this.dragEnabled = false;
+    this.stageFullscreen = false;
     this.backgroundTransparent = true;
     this.backgroundColor = "#ecf0f1";
     this.zoom = 1;
@@ -146,6 +172,7 @@ export class SpineWorkspace extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.fullscreen.connect();
     const selection = parseEntitySelection(navigationDocumentUrl().pathname);
     if (selection?.source === "canonical" && selection.route.kind === "spine") this.entityId = selection.route.id;
     this.locale = preferredLocale(this.locale);
@@ -187,6 +214,7 @@ export class SpineWorkspace extends LitElement {
     this.disposeMedia?.();
     this.paneFocus.detach();
     this.endDrag();
+    this.fullscreen.disconnect();
     this.stage?.dispose();
     this.stage = undefined;
     this.modelPhase = "idle";
@@ -263,7 +291,6 @@ export class SpineWorkspace extends LitElement {
     this.captureMessage = "";
     this.modelPhase = "loading";
     this.endDrag();
-    this.dragEnabled = false;
     this.skins = [];
     this.skin = "";
     this.resetPlacement();
@@ -353,73 +380,12 @@ export class SpineWorkspace extends LitElement {
     this.offsetX = applied.offsetX;
     this.offsetY = applied.offsetY;
   }
-  private beginDrag(event: PointerEvent) {
-    if (
-      this.modelPhase !== "ready" ||
-      !this.dragEnabled ||
-      !event.isPrimary ||
-      event.button !== 0 ||
-      this.dragPointer != null
-    )
-      return;
-    this.dragging = true;
-    this.dragPointer = event.pointerId;
-    this.dragLastX = event.clientX;
-    this.dragLastY = event.clientY;
-    event.preventDefault();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    this.setDragCursor();
-  }
-  private moveDrag(event: PointerEvent) {
-    if (!this.dragging || event.pointerId !== this.dragPointer) return;
-    const host = event.currentTarget as HTMLElement;
-    const rect = host.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      this.placement = {
-        ...this.placement,
-        offsetX: this.placement.offsetX + ((event.clientX - this.dragLastX) / (rect.width * this.placement.scale)) * 2,
-        offsetY: this.placement.offsetY + ((event.clientY - this.dragLastY) / (rect.height * this.placement.scale)) * 2,
-      };
-      this.applyPlacement(false);
-    }
-    this.dragLastX = event.clientX;
-    this.dragLastY = event.clientY;
-  }
-  private endDrag(event?: PointerEvent) {
-    if (event && event.pointerId !== this.dragPointer) return;
-    const pointer = this.dragPointer;
-    this.dragging = false;
-    this.dragPointer = undefined;
-    const host = this.querySelector<HTMLElement>("[data-spine-stage]");
-    if (pointer != null && host?.hasPointerCapture(pointer)) host.releasePointerCapture(pointer);
-    this.setDragCursor();
-    this.applyPlacement(true);
+  private endDrag() {
+    this.gestures.cancel();
   }
   private setDragCursor() {
     const canvas = this.querySelector<HTMLCanvasElement>("[data-spine-stage] canvas");
-    if (canvas) canvas.style.cursor = this.dragEnabled ? (this.dragging ? "grabbing" : "grab") : "default";
-  }
-  private toggleDrag() {
-    this.dragEnabled = !this.dragEnabled;
-    if (!this.dragEnabled) this.endDrag();
-    this.setDragCursor();
-  }
-  private zoomAtPointer(event: WheelEvent) {
-    if (!this.dragEnabled || this.modelPhase !== "ready" || !Number.isFinite(event.deltaY)) return;
-    event.preventDefault();
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1);
-    const previous = this.placement.scale;
-    const scale = Math.min(4, Math.max(0.25, previous * Math.exp(-delta * 0.002)));
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
-    this.placement = {
-      scale,
-      offsetX: this.placement.offsetX + x * (1 / scale - 1 / previous),
-      offsetY: this.placement.offsetY + y * (1 / scale - 1 / previous),
-    };
-    this.applyPlacement();
+    if (canvas) canvas.style.cursor = this.modelPhase === "ready" ? (this.dragging ? "grabbing" : "grab") : "default";
   }
   private replay() {
     this.stage?.replay();
@@ -892,13 +858,13 @@ export class SpineWorkspace extends LitElement {
             <div
               data-spine-stage
               class="spine-stage"
-              style=${this.dragEnabled ? "touch-action: none" : nothing}
-              @pointerdown=${this.beginDrag}
-              @pointermove=${this.moveDrag}
-              @pointerup=${this.endDrag}
-              @pointercancel=${this.endDrag}
-              @lostpointercapture=${this.endDrag}
-              @wheel=${this.zoomAtPointer}
+              style=${this.modelPhase === "ready" ? "touch-action: none" : nothing}
+              @pointerdown=${this.gestures.down}
+              @pointermove=${this.gestures.move}
+              @pointerup=${this.gestures.up}
+              @pointercancel=${this.gestures.up}
+              @lostpointercapture=${this.gestures.up}
+              @wheel=${this.gestures.wheel}
             ></div>
             ${
               this.modelPhase === "loading"
@@ -942,15 +908,6 @@ export class SpineWorkspace extends LitElement {
                       </button>
                       <button
                         class="icon-button runtime-button"
-                        aria-pressed=${this.dragEnabled}
-                        @click=${this.toggleDrag}
-                        aria-label=${uiText(this.locale, "drag")}
-                        title=${uiText(this.locale, "drag")}
-                      >
-                        <svg class="material-icon" width="22" height="22"><use href="/icons.svg#pan_tool"></use></svg>
-                      </button>
-                      <button
-                        class="icon-button runtime-button"
                         @click=${this.replay}
                         aria-label=${uiText(this.locale, "replay")}
                       >
@@ -964,6 +921,20 @@ export class SpineWorkspace extends LitElement {
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href="/icons.svg#photo_camera"></use>
+                        </svg>
+                      </button>
+                      <button
+                        class="icon-button runtime-button"
+                        aria-pressed=${this.stageFullscreen}
+                        @click=${(event: Event) =>
+                          void this.fullscreen.toggle(
+                            (event.currentTarget as HTMLElement).closest<HTMLElement>(".viewer-stage"),
+                          )}
+                        aria-label=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
+                        title=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
+                      >
+                        <svg class="material-icon" width="22" height="22">
+                          <use href=${this.stageFullscreen ? "/icons.svg#fullscreen_exit" : "/icons.svg#fullscreen"}></use>
                         </svg>
                       </button>
                     </div>

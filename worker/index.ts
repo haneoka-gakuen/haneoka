@@ -3,6 +3,7 @@ import { handleCommunityBootstrap } from "./community-bootstrap";
 import { withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
 import { version } from "@sonolus/core";
+import { sonolusShareRedirectTarget } from "./sonolus-share";
 export { CommunityMediaContainer } from "./community-media-container";
 import { handleAdminRequest } from "./admin";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
@@ -259,6 +260,11 @@ const POINTER_CACHE_LIMIT = 128;
 // Edge freshness is independent of the browser policy.
 const API_CACHE_TTL = 86_400;
 const CATALOG_API_CACHE_CONTROL = "public, max-age=0, must-revalidate";
+// Release-pinned media (`?release=r-…`) is content-addressed by its release.
+const PINNED_MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";
+// Release-pinned catalogue JSON is immutable in content, but its worker
+// representation can change with a deployment; match the edge cache's day.
+const PINNED_CATALOG_API_CACHE_CONTROL = "public, max-age=86400";
 // The release registry changes only when staff activate, retire, or rename an
 // Our Notes resource server. Treat it like other directory data: fresh daily,
 // while a background refresh absorbs an administrative change without making
@@ -2102,7 +2108,27 @@ async function handleCatalogStorageApi(
   return releaseResponseHeaders(response, release);
 }
 
+/**
+ * Catalogue reads that name a release (`?release=` or a release-bound cursor)
+ * can be kept by the browser; current-pointer reads always revalidate.
+ */
 async function handleCatalogApi(
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+  pathname: string,
+): Promise<Response | null> {
+  const response = await handleCatalogApiRequest(env, ctx, request, pathname);
+  if (!response || (response.status !== 200 && response.status !== 304)) return response;
+  const url = new URL(request.url);
+  if (!url.searchParams.has("release") && !url.searchParams.has("cursor")) return response;
+  if (response.headers.get("Cache-Control") !== CATALOG_API_CACHE_CONTROL) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", PINNED_CATALOG_API_CACHE_CONTROL);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function handleCatalogApiRequest(
   env: Env,
   ctx: ExecutionContext,
   request: Request,
@@ -2607,7 +2633,10 @@ async function handleReleaseMedia(
       ? errorResponse(request, 404, "release_not_found", "Requested release is not available")
       : new Response("not found", { status: 404, headers: CORS });
   }
-  const cacheControl = CATALOG_API_CACHE_CONTROL;
+  // A `?release=` URL names one immutable release: its bytes can never
+  // change, so browsers keep it for a year instead of revalidating every
+  // jacket on every visit. Unpinned URLs follow the moving current pointer.
+  const cacheControl = requested ? PINNED_MEDIA_CACHE_CONTROL : CATALOG_API_CACHE_CONTROL;
   const cacheRequest = releaseCacheRequest(request, release.releaseId);
   const response = await edgeCached(
     cacheRequest,
@@ -3287,6 +3316,17 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
         headers: { Location: temporaryTarget, "Cache-Control": "no-store" },
       });
     }
+  }
+  // Sonolus "Share" links address `/{type}/{name}` on the server address.
+  const sonolusShareTarget =
+    request.method === "GET" || request.method === "HEAD"
+      ? sonolusShareRedirectTarget(url.pathname, url.search, CANONICAL_HOST)
+      : undefined;
+  if (sonolusShareTarget) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: sonolusShareTarget, "Cache-Control": "public, max-age=3600" },
+    });
   }
   const stampFonts = await handleStampFontsRequest(request, env, ctx);
   if (stampFonts) return stampFonts;

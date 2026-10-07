@@ -88,6 +88,18 @@ type UploadEntry = {
 };
 /** app-bar.ts owner id for the community workspace's page controls. */
 const COMMUNITY_BAR_OWNER = "community";
+/** A feed left this recently is restored as it was; older ones load fresh. */
+const FEED_SNAPSHOT_RESTORE_MS = 30 * 60_000;
+/*
+ * How the current document was reached. Returning (history back/forward, or
+ * a detail's own back control, which replaces) restores the feed that was
+ * left; following a link to the feed starts it fresh from the top.
+ */
+let returningNavigation = false;
+if (typeof document !== "undefined")
+  document.addEventListener("astro:before-preparation", (event) => {
+    returningNavigation = (event as Event & { navigationType?: string }).navigationType !== "push";
+  });
 const feedSnapshots = new Map<
   string,
   {
@@ -543,6 +555,7 @@ export class CommunityWorkspace extends LitElement {
   }
   updated() {
     this.lazyImages?.observe(this);
+    this.observeLoadMore();
     // The open overlay is modal: focus stays inside it and Escape closes it.
     this.paneFocus.sync(
       this.querySelector<HTMLElement>(
@@ -559,6 +572,55 @@ export class CommunityWorkspace extends LitElement {
             ? (this.filtersOpen = false)
             : this.closePlaylist(),
     );
+  }
+  private editorBaseline = "";
+  private editorSnapshot() {
+    return JSON.stringify([this.editorTitle, this.editorBody, this.editorTags, this.editorVisibility]);
+  }
+  /**
+   * Work that leaving would lose: an edit not yet saved (new posts keep a
+   * local draft, but not their uploads), or a comment being edited.
+   */
+  private hasUnsavedWork() {
+    if (this.published) return false;
+    if (this.routeKind === "post-edit" && this.editorInitialized && this.editorBaseline &&
+        this.editorSnapshot() !== this.editorBaseline) return true;
+    if (this.routeKind === "post-new" && this.uploads.length > 0) return true;
+    if (this.commentEdit && this.document) {
+      const comments = Array.isArray(this.document.comments) ? (this.document.comments as Value[]) : [];
+      const original = comments.find((comment) => String(comment.id) === this.commentEdit?.id);
+      if (original && String(original.body || "") !== this.commentEdit.body) return true;
+    }
+    return false;
+  }
+  /** The last collection read needed a session the visitor does not have. */
+  private signedOutGate = false;
+  private personalCollection() {
+    return this.routeKind === "collection" && (["mine", "bookmarks", "notifications", "activity"].includes(this.mode) ||
+      (this.mode === "feeds" && this.feedScope === "following"));
+  }
+  private loadMoreObserver?: IntersectionObserver;
+  private observedLoadMore?: Element;
+  /** Whether the last failed collection read was a next page (retry appends). */
+  private failedAppend = false;
+  /**
+   * Infinite scroll: the next page starts loading well before the reader
+   * reaches the end. The button stays as the keyboard and fallback path, and
+   * a failed page waits for an explicit retry instead of looping.
+   */
+  private observeLoadMore() {
+    const target = this.routeKind === "collection" && this.phase === "ready" && !this.error
+      ? this.querySelector(":scope .load-more[data-auto-load]") : null;
+    if (target === this.observedLoadMore) return;
+    if (this.observedLoadMore) this.loadMoreObserver?.unobserve(this.observedLoadMore);
+    this.observedLoadMore = target || undefined;
+    if (!target || typeof IntersectionObserver !== "function") return;
+    this.loadMoreObserver ??= new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      if (this.isConnected && this.cursor && !this.loadingMore && !this.refreshing && !this.error && this.phase === "ready")
+        void this.load(true);
+    }, { root: this.scrollHost || null, rootMargin: "0px 0px 1200px 0px" });
+    this.loadMoreObserver.observe(target);
   }
   private initialFeedSnapshot?: ReturnType<typeof feedSnapshots.get>;
   private saveFeedSnapshot = () => {
@@ -589,6 +651,9 @@ export class CommunityWorkspace extends LitElement {
     this.reactions.clear();
     this.saveFeedSnapshot();
     this.columnsObserver?.disconnect();
+    this.loadMoreObserver?.disconnect();
+    this.loadMoreObserver = undefined;
+    this.observedLoadMore = undefined;
     cancelAnimationFrame(this.columnsFrame);
     this.lazyImages?.disconnect();
     this.requests.cancel();
@@ -626,6 +691,26 @@ export class CommunityWorkspace extends LitElement {
     window.addEventListener("haneoka:session-changed", this.onForumRefresh, {
       signal: this.lifetime.signal,
     });
+    // Leaving with unsaved work asks first. An in-app (view transition)
+    // navigation is turned into a document navigation so the browser's own
+    // confirmation applies to it as well.
+    window.addEventListener("beforeunload", (event) => {
+      if (!this.isConnected || !this.hasUnsavedWork()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }, { signal: this.lifetime.signal });
+    document.addEventListener("astro:before-preparation", (event) => {
+      // History traversal has already moved the URL; only link/form
+      // navigations can still be handed to the browser's confirmation.
+      if ((event as Event & { navigationType?: string }).navigationType === "traverse") return;
+      if (this.isConnected && this.hasUnsavedWork()) event.preventDefault();
+    }, { signal: this.lifetime.signal });
+    // A read that failed while offline retries by itself once the connection returns.
+    window.addEventListener("online", () => {
+      if (!this.isConnected || this.busy || this.loadingMore || this.refreshing) return;
+      if (this.phase === "error" || (this.error && this.phase === "ready" && this.routeKind === "collection"))
+        void this.load(this.failedAppend && Boolean(this.cursor));
+    }, { signal: this.lifetime.signal });
     this.scrollHost =
       this.closest<HTMLElement>(".app-shell__main") || undefined;
     this.lazyImages = new LazyImages({ root: this.scrollHost || null, rootMargin: "400px" });
@@ -644,9 +729,14 @@ export class CommunityWorkspace extends LitElement {
     document.addEventListener("astro:before-swap", this.saveFeedSnapshot, {
       signal: this.lifetime.signal,
     });
+    const columnsFor = (width: number) => width < 300 ? 1 : width < 670 ? 2 : width < 1050 ? 3 : width < 1400 ? 4 : 5;
+    // Decide the first render's columns now: starting from the default and
+    // correcting a frame later moved every skeleton card (a visible shift).
+    const initialWidth = this.clientWidth;
+    if (initialWidth > 0) this.columnCount = columnsFor(initialWidth);
     this.columnsObserver = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width || this.clientWidth;
-      const columns = width < 300 ? 1 : width < 670 ? 2 : width < 1050 ? 3 : width < 1400 ? 4 : 5;
+      const columns = columnsFor(width);
       if (this.columnCount === columns) return;
       cancelAnimationFrame(this.columnsFrame);
       this.columnsFrame = requestAnimationFrame(() => {
@@ -832,6 +922,7 @@ export class CommunityWorkspace extends LitElement {
       !["feeds", "mine", "bookmarks"].includes(this.mode) &&
       this.phase === "ready" &&
       snapshot &&
+      returningNavigation &&
       snapshot.viewer === this.viewerId() &&
       snapshot.realm === this.readViewer?.realm &&
       snapshot.endpoint === this.loadedCollectionEndpoint
@@ -868,6 +959,30 @@ export class CommunityWorkspace extends LitElement {
     const readyCollection = this.routeKind === "collection" && this.phase === "ready";
     this.phase = append || this.document || this.items.length || activeEditor || readyCollection ? this.phase : "loading";
     this.error = "";
+    this.signedOutGate = false;
+    // Returning to a feed (back/forward) paints the list the reader left at
+    // once, at the same scroll offset, while the network confirms it. The
+    // fresh first page then only refreshes those cards in place: a
+    // recommended feed is reshuffled per request, and replacing the list
+    // would move the reader to different posts.
+    const snapshot = !append && !refresh ? this.initialFeedSnapshot : undefined;
+    const restored = Boolean(snapshot && returningNavigation && this.routeKind === "collection" && this.phase !== "ready" &&
+      ["feeds", "mine", "bookmarks"].includes(this.mode) && !this.forumSlug && snapshot.items.length &&
+      snapshot.endpoint === this.endpoint(false) && Date.now() - snapshot.createdAt < FEED_SNAPSHOT_RESTORE_MS);
+    if (restored && snapshot) {
+      this.initialFeedSnapshot = undefined;
+      this.items = snapshot.items;
+      this.cursor = snapshot.cursor;
+      this.feedSeed = snapshot.seed;
+      this.loadedCollectionEndpoint = snapshot.endpoint;
+      this.phase = "ready";
+      this.refreshing = true;
+      void this.updateComplete.then(() => {
+        if (!this.isConnected || !this.requests.current(signal) || !this.scrollHost) return;
+        this.scrollHost.scrollTop = snapshot.scroll;
+        this.feedScroll = snapshot.scroll;
+      });
+    }
     let bootstrapped: Value | undefined;
     try {
       const postDetail = this.routeKind === "post-detail" || this.routeKind === "post-edit";
@@ -879,10 +994,12 @@ export class CommunityWorkspace extends LitElement {
         if (focusedId) query.set("commentId", focusedId);
         const path = postDetail ? `/api/v1/community/posts/${encodeURIComponent(this.entityId)}?${query}` : this.endpoint(false, refresh);
         const bootstrap = await readCommunityBootstrap<Value>(path, signal, true);
-        const latest = await readCommunityViewer(signal);
         if (!this.requests.current(signal)) return;
-        if (latest.realm !== bootstrap.viewer.realm) throw new CommunityRealmChanged();
-        await this.loadForums(signal, { viewer: latest, forums: bootstrap.directory!.forums, groups: bootstrap.directory!.groups });
+        // The bootstrap reads identity and content in one server request with
+        // this browser's cookie, so its viewer is the realm of that content.
+        // Re-reading the session here only added a serial round trip; identity
+        // changes still arrive through haneoka:session-changed.
+        await this.loadForums(signal, { viewer: bootstrap.viewer, forums: bootstrap.directory!.forums, groups: bootstrap.directory!.groups });
         if (!this.requests.current(signal)) return;
         bootstrapped = bootstrap.data;
       } else if (!append && this.usesForums()) {
@@ -954,6 +1071,7 @@ export class CommunityWorkspace extends LitElement {
         if (Array.isArray(detail.comments)) this.document.comments = (detail.comments as Value[]).map((comment) => this.mergeReaction("comment", comment, reactionMark));
         this.publishForumNavigation();
         if (focusedId) this.revealComment(focusedId);
+        if (this.routeKind === "post-detail") this.restoreCommentDraft();
         const currentPost = ((this.document.post as Value | undefined) || this.document) as Value;
         this.setDocumentTitle(String(currentPost.title || this.label("community", "Community")));
         if (this.routeKind === "post-edit" && (detail.viewer as Value | undefined)?.canEdit === false)
@@ -969,6 +1087,7 @@ export class CommunityWorkspace extends LitElement {
           this.editorVersion = Number(post.version || 1);
           this.editorInitialized = true;
           this.editorReady = true;
+          this.editorBaseline = this.editorSnapshot();
         }
         this.phase = "ready";
 
@@ -1041,6 +1160,14 @@ export class CommunityWorkspace extends LitElement {
         if (this.routeKind === "playlist-detail") await this.openPlaylist(this.entityId, false);
         return;
       }
+      // The viewer is confirmed signed out: a personal list needs no request.
+      if (!append && !bootstrapped && this.readViewer && !this.session && this.personalCollection()) {
+        this.signedOutGate = true;
+        this.items = [];
+        this.cursor = "";
+        this.phase = "ready";
+        return;
+      }
       const collectionEndpoint = this.endpoint(false);
       const collectionRoute = this.collectionUrl();
       let data = bootstrapped;
@@ -1070,15 +1197,23 @@ export class CommunityWorkspace extends LitElement {
             ? { ...record, comment: this.mergeReaction("comment", record.comment as unknown as Value, reactionMark) }
             : this.mergeReaction("post", record, reactionMark))
           : next;
-      this.items = append
-        ? [
-            ...new Map(
-              [...this.items, ...(mergedNext as Value[])].map((item) => [String(item.id || item.normalizedName), item]),
-            ).values(),
-          ]
-        : (mergedNext as Value[]);
-      this.cursor = String(data.nextCursor || "");
-      this.feedSeed = typeof data.seed === "number" && Number.isSafeInteger(data.seed) ? data.seed : null;
+      const keepRestored = restored && snapshot && snapshot.viewer === this.viewerId() &&
+        snapshot.realm === this.readViewer?.realm && this.items.length > 0;
+      if (keepRestored) {
+        const fresh = new Map((mergedNext as Value[]).map((item) => [String(item.id || item.normalizedName), item]));
+        this.items = this.items.map((item) => fresh.get(String(item.id || item.normalizedName)) ?? item);
+      } else {
+        if (restored && this.scrollHost) { this.scrollHost.scrollTop = 0; this.feedScroll = 0; }
+        this.items = append
+          ? [
+              ...new Map(
+                [...this.items, ...(mergedNext as Value[])].map((item) => [String(item.id || item.normalizedName), item]),
+              ).values(),
+            ]
+          : (mergedNext as Value[]);
+        this.cursor = String(data.nextCursor || "");
+        this.feedSeed = typeof data.seed === "number" && Number.isSafeInteger(data.seed) ? data.seed : null;
+      }
       if (!append) {
         const changed = this.loadedCollectionEndpoint && this.loadedCollectionEndpoint !== collectionEndpoint;
         this.loadedCollectionEndpoint = collectionEndpoint;
@@ -1109,6 +1244,17 @@ export class CommunityWorkspace extends LitElement {
         this.clearForumContent();
         this.phase = "error";
       }
+      // A personal list (following, mine, bookmarks, notifications, activity)
+      // read while signed out is not a failure: offer sign-in in its place.
+      if (error instanceof JsonResponseError && error.status === 401 && !append && this.personalCollection()) {
+        this.session = null;
+        this.signedOutGate = true;
+        this.items = [];
+        this.cursor = "";
+        this.error = "";
+        this.phase = "ready";
+        return;
+      }
       if (this.routeKind === "collection" && this.loadedCollectionEndpoint) {
         const loaded = new URL(this.loadedCollectionEndpoint, location.origin).searchParams;
         const scope = loaded.get("scope");
@@ -1123,12 +1269,19 @@ export class CommunityWorkspace extends LitElement {
         this.submittedQuery = appliedQuery;
       }
       if (!(error instanceof JsonResponseError) || ![401,403,404].includes(error.status)) this.forumNavigationState?.host.release?.(this.forumNavigationState.signal);
+      this.failedAppend = append;
       this.error = error instanceof Error ? error.message : String(error);
       if (!this.items.length && !this.document && this.phase !== "ready") this.phase = "error";
       progress.fail(error);
     } finally {
       progress.finish();
       if (this.requests.current(signal)) { this.loadingMore = false; this.refreshing = false; }
+      // Observe the sentinel afresh so a page that still ends inside the
+      // prefetch margin continues to the next one.
+      if (append && this.observedLoadMore) {
+        this.loadMoreObserver?.unobserve(this.observedLoadMore);
+        this.observedLoadMore = undefined;
+      }
     }
   }
   private submit(event: Event) {
@@ -1591,30 +1744,40 @@ export class CommunityWorkspace extends LitElement {
       String(this.postEnvelope().post.id || this.entityId),
     );
   }
+  private bookmarkPending = false;
+  /** Optimistic: the mark flips at once and rolls back if the save fails. */
   private toggleBookmark() {
-    if (!this.requireSession()) return;
+    if (!this.requireSession() || this.bookmarkPending) return;
     const { post, viewer } = this.postEnvelope();
     const postId = String(post.id || this.entityId);
     const viewerId = this.viewerId();
-    void this.mutate(async () => {
-      const result = await this.request(
-        `/api/v1/community/posts/${encodeURIComponent(postId)}/bookmark`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ active: !viewer.bookmarked }),
-        },
-      );
-      this.updatePost(
-        post,
-        { ...viewer, bookmarked: result.active },
-        viewerId,
-        {
-          kind: "patch",
-          viewer: { bookmarked: result.active },
-          removeFromBookmarks: !result.active,
-        },
-      );
-    });
+    const previous = Boolean(viewer.bookmarked);
+    const lifetime = this.lifetime, epoch = this.forumEpoch, entityId = this.entityId;
+    const current = () => this.isConnected && lifetime === this.lifetime && !lifetime.signal.aborted &&
+      viewerId === this.viewerId() && epoch === this.forumEpoch && entityId === this.entityId;
+    const paint = (active: boolean, settled: boolean) => {
+      if (!current()) return;
+      const envelope = this.postEnvelope();
+      this.updatePost(envelope.post, { ...envelope.viewer, bookmarked: active }, viewerId, {
+        kind: "patch",
+        viewer: { bookmarked: active },
+        // Leave the bookmarks list only once the server has confirmed it.
+        removeFromBookmarks: settled && !active,
+      });
+    };
+    paint(!previous, false);
+    this.bookmarkPending = true;
+    void this.request(`/api/v1/community/posts/${encodeURIComponent(postId)}/bookmark`, {
+      method: "PUT",
+      body: JSON.stringify({ active: !previous }),
+    }).then(
+      (result) => paint(Boolean(result.active), true),
+      (error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        paint(previous, false);
+        if (current()) this.showToast(this.label("bookmarkFailed", "The bookmark could not be updated."));
+      },
+    ).finally(() => { this.bookmarkPending = false; });
   }
   private setPinned(active: boolean) {
     const { post, viewer } = this.postEnvelope();
@@ -2978,6 +3141,7 @@ export class CommunityWorkspace extends LitElement {
         this.commentBody = "";
         this.replyTo = "";
         this.commentDraftOpen = false;
+        this.saveCommentDraft();
       }
       const comment = result.comment as Value | undefined;
       if (comment) {
@@ -3819,7 +3983,7 @@ export class CommunityWorkspace extends LitElement {
                       onSignIn: () => { this.requireSession(); }, onOpen: () => this.openComment(),
                       onClose: () => this.closeCommentComposer(),
                       onCancelReply: () => this.cancelCommentReply(),
-                      onBody: (body) => { ++this.commentDraftRevision; this.commentBody = body; },
+                      onBody: (body) => { ++this.commentDraftRevision; this.commentBody = body; this.saveCommentDraft(); },
                       onSubmit: (event) => void this.submitComment(event as SubmitEvent),
                     })
                   : html`
@@ -5047,7 +5211,7 @@ export class CommunityWorkspace extends LitElement {
     }
     const snapshot = this.initialFeedSnapshot;
     this.initialFeedSnapshot = undefined;
-    if (this.requests.current(signal) && snapshot && this.routeKind === "collection" &&
+    if (this.requests.current(signal) && snapshot && returningNavigation && this.routeKind === "collection" &&
       ["feeds", "mine", "bookmarks"].includes(this.mode) && this.phase !== "ready" &&
       snapshot.viewer === this.viewerId() && snapshot.realm === this.readViewer?.realm &&
       snapshot.endpoint === this.endpoint(false) &&
@@ -5552,7 +5716,10 @@ export class CommunityWorkspace extends LitElement {
     if (this.phase === "loading")
       return usesAsyncRegion
         ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: ["feeds", "mine", "bookmarks"].includes(this.mode) && !this.forumSlug ? "cards" : "list", columns: this.columnCount })
-        : loadingState(this.label("loading", "Loading"));
+        : ["post-detail", "user-detail"].includes(this.routeKind)
+          // A detail reserves its layout with placeholders instead of a blank pane.
+          ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: "detail" })
+          : loadingState(this.label("loading", "Loading"));
     if (this.phase === "error")
       return errorState(
         this.label("unavailable", "Unavailable"),
@@ -5563,7 +5730,7 @@ export class CommunityWorkspace extends LitElement {
     const content = this.mode === "forums" ? this.renderForumDirectory() : this.renderItems();
     if (!usesAsyncRegion) return content;
     return this.error
-      ? asyncRegion({ state: "error", message: this.error, retryLabel: this.label("retry", "Retry"), onRetry: () => void this.load(false), retainedContent: content })
+      ? asyncRegion({ state: "error", message: this.error, retryLabel: this.label("retry", "Retry"), onRetry: () => void this.load(this.failedAppend && Boolean(this.cursor)), retainedContent: content })
       : asyncRegion({ state: this.refreshing ? "refreshing" : "ready", content });
   }
   /**
@@ -6189,7 +6356,7 @@ export class CommunityWorkspace extends LitElement {
       ${this.renderPageItems()}${
         this.cursor
           ? html`
-              <div class="load-more">
+              <div class="load-more" data-auto-load>
                 <button
                   class="button button--tonal"
                   ?disabled=${this.loadingMore}
@@ -6204,6 +6371,18 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderPageItems() {
+    if (!this.items.length && this.signedOutGate) {
+      const following = this.mode === "feeds" && this.feedScope === "following";
+      return emptyState({
+        title: following
+          ? this.label("signInToFollowing", "Sign in to view your following feed")
+          : this.label("signInToViewPersonal", "Sign in to see your posts, bookmarks and notifications"),
+        icon: "account_circle",
+        action: html`<button class="button button--filled" type="button" @click=${() => this.requireSession()}>
+          ${this.label("signInAction", "Sign in")}
+        </button>`,
+      });
+    }
     if (!this.items.length) {
       const emptyKeys: Record<string, [string, string]> = {
         mine: ["emptyMine", "You have not posted yet"],
@@ -6590,6 +6769,42 @@ export class CommunityWorkspace extends LitElement {
   private replyToEntityComment(entry: Value) {
     const href = this.entityCommentHref(entry, true);
     if (href) void navigateDetailPage(href);
+  }
+  /**
+   * An unsent comment survives leaving the post (or a crash/reload): it is
+   * kept per member and post, and comes back with its composer open.
+   */
+  private commentDraftKey(postId = this.entityId) {
+    const viewer = this.viewerId();
+    return viewer && postId ? `haneoka:community-comment-draft:v1:${viewer}:${postId}` : "";
+  }
+  private saveCommentDraft() {
+    const key = this.commentDraftKey();
+    if (!key) return;
+    try {
+      if (this.commentBody.trim()) localStorage.setItem(key, JSON.stringify({ body: this.commentBody, replyTo: this.replyTo, savedAt: Date.now() }));
+      else localStorage.removeItem(key);
+    } catch { /* Drafts are a convenience; posting still works. */ }
+  }
+  private restoreCommentDraft() {
+    const key = this.commentDraftKey();
+    if (!key || this.commentBody || !this.session || !this.postEnvelope().viewer.canComment) return;
+    try {
+      const draft = JSON.parse(localStorage.getItem(key) || "null") as Value | null;
+      if (!draft || typeof draft.body !== "string" || !draft.body.trim()) return;
+      // Older than two weeks: the conversation has moved on.
+      if (typeof draft.savedAt === "number" && Date.now() - draft.savedAt > 14 * 86_400_000) {
+        localStorage.removeItem(key);
+        return;
+      }
+      const comments = Array.isArray(this.document?.comments) ? (this.document.comments as Value[]) : [];
+      const replyTo = typeof draft.replyTo === "string" && comments.some((comment) => String(comment.id) === draft.replyTo) ? draft.replyTo : "";
+      ++this.commentDraftRevision;
+      this.commentBody = draft.body;
+      this.replyTo = replyTo;
+      this.commentDraftOpen = true;
+      this.prepareCommentEditor();
+    } catch { /* An unreadable draft is ignored. */ }
   }
   private closeCommentComposer() {
     ++this.commentDraftRevision;
