@@ -1256,9 +1256,27 @@
   .home-birthday-avatars li > a:is(:hover, :focus-visible) .home-birthday-portrait {
     scale: 1.08;
   }
+  /* The nearest birthday takes the cookie shape. The shape clips the backdrop and the photo, not the portrait box,
+     so a voice actor's character badge at the bottom-right corner stays whole. */
   .home-birthday-avatars li:first-child .home-birthday-portrait {
+    isolation: isolate;
+    border-radius: 0;
+    background: none;
+  }
+  .home-birthday-avatars li:first-child .home-birthday-portrait::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: var(--member, var(--md-sys-color-primary));
+    clip-path: var(--shape-cookie-9);
+    content: "";
+  }
+  .home-birthday-avatars li:first-child .home-birthday-portrait__main {
     border-radius: 0;
     clip-path: var(--shape-cookie-9);
+  }
+  .home-birthday-portrait__role {
+    z-index: 1;
   }
   .home-birthday-avatar-days {
     font-weight: var(--md-sys-typescale-emphasized-label-weight);
