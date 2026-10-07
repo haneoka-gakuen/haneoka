@@ -6,6 +6,8 @@ import {
   eventObjective,
   eventPoints,
   liveScoreObjective,
+  scoreCapObjective,
+  eventBonusSurrogate,
   potentialObjective,
   powerObjective,
   type Criterion,
@@ -89,6 +91,12 @@ export interface EngineRequest {
   constraints: ConstraintInput;
   k: number;
   timeLimitMs: number | null;
+  /** Parallel search shard (see SearchInput.shard); merged by the client. */
+  shard?: { index: number; count: number };
+  /** Disables the aspiration floor (the rerun after a sharded aspiration fell short). */
+  noFloor?: boolean;
+  /** Known lower bounds on each song's k-th key (`songId:difficulty`), from teams other shards already found. */
+  floors?: Record<string, number>;
 }
 export interface HitScore {
   mean: number;
@@ -119,6 +127,8 @@ export interface SongResult {
   proven: boolean;
   bound: number | null;
   stats: SearchOutput<unknown>["stats"];
+  /** Aspiration floor of a sharded search: the merged result is exact only if it holds k hits at or above it. */
+  floor?: number;
 }
 export interface PlanSummary {
   normal: EngineHit | null;
@@ -300,6 +310,13 @@ function battleRank(chart: CompiledChart, score: number): number {
   return rank;
 }
 
+
+/** Per-Worker memo of the shard-independent preparation of the latest request. */
+const eventPrep = new Map<string, { seeds: Team[]; aspiration: number | undefined }>();
+const scoreCaps = new Map<string, number>();
+const prepFingerprint = (request: EngineRequest) =>
+  JSON.stringify([request.goal, request.members, request.snaps, request.player, request.unknownPolicy, request.constraints, request.k]);
+
 export async function runEngine(master: EngineMaster, charts: ChartCache, request: EngineRequest, onProgress?: (done: number, total: number) => void): Promise<EngineResponse> {
   const started = performance.now();
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
@@ -321,8 +338,10 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
     event: null,
     potential: null,
   });
-  const run = <Detail,>(objective: ObjectiveAdapter<Detail>, music: MusicView | null, powerEffects: readonly EventEffectRow[], k = request.k, seeds?: readonly Team[]) =>
+  const run = <Detail,>(objective: ObjectiveAdapter<Detail>, music: MusicView | null, powerEffects: readonly EventEffectRow[], k = request.k, seeds?: readonly Team[], shard: EngineRequest["shard"] | null = request.shard, limitMs?: number, floor?: number) =>
     searchTeams({
+      floor,
+      shard: shard ?? undefined,
       seeds,
       master,
       player,
@@ -332,14 +351,27 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
       objective,
       constraints,
       k,
-      timeLimitMs: request.timeLimitMs ?? undefined,
+      timeLimitMs: limitMs ?? songBudget(),
       memberPowerPercent: powerEffects.length ? (member) => memberEventPercent(powerEffects, member) : undefined,
       snapPowerPercent: powerEffects.length ? (snap) => snapEventPercent(powerEffects, snap) : undefined,
     });
+  /** A sharded search first probes the whole box briefly: its teams (exact, from any leader) seed every shard's
+   * threshold, which a shard alone would only reach after searching its own strong leaders. */
+  const PROBE_MS = 300;
+  const seeded = <Detail,>(objective: ObjectiveAdapter<Detail>, music: MusicView | null, powerEffects: readonly EventEffectRow[], seeds?: readonly Team[]) => {
+    if (!request.shard || request.shard.count < 2) return run(objective, music, powerEffects, request.k, seeds);
+    const probe = run(objective, music, powerEffects, request.k, seeds, null, PROBE_MS);
+    return run(objective, music, powerEffects, request.k, [...(seeds ?? []), ...probe.hits.map((hit) => hit.team)]);
+  };
   if (goal.kind === "plan") return runPlan(master, charts, request, goal, started, onProgress);
   const songs: (SongRef | null)[] =
     goal.kind === "power" ? [goal.song] : goal.kind === "potential" ? [null] : goal.kind === "event" && goal.route === "skip" && !goal.songs.length ? [null] : goal.songs;
+  // A time limit the user chose is shared out over the songs still to search; without one, searches run to proof.
+  const budgetEnd = request.timeLimitMs == null ? Infinity : started + request.timeLimitMs;
+  let songsLeft = songs.length;
+  const songBudget = () => (budgetEnd === Infinity ? Infinity : Math.max(250, (budgetEnd - performance.now()) / Math.max(1, songsLeft)));
   for (const [index, song] of songs.entries()) {
+    songsLeft = songs.length - index;
     onProgress?.(index, songs.length);
     const challengeId = goal.kind === "power" || goal.kind === "score" ? goal.challengeEventId : goal.kind === "event" && goal.route === "challenge" ? goal.eventId : null;
     const music = song ? musicView(master, song.songId, challengeId) : null;
@@ -365,7 +397,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
       const objective = liveScoreObjective({ ...shared, live: live!, play: goal.play }, goal.criterion);
       // Loose-bound plays start from the best all-Perfect teams, scored exactly under the real play.
       const seeds = objective.hard ? run(liveScoreObjective({ ...shared, live: live!, play: AP }, goal.criterion), music, powerEffects, Math.max(20, request.k * 3)).hits.map((hit) => hit.team) : undefined;
-      const out = run(objective, music, powerEffects, request.k, seeds);
+      const out = seeded(objective, music, powerEffects, seeds);
       results.push({
         song,
         proven: out.proven,
@@ -387,7 +419,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
         criterion: goal.criterion,
         constraints,
         k: request.k,
-        timeLimitMs: request.timeLimitMs ?? undefined,
+        timeLimitMs: songBudget(),
+        shard: request.shard,
       });
       results.push({
         song,
@@ -399,15 +432,58 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
     } else if (goal.kind === "event") {
       const route = eventRoute(master, goal.eventId, goal.route, goal.consumption);
       const measure = goal.measure === "items" ? "items" : "points";
-      const objective = eventObjective(chart && goal.route !== "skip" ? { ...shared, live: live!, play: goal.play, chart } : { ...shared, chart: null }, route, measure, master.params.skipRank);
+      // A fast best-order score search proves the highest score any team reaches; event bounds cap ranks at it.
+      let scoreCap = Infinity;
+      if (chart && goal.route !== "skip") {
+        const capKey = `cap|${prepFingerprint(request)}|${song?.songId}:${song?.difficulty}`;
+        const cached = scoreCaps.get(capKey);
+        if (cached !== undefined) scoreCap = cached;
+        else {
+          const best = run(scoreCapObjective({ ...shared, live: live!, play: goal.play }), music, powerEffects, 1, undefined, null, songBudget() / 4);
+          const top = best.hits[0]?.key ?? Infinity;
+          scoreCap = best.proven ? top : Math.max(top, best.bound ?? Infinity);
+          if (scoreCaps.size > 64) scoreCaps.clear();
+          scoreCaps.set(capKey, scoreCap);
+        }
+      }
+      const objective = eventObjective(chart && goal.route !== "skip" ? { ...shared, live: live!, play: goal.play, chart } : { ...shared, chart: null }, route, measure, master.params.skipRank, 0, scoreCap);
       let adapter: ObjectiveAdapter<unknown> = objective as ObjectiveAdapter<unknown>;
       if (goal.measure === "challenge-points" && chart) adapter = challengePointObjective(liveScoreObjective({ ...shared, live: live!, play: goal.play }, "mean"), chart, route);
-      const out = run(adapter, music, powerEffects);
+      let out: SearchOutput<unknown>;
+      let floor: number | undefined;
+      const known = song ? request.floors?.[`${song.songId}:${song.difficulty}`] : undefined;
+      if (chart && goal.route !== "skip" && goal.measure !== "challenge-points") {
+        // Seeds along the bonus/power front, then an aspiration floor at the best seed's whole points: event points
+        // cluster in whole numbers at the top, so the floor usually already admits the full top k. The preparation
+        // is the same for every shard of a request, so a Worker keeps it for the request's other shards.
+        const prepKey = `${prepFingerprint(request)}|${song?.songId}:${song?.difficulty}`;
+        let prep = eventPrep.get(prepKey);
+        if (!prep) {
+          const seeds: Team[] = [];
+          for (const weight of [2 ** 24, 64, 32, 16, 8, 4, 2])
+            // Seeds only steer the start: each sweep stops at 100 ms (the main search below still runs to proof).
+            seeds.push(...run(eventBonusSurrogate(shared, route.effects, measure, weight), music, powerEffects, request.k, undefined, null, 100).hits.map((hit) => hit.team));
+          const probe = run(adapter, music, powerEffects, request.k, seeds, null, 1);
+          prep = { seeds, aspiration: probe.hits.length ? Math.floor(probe.hits[0]!.key) : undefined };
+          if (eventPrep.size > 64) eventPrep.clear();
+          eventPrep.set(prepKey, prep);
+        }
+        const seeds = prep.seeds;
+        floor = !request.noFloor ? prep.aspiration : undefined;
+        const searchFloor = Math.max(floor ?? -Infinity, known ?? -Infinity);
+        out = run(adapter, music, powerEffects, request.k, seeds, undefined, undefined, Number.isFinite(searchFloor) ? searchFloor : undefined);
+        const enough = out.hits.filter((hit) => floor === undefined || hit.key >= floor).length >= request.k;
+        if (!enough && !(request.shard && request.shard.count > 1)) {
+          out = run(adapter, music, powerEffects, request.k, seeds);
+          floor = undefined;
+        }
+      } else out = seeded(adapter, music, powerEffects);
       results.push({
         song,
         proven: out.proven,
         bound: out.bound,
         stats: out.stats,
+        ...(floor !== undefined && request.shard && request.shard.count > 1 ? { floor } : {}),
         hits: out.hits.map((hit) => {
           const base = toHit(song, hit.team, hit.power, hit.slotPowers, hit.key);
           const detail = hit.detail as Partial<EventDetail> & { bonus?: number; mean?: number; scores?: LiveDetail["scores"] };
@@ -596,12 +672,16 @@ async function runPlan(
   const total = goal.challengeSongs.length + goal.normalSongs.length;
   let done = 0;
   const step = (inner: number) => onProgress?.(done + inner, total);
+  // A chosen time limit covers both stages, shared in proportion to their song counts.
+  const budget = request.timeLimitMs ?? null;
+  const budgetEnd = budget === null ? Infinity : started + budget;
   // Challenge stage first: its best points per challenge point prices what normal lives earn.
   const challenge = await runEngine(
     master,
     charts,
     {
       ...request,
+      timeLimitMs: budget === null ? null : (budget * goal.challengeSongs.length) / Math.max(1, total),
       goal: { kind: "event", measure: "points", route: "challenge", eventId: goal.eventId, songs: goal.challengeSongs, consumption: goal.challengePointsPerLive, play: goal.play },
     },
     step,
@@ -620,8 +700,13 @@ async function runPlan(
     step(index);
     const chart = await charts.chart(song);
     const live = charts.live(chart);
-    const objective = eventObjective({ ...shared, live, play: goal.play, chart }, route, "points", master.params.skipRank, weight);
-    const out = searchTeams({ master, player, members: box.members, snaps: box.snaps, music: musicView(master, song.songId, null), objective, constraints, k: request.k });
+    const music = musicView(master, song.songId, null);
+    const songBudget = budgetEnd === Infinity ? Infinity : Math.max(250, (budgetEnd - performance.now()) / Math.max(1, goal.normalSongs.length - index));
+    const best = searchTeams({ master, player, members: box.members, snaps: box.snaps, music, objective: scoreCapObjective({ ...shared, live, play: goal.play }), constraints, k: 1, timeLimitMs: songBudget / 4 });
+    const top = best.hits[0]?.key ?? Infinity;
+    const scoreCap = best.proven ? top : Math.max(top, best.bound ?? Infinity);
+    const objective = eventObjective({ ...shared, live, play: goal.play, chart }, route, "points", master.params.skipRank, weight, scoreCap);
+    const out = searchTeams({ master, player, members: box.members, snaps: box.snaps, music, objective, constraints, k: request.k, timeLimitMs: songBudget, shard: request.shard });
     normalResults.push({
       song,
       proven: out.proven,

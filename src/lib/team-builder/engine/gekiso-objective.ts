@@ -36,6 +36,7 @@ export interface GekisoSearchInput {
   constraints: Constraints;
   k: number;
   timeLimitMs?: number;
+  shard?: { index: number; count: number };
   progress?: (done: number, total: number) => void;
 }
 
@@ -459,6 +460,7 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
       const surrogate = objectiveFor(level, true);
       warm(surrogate);
       const out = searchTeams({
+        shard: input.shard,
         master,
         player: input.player,
         members,
@@ -494,6 +496,7 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     warm(objective);
     const seeds = [...hits.values()].sort((a, b) => b.key - a.key).slice(0, input.k).map((hit) => hit.team);
     const out = searchTeams({
+      shard: input.shard,
       master,
       player: input.player,
       members,

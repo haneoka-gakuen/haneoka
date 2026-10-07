@@ -45,8 +45,12 @@ export interface ObjectiveAdapter<Detail> {
   /** When set, `bound` depends on power and skill only through power × (productBase + skill): the snap assignment
    * then bounds that product directly (much tighter than bounding both sums apart). */
   productBase?: number;
-  /** The bounds are loose for this objective (life-draining plays): search with a default time limit. */
+  /** The bounds are loose for this objective (life-draining plays). */
   hard?: boolean;
+  /** Joint requirements a team must meet to reach a key of at least `limit`: for at least one entry, bonus ≥ `bonus`
+   * and power × (productBase + skill) ≥ `product` together (one entry per score rank of an event payoff). When snaps
+   * carry bonus, this lets the snap assignment prove that no completion has both enough bonus and enough score. */
+  jointTargets?(limit: number): readonly { bonus: number; product: number }[];
   /** Snap ordering hint: higher first within a slot (e.g. recovery when life drains). */
   preferSnap?(member: number, snap: number): number;
   /** Optional tighter upper bound for a complete team, checked before `interval`. */
@@ -96,6 +100,12 @@ export interface SearchInput<Detail> {
   timeLimitMs?: number;
   /** Teams evaluated first so the threshold starts high (e.g. the best teams of an easier objective). */
   seeds?: readonly Team[];
+  /** Parallel search: this worker takes every `count`-th leader from `index`. Each team has one leader, so the
+   * union of the shards' top-k lists (deduplicated by member set) is the exact top k. */
+  shard?: { index: number; count: number };
+  /** Aspiration: teams below this key are pruned. The result is exact when it still holds k teams at or above the
+   * floor; otherwise the caller searches again with a lower floor. */
+  floor?: number;
   progress?: (done: number, total: number) => void;
 }
 export interface SearchHit<Detail> {
@@ -126,20 +136,89 @@ interface Candidate {
 
 /** Maximum-weight assignment of rows to distinct columns (rows ≤ columns), Hungarian algorithm. `rowColumn`, when
  * given, receives each row's column. */
+/** Scratch of maxAssignment, grown on demand: the search calls it at hundreds of thousands of nodes. */
+let scratchSize = 0;
+let scratchU = new Float64Array(0),
+  scratchV = new Float64Array(0),
+  scratchP = new Int32Array(0),
+  scratchWay = new Int32Array(0),
+  scratchMinv = new Float64Array(0),
+  scratchUsed = new Uint8Array(0);
+/** Top candidates of the small assignment: per row, its `rows` best columns (another row can block at most rows−1 of
+ * them, so an optimal assignment never needs a column outside its row's list). */
+const smallColumns = new Int32Array(16);
+const smallValues = new Float64Array(16);
+const smallUsed = new Uint8Array(4096);
+function smallAssignment(weights: readonly Float64Array[], columns: number): number {
+  const n = weights.length;
+  for (let r = 0; r < n; r++) {
+    const row = weights[r]!;
+    const base = r * 4;
+    for (let k = 0; k < n; k++) {
+      smallColumns[base + k] = -1;
+      smallValues[base + k] = -Infinity;
+    }
+    for (let c = 0; c < columns; c++) {
+      const value = row[c]!;
+      if (value <= smallValues[base + n - 1]!) continue;
+      let k = n - 1;
+      while (k > 0 && smallValues[base + k - 1]! < value) {
+        smallValues[base + k] = smallValues[base + k - 1]!;
+        smallColumns[base + k] = smallColumns[base + k - 1]!;
+        k--;
+      }
+      smallValues[base + k] = value;
+      smallColumns[base + k] = c;
+    }
+  }
+  let best = -Infinity;
+  const search = (r: number, total: number) => {
+    if (r === n) {
+      if (total > best) best = total;
+      return;
+    }
+    const base = r * 4;
+    for (let k = 0; k < n; k++) {
+      const c = smallColumns[base + k]!;
+      if (c < 0 || smallUsed[c]) continue;
+      smallUsed[c] = 1;
+      search(r + 1, total + smallValues[base + k]!);
+      smallUsed[c] = 0;
+    }
+  };
+  search(0, 0);
+  return best;
+}
+
 export function maxAssignment(weights: readonly Float64Array[], columns: number, rowColumn?: Int32Array): number {
   const n = weights.length;
+  if (!rowColumn && n <= 4 && columns <= smallUsed.length) return smallAssignment(weights, columns);
   const INF = Number.MAX_VALUE / 4;
-  const u = new Float64Array(n + 1),
-    v = new Float64Array(columns + 1),
-    p = new Int32Array(columns + 1),
-    way = new Int32Array(columns + 1),
-    minv = new Float64Array(columns + 1),
-    used = new Uint8Array(columns + 1);
+  const size = Math.max(n, columns) + 1;
+  if (size > scratchSize) {
+    scratchSize = size * 2;
+    scratchU = new Float64Array(scratchSize);
+    scratchV = new Float64Array(scratchSize);
+    scratchP = new Int32Array(scratchSize);
+    scratchWay = new Int32Array(scratchSize);
+    scratchMinv = new Float64Array(scratchSize);
+    scratchUsed = new Uint8Array(scratchSize);
+  }
+  const u = scratchU,
+    v = scratchV,
+    p = scratchP,
+    way = scratchWay,
+    minv = scratchMinv,
+    used = scratchUsed;
+  u.fill(0, 0, n + 1);
+  v.fill(0, 0, columns + 1);
+  p.fill(0, 0, columns + 1);
+  way.fill(0, 0, columns + 1);
   for (let i = 1; i <= n; i++) {
     p[0] = i;
     let j0 = 0;
-    minv.fill(INF);
-    used.fill(0);
+    minv.fill(INF, 0, columns + 1);
+    used.fill(0, 0, columns + 1);
     do {
       used[j0] = 1;
       const i0 = p[j0]!;
@@ -179,9 +258,6 @@ export function maxAssignment(weights: readonly Float64Array[], columns: number,
     }
   return total;
 }
-
-/** Default limit for objectives whose bounds cannot be made tight. */
-export const HARD_TIME_LIMIT_MS = 5_000;
 
 /** Keeps the K best distinct member sets by a lower key. */
 class Frontier {
@@ -236,6 +312,15 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
   const memberBonus = members.map((_, i) => objective.memberBonus(i));
   const snapBonus = snaps.map((_, j) => objective.snapBonus(j));
   const anySnapBonus = snapBonus.some((value) => value !== 0);
+  /** The five largest bonuses of distinct usable snaps: no team's snaps can bring more. */
+  /** Usable snaps with a bonus, largest first. */
+  const bonusOrder = allowedSnaps.filter((j) => snapBonus[j]! > 0).sort((a, b) => snapBonus[b]! - snapBonus[a]!);
+  const snapBonusTop5 = allowedSnaps
+    .map((j) => snapBonus[j]!)
+    .filter((value) => value > 0)
+    .sort((a, b) => b - a)
+    .slice(0, 5)
+    .reduce((sum, value) => sum + value, 0);
   // Per member: the best snap contribution ignoring snap distinctness.
   const bestSnap = (i: number) => {
     const bound = constraints.bindings.get(i);
@@ -298,18 +383,51 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
 
   const frontier = new Frontier(k);
   const candidates: Candidate[] = [];
+  /** Compact when the pool doubles past what survived the last compaction, keeping the work amortized linear. */
+  let compactAt = 4096;
   const leaders = [...Array(n).keys()].filter(
     (i) => !excludedMember.has(i) && (constraints.leader === null || constraints.leader === i),
   );
   // Leader order: strongest optimistic slot first, so the threshold rises early.
   const memberScore = (i: number) => bases[i]!.fixedPoints + best[i]!.power;
   leaders.sort((a, b) => memberScore(b) - memberScore(a));
+  // Interleaved over the strength order, so every shard holds a balanced mix of strong and weak leaders.
+  if (input.shard && input.shard.count > 1) {
+    const { index, count } = input.shard;
+    const mine = leaders.filter((_, position) => position % count === index);
+    leaders.length = 0;
+    leaders.push(...mine);
+  }
+  const floor = input.floor ?? -Infinity;
   let timedOut = false;
   let unexploredBound = -Infinity;
-  const deadline = input.timeLimitMs ? started + input.timeLimitMs : objective.hard ? started + HARD_TIME_LIMIT_MS : Infinity;
+  const deadline = input.timeLimitMs ? started + input.timeLimitMs : Infinity;
 
-  for (const seed of input.seeds ?? []) {
-    if (seed.members.some((i) => excludedMember.has(i))) continue;
+  const seedValid = (seed: Team) => {
+    const team = seed.members;
+    if (team.length !== 5 || new Set(team).size !== 5) return false;
+    if (team.some((i) => excludedMember.has(i))) return false;
+    if (constraints.leader !== null && team[0] !== constraints.leader) return false;
+    if (new Set(team.map((i) => members[i]!.card.characterId)).size !== 5) return false;
+    for (const i of required) if (!team.includes(i)) return false;
+    const used = seed.snaps.filter((j) => j >= 0);
+    if (new Set(used).size !== used.length) return false;
+    if (constraints.noSnaps && used.length) return false;
+    for (const j of used) if (excludedSnap.has(j)) return false;
+    for (const j of requiredSnaps) if (!used.includes(j)) return false;
+    for (let slot = 0; slot < 5; slot++) {
+      const bound = constraints.bindings.get(team[slot]!);
+      if (bound !== undefined && seed.snaps[slot] !== bound) return false;
+      if (bound === undefined && seed.snaps[slot]! >= 0 && boundElsewhere.has(seed.snaps[slot]!)) return false;
+    }
+    return true;
+  };
+  const seedKeys: { seed: Team; key: number }[] = [];
+  const seen = new Set<string>();
+  const evaluateSeed = (seed: Team) => {
+    const id = seed.members.join(",") + "|" + seed.snaps.join(",");
+    if (seen.has(id)) return;
+    seen.add(id);
     const team = seed.members;
     const setKey = team.map((i) => members[i]!.key).sort().join("|");
     const lead = profile(team[0]!);
@@ -328,11 +446,15 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       weightLow += skillLow[i * width + (snap < 0 ? s : snap)]!;
       bonus += memberBonus[i]! + (snap < 0 ? 0 : snapBonus[snap]!);
     });
+    if (constraints.minBonus !== null && bonus < constraints.minBonus) return;
+    if (constraints.maxBonus != null && bonus > constraints.maxBonus) return;
     const { key } = objective.exact(seed, power, slotPowers);
     stats.exact++;
     frontier.offer(setKey, key);
+    seedKeys.push({ seed, key });
     candidates.push({ setKey, team: { members: [...team], snaps: [...seed.snaps] }, power, slotPowers, totals: { power, skill: weight, skillLow: weightLow, bonus }, low: key, high: key });
-  }
+  };
+  for (const seed of input.seeds ?? []) if (seedValid(seed)) evaluateSeed(seed);
   for (const [leaderIndex, leader] of leaders.entries()) {
     input.progress?.(leaderIndex, leaders.length);
     if (performance.now() > deadline) timedOut = true;
@@ -378,6 +500,9 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     const charPower = characters.map((list) => Math.max(...list.map((i) => slotPower(i) + best[i]!.power)));
     const charSkill = characters.map((list) => Math.max(...list.map((i) => best[i]!.weight)));
     const charBonus = characters.map((list) => Math.max(...list.map((i) => memberBonus[i]! + best[i]!.bonus)));
+    // charBonus may count one strong snap for every member; five distinct snaps bring at most the five largest.
+    const charMemberBonus = characters.map((list) => Math.max(...list.map((i) => memberBonus[i]!)));
+    const memberOnlyBound = (memberPart: number, index: number, left: number) => memberPart + topSum(charMemberBonus, index, left) + snapBonusTop5;
     const leaderTotals = {
       power: slotPower(leader) + best[leader]!.power,
       skill: best[leader]!.weight,
@@ -409,9 +534,9 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       power: leaderTotals.power + topSum(charPower, 0, 4),
       skill: leaderTotals.skill + topSum(charSkill, 0, 4),
       skillLow: 0,
-      bonus: leaderTotals.bonus + topSum(charBonus, 0, 4),
+      bonus: Math.min(leaderTotals.bonus + topSum(charBonus, 0, 4), memberOnlyBound(memberBonus[leader]!, 0, 4)),
     });
-    if (leaderBound < frontier.threshold) continue;
+    if (leaderBound < Math.max(frontier.threshold, floor)) continue;
     if (timedOut) {
       // Unexplored: its optimistic bound limits every team it leads.
       unexploredBound = Math.max(unexploredBound, leaderBound);
@@ -422,7 +547,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     const chosen: number[] = [];
     // The member part of the running bonus (it only grows): visit adds each member's best snap bonus too.
     const memberOptimisticSnapBonus = (list: readonly number[]) => best[leader]!.bonus + list.reduce((sum, i) => sum + best[i]!.bonus, 0);
-    const visit = (index: number, power: number, weight: number, bonus: number) => {
+    const visit = (index: number, power: number, weight: number, bonus: number, memberPart = memberBonus[leader]!) => {
       if (timedOut) {
         const left = 4 - chosen.length;
         unexploredBound = Math.max(unexploredBound, objective.bound({ power: power + topSum(charPower, index, left), skill: weight + topSum(charSkill, index, left), skillLow: 0, bonus: bonus + topSum(charBonus, index, left) }));
@@ -439,7 +564,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         // Required characters are always taken.
         for (const i of characters[index]!) {
           chosen.push(i);
-          visit(index + 1, power + slotPower(i) + best[i]!.power, weight + best[i]!.weight, bonus + memberBonus[i]! + best[i]!.bonus);
+          visit(index + 1, power + slotPower(i) + best[i]!.power, weight + best[i]!.weight, bonus + memberBonus[i]! + best[i]!.bonus, memberPart + memberBonus[i]!);
           chosen.pop();
         }
         return;
@@ -448,9 +573,9 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         power: power + topSum(charPower, index, left),
         skill: weight + topSum(charSkill, index, left),
         skillLow: 0,
-        bonus: bonus + topSum(charBonus, index, left),
+        bonus: Math.min(bonus + topSum(charBonus, index, left), memberOnlyBound(memberPart, index, left)),
       });
-      if (bound < frontier.threshold) return;
+      if (bound < Math.max(frontier.threshold, floor)) return;
       if (constraints.minBonus !== null && bonus + topSum(charBonus, index, left) < constraints.minBonus) return;
       if (constraints.maxBonus != null && bonus - memberOptimisticSnapBonus(chosen) > constraints.maxBonus) return;
       if (performance.now() > deadline) {
@@ -460,10 +585,10 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       }
       for (const i of characters[index]!) {
         chosen.push(i);
-        visit(index + 1, power + slotPower(i) + best[i]!.power, weight + best[i]!.weight, bonus + memberBonus[i]! + best[i]!.bonus);
+        visit(index + 1, power + slotPower(i) + best[i]!.power, weight + best[i]!.weight, bonus + memberBonus[i]! + best[i]!.bonus, memberPart + memberBonus[i]!);
         chosen.pop();
       }
-      visit(index + 1, power, weight, bonus);
+      visit(index + 1, power, weight, bonus, memberPart);
     };
     visit(0, leaderTotals.power, leaderTotals.skill, leaderTotals.bonus);
   }
@@ -494,24 +619,55 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     const requiredLeft = () => (requiredSnaps.size ? [...requiredSnaps].filter((j) => !used[j]).length : 0);
     // Only assignments that can beat this set's own best lower key matter for distinct-set results.
     let setLow = -Infinity;
-    const limit = () => Math.max(frontier.threshold, setLow);
+    const limit = () => Math.max(frontier.threshold, setLow, floor);
     // Distinct snaps: matchings of the remaining slots to unused snaps bound the optimistic totals. For a product
     // key P·(W + S), any λ > 0 gives P·(W+S) ≤ (λP₀ + (W+S₀)/λ + max Σ(λp + s/λ))²/4.
     const NONE = -1e15;
     /** Remaining slots × (unused snaps + one empty column per slot): power, skill and bonus matrices. */
-    const tables = (from: number) => {
-      const index = new Map<number, number>();
-      for (let slot = from; slot < 5; slot++) for (const j of options[slot]!) if (j >= 0 && !used[j] && !index.has(j)) index.set(j, index.size);
+    // Assignment matrices are rebuilt at every node of the snap walk: per-depth pools keep that allocation-free (a depth's
+    // buffers are reused only after its subtree is done).
+    const maxColumns = s + 5;
+    interface Tables {
+      count: number;
+      columns: number;
+      columnSnap: Int32Array;
+      power: Float64Array[];
+      weight: Float64Array[];
+      bonus: Float64Array[];
+      blended: Float64Array[];
+      joint: Float64Array[];
+    }
+    const pools: Tables[] = Array.from({ length: 5 }, (_, from) => {
+      const rows = () => Array.from({ length: 5 - from }, () => new Float64Array(maxColumns));
+      return { count: 0, columns: 0, columnSnap: new Int32Array(maxColumns), power: rows(), weight: rows(), bonus: rows(), blended: rows(), joint: rows() };
+    });
+    const columnOf = new Int32Array(s);
+    const columnStamp = new Int32Array(s);
+    let stamp = 0;
+    const tables = (from: number): Tables => {
+      const t = pools[from]!;
+      stamp++;
+      let count = 0;
+      for (let slot = from; slot < 5; slot++)
+        for (const j of options[slot]!)
+          if (j >= 0 && !used[j] && columnStamp[j] !== stamp) {
+            columnStamp[j] = stamp;
+            columnOf[j] = count;
+            t.columnSnap[count++] = j;
+          }
       const rows = 5 - from;
-      const columns = index.size + rows;
-      const power: Float64Array[] = [],
-        weight: Float64Array[] = [],
-        bonus: Float64Array[] = [];
-      for (let slot = from; slot < 5; slot++) {
+      const columns = count + rows;
+      t.count = count;
+      t.columns = columns;
+      for (let r = 0; r < rows; r++) {
+        const slot = from + r;
         const i = team[slot]!;
-        const p = new Float64Array(columns).fill(NONE),
-          w = new Float64Array(columns).fill(NONE),
-          b = new Float64Array(columns).fill(NONE);
+        const p = t.power[r]!,
+          w = t.weight[r]!,
+          b = t.bonus[r]!;
+        p.fill(NONE, 0, columns);
+        w.fill(NONE, 0, columns);
+        b.fill(NONE, 0, columns);
         for (const j of options[slot]!) {
           if (j >= 0 && used[j]) continue;
           const column = j < 0 ? s : j;
@@ -519,31 +675,64 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
             vw = skill[i * width0 + column]!,
             vb = j < 0 ? 0 : snapBonus[j]!;
           if (j < 0)
-            for (let empty = index.size; empty < columns; empty++) {
+            for (let empty = count; empty < columns; empty++) {
               p[empty] = vp;
               w[empty] = vw;
               b[empty] = vb;
             }
           else {
-            const at = index.get(j)!;
+            const at = columnOf[j]!;
             p[at] = vp;
             w[at] = vw;
             b[at] = vb;
           }
         }
-        power.push(p);
-        weight.push(w);
-        bonus.push(b);
       }
-      return { index, columns, power, weight, bonus };
+      return t;
     };
-    const blend = (t: ReturnType<typeof tables>, l: number) =>
-      t.power.map((row, r) => {
-        const out = new Float64Array(t.columns);
-        const w = t.weight[r]!;
+    const blend = (t: Tables, l: number) => {
+      const rows = t.power.length;
+      for (let r = 0; r < rows; r++) {
+        const out = t.blended[r]!,
+          row = t.power[r]!,
+          w = t.weight[r]!;
         for (let c = 0; c < t.columns; c++) out[c] = row[c]! <= NONE / 2 ? NONE : l * row[c]! + w[c]! / l;
-        return out;
-      });
+      }
+      return t.blended;
+    };
+    /** Whether some completion meets bonus ≥ need and power × (base + skill) ≥ product together: a Lagrangian
+     * relaxation over the tangent-linearized product (any feasible completion keeps l·P + S/l + μ·B above
+     * K + μ·need, so a maximum below it proves infeasibility). */
+    const jointFeasible = (t: Tables, x: number, y: number, bonus: number, P: number, S: number, B: number, need: number, product: number) => {
+      if (bonus + B < need) return false;
+      if ((x + P) * (y + S) < product) return false;
+      if (bonus >= need) return true;
+      const lambda0 = Math.sqrt((y + S) / Math.max(1e-9, x + P));
+      for (const scale of [1]) {
+      const lambda = lambda0 * scale;
+      const K = 2 * Math.sqrt(product) - lambda * x - y / lambda;
+      const linear = blend(t, lambda);
+      let spread = 0;
+      for (const row of linear) for (const value of row) if (value > NONE / 2) spread = Math.max(spread, value);
+      let pruned = false;
+      for (const factor of [0.25, 1, 4]) {
+        const mu = (factor * spread) / Math.max(1, need - bonus);
+        const rows = t.joint;
+        for (let r = 0; r < linear.length; r++) {
+          const out = rows[r]!,
+            row = linear[r]!,
+            b = t.bonus[r]!;
+          for (let c = 0; c < t.columns; c++) out[c] = row[c]! <= NONE / 2 ? NONE : row[c]! + mu * b[c]!;
+        }
+        if (maxAssignment(rows, t.columns) < K + mu * (need - bonus)) {
+          pruned = true;
+          break;
+        }
+      }
+      if (pruned) return false;
+      }
+      return true;
+    };
     const remainingBound = (from: number, power: number, weight: number, bonus: number) => {
       const t = tables(from);
       const P = maxAssignment(t.power, t.columns);
@@ -551,6 +740,10 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       if (P <= NONE / 2 || S <= NONE / 2) return -Infinity;
       const B = anySnapBonus ? maxAssignment(t.bonus, t.columns) : 0;
       const base = objective.productBase;
+      if (anySnapBonus && objective.jointTargets && base !== undefined) {
+        const targets = objective.jointTargets(limit());
+        if (!targets.some((target) => jointFeasible(t, power, base + weight, bonus, P, S, B, target.bonus, target.product))) return -Infinity;
+      }
       if (base === undefined) return objective.bound({ power: power + P, skill: weight + S, skillLow: 0, bonus: bonus + B });
       const x = power,
         y = base + weight;
@@ -583,7 +776,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       const l = Math.sqrt((objective.productBase + S) / Math.max(1e-9, x + P));
       const rowColumn = new Int32Array(5);
       if (maxAssignment(blend(t, l), t.columns, rowColumn) > NONE / 2) {
-        const snapOf = [...t.index.keys()];
+        const snapOf = Array.from(t.columnSnap.subarray(0, t.count));
         rowColumn.forEach((column, row) => (picks[row] = column < snapOf.length ? snapOf[column]! : -1));
         let power = x,
           weight = 0,
@@ -618,6 +811,17 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         }
       }
     }
+    /** The `count` largest bonuses of snaps still unused: distinct snaps, unlike the per-slot maxima. */
+    const unusedBonusTop = (count: number) => {
+      let total = 0;
+      for (let k = 0; k < bonusOrder.length && count > 0; k++) {
+        const j = bonusOrder[k]!;
+        if (used[j]) continue;
+        total += snapBonus[j]!;
+        count--;
+      }
+      return total;
+    };
     const walk = (slot: number, power: number, weight: number, weightLow: number, bonus: number) => {
       if (!timedOut && (++stats.snapNodes & 1023) === 0 && performance.now() > deadline) timedOut = true;
       if (timedOut) {
@@ -639,7 +843,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         frontier.offer(setKey, low);
         setLow = Math.max(setLow, low);
         stats.candidates++;
-        if (candidates.length > 4096) compact();
+        if (candidates.length > compactAt) compact();
         candidates.push({
           setKey,
           team: { members: [...team], snaps: [...assignment] },
@@ -655,13 +859,34 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         power: power + suffix(maxPower, slot),
         skill: weight + suffix(maxWeight, slot),
         skillLow: 0,
-        bonus: bonus + suffix(maxBonus, slot),
+        bonus: bonus + Math.min(suffix(maxBonus, slot), unusedBonusTop(5 - slot)),
       });
       if (optimistic < limit()) return;
       if (slot > 0 && slot < 4 && remainingBound(slot, power, weight, bonus) < limit()) return;
+      // One slot left: each option's own bound (its power, skill and bonus together), and only options that can still
+      // reach the limit are walked.
+      let lastOptions: readonly number[] | null = null;
+      if (slot === 4 && objective.productBase !== undefined) {
+        const i = team[4]!;
+        const bar = limit();
+        const keep: number[] = [];
+        for (const j of options[4]!) {
+          if (j >= 0 && used[j]) continue;
+          const column = j < 0 ? s : j;
+          const value = objective.bound({
+            power: power + snapPower[i * width + column]!,
+            skill: weight + skill[i * width + column]!,
+            skillLow: 0,
+            bonus: bonus + (j < 0 ? 0 : snapBonus[j]!),
+          });
+          if (value >= bar) keep.push(j);
+        }
+        if (!keep.length) return;
+        lastOptions = keep;
+      }
       if (5 - slot < requiredLeft()) return;
       const i = team[slot]!;
-      for (const j of options[slot]!) {
+      for (const j of lastOptions ?? options[slot]!) {
         if (j >= 0 && used[j]) continue;
         const column = j < 0 ? s : j;
         if (j >= 0) used[j] = 1;
@@ -681,16 +906,17 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
   }
 
   function compact() {
-    const threshold = frontier.threshold;
+    const threshold = Math.max(frontier.threshold, floor);
     const bestLow = new Map<string, number>();
     for (const candidate of candidates) bestLow.set(candidate.setKey, Math.max(bestLow.get(candidate.setKey) ?? -Infinity, candidate.low));
     let write = 0;
     for (const candidate of candidates)
       if (candidate.high >= threshold && candidate.high >= bestLow.get(candidate.setKey)!) candidates[write++] = candidate;
     candidates.length = write;
+    compactAt = Math.max(4096, candidates.length * 2);
   }
   // Exact phase: highest optimistic first, until nothing left can enter the Top-K.
-  const threshold = frontier.threshold;
+  const threshold = Math.max(frontier.threshold, floor);
   const pool = candidates.filter((candidate) => candidate.high >= threshold).sort((a, b) => b.high - a.high);
   const hits: SearchHit<Detail>[] = [];
   const exactBySet = new Map<string, number>();

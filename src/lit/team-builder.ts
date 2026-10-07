@@ -292,7 +292,7 @@ export class TeamBuilder extends LitElement {
       },
       k: s.k,
       // Gekisou searches stop at 10 s by default with the best teams found (their proof may continue on request).
-      timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : goal.kind === "gekiso" ? 10_000 : null,
+      timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
     };
   }
   async run() {

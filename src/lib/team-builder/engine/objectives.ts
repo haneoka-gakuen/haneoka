@@ -5,7 +5,7 @@ import { ORDERS, isAllPerfect, playJudgements, scoreOrdersAP, scoreOrdersPlay, t
 import type { EngineMaster, EventEffectRow, RewardRow } from "./master";
 import { conversionWeights, linearChart, linearPlayChart, playBoundsChart, playOrderBounds, skillWeights, type LinearChart, type SkillWeights } from "./model";
 import { memberEventPercent, snapEventPercent, type MemberState, type SnapState } from "./power";
-import type { ObjectiveAdapter, Team, Totals } from "./search";
+import { type ObjectiveAdapter, type Team, type Totals } from "./search";
 import { resolveSlotSkill, windowMs, type SlotSkill } from "./skills";
 
 export type Criterion = "mean" | "min" | "max";
@@ -177,7 +177,9 @@ function liveCore(context: LiveContext) {
     return ((totals.power * (entry.model.total + skill)) / divisor) * (1 + high.relativeError);
   };
   const drains = !!playBounds && playBounds.damage.reduce((total, row) => total + row.amount, 0) >= context.live.master.live.lifeBase;
-  return { weightOf, scoreHigh, scoreLow, evaluate, orderBounds, play: !!judgements, teamHigh, drains, slotSkill, productBase: high.total };
+  // scoreHigh = power × (productBase + skill) / productScale: what a score threshold needs of that product.
+  const productScale = divisor / (1 + high.relativeError);
+  return { weightOf, scoreHigh, scoreLow, evaluate, orderBounds, play: !!judgements, teamHigh, drains, slotSkill, productBase: high.total, productScale };
 }
 
 export function liveScoreObjective(context: LiveContext, criterion: Criterion): ObjectiveAdapter<LiveDetail> {
@@ -213,6 +215,69 @@ export function liveScoreObjective(context: LiveContext, criterion: Criterion): 
       return { key, detail };
     },
   };
+}
+
+/** Event bonus first, power second: a near-instant search whose top teams are strong seeds for event payoffs (the best
+ * event teams carry the most bonus that still reaches the top rank). */
+export function eventBonusSurrogate(shared: Shared, effects: readonly EventEffectRow[], measure: "points" | "items", bonusWeight = 2 ** 24): ObjectiveAdapter<null> {
+  const bonusType = measure === "points" ? 0 : 1;
+  // bonusWeight trades bonus (1/10000 units) for power: sweeping it traces the bonus/power front.
+  const key = (bonus: number, power: number) => bonus * bonusWeight + power;
+  return {
+    skill: () => [0, 0],
+    memberBonus: (i) => memberEventPercent(effects, shared.members[i]!, bonusType),
+    snapBonus: (j) => snapEventPercent(effects, shared.snaps[j]!, bonusType),
+    bound: (totals) => key(totals.bonus, totals.power),
+    interval: (_team, totals) => [key(totals.bonus, totals.power), key(totals.bonus, totals.power)],
+    exact: (team, power) => {
+      const bonus =
+        team.members.reduce((sum, i) => sum + memberEventPercent(effects, shared.members[i]!, bonusType), 0) +
+        team.snaps.reduce((sum, j) => sum + (j < 0 ? 0 : snapEventPercent(effects, shared.snaps[j]!, bonusType)), 0);
+      return { key: key(bonus, power), detail: null };
+    },
+  };
+}
+
+/** The largest linear upper bound on any order's score over all teams: a valid global score cap that needs no exact
+ * scoring (every team's best-order score is at most its own linear high bound). */
+export function scoreCapObjective(context: LiveContext): ObjectiveAdapter<null> {
+  const core = liveCore(context);
+  return {
+    skill(member, snap) {
+      const { high } = core.weightOf(member, snap);
+      return [high.best, high.best];
+    },
+    memberBonus: () => 0,
+    snapBonus: () => 0,
+    bound: core.scoreHigh,
+    interval: (_team, totals) => {
+      const value = core.scoreHigh(totals);
+      return [value, value];
+    },
+    exact: (team, power) => ({ key: core.scoreHigh({ power, skill: team.members.reduce((sum, member, slot) => sum + core.weightOf(member, team.snaps[slot]!).high.best, 0), skillLow: 0, bonus: 0 }), detail: null }),
+  };
+}
+
+/** Best total of five rows assigned to five distinct columns (a skill order): bitmask DP, no allocation. */
+const order5 = new Float64Array(32);
+function bestOrder5(rows: readonly Float64Array[]): number {
+  order5.fill(-Infinity);
+  order5[0] = 0;
+  for (let mask = 0; mask < 31; mask++) {
+    const base = order5[mask]!;
+    if (base === -Infinity) continue;
+    // Row index = number of columns already taken.
+    let row = 0;
+    for (let m = mask; m; m &= m - 1) row++;
+    const weights = rows[row]!;
+    for (let column = 0; column < 5; column++) {
+      const bit = 1 << column;
+      if (mask & bit) continue;
+      const value = base + weights[column]!;
+      if (value > order5[mask | bit]!) order5[mask | bit] = value;
+    }
+  }
+  return order5[31]!;
 }
 
 /** Event point / item rules of one play route. */
@@ -251,6 +316,8 @@ export function eventObjective(
   skipRank: number,
   /** Event points worth of one challenge point (resource plans); 0 ignores challenge points. */
   challengePointWeight = 0,
+  /** A proven upper bound on any team's score in any order: rank bounds never assume a rank above it. */
+  scoreCap = Infinity,
 ): ObjectiveAdapter<EventDetail | { bonus: number; mean: number }> {
   const bonusType = measure === "points" ? 0 : 1;
   const value = (bonus: number, rank: number) =>
@@ -260,6 +327,8 @@ export function eventObjective(
   const snapBonus = (j: number) => snapEventPercent(route.effects, context.snaps[j]!, bonusType);
   // Ties on points prefer the stronger team.
   const TIE = 1 / 2 ** 36;
+  /** Search range of the bonus inversion (BP; 10000 = 100 %). */
+  const MAX_BONUS = 1_000_000;
   if (route.kind === "skip" || !context.chart) {
     return {
       skill: () => [0, 0],
@@ -280,6 +349,22 @@ export function eventObjective(
   const live = context as LiveContext & { chart: CompiledChart };
   const core = liveCore(live);
   const rankOf = (score: number) => scoreRank(live.chart, score);
+  /** Least bonus whose payoff at `rank` reaches `target` (payoffs rise with bonus). */
+  const bonusFor = (rank: number, target: number) => {
+    if (value(MAX_BONUS, rank) < target) return Infinity;
+    let low = 0,
+      high = MAX_BONUS;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (value(mid, rank) >= target) high = mid;
+      else low = mid + 1;
+    }
+    return low;
+  };
+  const targetCache = new Map<number, readonly { bonus: number; product: number }[]>();
+  // Bounds only: the optimistic score of a partial team easily crosses the next rank's threshold that no team
+  // reaches, which would make every node look as good as that rank. The cap is a proven maximum score.
+  const rankBound = (score: number) => scoreRank(live.chart, Math.min(score, scoreCap));
   return {
     skill(member, snap) {
       const { high, low } = core.weightOf(member, snap);
@@ -288,17 +373,57 @@ export function eventObjective(
     memberBonus,
     snapBonus,
     productBase: core.productBase,
+    jointTargets(limit) {
+      // Like `bound`, payoff only: some order must bring the payoff to the limit, at a rank its score reaches.
+      let targets = targetCache.get(limit);
+      if (!targets) {
+        targets = live.chart.ranks
+          .filter((row) => row.required <= scoreCap)
+          .map((row) => ({ bonus: bonusFor(row.rank, limit), product: row.required * core.productScale }))
+          .filter((row) => Number.isFinite(row.bonus));
+        if (targetCache.size > 64) targetCache.clear();
+        targetCache.set(limit, targets);
+      }
+      return targets;
+    },
+    // The best order of a complete team assigns each slot a distinct skill event: a 5×5 assignment over the slots'
+    // per-event weights, far below the sum of each slot's best event.
+    leafBound(team, totals) {
+      if (core.play) return value(totals.bonus, rankBound(core.teamHigh(team, totals)));
+      const skill = bestOrder5(team.members.map((member, slot) => core.weightOf(member, team.snaps[slot]!).high.perEvent));
+      return value(totals.bonus, rankBound(core.scoreHigh({ ...totals, skill })));
+    },
     bound: (totals) => {
-      const high = core.scoreHigh(totals);
-      return value(totals.bonus, rankOf(high)) + TIE * high;
+      // Points only: equal-point teams are ordered by score among those found, but the bound does not try to
+      // prove that order (proving it means enumerating every team tied at the top points).
+      return value(totals.bonus, rankBound(core.scoreHigh(totals)));
     },
     interval(team, totals) {
+      // The team's worst/best slot weights bound every order's score: when both ends share a rank, every order
+      // has that rank and the points need no per-order work.
+      const scoreLow = core.scoreLow(totals),
+        scoreHigh = core.scoreHigh(totals);
+      const rank = rankOf(scoreLow);
+      if (rank === rankBound(scoreHigh)) {
+        const points = value(totals.bonus, rank);
+        return [points + TIE * scoreLow, points + TIE * scoreHigh];
+      }
       const { lows, highs } = core.orderBounds(team, totals.power);
       let low = 0,
-        high = 0;
+        high = 0,
+        straddles = false;
       for (let index = 0; index < lows.length; index++) {
-        low += value(totals.bonus, rankOf(lows[index]!));
-        high += value(totals.bonus, rankOf(highs[index]!));
+        const lowRank = rankOf(lows[index]!),
+          highRank = rankBound(highs[index]!);
+        if (lowRank !== highRank) straddles = true;
+        low += value(totals.bonus, lowRank);
+        high += value(totals.bonus, highRank);
+      }
+      // An order whose bounds straddle a rank threshold leaves the points interval wide open; scoring the team
+      // exactly (120 orders, well under a millisecond) is far cheaper than the search it would otherwise keep alive.
+      if (straddles) {
+        const key = this.exact(team, totals.power, []).key;
+        return [key, key];
       }
       return [low / lows.length + TIE * core.scoreLow(totals), high / highs.length + TIE * core.scoreHigh(totals)];
     },
