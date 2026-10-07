@@ -1007,6 +1007,14 @@ function packSkin(
   for (const sprite of native) copySprite(texture, sprite);
   bakeSkinSlideStrips(texture, skinName);
   bakeSkinLaneGuidelines(texture);
+  // Solid compatibility texels baked by build-original-assets. A transparent
+  // texel here silently disables an engine feature (published skins once
+  // shipped an invisible judgment line and simultaneous-press line).
+  for (const name of ["sim_line", "judgment_line", "preview_lane", "preview_border"] as const) {
+    const source = special.get(name)!;
+    const alpha = texture.pixels[((source.y + Math.floor(source.h / 2)) * texture.width + source.x + Math.floor(source.w / 2)) * 4 + 3];
+    if (!alpha) throw new Error(`${skinName} compatibility sprite ${name} is transparent; bake the common texture first`);
+  }
 
   return {
     skinSprites: sprites,

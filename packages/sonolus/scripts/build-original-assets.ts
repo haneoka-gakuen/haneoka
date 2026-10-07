@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { buildNativeNoteSkinPacks, decodeRgba8Png, encodeRgba8Png } from "./pack-original-note-skins.ts";
 import { NATIVE_EFFECT_WIDTHS, compileNativeParticles } from "./native-particles/compile.ts";
+import { compileCompactParticles, encodeCompactAtlasPng } from "./native-particles/compact.ts";
 import { buildPresentationThumbnails } from "./presentation-thumbnails.ts";
 import { OUR_NOTES_NOTE_SE_GROUP_IDS } from "@haneoka/cassiopeia-plugin-our-notes";
 import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
@@ -181,7 +182,28 @@ for (const retired of ["skin.data", "skin.texture.png"]) rmSync(resolve(out, ret
 // Native effect001 particles: the web renderer's own evaluator is traced
 // headlessly and compiled into native Sonolus particle effects (per-instance
 // randomness, baked HDR colour and bloom). See native-particles/compile.ts.
-const compiled = await compileNativeParticles({ releaseRoot: workspace.releaseRoot });
+// SONOLUS_PARTICLE_MODE=compact swaps the traced effects for the compact,
+// hand-authored set in native-particles/compact.ts (same effect names, ~1/60
+// of the data and a handful of particles per hit).
+const compactParticles = process.env.SONOLUS_PARTICLE_MODE === "compact";
+const compiled = compactParticles
+  ? (() => {
+      const compact = compileCompactParticles();
+      return {
+        effects: compact.effects,
+        atlas: {
+          width: compact.atlas.width,
+          height: compact.atlas.height,
+          sprites: compact.atlas.sprites,
+          png: encodeCompactAtlasPng(compact.atlas.width, compact.atlas.height, compact.atlas.pixels),
+        },
+        report: compact.effects.map((effect) => ({
+          name: String(effect.name),
+          groups: (effect.groups as unknown[]).length,
+        })),
+      };
+    })()
+  : await compileNativeParticles({ releaseRoot: workspace.releaseRoot });
 const particleData = {
   width: compiled.atlas.width,
   height: compiled.atlas.height,
@@ -196,7 +218,7 @@ writeFileSync(
   JSON.stringify(
     {
       schema: "our-notes-native-particles-v2",
-      source: "effect001",
+      source: compactParticles ? "effect001-compact" : "effect001",
       widths: NATIVE_EFFECT_WIDTHS,
       releaseInputsValidated: inputProvenance.sourceProvenanceValidated,
       atlas: { width: compiled.atlas.width, height: compiled.atlas.height, bytes: compiled.atlas.png.length },

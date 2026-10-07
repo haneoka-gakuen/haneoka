@@ -22,6 +22,7 @@ import {
   RuntimeChartDataProvider,
 } from "@haneoka/sonolus";
 import { localReleaseFile, releaseWorkspace, type ReleaseWorkspace } from "./releaseWorkspace.ts";
+import { sonolusShareRedirectTarget } from "../worker/sonolus-share.ts";
 import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src/lib/announcement-document.ts";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index.ts";
 import {
@@ -1207,6 +1208,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       "Access-Control-Expose-Headers":
         "Accept-Ranges, Content-Length, Content-Range, ETag, X-Haneoka-Garupa-Snapshot-Id, X-Haneoka-Release-Id, X-Haneoka-Source-Id, X-Request-Id",
     });
+    res.end();
+    return;
+  }
+  // Sonolus "Share" links address `/{type}/{name}` on the server address and
+  // land on open.sonolus.com, exactly as the production worker answers them.
+  const sonolusShareTarget =
+    (req.method ?? "GET") === "GET" || req.method === "HEAD"
+      ? sonolusShareRedirectTarget(url.pathname, url.search, "haneoka.org")
+      : undefined;
+  if (sonolusShareTarget) {
+    res.writeHead(302, { Location: sonolusShareTarget, "Cache-Control": "public, max-age=3600" });
     res.end();
     return;
   }
