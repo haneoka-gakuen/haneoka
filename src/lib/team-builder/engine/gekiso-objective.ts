@@ -512,6 +512,9 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
   const seedKey = JSON.stringify([members.map((m) => m.key), snaps.map((x) => x.key), criterion, input.k, input.constraints, input.seeds]);
   let seedCache = seededByChart.get(chart);
   if (!seedCache) seededByChart.set(chart, (seedCache = new Map()));
+  // Luck charts are ranked by the whole-pool estimate below, which ignores leader shards: one shard does it.
+  if (chart.luck && input.shard && input.shard.index !== 0)
+    return { hits: [], proven: false, bound: null, stats: { ...stats, elapsedMs: performance.now() - started }, levels: levels.length };
   const seeded = seedCache.get(seedKey);
   if (seeded) for (const hit of seeded) hits.set(setKey(hit.team), hit);
   else {
@@ -530,13 +533,17 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
         music: input.music,
         objective: { ...surrogate, exact: (team, power) => ({ key: surrogate.bound({ power, skill: teamSkill(surrogate, team), skillLow: 0, bonus: 0 }), detail: null }) },
         constraints: levelConstraints(level),
-        k: Math.max(input.k * 3, 16),
-        timeLimitMs: Math.min(400, Number.isFinite(deadline) ? Math.max(1, deadline - performance.now()) : 400),
+        // Luck charts rank on this estimate (their lottery has no proven bound), so it runs to completion and
+        // keeps a deeper pool for the exact rescoring below.
+        k: chart.luck ? Math.max(input.k * 12, 120) : Math.max(input.k * 3, 16),
+        timeLimitMs: chart.luck
+          ? (Number.isFinite(deadline) ? Math.max(1, deadline - performance.now()) : undefined)
+          : Math.min(400, Number.isFinite(deadline) ? Math.max(1, deadline - performance.now()) : 400),
       });
       for (const hit of out.hits) pool.set(setKey(hit.team) + "#" + hit.team.snaps.join(","), { team: hit.team, value: hit.key });
     }
     // The optimistic values overrate some teams by a few percent: score the most promising ones exactly.
-    const ranked = [...pool.values()].sort((a, b) => b.value - a.value).slice(0, Math.max(60, input.k * 12));
+    const ranked = [...pool.values()].sort((a, b) => b.value - a.value).slice(0, chart.luck ? Math.max(120, input.k * 12) : Math.max(60, input.k * 12));
     for (const { team } of ranked) {
       if (performance.now() > deadline) break;
       const power = teamPowerOf(team);
@@ -552,7 +559,10 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     }
   }
 
-  for (const [index, level] of levels.entries()) {
+  // Luck ranges: the lottery expectation has no bound the snap search could prune on (optimistic support gains
+  // against the strongest luck deck never meet the chained-lottery leaves), so the exact rescoring of the
+  // estimate's best teams above is the result.
+  for (const [index, level] of (chart.luck ? [] : levels).entries()) {
     input.progress?.(index, levels.length);
     if (performance.now() > deadline) {
       proven = false;
