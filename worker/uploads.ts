@@ -2,7 +2,7 @@ import { forumReadSql, forumPermissionSql, canAccessAttachmentForum } from "./co
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
-import { enqueueNativeMediaJob, retryNativeMediaJob, cleanupNativeMediaStorage, mediaPresentation, type MediaVariantRow } from "./community-media";
+import { enqueueNativeMediaJob, retryNativeMediaJob, cleanupNativeMediaStorage, mediaPresentation } from "./community-media";
 import { inspectCommunityText, type TextInspection } from "./moderation";
 
 type UploadMediaType =
@@ -71,6 +71,10 @@ interface DownloadAccessRow extends AttachmentRow {
   postModerationStatus: "allow" | "block" | "pending" | "review" | null;
   postStatus: "draft" | "hidden" | "published" | null;
   postVisibility: "private" | "protected" | "public" | null;
+  variantObjectKey: string | null;
+  variantMediaType: string | null;
+  variantByteSize: number | null;
+  variantSha256: string | null;
 }
 
 interface CleanupRow {
@@ -1776,8 +1780,14 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   const ownerPreview = new URL(request.url).searchParams.get("preview") === "owner";
   const session = await getAuthSession(request, env, { authoritative: true });
   const userId = session?.user?.id || null;
+  const variantKind = new URL(request.url).searchParams.get("variant") || (ownerPreview ? "media" : null);
+  const knownVariant = variantKind !== null && ["thumb", "poster", "media"].includes(variantKind);
+  // The variant is read in the same statement as the access row: one D1
+  // round trip per image instead of two.
   const row = await env.DB.prepare(
     `SELECT ${attachmentColumns},
+       variant.object_key AS variantObjectKey, variant.media_type AS variantMediaType,
+       variant.byte_size AS variantByteSize, variant.sha256 AS variantSha256,
        post.author_id AS postAuthorId, post.visibility AS postVisibility,
        post.status AS postStatus, post.moderation_status AS postModerationStatus,
        post.archived_at AS postArchivedAt, post.deleted_at AS postDeletedAt,
@@ -1789,9 +1799,11 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
      LEFT JOIN community_profile AS post_author_profile ON post_author_profile.user_id = post.author_id
      LEFT JOIN community_profile AS attachment_owner_profile
        ON attachment_owner_profile.user_id = community_attachment.owner_user_id
+     LEFT JOIN community_attachment_variant AS variant
+       ON variant.attachment_id = community_attachment.id AND variant.kind = ?
      WHERE community_attachment.id = ? AND (post.id IS NULL OR ${forumReadSql("post","?")}) LIMIT 1`,
   )
-    .bind(id,userId)
+    .bind(knownVariant ? variantKind : null, id, userId)
     .first<DownloadAccessRow>();
   if (
     !row ||
@@ -1829,25 +1841,22 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
     (publishedPost && (row.postVisibility === "public" || (row.postVisibility === "protected" && userId !== null)));
   if (!readable) return error(request, userId ? 403 : 401, "attachment_not_readable", "Attachment is not readable");
 
-  const variantKind = new URL(request.url).searchParams.get("variant") || (ownerPreview ? "media" : null);
   if (variantKind) {
-    if (!["thumb", "poster", "media"].includes(variantKind))
-      return error(request, 400, "invalid_media_variant", "Unknown media variant");
-    const variant = await env.DB.prepare(
-      "SELECT kind,object_key AS objectKey,media_type AS mediaType,byte_size AS byteSize,width,height,duration_seconds AS durationSeconds,sha256 FROM community_attachment_variant WHERE attachment_id=? AND kind=?",
-    )
-      .bind(id, variantKind)
-      .first<MediaVariantRow>();
-    if (variant) {
-      row.objectKey = variant.objectKey;
-      row.byteSize = variant.byteSize;
-      row.sha256 = variant.sha256;
-      row.mediaType = variant.mediaType as UploadMediaType;
-      row.fileName = `${row.fileName.replace(/\.[^.]*$/, "")}.${variant.mediaType === "video/mp4" ? "mp4" : variant.mediaType === "image/jpeg" ? "jpg" : "webp"}`;
+    if (!knownVariant) return error(request, 400, "invalid_media_variant", "Unknown media variant");
+    if (row.variantObjectKey !== null && row.variantMediaType !== null && row.variantByteSize !== null) {
+      row.objectKey = row.variantObjectKey;
+      row.byteSize = row.variantByteSize;
+      row.sha256 = row.variantSha256;
+      row.mediaType = row.variantMediaType as UploadMediaType;
+      row.fileName = `${row.fileName.replace(/\.[^.]*$/, "")}.${row.variantMediaType === "video/mp4" ? "mp4" : row.variantMediaType === "image/jpeg" ? "jpg" : "webp"}`;
     } else if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(row.mediaType))
       return error(request, 404, "media_variant_missing", "Media is not ready");
   }
-  const metadata = await env.COMMUNITY_UPLOADS.head(row.objectKey);
+  // A plain GET reads the object once; revalidations, ranges and HEAD keep
+  // the metadata-first path.
+  const whole = request.method === "GET" && !request.headers.has("Range") && !request.headers.has("If-None-Match");
+  const wholeObject = whole ? await env.COMMUNITY_UPLOADS.get(row.objectKey) : null;
+  const metadata: R2Object | null = whole ? wholeObject : await env.COMMUNITY_UPLOADS.head(row.objectKey);
   if (
     !metadata ||
     metadata.size !== row.byteSize ||
@@ -1857,12 +1866,18 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
         metadata.etag !== row.r2Etag ||
         metadata.version !== row.r2Version)
   ) {
+    await wholeObject?.body.cancel().catch(() => undefined);
     return error(request, 404, "attachment_object_missing", "Attachment object is unavailable");
   }
+  // Forum permissions are mutable; authorize each request before serving
+  // bytes. Media of a published public post may stay in the browser's cache,
+  // but only behind revalidation (no-cache): every reuse still asks this
+  // handler, which re-authorizes and answers 304 without the bytes. Anything
+  // narrower (protected, owner preview, unpublished) is never stored.
+  const revalidatable = !ownerPreview && publishedPost && row.postVisibility === "public";
   const headers = new Headers({
     "Accept-Ranges": "bytes",
-    // Forum permissions are mutable; authorize each request before serving bytes.
-    "Cache-Control": "private, no-store",
+    "Cache-Control": revalidatable ? "private, no-cache" : "private, no-store",
     Vary: "Cookie",
     "Content-Disposition": contentDisposition(row.fileName, row.mediaType),
     "Content-Type": row.mediaType,
@@ -1892,6 +1907,7 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
   }
   headers.set("Content-Length", String(metadata.size));
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+  if (wholeObject) return new Response(wholeObject.body, { status: 200, headers });
   const object = await env.COMMUNITY_UPLOADS.get(row.objectKey);
   return object?.body
     ? new Response(object.body, { status: 200, headers })

@@ -7,6 +7,8 @@ import { svg as googleSvg } from "@thesvg/icons/google";
 import { svg as xSvg } from "@thesvg/icons/x";
 import { fetchJson, JsonResponseError, preferredLocale } from "./shared/catalog";
 import { RequestScope } from "../lib/request-scope";
+import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
+import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
   appeal: "communityPage.appeal",
@@ -157,6 +159,7 @@ export class AccountWorkspace extends LitElement {
     this.profileRequests.cancel();
     this.securityRequests.cancel();
     this.cancelAvatar();
+    if (this.session) rememberSignedIn(false);
     this.session = null;
     this.profile = null;
     this.sessions = [];
@@ -183,6 +186,14 @@ export class AccountWorkspace extends LitElement {
     new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     if (typeof init.body === "string" && !headers.has("content-type")) headers.set("content-type", "application/json");
     const signal = init.signal ? AbortSignal.any([this.lifetime.signal, init.signal]) : this.lifetime.signal;
+    // A plain read AccountDocument.astro already started at document start.
+    const early = (init.method ?? "GET") === "GET" && init.body === undefined && init.headers === undefined
+      ? takeEarlyRead(url) : null;
+    const adopted = early ? await readEarlyJson<Value | null>(early, signal) : undefined;
+    if (adopted !== undefined) {
+      signal.throwIfAborted();
+      return adopted ?? {};
+    }
     const data = await fetchJson<Value | null>(url, {
       credentials: "same-origin",
       cache: "no-store",
@@ -230,22 +241,31 @@ export class AccountWorkspace extends LitElement {
     this.phase = "loading";
     this.error = "";
     try {
-      const config = await this.request("/api/v1/account/config", { signal });
+      // Configuration and session are independent reads; for a browser that
+      // was signed in last time, the signed-in reads start beside them too.
+      // Every read carries the same cookie, and each result is checked
+      // against the session's user before it is shown.
+      const configRead = this.request("/api/v1/account/config", { signal });
+      const sessionRead = this.request("/api/auth/get-session", { signal });
+      const speculative = signedInHint() ? this.signedInReads(signal) : undefined;
+      sessionRead.catch(() => undefined);
+      const config = await configRead;
       if (!current()) return;
       this.config = config;
       if (config.available === false) {
         this.clearSession();
         return;
       }
-      const session = await this.request("/api/auth/get-session", { signal });
+      const session = await sessionRead;
       if (!current()) return;
       if ((session.user as Value | undefined)?.id !== this.user()?.id) this.cancelAvatar();
       this.session = session.user ? session : null;
+      rememberSignedIn(Boolean(this.session));
       this.profile = null;
       this.sessions = [];
       this.accounts = [];
       this.appeals = [];
-      if (this.session) await Promise.all([this.loadProfile(signal), this.loadSecurity(signal)]);
+      if (this.session) await Promise.all([this.loadProfile(signal, speculative), this.loadSecurity(signal, speculative)]);
       if (current()) this.phase = "ready";
     } catch (error) {
       if (!current()) return;
@@ -255,26 +275,47 @@ export class AccountWorkspace extends LitElement {
     }
   }
 
-  private async loadProfile(signal?: AbortSignal) {
+  /** Reads a signed-in account page needs, started before the session confirms it. */
+  private signedInReads(signal: AbortSignal) {
+    const settle = (url: string) => {
+      const read = this.request(url, { signal });
+      read.catch(() => undefined);
+      return read;
+    };
+    return {
+      profile: settle("/api/v1/account/profile"),
+      appeals: settle("/api/v1/community/appeals"),
+      sessions: settle("/api/auth/list-sessions"),
+      accounts: settle("/api/auth/list-accounts"),
+    };
+  }
+
+  private async loadProfile(signal?: AbortSignal, speculative?: ReturnType<AccountWorkspace["signedInReads"]>): Promise<void> {
     const ownSignal = this.profileRequests.begin();
     const userId = this.user()?.id;
     const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
     const [value, appeals] = await Promise.all([
-      this.request("/api/v1/account/profile", init),
-      this.user()?.emailVerified ? this.request("/api/v1/community/appeals", init) : Promise.resolve<Value>({}),
+      speculative?.profile ?? this.request("/api/v1/account/profile", init),
+      this.user()?.emailVerified
+        ? speculative?.appeals ?? this.request("/api/v1/community/appeals", init)
+        : Promise.resolve<Value>({}),
     ]);
     if (!this.isConnected || !this.profileRequests.current(ownSignal) || userId !== this.user()?.id) return;
+    // A speculative read answered for whoever the cookie named; keep it only
+    // when that is the confirmed session's user.
+    const seed = (value.profile as Value | undefined)?.avatarSeed;
+    if (speculative && typeof seed === "string" && seed !== userId) return this.loadProfile(signal);
     this.profile = (value.profile as Value) || null;
     this.appeals = Array.isArray(appeals.appeals) ? (appeals.appeals as Value[]) : [];
   }
 
-  private async loadSecurity(signal?: AbortSignal) {
+  private async loadSecurity(signal?: AbortSignal, speculative?: ReturnType<AccountWorkspace["signedInReads"]>) {
     const ownSignal = this.securityRequests.begin();
     const userId = this.user()?.id;
     const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
     const [sessions, accounts] = await Promise.all([
-      this.request("/api/auth/list-sessions", init),
-      this.request("/api/auth/list-accounts", init),
+      speculative?.sessions ?? this.request("/api/auth/list-sessions", init),
+      speculative?.accounts ?? this.request("/api/auth/list-accounts", init),
     ]);
     if (!this.isConnected || !this.securityRequests.current(ownSignal) || userId !== this.user()?.id) return;
     this.sessions = Array.isArray(sessions)

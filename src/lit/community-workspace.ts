@@ -1,5 +1,6 @@
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
-import { readCommunityBootstrap } from "../lib/community-bootstrap";
+import { communityLinkBootstrapUrl, readCommunityBootstrap } from "../lib/community-bootstrap";
+import { prefetchEarlyRead } from "../lib/early-read";
 import { interpolateMessage, type MessageParams } from "@haneoka/i18n";
 import { renderEntityCommentActivity } from "./views/entity-comment-activity";
 import { renderCommunityComment, renderCommentComposer, renderCommentReplies, commentAuthorName } from "./views/community-comment-content";
@@ -680,6 +681,20 @@ export class CommunityWorkspace extends LitElement {
       void this.discardUploads();
     super.disconnectedCallback();
   }
+  private linkIntentTimer = 0;
+  private readonly onLinkIntent = (event: Event) => {
+    const anchor = (event.target as Element | null)?.closest?.("a[href]");
+    if (!(anchor instanceof HTMLAnchorElement) || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+    window.clearTimeout(this.linkIntentTimer);
+    let url: string | null = null;
+    try { url = communityLinkBootstrapUrl(new URL(anchor.href)); } catch { return; }
+    if (!url || location.pathname === new URL(anchor.href).pathname) return;
+    const start = () => { if (this.isConnected) prefetchEarlyRead(url); };
+    // Passing over a card on the way elsewhere is not intent; resting is.
+    if (event.type === "pointerover" && (event as PointerEvent).pointerType !== "touch")
+      this.linkIntentTimer = window.setTimeout(start, 120);
+    else if (event.type !== "pointerover") start();
+  };
   connectedCallback() {
     super.connectedCallback();
     this.lifetime = new AbortController();
@@ -691,6 +706,10 @@ export class CommunityWorkspace extends LitElement {
     window.addEventListener("haneoka:session-changed", this.onForumRefresh, {
       signal: this.lifetime.signal,
     });
+    // A post or member link the reader points at, presses or focuses starts
+    // that page's bootstrap read; the page adopts it when it opens.
+    for (const type of ["pointerover", "pointerdown", "focusin"])
+      this.addEventListener(type, this.onLinkIntent, { signal: this.lifetime.signal, passive: true });
     // Leaving with unsaved work asks first. An in-app (view transition)
     // navigation is turned into a document navigation so the browser's own
     // confirmation applies to it as well.
@@ -986,27 +1005,60 @@ export class CommunityWorkspace extends LitElement {
     let bootstrapped: Value | undefined;
     try {
       const postDetail = this.routeKind === "post-detail" || this.routeKind === "post-edit";
-      const canBootstrap = !append && (postDetail || (this.routeKind === "collection" && this.mode === "feeds" &&
-        !this.forumSlug && !this.selectedForumId && ["recommended", "latest", "following"].includes(this.feedScope)));
+      // Tags, member profiles and the forum directory read the same viewer and
+      // forum directory as the feed: one bootstrap request instead of the
+      // session → forums → content chain. For tags and profiles the directory
+      // is optional, so a failed bootstrap falls back to that chain.
+      const optionalDirectory = this.routeKind === "user-detail" ||
+        (this.routeKind === "collection" && this.mode === "tags");
+      // A forum page knows its forum by slug; the bootstrap resolves it and
+      // reads that forum's posts, so the slug → posts chain is one request.
+      const forumFeed = this.routeKind === "collection" && this.mode === "feeds" && Boolean(this.forumSlug) &&
+        !this.selectedForumId && ["recommended", "latest", "following"].includes(this.feedScope);
+      const canBootstrap = !append && (postDetail || forumFeed || (this.routeKind === "collection" && this.mode === "feeds" &&
+        !this.forumSlug && !this.selectedForumId && ["recommended", "latest", "following"].includes(this.feedScope)) ||
+        (this.routeKind === "collection" && this.mode === "forums" && !this.forumSlug) ||
+        (this.routeKind === "user-detail" && /^[1-9]\d{0,15}$/u.test(this.entityId)) ||
+        (this.routeKind === "collection" && this.mode === "tags"));
+      let bootstrapFailed = false;
       if (canBootstrap) {
         const query = new URLSearchParams({ commentsSort: this.commentSort });
         const focusedId = navigationDocumentUrl().hash.match(/^#comment-([0-9a-f-]{36})$/iu)?.[1];
         if (focusedId) query.set("commentId", focusedId);
-        const path = postDetail ? `/api/v1/community/posts/${encodeURIComponent(this.entityId)}?${query}` : this.endpoint(false, refresh);
-        const bootstrap = await readCommunityBootstrap<Value>(path, signal, true);
-        if (!this.requests.current(signal)) return;
-        // The bootstrap reads identity and content in one server request with
-        // this browser's cookie, so its viewer is the realm of that content.
-        // Re-reading the session here only added a serial round trip; identity
-        // changes still arrive through haneoka:session-changed.
-        await this.loadForums(signal, { viewer: bootstrap.viewer, forums: bootstrap.directory!.forums, groups: bootstrap.directory!.groups });
-        if (!this.requests.current(signal)) return;
-        bootstrapped = bootstrap.data;
+        const path = postDetail ? `/api/v1/community/posts/${encodeURIComponent(this.entityId)}?${query}`
+          : this.routeKind === "user-detail" ? `/api/v1/community/users/${this.entityId}`
+          : this.mode === "forums" ? "/api/v1/community/forums"
+          : forumFeed ? this.forumFeedEndpoint(refresh)
+          : this.endpoint(false, refresh);
+        try {
+          const bootstrap = await readCommunityBootstrap<Value>(path, signal, true, forumFeed ? this.forumSlug : "");
+          if (!this.requests.current(signal)) return;
+          // The bootstrap reads identity and content in one server request with
+          // this browser's cookie, so its viewer is the realm of that content.
+          // Re-reading the session here only added a serial round trip; identity
+          // changes still arrive through haneoka:session-changed.
+          await this.loadForums(signal, { viewer: bootstrap.viewer, forums: bootstrap.directory!.forums, groups: bootstrap.directory!.groups },
+            forumFeed ? bootstrap.forum as Value : undefined);
+          if (!this.requests.current(signal)) return;
+          bootstrapped = bootstrap.data;
+        } catch (error) {
+          // A worker that predates a bootstrap target refuses it; read the
+          // way this route did before instead.
+          const refusedTarget = error instanceof JsonResponseError && error.status === 400 &&
+            (optionalDirectory || forumFeed || this.mode === "forums") &&
+            /"invalid_bootstrap_(?:target|query)"/u.test(JSON.stringify(error.body ?? null));
+          if (!refusedTarget && (!optionalDirectory || signal.aborted || error instanceof CommunityRealmChanged ||
+              (error instanceof JsonResponseError && error.status < 500))) throw error;
+          bootstrapFailed = true;
+        }
+      }
+      if (canBootstrap && !bootstrapFailed) {
+        // Identity and directory arrived with the content.
       } else if (!append && this.usesForums()) {
         await this.loadForums(signal);
         if (!this.requests.current(signal)) return;
       }
-      if (!append && !this.usesForums()) {
+      if (!append && !this.usesForums() && !bootstrapped) {
         try {
           await this.loadForums(signal);
         } catch (error) {
@@ -1094,14 +1146,17 @@ export class CommunityWorkspace extends LitElement {
         return;
       }
       if (this.routeKind === "user-detail") {
-        const response = await fetch(`/api/v1/community/users/${encodeURIComponent(this.entityId)}`, {
-          headers: { accept: "application/json" },
-          credentials: "same-origin",
-          cache: "no-store",
-          signal,
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const detail = (await response.json()) as Value;
+        let detail = bootstrapped;
+        if (!detail) {
+          const response = await fetch(`/api/v1/community/users/${encodeURIComponent(this.entityId)}`, {
+            headers: { accept: "application/json" },
+            credentials: "same-origin",
+            cache: "no-store",
+            signal,
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          detail = (await response.json()) as Value;
+        }
         if (!this.requests.current(signal)) return;
         this.document = detail;
         const profile = ((this.document.profile as Value | undefined) || this.document) as Value;
@@ -5117,7 +5172,13 @@ export class CommunityWorkspace extends LitElement {
     this.facetsRequests.cancel();
     feedSnapshots.clear();
   }
-  private async loadForums(signal: AbortSignal, prefetched?: CommunityForumDirectory) {
+  /** The forum page's posts query before its forum is resolved (the bootstrap adds forumId from the slug). */
+  private forumFeedEndpoint(refresh: boolean) {
+    const endpoint = new URL(this.endpoint(false, refresh), location.origin);
+    endpoint.searchParams.delete("forumId");
+    return `${endpoint.pathname}${endpoint.search}`;
+  }
+  private async loadForums(signal: AbortSignal, prefetched?: CommunityForumDirectory, forumDetail?: Value) {
     let cleanup: Promise<void> | undefined;
     const observeViewer = (context: CommunityViewer) => {
       if (!this.isConnected || !this.requests.current(signal)) return;
@@ -5178,7 +5239,7 @@ export class CommunityWorkspace extends LitElement {
     )
       throw new JsonResponseError(404, null);
     if (this.forumSlug) {
-      const detail = await this.request(
+      const detail = forumDetail ?? await this.request(
         `/api/v1/community/forums/by-slug/${encodeURIComponent(this.forumSlug)}`,
         {
           signal,
@@ -5489,7 +5550,7 @@ export class CommunityWorkspace extends LitElement {
             : nothing
         }
         ${this.mode === "feeds" && this.phase === "ready" ? this.renderForumNav() : nothing}
-        ${this.currentForum ? this.renderForumHeader() : nothing}
+        ${this.currentForum || this.forumSlug || this.addressesForumPage() ? this.renderForumHeader() : nothing}
         ${this.renderFilterSummary()} ${this.renderPhase()}
         ${this.renderCardMenu()} ${this.renderFilters()} ${this.renderDialog()}
         ${
@@ -5715,7 +5776,7 @@ export class CommunityWorkspace extends LitElement {
     const usesAsyncRegion = this.routeKind === "collection" && ["feeds", "mine", "bookmarks", "forums", "notifications", "activity", "tags"].includes(this.mode);
     if (this.phase === "loading")
       return usesAsyncRegion
-        ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: ["feeds", "mine", "bookmarks"].includes(this.mode) && !this.forumSlug ? "cards" : "list", columns: this.columnCount })
+        ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: ["feeds", "mine", "bookmarks"].includes(this.mode) && !this.forumSlug && !this.addressesForumPage() ? "cards" : "list", columns: this.columnCount })
         : ["post-detail", "user-detail"].includes(this.routeKind)
           // A detail reserves its layout with placeholders instead of a blank pane.
           ? asyncRegion({ state: "initial", label: this.label("loading", "Loading"), layout: "detail" })
@@ -6033,9 +6094,30 @@ export class CommunityWorkspace extends LitElement {
   private renderForumNav() {
     return nothing;
   }
+  /** Before the route is parsed (first frame), whether the document addresses one forum. */
+  private addressesForumPage() {
+    if (this.routeUrl) return false;
+    const parts = location.pathname.split("/").filter(Boolean);
+    const at = parts.indexOf("community");
+    return at >= 0 && parts[at + 1] === "forums" && Boolean(parts[at + 2]) && !parts[at + 3];
+  }
   private renderForumHeader() {
     const forum = this.currentForum;
-    if (!forum) return nothing;
+    // A forum page reserves its header while the forum resolves, so the
+    // topics below do not move down when it arrives.
+    if (!forum)
+      return (this.forumSlug || this.addressesForumPage()) && this.phase !== "error"
+        ? html`
+            <header class="community-forum-header" aria-hidden="true">
+              <span class="community-forum-mark"></span>
+              <div class="community-forum-header__body">
+                <h2>\u00a0</h2>
+                <p class="community-forum-description">\u00a0</p>
+                <div class="community-forum-stats"><span>\u00a0</span></div>
+              </div>
+            </header>
+          `
+        : nothing;
     return html`
       <header
         class="community-forum-header"

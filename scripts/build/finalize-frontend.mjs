@@ -6,6 +6,7 @@ import path from "node:path";
 import * as pagefind from "pagefind";
 import { parseFragment } from "parse5";
 import { copyCalendarStaticAssets } from "./calendar-static-assets.mjs";
+import { addModulePreloads } from "./module-preload.mjs";
 
 const output = path.resolve(".output/public");
 const calendarImages = await copyCalendarStaticAssets({ outputRoot: output });
@@ -41,6 +42,9 @@ function withServerFilter(html, sourcePath) {
 const files = readdirSync(output, { recursive: true, withFileTypes: true })
   .filter((entry) => entry.isFile() && entry.name.endsWith(".html"))
   .map((entry) => path.relative(output, path.join(entry.parentPath, entry.name)));
+// Hoisted module entries otherwise discover their shared chunks one import
+// level (one round trip) at a time.
+console.log(`added module preloads to ${await addModulePreloads(output, files)} documents`);
 let index;
 try {
   const created = await pagefind.createIndex({

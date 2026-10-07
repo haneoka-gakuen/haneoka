@@ -53,21 +53,45 @@ export async function handleCommunityBootstrap(
   if (request.method !== "GET") return json({ error: { code: "method_not_allowed" } }, 405);
   const path = url.searchParams.get("path") || "";
   if (path.length > 4096 || !path.startsWith("/api/v1/community/") || path.includes("#") ||
-      [...url.searchParams.keys()].some((key) => !["path", "forums"].includes(key)) ||
-      ["path", "forums"].some((key) => url.searchParams.getAll(key).length > 1) ||
+      [...url.searchParams.keys()].some((key) => !["path", "forums", "forumSlug"].includes(key)) ||
+      ["path", "forums", "forumSlug"].some((key) => url.searchParams.getAll(key).length > 1) ||
       (url.searchParams.has("forums") && url.searchParams.get("forums") !== "1"))
     return json({ error: { code: "invalid_bootstrap_query" } }, 400);
+  // A forum page knows its forum only by slug: resolve it here and read that
+  // forum's posts in the same request (instead of slug → posts round trips).
+  const forumSlug = url.searchParams.get("forumSlug");
   const target = new URL(path, url);
   if (target.origin !== url.origin ||
-      !/^\/api\/v1\/community\/(?:posts(?:\/[a-f0-9-]{36})?|entity-threads\/[a-z][a-z0-9-]{0,63}\/[^/]+)$/iu.test(target.pathname))
+      !/^\/api\/v1\/community\/(?:posts(?:\/[a-f0-9-]{36})?|tags|forums|users\/[1-9]\d{0,15}|entity-threads\/[a-z][a-z0-9-]{0,63}\/[^/]+)$/iu.test(target.pathname) ||
+      // The forum directory is only a bootstrap target as the directory itself.
+      (target.pathname === "/api/v1/community/forums" && (target.search || url.searchParams.get("forums") !== "1")))
+    return json({ error: { code: "invalid_bootstrap_target" } }, 400);
+  if (forumSlug !== null && (forumSlug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(forumSlug) || target.pathname !== "/api/v1/community/posts" ||
+      target.searchParams.has("forumId") || url.searchParams.get("forums") !== "1"))
     return json({ error: { code: "invalid_bootstrap_target" } }, 400);
   return withCommunityReadTiming(async () => {
   const started = performance.now();
   const identity = await viewer(request, env);
   if ("response" in identity) return identity.response!;
   const identified = performance.now();
+  const directoryOnly = target.pathname === "/api/v1/community/forums";
+  let forum: ObjectValue | null = null;
+  const readContent = async (): Promise<Response | null> => {
+    if (directoryOnly) return Response.json({});
+    if (forumSlug !== null) {
+      const detail = await handleCommunityForumsRequest(
+        new Request(new URL(`/api/v1/community/forums/by-slug/${encodeURIComponent(forumSlug)}`, url), request), env);
+      if (!detail || !detail.ok) return detail;
+      forum = object(await detail.json());
+      const record = object(forum?.forum);
+      if (typeof record?.id !== "string" || object(record.capabilities)?.canRead !== true)
+        return json({ error: { code: "forum_not_found", message: "Forum not found" } }, 404);
+      target.searchParams.set("forumId", record.id);
+    }
+    return read(new Request(target, request));
+  };
   const [content, directory] = await Promise.all([
-    read(new Request(target, request)),
+    readContent(),
     url.searchParams.get("forums") === "1"
       ? handleCommunityForumsRequest(new Request(new URL("/api/v1/community/forums", url), request), env)
       : Promise.resolve(null),
@@ -76,7 +100,10 @@ export async function handleCommunityBootstrap(
   const failure = !content.ok ? content : directory && !directory.ok ? directory : null;
   const response = failure
     ? new Response(failure.body, failure)
-    : json({ viewer: identity.value, data: await content.json(), directory: directory ? await directory.json() : null });
+    : json({
+        viewer: identity.value, data: await content.json(), directory: directory ? await directory.json() : null,
+        ...(forum ? { forum } : {}),
+      });
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("Vary", "Cookie");
   for (const cookie of identity.cookies) response.headers.append("Set-Cookie", cookie);

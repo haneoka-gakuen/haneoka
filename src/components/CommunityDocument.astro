@@ -18,5 +18,75 @@ const titleKey = modeTitleKeys[mode] || "community";
 const title = t(locale, titleKey, mode === "feeds" ? "Community" : mode);
 
 ---
-<Base locale={locale} route={route} title={title} titleKey={titleKey}><AppShell locale={locale} route={route} title={title} titleKey={titleKey}><community-workspace locale={locale} mode={mode}></community-workspace></AppShell></Base>
+<Base locale={locale} route={route} title={title} titleKey={titleKey}>
+<script slot="head-early" is:inline>
+  // Start the community bootstrap read while stylesheets and the module graph
+  // are still downloading. <community-workspace> adopts it only when it would
+  // request exactly this URL (src/lib/early-read.ts); otherwise it is
+  // ignored. Mirrors the workspace's route parsing and endpoint() for the
+  // unfiltered entry routes only.
+  (() => {
+    try {
+      const page = new URL(document.documentElement.dataset.navigationHref || location.href, location.href);
+      const params = page.searchParams;
+      const parts = page.pathname.split("/").filter(Boolean);
+      const at = parts.indexOf("community");
+      if (at < 0) return;
+      const [section, value, extra] = parts.slice(at + 1);
+      let target = "";
+      let forumSlug = "";
+      if (!section || section === "feeds" || section === "latest" || section === "following") {
+        if (["q", "tag", "tags", "forumId"].some((key) => params.has(key)) || value) return;
+        let scope = section === "latest" || section === "following" ? section : "recommended";
+        const requested = params.get("scope");
+        if (requested === "latest" || requested === "following" || requested === "recommended") scope = requested;
+        const query = new URLSearchParams({ limit: "20", scope });
+        if (scope === "recommended") {
+          const pick = (server) => server === "jp" || server === "jp-cbt" ? "jp" : "intl";
+          const fromQuery = params.get("server");
+          let server = "intl";
+          if (fromQuery && /^(?:jp|intl|jp-cbt|intl-cbt|gl-cbt)$/u.test(fromQuery)) server = pick(fromQuery);
+          else try { server = pick(localStorage.getItem("haneoka.release-server")); } catch {}
+          query.set("server", server);
+          query.set("locale", document.documentElement.dataset.locale || "ja");
+        }
+        query.set("state", "active");
+        target = `/api/v1/community/posts?${query}`;
+      } else if (section === "posts" && value && value !== "new" && !extra && /^[0-9a-f-]{36}$/iu.test(value)) {
+        const query = new URLSearchParams({ commentsSort: "hot" });
+        const focused = page.hash.match(/^#comment-([0-9a-f-]{36})$/iu);
+        if (focused) query.set("commentId", focused[1]);
+        target = `/api/v1/community/posts/${encodeURIComponent(value)}?${query}`;
+      } else if (section === "users" && value && !extra && /^[1-9]\d{0,15}$/u.test(value)) {
+        target = `/api/v1/community/users/${value}`;
+      } else if (section === "tags" && !value && !params.has("q")) {
+        target = "/api/v1/community/tags?limit=20";
+      } else if (section === "forums" && !value) {
+        target = "/api/v1/community/forums";
+      } else if (section === "forums" && value && !extra) {
+        // A forum page: its latest posts, the forum resolved by slug on the server.
+        if (["q", "tag", "tags", "forumId"].some((key) => params.has(key))) return;
+        const slug = decodeURIComponent(value);
+        if (slug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) return;
+        let scope = "latest";
+        const requested = params.get("scope");
+        if (requested === "following") scope = requested;
+        else if (requested === "recommended") return;
+        forumSlug = slug;
+        target = `/api/v1/community/posts?${new URLSearchParams({ limit: "20", scope, state: "active" })}`;
+      }
+      if (!target) return;
+      const url = `/api/v1/community/bootstrap?${new URLSearchParams(forumSlug ? { path: target, forums: "1", forumSlug } : { path: target, forums: "1" })}`;
+      const reads = (window.__haneokaEarlyReads ||= {});
+      // A link-intent prefetch from the previous page may already be pending.
+      if (reads[url] && performance.now() - reads[url].at < 10000) return;
+      reads[url] = {
+        at: performance.now(),
+        response: fetch(url, { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } })
+          .catch(() => null),
+      };
+    } catch {}
+  })();
+</script>
+<AppShell locale={locale} route={route} title={title} titleKey={titleKey}><community-workspace locale={locale} mode={mode}></community-workspace></AppShell></Base>
 <script>import "../lit/community-workspace";</script>

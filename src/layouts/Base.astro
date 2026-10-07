@@ -68,6 +68,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       @layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
     </style>
     <meta charset="utf-8" />
+    <slot name="head-early" />
     {uiFontStyles(locale).map((font) => <link rel="stylesheet" href={font.href} data-ui-font={font.key} />)}
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <script id="haneoka-i18n-seed" type="application/json" is:inline set:html={i18nSeed}></script>

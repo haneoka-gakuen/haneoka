@@ -22,7 +22,7 @@ export class CommunityRealmChanged extends Error {
  * then skip a guaranteed 401 on every page.
  */
 const SIGNED_IN_HINT = "haneoka.community.signed-in.v1";
-function signedInHint(): boolean {
+export function signedInHint(): boolean {
   try { return localStorage.getItem(SIGNED_IN_HINT) === "1"; } catch { return false; }
 }
 export function rememberSignedIn(value: boolean) {

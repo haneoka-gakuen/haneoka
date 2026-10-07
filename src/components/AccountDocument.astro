@@ -11,6 +11,32 @@ const title = t(locale, "account", "Account");
 
 ---
 <Base locale={locale} route="/account" title={title} titleKey="account">
+  <script slot="head-early" is:inline>
+    // Start the account page's reads while stylesheets and modules download;
+    // <account-workspace> adopts each only for the identical URL
+    // (src/lib/early-read.ts). The signed-in reads start only for a browser
+    // whose last observed viewer was signed in, and are checked against the
+    // confirmed session before anything is shown.
+    (() => {
+      try {
+        const reads = (window.__haneokaEarlyReads ||= {});
+        const start = (url) => {
+          reads[url] = {
+            at: performance.now(),
+            response: fetch(url, { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } })
+              .catch(() => null),
+          };
+        };
+        start("/api/v1/account/config");
+        start("/api/auth/get-session");
+        let signedIn = false;
+        try { signedIn = localStorage.getItem("haneoka.community.signed-in.v1") === "1"; } catch {}
+        if (signedIn)
+          for (const url of ["/api/v1/account/profile", "/api/v1/community/appeals", "/api/auth/list-sessions", "/api/auth/list-accounts"])
+            start(url);
+      } catch {}
+    })();
+  </script>
   <AppShell locale={locale} route="/account" title={title} titleKey="account">
     <account-workspace></account-workspace>
   </AppShell>

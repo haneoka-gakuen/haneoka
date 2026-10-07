@@ -37,6 +37,8 @@ import { handleScreenshotRecognitionRequest } from "../packages/community-media/
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
+import { withD1Session } from "./d1-session";
+import { cachedCommunityRead, markCommunityMutation } from "./community-edge-cache";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
@@ -3396,6 +3398,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     );
     const bootstrap = await handleCommunityBootstrap(request, env, async (readRequest) =>
       (await handleCommunityEntityRequest(readRequest, env, resolveCommunityEntity)) ??
+      (await handleCommunityForumsRequest(readRequest, env)) ??
+      (await handlePublicProfileRequest(readRequest, env)) ??
       (await handleCommunityRequest(readRequest, env)),
     );
     if (bootstrap) return bootstrap;
@@ -3539,7 +3543,17 @@ async function cleanupDatabase(env: Env): Promise<void> {
 const worker: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
-      return await withRequestWork(ctx, () => handleRequest(request, env, ctx));
+      return await withRequestWork(ctx, () =>
+        withD1Session(request, env, async (routedEnv) => {
+          const response = await cachedCommunityRead(request, ctx, () => handleRequest(request, routedEnv, ctx));
+          if (
+            request.method !== "GET" && request.method !== "HEAD" && request.method !== "OPTIONS" &&
+            response.status < 400 && new URL(request.url).pathname.startsWith("/api/")
+          )
+            ctx.waitUntil(markCommunityMutation(request.url));
+          return response;
+        }),
+      );
     } catch (error) {
       return internalErrorResponse(request, error);
     }
