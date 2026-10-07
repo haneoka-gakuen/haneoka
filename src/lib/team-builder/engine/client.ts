@@ -2,7 +2,7 @@
 import type { TeamBuilderData } from "../data";
 import type { EngineRequest, EngineResponse, TeamEvaluation, Timeline } from "./api";
 import type { EngineCall, EngineReply, EvaluateRequest, ExplainRequest } from "./protocol";
-import { aspirationHeld, mergeShardResponses } from "./merge";
+import { aspirationHeld, mergeShardResponses, planSummary } from "./merge";
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (done: number, total: number) => void };
 
@@ -76,6 +76,8 @@ const poolSize = () => {
 };
 /** Below this many members a single Worker finishes before the others would compile the release. */
 const PARALLEL_MIN_MEMBERS = 15;
+/** How long one Worker tries before a search fans out over the pool. */
+const QUICK_MS = 700;
 /** Leader shards per Worker: enough for the free Workers to even out uneven subtrees. */
 const SHARDS_PER_WORKER = 4;
 
@@ -91,34 +93,78 @@ export class EngineClient {
     for (const worker of this.pool) worker.warm();
   }
   async run(request: EngineRequest, progress?: Pending["progress"]): Promise<EngineResponse> {
-    const parallel = this.pool.length > 1 && request.goal.kind !== "plan" && request.members.length >= PARALLEL_MIN_MEMBERS;
+    const parallel = this.pool.length > 1 && request.members.length >= PARALLEL_MIN_MEMBERS;
     if (!parallel) return this.pool[0]!.send<EngineResponse>({ type: "run", id: 0, request }, progress);
     const started = performance.now();
-    // Leader shards are many and small, handed to whichever Worker is free: subtree sizes vary widely, and each new
-    // task starts from the best k-th key found so far.
+    // Most searches prove their ranking in well under a second on one Worker; only those that don't fan out, and
+    // the teams found so far give every shard its starting floor.
+    const initial: Record<string, number> = {};
+    // Gekisou seeding alone outlasts the quick window, so it fans out at once.
+    if (!request.noFloor && request.goal.kind !== "gekiso") {
+      const quick = await this.pool[0]!.send<EngineResponse>({
+        type: "run",
+        id: 0,
+        request: { ...request, timeLimitMs: Math.min(request.timeLimitMs ?? Infinity, QUICK_MS) },
+      });
+      if (quick.results.every((result) => result.proven)) return quick;
+      if (request.goal.kind !== "plan")
+        for (const result of quick.results)
+          if (result.song && result.hits.length >= request.k) initial[`${result.song.songId}:${result.song.difficulty}`] = result.hits[request.k - 1]!.key;
+    }
+    if (request.goal.kind === "plan") return this.plan(request, request.goal, started, progress);
+    const merged = await this.sharded(request, initial, progress);
+    merged.elapsedMs = performance.now() - started;
+    if (aspirationHeld(merged, request.k) || request.noFloor) return merged;
+    // A floor admitted fewer than k teams: search again without it.
+    return this.run({ ...request, noFloor: true }, progress);
+  }
+  /** Leader shards are many and small, handed to whichever Worker is free: subtree sizes vary widely, and each new
+   * task starts from the best k-th key found so far. */
+  private async sharded(request: EngineRequest, initial: Record<string, number>, progress?: Pending["progress"], offset = 0, total = 1): Promise<EngineResponse> {
     const count = this.pool.length * SHARDS_PER_WORKER;
     const responses: EngineResponse[] = [];
     let next = 0;
     const floors = (): Record<string, number> => {
-      if (!responses.length) return {};
+      if (!responses.length) return initial;
       const merged = mergeShardResponses(responses, request.k, 0);
-      const out: Record<string, number> = {};
+      const out: Record<string, number> = { ...initial };
       for (const result of merged.results)
-        if (result.song && result.hits.length >= request.k) out[`${result.song.songId}:${result.song.difficulty}`] = result.hits[request.k - 1]!.key;
+        if (result.song && result.hits.length >= request.k) {
+          const key = `${result.song.songId}:${result.song.difficulty}`;
+          out[key] = Math.max(out[key] ?? -Infinity, result.hits[request.k - 1]!.key);
+        }
       return out;
     };
     const worker = async (engine: EngineWorker) => {
       while (next < count) {
         const index = next++;
         responses.push(await engine.send<EngineResponse>({ type: "run", id: 0, request: { ...request, shard: { index, count }, floors: floors() } }));
-        progress?.(responses.length, count);
+        progress?.(offset + responses.length / count, total);
       }
     };
     await Promise.all(this.pool.map(worker));
-    const merged = mergeShardResponses(responses, request.k, performance.now() - started);
-    if (aspirationHeld(merged, request.k) || request.noFloor) return merged;
-    // The guessed floor admitted fewer than k teams: search again without it.
-    return this.run({ ...request, noFloor: true }, progress);
+    return mergeShardResponses(responses, request.k, 0);
+  }
+  /** A plan's normal lives are priced by the best challenge live, so the stages run one after the other, each
+   * over the pool. */
+  private async plan(request: EngineRequest, goal: Extract<EngineRequest["goal"], { kind: "plan" }>, started: number, progress?: Pending["progress"]): Promise<EngineResponse> {
+    const challengeRequest: EngineRequest = {
+      ...request,
+      goal: { kind: "event", measure: "points", route: "challenge", eventId: goal.eventId, songs: goal.challengeSongs, consumption: goal.challengePointsPerLive, play: goal.play },
+    };
+    let challenge = await this.sharded(challengeRequest, {}, progress, 0, 2);
+    if (!aspirationHeld(challenge, request.k)) challenge = await this.sharded({ ...challengeRequest, noFloor: true }, {}, progress, 0, 2);
+    const bestChallenge = challenge.overall[0] ?? null;
+    const pointsPerChallenge = bestChallenge?.event?.mean ?? 0;
+    const normal = await this.sharded({ ...request, goal: { ...goal, challengePointsPerPlay: pointsPerChallenge } }, {}, progress, 1, 2);
+    const bestNormal = normal.results.flatMap((result) => result.hits).sort((a, b) => b.key - a.key)[0] ?? null;
+    return {
+      plan: planSummary(goal, bestNormal, bestChallenge, pointsPerChallenge),
+      results: [...challenge.results, ...normal.results],
+      overall: [...(bestNormal ? [bestNormal] : []), ...(bestChallenge ? [bestChallenge] : [])],
+      unknownCards: normal.unknownCards,
+      elapsedMs: performance.now() - started,
+    };
   }
   evaluate(request: EvaluateRequest) {
     return this.pool[0]!.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request });

@@ -37,6 +37,8 @@ export interface GekisoSearchInput {
   k: number;
   timeLimitMs?: number;
   shard?: { index: number; count: number };
+  /** Known lower bound on the k-th key (teams other shards found). */
+  floor?: number;
   progress?: (done: number, total: number) => void;
 }
 
@@ -135,6 +137,12 @@ function levelMaster(master: EngineMaster, template: SkillEffectRow, level: numb
   return { ...master, gekisoSkills: skills };
 }
 
+/** Per-Worker Gekisou contexts by chart, then level tag and lottery seeds, then deck. */
+const contextsByChart = new WeakMap<GekisoChart, Map<string, Map<string, GekisoContext>>>();
+const levelTags = new WeakMap<EngineMaster, string>();
+/** Per-Worker memo of the seeding phase (shard-independent), keyed by chart and request. */
+const seededByChart = new WeakMap<GekisoChart, Map<string, SearchHit<GekisoDetail>[]>>();
+
 export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetail> & { levels: number } {
   const started = performance.now();
   const { master, members, snaps, chart, criterion } = input;
@@ -145,17 +153,28 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
   const missions = chart.setup.missions.slice(0, chart.full.fevers.length);
   const comboRanges = missions.some((m) => m === M_COMBO || m === M_ALL);
 
-  const caches = new WeakMap<EngineMaster, Map<string, GekisoContext>>();
+  // Contexts are kept per chart across calls: the shards of one request (and later requests on the same chart) share
+  // every deck already simulated. Level masters are tagged by level, since each call builds them afresh.
+  let chartCache = contextsByChart.get(chart);
+  if (!chartCache) contextsByChart.set(chart, (chartCache = new Map()));
+  const seedTag = input.seeds.join(",");
   const readAll = readAttributes(master, "all");
   const readMembers = readAttributes(master, "members");
   const timing = { contexts: 0, contextMs: 0, orders: 0, ordersMs: 0 };
+  /** A performer's context key (the fields its simulation reads), computed once per performer object. */
+  const performerKeys = new WeakMap<Performer, string>();
   const contextOf = (deck: Performer[], within = master) => {
-    let cache = caches.get(within);
-    if (!cache) caches.set(within, (cache = new Map()));
-    const keyed = deck.map((p) => ({
-      p,
-      key: JSON.stringify([p.gekisouSkill, p.missionOnly ?? 0, p.gekisouSupportSkills, ...(p.gekisouSupportSkills.length ? readAll : readMembers).map((field) => p[field])]),
-    }));
+    const tag = `${within === master ? "base" : (levelTags.get(within) ?? "?")}|${seedTag}`;
+    let cache = chartCache!.get(tag);
+    if (!cache) chartCache!.set(tag, (cache = new Map()));
+    const keyed = deck.map((p) => {
+      let key = performerKeys.get(p);
+      if (key === undefined) {
+        key = JSON.stringify([p.gekisouSkill, p.missionOnly ?? 0, p.gekisouSupportSkills, ...(p.gekisouSupportSkills.length ? readAll : readMembers).map((field) => p[field])]);
+        performerKeys.set(p, key);
+      }
+      return { p, key };
+    });
     keyed.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     const key = keyed.map((item) => item.key).join("|");
     let value = cache.get(key);
@@ -203,8 +222,15 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
   // current master), so the band reduces to "favoured or not".
   const songMissions = new Set(missions);
   const supportPerformers = new Map<string, Performer | null>();
+  const supportBySlot: (Performer | null | undefined)[] = [];
   const supportPerformer = (member: number, snap: number): Performer | null => {
     if (snap < 0 || !hasGekiso[member]) return null;
+    const index = member * snaps.length + snap;
+    const known = supportBySlot[index];
+    if (known !== undefined) return known;
+    return (supportBySlot[index] = supportPerformerOf(member, snap));
+  };
+  const supportPerformerOf = (member: number, snap: number): Performer | null => {
     const p = performer(master, members[member]!, snaps[snap]!);
     if (!p.gekisouSupportSkills.length) return null;
     const runs = p.gekisouSupportSkills.some(([id]) => {
@@ -338,18 +364,41 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     }
     return value;
   };
+  /** Per member set (and lottery-changing supports): its weights, each support's gain and each slot's live weight. */
+  const refineBases = new Map<string, { w: Weights; deck: Performer[]; gains: Map<Performer, number>; lives: Map<number, number> }>();
+  const supportIds = new Map<Performer, number>();
+  const refinePick = criterion === "min" ? "worst" : criterion === "max" ? "best" : "mean";
   const refine = (team: Team, power: number) => {
-    const deck = team.members.map((i) => gkMember[i]!);
-    // With luck ranges the lottery-changing supports join the base: the rest add their gains given its lottery.
     const supports = team.members.map((member, slot) => supportPerformer(member, team.snaps[slot]!));
-    if (chart.luck) for (const p of supports) if (p && luckChain(p)) deck.push(p);
-    const w = weights(contextOf(deck));
-    let total = w.base;
+    // With luck ranges the lottery-changing supports join the base: the rest add their gains given its lottery.
+    const chained = chart.luck ? supports.filter((p): p is Performer => !!p && luckChain(p)) : [];
+    let key = team.members.slice().sort((a, b) => a - b).join(",");
+    if (chained.length) {
+      const ids = chained.map((p) => {
+        let id = supportIds.get(p);
+        if (id === undefined) supportIds.set(p, (id = supportIds.size));
+        return id;
+      });
+      key += "|" + ids.sort((a, b) => a - b).join(",");
+    }
+    let base = refineBases.get(key);
+    if (!base) {
+      const deck = [...team.members.map((i) => gkMember[i]!), ...chained];
+      refineBases.set(key, (base = { w: weights(contextOf(deck)), deck, gains: new Map(), lives: new Map() }));
+    }
+    let total = base.w.base;
     team.members.forEach((member, slot) => {
       const snap = team.snaps[slot]!;
       const p = supports[slot];
-      if (p && !(chart.luck && luckChain(p))) total += gain([p], deck);
-      total += liveWeight(slotSkill(member, snap), w, criterion === "min" ? "worst" : criterion === "max" ? "best" : "mean");
+      if (p && !(chart.luck && luckChain(p))) {
+        let value = base.gains.get(p);
+        if (value === undefined) base.gains.set(p, (value = gain([p], base.deck)));
+        total += value;
+      }
+      const index = member * (snaps.length + 1) + snap + 1;
+      let live = base.lives.get(index);
+      if (live === undefined) base.lives.set(index, (live = liveWeight(slotSkill(member, snap), base.w, refinePick)));
+      total += live;
     });
     return (power * total) / count;
   };
@@ -383,6 +432,7 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     let value = levelData.get(level);
     if (!value) {
       const within = level > 0 && template ? levelMaster(master, template, level) : master;
+      if (within !== master) levelTags.set(within, `L${level}`);
       const deck: Performer[] = [...luckDeck];
       if (level > 0 && template) deck.push({ ...EMPTY, gekisouSkill: [SYNTHETIC_SKILL, 1], gekisouMissionType: M_COMBO });
       levelData.set(level, (value = { within, deck, weights: weights(contextOf(deck, within)) }));
@@ -390,10 +440,17 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     return value;
   };
   const supportHigh = new Map<string, number>();
+  const supportHighBySlot = new Map<number, number>();
   const supportHighOf = (member: number, snap: number, level: number) => {
     const p = supportPerformer(member, snap);
     if (!p) return 0;
     const at = grid.find((g) => g >= level) ?? maxLevel;
+    const index = (member * snaps.length + snap) * (maxLevel + 1) + at;
+    let known = supportHighBySlot.get(index);
+    if (known === undefined) supportHighBySlot.set(index, (known = supportHighAt(p, at)));
+    return known;
+  };
+  const supportHighAt = (p: Performer, at: number) => {
     const key = JSON.stringify([p.gekisouSupportSkills, p.bandId, at]);
     let value = supportHigh.get(key);
     if (value === undefined) {
@@ -450,8 +507,14 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     };
   };
   // Seeding: the best teams of each level by its optimistic values, scored exactly, so the proving pass starts from a
-  // threshold near the optimum.
-  {
+  // threshold near the optimum. It covers every leader (a shard's own leaders would seed it far lower) and a Worker
+  // keeps it for the request's other shards.
+  const seedKey = JSON.stringify([members.map((m) => m.key), snaps.map((x) => x.key), criterion, input.k, input.constraints, input.seeds]);
+  let seedCache = seededByChart.get(chart);
+  if (!seedCache) seededByChart.set(chart, (seedCache = new Map()));
+  const seeded = seedCache.get(seedKey);
+  if (seeded) for (const hit of seeded) hits.set(setKey(hit.team), hit);
+  else {
     const pool = new Map<string, { team: Team; value: number }>();
     // A few levels are enough to seed: the per-level passes below still visit every level.
     const seedLevels = [...new Set(grid.slice().reverse())];
@@ -460,7 +523,6 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
       const surrogate = objectiveFor(level, true);
       warm(surrogate);
       const out = searchTeams({
-        shard: input.shard,
         master,
         player: input.player,
         members,
@@ -484,6 +546,10 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
       const previous = hits.get(hitKey);
       if (!previous || previous.key < key) hits.set(hitKey, { team, power: power.total, slotPowers: power.slots, totals: { power: power.total, skill: 0, skillLow: 0, bonus: 0 }, key, detail });
     }
+    if (performance.now() <= deadline) {
+      if (seedCache.size > 8) seedCache.clear();
+      seedCache.set(seedKey, [...hits.values()]);
+    }
   }
 
   for (const [index, level] of levels.entries()) {
@@ -494,7 +560,10 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     }
     const objective = objectiveFor(level, false) as ObjectiveAdapter<GekisoDetail>;
     warm(objective);
-    const seeds = [...hits.values()].sort((a, b) => b.key - a.key).slice(0, input.k).map((hit) => hit.team);
+    const best = [...hits.values()].sort((a, b) => b.key - a.key).slice(0, input.k);
+    const seeds = best.map((hit) => hit.team);
+    // Seeds rarely hold this level's bonus: the k-th best of every level so far is the floor any team must beat.
+    const floor = Math.max(input.floor ?? -Infinity, best.length >= input.k ? best[input.k - 1]!.key : -Infinity);
     const out = searchTeams({
       shard: input.shard,
       master,
@@ -506,6 +575,7 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
       constraints: levelConstraints(level),
       k: input.k,
       seeds,
+      floor: Number.isFinite(floor) ? floor : undefined,
       timeLimitMs: Number.isFinite(deadline) ? Math.max(1, deadline - performance.now()) : undefined,
     });
     stats.leaders += out.stats.leaders;

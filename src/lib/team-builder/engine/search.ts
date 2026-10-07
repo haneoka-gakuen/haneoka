@@ -146,14 +146,14 @@ let scratchU = new Float64Array(0),
   scratchUsed = new Uint8Array(0);
 /** Top candidates of the small assignment: per row, its `rows` best columns (another row can block at most rows−1 of
  * them, so an optimal assignment never needs a column outside its row's list). */
-const smallColumns = new Int32Array(16);
-const smallValues = new Float64Array(16);
+const smallColumns = new Int32Array(25);
+const smallValues = new Float64Array(25);
 const smallUsed = new Uint8Array(4096);
 function smallAssignment(weights: readonly Float64Array[], columns: number): number {
   const n = weights.length;
   for (let r = 0; r < n; r++) {
     const row = weights[r]!;
-    const base = r * 4;
+    const base = r * 5;
     for (let k = 0; k < n; k++) {
       smallColumns[base + k] = -1;
       smallValues[base + k] = -Infinity;
@@ -177,7 +177,7 @@ function smallAssignment(weights: readonly Float64Array[], columns: number): num
       if (total > best) best = total;
       return;
     }
-    const base = r * 4;
+    const base = r * 5;
     for (let k = 0; k < n; k++) {
       const c = smallColumns[base + k]!;
       if (c < 0 || smallUsed[c]) continue;
@@ -381,6 +381,26 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     return value;
   };
 
+  // Assignment matrices are rebuilt at every node of the snap walk: per-depth pools keep that allocation-free (a depth's
+  // buffers are reused only after its subtree is done).
+  const maxColumns = s + 5;
+  interface Tables {
+    count: number;
+    columns: number;
+    columnSnap: Int32Array;
+    power: Float64Array[];
+    weight: Float64Array[];
+    bonus: Float64Array[];
+    blended: Float64Array[];
+    joint: Float64Array[];
+  }
+  const pools: Tables[] = Array.from({ length: 5 }, (_, from) => {
+    const rows = () => Array.from({ length: 5 - from }, () => new Float64Array(maxColumns));
+    return { count: 0, columns: 0, columnSnap: new Int32Array(maxColumns), power: rows(), weight: rows(), bonus: rows(), blended: rows(), joint: rows() };
+  });
+  const columnOf = new Int32Array(s);
+  const columnStamp = new Int32Array(s);
+  let stamp = 0;
   const frontier = new Frontier(k);
   const candidates: Candidate[] = [];
   /** Compact when the pool doubles past what survived the last compaction, keeping the work amortized linear. */
@@ -614,7 +634,17 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     const maxPower = team.map((i) => best[i]!.power);
     const maxWeight = team.map((i) => best[i]!.weight);
     const maxBonus = team.map((i) => best[i]!.bonus);
-    const suffix = (values: number[], from: number) => values.slice(from).reduce((sum, value) => sum + value, 0);
+    // Suffix sums of the slot maxima, precomputed once per set (the walk asks at every node).
+    const suffixCache = new Map<readonly number[], Float64Array>();
+    const suffix = (values: readonly number[], from: number) => {
+      let table = suffixCache.get(values);
+      if (!table) {
+        table = new Float64Array(values.length + 1);
+        for (let k = values.length - 1; k >= 0; k--) table[k] = table[k + 1]! + values[k]!;
+        suffixCache.set(values, table);
+      }
+      return table[from]!;
+    };
     const memberTotalBonus = team.reduce((sum, i) => sum + memberBonus[i]!, 0);
     const requiredLeft = () => (requiredSnaps.size ? [...requiredSnaps].filter((j) => !used[j]).length : 0);
     // Only assignments that can beat this set's own best lower key matter for distinct-set results.
@@ -624,26 +654,6 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     // key P·(W + S), any λ > 0 gives P·(W+S) ≤ (λP₀ + (W+S₀)/λ + max Σ(λp + s/λ))²/4.
     const NONE = -1e15;
     /** Remaining slots × (unused snaps + one empty column per slot): power, skill and bonus matrices. */
-    // Assignment matrices are rebuilt at every node of the snap walk: per-depth pools keep that allocation-free (a depth's
-    // buffers are reused only after its subtree is done).
-    const maxColumns = s + 5;
-    interface Tables {
-      count: number;
-      columns: number;
-      columnSnap: Int32Array;
-      power: Float64Array[];
-      weight: Float64Array[];
-      bonus: Float64Array[];
-      blended: Float64Array[];
-      joint: Float64Array[];
-    }
-    const pools: Tables[] = Array.from({ length: 5 }, (_, from) => {
-      const rows = () => Array.from({ length: 5 - from }, () => new Float64Array(maxColumns));
-      return { count: 0, columns: 0, columnSnap: new Int32Array(maxColumns), power: rows(), weight: rows(), bonus: rows(), blended: rows(), joint: rows() };
-    });
-    const columnOf = new Int32Array(s);
-    const columnStamp = new Int32Array(s);
-    let stamp = 0;
     const tables = (from: number): Tables => {
       const t = pools[from]!;
       stamp++;

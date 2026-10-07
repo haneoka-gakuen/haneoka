@@ -21,6 +21,7 @@ import { searchTeams, type Constraints, type ObjectiveAdapter, type SearchOutput
 import { resolveSlotSkill, windowMs } from "./skills";
 import { gekisoChart, type GekisoChart } from "./gekiso";
 import { gekisoSearch } from "./gekiso-objective";
+import { planSummary } from "./merge";
 import type { Accuracy } from "./full/play";
 
 export interface SongRef {
@@ -81,6 +82,9 @@ export type Goal =
       startingChallengePoints: number;
       challengePointsPerLive: number;
       play: PlayModel;
+      /** Event points of the best challenge live, when the caller already searched the challenge stage (the parallel
+       * client does): the plan then only searches the normal lives. */
+      challengePointsPerPlay?: number;
     };
 export interface EngineRequest {
   members: MemberInput[];
@@ -421,6 +425,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
         k: request.k,
         timeLimitMs: songBudget(),
         shard: request.shard,
+        floor: song ? request.floors?.[`${song.songId}:${song.difficulty}`] : undefined,
       });
       results.push({
         song,
@@ -453,9 +458,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
       let floor: number | undefined;
       const known = song ? request.floors?.[`${song.songId}:${song.difficulty}`] : undefined;
       if (chart && goal.route !== "skip" && goal.measure !== "challenge-points") {
-        // Seeds along the bonus/power front, then an aspiration floor at the best seed's whole points: event points
-        // cluster in whole numbers at the top, so the floor usually already admits the full top k. The preparation
-        // is the same for every shard of a request, so a Worker keeps it for the request's other shards.
+        // Seeds along the bonus/power front, and a floor at the k-th best seed's key. The preparation is the same for
+        // every shard of a request, so a Worker keeps it for the request's other shards.
         const prepKey = `${prepFingerprint(request)}|${song?.songId}:${song?.difficulty}`;
         let prep = eventPrep.get(prepKey);
         if (!prep) {
@@ -464,7 +468,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
             // Seeds only steer the start: each sweep stops at 100 ms (the main search below still runs to proof).
             seeds.push(...run(eventBonusSurrogate(shared, route.effects, measure, weight), music, powerEffects, request.k, undefined, null, 100).hits.map((hit) => hit.team));
           const probe = run(adapter, music, powerEffects, request.k, seeds, null, 1);
-          prep = { seeds, aspiration: probe.hits.length ? Math.floor(probe.hits[0]!.key) : undefined };
+          // The k-th best seed is a real team: a floor at its key never cuts the true top k.
+          prep = { seeds, aspiration: probe.hits.length >= request.k ? probe.hits[request.k - 1]!.key : undefined };
           if (eventPrep.size > 64) eventPrep.clear();
           eventPrep.set(prepKey, prep);
         }
@@ -676,7 +681,10 @@ async function runPlan(
   const budget = request.timeLimitMs ?? null;
   const budgetEnd = budget === null ? Infinity : started + budget;
   // Challenge stage first: its best points per challenge point prices what normal lives earn.
-  const challenge = await runEngine(
+  const challenge: Pick<EngineResponse, "results" | "overall" | "unknownCards"> =
+    goal.challengePointsPerPlay !== undefined
+      ? { results: [], overall: [], unknownCards: [] }
+      : await runEngine(
     master,
     charts,
     {
@@ -688,7 +696,7 @@ async function runPlan(
   );
   done += goal.challengeSongs.length;
   const bestChallenge = challenge.overall[0] ?? null;
-  const pointsPerChallenge = bestChallenge?.event?.mean ?? 0;
+  const pointsPerChallenge = goal.challengePointsPerPlay ?? bestChallenge?.event?.mean ?? 0;
   const weight = goal.challengePointsPerLive > 0 ? pointsPerChallenge / goal.challengePointsPerLive : 0;
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const player = playerState(master, request.player);
@@ -732,25 +740,11 @@ async function runPlan(
     });
   }
   const bestNormal = normalResults.flatMap((result) => result.hits).sort((a, b) => b.key - a.key)[0] ?? null;
-  const lives = goal.boostsPerLive > 0 ? Math.floor(goal.boostBudget / goal.boostsPerLive) : goal.boostBudget;
-  const earned = Math.floor(lives * (bestNormal?.event?.challengePoints ?? 0));
-  const pool = goal.startingChallengePoints + earned;
-  const challengeLives = goal.challengePointsPerLive > 0 ? Math.floor(pool / goal.challengePointsPerLive) : 0;
-  const eventPointsTotal = lives * (bestNormal?.event?.mean ?? 0) + challengeLives * pointsPerChallenge;
   return {
-    plan: {
-      normal: bestNormal,
-      challenge: bestChallenge,
-      normalLives: lives,
-      challengeLives,
-      challengePointsEarned: earned,
-      leftoverChallengePoints: pool - challengeLives * goal.challengePointsPerLive,
-      eventPoints: eventPointsTotal,
-      perBoost: goal.boostBudget ? eventPointsTotal / Math.max(1, goal.boostsPerLive > 0 ? lives * goal.boostsPerLive : goal.boostBudget) : 0,
-    },
+    plan: planSummary(goal, bestNormal, bestChallenge, pointsPerChallenge),
     results: [...challenge.results, ...normalResults],
     overall: [...(bestNormal ? [bestNormal] : []), ...(bestChallenge ? [bestChallenge] : [])],
-    unknownCards: challenge.unknownCards,
+    unknownCards: goal.challengePointsPerPlay !== undefined ? box.unknown : challenge.unknownCards,
     elapsedMs: performance.now() - started,
   };
 }

@@ -1,7 +1,7 @@
 /** Merges the responses of a sharded search (one shard of leaders per Worker) into one response. Every team has one
  * leader, so each shard's per-song top k is exact over its leaders; the union, deduplicated by member set (the same
  * set can lead with a different member in another shard), holds the exact global top k. */
-import type { EngineHit, EngineResponse, SongResult } from "./api";
+import type { EngineHit, EngineResponse, Goal, PlanSummary, SongResult } from "./api";
 
 const songKey = (hit: EngineHit) => (hit.song ? `${hit.song.songId}:${hit.song.difficulty}` : "-");
 const setKey = (hit: EngineHit) => `${songKey(hit)}|${[...hit.members].sort().join(",")}`;
@@ -55,3 +55,23 @@ export function mergeShardResponses(responses: readonly EngineResponse[], k: num
 export function aspirationHeld(response: EngineResponse, k: number): boolean {
   return response.results.every((result) => result.floor === undefined || result.hits.filter((hit) => hit.key >= result.floor!).length >= k);
 }
+
+/** The cycle a plan settles into: normal lives spend the boosts and earn challenge points, challenge lives spend those. */
+export function planSummary(goal: Extract<Goal, { kind: "plan" }>, bestNormal: EngineHit | null, bestChallenge: EngineHit | null, pointsPerChallenge: number): PlanSummary {
+  const lives = goal.boostsPerLive > 0 ? Math.floor(goal.boostBudget / goal.boostsPerLive) : goal.boostBudget;
+  const earned = Math.floor(lives * (bestNormal?.event?.challengePoints ?? 0));
+  const pool = goal.startingChallengePoints + earned;
+  const challengeLives = goal.challengePointsPerLive > 0 ? Math.floor(pool / goal.challengePointsPerLive) : 0;
+  const eventPointsTotal = lives * (bestNormal?.event?.mean ?? 0) + challengeLives * pointsPerChallenge;
+  return {
+    normal: bestNormal,
+    challenge: bestChallenge,
+    normalLives: lives,
+    challengeLives,
+    challengePointsEarned: earned,
+    leftoverChallengePoints: pool - challengeLives * goal.challengePointsPerLive,
+    eventPoints: eventPointsTotal,
+    perBoost: goal.boostBudget ? eventPointsTotal / Math.max(1, goal.boostsPerLive > 0 ? lives * goal.boostsPerLive : goal.boostBudget) : 0,
+  };
+}
+

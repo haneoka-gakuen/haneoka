@@ -129,6 +129,10 @@ export class TeamBuilder extends LitElement {
       this.catalog = new Catalog(this, data, this.master);
       this.engine?.dispose();
       this.engine = new EngineClient(data);
+      // Compile the release in every Worker while the reader sets up the search.
+      const warm = () => this.engine?.warm();
+      if ("requestIdleCallback" in window) requestIdleCallback(warm, { timeout: 2000 });
+      else setTimeout(warm, 500);
       this.unsubscribe?.();
       this.store?.dispose();
       this.store = new BoxStore({ server });
@@ -291,7 +295,6 @@ export class TeamBuilder extends LitElement {
         minBonusPercent: s.minBonus,
       },
       k: s.k,
-      // Gekisou searches stop at 10 s by default with the best teams found (their proof may continue on request).
       timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
     };
   }
