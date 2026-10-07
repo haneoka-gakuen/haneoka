@@ -5,6 +5,7 @@ import { difficultyEstimatesEnabled } from "../lib/difficulty-display";
 import "../styles/song-gekisou.css";
 import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { icon } from "./ui/icon";
 
 type Item = Record<string, unknown>;
 
@@ -243,11 +244,14 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
   ].sort((a, b) => a - b);
   const renderReward = (reward: Item) => {
     const value = rewardValue(reward);
+    // The icon slot is always present (26dp) so reward names form one
+    // column whether or not a reward has artwork, and nothing reflows as
+    // the artwork arrives.
     const image = value.image
       ? html`
-          <img src=${value.image} alt="" />
+          <img src=${value.image} alt="" width="26" height="26" decoding="async" />
         `
-      : nothing;
+      : html`<span class="song-reward-value__placeholder" aria-hidden="true">${icon("redeem", 18)}</span>`;
     return html`
       <span class="song-reward-value">
         ${image}
@@ -274,7 +278,7 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
               const rewards = scoreRewards.filter((entry) => Number(entry.liveScoreRank) === rankId);
               return html`
                 <li>
-                  <img src=${rankIcon(rankName)} alt=${rankName} />
+                  <img src=${rankIcon(rankName)} alt=${rankName} width="28" height="28" decoding="async" />
                   <span class="song-reward-list__condition">
                     <strong>${rank ? Number(rank.requiredScore || 0).toLocaleString() : rankName}</strong>
                     <small>${label("score", "Score")}</small>
@@ -304,9 +308,9 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
                     ${
                       value.image
                         ? html`
-                            <img src=${value.image} alt="" />
+                            <img src=${value.image} alt="" width="26" height="26" decoding="async" />
                           `
-                        : nothing
+                        : html`<span class="song-reward-value__placeholder" aria-hidden="true">${icon("redeem", 18)}</span>`
                     }
                     <span>
                       ${value.name}

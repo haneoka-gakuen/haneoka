@@ -188,7 +188,7 @@ export function renderTeamsTab(host: TeamBuilder): TemplateResult {
                 </button>
                 <button class="tb-slot__snap" type="button" @click=${() => { host.slotPicker = { slot, kind: "snaps" }; host.requestUpdate(); }}
                   aria-label=${snapOptions ? `${host.t("pickSnap", "Choose a snap")}: ${snapOptions.label}` : host.t("pickSnap", "Choose a snap")}>
-                  ${snapOptions ? tileMedia({ ...snapOptions, marks: [] }) : html`<span class="tb-slot__empty">${icon("add_photo_alternate", 20)}</span>`}
+                  ${snapOptions ? tileMedia(snapOptions) : html`<span class="tb-slot__empty">${icon("add_photo_alternate", 20)}</span>`}
                 </button>
                 <span class="row row--wrap tb-slot__tools">
                   ${leader

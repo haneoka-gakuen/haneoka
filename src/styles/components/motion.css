@@ -111,29 +111,39 @@
   border-radius: var(--md-sys-shape-corner-medium);
 }
 
-/* ---------- Navigation: the active indicator stretches in from its centre ---------- */
+/* ---------- Navigation ----------
+   The rail's own morph lives in shell/navigation.css (one spring on
+   --nav-wide; the current pill glides between pages as a view transition).
+   Here: items respond to the pointer. */
 .rail-item__indicator,
 .nav-bar__indicator {
   transition:
     background-color var(--motion-effects),
+    border-radius var(--motion-spatial-fast),
     transform var(--motion-spatial);
 }
 :is(.rail-item, .nav-bar__item):active :is(.rail-item__indicator, .nav-bar__indicator) {
-  transform: scaleX(0.92);
-}
-:is(.rail-item, .nav-bar__item):is([aria-current="page"], .is-active) :is(.rail-item__indicator, .nav-bar__indicator) {
-  animation: motion-indicator-in var(--motion-spatial) backwards;
-}
-@keyframes motion-indicator-in {
-  from {
-    transform: scaleX(0.4);
-  }
+  transform: scaleX(0.94);
 }
 .nav-item {
   transition:
     background-color var(--motion-effects),
     color var(--motion-effects),
     border-radius var(--motion-spatial-fast);
+}
+.nav-item__indicator {
+  transition: background-color var(--motion-effects);
+}
+.nav-item > .material-icon {
+  transition: transform var(--motion-spatial-fast);
+}
+.nav-item:active > .material-icon {
+  transform: scale(0.9);
+}
+@media (hover: hover) {
+  .nav-item:hover > .material-icon {
+    transform: translateX(2px);
+  }
 }
 
 /* ---------- Arrival ----------

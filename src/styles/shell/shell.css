@@ -11,6 +11,15 @@
    catalog toolbar was fixed at top: 0 and overlapped the page title on any
    window narrow enough for the two to meet.
    ========================================================================== */
+@property --shell-wide {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+:root {
+  --shell-wide: 0;
+  transition: --shell-wide var(--motion-spatial);
+}
 .app-shell {
   display: grid;
   width: 100%;
@@ -75,11 +84,15 @@
 .top-app-bar__identity-group {
   display: flex;
   min-width: 0;
+  flex: none;
   align-items: center;
   gap: 4px;
 }
+.top-app-bar__identity:not(:empty) {
+  animation: motion-fade var(--motion-effects) backwards;
+}
 .top-app-bar > h1 {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   margin: 0;
   padding-inline: 12px;
@@ -101,14 +114,15 @@
    hides the lowest-priority ones and lists them in a ⋮ overflow menu
    (Material 3: a top app bar shows a few actions and overflows the rest). */
 .top-app-bar__actions {
-  justify-self: end;
   display: flex;
   min-width: 0;
-  flex: 0 0 auto;
+  /* Grows into the free space, never shrinks below its controls: when they
+   * do not fit, the title truncates and the overflow menu takes the rest. */
+  flex: 1 0 auto;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   max-width: 100%;
-  margin-inline-start: auto;
 }
 .top-app-bar__actions [data-app-bar-overflowed] {
   display: none !important;
@@ -125,12 +139,15 @@
   inset: auto;
   margin: 0;
 }
+/* Previous/next sit at the trailing edge, after the page's own actions:
+ * the row is end-aligned, so actions that arrive after hydration are
+ * inserted to the left of these and nothing already on screen moves. */
 .top-app-bar__secondary-actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  order: 1;
+  order: 3;
 }
 /* One group per owning component (lib/app-bar.ts). */
 .top-app-bar__group {
@@ -171,22 +188,39 @@
   color: var(--md-sys-color-on-surface-variant);
   pointer-events: none;
 }
+/* Material 3 Expressive search bar (SearchBarTokens): a 56dp full-pill filled
+ * container on surface-container-high with no outline, leading search icon,
+ * body-large text. It widens while it has focus, on the spatial spring. */
 .top-app-bar__search-field input {
-  width: clamp(160px, 22vw, 320px);
-  height: var(--control-height);
-  padding-inline: 14px;
-  padding-inline-start: 44px;
+  width: clamp(180px, 22vw, 320px);
+  height: 56px;
+  padding-inline: 16px;
+  padding-inline-start: 48px;
   color: var(--md-sys-color-on-surface);
-  border: 1px solid var(--md-sys-color-outline);
+  border: 0;
   border-radius: var(--md-sys-shape-corner-full);
   outline: none;
   background: var(--md-sys-color-surface-container-high);
-  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
-    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
+  transition:
+    width var(--motion-spatial),
+    background-color var(--motion-effects),
+    box-shadow var(--motion-effects);
+}
+.top-app-bar__search-field > .material-icon {
+  inset-inline-start: 16px;
+}
+.top-app-bar__search-field input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+}
+.top-app-bar__search-field input:hover {
+  background: var(--md-sys-color-surface-container-highest);
 }
 .top-app-bar__search-field input:focus {
-  border-color: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+  width: clamp(240px, 30vw, 420px);
+  background: var(--md-sys-color-surface-container-highest);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
 }
 .app-shell__progress {
   position: relative;
@@ -263,10 +297,6 @@
   scrollbar-gutter: stable;
 }
 
-.nav-scrim {
-  display: none;
-}
-
 /* ---------- compact ---------- */
 @media (max-width: 599px) {
   :root {
@@ -274,12 +304,11 @@
   }
   .app-shell {
     grid-template-columns: minmax(0, 1fr);
+    /* One surface on compact: the band the mini player rests on is page. */
+    background: var(--md-sys-color-surface);
   }
   .app-shell__body {
     grid-column: 1;
-  }
-  .nav {
-    display: none;
   }
   .top-app-bar {
     background: var(--md-sys-color-surface);
@@ -311,12 +340,25 @@
     border-radius: var(--md-sys-shape-corner-full);
     background: var(--md-sys-color-surface);
   }
+  /* The field grows out of the search icon it replaces. */
+  .top-app-bar__search[data-search-expanded="true"] {
+    animation: app-bar-search-open var(--motion-spatial) backwards;
+  }
+  @keyframes app-bar-search-open {
+    from {
+      clip-path: inset(0 0 0 calc(100% - 48px) round 24px);
+    }
+    to {
+      clip-path: inset(0 0 0 0 round 24px);
+    }
+  }
   .top-app-bar__search[data-search-expanded="true"] .top-app-bar__search-field {
     display: block;
     width: 100%;
   }
   .top-app-bar__search[data-search-expanded="true"] input {
     width: 100%;
+    height: 48px;
     background: var(--md-sys-color-surface-container-high);
   }
   .top-app-bar__search[data-search-expanded="true"] .top-app-bar__search-toggle {
@@ -330,7 +372,9 @@
 /* ---------- medium and up: rail + rounded content pane ---------- */
 @media (min-width: 600px) {
   :root {
-    --shell-width: var(--nav-rail-width);
+    --shell-width: calc(
+      var(--nav-rail-width) + var(--shell-wide) * (var(--nav-rail-expanded-width) - var(--nav-rail-width))
+    );
     --shell-pane-gap: 16px;
     --shell-overlay-inset: var(--top-bar-height) max(16px, env(safe-area-inset-right))
       calc(var(--shell-pane-gap) + var(--audio-dock-height, 0px)) var(--shell-width);
@@ -355,33 +399,12 @@
   .top-app-bar {
     padding-inline: 4px max(16px, env(safe-area-inset-right));
   }
-  .nav__header {
-    justify-content: center;
-    padding-inline: 0;
-  }
-  .nav__header .nav__brand {
-    display: none;
-  }
 }
 
-/* ---------- expanded: the rail can open into a persistent drawer ---------- */
+/* ---------- expanded: the rail can stay open beside the page ---------- */
 @media (min-width: 1200px) {
   :root[data-nav="expanded"] {
-    --shell-width: var(--nav-drawer-width);
-  }
-  :root[data-nav="expanded"] .nav__rail,
-  :root[data-nav="expanded"] .rail-item--footer {
-    display: none;
-  }
-  :root[data-nav="expanded"] .nav__drawer {
-    display: flex;
-  }
-  :root[data-nav="expanded"] .nav__header {
-    justify-content: flex-start;
-    padding-inline: 16px 12px;
-  }
-  :root[data-nav="expanded"] .nav__header .nav__brand {
-    display: flex;
+    --shell-wide: 1;
   }
 }
 
@@ -440,4 +463,23 @@
 }
 .top-app-bar__overflow {
   order: 99;
+}
+/* Controls in the trailing slot keep their intrinsic width, so when they do
+ * not fit the overflow menu takes them whole instead of the bar squeezing a
+ * connected group until its labels are clipped. */
+.top-app-bar__actions .segmented {
+  width: auto;
+  flex: 0 0 auto;
+}
+.top-app-bar__actions .segmented > button {
+  flex: 0 0 auto;
+}
+
+/* The floating mini player reserves no height; the pane only gains the same
+ * amount of scroll room at its end, so its last row can scroll clear of it. */
+.app-shell__main::after {
+  display: block;
+  height: var(--audio-dock-clearance, 0px);
+  content: "";
+  pointer-events: none;
 }

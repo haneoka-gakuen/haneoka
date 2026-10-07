@@ -6,9 +6,23 @@
     flex: 1;
     min-width: 0;
   }
+  /* M3E search bar: a 56dp full pill on surface-container-high, no active
+   * indicator line, leading search icon — the same bar every list page
+   * shows in its app bar, at the size the search destination deserves. */
   .global-search-bar md-filled-text-field {
     width: 100%;
     --md-filled-text-field-container-shape: 28px;
+    --md-filled-text-field-container-color: var(--md-sys-color-surface-container-high);
+    --md-filled-text-field-active-indicator-height: 0px;
+    --md-filled-text-field-hover-active-indicator-height: 0px;
+    --md-filled-text-field-focus-active-indicator-height: 0px;
+    --md-filled-text-field-top-space: 6px;
+    --md-filled-text-field-bottom-space: 6px;
+    --md-filled-text-field-with-label-top-space: 6px;
+    --md-filled-text-field-with-label-bottom-space: 6px;
+  }
+  .global-search-bar md-filled-text-field::part(field) {
+    border-radius: 28px;
   }
   global-search {
     display: block;

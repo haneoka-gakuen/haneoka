@@ -63,17 +63,18 @@ function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
         const snapOptions = snap !== null ? catalog.cardOptions("snaps", snap) : null;
         const owned = host.view?.members.get(member);
         return html`
-          <li class=${`tb-slot${index === 0 ? " is-leader" : ""}`}>
+          <li
+            class=${`tb-slot${index === 0 ? " is-leader" : ""}`}
+            title=${`${catalog.characterName(catalog.member(member)?.characterId ?? 0)} · ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`}
+          >
             <button class="tb-slot__member" type="button" aria-label=${`${host.t("editGrowth", "Edit growth")}: ${memberOptions?.label ?? member}`}
               @click=${() => { host.editing = { kind: "members", cardId: member }; host.requestUpdate(); }}>
               ${memberOptions ? tileMedia({ ...memberOptions, marks: [...(memberOptions.marks ?? []), ...(index === 0 ? [{ at: "bottom-start" as const, text: host.t("leader", "Leader"), accent: "var(--md-sys-color-primary)" }] : [])] }) : nothing}
             </button>
             <button class="tb-slot__snap" type="button" ?disabled=${snap === null} aria-label=${snapOptions ? `${host.t("editGrowth", "Edit growth")}: ${snapOptions.label}` : host.t("noSnap", "No snap")}
               @click=${() => { if (snap !== null) { host.editing = { kind: "snaps", cardId: snap }; host.requestUpdate(); } }}>
-              ${snapOptions ? tileMedia({ ...snapOptions, marks: [] }) : html`<span class="tb-slot__empty">${icon("hide_image", 20)}</span>`}
+              ${snapOptions ? tileMedia(snapOptions) : html`<span class="tb-slot__empty">${icon("hide_image", 20)}</span>`}
             </button>
-            <span class="tb-slot__name clamp-1">${catalog.characterName(catalog.member(member)?.characterId ?? 0)}</span>
-            <span class="tb-slot__power tabular" title=${host.t("slotPower", "Slot power")}>${format(host, hit.slotPowers[index] ?? 0)}</span>
             ${owned ? nothing : host.settings.scope === "theoretical" ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : nothing}
           </li>
         `;

@@ -35,8 +35,12 @@
     min-width: 0;
   }
 
+  /* A face that fails to load keeps its slot (a tonal disc), so the
+   * speaker's name never slides left mid-read. */
   .dialogue-row__avatar img[hidden] {
-    display: none;
+    display: block;
+    color: transparent;
+    font-size: 0;
   }
 
   .dialogue-row__bubble {

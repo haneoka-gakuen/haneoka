@@ -13,6 +13,28 @@
     padding: 8px var(--md-comp-page-inline-space) 24px;
   }
 
+  .mission-workspace__filter {
+    display: flex;
+    min-width: 0;
+    padding-block: 4px 8px;
+  }
+  .mission-workspace__filter > .segmented {
+    width: auto;
+    flex: 0 1 auto;
+  }
+  .mission-workspace__filter > .segmented > button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  @media (max-width: 599px) {
+    .mission-workspace__filter > .segmented {
+      width: 100%;
+    }
+    .mission-workspace__filter > .segmented > button {
+      flex: 1 1 auto;
+      padding-inline: 12px;
+    }
+  }
   .mission-group {
     display: grid;
     align-content: start;

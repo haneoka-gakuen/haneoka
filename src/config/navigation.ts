@@ -172,13 +172,15 @@ const sections: NavSection[] = [
         { route: "/community/latest", icon: "schedule", label: "communityPage.feedLatest" },
         { route: "/community/tags", icon: "sell", label: "communityPage.tags" },
       ] },
-      { route: "/community/forums", icon: "forum", label: "communityPage.forums" },
       { route: "/community/mine", icon: "person", label: "communityPage.navigation.mine", children: [
         { route: "/community/following", icon: "group", label: "communityPage.feedFollowing" },
         { route: "/community/bookmarks", icon: "bookmarks", label: "communityPage.bookmarks" },
         { route: "/community/notifications", icon: "notifications", label: "communityPage.notifications" },
         { route: "/community/activity", icon: "comment", label: "communityPage.activity" },
       ] },
+      // Last in the tree: its boards are a live directory that loads after
+      // the page, and at the end it can grow without moving any row.
+      { route: "/community/forums", icon: "forum", label: "communityPage.forums" },
     ],
   },
   /**

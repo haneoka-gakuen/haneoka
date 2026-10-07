@@ -1330,6 +1330,7 @@ export class HomeDashboard extends LitElement {
               )}
             </div>
           `,
+          ".home-cards__grid",
         )}
         <div class="collection collection--rail home-cards__grid">
           ${
@@ -1417,7 +1418,7 @@ export class HomeDashboard extends LitElement {
   }
 
   /* ---------- render: modules ---------- */
-  private moduleHeader(leading: unknown, title: string, id: string, aside: unknown = nothing) {
+  private moduleHeader(leading: unknown, title: string, id: string, aside: unknown = nothing, rail?: string) {
     return html`
       <header class="home-card__header">
         <h2 id=${id}>
@@ -1425,7 +1426,30 @@ export class HomeDashboard extends LitElement {
           <span>${title}</span>
         </h2>
         ${aside}
+        ${rail ? this.railButtons(rail) : nothing}
       </header>
+    `;
+  }
+  /**
+   * A horizontal rail is a carousel: on pointer devices (no swipe) it gets
+   * a previous/next pair that pages it by most of its width, and each button
+   * disables at its end so the rail's extent is visible before scrolling.
+   */
+  private railButtons(selector: string) {
+    const page = (direction: -1 | 1) => {
+      const rail = this.querySelector<HTMLElement>(selector);
+      if (!rail) return;
+      rail.scrollBy({ left: direction * Math.max(160, rail.clientWidth * 0.8), behavior: "smooth" });
+    };
+    return html`
+      <span class="home-card__rail-buttons">
+        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "previous")} title=${uiText(this.locale, "previous")} @click=${() => page(-1)}>
+          ${icon("chevron_left", 24)}
+        </button>
+        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "next")} title=${uiText(this.locale, "next")} @click=${() => page(1)}>
+          ${icon("chevron_right", 24)}
+        </button>
+      </span>
     `;
   }
   /** Latest songs, in the same grid the catalogue uses — difficulty gives way to recency. */
@@ -1451,6 +1475,7 @@ export class HomeDashboard extends LitElement {
               </a>
             </div>
           `,
+          ".home-songs__grid",
         )}
         ${
           songs.length

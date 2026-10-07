@@ -33,6 +33,10 @@
     padding-top: 20px;
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
+  /* Provider names arrive as identifiers ("github"); show them as names. */
+  .oauth-grid .button {
+    text-transform: capitalize;
+  }
 
   .account-profile {
     display: grid;

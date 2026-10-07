@@ -8,6 +8,7 @@ const RIPPLE_TARGETS = [
   ".icon-button",
   ".chip",
   ".nav-item",
+  ".rail-item",
   ".list-item--interactive",
   ".card--interactive",
   ".tile--interactive",
@@ -26,7 +27,9 @@ export function installRipple() {
     "pointerdown",
     (event: PointerEvent) => {
       if (reduced.matches || event.button !== 0) return;
-      const target = (event.target as Element | null)?.closest<HTMLElement>(RIPPLE_TARGETS);
+      const hit = (event.target as Element | null)?.closest<HTMLElement>(RIPPLE_TARGETS);
+      // A rail item ripples inside its indicator pill, not across its whole box.
+      const target = hit?.matches(".rail-item") ? hit.querySelector<HTMLElement>(".rail-item__indicator") : hit;
       if (!target || target.matches(":disabled, [aria-disabled='true']")) return;
       const rect = target.getBoundingClientRect();
       const x = event.clientX - rect.left;

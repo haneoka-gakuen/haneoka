@@ -1,4 +1,5 @@
 import { html, nothing, type TemplateResult } from "lit";
+import { knownImageSize } from "../../lib/image-dimensions";
 import { clearAppBarActions, setAppBarActions } from "../../lib/app-bar";
 import { icon } from "./icon";
 import { iconButton, rovingKeydown } from "./controls";
@@ -49,6 +50,12 @@ export interface BrowseRail {
   value: string;
   items: ReadonlyArray<BrowseRailItem>;
   onSelect: (value: string) => void;
+  /**
+   * The rail's destinations are still loading. The rail column is drawn at
+   * once with placeholder tiles, so the results beside it start at their
+   * final position instead of jumping sideways when the rail arrives.
+   */
+  pending?: boolean;
   /** Draw the rail even when it holds a single destination: sections whose
    *  rail is the identity of the collection (event stories) want the one
    *  tile on screen, not a silently dropped pane. */
@@ -60,6 +67,11 @@ export interface BrowseRail {
  * unreadable without it — "42 results" says nothing about which chapter's 42.
  */
 export interface BrowseHeading {
+  /**
+   * Drawn as placeholder lines while the subject loads (same box as the real
+   * heading); a non-empty `image` then reserves the artwork's slot too.
+   */
+  pending?: boolean;
   title: string;
   titleLanguage?: string;
   supportingLanguage?: string;
@@ -106,6 +118,28 @@ export interface BrowseOptions {
   applied?: unknown;
   results: unknown;
   filters?: BrowseFilters;
+}
+
+/** The rail while its destinations load: the same column, placeholder tiles. */
+function renderRailSkeleton(rail: BrowseRail): TemplateResult {
+  return html`
+    <nav class="browse__rail" aria-label=${rail.label} aria-busy="true">
+      <div class="collection collection--rail collection--skeleton" aria-hidden="true">
+        ${Array.from(
+          { length: 6 },
+          () => html`
+            <span class="tile tile--rail tile--skeleton">
+              <span class="tile__media"></span>
+              <span class="tile__identity">
+                <strong class="tile__title"><span class="skeleton-line">Xxxxxxxxxx</span></strong>
+                <small class="tile__subtitle"><span class="skeleton-line">00 Xxxxx</span></small>
+              </span>
+            </span>
+          `,
+        )}
+      </div>
+    </nav>
+  `;
 }
 
 /** The rail, as a one-column collection of tiles in a tablist. */
@@ -161,8 +195,12 @@ function renderRail(rail: BrowseRail): TemplateResult {
 export function browseBar(options: BrowseOptions): TemplateResult {
   const { filters } = options;
   return html`
-    <p class="browse__count" role="status" aria-live="polite">
-      <strong>${options.count.value === null ? "—" : options.count.value.toLocaleString()}</strong>
+    <p class="browse__count" role="status" aria-live="polite" aria-busy=${String(options.count.value === null)}>
+      ${
+        options.count.value === null
+          ? html`<strong class="browse__count-pending" aria-hidden="true"></strong>`
+          : html`<strong>${options.count.value.toLocaleString()}</strong>`
+      }
       <span>${options.count.label}</span>
     </p>
     ${options.controls}
@@ -190,25 +228,29 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
   setAppBarActions(BROWSE_OWNER, browseBar(options));
   // A rail of one is not a choice, so it is not drawn — unless the section
   // keeps its single destination visible on purpose.
-  const railed = Boolean(rail && (rail.single || rail.items.length > 1));
+  const railed = Boolean(rail && ((rail.pending && !rail.items.length) || rail.single || rail.items.length > 1));
   const classes = ["browse", options.kind ? `browse--${options.kind}` : "", railed ? "browse--railed" : ""]
     .filter(Boolean)
     .join(" ");
   return html`
     <section class=${classes} style=${options.style || nothing}>
-      ${railed && rail ? renderRail(rail) : nothing}
+      ${railed && rail ? (rail.pending && !rail.items.length ? renderRailSkeleton(rail) : renderRail(rail)) : nothing}
       <div class="browse__main">
         ${
           heading
             ? html`
                 <header class="browse__heading">
                   ${
-                    heading.image
+                    heading.pending && heading.image
+                      ? html`<span class="browse__heading-art browse__heading-art--pending" aria-hidden="true"></span>`
+                      : heading.image
                       ? html`
                           <img
                             class="browse__heading-art"
                             data-src=${heading.image}
                             alt=""
+                            width=${knownImageSize(heading.image)?.width ?? 128}
+                            height=${knownImageSize(heading.image)?.height ?? 64}
                             decoding="async"
                             @error=${nextImageCandidate}
                           />
@@ -216,7 +258,15 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
                       : nothing
                   }
                   <div class="browse__heading-copy">
-                    <h2 lang=${heading.titleLanguage || nothing}>${heading.title}</h2>
+                    ${
+                      heading.pending
+                        ? html`
+                            <h2 aria-hidden="true"><span class="skeleton-line">Xxxxxxxxxxxxxxxx</span></h2>
+                            <p aria-hidden="true"><span class="skeleton-line">Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</span></p>
+                          `
+                        : nothing
+                    }
+                    <h2 lang=${heading.titleLanguage || nothing} ?hidden=${heading.pending}>${heading.title}</h2>
                     ${
                       heading.supporting
                         ? html`
@@ -305,5 +355,30 @@ export function filterGroup(label: string, body: unknown, trailing?: unknown): T
       <h3>${label}${trailing ?? nothing}</h3>
       ${body}
     </section>
+  `;
+}
+
+/**
+ * Placeholder tiles for a collection that is still loading. Each one is the
+ * real tile anatomy — media box at the collection's --tile-ratio, a
+ * two-line title block and a subtitle line — so the grid has its final
+ * rhythm from the first frame and the arriving tiles fill it in place.
+ */
+export function collectionSkeleton(kind: string, count = 12): TemplateResult {
+  return html`
+    <div class=${`collection collection--${kind} collection--skeleton`} aria-hidden="true">
+      ${Array.from(
+        { length: count },
+        () => html`
+          <span class="tile tile--skeleton">
+            <span class="tile__media"></span>
+            <span class="tile__identity">
+              <strong class="tile__title"><span class="skeleton-line">Xxxxxxxxx xxxxx</span></strong>
+              <small class="tile__subtitle"><span class="skeleton-line">Xxxxxxx</span></small>
+            </span>
+          </span>
+        `,
+      )}
+    </div>
   `;
 }

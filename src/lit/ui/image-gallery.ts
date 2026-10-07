@@ -6,6 +6,7 @@ import { uiText } from "../shared/catalog";
 import { iconButton, rovingKeydown } from "./controls";
 import { icon } from "./icon";
 import { nextImageCandidate } from "./lazy-images";
+import { knownImageSize, rememberImageSize } from "../../lib/image-dimensions";
 import "../../styles/image-gallery.css";
 import "photoswipe/style.css";
 import { loadingIndicator } from "./loading-indicator";
@@ -282,7 +283,15 @@ export class ImageGallery extends LitElement {
         width: image.naturalWidth,
         height: image.naturalHeight,
       });
-    if (this.natural) this.requestUpdate();
+    // Remembered for the next visit only: the stage keeps the ratio it was
+    // first drawn with, so nothing below it moves when the picture arrives.
+    rememberImageSize(source, image.naturalWidth, image.naturalHeight);
+  }
+  /** The ratio a natural stage reserves for `entry`, known at first paint. */
+  private stageRatio(entry: GalleryImage): string {
+    const size =
+      entry.width && entry.height ? { width: entry.width, height: entry.height } : knownImageSize(entry.source);
+    return size ? `${size.width} / ${size.height}` : "16 / 9";
   }
   private async imageData(entry: GalleryImage) {
     const cached = this.dimensions.get(entry.source);
@@ -530,7 +539,7 @@ export class ImageGallery extends LitElement {
         <div class="image-gallery__stagewrap">
           <a
             class="image-gallery__stage"
-            style=${this.natural ? `--gallery-ratio:${this.dimensions.get(active.source)?.width || active.width || 16} / ${this.dimensions.get(active.source)?.height || active.height || 9}` : nothing}
+            style=${this.natural ? `--gallery-ratio:${this.stageRatio(active)}` : nothing}
             href=${candidates[0]}
             target="_blank"
             rel="noopener"

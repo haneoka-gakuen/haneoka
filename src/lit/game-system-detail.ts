@@ -690,6 +690,8 @@ function renderShopFacts(c: Controller, item: Item) {
     for (const { code, amount } of shopPriceEntries(payment.prices)) {
       const price = formatMoney(amount, code, c.settings.locale);
       const rate = fx?.status === "ready" && code !== target ? fx.rates?.rates[code] : undefined;
+      // While rates load, the conversion's line is held by a placeholder of
+      // the same size, so the facts below never move when the rate lands.
       const converted =
         rate && Number.isFinite(convertShopPrice(amount, code, target, fx!.rates!))
           ? html`
@@ -697,7 +699,9 @@ function renderShopFacts(c: Controller, item: Item) {
                 ≈ ${formatMoney(convertShopPrice(amount, code, target, fx!.rates!), target, c.settings.locale)}
               </small>
             `
-          : nothing;
+          : code !== target && (!fx || fx.status === "loading")
+            ? html`<small class="shop-fx__note" aria-hidden="true"><span class="skeleton-line">≈ US$0.00</span></small>`
+            : nothing;
       rows.push({
         label: moneyName(code, c.settings.locale),
         value: html`

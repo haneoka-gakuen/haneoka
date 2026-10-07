@@ -23,6 +23,46 @@ md-outlined-select {
   --md-menu-container-color: var(--md-sys-color-surface-container);
   --md-menu-container-shape: var(--md-sys-shape-corner-large);
 }
+/* Before its definition loads, a Material Web host is an unknown element
+ * that lays out its light-DOM children (option labels, slotted icons) as
+ * plain text — a different height from the upgraded control. Each one holds
+ * its final box until it upgrades, so nothing around it moves. */
+:is(md-outlined-select, md-filled-select, md-outlined-text-field, md-filled-text-field):not(:defined) {
+  display: block;
+  min-height: 56px;
+  overflow: hidden;
+  visibility: hidden;
+}
+:is(md-outlined-select, md-filled-select, md-outlined-text-field, md-filled-text-field):not(:defined):not([type="textarea"]) {
+  max-height: 56px;
+}
+md-slider:not(:defined) {
+  display: block;
+  min-height: 44px;
+  max-height: 44px;
+  overflow: hidden;
+  visibility: hidden;
+}
+md-switch:not(:defined) {
+  display: inline-block;
+  width: 52px;
+  height: 32px;
+  overflow: hidden;
+  visibility: hidden;
+}
+:is(md-checkbox, md-radio):not(:defined) {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  visibility: hidden;
+}
+md-linear-progress:not(:defined) {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  visibility: hidden;
+}
 md-switch {
   --md-switch-selected-track-color: var(--md-sys-color-primary);
   --md-switch-selected-handle-color: var(--md-sys-color-on-primary);

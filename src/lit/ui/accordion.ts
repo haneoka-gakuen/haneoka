@@ -42,7 +42,10 @@ export function accordion(options: AccordionOptions): TemplateResult {
           aria-controls=${panelId}
           ?disabled=${options.disabled}
           @click=${(event: MouseEvent) => {
-            if (!options.disabled) options.onExpandedChange(!options.expanded, event);
+            if (options.disabled) return;
+            // Motion is for the reader's own toggles, never for first render.
+            (event.currentTarget as HTMLElement).closest<HTMLElement>(".md-accordion")?.setAttribute("data-toggled", "");
+            options.onExpandedChange(!options.expanded, event);
           }}
         >
           ${options.leading == null ? nothing : html`<span class="md-accordion__leading" aria-hidden="true">${options.leading}</span>`}

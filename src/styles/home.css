@@ -1346,3 +1346,26 @@
     }
   }
 }
+
+/* Carousel paging for pointer users; touch users swipe. */
+@layer pages {
+  .home-card__rail-buttons {
+    display: none;
+    flex: none;
+    gap: 0;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .home-card__rail-buttons {
+      display: inline-flex;
+    }
+  }
+  .home-cards__grid,
+  .home-songs__grid {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 16px;
+  }
+  .home-cards__grid > *,
+  .home-songs__grid > * {
+    scroll-snap-align: start;
+  }
+}

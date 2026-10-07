@@ -59,6 +59,19 @@ const inInformation = route === "/about" || informationPages.some((item) => item
     data-i18n-aria-label="close" data-i18n-aria-label-fallback="Close"
   ></button>
 
+  <!--
+    Material 3 Expressive navigation rail (WideNavigationRail).
+    One element serves every window class:
+      compact  <600    hidden; the menu button opens it as a modal expanded rail
+      medium   600+    collapsed rail (96dp); the menu button opens the modal expanded rail
+      expanded 1200+   persistent rail that the reader toggles between collapsed and expanded
+    Primary destinations morph between the vertical item (56x32 indicator,
+    label below) and the horizontal item (56dp full-width pill, label beside
+    the icon); the icon keeps its x so the morph reads as one object. The current
+    destination's whole tree is listed below it — every level visible and
+    indented, nothing to disclose — and account, settings and about are
+    pinned at the bottom.
+  -->
   <nav
     class="nav"
     id="global-navigation"
@@ -76,7 +89,10 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         aria-label={t(locale, "menu", "Menu")}
         data-i18n-aria-label="menu" data-i18n-aria-label-fallback="Menu"
       >
-        <Icon name="menu" />
+        <span class="nav__toggle-icon" aria-hidden="true">
+          <Icon name="menu" />
+          <Icon name="menu_open" />
+        </span>
       </button>
       <a class="nav__brand" href={navigationHref("/")} aria-label="haneoka">
         <img src="/favicon.svg" width="28" height="28" alt="" />
@@ -84,181 +100,123 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       </a>
     </div>
 
-    <ul class="nav__rail" role="list">
-      {PRIMARY_DESTINATIONS.map((destination) => {
-        const current = isDestinationActive(destination, route);
-        return (
-          <li>
-            <a
-              class="rail-item"
-              href={navigationHref(destination.route)}
-              aria-current={current ? "page" : undefined}
-            >
-              <span class="rail-item__indicator">
-                <Icon name={destination.icon} filled={current} />
-              </span>
-              <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
-            </a>
-          </li>
-        );
-      })}
-    </ul>
-
-    <div class="nav__drawer">
-      <ul class="nav__primary" role="list">
+    <div class="nav__scroll" data-nav-scroll>
+      <ul class="nav__destinations" role="list">
         {navigation.map((destination) => {
           const current = isDestinationActive(destination, route);
-          const branchId = `navigation-${destination.id}`;
           return (
-            <li>
-              <div class="nav__destination">
-                <a
-                  class="nav-item nav-item--primary"
-                  href={navigationHref(destination.route)}
-                  aria-current={current ? (route === destination.route ? "page" : "location") : undefined}
-                >
+            <li class="nav__destination" data-current={current ? "true" : undefined} data-destination={destination.id}>
+              <a
+                class="rail-item"
+                href={navigationHref(destination.route)}
+                aria-current={current ? (route === destination.route ? "page" : "location") : undefined}
+              >
+                <span class="rail-item__indicator" aria-hidden="true"></span>
+                <span class="rail-item__icon">
                   <Icon name={destination.icon} filled={current} />
+                </span>
+                <span class="rail-item__label">
                   <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
-                </a>
-                {destination.sections.length > 0 && (
-                  <button
-                    class="icon-button nav__disclosure"
-                    type="button"
-                    data-nav-branch={branchId}
-                    aria-controls={branchId}
-                    aria-expanded={current}
-                    aria-label={t(locale, destination.label, destination.id)}
-                    data-i18n-aria-label={destination.label} data-i18n-aria-label-fallback={destination.id}
-                  >
-                    <Icon name="expand_more" />
-                  </button>
-                )}
-              </div>
-              {destination.sections.length > 0 && (
-                <div class="nav__branch" id={branchId} hidden={!current}>
-                  {destination.sections.map((section) => {
-                    const links = (
-                      <ul class="nav__children" role="list">
-                        {section.items.map((item, itemIndex) => {
-                          const children = item.children || [];
-                          const forums = destination.id === "community" && item.route === "/community/forums";
-                          const childCurrent = children.some((child) => itemActive(child.route));
-                          const open = itemActive(item.route) || childCurrent;
-                          const childId = `nav-${destination.id}-${section.id}-${itemIndex}`;
-                          const link = (
-                            <a class="nav-item" href={navigationHref(item.route)}
-                              aria-current={itemActive(item.route) ? "page" : undefined}>
-                              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
-                            </a>
-                          );
-                          return (
-                            <li>
-                              {children.length || forums ? (
-                                <div class="nav__destination">
-                                  {link}
-                                  <button class="icon-button nav__disclosure" type="button"
-                                    data-nav-branch={childId} aria-controls={childId} aria-expanded={open}
-                                    aria-label={t(locale, item.label, item.label)}
-                                    data-i18n-aria-label={item.label}>
-                                    <Icon name="expand_more" />
-                                  </button>
-                                </div>
-                              ) : link}
-                              {(children.length > 0 || forums) && (
-                                <div class="nav__branch" id={childId} hidden={!open}>
-                                  <ul class="nav__children" role="list">
+                </span>
+              </a>
+              {current && destination.sections.length > 0 && (
+                <div class="nav__tree" data-nav-tree={destination.id}>
+                  <div class="nav__tree-inner">
+                    {destination.sections.map((section) => (
+                      <section class="nav__section" aria-labelledby={destination.sections.length > 1 ? `nav-section-${section.id}` : undefined}>
+                        {destination.sections.length > 1 && (
+                          <h2 class="nav__headline" id={`nav-section-${section.id}`}>
+                            <I18nText keyName={section.label} fallback={section.id} locale={locale} />
+                          </h2>
+                        )}
+                        <ul class="nav__items" role="list">
+                          {section.items.map((item) => {
+                            const children = item.children || [];
+                            const forums = destination.id === "community" && item.route === "/community/forums";
+                            const active = itemActive(item.route);
+                            return (
+                              <li>
+                                <a class="nav-item" href={navigationHref(item.route)} aria-current={active ? "page" : undefined}>
+<span class="nav-item__indicator" aria-hidden="true"></span>
+                                  <Icon name={item.icon} size={20} filled={active} />
+                                  <span class="nav-item__label"><I18nText keyName={item.label} fallback={item.label} locale={locale} /></span>
+                                </a>
+                                {children.length > 0 && (
+                                  <ul class="nav__items nav__items--nested" role="list">
                                     {children.map((child) => (
-                                      <li><a class="nav-item" href={navigationHref(child.route)}
-                                        aria-current={itemActive(child.route) ? "page" : undefined}>
-                                        <I18nText keyName={child.label} fallback={child.label} locale={locale} />
-                                      </a></li>
+                                      <li>
+                                        <a class="nav-item" href={navigationHref(child.route)} aria-current={itemActive(child.route) ? "page" : undefined}>
+<span class="nav-item__indicator" aria-hidden="true"></span>
+                                          <Icon name={child.icon} size={20} filled={itemActive(child.route)} />
+                                          <span class="nav-item__label"><I18nText keyName={child.label} fallback={child.label} locale={locale} /></span>
+                                        </a>
+                                      </li>
                                     ))}
                                   </ul>
-                                  {forums && (
+                                )}
+                                {forums && (
+                                  <div class="nav__items--nested nav__forums">
                                     <community-forum-navigation locale={locale} data-community-forum-directory
                                       transition:persist="community-forum-navigation"></community-forum-navigation>
-                                  )}
-                                </div>
-                              )}
-
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    );
-                    return destination.sections.length === 1 ? (
-                      links
-                    ) : (
-                      <details
-                        class="nav__section"
-                        open={
-                          section.items.some((item) => itemActive(item.route)) ||
-                          (route === destination.route && section === destination.sections[0])
-                        }
-                      >
-                        <summary>
-                          <I18nText keyName={section.label} fallback={section.id} locale={locale} />
-                          <Icon name="expand_more" />
-                        </summary>
-                        {links}
-                      </details>
-                    );
-                  })}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
                 </div>
               )}
             </li>
           );
         })}
       </ul>
-      <ul class="nav__utilities" role="list">
-        {utilities.map((item) => (
-          <li>
-            <a
-              class="nav-item"
-              href={navigationHref(item.route)}
-              aria-current={itemActive(item.route) ? "page" : undefined}
-            >
-              <Icon name={item.icon} filled={itemActive(item.route)} />
-              <I18nText keyName={item.label} fallback={item.label} locale={locale} />
-            </a>
-            {item.route === "/about" && inInformation && (
-              <ul class="nav__children" role="list">
-                {informationPages.map((page) => (
-                  <li>
-                    <a
-                      class="nav-item"
-                      href={navigationHref(page.route)}
-                      aria-current={itemActive(page.route) ? "page" : undefined}
-                    >
-                      <I18nText keyName={page.label} fallback={page.label} locale={locale} />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ul>
-      <!-- The audio dock renders its sidebar presence here when the full
-           player is collapsed away from the bottom. -->
-      <div class="nav__player" data-nav-player></div>
     </div>
 
-    <div class="nav__rail-utilities">
-      {utilities.map((item) => (
-        <a
-          class="rail-item"
-          href={navigationHref(item.route)}
-          aria-current={itemActive(item.route) ? "page" : undefined}
-        >
-          <span class="rail-item__indicator">
-            <Icon name={item.icon} filled={itemActive(item.route)} />
-          </span>
-          <I18nText keyName={item.label} fallback={item.label} locale={locale} />
-        </a>
-      ))}
-    </div>
-    <div class="nav__rail-player" data-nav-rail-player></div>
+    <!-- The music player lives here while it is collapsed (audio-dock.ts
+         renders into this slot): a now-playing item in the rail. -->
+    <div class="nav__player" data-nav-player></div>
+
+    <ul class="nav__utilities" role="list">
+      {utilities.map((item) => {
+        const active = itemActive(item.route) || (item.route === "/about" && inInformation);
+        return (
+          <li class="nav__destination" data-current={active ? "true" : undefined}>
+            <a
+              class="rail-item rail-item--utility"
+              href={navigationHref(item.route)}
+              aria-current={itemActive(item.route) ? "page" : active ? "location" : undefined}
+            >
+              <span class="rail-item__indicator" aria-hidden="true"></span>
+              <span class="rail-item__icon">
+                <Icon name={item.icon} filled={active} />
+              </span>
+              <span class="rail-item__label">
+                <I18nText keyName={item.label} fallback={item.label} locale={locale} />
+              </span>
+            </a>
+            {item.route === "/about" && inInformation && (
+              <div class="nav__tree">
+                <div class="nav__tree-inner">
+                  <ul class="nav__items" role="list">
+                    {informationPages.map((page) => (
+                      <li>
+                        <a class="nav-item" href={navigationHref(page.route)} aria-current={itemActive(page.route) ? "page" : undefined}>
+<span class="nav-item__indicator" aria-hidden="true"></span>
+                          <span class="nav-item__label"><I18nText keyName={page.label} fallback={page.label} locale={locale} /></span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   </nav>
 
   <div class="app-shell__body">
@@ -288,7 +246,6 @@ const inInformation = route === "/about" || informationPages.some((item) => item
             <Icon name="menu" />
           </button>
         )}
-        {entity && <div class="top-app-bar__identity" data-top-app-bar-identity></div>}
       </div>
       <h1
         hidden={hasSearch}
@@ -296,13 +253,23 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         data-entity-title={entity ? "true" : undefined}
         lang={entity?.titleLanguage}
       >{shellTitleKey ? <I18nText keyName={shellTitleKey} fallback={shellTitle} locale={locale} /> : shellTitle}</h1>
+      <!-- An entity's identity marks (band logo, attribute, rarity) follow its
+           title: they arrive after hydration, and after the title they can
+           appear without moving it. -->
+      {entity && <div class="top-app-bar__identity" data-top-app-bar-identity></div>}
       <slot name="search" />
+      <!-- The trailing row fills the rest of the bar and packs its controls
+           to the end, so controls that arrive after hydration never move the
+           row's box. Compact windows have no rail: the collapsed player's
+           now-playing button sits at the start of this row. -->
       <div class="top-app-bar__actions" data-top-app-bar-actions>
+        <div class="top-app-bar__player" data-app-bar-player></div>
         {entity && (
           <div class="top-app-bar__secondary-actions">
             <button
               class="icon-button top-app-bar__menu"
               type="button"
+              data-app-bar-overflow-compact
               data-nav-toggle
               aria-controls="global-navigation"
               aria-expanded="false"
@@ -358,6 +325,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   import { syncEntityNavigation } from "../lib/detail-navigation";
   import { fitAppBarActions } from "../lib/app-bar-overflow";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
+  const SCROLL_KEY = "haneoka.navigation.scroll.v3";
+  const TREE_KEY = "haneoka.navigation.tree.v1";
   const persistentQuery = matchMedia("(min-width: 1200px)");
   const root = document.documentElement;
   let releaseNavigationFocus: (() => void) | undefined;
@@ -370,10 +339,14 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       .querySelectorAll("[data-nav-toggle]")
       .forEach((node) => node.setAttribute("aria-expanded", String(expanded)));
 
-  /** Below 1200px the expanded navigation is modal: it floats over a scrim and the page goes inert. */
+  /** Below 1200px the expanded rail is modal: it slides over a scrim and the page goes inert. */
   const setModal = (open: boolean) => {
     const host = shell();
     if (!host) return;
+    if (host.classList.contains("nav-modal-open") === open && (open || !releaseNavigationFocus)) {
+      syncToggles(open || (persistentQuery.matches && root.dataset.nav !== "collapsed"));
+      return;
+    }
     host.classList.toggle("nav-modal-open", open);
     if (open) {
       for (const target of document.querySelectorAll<HTMLElement>(".app-shell__body, audio-dock")) {
@@ -387,7 +360,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         releaseNavigationFocus = trapFocus(navigation, {
           onDismiss: () => setModal(false),
           initialFocus: navigation.querySelector<HTMLElement>(
-            ".nav__children [aria-current], .nav__drawer [aria-current], .nav-item",
+            ".nav-item[aria-current='page'], .rail-item[aria-current], .rail-item",
           ),
         });
     } else {
@@ -417,30 +390,42 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         else setModal(!host.classList.contains("nav-modal-open"));
       }),
     );
-    host.querySelectorAll<HTMLButtonElement>("[data-nav-branch]").forEach((button) =>
-      button.addEventListener("click", () => {
-        const branch = document.getElementById(button.dataset.navBranch || "");
-        if (!branch) return;
-        branch.hidden = !branch.hidden;
-        button.setAttribute("aria-expanded", String(!branch.hidden));
-      }),
-    );
     host.querySelectorAll("[data-nav-close]").forEach((node) => node.addEventListener("click", () => setModal(false)));
 
-    // Keep the drawer's scroll position across page swaps so long sections don't jump.
-    const drawer = host.querySelector<HTMLElement>(".nav__drawer");
+    // Keep the rail's scroll position across page swaps so a long tree never
+    // jumps, then bring the current entry on screen if it is not.
+    const scroller = host.querySelector<HTMLElement>("[data-nav-scroll]");
     try {
-      if (drawer) drawer.scrollTop = Number(sessionStorage.getItem("haneoka.navigation.scroll.v2") || 0);
+      if (scroller) scroller.scrollTop = Number(sessionStorage.getItem(SCROLL_KEY) || 0);
     } catch {}
-    drawer?.addEventListener(
+    const currentEntry = scroller?.querySelector<HTMLElement>(".nav-item[aria-current='page']");
+    if (scroller && currentEntry && scroller.clientHeight > 0) {
+      const box = scroller.getBoundingClientRect();
+      const entry = currentEntry.getBoundingClientRect();
+      if (entry.top < box.top + 8 || entry.bottom > box.bottom - 8)
+        scroller.scrollTop += entry.top - box.top - box.height / 3;
+    }
+    scroller?.addEventListener(
       "scroll",
       () => {
         try {
-          sessionStorage.setItem("haneoka.navigation.scroll.v2", String(drawer.scrollTop));
+          sessionStorage.setItem(SCROLL_KEY, String(scroller.scrollTop));
         } catch {}
       },
       { passive: true },
     );
+    // A destination's tree unfolds when the reader arrives from another
+    // destination; moving within one destination leaves it still.
+    const tree = host.querySelector<HTMLElement>(".nav__destinations [data-nav-tree]");
+    let previousTree: string | null = null;
+    try {
+      previousTree = sessionStorage.getItem(TREE_KEY);
+      sessionStorage.setItem(TREE_KEY, tree?.dataset.navTree ?? "");
+    } catch {}
+    if (tree && previousTree !== null && previousTree !== tree.dataset.navTree) {
+      tree.classList.add("nav__tree--entering");
+      window.setTimeout(() => tree.classList.remove("nav__tree--entering"), 800);
+    }
 
     // Material top app bar: the container switches to the "on scroll" surface once content scrolls under it.
     const bar = host.querySelector<HTMLElement>("[data-top-app-bar]");
@@ -459,9 +444,9 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       { capture: true, passive: true },
     );
 
-    // The trailing row advertises a scroll affordance only when its current
-    // actions exceed the available app-bar width. Lit replaces this subtree
-    // as entities load, so watch both its box and its children.
+    // The trailing row overflows its lowest-priority actions into a menu
+    // when they do not fit beside the title. Lit replaces this subtree as
+    // entities load, so watch both its box and its children.
     const actions = host.querySelector<HTMLElement>("[data-top-app-bar-actions]");
     let fitting = false;
     const syncActionOverflow = () => {
@@ -473,7 +458,10 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         fitAppBarActions(bar, actions);
         // Identity marks go before any further squeeze of the title.
         const title = bar.querySelector<HTMLElement>("h1");
-        if (identity && title && title.getBoundingClientRect().width < 96) identity.hidden = true;
+        // (A short title is not a squeezed one: only a truncated title under
+        // 96px gives up the marks.)
+        if (identity && title && title.scrollWidth > title.clientWidth + 1 && title.getBoundingClientRect().width < 96)
+          identity.hidden = true;
         actions.dataset.appBarOverflow = "false";
       } finally {
         fitting = false;
@@ -485,6 +473,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       const mutationObserver = new MutationObserver(syncActionOverflow);
       resizeObserver.observe(bar);
       resizeObserver.observe(actions);
+      const playerSlot = bar.querySelector<HTMLElement>("[data-app-bar-player]");
+      if (playerSlot) resizeObserver.observe(playerSlot);
       mutationObserver.observe(bar, { childList: true, subtree: true });
       actions.addEventListener("scroll", syncActionOverflow, { passive: true });
       releaseActionObservers = () => {
@@ -501,9 +491,9 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   document.addEventListener("astro:page-load", syncEntityNavigation);
   document.addEventListener("astro:page-load", initializeShell);
   persistentQuery.addEventListener("change", () => setModal(false));
-      document.addEventListener("astro:before-swap", () => {
-        setModal(false);
-        releaseActionObservers?.();
-        releaseActionObservers = undefined;
-      });
+  document.addEventListener("astro:before-swap", () => {
+    setModal(false);
+    releaseActionObservers?.();
+    releaseActionObservers = undefined;
+  });
 </script>

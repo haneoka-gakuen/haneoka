@@ -1543,7 +1543,7 @@
       position: fixed;
       z-index: var(--md-sys-z-index-local-sticky, 5);
       right: max(16px, env(safe-area-inset-right));
-      bottom: calc(16px + var(--shell-bottom-inset, 0px) + var(--audio-dock-height, 0px) + env(safe-area-inset-bottom));
+      bottom: calc(16px + var(--shell-bottom-inset, 0px) + var(--audio-dock-height, 0px) + var(--audio-dock-clearance, 0px) + env(safe-area-inset-bottom));
       width: 56px;
       height: 56px;
       padding: 0;

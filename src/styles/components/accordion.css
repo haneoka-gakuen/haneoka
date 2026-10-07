@@ -68,7 +68,7 @@
 }
 
 .md-accordion__chevron {
-  transition: transform var(--md-sys-motion-duration-short3) var(--ease-standard);
+  transition: transform var(--motion-spatial);
 }
 
 .md-accordion__trigger[aria-expanded="true"] .md-accordion__chevron {
@@ -88,10 +88,40 @@
 .md-accordion__panel {
   min-inline-size: 0;
   padding: 0 16px 16px;
+  overflow: clip;
+  overflow-clip-margin: 8px;
+  opacity: 1;
+}
+.md-accordion[data-toggled] > .md-accordion__panel {
+  transition:
+    height var(--motion-spatial),
+    padding-block var(--motion-spatial),
+    opacity var(--motion-effects),
+    display var(--motion-spring-spatial-default-duration) allow-discrete;
+}
+/* Expressive disclosure: the panel unfolds to its content height on the
+ * spatial spring and folds back the same way (height: auto interpolates
+ * through interpolate-size, set on :root in motion.css). */
+.md-accordion__panel[hidden] {
+  display: none;
+  height: 0;
+  padding-block: 0;
+  opacity: 0;
+}
+/* Only after the reader has toggled a panel: a panel that is open when the
+ * page renders must already be at its full height (unfolding it on load
+ * would move everything below it). accordion.ts marks the section on click. */
+@starting-style {
+  .md-accordion[data-toggled] > .md-accordion__panel:not([hidden]) {
+    height: 0;
+    padding-block: 0;
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .md-accordion__chevron {
+  .md-accordion__chevron,
+  .md-accordion[data-toggled] > .md-accordion__panel {
     transition: none;
   }
 }

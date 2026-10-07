@@ -441,3 +441,14 @@
     width: 56px;
   }
 }
+
+/* ---------- Loading skeleton (browse.ts collectionSkeleton) ---------- */
+.tile--skeleton {
+  pointer-events: none;
+}
+.tile--skeleton > .tile__media {
+  animation: skeleton-pulse 1.4s var(--ease-standard) infinite alternate;
+}
+.collection--skeleton {
+  animation: motion-fade var(--motion-effects) backwards;
+}

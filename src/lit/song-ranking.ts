@@ -370,6 +370,56 @@ export class SongRanking extends GameRecordsCardsElement {
       </li>
     `;
   }
+  /**
+   * The first page of a ranking is always 20 rows, so while it loads the
+   * list is drawn as 20 placeholder rows built from the same grid, media
+   * boxes and text lines as a real row: when the data arrives every row
+   * fills in place and nothing below the list moves.
+   */
+  private renderSkeleton() {
+    const rows = Array.from({ length: 20 });
+    return html`
+      <ol class="song-ranking__list song-ranking__list--skeleton" aria-busy="true" aria-label=${this.label("loading", "Loading ranking")}>
+        ${rows.map(
+          () => html`
+            <li class="song-ranking__entry" aria-hidden="true">
+              <div class=${`song-ranking__row${this.points ? " song-ranking__row--points" : ""}`}>
+                <span class="song-ranking__rank"><span class="skeleton-line">00</span></span>
+                <span class="song-ranking__namecard song-ranking__namecard--empty"></span>
+                <span class="song-ranking__avatar"><span class="song-ranking__initial"></span></span>
+                <span class="song-ranking__player-copy">
+                  <strong><span class="skeleton-line">\u00a0</span></strong>
+                  <small class="song-ranking__player-stats"><span class="skeleton-line">\u00a0</span></small>
+                </span>
+                <span class="song-ranking__score"><strong><span class="skeleton-line">00,000,000</span></strong></span>
+                ${
+                  this.points
+                    ? nothing
+                    : html`
+                        <span class="song-ranking__deck-preview">
+                          ${[0, 1, 2, 3, 4].map(
+                            () => html`
+                              <span class="song-ranking__deck-slot">
+                                <span class="song-ranking__card"><span class="song-ranking__card-media"></span></span>
+                                <span class="song-ranking__card"><span class="song-ranking__card-media song-ranking__card-media--support"></span></span>
+                              </span>
+                            `,
+                          )}
+                        </span>
+                      `
+                }
+              </div>
+            </li>
+          `,
+        )}
+      </ol>
+      <span class="button button--tonal song-ranking__more song-ranking__more--placeholder" aria-hidden="true">
+        ${this.label("showMore", "Show top 100")}
+      </span>
+      ${loadingState(this.label("loading", "Loading ranking"))}
+    `;
+  }
+
   private renderRanking() {
     const cached = this.cache.get(this.rankingUrl(this.region));
     const visible = this.rows.slice(0, this.expanded ? 100 : 20);
@@ -403,7 +453,9 @@ export class SongRanking extends GameRecordsCardsElement {
                     ${this.label("updated", "Updated")}${this.formatTime(this.region) ? ` · ${this.formatTime(this.region)}` : ""}
                   </p>
                 `
-              : nothing
+              : this.phase === "loading" && !this.rows.length
+                ? html`<p class="song-ranking__fetched" aria-hidden="true"><span class="skeleton-line">${this.label("updated", "Updated")} · 00/00/0000, 00:00:00</span></p>`
+                : nothing
           }
           ${this.embedded ? nothing : moenotesBrand()}
         </div>
@@ -411,7 +463,7 @@ export class SongRanking extends GameRecordsCardsElement {
           this.phase === "error" && !this.rows.length
             ? errorState(failureText, this.label("retry", "Retry"), () => this.refresh())
             : this.phase === "loading" && !this.rows.length
-              ? loadingState(this.label("loading", "Loading ranking"))
+              ? this.renderSkeleton()
               : !this.rows.length
                 ? emptyState({
                     title:

@@ -10,7 +10,7 @@
  */
 
 import { LitElement, html, nothing } from "lit";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { clearAppBarActions } from "../lib/app-bar";
 import { syncEntityNavigation, updateEntityHeading } from "../lib/detail-navigation";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
 import { entityHref, parseResourceRoute, type ReleaseServer } from "../lib/resource-route";
@@ -460,13 +460,15 @@ export class MissionWorkspace extends LitElement {
       </section>
     `;
   }
-  render() {
-    if (this.entityId) {
-      clearAppBarActions("missions");
-    } else {
-      setAppBarActions(
-        "missions",
-        segmented({
+  /**
+   * The mission-type filter belongs to the overview's content, not to the
+   * top app bar: it is a choice about what the grid shows, so it sits as a
+   * connected button group directly above the grid it filters.
+   */
+  private modeFilter() {
+    return html`
+      <div class="mission-workspace__filter">
+        ${segmented({
           label: uiText(this.locale, "view"),
           value: this.mode,
           options: [
@@ -478,9 +480,12 @@ export class MissionWorkspace extends LitElement {
             this.mode = mode;
             this.sync();
           },
-        }),
-      );
-    }
+        })}
+      </div>
+    `;
+  }
+  render() {
+    clearAppBarActions("missions");
     const groups = this.groups();
     const selected = this.groupKey ? groups.find((group) => group.key === this.groupKey) : undefined;
     return html`
@@ -502,6 +507,7 @@ export class MissionWorkspace extends LitElement {
                       : selected
                         ? this.groupView(selected)
                         : html`
+                            ${this.modeFilter()}
                             <ul class="mission-cards" role="list">
                               ${groups.map((group) => this.groupCard(group))}
                             </ul>

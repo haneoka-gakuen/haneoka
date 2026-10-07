@@ -5,6 +5,7 @@ import { LitElement, html, nothing, render } from "lit";
 import "../../styles/audio.css";
 import { iconButton } from "../ui/controls";
 import { icon } from "../ui/icon";
+import { wavyProgress } from "../ui/wavy-progress";
 import { trapFocus } from "../../lib/overlay";
 import { preferredLocale, uiText } from "../shared/catalog";
 
@@ -33,6 +34,7 @@ interface Snapshot {
 }
 
 const STORAGE_KEY = "haneoka:audio:v2";
+const compactQuery = typeof matchMedia === "function" ? matchMedia("(max-width: 599px)") : ({ matches: false } as MediaQueryList);
 const MODES: readonly PlaybackMode[] = ["sequential", "repeat-all", "repeat-one", "shuffle"];
 const clamp = (value: number, minimum: number, maximum: number) => Math.max(minimum, Math.min(maximum, value));
 const normalizedTrack = (value: AudioTrack, occurrence = 0): AudioTrack | null => {
@@ -121,10 +123,18 @@ export class AudioDock extends LitElement {
   private releaseQueueFocus?: () => void;
   private afterNavigation = () => {
     this.observedDock = undefined;
+    // The shell (and the rail/app-bar slots the collapsed player lives in)
+    // is swapped on every page.
+    queueMicrotask(() => this.syncCollapsedSlots());
+    // The compact full player is a sheet over the page it was opened on;
+    // arriving somewhere new (often through its own title link) folds it.
+    if (compactQuery.matches && !this.collapsed) {
+      this.collapsed = true;
+      this.persist();
+    }
     this.requestUpdate();
-    // The navigation shell (and its player slots) is swapped on every page.
-    this.syncSidebarWidgets();
   };
+  private sheetDrag?: { pointer: number; startY: number; dy: number };
 
   constructor() {
     super();
@@ -180,6 +190,7 @@ export class AudioDock extends LitElement {
     addEventListener("pagehide", this.persistBound);
     document.addEventListener("astro:after-swap", this.afterNavigation);
     addEventListener("popstate", this.onPopState);
+    addEventListener("keydown", this.onKeydown);
     if (this.track) void this.prepare(false, false);
     if ("mediaSession" in navigator) {
       try {
@@ -205,18 +216,20 @@ export class AudioDock extends LitElement {
     this.releaseQueueFocus = undefined;
     this.queuePanel = undefined;
     removeEventListener("popstate", this.onPopState);
+    removeEventListener("keydown", this.onKeydown);
     this.setOverlayIsolation(false);
     this.dockObserver?.disconnect();
     this.observedDock = undefined;
     document.documentElement.style.removeProperty("--audio-dock-height");
-    for (const slot of document.querySelectorAll<HTMLElement>("[data-nav-player], [data-nav-rail-player]"))
+    document.documentElement.style.removeProperty("--audio-dock-clearance");
+    for (const slot of document.querySelectorAll<HTMLElement>("[data-nav-player], [data-app-bar-player]"))
       render(nothing, slot);
     this.persist();
     super.disconnectedCallback();
   }
 
   updated() {
-    this.syncSidebarWidgets();
+    this.syncCollapsedSlots();
     const panel = this.queueOpen ? this.querySelector<HTMLElement>(".audio-queue-panel") : null;
     if (panel !== (this.queuePanel ?? null)) {
       this.releaseQueueFocus?.();
@@ -229,13 +242,22 @@ export class AudioDock extends LitElement {
     this.observedDock = dock || undefined;
     if (!dock) {
       document.documentElement.style.removeProperty("--audio-dock-height");
+      document.documentElement.style.removeProperty("--audio-dock-clearance");
       return;
     }
-    const publishHeight = () =>
-      document.documentElement.style.setProperty(
-        "--audio-dock-height",
-        `${Math.ceil(dock.getBoundingClientRect().height) + 32}px`,
-      );
+    // The pane reserves room for the docked player so it never covers the
+    // last row of a page. The compact expanded player is a sheet over the
+    // page, so there only the mini player's height is reserved.
+    // The full player is docked: the pane reserves its height so it never
+    // covers the page. Collapsed, the player is not at the bottom at all (it
+    // lives in the rail / app bar), and the compact full player is a sheet
+    // over the page, so neither reserves anything.
+    const publishHeight = () => {
+      const root = document.documentElement.style;
+      const docked = dock.dataset.state === "full" && !compactQuery.matches;
+      root.setProperty("--audio-dock-height", docked ? `${Math.ceil(dock.offsetHeight) + 16}px` : "0px");
+      root.setProperty("--audio-dock-clearance", "0px");
+    };
     publishHeight();
     this.dockObserver = new ResizeObserver(publishHeight);
     this.dockObserver.observe(dock);
@@ -253,7 +275,6 @@ export class AudioDock extends LitElement {
     const requested = normalizedTrack(track);
     if (!requested || !normalizedQueue.length) return;
     if (this.track?.id === requested.id && this.track.url === requested.url) {
-      this.collapsed = false;
       this.playing ? this.audio.pause() : await this.audio.play().catch(() => undefined);
       return;
     }
@@ -263,7 +284,10 @@ export class AudioDock extends LitElement {
       0,
       this.queue.findIndex((entry) => entry.id === requested.id && entry.url === requested.url),
     );
-    this.collapsed = false;
+    // A new track always surfaces the player: the docked bar on wider
+    // windows, the mini player on compact ones (the full sheet would cover
+    // the list the reader is choosing from).
+    this.collapsed = compactQuery.matches;
     this.currentTime = 0;
     this.duration = 0;
     await this.prepare(true);
@@ -526,11 +550,78 @@ export class AudioDock extends LitElement {
       });
   }
 
-  private collapsePlayer() {
-    this.collapsed = true;
-    if (this.queueOpen) this.closeOverlay();
-    this.persist();
+  /**
+   * Mini player ⇄ full player. The two are one surface, so the change is a
+   * container transform: a same-document view transition morphs the
+   * player's box on the spatial spring while the rest of the page holds
+   * still (base styles turn the page's own transition off for it).
+   */
+  private setExpanded(expanded: boolean) {
+    if (this.collapsed === !expanded) return;
+    if (!expanded && this.queueOpen) this.closeOverlay();
+    const root = document.documentElement;
+    const apply = async () => {
+      this.collapsed = !expanded;
+      this.persist();
+      await this.updateComplete;
+    };
+    const start = (document as Document & { startViewTransition?: (update: () => Promise<void>) => { finished: Promise<void> } }).startViewTransition;
+    if (!start || matchMedia("(prefers-reduced-motion: reduce)").matches || root.dataset.playerTransition) {
+      void apply().then(() => this.focusAfterToggle(expanded));
+      return;
+    }
+    root.dataset.playerTransition = "true";
+    const transition = start.call(document, apply);
+    void transition.finished.finally(() => {
+      delete root.dataset.playerTransition;
+      this.focusAfterToggle(expanded);
+    });
   }
+  private focusAfterToggle(expanded: boolean) {
+    const target = expanded
+      ? this.querySelector<HTMLElement>(".player__collapse")
+      : document.querySelector<HTMLElement>(
+          compactQuery.matches ? "[data-app-bar-player] .now-playing" : "[data-nav-player] .now-playing__expand",
+        );
+    if (target && this.contains(document.activeElement)) target.focus({ preventScroll: true });
+    else if (target && expanded && compactQuery.matches) target.focus({ preventScroll: true });
+  }
+  private collapsePlayer() {
+    this.setExpanded(false);
+  }
+  private onKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || this.collapsed || this.queueOpen || !compactQuery.matches || !this.track) return;
+    event.preventDefault();
+    this.setExpanded(false);
+  };
+  /** The compact sheet follows a downward drag on its handle and collapses past a threshold. */
+  private onSheetPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || !compactQuery.matches) return;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    this.sheetDrag = { pointer: event.pointerId, startY: event.clientY, dy: 0 };
+  };
+  private onSheetPointerMove = (event: PointerEvent) => {
+    const drag = this.sheetDrag;
+    if (!drag || drag.pointer !== event.pointerId) return;
+    drag.dy = Math.max(0, event.clientY - drag.startY);
+    const sheet = this.querySelector<HTMLElement>(".player");
+    if (sheet) {
+      sheet.style.transition = "none";
+      sheet.style.translate = `0 ${drag.dy}px`;
+    }
+  };
+  private onSheetPointerUp = (event: PointerEvent) => {
+    const drag = this.sheetDrag;
+    if (!drag || drag.pointer !== event.pointerId) return;
+    this.sheetDrag = undefined;
+    const sheet = this.querySelector<HTMLElement>(".player");
+    if (sheet) {
+      sheet.style.removeProperty("transition");
+      sheet.style.removeProperty("translate");
+    }
+    // A tap (no travel) is handled by the handle's click.
+    if (drag.dy > 96) this.setExpanded(false);
+  };
 
   private renderQueue() {
     if (!this.queueOpen) return nothing;
@@ -635,102 +726,122 @@ export class AudioDock extends LitElement {
     `;
   }
 
+  private renderCover(track: AudioTrack, size: number) {
+    return html`
+      <span class="player__cover">
+        ${
+          track.cover
+            ? html`
+                <img src=${track.cover} alt="" width=${size} height=${size} decoding="async" />
+              `
+            : icon("queue_music", Math.round(size / 2))
+        }
+      </span>
+    `;
+  }
+
+  /**
+   * One surface in two states (Material 3 Expressive media player):
+   *   mini  — a 64dp floating bar: cover, title and artist (tap to expand),
+   *           play/pause, next and an explicit expand button, with a thin
+   *           progress line along its foot;
+   *   full  — on medium and wider windows a docked player bar (identity,
+   *           transport, actions, then the seek row); on compact windows a
+   *           bottom sheet with large artwork and large transport controls,
+   *           dismissed by its handle, a downward drag, the scrim or Escape.
+   */
   render() {
     const track = this.track;
-    if (!track || this.collapsed) return nothing;
+    if (!track) return nothing;
+    const full = !this.collapsed;
+    const progress = this.duration > 0 ? clamp(this.currentTime / this.duration, 0, 1) : 0;
+    const title = html`
+      <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
+      <small>${track.artist || "\u00a0"}</small>
+    `;
+    const detailHref = track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`;
+    const play = html`
+      <button
+        class="player__play"
+        data-playing=${String(this.playing)}
+        type="button"
+        aria-label=${this.t(this.playing ? "pause" : "play")}
+        title=${this.t(this.playing ? "pause" : "play")}
+        @click=${() => void this.togglePlayback()}
+      >
+        ${this.playing ? icon("pause", full ? 32 : 24) : icon("play_arrow", full ? 32 : 24)}
+      </button>
+    `;
+    if (!full) return this.renderQueue();
     return html`
-      <aside class="player" aria-label=${this.t("musicPlayer")}>
-        <div class="player__body">
-          <a
-            class="player__identity state-layer"
-            aria-label=${`${track.title} · ${track.artist}`}
-            title=${track.title}
-            href=${track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`}
-          >
-            <span class="player__cover">
-              ${
-                track.cover
-                  ? html`
-                      <img src=${track.cover} alt="" loading="lazy" />
-                    `
-                  : icon("queue_music", 20)
-              }
-            </span>
-            <span class="player__copy">
-              <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
-              <small>${track.artist || "\u00a0"}</small>
-            </span>
-          </a>
-
-          <div class="player__transport">
-            ${iconButton({ label: this.t("previous"), icon: "skip_previous", onClick: () => void this.previous() })}
-            <!-- The play control is the one filled button on the surface. -->
-            <button
-              class="player__play state-layer"
-              data-playing=${String(this.playing)}
-              type="button"
-              aria-label=${this.t(this.playing ? "pause" : "play")}
-              @click=${() => void this.togglePlayback()}
-            >
-              ${this.playing ? icon("pause", 26) : icon("play_arrow", 26)}
-            </button>
-            ${iconButton({ label: this.t("next"), icon: "skip_next", onClick: () => void this.next() })}
-            <span class="player__time tabular">
-              ${this.format(this.currentTime)}
-              <span aria-hidden="true">/</span>
-              ${this.format(this.duration)}
-            </span>
-          </div>
-
-          <div class="player__actions">
-            ${iconButton({
-              label: this.modeLabel(),
-              className: "player__secondary",
-              icon: this.modeIconName(),
-              onClick: this.cycleMode,
-              pressed: this.mode !== "sequential",
-              toggle: true,
-            })}
-            ${iconButton({
-              label: this.t("queue"),
-              icon: "queue_music",
-              onClick: () => (this.queueOpen ? this.closeOverlay() : this.openOverlay("queue")),
-              pressed: this.queueOpen,
-              toggle: true,
-              badge: this.queue.length,
-            })}
-            ${iconButton({
-              label: this.t("collapse"),
-              className: "player__secondary",
-              icon: "expand_more",
-              onClick: () => this.collapsePlayer(),
-            })}
-          </div>
+      <button class="player-scrim" type="button" tabindex="-1" aria-label=${this.t("collapse")} @click=${() => this.setExpanded(false)}></button>
+      <aside class="player" data-state="full" aria-label=${this.t("musicPlayer")}>
+        <button
+          class="player__handle"
+          type="button"
+          aria-label=${this.t("collapse")}
+          @click=${() => this.setExpanded(false)}
+          @pointerdown=${this.onSheetPointerDown}
+          @pointermove=${this.onSheetPointerMove}
+          @pointerup=${this.onSheetPointerUp}
+          @pointercancel=${this.onSheetPointerUp}
+        >
+          <span aria-hidden="true"></span>
+        </button>
+        <a class="player__identity state-layer" aria-label=${`${track.title} · ${track.artist}`} title=${track.title} href=${detailHref}>
+          ${this.renderCover(track, 56)}
+          <span class="player__copy">${title}</span>
+        </a>
+        <div class="player__transport">
+          ${iconButton({ label: this.t("previous"), icon: "skip_previous", className: "player__skip", onClick: () => void this.previous() })}
+          ${play}
+          ${iconButton({ label: this.t("next"), icon: "skip_next", className: "player__skip", onClick: () => void this.next() })}
         </div>
         <div class="player__timeline">
-          <div class="player__seek">
-            <md-slider
-              class="player__scrub md3-slider"
-              labeled
-              .min=${0}
-              .max=${this.duration || 1}
-              .step=${0.01}
-              .value=${this.currentTime}
-              .valueLabel=${this.format(this.currentTime)}
-              ?disabled=${this.duration <= 0}
-              aria-label=${this.t("playbackPosition")}
-              aria-valuetext=${`${this.format(this.currentTime)} / ${this.format(this.duration)}`}
-              @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value: number }).value))}
-            ></md-slider>
-          </div>
+          <span class="player__time tabular">${this.format(this.currentTime)}</span>
+          <span class="player__seek">
+          ${wavyProgress({ value: progress, thickness: 4, amplitude: 3, wavelength: 28, still: !this.playing })}
+          <md-slider
+            class="player__scrub md3-slider"
+            labeled
+            .min=${0}
+            .max=${this.duration || 1}
+            .step=${0.01}
+            .value=${this.currentTime}
+            .valueLabel=${this.format(this.currentTime)}
+            ?disabled=${this.duration <= 0}
+            aria-label=${this.t("playbackPosition")}
+            aria-valuetext=${`${this.format(this.currentTime)} / ${this.format(this.duration)}`}
+            @input=${(event: Event) => this.seek(Number((event.target as HTMLElement & { value: number }).value))}
+          ></md-slider>
+          </span>
+          <span class="player__time tabular">${this.format(this.duration)}</span>
+        </div>
+        <div class="player__actions">
+          ${iconButton({
+            label: this.modeLabel(),
+            icon: this.modeIconName(),
+            onClick: this.cycleMode,
+            pressed: this.mode !== "sequential",
+            toggle: true,
+          })}
+          ${iconButton({
+            label: this.t("queue"),
+            icon: "queue_music",
+            onClick: () => (this.queueOpen ? this.closeOverlay() : this.openOverlay("queue")),
+            pressed: this.queueOpen,
+            toggle: true,
+            badge: this.queue.length,
+          })}
           <div class="player__volume">
             <button
               class="icon-button"
               type="button"
               aria-label=${this.t(this.volume ? "mute" : "unmute")}
+              title=${this.t(this.volume ? "mute" : "unmute")}
               @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
             >
-              ${this.volume ? icon("volume_up", 20) : icon("volume_off", 20)}
+              ${this.volume ? icon("volume_up", 24) : icon("volume_off", 24)}
             </button>
             <md-slider
               class="player__volume-slider md3-slider"
@@ -745,95 +856,102 @@ export class AudioDock extends LitElement {
               @input=${(event: Event) => this.setVolume(Number((event.target as HTMLElement & { value: number }).value))}
             ></md-slider>
           </div>
+          ${iconButton({
+            label: this.t("collapse"),
+            className: "player__collapse",
+            icon: "keyboard_arrow_down",
+            onClick: () => this.setExpanded(false),
+          })}
         </div>
       </aside>
       ${this.renderQueue()}
     `;
   }
+
   /**
-   * The collapsed player's presence lives in the navigation shell instead of
-   * a fixed bottom bar: the drawer shows cover, title and the play control
-   * (clicking the cover expands the full player at the bottom), the icon rail
-   * shows the cover alone with a play/pause affordance on hover. Both forms
-   * render into slots the shell owns; the same CSS that shows the rail or
-   * the drawer decides which one is visible.
+   * Collapsed, the player leaves the bottom of the screen and lives in the
+   * navigation: a now-playing item in the rail (cover with a wavy progress
+   * ring, play/pause; in the expanded rail also title, artist and next), or,
+   * on compact windows that have no rail, a now-playing button at the start
+   * of the top app bar's actions. Either one expands the full player, and
+   * shares its view-transition name, so expanding and collapsing are one
+   * container transform between the rail and the bottom bar.
    */
-  private syncSidebarWidgets() {
+  private syncCollapsedSlots() {
     const track = this.track;
-    const drawer = document.querySelector<HTMLElement>("[data-nav-player]");
-    const rail = document.querySelector<HTMLElement>("[data-nav-rail-player]");
-    if (drawer)
-      render(
-        track
-          ? html`
-              <div class="player player--compact player--docked">
-                <button
-                  class="player__identity state-layer"
-                  type="button"
-                  aria-label=${`${this.t("expandPlayer")} · ${track.title}`}
-                  title=${this.t("expandPlayer")}
-                  @click=${() => {
-                    this.collapsed = false;
-                    this.persist();
-                  }}
-                >
-                  <span class="player__cover">
-                    ${
-                      track.cover
-                        ? html`
-                            <img src=${track.cover} alt="" />
-                          `
-                        : icon("queue_music", 24)
-                    }
-                  </span>
-                  <span class="player__copy">
-                    <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
-                    <small>${track.artist || "\u00a0"}</small>
-                  </span>
-                </button>
-                <button
-                  class="player__play state-layer"
-                  type="button"
-                  data-playing=${String(this.playing)}
-                  aria-label=${this.t(this.playing ? "pause" : "play")}
-                  @click=${() => void this.togglePlayback()}
-                >
-                  ${this.playing ? icon("pause", 24) : icon("play_arrow", 24)}
-                </button>
-              </div>
-            `
-          : nothing,
-        drawer,
-      );
-    if (rail)
-      render(
-        track
-          ? html`
-              <button
-                class="nav-player-rail"
-                type="button"
-                data-playing=${String(this.playing)}
-                aria-label=${`${track.title} · ${this.t(this.playing ? "pause" : "play")}`}
-                title=${track.title}
-                @click=${() => void this.togglePlayback()}
-              >
-                <span class="nav-player-rail__cover">
-                  ${
-                    track.cover
-                      ? html`
-                          <img src=${track.cover} alt="" />
-                        `
-                      : icon("queue_music", 24)
-                  }
-                </span>
-                <span class="nav-player-rail__overlay" aria-hidden="true">
-                  ${this.playing ? icon("pause", 22) : icon("play_arrow", 22)}
-                </span>
-              </button>
-            `
-          : nothing,
-        rail,
-      );
+    const collapsed = Boolean(track) && this.collapsed;
+    const rail = document.querySelector<HTMLElement>("[data-nav-player]");
+    const bar = document.querySelector<HTMLElement>("[data-app-bar-player]");
+    if (rail) render(collapsed && track ? this.renderRailPlayer(track) : nothing, rail);
+    if (bar) render(collapsed && track ? this.renderBarPlayer(track) : nothing, bar);
+  }
+  private progressRatio() {
+    return this.duration > 0 ? clamp(this.currentTime / this.duration, 0, 1) : 0;
+  }
+  private renderRailPlayer(track: AudioTrack) {
+    const progress = this.progressRatio();
+    return html`
+      <section class="now-playing-rail" aria-label=${this.t("musicPlayer")}>
+        <button
+          class="now-playing__expand"
+          type="button"
+          aria-label=${`${this.t("expandPlayer")} · ${track.title} · ${track.artist}`}
+          title=${this.t("expandPlayer")}
+          @click=${() => this.setExpanded(true)}
+        >
+          <span class="now-playing__cover" style=${`--player-progress:${progress}`}>
+            ${
+              track.cover
+                ? html`<img src=${track.cover} alt="" width="40" height="40" decoding="async" />`
+                : icon("queue_music", 20)
+            }
+          </span>
+          <span class="now-playing__copy">
+            <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
+            <small>${track.artist || "\u00a0"}</small>
+          </span>
+          <span class="now-playing__chevron" aria-hidden="true">${icon("keyboard_arrow_up", 20)}</span>
+        </button>
+        <span class="now-playing__progress" aria-hidden="true">
+          ${wavyProgress({ value: progress, thickness: 3, amplitude: 2, wavelength: 16, still: !this.playing })}
+        </span>
+        <span class="now-playing__controls">
+          <button
+            class="icon-button now-playing__play"
+            type="button"
+            data-playing=${String(this.playing)}
+            aria-label=${this.t(this.playing ? "pause" : "play")}
+            title=${this.t(this.playing ? "pause" : "play")}
+            @click=${() => void this.togglePlayback()}
+          >
+            ${this.playing ? icon("pause", 24) : icon("play_arrow", 24)}
+          </button>
+          ${iconButton({ label: this.t("next"), icon: "skip_next", className: "now-playing__next", onClick: () => void this.next() })}
+        </span>
+      </section>
+    `;
+  }
+  private renderBarPlayer(track: AudioTrack) {
+    const progress = this.progressRatio();
+    return html`
+      <button
+        class="now-playing"
+        type="button"
+        data-playing=${String(this.playing)}
+        aria-label=${`${this.t("expandPlayer")} · ${track.title} · ${track.artist}`}
+        title=${`${track.title} · ${track.artist}`}
+        style=${`--player-progress:${progress}`}
+        @click=${() => this.setExpanded(true)}
+      >
+        <span class="now-playing__cover">
+          ${
+            track.cover
+              ? html`<img src=${track.cover} alt="" width="32" height="32" decoding="async" />`
+              : icon("queue_music", 18)
+          }
+        </span>
+      </button>
+    `;
   }
 
   private modeLabel() {

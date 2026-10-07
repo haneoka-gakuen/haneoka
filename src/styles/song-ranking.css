@@ -534,3 +534,14 @@
     }
   }
 }
+@layer pages {
+  .song-ranking__list--skeleton .song-ranking__namecard,
+  .song-ranking__list--skeleton .song-ranking__card-media,
+  .song-ranking__list--skeleton .song-ranking__initial {
+    background: var(--md-sys-color-surface-container-highest);
+    animation: skeleton-pulse 1.4s var(--ease-standard) infinite alternate;
+  }
+  .song-ranking__more--placeholder {
+    visibility: hidden;
+  }
+}

@@ -9,24 +9,29 @@
     margin-inline: auto;
     padding: 8px var(--md-comp-page-inline-space) 32px;
   }
+  /* Every row keeps the same leading 16:9 thumbnail box — the whole banner
+   * (contained, never cropped), or a placeholder glyph when the notice has none or its banner fails — so the
+   * headlines form one column and nothing reflows as banners arrive. */
   .announcement-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     text-decoration: none;
   }
-  .announcement-row:has(.announcement-row__thumbnail:not([hidden])) {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-  .announcement-row:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
-  }
   .announcement-row__thumbnail {
+    position: relative;
+    display: grid;
     width: 112px;
-    height: 64px;
+    height: 63px;
+    flex: none;
+    place-items: center;
     overflow: hidden;
-    border-radius: var(--md-sys-shape-corner-extra-small);
+    color: var(--md-sys-color-on-surface-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-high);
   }
   .announcement-row__thumbnail img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -131,7 +136,7 @@
     }
     .announcement-row__thumbnail {
       width: 80px;
-      height: 48px;
+      height: 45px;
     }
     .announcement-row {
       gap: 12px;
@@ -140,7 +145,7 @@
   @container (max-width: 380px) {
     .announcement-row__thumbnail {
       width: 80px;
-      height: 48px;
+      height: 45px;
     }
   }
 }

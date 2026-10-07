@@ -19,6 +19,8 @@ const isInteractive = (node: Element) => node.matches("button, a[href], [role='b
 const labelOf = (node: Element): string =>
   (node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "").replace(/\s+/gu, " ").trim();
 
+const compactWindow = typeof matchMedia === "function" ? matchMedia("(max-width: 599px)") : undefined;
+
 /** Candidates in the order they overflow: entity arrows first, then page actions from the end. */
 function candidates(actions: HTMLElement): HTMLElement[] {
   const secondary = [...actions.querySelectorAll<HTMLElement>(".top-app-bar__secondary-actions > [data-entity-navigation]")];
@@ -129,11 +131,29 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-overflowed]")) delete node.dataset[HIDDEN];
   const button = actions.querySelector<HTMLElement>(":scope > .top-app-bar__overflow");
   if (button) button.hidden = true;
+  // On compact windows a detail page's leading slot is Back, so the
+  // navigation menu is an overflow entry rather than a second trailing icon.
+  const compactOnly = compactWindow?.matches
+    ? [...actions.querySelectorAll<HTMLElement>("[data-app-bar-overflow-compact]")]
+    : [];
+  for (const node of compactOnly) node.dataset[HIDDEN] = "true";
+  const identity = bar.querySelector<HTMLElement>("[data-top-app-bar-identity]");
+  // The row fills the bar and packs to its end, so its own box says nothing
+  // about how much it holds: measure what it actually lays out.
+  const actionsGap = parseFloat(getComputedStyle(actions).columnGap) || 0;
+  const actionsWidth = () => {
+    const shown = [...actions.children].filter((child) => (child as HTMLElement).getBoundingClientRect().width > 0);
+    return shown.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) + Math.max(0, shown.length - 1) * actionsGap;
+  };
   const titleRoom = () =>
-    width - (leading?.getBoundingClientRect().width || 0) - actions.scrollWidth - gap * 2;
+    width -
+    (leading?.getBoundingClientRect().width || 0) -
+    (identity && !identity.hidden ? identity.getBoundingClientRect().width + gap : 0) -
+    actionsWidth() -
+    gap * 2;
   // scrollWidth is the title's untruncated width, padding included.
   const minimum = title && !title.hidden ? Math.min(title.scrollWidth, TITLE_MAX_RESERVED) : 0;
-  if (titleRoom() >= minimum) return;
+  if (titleRoom() >= minimum && !compactOnly.length) return;
   const more = overflowButton(actions);
   more.hidden = false;
   more.setAttribute("aria-label", clientText(document.documentElement.dataset.locale || "en", "moreActions", "More"));

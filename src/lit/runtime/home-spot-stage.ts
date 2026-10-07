@@ -41,7 +41,6 @@ export class HomeSpotStage {
         three,
         GLTFLoader,
         spine: {
-          AssetManager: spine.AssetManager,
           TextureAtlas: spine.TextureAtlas,
           ThreeJsTexture: spine.ThreeJsTexture,
           AtlasAttachmentLoader: spine.AtlasAttachmentLoader,

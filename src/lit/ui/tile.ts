@@ -4,6 +4,7 @@ import { prepareMaterialProgress } from "../../lib/loading-progress";
 import { icon } from "./icon";
 import { loadingIndicator } from "./loading-indicator";
 import { nextImageCandidate } from "./lazy-images";
+import { knownImageSize, rememberImageSize } from "../../lib/image-dimensions";
 import "@material/web/progress/circular-progress.js";
 
 /** Media loading state: the Expressive loading indicator while waiting, native determinate progress once a value is known. */
@@ -130,22 +131,23 @@ const KIND_MEDIA_RATIOS: Record<string, number | string> = {
 
 /** Artwork and native marks shared by grid tiles and compact identity rows. */
 export function tileMedia(options: TileOptions): TemplateResult {
-  const width = Number(options.width);
-  const height = Number(options.height);
+  // A natural tile takes its artwork's own shape — but only one it knows at
+  // first paint (indexed dimensions, the artwork family, or a size
+  // remembered from an earlier visit). It is never reshaped after the image
+  // loads: that moved every tile below it, once per image.
+  const known = options.natural && !(Number(options.width) > 0 && Number(options.height) > 0)
+    ? knownImageSize(options.image)
+    : undefined;
+  const width = Number(options.width) > 0 ? Number(options.width) : Number(known?.width);
+  const height = Number(options.height) > 0 ? Number(options.height) : Number(known?.height);
   const dimensionRatio = mediaAspectRatio(width, height);
   const ratio = dimensionRatio ?? options.aspectRatio ?? KIND_MEDIA_RATIOS[options.kind ?? ""];
   const mediaStyle = ratio === undefined ? undefined : `--tile-ratio:${ratio};aspect-ratio:${ratio}`;
   const onImageError = options.onImageError || nextImageCandidate;
   const onImageLoad = (event: Event) => {
-    const square = options.aspectRatio === 1 || options.aspectRatio === "1" || options.aspectRatio === "1 / 1";
-    if (!options.natural || dimensionRatio !== undefined || square) return;
+    if (!options.natural) return;
     const image = event.currentTarget as HTMLImageElement;
-    const nativeRatio = mediaAspectRatio(image.naturalWidth, image.naturalHeight);
-    if (nativeRatio === undefined) return;
-    const frame = image.parentElement;
-    if (!frame?.classList.contains("tile__media")) return;
-    frame.style.setProperty("--tile-ratio", String(nativeRatio));
-    frame.style.aspectRatio = String(nativeRatio);
+    rememberImageSize(options.image, image.naturalWidth, image.naturalHeight);
   };
   // Rendered as two plain templates rather than one static-html template with
   // a literal tag name: static templates lose their event-part wiring when the

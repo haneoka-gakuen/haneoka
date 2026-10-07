@@ -23,8 +23,12 @@
   /* Detail layers (list-detail) occupy exactly the content pane. */
   --shell-overlay-inset: 0 0 calc(var(--shell-bottom-inset) + var(--audio-dock-height, 0px)) 0;
   --shell-overlay-radius: 0px;
-  --nav-rail-width: 80px;
-  --nav-drawer-width: 224px;
+  /* NavigationRailCollapsedTokens.ContainerWidth / NavigationRailExpandedTokens
+   * (220–360dp). The modal expanded rail takes a little more room because it
+   * floats over the page rather than pushing it. */
+  --nav-rail-width: 96px;
+  --nav-rail-expanded-width: 280px;
+  --nav-rail-modal-width: 320px;
   --content-max: 1440px;
 
   /* ---- Measure ----

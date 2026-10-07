@@ -738,3 +738,15 @@
     object-position: center;
   }
 }
+@layer pages {
+  .song-reward-value__placeholder {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--md-sys-color-on-surface-variant);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-high);
+  }
+}

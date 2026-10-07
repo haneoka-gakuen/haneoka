@@ -123,3 +123,16 @@
     }
   }
 }
+@layer pages {
+  /* A help topic is an article: one readable measure, body-large, on the
+   * page's own surface. */
+  .help-topic-page {
+    width: min(100%, 760px);
+    margin-inline: auto;
+  }
+  .help-topic-page > .detail-long-copy {
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+      1.75 var(--app-font);
+  }
+}

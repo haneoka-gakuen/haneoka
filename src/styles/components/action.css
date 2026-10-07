@@ -228,9 +228,15 @@
 .segmented--grow > button {
   flex: 1 1 0;
 }
+/* A segment never breaks inside a word ("Popula/r"): it is at least as wide
+ * as its longest word and wraps only between words when space runs out. */
+.segmented > button {
+  min-width: min-content;
+}
 .segmented > button > span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  text-wrap: balance;
 }
 @media (pointer: coarse) {
   .segmented,

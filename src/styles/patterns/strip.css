@@ -130,7 +130,9 @@
   }
   .hub-link__count {
     grid-column: 2;
+    min-height: var(--md-sys-typescale-label-medium-line-height);
     font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
   }
   .hub-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

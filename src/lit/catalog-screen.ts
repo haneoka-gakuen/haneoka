@@ -90,7 +90,7 @@ import { CHARACTER_ART } from "../config/character-art";
 import { SONOLUS_SERVER_LINK } from "../config/sonolus";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
-import { clearBrowseBar, renderBrowse, filterGroup } from "./ui/browse";
+import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { iconButton, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -3368,6 +3368,7 @@ export class CatalogScreen extends LitElement {
         },
         rail: this.hasBandRail()
           ? {
+              pending: this.phase === "loading",
               label: this.label("band", "Band"),
               value: String(this.activeBand),
               single: kind === "character" && this.railBands().length === 1,
@@ -3387,7 +3388,9 @@ export class CatalogScreen extends LitElement {
             }
           : undefined,
         heading:
-          this.hasBandRail() && this.activeBand &&
+          this.hasBandRail() && this.phase === "loading"
+            ? { pending: true, title: "", image: "pending" }
+            : this.hasBandRail() && this.activeBand &&
           (kind !== "character" || this.railBands().some((band) => Number(band.bandId) === this.activeBand))
             ? {
                 title: this.bandName(this.activeBand),
@@ -3873,7 +3876,10 @@ export class CatalogScreen extends LitElement {
   }
   private renderContent(items: Item[]) {
     const kind = this.profile.presentation;
-    if (this.phase === "loading") return loadingState(this.label("loading", "Loading"));
+    if (this.phase === "loading")
+      return this.view === "grid" || !this.view
+        ? html`${collectionSkeleton(kind)}${loadingState(this.label("loading", "Loading"))}`
+        : loadingState(this.label("loading", "Loading"));
     if (this.phase === "error")
       return errorState(this.label("unavailable", "Unavailable"), this.label("retry", "Retry"), () => void this.load());
     if (!items.length)
@@ -4939,7 +4945,7 @@ export class CatalogScreen extends LitElement {
       if (!this.commentsTargetCurrent(key, generation, element)) return;
       this.commentsNearMain = entries.some((entry) => entry.isIntersecting);
       this.activateComments(key, generation, element);
-    }, { root: this.scrollHost || null, rootMargin: "320px" });
+    }, { root: this.closest<HTMLElement>("#main-content"), rootMargin: "320px" });
     this.commentsObservers.push(main);
     main.observe(left || element);
     if (left) {

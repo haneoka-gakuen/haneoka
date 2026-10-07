@@ -1,66 +1,238 @@
+/* ==========================================================================
+   Navigation rail — Material 3 Expressive WideNavigationRail
+   (NavigationRailCollapsedTokens / NavigationRailExpandedTokens /
+   NavigationRail{Vertical,Horizontal}ItemTokens)
+
+     collapsed   96dp, vertical items: 56x32 indicator, label-medium below
+     expanded    280dp (220–360dp), horizontal items: 56dp pill, 8dp
+                 icon–label space, label-large
+     modal       the expanded rail over a scrim: surface-container,
+                 corner-large trailing edge, level 2
+
+   One numeric custom property, --nav-wide (0 → 1), drives the whole morph,
+   and it transitions on the expressive default spatial spring. Every
+   geometry below is an interpolation on it, so the indicator, icon and
+   label move as one object instead of jumping between two layouts. The icon
+   holds x = 36dp in both states (20dp indicator inset + 16dp leading space),
+   which is what makes the change read as an expansion rather than a swap.
+
+   Below the current destination its tree is listed in full — sections,
+   items and nested items, progressively indented — with no disclosure to
+   operate. Account, settings and about are pinned to the bottom edge.
+   ========================================================================== */
+@property --nav-wide {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 .nav {
+  --nav-wide: 0;
+  --nav-rail-inset: 20px;
+  --nav-rail-icon-x: 36px;
+  position: fixed;
   z-index: var(--md-sys-z-index-shell-navigation);
+  inset: 0 auto 0 0;
   display: flex;
+  width: calc(var(--nav-rail-width) + var(--nav-wide) * (var(--nav-rail-expanded-width) - var(--nav-rail-width)));
   min-height: 0;
   flex-direction: column;
-  grid-column: 1;
-  grid-row: 1;
   color: var(--md-sys-color-on-surface-variant);
+  border-radius: 0;
   background: var(--md-sys-color-surface-container);
+  transition:
+    --nav-wide var(--motion-spatial),
+    transform var(--motion-spatial),
+    border-radius var(--motion-spatial),
+    box-shadow var(--motion-effects),
+    visibility 0s linear var(--motion-spring-spatial-default-duration);
 }
+@media (max-width: 599px) {
+  .nav {
+    --nav-wide: 1;
+    width: min(var(--nav-rail-modal-width), calc(100vw - 56px));
+    visibility: hidden;
+    transform: translateX(calc(-100% - 24px));
+  }
+}
+@media (min-width: 1200px) {
+  :root[data-nav="expanded"] .nav {
+    --nav-wide: 1;
+  }
+}
+.nav-modal-open .nav {
+  --nav-wide: 1;
+  z-index: var(--md-sys-z-index-overlay-drawer);
+  visibility: visible;
+  width: min(var(--nav-rail-modal-width), calc(100vw - 56px));
+  border-radius: 0 var(--md-sys-shape-corner-large) var(--md-sys-shape-corner-large) 0;
+  box-shadow: var(--md-sys-elevation-level2);
+  transform: none;
+  transition:
+    --nav-wide var(--motion-spatial),
+    width var(--motion-spatial),
+    transform var(--motion-spatial),
+    border-radius var(--motion-spatial),
+    box-shadow var(--motion-effects),
+    visibility 0s;
+}
+@media (min-width: 600px) {
+  /* The modal rail grows out of the docked one instead of arriving from off-screen. */
+  .nav {
+    transition:
+      --nav-wide var(--motion-spatial),
+      width var(--motion-spatial),
+      border-radius var(--motion-spatial),
+      box-shadow var(--motion-effects);
+  }
+}
+
+/* ---------- Header: menu button and brand ---------- */
 .nav__header {
+  position: relative;
   display: flex;
   height: var(--top-bar-height);
   min-height: var(--top-bar-height);
+  flex: none;
   align-items: center;
-  gap: 8px;
-  padding-inline: 16px;
+}
+.nav__toggle {
+  position: absolute;
+  top: calc((var(--top-bar-height) - var(--icon-button-size, var(--control-height))) / 2);
+  left: calc(48px - var(--icon-button-size, var(--control-height)) / 2);
+}
+.nav__toggle-icon {
+  position: relative;
+  display: grid;
+  width: 24px;
+  height: 24px;
+}
+.nav__toggle-icon > .material-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--motion-effects),
+    rotate var(--motion-spatial);
+}
+.nav__toggle-icon > .material-icon:first-child {
+  opacity: calc(1 - var(--nav-wide));
+  rotate: calc(var(--nav-wide) * 180deg);
+}
+.nav__toggle-icon > .material-icon:last-child {
+  opacity: var(--nav-wide);
+  rotate: calc((1 - var(--nav-wide)) * -180deg);
 }
 .nav__brand {
+  position: absolute;
+  left: 76px;
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 6px 12px 6px 6px;
   color: var(--md-sys-color-on-surface);
-  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) / var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  border-radius: var(--md-sys-shape-corner-full);
+  font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+    var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  white-space: nowrap;
+  opacity: var(--nav-wide);
+  translate: calc((1 - var(--nav-wide)) * -16px) 0;
+  visibility: hidden;
 }
-.nav__rail {
+
+/* ---------- Scrolling destinations and pinned utilities ---------- */
+.nav__scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding-block: 12px 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.nav__destinations,
+.nav__utilities,
+.nav__items {
   display: grid;
-  gap: 8px;
-  margin: 16px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-.rail-item {
-  display: grid;
-  min-height: 64px;
-  align-content: center;
-  justify-items: center;
+.nav__destinations {
   gap: 4px;
-  padding-block: 4px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-  text-align: center;
 }
-.rail-item > span:last-child {
-  max-width: calc(var(--nav-rail-width) - 8px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.nav__utilities {
+  flex: none;
+  gap: 4px;
+  padding-block: 8px 16px;
+}
+
+/* ---------- Primary item: one element, two layouts ----------
+   collapsed: indicator 56x32 at the top, label below (52dp + 4dp spacing)
+   expanded:  indicator 56dp tall spanning the rail, label 8dp after the icon */
+.rail-item {
+  --nav-indicator-height: calc(32px + 24px * var(--nav-wide));
+  position: relative;
+  display: block;
+  height: 56px;
+  color: var(--md-sys-color-on-surface-variant);
+  -webkit-tap-highlight-color: transparent;
 }
 .rail-item__indicator {
-  display: grid;
-  width: 56px;
-  height: 32px;
-  place-items: center;
+  position: absolute;
+  top: calc(2px * (1 - var(--nav-wide)));
+  left: var(--nav-rail-inset);
+  width: calc(56px + var(--nav-wide) * (100% - var(--nav-rail-inset) - 12px - 56px));
+  height: var(--nav-indicator-height);
   border-radius: var(--md-sys-shape-corner-full);
-  transition: background-color 200ms var(--ease-standard);
+  background: transparent;
+  transition:
+    background-color var(--motion-effects),
+    border-radius var(--motion-spatial-fast);
 }
-.rail-item[aria-current="page"] {
+.rail-item__icon {
+  position: absolute;
+  top: calc(6px + 10px * var(--nav-wide));
+  left: var(--nav-rail-icon-x);
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  pointer-events: none;
+}
+.rail-item__label {
+  position: absolute;
+  top: calc(38px - 20px * var(--nav-wide));
+  left: calc(48px + 20px * var(--nav-wide));
+  max-width: calc((1 - var(--nav-wide)) * 88px + var(--nav-wide) * (100% - 96px));
+  overflow: hidden;
+  font-family: var(--app-font);
+  font-size: calc(12px + 2px * var(--nav-wide));
+  font-weight: 500;
+  line-height: calc(16px + 4px * var(--nav-wide));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(calc(-50% * (1 - var(--nav-wide))));
+  pointer-events: none;
+}
+.rail-item[aria-current] {
   color: var(--md-sys-color-on-surface);
 }
-.rail-item[aria-current="page"] .rail-item__indicator {
-  color: var(--md-sys-color-on-secondary-container);
+.rail-item[aria-current] .rail-item__indicator {
   background: var(--md-sys-color-secondary-container);
+}
+.rail-item[aria-current] .rail-item__icon {
+  color: var(--md-sys-color-on-secondary-container);
+}
+/* The expanded indicator holds the label too, so the label takes its colour. */
+.rail-item[aria-current] .rail-item__label {
+  color: color-mix(
+    in srgb,
+    var(--md-sys-color-on-secondary-container) calc(var(--nav-wide) * 100%),
+    var(--md-sys-color-on-surface)
+  );
+}
+.rail-item:active .rail-item__indicator {
+  border-radius: var(--md-sys-shape-corner-medium);
 }
 .rail-item:focus-visible {
   outline: none;
@@ -69,158 +241,274 @@
   outline: 3px solid var(--md-sys-color-secondary);
   outline-offset: 2px;
 }
-.nav__drawer {
-  display: none;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  padding: 16px 12px;
-  overflow: auto;
-}
-.nav__primary,
-.nav__utilities {
+
+/* ---------- The current destination's tree ----------
+   Rows are 44dp pills (48dp on touch); each level indents 16dp so the
+   hierarchy reads at a glance. The tree only exists while the rail is
+   expanded: it folds away with the rail on the same spring. */
+.nav__tree {
   display: grid;
-  gap: 4px;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-spatial),
+    opacity var(--motion-effects),
+    visibility 0s linear var(--motion-spring-spatial-default-duration);
+}
+.nav__tree-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.nav__tree-inner > :first-child {
+  margin-top: 4px;
+}
+.nav__tree-inner > :last-child {
+  margin-bottom: 12px;
+}
+/* Arriving in a destination, its tree rises into place section by section.
+ * Only transform and opacity move: the tree has its final height from the
+ * first frame, so the rows below it never shift while it settles. */
+@keyframes nav-tree-rise {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+.nav__tree--entering .nav__tree-inner > * {
+  animation: nav-tree-rise var(--motion-spring-spatial-default-duration) var(--motion-spring-spatial-default) both;
+}
+.nav__tree--entering .nav__tree-inner > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.nav__tree--entering .nav__tree-inner > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.nav__tree--entering .nav__tree-inner > :nth-child(n + 4) {
+  animation-delay: 120ms;
+}
+.nav__headline {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding: 16px 16px 8px calc(var(--nav-rail-icon-x) + 12px);
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+}
+.nav__section:first-child > .nav__headline {
+  padding-top: 8px;
+}
+.nav__items {
+  --nav-depth: 1;
+  gap: 2px;
+}
+.nav__items--nested {
+  --nav-depth: 2;
+  margin-top: 2px;
 }
 .nav-item {
   display: flex;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 44px;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  margin-inline: calc(var(--nav-rail-inset) + var(--nav-depth, 1) * 16px) 12px;
+  padding: 10px 16px 10px 12px;
   color: var(--md-sys-color-on-surface-variant);
   border-radius: var(--md-sys-shape-corner-full);
-  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  -webkit-tap-highlight-color: transparent;
 }
-.nav-item--primary {
-  min-height: 56px;
+.nav__items--nested .nav-item {
+  font-weight: 400;
 }
-.nav-item[aria-current="location"] {
-  color: var(--md-sys-color-on-surface);
+.nav-item > .material-icon {
+  --icon-size: 20px;
+  flex: none;
+}
+.nav-item__label,
+.nav-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-item__indicator {
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 .nav-item[aria-current="page"] {
   color: var(--md-sys-color-on-secondary-container);
+}
+.nav-item[aria-current="page"] > .nav-item__indicator,
+.nav-item[aria-current="page"]:not(:has(> .nav-item__indicator)) {
   background: var(--md-sys-color-secondary-container);
 }
-.nav__utilities {
-  margin-top: auto;
-  padding-top: 24px;
+.nav-item:active {
+  border-radius: var(--md-sys-shape-corner-medium);
 }
-.nav__rail-utilities {
+@media (pointer: coarse) {
+  .nav-item {
+    min-height: 48px;
+  }
+}
+
+/* Where the rail is expanded, the wide-only parts become visible. */
+@media (max-width: 599px) {
+  .nav .nav__tree {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows var(--motion-spatial),
+      opacity var(--motion-effects),
+      visibility 0s;
+  }
+  .nav .nav__brand {
+    visibility: visible;
+  }
+}
+@media (min-width: 1200px) {
+  :root[data-nav="expanded"] .nav__tree {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows var(--motion-spatial),
+      opacity var(--motion-effects),
+      visibility 0s;
+  }
+  :root[data-nav="expanded"] .nav__brand {
+    visibility: visible;
+  }
+}
+.nav-modal-open .nav__tree {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-spatial),
+    opacity var(--motion-effects),
+    visibility 0s;
+}
+.nav-modal-open .nav__brand {
+  visibility: visible;
+}
+
+/* ---------- Scrim (modal rail) ---------- */
+.nav-scrim {
+  position: fixed;
+  z-index: var(--md-sys-z-index-overlay-raised-backdrop);
+  inset: 0;
+  display: block;
+  border: 0;
+  background: var(--md-sys-color-scrim);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-effects),
+    visibility 0s linear var(--motion-spring-effects-default-duration);
+}
+.nav-modal-open .nav-scrim {
+  opacity: 0.32;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--motion-effects),
+    visibility 0s;
+}
+
+/* ---------- Selection glides between pages ----------
+   The current indicator carries a view-transition name, so when the
+   router swaps pages the browser morphs the old pill into the new one on
+   the spatial spring. Blending keeps the labels it passes over readable. */
+@media (min-width: 600px) {
+  .rail-item[aria-current] .rail-item__indicator {
+    view-transition-name: nav-indicator;
+  }
+}
+@media (min-width: 1200px) {
+  :root[data-nav="expanded"] .nav__items > li > .nav-item[aria-current="page"] > .nav-item__indicator {
+    view-transition-name: nav-indicator;
+  }
+  :root[data-nav="expanded"] .rail-item:has(~ .nav__tree .nav__items > li > .nav-item[aria-current="page"]) .rail-item__indicator {
+    view-transition-name: none;
+  }
+}
+/* The group blends (multiply on light, screen on dark), so the labels the
+ * pill slides over — and the destination's own label — stay readable while
+ * it travels; the image pair beneath it is isolated by default. */
+::view-transition-group(nav-indicator) {
+  animation-duration: var(--motion-spring-spatial-default-duration);
+  animation-timing-function: var(--motion-spring-spatial-default);
+  mix-blend-mode: multiply;
+}
+:root[data-theme="dark"]::view-transition-group(nav-indicator) {
+  mix-blend-mode: screen;
+}
+::view-transition-old(nav-indicator),
+::view-transition-new(nav-indicator) {
+  height: 100%;
+  animation-duration: var(--motion-spring-effects-default-duration);
+}
+
+/* ---------- Dynamic forum groups (community-forum-navigation) ----------
+   Rendered inside the community tree at the nested depth; forum groups
+   keep their own disclosure because their count is not known up front. */
+.nav__forums {
   display: grid;
-  gap: 4px;
-  margin-top: auto;
-  padding-block: 16px;
+  margin-top: 2px;
 }
-.nav__rail-utilities .rail-item {
-  min-height: 56px;
-}
-.nav__destination {
-  display: flex;
-  align-items: center;
+.nav__forums .nav__children {
+  display: grid;
   gap: 2px;
-}
-.nav__destination > .nav-item {
-  min-width: 0;
-  flex: 1;
-}
-.nav__disclosure {
-  flex: 0 0 48px;
-}
-.nav__disclosure[aria-expanded="true"] > svg,
-.nav__section[open] > summary > svg {
-  transform: rotate(180deg);
-}
-.nav__branch {
-  padding-block: 4px 12px;
-}
-.nav__children {
-  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.nav__children .nav-item {
-  padding-inline-start: 24px;
-  font-weight: 400;
+.nav__forums .nav__section {
+  display: grid;
 }
-.nav__section > summary,
-.nav__section > .nav__section-toggle {
+.nav__forums .nav__section-toggle {
   display: flex;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px 8px 24px;
-  border-radius: var(--md-sys-shape-corner-small);
-  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-  list-style: none;
+  margin-inline: calc(var(--nav-rail-inset) + 32px) 12px;
+  padding: 8px 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+    var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  text-align: start;
   cursor: pointer;
+  transition: background-color var(--motion-effects);
 }
-.nav__section > summary::-webkit-details-marker {
-  display: none;
-}
-.nav__section .nav-item {
-  padding-inline-start: 32px;
-}
-.nav__section > summary:hover,
-.nav__section > .nav__section-toggle:hover,
-.nav__children .nav-item:hover {
+.nav__forums .nav__section-toggle:hover {
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
-@media (min-width: 1200px) {
-  :root[data-nav="expanded"] .nav__rail-utilities,
-  :root[data-nav="expanded"] .nav__rail-player {
-    display: none;
-  }
+.nav__forums .nav__section-toggle > .material-icon {
+  flex: none;
+  transition: rotate var(--motion-spatial);
 }
-@media (max-width: 1199px) {
-  .nav-modal-open .nav {
-    position: fixed;
-    z-index: var(--md-sys-z-index-overlay-drawer);
-    inset: 0 auto 0 0;
-    display: flex;
-    width: min(320px, calc(100vw - 56px));
-    border-radius: 0 28px 28px 0;
-    box-shadow: var(--md-sys-elevation-level3);
-    background: var(--md-sys-color-surface-container-low);
-  }
-  .nav-modal-open .nav__header {
-    justify-content: flex-start;
-    padding-inline: 16px;
-  }
-  .nav-modal-open .nav__header .nav__brand {
-    display: flex;
-  }
-  .nav-modal-open .nav__drawer {
-    display: flex;
-  }
-  .nav-modal-open .nav__rail,
-  .nav-modal-open .nav__rail-utilities,
-  .nav-modal-open .nav__rail-player {
-    display: none;
-  }
-  .nav-modal-open .nav-scrim {
-    position: fixed;
-    z-index: var(--md-sys-z-index-overlay-raised-backdrop);
-    inset: 0;
-    display: block;
-    border: 0;
-    background: color-mix(in srgb, var(--md-sys-color-scrim) 32%, transparent);
-  }
+.nav__forums .nav__section-toggle[aria-expanded="true"] > .material-icon {
+  rotate: 180deg;
 }
-
-/* Controlled dynamic forum groups share the catalogue section treatment. */
-.nav__section > .nav__section-toggle {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  text-align: start;
+.nav__forums .nav__branch:not([hidden]) {
+  animation:
+    motion-rise var(--motion-spatial) backwards,
+    motion-fade var(--motion-effects) backwards;
+}
+.nav__forums .nav__branch .nav-item {
+  margin-inline-start: calc(var(--nav-rail-inset) + 48px);
 }
 .nav__section-toggle > span,
 .community-nav-board-link > span {
@@ -233,4 +521,11 @@
 .community-nav-board-link > .material-icon {
   --icon-size: 18px;
   flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav,
+  .nav-modal-open .nav {
+    transition: none;
+  }
 }

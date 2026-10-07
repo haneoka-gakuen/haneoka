@@ -143,21 +143,24 @@
 }
 
 /* ---------- Menu ----------
-   Popover surface, 4dp corner, level-2 elevation, 48dp items. Anchored
-   menus use the native popover API; lib has no positioning engine and needs
-   none at these sizes. */
+   Material 3 Expressive vertical menu (SegmentedMenuTokens /
+   StandardMenuTokens): a surface-container-low popover with a 16dp (large)
+   corner at level 2; items are inset 4dp and carry their own shape — small
+   at rest, medium while hovered, focused or pressed, full when selected on
+   tertiary-container. Anchored menus use the native popover API. */
 .menu {
   position: fixed;
   z-index: var(--md-sys-z-index-overlay-popover);
   display: grid;
-  min-width: 192px;
+  min-width: 200px;
   max-width: min(320px, calc(100vw - 32px));
   max-height: min(60dvh, 420px);
-  padding: 8px 0;
+  gap: 2px;
+  padding: 4px;
   overflow-y: auto;
   border: 0;
-  border-radius: var(--md-sys-shape-corner-extra-small);
-  background: var(--md-sys-color-surface-container);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-surface-container-low);
   box-shadow: var(--md-sys-elevation-level2);
 }
 .menu-item {
@@ -168,11 +171,19 @@
   gap: 12px;
   padding: 0 12px;
   color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-small);
   background: transparent;
   font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
     var(--md-sys-typescale-label-large-line-height) var(--app-font);
   text-align: start;
   cursor: pointer;
+  transition:
+    border-radius var(--motion-spatial-fast),
+    background-color var(--motion-effects),
+    color var(--motion-effects);
+}
+.menu-item:is(:hover, :focus-visible, :active) {
+  border-radius: var(--md-sys-shape-corner-medium);
 }
 .menu-item > span {
   min-width: 0;
@@ -185,8 +196,12 @@
   color: var(--md-sys-color-on-surface-variant);
 }
 .menu-item[aria-checked="true"] {
-  color: var(--md-sys-color-on-secondary-container);
-  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-tertiary-container);
+}
+.menu-item[aria-checked="true"] > .material-icon {
+  color: inherit;
 }
 .menu-item[aria-checked="false"] > .material-icon:last-child {
   visibility: hidden;

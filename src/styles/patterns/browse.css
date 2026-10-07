@@ -160,7 +160,11 @@
   padding-inline: 8px;
   color: var(--md-sys-color-on-surface-variant);
 }
+/* The number keeps one width from its loading placeholder to its value, so
+ * the app bar's controls never slide sideways when a collection arrives. */
 .browse__count > strong {
+  min-width: 3ch;
+  text-align: end;
   color: var(--md-sys-color-on-surface);
   font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
     var(--md-sys-typescale-title-medium-line-height) var(--app-font);
@@ -176,6 +180,19 @@
 }
 .browse__count > span:empty {
   display: none;
+}
+.browse__count-pending {
+  display: inline-block;
+  height: 12px;
+  align-self: center;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-highest);
+  animation: browse-count-pulse 1.2s var(--ease-standard) infinite alternate;
+}
+@keyframes browse-count-pulse {
+  to {
+    opacity: 0.45;
+  }
 }
 
 /* ---------- Applied filters ----------
@@ -402,4 +419,42 @@ filter-facet {
   border: 1px solid var(--md-sys-color-outline);
   border-radius: var(--md-sys-shape-corner-small);
   background: var(--md-sys-color-surface);
+}
+
+/* The heading's artwork slot exists before the artwork does (the event
+ * tracker learns its event after the rankings), at the logo family's own
+ * 460x240 shape, so the copy beside it never slides when the logo arrives. */
+.browse__heading:has(.browse__heading-art-link) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.browse__heading-art-link {
+  display: grid;
+  width: clamp(72px, 16vw, 132px);
+  aspect-ratio: 460 / 240;
+  place-items: center;
+  border-radius: var(--md-sys-shape-corner-small);
+}
+.browse__heading-art-link > .browse__heading-art {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.browse__heading-art--pending {
+  display: block;
+  aspect-ratio: 460 / 240;
+  height: auto;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-surface-container-highest);
+  animation: skeleton-pulse 1.4s var(--ease-standard) infinite alternate;
+}
+
+/* A collection heading's description is reserved at three lines: the
+ * description is the subject's own prose and is never clamped, but most fit
+ * in three, so the results below start at their final position whichever
+ * subject is selected and however late its text arrives. */
+.browse--railed .browse__heading-copy > p {
+  min-height: calc(var(--md-sys-typescale-body-medium-line-height) * 3);
+}
+.browse__heading-art--pending {
+  width: clamp(72px, 16vw, 132px);
 }

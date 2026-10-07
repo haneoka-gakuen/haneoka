@@ -305,24 +305,27 @@ export class EventTracker extends LitElement {
       <div class="song-ranking-page song-ranking__content">
         <div class="row row--start">
           <header class="browse__heading grow">
-            ${
-              this.info?.image || this.info?.logo
-                ? html`
-                    <a
-                      href=${resourcePath({ server: this.infoServer, locale: this.locale as Locale, kind: "events", id: event.id })}
-                      aria-label=${`${this.label("event", "Event")} · ${this.eventTitle()}`}
-                    >
+            <a
+              class="browse__heading-art-link"
+              href=${resourcePath({ server: this.infoServer, locale: this.locale as Locale, kind: "events", id: event.id })}
+              aria-label=${`${this.label("event", "Event")} · ${this.eventTitle()}`}
+            >
+              ${
+                this.info?.image || this.info?.logo
+                  ? html`
                       <img
                         class="browse__heading-art"
                         src=${localizedAssetUrl(String(this.info.logo || this.info.image), this.locale)}
                         alt=""
+                        width="460"
+                        height="240"
                         decoding="async"
                         @error=${nextImageCandidate}
                       />
-                    </a>
-                  `
-                : nothing
-            }
+                    `
+                  : nothing
+              }
+            </a>
             <div class="browse__heading-copy">
               <h2 lang=${resolveLocalizedText(this.info?.title, this.locale).locale}>${this.eventTitle()}</h2>
               <p>

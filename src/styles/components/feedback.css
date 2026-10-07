@@ -215,3 +215,36 @@ haneoka-loading-state > md-linear-progress {
   font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
     var(--md-sys-typescale-body-medium-line-height) var(--app-font);
 }
+
+/* ---------- Skeleton text ----------
+   A placeholder that occupies exactly the box its final text will: the
+   characters are present (so line height and width match), only painted
+   over by a tonal pill that pulses. Used where a region's final geometry is
+   known before its data arrives. */
+.skeleton-line {
+  display: inline-block;
+  max-width: 100%;
+  height: 0.7em;
+  overflow: hidden;
+  line-height: 0.7;
+  vertical-align: middle;
+  white-space: nowrap;
+  color: transparent !important;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-highest);
+  animation: skeleton-pulse 1.4s var(--ease-standard) infinite alternate;
+  user-select: none;
+}
+.skeleton-line > * {
+  visibility: hidden;
+}
+@keyframes skeleton-pulse {
+  to {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}

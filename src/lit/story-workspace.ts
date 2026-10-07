@@ -39,7 +39,7 @@ import type { HomeSpotStage } from "./runtime/home-spot-stage";
 import { projectHaneokaTranscript, type HaneokaTranscriptEntry } from "@haneoka/vega-plugin-haneoka/transcript";
 import { advText } from "./ui/adv-text";
 import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
-import { clearBrowseBar, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
+import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
 import { inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
@@ -520,6 +520,7 @@ export class StoryWorkspace extends LitElement {
       ({ "zh-TW": "zh-Hant", "zh-CN": "zh-Hans" } as Record<string, string>)[this.locale] || this.locale;
     return html`
       <image-gallery
+        natural
         .images=${images}
         .active=${variants[preferred] ? preferred : "ja"}
         .locale=${this.locale}
@@ -1414,13 +1415,18 @@ export class StoryWorkspace extends LitElement {
           label: episodes.length !== total ? `/ ${total.toLocaleString()}` : "",
         },
         rail: {
+          // Sections organised by a rail draw its column while loading.
+          pending: this.phase === "loading" && this.origin === "release" && !["tutorial", "afterlive"].includes(this.mode),
           label: this.railLabel(),
           value: this.railValue(),
           items: this.railItems(),
           onSelect: (value) => this.selectRail(value),
           single: this.origin === "release" && ["event", "birthday"].includes(this.mode),
         },
-        heading: this.heading(),
+        heading:
+          this.phase === "loading" && this.origin === "release" && !["tutorial", "birthday"].includes(this.mode)
+            ? { pending: true, title: "", image: this.mode === "event" ? "pending" : undefined }
+            : this.heading(),
         modes: viewSwitch(this.locale, this.view, (view) => {
           this.view = view;
           this.sync();
@@ -1486,7 +1492,10 @@ export class StoryWorkspace extends LitElement {
     `;
   }
   private renderResults(episodes: JsonRecord[]) {
-    if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
+    if (this.phase === "loading")
+      return this.view === "grid"
+        ? html`${collectionSkeleton("story")}${loadingState(uiText(this.locale, "loading"))}`
+        : loadingState(uiText(this.locale, "loading"));
     if (this.phase === "error")
       return errorState(
         uiText(this.locale, "unavailable"),
@@ -2152,9 +2161,11 @@ export class StoryWorkspace extends LitElement {
                       : nothing
                   }
                   <details class="story-reading-info">
-                    <summary>
-                      ${uiText(this.locale, "details")}
+                    <summary class="state-layer">
+                      ${icon("info", 20)}
+                      <strong>${uiText(this.locale, "details")}</strong>
                       <span>${this.duration(episode)}</span>
+                      ${icon("expand_more", 24)}
                     </summary>
                     ${specList([
                       {

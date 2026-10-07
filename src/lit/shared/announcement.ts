@@ -26,10 +26,11 @@ export function announcementRow(entry: Announcement, server: ReleaseServer, loca
         class="list-item list-item--interactive list-item--three-line announcement-row"
         href=${announcementPath(server, locale, entry.id)}
       >
-        ${
-          thumbnail
-            ? html`
-                <span class="list-item__leading announcement-row__thumbnail">
+        <span class="list-item__leading announcement-row__thumbnail" aria-hidden="true">
+          ${icon("campaign", 24)}
+          ${
+            thumbnail
+              ? html`
                   <img
                     src=${thumbnail}
                     alt=""
@@ -38,13 +39,13 @@ export function announcementRow(entry: Announcement, server: ReleaseServer, loca
                     loading="lazy"
                     decoding="async"
                     @error=${(event: Event) => {
-                      (event.currentTarget as HTMLElement).parentElement?.setAttribute("hidden", "");
+                      (event.currentTarget as HTMLElement).hidden = true;
                     }}
                   />
-                </span>
-              `
-            : nothing
-        }
+                `
+              : nothing
+          }
+        </span>
         <span class="list-item__body">
           <span class="list-item__supporting announcement-row__meta">
             <time

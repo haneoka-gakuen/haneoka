@@ -7,7 +7,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
-import { clearBrowseBar, filterGroup, renderBrowse } from "./ui/browse";
+import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -564,14 +564,16 @@ export class SpineWorkspace extends LitElement {
     return html`
       ${renderBrowse({
         kind: "model",
-        count: { value: models.length, label: "" },
+        count: { value: this.phase === "ready" ? models.length : null, label: "" },
         modes: viewSwitch(this.locale, this.view, (view) => {
           this.view = view;
           this.sync();
         }),
         results:
           this.phase === "loading"
-            ? loadingState(uiText(this.locale, "loading"))
+            ? this.view === "grid"
+              ? html`${collectionSkeleton("model")}${loadingState(uiText(this.locale, "loading"))}`
+              : loadingState(uiText(this.locale, "loading"))
             : this.phase === "error"
               ? errorState(
                   uiText(this.locale, "unavailable"),
