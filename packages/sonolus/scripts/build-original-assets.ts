@@ -185,8 +185,24 @@ for (const retired of ["skin.data", "skin.texture.png"]) rmSync(resolve(out, ret
 // SONOLUS_PARTICLE_MODE=compact swaps the traced effects for the compact,
 // hand-authored set in native-particles/compact.ts (same effect names, ~1/60
 // of the data and a handful of particles per hit).
-const compactParticles = process.env.SONOLUS_PARTICLE_MODE === "compact";
-const compiled = compactParticles
+// The default is the game's Simple note effects, prebuilt from the effect001Simple prefabs into
+// assets/simple-effects (see scripts/simple-effects). SONOLUS_PARTICLE_MODE=traced restores the traced effect001
+// set; =compact the hand-authored one.
+const particleMode = process.env.SONOLUS_PARTICLE_MODE || "simple";
+const compactParticles = particleMode === "compact";
+const simpleDir = resolve(dirname(fileURLToPath(import.meta.url)), "../assets/simple-effects");
+const compiled = particleMode === "simple"
+  ? (() => {
+      const data = JSON.parse(gunzipSync(readFileSync(resolve(simpleDir, "particle.data"))).toString()) as {
+        width: number; height: number; sprites: unknown[]; effects: { name: string; groups: unknown[] }[];
+      };
+      return {
+        effects: data.effects,
+        atlas: { width: data.width, height: data.height, sprites: data.sprites, png: readFileSync(resolve(simpleDir, "particle.texture.png")) },
+        report: data.effects.map((effect) => ({ name: String(effect.name), groups: effect.groups.length })),
+      };
+    })()
+  : compactParticles
   ? (() => {
       const compact = compileCompactParticles();
       return {
@@ -218,7 +234,7 @@ writeFileSync(
   JSON.stringify(
     {
       schema: "our-notes-native-particles-v2",
-      source: compactParticles ? "effect001-compact" : "effect001",
+      source: particleMode === "simple" ? "effect001simple" : compactParticles ? "effect001-compact" : "effect001",
       widths: NATIVE_EFFECT_WIDTHS,
       releaseInputsValidated: inputProvenance.sourceProvenanceValidated,
       atlas: { width: compiled.atlas.width, height: compiled.atlas.height, bytes: compiled.atlas.png.length },
