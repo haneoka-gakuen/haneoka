@@ -777,16 +777,16 @@ jobs:
           # reads this local 4–5 GiB source directory after CRI extraction.
           rm -rf -- "data/servers/$RESOURCE_SERVER/sources/${{ needs.prepare.outputs.source_id }}/android/cri"
       - name: Install CPU stamp reconstruction dependencies
-        if: inputs.server == 'intl' || inputs.server == 'intl-cbt'
+        if: inputs.server == 'intl' || inputs.server == 'intl-test'
         run: python -m pip install --disable-pip-version-check --requirement scripts/build/requirements-textless-stamps.txt
       - name: Cache pinned stamp detector
-        if: inputs.server == 'intl' || inputs.server == 'intl-cbt'
+        if: inputs.server == 'intl' || inputs.server == 'intl-test'
         uses: actions/cache@v6
         with:
           path: .cache/stamp-cv
           key: stamp-detector-${{ runner.os }}-${{ hashFiles('scripts/build/textless-stamps-models.json') }}
       - name: Restore verified private Intl stamp bootstrap
-        if: inputs.server == 'intl'
+        if: inputs.server == 'intl' || inputs.server == 'intl-test'
         run: >-
           python scripts/core/stamp_ci_inputs.py --server "$RESOURCE_SERVER"
           --output "$RUNNER_TEMP/stamp-reviewed"
@@ -799,9 +799,9 @@ jobs:
             extra+=(--delta-plan "$RUNNER_TEMP/unity-delta-plan.json")
           fi
           python scripts/pipeline.py --server "$RESOURCE_SERVER" build-api --source "$SOURCE_ID" --build "$BUILD_ID" "${extra[@]}"
-          if [[ "$RESOURCE_SERVER" == "intl" || "$RESOURCE_SERVER" == "intl-cbt" ]]; then
+          if [[ "$RESOURCE_SERVER" == "intl" || "$RESOURCE_SERVER" == "intl-test" ]]; then
             stamp_extra=()
-            if [[ "$RESOURCE_SERVER" == "intl" ]]; then
+            if [[ "$RESOURCE_SERVER" == "intl" || "$RESOURCE_SERVER" == "intl-test" ]]; then
               stamp_extra+=(--seed-manifest "$RUNNER_TEMP/stamp-reviewed/seed/manifest.json"
                 --seed-provenance "$RUNNER_TEMP/stamp-reviewed/provenance.json"
                 --repair-cache-manifest "$RUNNER_TEMP/stamp-reviewed/repair/manifest.json")

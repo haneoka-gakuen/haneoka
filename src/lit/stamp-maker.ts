@@ -16,6 +16,8 @@ import { readReleaseServer } from "../lib/release-server";
 import {
   stampChoices,
   STAMP_SOURCE_SERVER,
+  stampSourceServers,
+  mergeTextlessStampManifests,
   textlessChoices,
   textlessManifestUrl,
   loadStampImage,
@@ -624,9 +626,11 @@ export class StampMaker extends LitElement {
     this.catalog = {};
     const loading = beginLoading(this.t("choose"), { signal: request.signal });
     try {
-      const catalog = await fetchJson<JsonRecord>(catalogUrl("stamps", "", STAMP_SOURCE_SERVER), {
-        signal: request.signal,
-      });
+      const sources = await Promise.allSettled(stampSourceServers().map((server) =>
+        fetchJson<JsonRecord>(catalogUrl("stamps", "", server), { signal: request.signal })));
+      const catalog: JsonRecord = {};
+      for (const source of sources) if (source.status === "fulfilled")
+        for (const [id, stamp] of Object.entries(source.value)) if (!(id in catalog)) catalog[id] = stamp;
       if (request.signal.aborted || !this.isConnected) return;
       if (!stampChoices(catalog, this.locale).length) throw new Error("Stamp catalog is empty");
       this.catalog = catalog;
@@ -701,15 +705,13 @@ export class StampMaker extends LitElement {
     this.textless = undefined;
     this.manifestError = false;
     this.manifestSettled = false;
-    const source = this.textlessSrc || textlessManifestUrl();
-    if (!source) {
-      this.manifestSettled = true;
-      return;
-    }
+    const sources = this.textlessSrc ? [this.textlessSrc] : stampSourceServers().map((server) => textlessManifestUrl(server));
     const request = new AbortController();
     this.manifestRequest = request;
     try {
-      const manifest = await fetchJson(source, { signal: request.signal });
+      const results = await Promise.allSettled(sources.map((source) => fetchJson(source, { signal: request.signal })));
+      if (results.every((result) => result.status === "rejected")) throw new Error("Stamp manifests unavailable");
+      const manifest = mergeTextlessStampManifests(results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []));
       if (!request.signal.aborted && this.isConnected) this.textless = manifest;
     } catch {
       if (!request.signal.aborted) this.manifestError = true;

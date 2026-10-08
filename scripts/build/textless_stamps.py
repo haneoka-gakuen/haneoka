@@ -252,11 +252,13 @@ def discover(indir: Path) -> dict[str, dict[str, Path]]:
     return groups
 
 
-def catalog_inventory(catalog: Path, build: Path, assets: Path, server: str = 'intl') -> dict:
+def catalog_inventory(catalog: Path, build: Path, assets: Path, server: str = 'intl', *, stamp_ids: set[str] | None = None) -> dict:
     """Read existing per-bundle metadata and Sprite headers; never re-extract assets."""
     entities = {}
     for path in sorted(catalog.glob("*.json")) if catalog.is_dir() else [catalog]:
         entities.update(json.loads(path.read_text()))
+    if stamp_ids is not None:
+        entities = {key: value for key, value in entities.items() if key in stamp_ids}
     metadata_dir = build/"metadata/bundles"
     if shutil.which("rg"):
         result = subprocess.run(["rg", "-l", "-F", "Assets/AddressableResources/Stamp/",

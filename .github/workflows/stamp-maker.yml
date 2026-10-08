@@ -1,0 +1,44 @@
+name: Refresh textless stamp union
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        type: choice
+        options: [intl, intl-test]
+        default: intl-test
+        required: true
+concurrency:
+  group: stamp-maker-refresh-${{ inputs.server }}
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: resource-${{ inputs.server }}
+    permissions:
+      contents: read
+      actions: write
+    env:
+      RESOURCE_SERVER: ${{ inputs.server }}
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-resource-pipeline
+      - name: Install CPU stamp reconstruction
+        run: python -m pip install --disable-pip-version-check --requirement scripts/build/requirements-textless-stamps.txt
+      - name: Cache pinned stamp detector
+        uses: actions/cache@v6
+        with:
+          path: .cache/stamp-cv
+          key: stamp-detector-${{ runner.os }}-${{ hashFiles('scripts/build/textless-stamps-models.json') }}
+      - name: Generate new stamp IDs and publish derivatives
+        run: python scripts/publish/stamp_maker.py --server "$RESOURCE_SERVER" --output "$RUNNER_TEMP/stamp-result"
+      - name: Rebuild site pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-cloudflare.yml --repo "$GITHUB_REPOSITORY" --ref main

@@ -107,7 +107,7 @@ def restore_reviewed_inputs(store, output: Path) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", choices=("intl",), required=True)
+    parser.add_argument("--server", choices=("intl", "intl-test"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     from core.config import load_server_config

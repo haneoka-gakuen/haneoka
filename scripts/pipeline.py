@@ -832,27 +832,26 @@ def command_build_textless_stamps(args: argparse.Namespace) -> None:
     config = load_server_config(args.server)
     identity = args.build or build_id(config, args.source)
     delta = _delta_context(config, args.delta_plan) if args.delta_plan else None
-    reuse_manifest = None
-    restore_output = None
-    if config.id in ("intl", "intl-cbt") and delta is None and args.reuse_current:
-        try:
-            store = R2Store(config, 2)
-            snapshot = current_release_document(store, config, MANIFEST)
-            if isinstance(snapshot, dict):
-                reuse_manifest = snapshot["document"]
-                restore_output = _preview_restore(store, snapshot)
-                # _preview_restore also pins the expected object SHA.
-                pinned = restore_output
-                restore_output = lambda path, target: pinned(path, snapshot["entries"][path]["sha256"], target)
-        except Exception as error:
-            sys.stderr.write(f"stamp current-release cache unavailable; rebuilding: {error}\n")
-    _print(build_textless_stamps(config.id, args.source, identity,
-                                 model=Path(args.model) if args.model else None,
-                                 delta=delta,
-                                 reuse_manifest=reuse_manifest, restore_output=restore_output,
-                                 seed_manifest=Path(args.seed_manifest) if args.seed_manifest else None,
-                                 seed_provenance=Path(args.seed_provenance) if args.seed_provenance else None,
-                                 repair_cache_manifest=Path(args.repair_cache_manifest) if args.repair_cache_manifest else None))
+    from contextlib import nullcontext
+    from dataclasses import replace
+    from build.stamp_id_cache import StampIdCache
+    previous = []
+    cache = None
+    if config.id in ("intl", "intl-test"):
+        store = R2Store(config, 8)
+        cache = StampIdCache(store)
+    with cache if cache is not None else nullcontext() as id_cache:
+        if id_cache is not None:
+            for peer in ("intl", "intl-test"):
+                snapshot = current_release_document(store, replace(config, id=peer), MANIFEST)
+                if isinstance(snapshot, dict):
+                    previous.append(snapshot["document"])
+        _print(build_textless_stamps(config.id, args.source, identity,
+                                     model=Path(args.model) if args.model else None,
+                                     delta=delta, id_cache=id_cache, previous_manifests=previous,
+                                     seed_manifest=Path(args.seed_manifest) if args.seed_manifest else None,
+                                     seed_provenance=Path(args.seed_provenance) if args.seed_provenance else None,
+                                     repair_cache_manifest=Path(args.repair_cache_manifest) if args.repair_cache_manifest else None))
 
 
 def command_build_announcements(args: argparse.Namespace) -> None:
@@ -930,7 +929,19 @@ def _run_build(
                    allow_basis_reencode=include_basis_reencode)
     build_api(config, source_id, identity)
     from build.stamp_pipeline import build_textless_stamps
-    build_textless_stamps(config.id, source_id, identity, allow_model_download=not offline)
+    if not offline and config.id in ("intl", "intl-test"):
+        from dataclasses import replace
+        from build.stamp_id_cache import StampIdCache
+        store = R2Store(config, 8)
+        with StampIdCache(store) as cache:
+            previous = []
+            for peer in ("intl", "intl-test"):
+                snapshot = current_release_document(store, replace(config, id=peer), "runtime/stamp-maker/manifest.json")
+                if snapshot:
+                    previous.append(snapshot["document"])
+            build_textless_stamps(config.id, source_id, identity, id_cache=cache, previous_manifests=previous)
+    else:
+        build_textless_stamps(config.id, source_id, identity, allow_model_download=not offline)
     # NOTE: the Sonolus payload is intentionally NOT built here. It is decoupled
     # from the resource pipeline (it is slow and changes independently): the engine
     # is a shared global asset built via `pnpm sonolus:build`, and chart data is
@@ -1403,7 +1414,7 @@ def parser() -> argparse.ArgumentParser:
     stamp_build.add_argument("--source", required=True)
     stamp_build.add_argument("--build")
     stamp_build.add_argument("--delta-plan")
-    stamp_build.add_argument("--reuse-current", action="store_true", help="reuse matching images from one pinned current release")
+    stamp_build.add_argument("--reuse-current", action="store_true", help="reuse generated stamp IDs across Intl and Intl test")
     stamp_build.add_argument("--model", help="verified detector; defaults to the pinned download/cache")
     stamp_build.add_argument("--seed-manifest", help="content-verified reviewed local images for initial cache population")
     stamp_build.add_argument("--seed-provenance", help="portable reviewed repair metadata bound into the production recipe")

@@ -1,9 +1,14 @@
 import { localizedText, type JsonRecord } from "../../lit/shared/catalog";
+import { showTestServerContent } from "../test-server-visibility";
 
 /** International multilingual assets are shared by every page-server selection. */
 export const STAMP_SOURCE_SERVER = "intl";
-export function textlessManifestUrl(_server = STAMP_SOURCE_SERVER): string {
-  return `/runtime/${STAMP_SOURCE_SERVER}/stamp-maker/manifest.json`;
+export const STAMP_SOURCE_SERVERS = ["intl", "intl-test"] as const;
+export function stampSourceServers(): readonly string[] {
+  return showTestServerContent() ? STAMP_SOURCE_SERVERS : [STAMP_SOURCE_SERVER];
+}
+export function textlessManifestUrl(server = STAMP_SOURCE_SERVER): string {
+  return `/runtime/${server}/stamp-maker/manifest.json`;
 }
 
 export interface StampChoice {
@@ -22,6 +27,7 @@ export interface TextlessStampManifest {
   server: string;
   records: {
     id: string;
+    stampId?: string;
     publishable: boolean;
     quality: string;
     nativeSize?: [number, number];
@@ -102,12 +108,27 @@ export function textlessChoices(originals: StampChoice[], value: unknown, server
       Array.isArray(size) && size.length === 2 && size.every((value) => Number.isSafeInteger(value) && value > 0)
         ? { width: size[0], height: size[1] }
         : undefined;
-    if (source) entries.set(record.id, { source, effectiveSize });
+    const key = record.stampId || record.id;
+    if (source && !entries.has(key)) entries.set(key, { source, effectiveSize });
   }
   return originals.flatMap((stamp) => {
-    const entry = entries.get(stamp.resourceName);
+    const entry = entries.get(stamp.id) ?? entries.get(stamp.resourceName);
     return entry ? [{ ...stamp, sources: [entry.source], effectiveSize: entry.effectiveSize }] : [];
   });
+}
+
+/** Both manifests use numeric stamp identity; the first published derivative stays selected. */
+export function mergeTextlessStampManifests(values: readonly unknown[]): TextlessStampManifest {
+  const records = new Map<string, TextlessStampManifest["records"][number]>();
+  for (const value of values) {
+    const manifest = value as Partial<TextlessStampManifest> | null;
+    if (manifest?.schema !== "haneoka-textless-stamps-v1" || !STAMP_SOURCE_SERVERS.includes(manifest.server as typeof STAMP_SOURCE_SERVERS[number]) || !Array.isArray(manifest.records)) continue;
+    for (const record of manifest.records) {
+      const key = record.stampId || record.id;
+      if (record.publishable && !records.has(key)) records.set(key, record);
+    }
+  }
+  return { schema: "haneoka-textless-stamps-v1", server: STAMP_SOURCE_SERVER, records: [...records.values()] };
 }
 
 /** Blob loading keeps cancellation and the canvas origin under our control. */
