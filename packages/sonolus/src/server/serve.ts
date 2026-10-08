@@ -269,6 +269,8 @@ function main() {
   // are fatal: no pixel/8bit replacement is visually equivalent.
   const resourceDir = resolve(ROOT, "packages/sonolus/dist/our-notes");
   const PARTICLE_NAME = "ourNotesParticle";
+  // SONOLUS_PARTICLE_DIR serves a candidate particle pack (particle.data/.texture.png) for local playtests.
+  const particleDir = process.env.SONOLUS_PARTICLE_DIR ?? resourceDir;
   const requiredResourceFiles = [
     "skins/skin001/skin.data",
     "skins/skin001/skin.texture.png",
@@ -329,8 +331,8 @@ function main() {
     author: { en: "haneoka" },
     tags: [],
     thumbnail: s.add(readFileSync(resolve(resourceDir, "particle.thumbnail.png"))),
-    data: s.add(readFileSync(resolve(resourceDir, "particle.data"))),
-    texture: s.add(readFileSync(resolve(resourceDir, "particle.texture.png"))),
+    data: s.add(readFileSync(resolve(particleDir, "particle.data"))),
+    texture: s.add(readFileSync(resolve(particleDir, "particle.texture.png"))),
   };
   s.particle.items.push(particle);
   const effectItems: EffectItemModel[] = OUR_NOTES_NOTE_SE_GROUP_IDS.map((group) => {
