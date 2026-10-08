@@ -2678,10 +2678,10 @@
     "runtimeError": "无法加载 Our Notes 谱面运行环境。"
   },
   "seo": {
-    "homeTitle": "BanG Dream! Our Notes 资料库",
+    "homeTitle": "BanG Dream! Our Notes 数据库",
     "descriptions": {
-      "home": "在 haneoka 浏览 BanG Dream! Our Notes 的乐曲、谱面、成员卡、留影卡、角色、故事与活动资料，探索 Live2D、Spine 和主页场景，查看游戏公告并参与社区交流。",
-      "catalog": "在 haneoka 浏览 BanG Dream! Our Notes 的乐曲、谱面、成员卡、留影卡、角色、故事与活动资料，探索 Live2D、Spine 和主页场景，查看游戏公告并参与社区交流。",
+      "home": "haneoka 的 BanG Dream! Our Notes 数据库收录歌曲与谱面、成员卡与留影卡、角色、剧情和活动资料。查阅卡牌技能与卡图、歌曲制作信息、角色档案和故事对白。",
+      "catalog": "浏览 BanG Dream! Our Notes 数据库与图鉴，按歌曲、卡牌、角色、剧情和活动查找资料，打开关联条目、谱面预览及 Live2D、Spine 模型工具。",
       "catalogItem": "查阅{title}的详细资料、相关内容和关联条目，通过 haneoka 的 BanG Dream! Our Notes 资料库浏览歌曲、卡牌、角色、故事与游戏系统信息。",
       "about": "了解 haneoka 的资料浏览、剧情与谱面播放器、Live2D 和 Spine 工具、社区与开放接口，认识 Vega、Altair、Deneb 和 Cassiopeia 等组件的分工，以及项目的开源仓库与技术路线。",
       "community": "浏览 BanG Dream! Our Notes 社区的帖子、话题与创作分享，参与评论和回复，点赞或收藏感兴趣的内容，关注作者，并通过关联资料探索歌曲、角色与故事。",
@@ -2692,7 +2692,9 @@
       "terms": "阅读 haneoka 的网站和社区使用规则，了解账户、帖子、上传内容、举报与审核的要求，查看资源使用、版权和服务相关条款，参与有序的游戏社区交流。",
       "privacy": "了解 haneoka 如何处理账户资料、Cookie、社区内容、上传文件与访问记录，查看数据使用、存储、安全和用户权利相关说明，以及隐私设置与联系渠道。",
       "general": "探索 haneoka 的{title}内容，浏览 BanG Dream! Our Notes 游戏资料、预览工具和社区分享，通过相关条目继续了解乐曲、角色、卡牌与故事。",
-      "announcements": "查看 BanG Dream! Our Notes 的游戏公告、活动消息、招募通知、维护安排与已知问题，阅读完整内容、相关图片和发布时间，按当前语言浏览对应服务器的最新消息。"
+      "announcements": "查看 BanG Dream! Our Notes 的游戏公告、活动消息、招募通知、维护安排与已知问题，阅读完整内容、相关图片和发布时间，按当前语言浏览对应服务器的最新消息。",
+      "stampMaker": "使用 BanG Dream! Our Notes 角色图片与文字制作自定义表情。在浏览器中调整图片并导出 PNG。",
+      "chartEditor": "使用浏览器谱面编辑器编辑音符与连接线，预览节奏游戏谱面并管理本地项目。"
     },
     "resources": {
       "songs": "查阅 BanG Dream! Our Notes 乐曲的作词、作曲、编曲与乐队信息，比较各难度谱面、音符数量和发布资料，打开谱面播放器、谱面图片、排行榜或 Sonolus，探索相关歌曲内容。",
@@ -2705,7 +2707,23 @@
       "stories": "浏览 BanG Dream! Our Notes 的乐队、活动、羁绊、主页和演出后故事，查看人物头像、对白与折叠的图片视频，或使用剧情播放器体验场景、模型和演出。",
       "events": "查看 BanG Dream! Our Notes 活动的时间、玩法、奖励与关联故事，浏览相关招募、UP 卡牌和乐曲，通过关联资料了解活动内容与游戏进展。"
     },
-    "siteTitle": "BanG Dream! Our Notes 资料库"
+    "siteTitle": "BanG Dream! Our Notes 数据库",
+    "keywords": {
+      "base": "BanG Dream! Our Notes, Our Notes 数据库, 游戏图鉴, 梦想协奏曲, バンドリ！Our Notes",
+      "resources": {
+        "songs": "歌曲数据库, 歌曲制作信息, 节奏游戏谱面, 谱面难度",
+        "characters": "角色图鉴, 角色档案",
+        "member-cards": "成员卡图鉴, 卡图, 卡牌技能, 培养材料",
+        "support-cards": "留影卡图鉴, 卡图, 卡牌能力, 卡牌技能",
+        "band-items": "乐队道具, 升级材料",
+        "live2d": "Live2D 模型, 模型预览",
+        "spine": "Spine 模型, 动画预览",
+        "stories": "剧情数据库, 剧情文本, 故事对白, 剧情播放器",
+        "events": "活动数据库, 活动奖励"
+      },
+      "stampMaker": "表情制作, 自定义表情, PNG 导出",
+      "chartEditor": "谱面编辑器, 节奏游戏谱面, 音符编辑"
+    }
   },
   "lookX": "水平视线",
   "lookY": "垂直视线",

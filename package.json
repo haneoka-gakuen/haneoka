@@ -1,13 +1,22 @@
 {
   "name": "haneoka",
   "private": true,
-  "description": "Unofficial BanG Dream! Our Notes resource archive and browser viewer",
+  "description": "Unofficial BanG Dream! Our Notes database, resource archive and browser tools",
   "keywords": [
     "bang-dream",
     "our-notes",
     "resource-archive",
     "astro",
-    "sonolus"
+    "sonolus",
+    "bang-dream-our-notes",
+    "game-database",
+    "song-database",
+    "card-database",
+    "story-archive",
+    "chart-editor",
+    "live2d-viewer",
+    "spine-viewer",
+    "bestdori"
   ],
   "license": "MPL-2.0",
   "homepage": "https://haneoka.org",

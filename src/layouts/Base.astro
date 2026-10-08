@@ -7,7 +7,7 @@ import { uiFontStyles } from "../lib/ui-fonts";
 import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
-import { canonicalPath, pageSummary, pageTitle, pageStructuredData, shouldNoindex } from "../lib/seo";
+import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex } from "../lib/seo";
 interface Props {
   locale: Locale;
   title: string;
@@ -43,6 +43,7 @@ const isLocalizedRoute = canonicalRoute
 const localizedTitle = seoTitleValues?.[locale] ?? (titleKey ? t(locale, titleKey, title) : title);
 const fullTitle = pageTitle(locale, route, localizedTitle);
 const summary = pageSummary(locale, route, localizedTitle, seoDescriptionValues?.[locale] ?? description);
+const keywords = pageKeywords(locale, route, localizedTitle);
 const publicRoute = canonicalRoute ?? (isLocalizedRoute ? localePath(route, locale) : route);
 // Each locale's page canonicalizes to itself and points at its language
 // siblings, so every language can rank on its own URL.
@@ -110,6 +111,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
     </script>
     <title>{fullTitle}</title>
     <meta name="description" content={summary} />
+    {!noindex && keywords && <meta name="keywords" content={keywords} />}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="haneoka" />
     <meta property="og:title" content={fullTitle} />
@@ -140,7 +142,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       languageAlternates.map((alternate) => (
         <link rel="alternate" hreflang={localeTag(alternate.locale)} href={alternate.href} />
       ))}
-    {!noindex && (
+    {!noindex && languageAlternates.length > 0 && (
       <link
         rel="alternate"
         hreflang="x-default"

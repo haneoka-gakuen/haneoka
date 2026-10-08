@@ -45,9 +45,30 @@ const withoutSiteSuffix = (title: string): string =>
   title.replace(/\s*·\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
 
 export function pageTitle(locale: Locale, route: string, title: string): string {
-  const name = route === "/" ? t(locale, "home", "Home") : withoutSiteSuffix(title);
+  if (route === "/") return `haneoka - ${serverText(locale, "seo.homeTitle", undefined, title)}`;
+  const name = withoutSiteSuffix(title);
   const site = serverText(locale, "seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
   return `${name && name !== "haneoka" ? `${name} · ` : ""}haneoka - ${site}`;
+}
+
+/** Small, page-specific vocabulary for clients that consume keyword metadata. */
+export function pageKeywords(locale: Locale, route: string, title: string): string {
+  const kind =
+    parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
+  const category = kind
+    ? serverText(locale, `seo.keywords.resources.${kind}`, undefined, "")
+    : route === "/stamp-maker" || route === "/tools/stamp-maker"
+      ? serverText(locale, "seo.keywords.stampMaker", undefined, "")
+      : route.startsWith("/chart-editor")
+        ? serverText(locale, "seo.keywords.chartEditor", undefined, "")
+        : "";
+  return [
+    ...new Set(
+      [withoutSiteSuffix(title), serverText(locale, "seo.keywords.base", undefined, ""), category]
+        .flatMap((value) => value.split(",").map((term) => term.trim()))
+        .filter(Boolean),
+    ),
+  ].join(", ");
 }
 
 export function pageSummary(locale: Locale, route: string, title: string, description?: string): string {
@@ -139,28 +160,32 @@ export function pageDescription(locale: Locale, route: string, title: string): s
   const key =
     route === "/"
       ? "home"
-      : /\/announcements(?:\/|$)/u.test(route)
-        ? "announcements"
-        : route === "/catalog"
-          ? "catalog"
-          : route.startsWith("/catalog/")
-            ? "catalogItem"
-            : route === "/about"
-              ? "about"
-              : route === "/community/tags"
-                ? "communityTags"
-                : route === "/community/playlists"
-                  ? "communityPlaylists"
-                  : route === "/community/songs-bestdori"
-                    ? "communitySongs"
-                    : route.startsWith("/community/stories-bestdori/")
-                      ? "communityStories"
-                      : route.startsWith("/community")
-                        ? "community"
-                        : route === "/terms"
-                          ? "terms"
-                          : route === "/privacy"
-                            ? "privacy"
-                            : "general";
+      : route === "/stamp-maker" || route === "/tools/stamp-maker"
+        ? "stampMaker"
+        : route.startsWith("/chart-editor")
+          ? "chartEditor"
+          : /\/announcements(?:\/|$)/u.test(route)
+            ? "announcements"
+            : route === "/catalog"
+              ? "catalog"
+              : route.startsWith("/catalog/")
+                ? "catalogItem"
+                : route === "/about"
+                  ? "about"
+                  : route === "/community/tags"
+                    ? "communityTags"
+                    : route === "/community/playlists"
+                      ? "communityPlaylists"
+                      : route === "/community/songs-bestdori"
+                        ? "communitySongs"
+                        : route.startsWith("/community/stories-bestdori/")
+                          ? "communityStories"
+                          : route.startsWith("/community")
+                            ? "community"
+                            : route === "/terms"
+                              ? "terms"
+                              : route === "/privacy"
+                                ? "privacy"
+                                : "general";
   return serverText(locale, `seo.descriptions.${key}`, { title }, title).trim();
 }

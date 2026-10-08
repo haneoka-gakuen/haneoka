@@ -2678,10 +2678,10 @@
     "runtimeError": "Unable to load the Our Notes chart runtime."
   },
   "seo": {
-    "homeTitle": "BanG Dream! Our Notes Archive",
+    "homeTitle": "BanG Dream! Our Notes Database",
     "descriptions": {
-      "home": "Explore BanG Dream! Our Notes on haneoka: songs and charts, member and support cards, characters, stories and events. Preview Live2D, Spine and home scenes, read game announcements and join the community.",
-      "catalog": "Explore BanG Dream! Our Notes on haneoka: songs and charts, member and support cards, characters, stories and events. Preview Live2D, Spine and home scenes, read game announcements and join the community.",
+      "home": "Explore the BanG Dream! Our Notes database on haneoka: song credits and charts, member and support card artwork and skills, character profiles, story dialogue and event information.",
+      "catalog": "Browse the BanG Dream! Our Notes database by songs, cards, characters, stories and events. Open related entries, chart previews and Live2D or Spine model tools.",
       "catalogItem": "Explore detailed information about {title} and its related entries on haneoka, the BanG Dream! Our Notes resource archive for songs, cards, characters, stories and game systems.",
       "about": "Discover haneoka’s game archive, story and chart players, Live2D and Spine tools, community and public APIs. Learn how Vega, Altair, Deneb and Cassiopeia work together, explore the open-source repositories and follow the project’s technology.",
       "community": "Discover BanG Dream! Our Notes community posts, discussions and creative contributions. Comment and reply, like or bookmark interesting posts, follow authors and explore related songs, characters and stories.",
@@ -2692,7 +2692,9 @@
       "terms": "Read the rules for using haneoka and its community. Learn the requirements for accounts, posts, uploads, reports and moderation, and review resource use, copyright and service terms.",
       "privacy": "Learn how haneoka handles account details, cookies, community content, uploaded files and visit records. Read about data use, storage, security, user rights, privacy settings and contact options.",
       "general": "Explore {title} on haneoka, with BanG Dream! Our Notes game information, preview tools and community contributions. Follow related entries to discover songs, characters, cards and stories.",
-      "announcements": "Read BanG Dream! Our Notes announcements, event news, recruitment notices, maintenance updates and known issues. View full articles, images and publication dates in the available language for your selected server."
+      "announcements": "Read BanG Dream! Our Notes announcements, event news, recruitment notices, maintenance updates and known issues. View full articles, images and publication dates in the available language for your selected server.",
+      "stampMaker": "Create custom BanG Dream! Our Notes stamps with character artwork and text. Adjust the image and export a PNG with the browser stamp maker.",
+      "chartEditor": "Create and edit rhythm-game charts in the browser chart editor. Work with notes and connectors, preview the chart and manage local projects."
     },
     "resources": {
       "songs": "Explore BanG Dream! Our Notes song credits, bands and release information. Compare chart difficulties and note counts, open the chart player or chart image, view rankings and access Sonolus levels.",
@@ -2705,7 +2707,23 @@
       "stories": "Explore BanG Dream! Our Notes band, event, relationship, home and after-live stories. Read dialogue with character portraits and expandable media, or open the story player for scenes, models and performances.",
       "events": "Explore BanG Dream! Our Notes event schedules, gameplay, rewards and related stories. Browse linked recruitment, featured cards and songs to understand the event and follow game updates."
     },
-    "siteTitle": "BanG Dream! Our Notes Resource Archive"
+    "siteTitle": "BanG Dream! Our Notes Database",
+    "keywords": {
+      "base": "BanG Dream! Our Notes, Our Notes database, game resource archive, Bandori Our Notes",
+      "resources": {
+        "songs": "song database, song credits, rhythm game charts, chart difficulties",
+        "characters": "character database, character profiles",
+        "member-cards": "member card database, card artwork, card skills, upgrade materials",
+        "support-cards": "support card database, card artwork, card stats, card skills",
+        "band-items": "band item database, upgrade materials",
+        "live2d": "Live2D models, model viewer",
+        "spine": "Spine models, animation viewer",
+        "stories": "story database, story dialogue, story transcripts, story player",
+        "events": "event database, event rewards"
+      },
+      "stampMaker": "stamp maker, custom stamps, PNG export",
+      "chartEditor": "chart editor, rhythm game charts, note editing"
+    }
   },
   "lookX": "Look horizontally",
   "lookY": "Look vertically",

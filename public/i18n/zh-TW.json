@@ -2680,8 +2680,8 @@
   "seo": {
     "homeTitle": "BanG Dream! Our Notes 資料庫",
     "descriptions": {
-      "home": "在 haneoka 瀏覽 BanG Dream! Our Notes 的樂曲、譜面、成員卡、留影卡、角色、故事與活動資料，探索 Live2D、Spine 和主頁場景，查看遊戲公告並參與社群交流。",
-      "catalog": "在 haneoka 瀏覽 BanG Dream! Our Notes 的樂曲、譜面、成員卡、留影卡、角色、故事與活動資料，探索 Live2D、Spine 和主頁場景，查看遊戲公告並參與社群交流。",
+      "home": "haneoka 的 BanG Dream! Our Notes 資料庫收錄樂曲與譜面、成員卡與留影卡、角色、劇情及活動資料。查閱卡片技能與卡圖、樂曲製作資訊、角色檔案及故事對白。",
+      "catalog": "瀏覽 BanG Dream! Our Notes 資料庫與圖鑑，依樂曲、卡片、角色、劇情及活動尋找資料，開啟關聯條目、譜面預覽和 Live2D、Spine 模型工具。",
       "catalogItem": "查閱{title}的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
       "about": "了解 haneoka 的資料瀏覽、劇情與譜面播放器、Live2D 和 Spine 工具、社群及開放介面，認識 Vega、Altair、Deneb 與 Cassiopeia 等元件的分工，以及專案的開源倉庫與技術路線。",
       "community": "瀏覽 BanG Dream! Our Notes 社群的貼文、話題與創作分享，參與留言和回覆，按讚或收藏感興趣的內容，追蹤作者，並透過關聯資料探索樂曲、角色與故事。",
@@ -2692,20 +2692,38 @@
       "terms": "閱讀 haneoka 的網站及社群使用規則，了解帳戶、貼文、上傳內容、檢舉與審核要求，查看資源使用、版權及服務相關條款，參與有序的遊戲社群交流。",
       "privacy": "了解 haneoka 如何處理帳戶資料、Cookie、社群內容、上傳檔案與訪問紀錄，查看資料使用、儲存、安全和使用者權利的說明，以及隱私設定與聯絡管道。",
       "general": "探索 haneoka 的{title}內容，瀏覽 BanG Dream! Our Notes 遊戲資料、預覽工具和社群分享，透過關聯條目繼續了解樂曲、角色、卡片與故事。",
-      "announcements": "查看 BanG Dream! Our Notes 遊戲公告、活動消息、招募通知、維護安排與已知問題，閱讀完整內容、相關圖片和發布時間，依目前語言瀏覽對應伺服器的最新消息。"
+      "announcements": "查看 BanG Dream! Our Notes 遊戲公告、活動消息、招募通知、維護安排與已知問題，閱讀完整內容、相關圖片和發布時間，依目前語言瀏覽對應伺服器的最新消息。",
+      "stampMaker": "使用 BanG Dream! Our Notes 角色圖片與文字製作自訂表情。在瀏覽器中調整圖片並匯出 PNG。",
+      "chartEditor": "使用瀏覽器譜面編輯器編輯音符與連接線，預覽節奏遊戲譜面並管理本機專案。"
     },
     "resources": {
-      "songs": "BanG Dream! Our Notes 樂曲的製作名單、譜面難度、音符數與發布資訊。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "characters": "BanG Dream! Our Notes 角色立繪、個人資料、所屬樂團、卡片與相關故事。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "member-cards": "成員卡的能力、技能、培養階段與各階段所需素材。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "support-cards": "留影卡的能力、技能、等級與培養資訊。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "band-items": "樂團道具的效果與各等級強化所需素材。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "live2d": "預覽 Live2D 模型、切換動作與表情、調整參數並匯出圖片。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
-      "spine": "Spine 模型目錄、動畫預覽與透明 PNG 圖片匯出。 查閱這個項目的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
+      "songs": "BanG Dream! Our Notes 樂曲的製作名單、譜面難度、音符數與發布資訊。",
+      "characters": "BanG Dream! Our Notes 角色立繪、個人資料、所屬樂團、卡片與相關故事。",
+      "member-cards": "成員卡的能力、技能、培養階段與各階段所需素材。",
+      "support-cards": "留影卡的能力、技能、等級與培養資訊。",
+      "band-items": "樂團道具的效果與各等級強化所需素材。",
+      "live2d": "預覽 Live2D 模型、切換動作與表情、調整參數並匯出圖片。",
+      "spine": "Spine 模型目錄、動畫預覽與透明 PNG 圖片匯出。",
       "stories": "瀏覽 BanG Dream! Our Notes 樂團、活動、羈絆、主頁及演出後故事，透過人物頭像與對白閱讀劇情，展開圖片和影片，或開啟播放器欣賞場景、模型及演出。",
       "events": "查看 BanG Dream! Our Notes 活動時間、玩法、獎勵及關聯故事，瀏覽相關招募、UP 卡片與樂曲，透過相連的資料掌握活動內容與遊戲近況。"
     },
-    "siteTitle": "BanG Dream! Our Notes 資料庫"
+    "siteTitle": "BanG Dream! Our Notes 資料庫",
+    "keywords": {
+      "base": "BanG Dream! Our Notes, Our Notes 資料庫, 遊戲圖鑑, 夢想協奏曲, バンドリ！Our Notes",
+      "resources": {
+        "songs": "樂曲資料庫, 樂曲製作資訊, 節奏遊戲譜面, 譜面難度",
+        "characters": "角色圖鑑, 角色檔案",
+        "member-cards": "成員卡圖鑑, 卡圖, 卡片技能, 培養素材",
+        "support-cards": "留影卡圖鑑, 卡圖, 卡片能力, 卡片技能",
+        "band-items": "樂團道具, 升級素材",
+        "live2d": "Live2D 模型, 模型預覽",
+        "spine": "Spine 模型, 動畫預覽",
+        "stories": "劇情資料庫, 劇情文本, 故事對白, 劇情播放器",
+        "events": "活動資料庫, 活動獎勵"
+      },
+      "stampMaker": "表情製作, 自訂表情, PNG 匯出",
+      "chartEditor": "譜面編輯器, 節奏遊戲譜面, 音符編輯"
+    }
   },
   "lookX": "水平視線",
   "lookY": "垂直視線",
