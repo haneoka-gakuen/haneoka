@@ -1170,7 +1170,6 @@ export class HomeDashboard extends LitElement {
     const event = featured?.entry;
     const eventServer = event?.sourceServer ?? this.sourceServer();
     const mark = event ? this.exclusiveMark(event.details) : null;
-    const additionalEvents = this.events.filter((entry) => entry.id !== event?.id).sort((a, b) => b.startAt - a.startAt);
     const title = event ? localizedText(event.details.title, this.locale) || event.title : "";
     const countdown = event ? this.eventPhrase(event.startAt, event.endAt) : "";
     const targets = event
@@ -1342,16 +1341,6 @@ export class HomeDashboard extends LitElement {
                 </div>
               `
         }
-        ${additionalEvents.length ? html`<div class="home-event__additional">
-          ${additionalEvents.map((entry) => {
-            const badge = this.exclusiveMark(entry.details);
-            return html`<a class="home-event__additional-entry" href=${entityHref({ server: entry.sourceServer, locale: this.locale as Locale, kind: "events", id: entry.id })}>
-              <img class="home-event__additional-image" src=${entry.image} alt="" loading="lazy" decoding="async" />
-              <span><strong>${localizedText(entry.details.title, this.locale) || entry.title}</strong><small>${this.eventPhrase(entry.startAt, entry.endAt)}</small></span>
-              ${badge ? html`<img class="catalog-server-availability" src=${badge.image} alt=${badge.label} title=${badge.label} width="18" height="18" />` : nothing}
-            </a>`;
-          })}
-        </div>` : nothing}
       </section>
     `;
   }
