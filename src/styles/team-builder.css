@@ -53,6 +53,7 @@
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
   .selection-pane__choice {
+    isolation: isolate;
     cursor: pointer;
   }
   .selection-pane__choice:has(md-checkbox[disabled]) {
@@ -811,6 +812,7 @@
   }
   .tb-card {
     position: relative;
+    isolation: isolate;
     display: grid;
     min-width: 0;
     align-content: start;
