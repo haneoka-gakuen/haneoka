@@ -68,7 +68,8 @@ const pctUniform = (base: BP3, pct: number) => pctFloor(base, [pct, pct, pct]);
 export const points = (bp: BP3 | Stat3) => Math.floor(bp[0] / 10000) + Math.floor(bp[1] / 10000) + Math.floor(bp[2] / 10000);
 
 export function memberLevelCap(master: EngineMaster, card: MemberCard, awake: number): number {
-  return master.memberLevelLimits.get(`${card.rarity}:${awake}`) ?? Math.max(...(master.memberLevels.get(card.levelGroup)?.keys() ?? [1]));
+  const cap = card.levelLimits ? card.levelLimits[String(awake)] : master.memberLevelLimits.get(`${card.rarity}:${awake}`);
+  return cap ?? Math.max(...(master.memberLevels.get(card.levelGroup)?.keys() ?? [1]));
 }
 export function snapLevelCap(master: EngineMaster, card: SnapCard, rank: number): number {
   return master.snapRanks.get(card.rankGroup)?.get(rank)?.limitLevel ?? Math.max(...(master.snapLevels.get(card.levelGroup)?.keys() ?? [1]));

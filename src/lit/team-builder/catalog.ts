@@ -17,6 +17,7 @@ import { difficultyKey } from "../ui/difficulty-picker";
 import type { TileOptions } from "../ui/tile";
 import { icon } from "../ui/icon";
 import type { TeamBuilder } from "../team-builder";
+import { catalogServerMark, exclusiveServer, type FormalCatalogServer } from "../shared/server-availability";
 
 type Visuals = Awaited<ReturnType<typeof fetchCatalogVisuals>>;
 const COLORS = ["", "Red", "Blue", "Green", "Yellow", "Purple"];
@@ -30,6 +31,13 @@ export class Catalog {
   ) {}
   setVisuals(visuals: Visuals) {
     this.visuals = visuals;
+  }
+  serverMark(collection: string, id: number) {
+    const cross = this.data.crossServer;
+    if (!cross?.identities.jp || !cross.identities.intl) return undefined;
+    const available = (cross.availability[collection]?.[String(id)] ?? [])
+      .filter((server): server is FormalCatalogServer => server === "jp" || server === "intl" || server === "intl-test");
+    return catalogServerMark({ exclusive: exclusiveServer(available) ?? null }, this.host.locale);
   }
   text(value: unknown) {
     return resolveLocalizedText(value, this.host.locale).text;
@@ -111,6 +119,7 @@ export class Catalog {
         rarityIcon: this.rarityIcon(card.rarity),
         rarityLabel: rarity,
       }),
+      serverMark: this.serverMark(kind === "members" ? "members" : "snapshots", id),
       aspectRatio: kind === "members" ? "3 / 4" : "16 / 9",
     };
   }
@@ -178,14 +187,14 @@ export class Catalog {
       [],
       row,
     );
-    return { ...options, aspectRatio: 1 };
+    return { ...options, aspectRatio: 1, serverMark: this.serverMark("songs", id) };
   }
   /** Events with a live point table (searchable event goals). */
   events() {
     return [...this.master.events.values()]
       .filter((event) => event.livePoints.size || event.challengePoints.size || event.effects.length)
       .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))
-      .map((event) => ({ id: event.id, name: this.text(this.data.events[String(event.id)]?.name ?? this.data.events[String(event.id)]?.title) || `#${event.id}`, event }));
+      .map((event) => ({ id: event.id, name: this.text(this.data.events[String(event.id)]?.name ?? this.data.events[String(event.id)]?.title) || `#${event.id}`, event, serverMark: this.serverMark("events", event.id) }));
   }
   challengeSongs(eventId: number | null) {
     return this.master.challengeMusics.filter((row) => eventId === null || row.eventId === eventId);

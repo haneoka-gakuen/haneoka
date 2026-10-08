@@ -8,16 +8,9 @@ const THUMBNAIL_SIZE = 512;
 const MAX_TEXTURE_BYTES = 96 * 1024 * 1024;
 const BACKGROUND: readonly [number, number, number, number] = [8, 12, 30, 255];
 const RANDOM_DRAWS = [0.17, 0.73, 0.31, 0.89, 0.47, 0.63, 0.23, 0.81] as const;
-const PARTICLE_SNAPSHOT_TIME = 0.2;
+const PARTICLE_SNAPSHOT_TIME = 0.44;
 const SKIN_IDS = ["skin001", "skin002", "skin003"] as const;
-// The Simple tap (2-lane width bucket): its outline and dot bursts.
-const PARTICLE_LAYERS = [
-  "Our Notes FX S0 5 B3 Frame",
-  "Our Notes FX S0 5 B3 Frame Left",
-  "Our Notes FX S0 5 B3 Frame Right",
-  "Our Notes FX S0 5 B3 Dots ef_particle_point",
-  "Our Notes FX S0 5 B3 Emit ef_particle_point_center",
-] as const;
+const PARTICLE_LAYERS = ["Our Notes Light Normal W4 P0"] as const;
 
 type SkinId = (typeof SKIN_IDS)[number];
 

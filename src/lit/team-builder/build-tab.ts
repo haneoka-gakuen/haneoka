@@ -80,7 +80,7 @@ function eventSection(host: TeamBuilder): TemplateResult {
   return html`
     <md-outlined-select label=${host.t("event", "Event")} .value=${String(eventId)}
       @change=${(e: Event) => set({ eventId: Number((e.target as HTMLInputElement).value) })}>
-      ${events.map((row) => html`<md-select-option value=${String(row.id)}><div slot="headline">${row.name}</div></md-select-option>`)}
+      ${events.map((row) => html`<md-select-option value=${String(row.id)}>${row.serverMark ? html`<img slot="start" src=${row.serverMark.image} alt=${row.serverMark.label} title=${row.serverMark.label} width="18" height="18" />` : nothing}<div slot="headline">${row.name}</div></md-select-option>`)}
     </md-outlined-select>
     ${event?.musicId || challengeSongs.length
       ? html`<div class="cluster">

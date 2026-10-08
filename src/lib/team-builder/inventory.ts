@@ -314,7 +314,7 @@ export function practiceRanges(
     );
     const training = (state as Partial<MemberEntry> | undefined)?.training;
     cap = Number(
-      (progression.memberCardLevelLimits || []).find(
+      member.levelLimits ? member.levelLimits[String(training)] : (progression.memberCardLevelLimits || []).find(
         (row) => Number(row.rarity) === member.rarity && Number(row.awakeCount) === training,
       )?.limitLevel,
     );

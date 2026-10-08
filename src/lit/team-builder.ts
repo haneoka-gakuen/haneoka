@@ -8,7 +8,7 @@ import { clientText } from "../i18n/client";
 import { beginLoading } from "../lib/loading-progress";
 import { readReleaseServer } from "../lib/release-server";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
-import { fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
+import { fetchCrossServerTeamBuilderData } from "../lib/team-builder/data/cross-server";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { EngineClient } from "../lib/team-builder/engine/client";
@@ -77,6 +77,7 @@ export class TeamBuilder extends LitElement {
   private settingsTimer?: ReturnType<typeof setTimeout>;
   private unsubscribe?: () => void;
   private loadedServer = "";
+  private dataController?: AbortController;
 
   constructor() {
     super();
@@ -92,6 +93,7 @@ export class TeamBuilder extends LitElement {
   }
   disconnectedCallback() {
     super.disconnectedCallback();
+    this.dataController?.abort();
     this.images.disconnect();
     this.unsubscribe?.();
     this.store?.dispose();
@@ -117,12 +119,14 @@ export class TeamBuilder extends LitElement {
 
   async load(server: string) {
     if (this.loadedServer === server) return;
+    this.dataController?.abort();
+    const loadController = this.dataController = new AbortController();
     this.loadedServer = server;
     this.loadError = "";
     this.requestUpdate();
     const loading = beginLoading(this.t("loadingData", "Loading card data"));
     try {
-      const data = await fetchTeamBuilderData(server);
+      const data = await fetchCrossServerTeamBuilderData(server, loadController.signal);
       if (this.loadedServer !== server) return;
       this.data = data;
       this.master = compileFromTeamData(data);

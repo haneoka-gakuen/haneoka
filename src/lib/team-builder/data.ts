@@ -8,6 +8,8 @@ import { withNativeRuleEvidence } from "./data/native-rule-evidence";
 
 export type DataRow = Record<string, unknown>;
 export interface MemberCatalog {
+  /** Growth caps from the card's selected source, keyed by training count. */
+  levelLimits?: Record<string, number>;
   id: number;
   characterId: number;
   bandId: number;
@@ -48,6 +50,13 @@ export interface SnapshotCatalog {
   gekisoSupportSkillSlotsKnown?: boolean;
 }
 export interface TeamBuilderData {
+  crossServer?: {
+    identities: Record<string, TeamBuilderData["identity"]>;
+    owners: Record<string, Record<string, string>>;
+    availability: Record<string, Record<string, string[]>>;
+    unavailableServers: string[];
+    challengeMusics: DataRow[];
+  };
   schema: "haneoka-team-builder-data-v1";
   identity: ReleaseIdentity & { sourceId?: string };
   members: Record<string, MemberCatalog>;

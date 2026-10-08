@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /** Team engine Worker: compiles the release once, then serves searches and evaluations. */
 import { pinnedSongAssetUrl } from "../solver/song-loader";
-import type { TeamBuilderData } from "../data";
+import { teamBuilderSourceIdentity } from "../data/source";
 import { compileFromTeamData, type EngineMaster } from "./master";
 import { convertChartBytes } from "./chart";
 import { ChartCache, evaluateTeam, explainTeam, runEngine } from "./api";
@@ -9,17 +9,15 @@ import type { EngineCall, EngineReply } from "./protocol";
 
 let master: EngineMaster | null = null;
 let charts: ChartCache | null = null;
-let identity: TeamBuilderData["identity"] | null = null;
 const post = (reply: EngineReply) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(reply);
 
 self.onmessage = async (event: MessageEvent<EngineCall>) => {
   const call = event.data;
   try {
     if (call.type === "init") {
-      identity = call.data.identity;
       master = compileFromTeamData(call.data);
-      const pinned = identity;
       charts = new ChartCache(master, async (engine, ref) => {
+        const pinned = teamBuilderSourceIdentity(call.data, "songs", ref.songId);
         const difficulty = engine.songs.get(ref.songId)?.difficulties.find((row) => row.difficulty === ref.difficulty);
         if (!difficulty?.file) throw new Error("chart-file-missing");
         const response = await fetch(pinnedSongAssetUrl(pinned, difficulty.file), { credentials: "omit" });

@@ -49,6 +49,7 @@ export interface SkillEffectRow {
   maxValue: number;
 }
 export interface MemberCard {
+  levelLimits?: Record<string, number>;
   id: number;
   characterId: number;
   bandId: number;
@@ -246,6 +247,7 @@ const nested = <V>(rows: readonly DataRow[], outer: string, inner: string, value
   return out;
 };
 const time = (value: unknown): number | null => {
+  if (Array.isArray(value)) return time(value.find((slot) => slot !== null && slot !== undefined));
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string" || !value.trim() || value === "null") return null;
   const match = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/u.exec(value.trim());
@@ -566,7 +568,7 @@ function dtoEvents(data: TeamBuilderData): GameEvent[] {
     const tables = objectRow(event.tables);
     const table = (name: string) => {
       const own = rowsOf(tables[name]);
-      return own.length ? own : rowsOf(shared[name]).filter((row) => !row.eventId || num(row.eventId) === id);
+      return Object.hasOwn(tables, name) ? own : rowsOf(shared[name]).filter((row) => !row.eventId || num(row.eventId) === id);
     };
     const groups = objectRow(event.groups);
     const points = (name: string, groupKey: string) => {
@@ -614,6 +616,7 @@ export function compileFromTeamData(data: TeamBuilderData): EngineMaster {
     comboScoreBonuses: rowsOf(liveTools.comboScoreBonuses),
     characters: Object.values(data.characters),
     members: Object.values(data.members).map((card) => ({
+      levelLimits: card.levelLimits,
       id: card.id,
       characterId: card.characterId,
       bandId: card.bandId,
@@ -667,7 +670,7 @@ export function compileFromTeamData(data: TeamBuilderData): EngineMaster {
     skillCategories: { live: categoryRows(data.skills.live), gekiso: categoryRows(data.skills.gekiso) },
     songs: dtoSongs(data),
     scoreRanks: rowsOf(liveTools.scoreRanks),
-    challengeMusics: data.challengeMusicTable?.rows ?? [],
+    challengeMusics: data.crossServer?.challengeMusics ?? data.challengeMusicTable?.rows ?? [],
     events: dtoEvents(data),
     liveChallengePoints: data.challengePointTable?.rows ?? [],
     boosts: rowsOf(liveTools.liveBoostBonuses),

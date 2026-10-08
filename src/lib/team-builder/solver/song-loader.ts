@@ -1,6 +1,7 @@
 import { tickToTimeMs } from "../song-metrics.ts";
 import type { SongOption } from "../contracts.ts";
 import { dataRows, objectRow, type TeamBuilderData } from "../data.ts";
+import { teamBuilderSourceIdentity } from "../data/source.ts";
 import { createNativeGekisoAllComboChartPlan } from "./native-gekiso-chart-plan.ts";
 import { createNativeGekisoPerfectChartPlan } from "./native-gekiso-perfect-chart-plan.ts";
 
@@ -55,9 +56,10 @@ export async function loadSongOptions(
     seen.add(key);
     const file = String(difficulty.file ?? objectRow(difficulty.score).file ?? "");
     if (!file) throw new RangeError("chart-file-missing");
-    const response = await fetch(pinnedSongAssetUrl(data.identity, file), { signal, credentials: "omit" });
+    const identity = teamBuilderSourceIdentity(data, "songs", selection.songId);
+    const response = await fetch(pinnedSongAssetUrl(identity, file), { signal, credentials: "omit" });
     if (!response.ok) throw new Error(`chart-http:${response.status}`);
-    verifySongAssetIdentity(response, data.identity);
+    verifySongAssetIdentity(response, identity);
     if (Number(response.headers.get("content-length")) > 2 * 1024 * 1024) throw new RangeError("chart-byte-limit");
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.length > 2 * 1024 * 1024) throw new RangeError("chart-byte-limit");
