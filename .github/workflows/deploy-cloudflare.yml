@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      apply_d1_migrations:
+        description: Apply production D1 migrations with explicit authorization
+        type: boolean
+        default: false
 
 concurrency:
   group: cloudflare-production
@@ -87,6 +92,7 @@ jobs:
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
 
       - name: Apply production D1 migrations
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_d1_migrations == true }}
         run: pnpm exec wrangler d1 migrations apply haneoka-community --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

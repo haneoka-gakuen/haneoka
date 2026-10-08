@@ -904,7 +904,7 @@ export class HomeDashboard extends LitElement {
       days < 0 ? this.text("releasedAgo", "Added {time} ago") : this.text("releasesIn", "Added in {time}")
     ).replace("{time}", span);
   }
-  /** The event card: the in-game event ending soonest, or the next to begin. */
+  /** Prefer an ongoing event, then the next event, then the latest ended event. */
   private featuredEvent(): { entry: Spotlight; resource: string; ending: boolean } | null {
     const now = Date.now();
     const ongoing = this.events
@@ -912,7 +912,11 @@ export class HomeDashboard extends LitElement {
       .sort((a, b) => a.endAt - b.endAt)[0];
     if (ongoing) return { entry: ongoing, resource: "events", ending: true };
     const upcoming = this.events.filter((entry) => entry.startAt > now).sort((a, b) => a.startAt - b.startAt)[0];
-    return upcoming ? { entry: upcoming, resource: "events", ending: false } : null;
+    if (upcoming) return { entry: upcoming, resource: "events", ending: false };
+    const ended = this.events
+      .filter((entry) => entry.endAt > 0 && entry.endAt < now)
+      .sort((a, b) => b.endAt - a.endAt || b.startAt - a.startAt || b.id.localeCompare(a.id, "en", { numeric: true }))[0];
+    return ended ? { entry: ended, resource: "events", ending: false } : null;
   }
   private characterFor(slug: string, names: readonly string[]) {
     const normalized = names.map((name) => name.replace(/[\s・]/g, "").normalize("NFKC"));

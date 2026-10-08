@@ -107,6 +107,7 @@
     align-self: stretch;
     flex: 0 0 auto;
     margin: 0 12px 8px;
+    inline-size: calc(100% - 24px);
   }
   .chart-studio__panel > .segmented > button {
     flex: 1;
@@ -205,7 +206,7 @@
   }
   .chart-studio__transport {
     display: grid;
-    grid-template-columns: 40px 40px minmax(48px, 1fr) max-content 40px;
+    grid-template-columns: repeat(2, var(--control-height)) minmax(48px, 1fr) max-content var(--control-height);
     align-items: center;
     gap: 6px;
     min-inline-size: 0;
@@ -361,14 +362,11 @@
     align-items: center;
   }
   .chart-studio__transport {
-    grid-template-columns: 40px 40px minmax(48px, 1fr) max-content 40px 40px;
+    grid-template-columns: repeat(2, var(--control-height)) minmax(48px, 1fr) max-content repeat(2, var(--control-height));
   }
   @media (max-width: 599px) {
     .chart-studio__transport {
-      grid-template-columns: 44px 44px minmax(48px, 1fr) max-content 44px;
-    }
-    .chart-studio__transport .icon-button {
-      --icon-button-size: 44px;
+      grid-template-columns: repeat(2, var(--control-height)) minmax(48px, 1fr) max-content var(--control-height);
     }
     .chart-studio__transport > .chart-studio__follow {
       display: none;
@@ -407,7 +405,7 @@
 }
 
 @layer pages {
-  .chart-studio__mode-toggle { flex: 0 0 auto; inline-size: clamp(152px, 24vw, 200px); min-inline-size: 0; padding: 0; margin: 0; border: 0; }
+  .chart-studio__mode-toggle { flex: 0 0 auto; inline-size: max-content; min-inline-size: clamp(168px, 24vw, 200px); max-inline-size: 100%; padding: 0; margin: 0; border: 0; }
   .chart-studio__cursor {
     position: absolute; inset-block-start: 8px; inset-inline-start: 8px; z-index: 1;
     max-inline-size: calc(100% - 16px); padding: 6px 10px; pointer-events: none;
@@ -417,4 +415,42 @@
     font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size)/var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
   .chart-studio__stage[data-mode="preview"] .chart-studio__cursor { display: none; }
+}
+
+@layer pages {
+  /* Share Expressive control dimensions with the actual button containers. */
+  @media (pointer: coarse) {
+    .chart-studio__transport {
+      grid-template-columns: repeat(2, var(--md-comp-control-height-touch, 48px)) minmax(48px, 1fr) max-content repeat(2, var(--md-comp-control-height-touch, 48px));
+    }
+    .chart-studio__transport .icon-button {
+      --icon-button-size: var(--md-comp-control-height-touch, 48px);
+    }
+  }
+  @media (pointer: coarse) and (max-width: 599px) {
+    .chart-studio__transport {
+      grid-template-columns: repeat(2, var(--md-comp-control-height-touch, 48px)) minmax(48px, 1fr) max-content var(--md-comp-control-height-touch, 48px);
+    }
+  }
+}
+
+@layer pages {
+  /* T57 emits tabindex=0 only while the real native editing port is available. */
+  .chart-studio__native[data-native-preview][tabindex="0"] canvas.our-notes-player__canvas {
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .chart-studio__native[data-native-preview][tabindex="0"]:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
+  }
+  .chart-studio[data-stage="preview"] .chart-studio__panel-content > :is(chart-creation-collections, section.chart-creation__form) + .chart-studio__native-settings {
+    padding-block-start: 16px;
+    border-block-start: 1px solid var(--md-sys-color-outline-variant);
+  }
+  @media (forced-colors: active) {
+    .chart-studio__native[data-native-preview][tabindex="0"]:focus-visible {
+      outline-color: Highlight;
+    }
+  }
 }

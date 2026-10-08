@@ -3,6 +3,7 @@ import { resolveChartAssets, resolveNativeResourceUrl } from "./resources.js";
 import { createChartHost } from "./host.js";
 import { publicResourceRequest } from "./public-resources.js";
 import type { PlayerDriver } from "./driver.js";
+import { ChartReplacementRejectedError } from "./driver.js";
 import type {
   ChartEmbedDocument,
   ChartEmbedEvent,
@@ -53,6 +54,17 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
   let disposal: Promise<void> | undefined;
   let boot: Promise<void>;
   let child: AbortController | undefined;
+  let driverEpoch = 0;
+  let chartUpdating = false;
+  let mutations: Promise<void> = Promise.resolve();
+  const enqueueMutation = (action: () => Promise<void>) => {
+    const pending = mutations.catch(() => {}).then(() => {
+      controller.signal.throwIfAborted();
+      return action();
+    });
+    mutations = pending;
+    return pending;
+  };
   const listeners = new Set<(event: ChartEmbedEvent) => void>();
   if (options.onEvent) listeners.add(options.onEvent);
   const emit = (event: ChartEmbedEvent) => {
@@ -88,6 +100,7 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
   };
   const failure = (error: unknown) => {
     if (controller.signal.aborted) return;
+    ++driverEpoch;
     phase = "error";
     playing = false;
     driver?.dispose();
@@ -184,6 +197,7 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
     }
   };
   const stop = () => {
+    ++driverEpoch;
     host.restoreBrand();
     child?.abort();
     driver?.dispose();
@@ -199,6 +213,7 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
       return snapshot();
     },
     async play() {
+      if (chartUpdating) throw new Error("Await chart replacement before playback");
       await required().play();
     },
     pause() {
@@ -222,26 +237,86 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
       };
       await active.setOptions(playback);
     },
+    ...(!options.rendererAdapter ? {
+      getPresentation: () => phase === "ready" && !chartUpdating && !controller.signal.aborted
+        ? driver?.getPresentation?.() : undefined,
+      async setChart(chart, value = {}) {
+        required();
+        if (!Array.isArray(chart?.notes) || !Array.isArray(chart.lines) || !Number.isFinite(chart.durationMs) || chart.durationMs < 0)
+          throw new TypeError("Chart document requires notes, lines and a nonnegative durationMs");
+        if (value.bgmOffsetMs !== undefined && !Number.isFinite(value.bgmOffsetMs))
+          throw new RangeError("bgmOffsetMs requires finite milliseconds");
+        return enqueueMutation(async () => {
+          const active = required(), epoch = driverEpoch, position = time;
+          const profileOnly = chart === document.chart && (value.bgmOffsetMs === undefined || value.bgmOffsetMs === (document.bgmOffsetMs ?? 0));
+          if (!active.setChart) throw new Error("This player does not support chart replacement");
+          active.pause();
+          playing = false;
+          if (profileOnly && value.visualProfiles === document.visualProfiles) { publish(); return; }
+          chartUpdating = true;
+          publish();
+          try {
+            await active.setChart(chart, value);
+            controller.signal.throwIfAborted();
+            if (driver !== active || driverEpoch !== epoch) throw new DOMException("Chart player changed", "AbortError");
+            active.pause();
+            const target = Math.min(position, Math.max(0, duration));
+            const rendered = active.waitForPresentation?.();
+            void rendered?.catch(() => {});
+            if (!profileOnly) active.seek(target);
+            await rendered;
+            controller.signal.throwIfAborted();
+            if (driver !== active || driverEpoch !== epoch) throw new DOMException("Chart player changed", "AbortError");
+            const { visualProfiles: _previousProfiles, ...retained } = document;
+            document = { ...retained, chart, ...(value.bgmOffsetMs === undefined ? {} : { bgmOffsetMs: value.bgmOffsetMs }),
+              ...(value.visualProfiles === undefined ? {} : { visualProfiles: value.visualProfiles }) };
+            time = target;
+            playing = false;
+          } catch (error) {
+            if (!(error instanceof ChartReplacementRejectedError) && driver === active && driverEpoch === epoch) failure(error);
+            throw error;
+          } finally {
+            chartUpdating = false;
+            if (phase === "ready" && driver === active && driverEpoch === epoch) publish();
+          }
+        });
+      },
+    } satisfies Pick<ChartEmbedHandle, "getPresentation" | "setChart"> : {}),
     async setSkin(value) {
       required();
       if (!options.theme || options.rendererAdapter) throw new Error("setSkin requires a default-player theme factory");
-      const position = time;
-      driver!.pause();
-      stop();
-      skin = { ...skin, ...value };
-      phase = "loading";
-      publish();
-      try {
-        driver = await construct();
-        controller.signal.throwIfAborted();
-        driver.seek(position);
-        phase = "ready";
-        time = position;
+      return enqueueMutation(async () => {
+        required();
+        const position = time;
+        driver!.pause();
+        stop();
+        const epoch = driverEpoch;
+        skin = { ...skin, ...value };
+        phase = "loading";
         publish();
-      } catch (error) {
-        failure(error);
-        throw error;
-      }
+        try {
+          const candidate = await construct();
+          if (controller.signal.aborted || driverEpoch !== epoch) {
+            candidate.dispose();
+            controller.signal.throwIfAborted();
+            throw new DOMException("Chart player changed", "AbortError");
+          }
+          driver = candidate;
+          const target = duration > 0 ? Math.min(position, duration) : position;
+          const rendered = driver.waitForPresentation?.();
+          void rendered?.catch(() => {});
+          driver.seek(target);
+          await rendered;
+          controller.signal.throwIfAborted();
+          if (driver !== candidate || driverEpoch !== epoch) throw new DOMException("Chart player changed", "AbortError");
+          phase = "ready";
+          time = target;
+          publish();
+        } catch (error) {
+          failure(error);
+          throw error;
+        }
+      });
     },
     subscribe(listener) {
       if (phase === "disposed") throw new Error("Chart has been disposed");
@@ -296,6 +371,8 @@ export function mountChart(container: HTMLElement, options: MountChartOptions): 
       controller.signal.throwIfAborted();
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeout)]);
       document = await loader.load({ signal });
+      if (options.rendererAdapter && document.visualProfiles !== undefined)
+        throw new Error("Visual profiles require the native player");
       if (
         !Array.isArray(document.chart?.notes) ||
         !Array.isArray(document.chart.lines) ||

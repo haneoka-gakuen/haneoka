@@ -17,6 +17,16 @@ export async function decodeCreationAudio(file: File, signal: AbortSignal): Prom
   if (!file.size || file.size > AUDIO_LIMITS.bytes) throw new Error("audio_size");
   const url = URL.createObjectURL(file),
     media = new Audio();
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+    URL.revokeObjectURL(url);
+  };
+  signal.addEventListener("abort", release, { once: true });
   try {
     const duration = await new Promise<number>((resolve, reject) => {
       const finish = (error?: unknown) => {
@@ -38,8 +48,11 @@ export async function decodeCreationAudio(file: File, signal: AbortSignal): Prom
     signal.throwIfAborted();
     if (!Number.isFinite(duration) || duration <= 0 || duration > AUDIO_LIMITS.seconds)
       throw new Error("audio_duration");
+    release();
+    const encoded = await file.arrayBuffer();
+    signal.throwIfAborted();
     const decoder = new OfflineAudioContext(1, 1, AUDIO_LIMITS.sampleRate);
-    const buffer = await decoder.decodeAudioData(await file.arrayBuffer());
+    const buffer = await decoder.decodeAudioData(encoded);
     signal.throwIfAborted();
     if (buffer.duration > AUDIO_LIMITS.seconds || buffer.numberOfChannels > 8) throw new Error("audio_duration");
     const analysis = analyzeAudio(buffer);
@@ -47,10 +60,8 @@ export async function decodeCreationAudio(file: File, signal: AbortSignal): Prom
     signal.throwIfAborted();
     return { file, sha256, analysis };
   } finally {
-    media.pause();
-    media.removeAttribute("src");
-    media.load();
-    URL.revokeObjectURL(url);
+    signal.removeEventListener("abort", release);
+    release();
   }
 }
 

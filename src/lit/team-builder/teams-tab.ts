@@ -1,3 +1,4 @@
+import { matchesCardFilters, renderCardFilters } from "./card-filters";
 /** Saved teams, a manual formation and its evaluation across songs, with swap suggestions. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -15,7 +16,7 @@ const format = (host: TeamBuilder, value: number, digits = 0) =>
   new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
 let suggestions: { slot: number; hits: EngineHit[] } | null = null;
 let suggesting = -1;
-let pickerQuery = "";
+
 
 function manualReady(host: TeamBuilder) {
   return host.manual.members.every((id) => id !== null) && new Set(host.manual.members.map((id) => host.catalog!.member(id!)?.characterId)).size === 5;
@@ -99,13 +100,16 @@ function slotPicker(host: TeamBuilder): TemplateResult | typeof nothing {
   const kind = picker.kind;
   const close = () => {
     host.slotPicker = null;
-    pickerQuery = "";
+    host.slotFilters = { ...host.slotFilters, query: "", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+    host.slotFiltersOpen = false;
     host.requestUpdate();
   };
+  const filters = { ...host.slotFilters, kind };
+  const set = (patch: Partial<typeof filters>) => {host.slotFilters = {...filters,...patch};host.requestUpdate();};
   const theoretical = host.settings.scope === "theoretical";
   const owned = kind === "members" ? host.view!.members : host.view!.snaps;
   const ids = (theoretical ? Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number) : [...owned.keys()])
-    .filter((id) => !pickerQuery || `${catalog.cardName(kind, id)} ${catalog.characterIds(kind, id).map((c) => catalog.characterName(c)).join(" ")}`.toLocaleLowerCase(host.locale).includes(pickerQuery.toLocaleLowerCase(host.locale)))
+    .filter((id) => matchesCardFilters(host, kind, id, filters))
     .sort((a, b) => b - a);
   const current = kind === "members" ? host.manual.members[picker.slot] : host.manual.snaps[picker.slot];
   return selectionPane({
@@ -115,14 +119,12 @@ function slotPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     close,
     searchLabel: host.common("search", "Search"),
     filterLabel: host.t("filters", "Filters"),
-    filtersOpen: false,
-    toggleFilters: () => undefined,
-    query: pickerQuery,
-    search: (value) => {
-      pickerQuery = value;
-      host.requestUpdate();
-    },
-    filters: nothing,
+    filtersOpen: host.slotFiltersOpen,
+    toggleFilters: () => {host.slotFiltersOpen = !host.slotFiltersOpen;host.requestUpdate();},
+    query: filters.query,
+    search: (value) => set({query:value}),
+    filterLayout: "facets",
+    filters: renderCardFilters(host, filters, set),
     kind: kind === "members" ? "member" : "support",
     items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
     selected: current === null || current === undefined ? "" : String(current),

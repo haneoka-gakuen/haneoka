@@ -57,7 +57,7 @@ function songList(host: TeamBuilder, songs: SongRef[], change: (songs: SongRef[]
       )}
       <button class="button button--tonal tb-songs__add" type="button"
         @click=${() => {
-          host.songPicker = { songs: [...songs], single, query: "", filtersOpen: false, bands: [], attributes: [], difficulty: 3, change };
+          host.songPicker = { songs: [...songs], single, query: "", filtersOpen: false, bands: [], attributes: [], gekisouTypes: [], difficulty: 3, change };
           host.requestUpdate();
         }}>
         ${icon("add", 18)}${songs.length ? host.t("editSongs", "Change songs") : host.t("addSongs", "Choose songs")}

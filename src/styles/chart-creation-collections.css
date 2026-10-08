@@ -1,0 +1,130 @@
+@layer pages {
+  chart-creation-collections {
+    display: block;
+    min-inline-size: 0;
+  }
+  chart-creation-collections .chart-collections {
+    display: grid;
+    min-inline-size: 0;
+    gap: 12px;
+    padding-block: 8px;
+  }
+  chart-creation-collections .chart-collections > .segmented {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+  chart-creation-collections .chart-collections__scope.chart-creation__actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 4px;
+    margin: 0;
+  }
+  chart-creation-collections .chart-collections__scope.chart-creation__actions > .button {
+    min-inline-size: 0;
+    inline-size: 100%;
+    block-size: auto;
+    min-block-size: var(--control-height);
+    padding: 6px 8px;
+    white-space: normal;
+    text-wrap: balance;
+    justify-content: center;
+  }
+  chart-creation-collections .chart-collections__list {
+    display: grid;
+    min-inline-size: 0;
+    gap: 8px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+  chart-creation-collections .chart-collections__row {
+    min-inline-size: 0;
+    padding: 8px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+    transition: background-color var(--motion-effects), border-color var(--motion-effects);
+  }
+  chart-creation-collections .chart-collections__row[data-active="true"] {
+    background: var(--md-sys-color-secondary-container);
+    border-color: var(--md-sys-color-secondary);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  chart-creation-collections .chart-collections__identity.chart-creation__form {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+  }
+  chart-creation-collections .chart-collections__identity > md-outlined-text-field {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  chart-creation-collections .chart-collections__row-actions.chart-creation__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 2px;
+    margin: 6px 0 0;
+  }
+  chart-creation-collections .chart-collections__row-actions > .icon-button {
+    flex: none;
+  }
+  chart-creation-collections .chart-collections__add.chart-creation__form,
+  chart-creation-collections .chart-collections__assignment.chart-creation__form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-inline-size: 0;
+    gap: 8px;
+    margin: 0;
+    padding-block-start: 12px;
+    border-block-start: 1px solid var(--md-sys-color-outline-variant);
+  }
+  chart-creation-collections .chart-collections__add > .button {
+    inline-size: 100%;
+    white-space: normal;
+    min-block-size: var(--control-height);
+    block-size: auto;
+    padding-block: 8px;
+  }
+  chart-creation-collections .chart-collections__hint {
+    margin: 0;
+    padding: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size)/var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  chart-creation-collections .chart-collections__delete {
+    display: grid;
+    min-inline-size: 0;
+    gap: 6px;
+    padding-block-start: 10px;
+    margin-block-start: 8px;
+    border-block-start: 1px solid var(--md-sys-color-outline-variant);
+  }
+  chart-creation-collections .chart-collections__delete > p {
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size)/var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+  }
+  chart-creation-collections .chart-collections__delete > .button {
+    inline-size: 100%;
+    block-size: auto;
+    min-block-size: var(--control-height);
+    padding-block: 8px;
+    white-space: normal;
+    text-wrap: balance;
+  }
+  @media (pointer: coarse) {
+    chart-creation-collections :is(.chart-collections__scope, .chart-collections__add, .chart-collections__delete) > .button {
+      min-block-size: var(--md-comp-control-height-touch, 48px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    chart-creation-collections .chart-collections__row {
+      transition: none;
+    }
+  }
+}

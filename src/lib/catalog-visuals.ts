@@ -4,6 +4,7 @@ import { objectRow } from "./team-builder/data";
 export async function fetchCatalogVisuals(
   identity: { server: string; releaseId: string; sourceId?: string },
   signal: AbortSignal,
+  cardMetadata = false,
 ) {
   const read = async (resource: string) => {
     const response = await fetch(
@@ -19,8 +20,9 @@ export async function fetchCatalogVisuals(
     const value = objectRow(await response.json());
     return objectRow(value.entries ?? value.items ?? value[resource] ?? value);
   };
-  const [marks, characters, songs] = await Promise.all([read("ui-marks"), read("characters"), read("songs")]);
+  const [marks, characters, songs, cards, supportCards] = await Promise.all([read("ui-marks"), read("characters"), read("songs"), cardMetadata ? read("cards") : Promise.resolve({} as Record<string, unknown>), cardMetadata ? read("support-cards") : Promise.resolve({} as Record<string, unknown>)]);
   return {
+    cards, supportCards,
     marks: new Map(
       Object.entries(marks)
         .filter((entry): entry is [string, string] => typeof entry[1] === "string")

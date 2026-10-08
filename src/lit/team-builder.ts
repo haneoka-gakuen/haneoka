@@ -54,7 +54,7 @@ export class TeamBuilder extends LitElement {
 
   tab: Tab = "build";
   settings: BuildSettings = { ...DEFAULT_SETTINGS };
-  filters: BoxFilters = { kind: "members", query: "", show: "owned", bands: [], characters: [], attributes: [], rarities: [] };
+  filters: BoxFilters = { kind: "members", query: "", show: "owned", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
   filtersOpen = false;
   selection = new Set<string>();
   editing: { kind: "members" | "snaps"; cardId: number } | null = null;
@@ -72,12 +72,16 @@ export class TeamBuilder extends LitElement {
   manualResults: TeamEvaluation[] | null = null;
   manualBusy = false;
   slotPicker: { slot: number; kind: "members" | "snaps" } | null = null;
+  slotFilters: BoxFilters = { kind: "members", query: "", show: "all", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+  slotFiltersOpen = false;
   notice = "";
   private readonly images = new LazyImages();
   private settingsTimer?: ReturnType<typeof setTimeout>;
   private unsubscribe?: () => void;
   private loadedServer = "";
   private dataController?: AbortController;
+  private visualsController?: AbortController;
+  catalogMetadataError = false;
 
   constructor() {
     super();
@@ -94,6 +98,7 @@ export class TeamBuilder extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.dataController?.abort();
+    this.visualsController?.abort();
     this.images.disconnect();
     this.unsubscribe?.();
     this.store?.dispose();
@@ -121,6 +126,8 @@ export class TeamBuilder extends LitElement {
     if (this.loadedServer === server) return;
     this.dataController?.abort();
     const loadController = this.dataController = new AbortController();
+    this.visualsController?.abort();
+    this.catalogMetadataError = false;
     this.loadedServer = server;
     this.loadError = "";
     this.requestUpdate();
@@ -142,13 +149,7 @@ export class TeamBuilder extends LitElement {
       this.store = new BoxStore({ server });
       this.unsubscribe = this.store.subscribe((snapshot) => this.adopt(snapshot));
       void this.store.start();
-      const controller = new AbortController();
-      void fetchCatalogVisuals(data.identity, controller.signal)
-        .then((visuals) => {
-          this.catalog?.setVisuals(visuals);
-          this.requestUpdate();
-        })
-        .catch(() => undefined);
+      void this.loadCatalogMetadata();
     } catch {
       if (this.loadedServer === server) {
         this.loadError = this.t("loadFailed", "Card data could not be loaded.");
@@ -158,6 +159,22 @@ export class TeamBuilder extends LitElement {
       loading.finish();
       this.requestUpdate();
     }
+  }
+  private async loadCatalogMetadata() {
+    const catalog = this.catalog;
+    if (!catalog) return;
+    this.visualsController?.abort();
+    const controller = this.visualsController = new AbortController();
+    this.catalogMetadataError = false;
+    this.requestUpdate();
+    try {
+      const visuals = await fetchCatalogVisuals(catalog.data.identity, controller.signal, true);
+      if (controller.signal.aborted || this.catalog !== catalog) return;
+      catalog.setVisuals(visuals);
+    } catch {
+      if (!controller.signal.aborted && this.catalog === catalog) this.catalogMetadataError = true;
+    }
+    if (!controller.signal.aborted && this.catalog === catalog) this.requestUpdate();
   }
   private adopt(snapshot: BoxSnapshot) {
     const versionChanged = this.snapshot?.version !== snapshot.version;
@@ -396,6 +413,7 @@ export class TeamBuilder extends LitElement {
           ${this.renderSync()}
         </header>
         ${this.notice ? html`<div class="banner" role="status"><span>${this.notice}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => { this.notice = ""; this.requestUpdate(); }}>${this.common("close", "Close")}</button></div></div>` : nothing}
+        ${this.catalogMetadataError ? html`<div class="banner" role="status"><span>${this.common("catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span><button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("retry", "Retry")}</button></div>` : nothing}
         <section id="tb-panel" class="tb-tabpanel" role="tabpanel" tabindex="-1">${panel}</section>
         ${renderCardEditor(this)}
         ${this.songPicker ? renderSongPicker(this) : nothing}

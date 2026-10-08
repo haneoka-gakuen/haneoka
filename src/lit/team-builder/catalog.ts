@@ -96,6 +96,22 @@ export class Catalog {
     }
     return [...new Set(this.characterIds("snaps", id).map((character) => Number(this.data.characters[String(character)]?.bandId ?? 0)).filter(Boolean))];
   }
+  /** The same summary fields/facets as card catalogue screens. */
+  cardFilterItem(kind: "members" | "snaps", id: number): Record<string, unknown> {
+    const card = kind === "members" ? this.member(id) : this.snap(id);
+    if (!card) return {};
+    const keys: Record<string, number[]> = kind === "members"
+      ? { leader: [(card as MemberCatalog).leaderSkillId], live: [(card as MemberCatalog).liveSkillId], gekisou: [(card as MemberCatalog).gekisoSkillId] }
+      : { support: (card as SnapshotCatalog).supportSkillIds, gekisouSupport: (card as SnapshotCatalog).gekisoSupportSkillIds };
+    const metadata = (this.visuals ? (kind === "members" ? this.visuals.cards : this.visuals.supportCards)[String(id)] ?? card.catalogMetadata : card.catalogMetadata) as Record<string, unknown> | undefined;
+    const resolvedSkills = { ...metadata?.resolvedSkills as Record<string, unknown> };
+    for (const [role, ids] of Object.entries(keys)) {
+      const group = role.replace("gekisou", "gekiso");
+      const rows = ids!.flatMap((skillId) => this.data.skills[group]?.[String(skillId)] ? [this.data.skills[group]![String(skillId)]!] : []);
+      if (rows.length && !resolvedSkills[role]) resolvedSkills[role] = rows;
+    }
+    return { id, cardType: card.attribute, rarity: card.rarity, stat: card.statMax, images: {thumbnail: card.image}, ...metadata, resolvedSkills };
+  }
   /** Catalogue tile of a card, with its native frame ratio. */
   cardOptions(kind: "members" | "snaps", id: number): TileOptions | null {
     const card = kind === "members" ? this.member(id) : this.snap(id);

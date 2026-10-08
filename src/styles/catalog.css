@@ -316,6 +316,33 @@
     display: grid;
     gap: 3px;
   }
+  /* Static skill-role cells: original icon and complete localized title. */
+  catalog-table-view .catalog-skill-cell {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--md-sys-spacing-2);
+  }
+  catalog-table-view .catalog-skill-cell__item {
+    display: flex;
+    min-inline-size: 0;
+    align-items: center;
+    gap: var(--md-sys-spacing-2);
+  }
+  catalog-table-view .catalog-skill-cell__icon {
+    display: block;
+    flex: 0 0 24px;
+    inline-size: 24px;
+    block-size: 24px;
+    object-fit: contain;
+  }
+  catalog-table-view .catalog-skill-cell__title {
+    display: block;
+    flex: 1;
+    min-inline-size: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   /* ---------- skill + level tables (ported) ---------- */
   .detail-section h3 {
     margin: 0 0 4px;
@@ -748,5 +775,43 @@
     color: var(--md-sys-color-on-surface-variant);
     border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-surface-container-high);
+  }
+}
+
+@layer pages {
+  /* Song catalogue only: a real action button is a sibling of the detail tile. */
+  catalog-screen .collection--song > .catalog-song-tile {
+    position: relative;
+    min-inline-size: 0;
+  }
+  catalog-screen .collection--song > .catalog-song-tile > .tile {
+    inline-size: 100%;
+  }
+  catalog-screen .collection--song > .catalog-song-tile > .tile__action.icon-button {
+    position: absolute;
+    inset-block-start: 8px;
+    right: 8px;
+    z-index: 2;
+    box-shadow: var(--md-sys-elevation-level1);
+  }
+}
+
+@layer pages {
+  catalog-screen .collection--song > .catalog-song-tile {
+    display: grid;
+    position: relative;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  catalog-screen .collection--song > .catalog-song-tile > .tile {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  catalog-screen .collection--song > .catalog-song-tile > .catalog-song-tile__play.icon-button {
+    position: absolute;
+    inset-block-start: 8px;
+    right: 8px;
+    z-index: 2;
+    box-shadow: var(--md-sys-elevation-level1);
   }
 }

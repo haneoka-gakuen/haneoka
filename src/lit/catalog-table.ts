@@ -1,3 +1,5 @@
+import { cardSkills, CARD_SKILL_FACETS, songMissions } from "../lib/catalog-filters";
+import { gekisouMission } from "../lib/gekisou";
 import { rarityIcon } from "./shared/rarity-icon";
 import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
 import { LitElement, html, nothing } from "lit";
@@ -54,7 +56,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("technique", "numeric", "technique"),
     column("visual", "numeric", "visual"),
     column("total", "numeric", "total"),
-    column("skills"),
+    ...CARD_SKILL_FACETS.filter((facet) => (facet.kinds as readonly string[]).includes("member")).map((facet) => column(facet.key, "text", facet.key)),
     column("release", "text", "release"),
   ],
   support: [
@@ -67,7 +69,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("technique", "numeric", "technique"),
     column("visual", "numeric", "visual"),
     column("total", "numeric", "total"),
-    column("skills"),
+    ...CARD_SKILL_FACETS.filter((facet) => (facet.kinds as readonly string[]).includes("support")).map((facet) => column(facet.key, "text", facet.key)),
     column("release", "text", "release"),
   ],
   character: [
@@ -93,6 +95,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("attribute", "mark", "musicType"),
     column("band", "entity", "band"),
     column("difficulty", "numeric", "level"),
+    column("gekisouPhase1"), column("gekisouPhase2"), column("gekisouPhase3"),
     column("time", "numeric", "time"),
     column("nativeScore", "numeric", "nativeScore"),
     column("score", "numeric", "score"),
@@ -229,7 +232,9 @@ export class CatalogTable extends LitElement {
             : "song-meta"
           : c.profile.presentation
       ] || COLUMNS.item;
-    const visibleColumns = columns.filter((entry) => entry.key !== "nativeScore" || c.hasNativeMetaReference());
+    const visibleColumns = columns.filter((entry) =>
+      (!entry.key.startsWith("gekisouPhase") || c.settings.origin !== "bestdori") &&
+      (entry.key !== "nativeScore" || c.hasNativeMetaReference()));
     const metricLabels: Record<string, [string, string]> = {
       time: ["metaTime", "Song Duration"], eff: ["metaEff", "Efficiency"], bpm: ["metaBpm", "Beats per Minute"],
       n: ["metaN", "Note Count"], nps: ["metaNps", "Notes per Second"], sr: ["metaSr", "Skill Coverage Rate"],
@@ -421,44 +426,18 @@ export class CatalogTable extends LitElement {
       return wrap(c.profile.presentation === "support" ? `${(value / 100).toLocaleString()}%` : value.toLocaleString());
     }
     if (key === "total") return wrap(c.total(item).toLocaleString());
-    if (key === "skills") {
-      const skills =
-        item.resolvedSkills && typeof item.resolvedSkills === "object"
-          ? Object.entries(item.resolvedSkills as Item).filter(([, value]) => value)
-          : [];
-      const labels: Record<string, string> = {
-        leader: "Leader",
-        live: "Live",
-        gekisou: "Gekisou",
-        support: "Support",
-        gekisouSupport: "Gekisou support",
-      };
-      return wrap(
-        skills.length
-          ? html`
-              <span class="cluster" style="--cluster-gap:4px">
-                ${skills.slice(0, 3).map(([name, value]) => {
-                  const skill = value as Item;
-                  const mark = String(skill.icon || skill.image || "");
-                  return html`
-                    <span class="chip chip--static chip--assist" style="--chip-height:24px">
-                      ${
-                        mark
-                          ? html`
-                              <span class="chip__avatar" style="width:16px;height:16px">
-                                <img src=${mark} alt="" />
-                              </span>
-                            `
-                          : nothing
-                      }
-                      <span class="chip__label">${c.label(`${name}Skill`, labels[name] || name)}</span>
-                    </span>
-                  `;
-                })}
-              </span>
-            `
-          : "—",
-      );
+    const skillFacet = CARD_SKILL_FACETS.find((facet) => facet.key === key);
+    if (skillFacet) {
+      const skills = cardSkills(item, skillFacet.role);
+      return wrap(skills.length ? html`<div class="catalog-skill-cell">${skills.map((skill) => html`<span class="catalog-skill-cell__item">
+        ${skill.icon ? html`<img class="catalog-skill-cell__icon" src=${c.imageForLocale(String(skill.icon))} width="24" height="24" alt="" loading="lazy" decoding="async" />` : nothing}
+        <span class="catalog-skill-cell__title" lang=${c.localizedLanguage(skill.skillName)}>${c.localized(skill.skillName) || "—"}</span>
+      </span>`)}</div>` : "—");
+    }
+    if (/^gekisouPhase[123]$/u.test(key)) {
+      const mission = gekisouMission(songMissions(item)[Number(key.slice(-1)) - 1]);
+      const source = mission ? c.missionIcons?.[mission.icon] : undefined;
+      return wrap(mission ? html`<span class="table-entity">${source ? html`<img src=${source} width="24" height="24" alt="" loading="lazy" />` : nothing}<span>${c.label(mission.key, mission.fallback)}</span></span>` : "—");
     }
     if (key === "play")
       return wrap(

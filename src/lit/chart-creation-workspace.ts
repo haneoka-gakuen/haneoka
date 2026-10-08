@@ -32,6 +32,7 @@ import { CreationStore, type CreationDocument, type CreationRevision } from "../
 import { createExampleAudio, decodeCreationAudio, type CreationAudio } from "../lib/chart-creation/audio";
 import { MediaClock } from "@haneoka/cassiopeia-host-web";
 import { clientText, initializeI18nClient } from "../i18n/client";
+import { localizedFallbacks } from "../lib/localized-text";
 import { beginLoading } from "../lib/loading-progress";
 import { downloadBlob } from "../lib/canvas-capture";
 import { iconButton, segmented } from "./ui/controls";
@@ -40,24 +41,32 @@ import { trapFocus } from "../lib/overlay";
 import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
 import { accordion } from "./ui/accordion";
 import "./chart-creation-library";
-import type { ChartCreationLibrary, PublicChartImport } from "./chart-creation-library";
+import "./chart-creation-collections";
+import type { ChartCollectionScope } from "./chart-creation-collections";
+import { readAuthorCollections, authorSelectionForScope, authorEntityIds, reconcileAuthorEdit, assignAuthorSelection, copyAuthorSelection, pasteAuthorSelection, type AuthorClipboard } from "../../packages/chart-editor/src/creation/collections";
+import { applyAuthorCollectionOperation, type AuthorCollectionOperation } from "../../packages/chart-editor/src/creation/collections-history";
+import type { ChartCreationLibrary, PublicChartImport, CreationLibraryProvider } from "./chart-creation-library";
 import type { ChartEmbedHandle, ChartPlaybackOptions, ChartSkin } from "../../packages/embed-cassiopeia/src/types";
+import { ChartReplacementRejectedError } from "../../packages/embed-cassiopeia/src/driver";
+import { AuthorNativeSpeedError } from "../lib/chart-creation/native-speed-plan";
 import type { HaneokaReleaseIdentity, HaneokaLocale } from "../../packages/api-client/src/haneoka";
 import { listPublicCreationSongs } from "../lib/chart-creation/public-songs";
 import { readReleaseServer } from "../lib/release-server";
-import { compileOurNotesCreation } from "../lib/chart-creation/our-notes";
+import { compileOurNotesCreation, isNativeCreationPreview, type NativeCreationPreviewHandle } from "../lib/chart-creation/our-notes";
 import { loadOurNotesCreationCanvasSkin, ourNotesCreationCanvasNoteAppearance, createChartCanvasRibbonStyle, drawChartCanvasLanePlane, drawChartCanvasRibbon, interpolateNoteLine, type OurNotesCreationCanvasSkin } from "../lib/chart-creation/native-canvas-skin";
 import type { ChartNote } from "@haneoka/cassiopeia";
 import type { RenderNoteKind } from "@haneoka/cassiopeia-plugin-our-notes";
 import { loadingState } from "./ui/state";
-import type { ChartSelection } from "../../packages/chart-editor/src/creation/editing";
-import { assertAuthoredSpanOverlap, assertEditedChartSpans, authoredSpanOverlaps, authoredSpanViewport, authoredWidthBounds, constrainLaneValue, viewportXToAuthoredLane, authoredLaneToViewportX } from "../../packages/chart-editor/src/creation/span";
+
+import { assertAuthoredSpanOverlap, assertEditedChartSpans, authoredSpanOverlaps, authoredSpanViewport, authoredWidthBounds, constrainLaneValue, viewportXToAuthoredLane, authoredLaneToViewportX, nativeLaneToAuthoredLane } from "../../packages/chart-editor/src/creation/span";
 import { createAuthoredNote, resizeChartSelection } from "../../packages/chart-editor/src/creation/authoring";
 import {
   brushChartSelection,
   flipChartSelection,
-  cutChartSelection,
   generateLinePoints,
+  nudgeChartSelectionOnGrid,
+  removableLinePointIds,
+  removeLineControlPoints,
   type NoteBrush,
 } from "../../packages/chart-editor/src/creation/actions";
 import {
@@ -77,8 +86,6 @@ import {
   chartSelectionNodes,
   chartSelectionInBox,
   moveChartSelection,
-  copyChartSelectionGroup,
-  pasteChartSelectionGroup,
   deleteChartSelectionGroup,
 } from "../../packages/chart-editor/src/creation/selection";
 interface EditAudioTransport {
@@ -87,6 +94,23 @@ interface EditAudioTransport {
   pause(): void;
   seek(seconds: number): void;
   dispose(): void;
+}
+interface NativeSelectionGesture {
+  pointer: number;
+  canvas: HTMLCanvasElement;
+  handle: NativeCreationPreviewHandle;
+  epoch: number;
+  base: Project;
+  ids: Set<string>;
+  previous: string[];
+  primary: string;
+  lane: number;
+  mirror: boolean;
+  x: number;
+  y: number;
+  moved: boolean;
+  candidate?: Project;
+  error?: string;
 }
 interface SelectionGesture {
   pointer: number;
@@ -122,6 +146,8 @@ interface SelectionGesture {
 export class ChartCreationWorkspace extends LitElement {
   static properties = {
     locale: {},
+    collectionScope: { state: true },
+    deletingProject: { state: true },
     busy: { state: true },
     dirty: { state: true },
     error: { state: true },
@@ -146,8 +172,35 @@ export class ChartCreationWorkspace extends LitElement {
     relativeSnap: { state: true },
     canvasLoading: { state: true },
     canvasFailed: { state: true },
+    nativeUpdating: { state: true },
+    visualProfilesAvailable: { state: true },
   };
   declare locale: string;
+  declare private collectionScope: ChartCollectionScope;
+  declare private deletingProject: boolean;
+  private scopeSnapshot?: { project: Project; scope: ChartCollectionScope; ids: Set<string> };
+  private editingSnapshot?: { project: Project; scope: ChartCollectionScope; view: Project };
+  private readonly collectionOperation = (operation: AuthorCollectionOperation) => {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating) return false;
+    try { return this.commitProject(applyAuthorCollectionOperation(this.chart, operation).project); }
+    catch { this.error = this.t("creation.invalid_edit"); return false; }
+  };
+  private readonly changeCollectionScope = (scope: ChartCollectionScope) => {
+    this.cancelGesture(); this.cancelWidth(); this.pending = undefined;
+    this.collectionScope = scope; this.pruneSelection(); this.paint();
+  };
+  private readonly selectCollectionMembers = (ids: string[]) => { if (!this.nativeSelectionReady) return; this.setSelection(ids); this.pruneSelection(); this.paint(); };
+  private scopeIds(project = this.chart) {
+    if (this.scopeSnapshot?.project !== project || this.scopeSnapshot.scope !== this.collectionScope)
+      this.scopeSnapshot = { project, scope: this.collectionScope, ids: authorSelectionForScope(project, this.collectionScope) };
+    return this.scopeSnapshot.ids;
+  }
+  private editingProject(project: Project) {
+    if (this.editingSnapshot?.project === project && this.editingSnapshot.scope === this.collectionScope) return this.editingSnapshot.view;
+    const ids = this.scopeIds(project), singles = project.singles.filter(note => ids.has(note.id)), lines = project.lines.filter(line => line.points.some(note => ids.has(note.id)));
+    const view = singles.length === project.singles.length && lines.length === project.lines.length ? project : { ...project, singles, lines };
+    return (this.editingSnapshot = { project, scope: this.collectionScope, view }).view;
+  }
   private history = new ProjectHistory(createEmptyProject());
   private original = createEmptyProject();
   private projectSnapshot?: { revision: number; value: Project };
@@ -170,6 +223,13 @@ export class ChartCreationWorkspace extends LitElement {
   private nativePending?: Promise<ChartEmbedHandle>;
   private nativeDisposal: Promise<void> = Promise.resolve();
   private nativeEpoch = 0;
+  private nativeAudio?: CreationAudio;
+  private nativeProjectId?: string;
+  declare private nativeUpdating: boolean;
+  private nativeUpdateEpoch = 0;
+  private nativeGesture?: NativeSelectionGesture;
+  declare private visualProfilesAvailable: boolean;
+  private visualProfileProbe?: Promise<void>;
   private previewIdentity?: HaneokaReleaseIdentity;
   private canvasTheme?: OurNotesCreationCanvasSkin;
   private canvasThemeKey = "";
@@ -218,7 +278,8 @@ export class ChartCreationWorkspace extends LitElement {
   private secondsPerScreen = 4;
   private rate = 1;
   private exportFormat: ExportFormat = "project";
-  private clipboard?: ChartSelection[];
+  private clipboard?: AuthorClipboard;
+  private get hasClipboard() { return Boolean(this.clipboard && (this.clipboard.entities.singles.length || this.clipboard.entities.lines.length || this.clipboard.entities.tempos.length || this.clipboard.entities.meters.length || this.clipboard.entities.timeScales.length || this.clipboard.collections.groups.length || this.clipboard.collections.layers.length)); }
   declare private selectedIds: Set<string>;
   declare private multiPick: boolean;
   private gesture?: SelectionGesture;
@@ -227,7 +288,7 @@ export class ChartCreationWorkspace extends LitElement {
   private direction: "left" | "up" | "right" = "up";
   private insertLane = 0;
   declare private defaultWidth: number;
-  private widthSession?: { base: Project; id: string; candidate?: Project };
+  private widthSession?: { base: Project; ids: Set<string>; candidate?: Project };
   private widthCancelled = false;
   private brushPreset: NoteBrush = { type: "tap", direction: "none", critical: false, visible: true };
   declare private fullscreen: boolean;
@@ -254,6 +315,7 @@ export class ChartCreationWorkspace extends LitElement {
   constructor() {
     super();
     this.locale = "en";
+    this.collectionScope = {}; this.deletingProject = false;
     this.defaultWidth = 4;
     this.fullscreen = false;
     this.zoomX = 1;
@@ -262,6 +324,8 @@ export class ChartCreationWorkspace extends LitElement {
     this.relativeSnap = false;
     this.canvasLoading = false;
     this.canvasFailed = false;
+    this.nativeUpdating = false;
+    this.visualProfilesAvailable = false;
     this.stageMode = "edit";
     this.nativeMode = "play";
     this.multiPick = false;
@@ -287,10 +351,28 @@ export class ChartCreationWorkspace extends LitElement {
   private c(key: string) {
     return clientText(this.locale, key);
   }
+  private apiLocale(): HaneokaLocale {
+    return (localizedFallbacks(this.locale).find(locale => ["ja", "en", "zh-TW", "zh-CN", "ko"].includes(locale)) ?? "en") as HaneokaLocale;
+  }
   private get chart() {
     if (this.projectSnapshot?.revision !== this.history.revision)
       this.projectSnapshot = { revision: this.history.revision, value: this.history.value };
     return this.projectSnapshot.value;
+  }
+  private get nativePreviewSupported() {
+    return !this.chart.meta.source || ["ss", "authored"].includes(this.chart.meta.source);
+  }
+  private get canUpdateNative() {
+    return this.stageMode === "preview" && this.nativePreviewSupported && this.nativeAudio === this.audio && this.nativeProjectId === this.projectId
+      && isNativeCreationPreview(this.nativePreview);
+  }
+  private get nativeEditable() {
+    return this.canUpdateNative && this.nativeMode === "chart";
+  }
+  private get nativeSelectionReady() {
+    if (!this.canUpdateNative) return true;
+    return isNativeCreationPreview(this.nativePreview) && this.nativePreview.getCompiledProject() === this.chart
+      && !!this.nativePreview.getSourceMap() && !!this.nativePreview.getPresentation?.();
   }
   private exportWarnings() {
     if (this.warningSnapshot?.revision !== this.history.revision || this.warningSnapshot.format !== this.exportFormat)
@@ -359,11 +441,12 @@ export class ChartCreationWorkspace extends LitElement {
       this.releasePanelFocus = panel ? trapFocus(panel, { onDismiss: () => this.closePanels() }) : undefined;
     }
     // Material resolves newly rendered version options after its own update.
-    const control = this.querySelector<HTMLElementTagNameMap["md-outlined-select"]>("[data-version]");
-    if (control) {
-      const value = String(this.activeRevision);
+    for (const [selector, value] of [["[data-version]", String(this.activeRevision)], ["[data-project]", this.head ? this.projectId : ""]]) {
+      const control = this.querySelector<HTMLElementTagNameMap["md-outlined-select"]>(selector);
+      if (!control) continue;
       void control.updateComplete.then(() => {
-        if (this.isConnected && String(this.activeRevision) === value && control.value !== value) control.select(value);
+        const current = selector === "[data-version]" ? String(this.activeRevision) : this.head ? this.projectId : "";
+        if (this.isConnected && current === value && control.value !== value) control.select(value);
       });
     }
   }
@@ -415,7 +498,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.revisions = await this.store.versions(this.projectId);
   }
   private edit(updater: (draft: Project) => void) {
-    if (this.busy || this.gesture) return;
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady) return;
     this.cancelWidth();
     try {
       const draft = structuredClone(this.chart);
@@ -426,11 +509,41 @@ export class ChartCreationWorkspace extends LitElement {
     }
   }
   private rebuildPreview(position = this.seconds) {
+    if (this.audio && this.nativePreviewSupported && !this.visualProfileProbe)
+      this.visualProfileProbe = import("../../packages/embed-cassiopeia/src/vue-player")
+        .then(module => module.supportsNativeVisualProfiles()).then(supported => {
+          if (this.isConnected) this.visualProfilesAvailable = supported;
+        }).catch(() => { this.visualProfileProbe = undefined; });
     if (this.viewProjectId !== this.projectId) {
       this.viewProjectId = this.projectId;
       this.laneStart = (this.chart.laneBasis - this.laneSpan()) / 2;
     }
     this.laneStart = this.clampLaneStart(this.laneStart);
+    if (this.canUpdateNative && isNativeCreationPreview(this.nativePreview)) {
+      const handle = this.nativePreview, epoch = this.nativeEpoch, update = ++this.nativeUpdateEpoch;
+      this.nativeUpdating = true;
+      void handle.updateProject(this.chart).then(() => {
+        if (epoch !== this.nativeEpoch || this.nativePreview !== handle || update !== this.nativeUpdateEpoch) return;
+        this.nativeUpdating = false;
+        this.pruneSelection();
+        this.requestUpdate();
+      }).catch(error => {
+        if (epoch !== this.nativeEpoch || this.nativePreview !== handle || update !== this.nativeUpdateEpoch) return;
+        this.error = this.t("creation.invalid_edit");
+        if (error instanceof ChartReplacementRejectedError) {
+          this.nativeUpdating = false;
+          this.requestUpdate();
+          return;
+        }
+        void this.disposeNative().then(() => {
+          if (!this.isConnected || this.nativePreview) return;
+          this.stageMode = "edit";
+          this.rebuildPreview(position);
+        });
+      });
+      this.requestUpdate();
+      return;
+    }
     if (this.stageMode === "preview" || this.nativePreview || this.nativePending) {
       this.stageMode = "edit";
       void this.disposeNative();
@@ -521,7 +634,7 @@ export class ChartCreationWorkspace extends LitElement {
     const controller=this.canvasController=new AbortController();this.canvasThemeKey=requested;this.canvasLoading=true;this.canvasFailed=false;
     const report=beginLoading(this.c("loading"),{signal:controller.signal,scope:"owner"});
     try {
-      const pin=identity??(await listPublicCreationSongs({server:readReleaseServer(),locale:this.locale as HaneokaLocale,limit:1,signal:controller.signal})).release;
+      const pin=identity??(await listPublicCreationSongs({server:readReleaseServer(),locale:this.apiLocale(),limit:1,signal:controller.signal})).release;
       const theme=await loadOurNotesCreationCanvasSkin(pin,{skin:this.nativeSkin,locale:this.locale,signal:controller.signal});
       if(controller!==this.canvasController||!this.isConnected){await theme.dispose();return;}
       this.canvasTheme=theme;this.previewIdentity=pin;this.canvasThemeKey=JSON.stringify([pin,this.nativeSkin]);
@@ -560,7 +673,12 @@ export class ChartCreationWorkspace extends LitElement {
     }
   }
   private disposeNative() {
+    this.cancelNativeGesture();
     ++this.nativeEpoch;
+    ++this.nativeUpdateEpoch;
+    this.nativeUpdating = false;
+    this.nativeAudio = undefined;
+    this.nativeProjectId = undefined;
     this.nativeController?.abort();
     this.nativeController = undefined;
     const handle = this.nativePreview,
@@ -586,23 +704,31 @@ export class ChartCreationWorkspace extends LitElement {
     let accepted = false,
       cancelled = false;
     await this.run(async (signal) => {
-      const abort = () => this.controller?.abort(external.reason);
+      const controller = this.controller!;
+      const abort = () => controller.abort(external.reason);
       external.addEventListener("abort", abort, { once: true });
       try {
-        external.throwIfAborted();
+        if (external.aborted) abort();
+        signal.throwIfAborted();
         await this.save();
+        signal.throwIfAborted();
+        if (!value.audio) throw new Error("creation_audio_required");
         const audio = await decodeCreationAudio(value.audio, signal);
         signal.throwIfAborted();
         await this.disposeNative();
+        signal.throwIfAborted();
+        if (!this.isConnected) throw new DOMException("Disconnected", "AbortError");
         this.projectId = crypto.randomUUID();
         this.head = 0;
         this.activeRevision = 0;
         this.revisions = [];
+        readAuthorCollections(value.project);
+        this.collectionScope = {}; this.deletingProject = false;
         this.history.reset(value.project);
         this.original = structuredClone(value.project);
         this.source = value.source;
         this.audio = audio;
-        this.previewIdentity = value.identity;
+        this.previewIdentity = "provider" in value ? undefined : value.identity;
         this.setSelection([]);
         this.pending = undefined;
         this.dirty = true;
@@ -613,14 +739,19 @@ export class ChartCreationWorkspace extends LitElement {
       } finally {
         cancelled = signal.aborted;
         external.removeEventListener("abort", abort);
+        if (!accepted && this.isConnected && this.audio && this.stageMode === "preview" && !this.nativePreview && !this.nativePending) {
+          this.stageMode = "edit";
+          await this.updateComplete;
+          this.rebuildPreview(this.seconds);
+        }
       }
     });
     if (!accepted) throw cancelled ? new DOMException("Cancelled", "AbortError") : new Error("import_failed");
   }
-  private showLibrary() {
+  private showLibrary(provider: CreationLibraryProvider = "haneoka") {
     if (this.busy) return;
     if (this.narrow) this.closePanels();
-    void this.updateComplete.then(() => this.querySelector<ChartCreationLibrary>("chart-creation-library")?.show());
+    void this.updateComplete.then(() => this.querySelector<ChartCreationLibrary>("chart-creation-library")?.show(provider));
   }
   private async switchStage() {
     if (this.busy || !this.audio) return;
@@ -641,6 +772,27 @@ export class ChartCreationWorkspace extends LitElement {
       this.stageMode = "preview";
       this.closePanels();
       await this.updateComplete;
+      signal.throwIfAborted();
+      if (!this.nativePreviewSupported) {
+        const { mountCreationPresentationPreview } = await import("../lib/chart-creation/presentation-preview");
+        signal.throwIfAborted();
+        const epoch = ++this.nativeEpoch, controller = (this.nativeController = new AbortController());
+        const abort = () => controller.abort(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        try {
+          const style = getComputedStyle(this), color = (key: string) => style.getPropertyValue(`--md-sys-color-${key}`).trim();
+          const handle = mountCreationPresentationPreview(this.querySelector<HTMLElement>("[data-native-preview]")!, this.chart, this.audio!, {
+            mode: "chart", rate: this.rate, volume: this.nativeOptions.volume ?? 0.82, loop: this.nativeOptions.loop ?? false,
+            signal: controller.signal, label: this.t("preview"),
+            colors: { surface: color("surface-container"), primary: color("primary"), secondary: color("secondary"), outline: color("outline-variant"), critical: color("tertiary") },
+            onEvent: event => { if (epoch !== this.nativeEpoch) return; if (event.type === "state") this.updateTransport(event.snapshot.time, event.snapshot.playing); if (event.type === "error") this.error = this.t("audioFailed"); },
+          });
+          this.nativePreview = handle;
+          handle.seek(position);
+          mounted = true;
+        } finally { signal.removeEventListener("abort", abort); }
+        return;
+      }
       const stored = this.chart.extensions.haneoka;
       if (
         stored &&
@@ -660,7 +812,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.previewIdentity = (
           await listPublicCreationSongs({
             server: readReleaseServer(),
-            locale: this.locale as HaneokaLocale,
+            locale: this.apiLocale(),
             limit: 1,
             signal,
           })
@@ -701,6 +853,8 @@ export class ChartCreationWorkspace extends LitElement {
         }
         this.nativePreview = handle;
         this.nativePending = undefined;
+        this.nativeAudio = this.audio;
+        this.nativeProjectId = this.projectId;
         signal.throwIfAborted();
         handle.seek(position);
         mounted = true;
@@ -724,6 +878,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.preview?.pause();
   }
   private async applyNativeOptions(patch: ChartPlaybackOptions) {
+    this.cancelNativeGesture();
     this.nativeOptions = { ...this.nativeOptions, ...patch };
     try {
       await this.nativePreview?.setOptions(patch);
@@ -754,6 +909,7 @@ export class ChartCreationWorkspace extends LitElement {
           direction: "none",
           visible: true,
         }));
+        this.collectionScope = {}; this.deletingProject = false;
         this.history.reset(chart);
         this.original = structuredClone(chart);
         this.revisions = [];
@@ -765,28 +921,66 @@ export class ChartCreationWorkspace extends LitElement {
     });
   }
   private async open(id: string, revision?: number) {
-    await this.save();
-    const opened = await this.store.open(id, revision),
-      signal = this.controller!.signal;
-    const audio = await decodeCreationAudio(opened.file, signal);
+    const signal = this.controller!.signal;
+    await this.save(); signal.throwIfAborted();
+    const opened = await this.store.open(id, revision);
+    const [audio, revisions] = await Promise.all([decodeCreationAudio(opened.file, signal), this.store.versions(id)]);
     if (audio.sha256 !== opened.value.audio.sha256) throw new Error("audio_hash");
-    signal.throwIfAborted();
+    signal.throwIfAborted(); await this.disposeNative(); signal.throwIfAborted();
+    if (!this.isConnected) throw new DOMException("Disconnected", "AbortError");
     this.preview?.dispose();
-    this.projectId = id;
-    this.head = opened.document.head;
-    this.activeRevision = opened.value.revision;
-    this.original = opened.document.original;
-    this.source = opened.document.source;
-    this.history.reset(opened.value.chart);
-    this.audio = audio;
-    this.setSelection([]);
-    this.pending = undefined;
-    // An earlier version becomes a new branch of edits on the same monotonic local history.
-    this.dirty = opened.value.revision !== opened.document.head;
-    this.windowStart = 0;
-    this.revisions = await this.store.versions(id);
-    this.rebuildPreview(0);
-    this.status = this.t("restored");
+    this.projectId = id; this.head = opened.document.head; this.activeRevision = opened.value.revision;
+    this.original = opened.document.original; this.source = opened.document.source;
+    this.collectionScope = {}; this.deletingProject = false;
+    this.history.reset(opened.value.chart); this.audio = audio; this.previewIdentity = undefined;
+    this.setSelection([]); this.pending = undefined;
+    // Viewing a historical version is clean; the first subsequent edit creates a new saved branch.
+    this.dirty = false; this.windowStart = 0; this.revisions = revisions;
+    this.rebuildPreview(0); this.status = this.t("restored");
+  }
+  private async saveCopy() {
+    if (!this.audio) return;
+    await this.run(async signal => {
+      const id = crypto.randomUUID(), snapshot = structuredClone(this.chart), original = this.original, audio = this.audio!, source = this.source;
+      snapshot.meta.title = `${snapshot.meta.title || this.t("project")} (${this.t("creation.copy")})`;
+      const originalAudio = this.head ? await this.store.original(this.projectId) : undefined;
+      signal.throwIfAborted();
+      const document = await this.store.save(id, 0, snapshot, audio, original, source, originalAudio);
+      signal.throwIfAborted();
+      this.projectId = id; this.head = document.head; this.activeRevision = document.head;
+      this.history.reset(snapshot); this.setSelection([]);
+      this.dirty = false; this.conflict = false; this.deletingProject = false;
+      this.documents = await this.store.list(); this.revisions = await this.store.versions(id);
+      this.status = this.t("creation.saved");
+    });
+  }
+  private async restoreOriginal() {
+    await this.run(async signal => {
+      await this.save(); signal.throwIfAborted();
+      const original = await this.store.original(this.projectId), audio = await decodeCreationAudio(original.file, signal);
+      if (audio.sha256 !== original.audio.sha256) throw new Error("audio_hash");
+      signal.throwIfAborted(); await this.disposeNative(); signal.throwIfAborted();
+      this.original = original.chart; this.source = original.document.source; this.audio = audio;
+      this.history.reset(original.chart); this.collectionScope = {}; this.previewIdentity = undefined;
+      this.setSelection([]); this.pending = undefined; this.dirty = true;
+      this.rebuildPreview(0); await this.save();
+      this.status = this.t("restored");
+    });
+  }
+  private async deleteProject() {
+    await this.run(async signal => {
+      await this.save(); signal.throwIfAborted();
+      await this.store.delete(this.projectId, this.head);
+      // The confirmed local deletion committed; finalize its UI even if Cancel arrives during disposal.
+      await this.disposeNative();
+      this.preview?.dispose(); this.preview = undefined; this.audio = undefined;
+      const project = createEmptyProject({ source: "authored" });
+      this.history.reset(project); this.original = structuredClone(project); this.source = undefined;
+      this.projectId = crypto.randomUUID(); this.head = this.activeRevision = 0;
+      this.collectionScope = {}; this.deletingProject = false; this.revisions = []; this.dirty = false;
+      this.setSelection([]); this.pending = undefined; this.windowStart = this.seconds = 0;
+      this.stageMode = "edit"; this.documents = await this.store.list(); this.rebuildPreview(0);
+    });
   }
   private pick(selector: string) {
     (this.querySelector(selector) as HTMLInputElement).click();
@@ -808,6 +1002,8 @@ export class ChartCreationWorkspace extends LitElement {
       const text = await file.text(),
         imported = importChart(text);
       signal.throwIfAborted();
+      readAuthorCollections(imported.project);
+      this.collectionScope = {}; this.deletingProject = false;
       this.history.reset(imported.project);
       this.original = structuredClone(imported.project);
       this.source = { name: file.name, text };
@@ -825,7 +1021,8 @@ export class ChartCreationWorkspace extends LitElement {
   private selectionNodes(project = this.chart) {
     if (this.selectionSnapshot?.project !== project)
       this.selectionSnapshot = { project, nodes: chartSelectionNodes(project) };
-    return this.selectionSnapshot.nodes;
+    const visible = this.scopeIds(project);
+    return this.selectionSnapshot.nodes.filter(entry => visible.has(entry.note.id));
   }
   private map() {
     const p = this.chart;
@@ -838,7 +1035,7 @@ export class ChartCreationWorkspace extends LitElement {
     }
   };
   private keydown = (event: KeyboardEvent) => {
-    if (this.busy || event.defaultPrevented || event.isComposing || event.repeat) return;
+    if (this.busy || this.nativeUpdating || event.defaultPrevented || event.isComposing || event.repeat) return;
     if (
       event
         .composedPath()
@@ -854,11 +1051,27 @@ export class ChartCreationWorkspace extends LitElement {
     )
       return;
     if (this.stageMode === "preview") {
+      if (!this.nativeSelectionReady && event.key !== "Escape") return;
+      if (this.nativeGesture) {
+        if (event.key === "Escape") this.cancelNativeGesture();
+        event.preventDefault();
+        return;
+      }
+      if (this.nativeEditable && event.key !== "Escape") {
+        const modifier = event.ctrlKey || event.metaKey;
+        const editingKey = modifier && ["s", "z", "y", "a", "x", "c", "v"].includes(event.key.toLowerCase())
+          || !modifier && ["Delete", "Backspace", " "].includes(event.key)
+          || !modifier && event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)
+          || !modifier && !event.altKey && ["BracketLeft", "BracketRight"].includes(event.code);
+        if (!editingKey) return;
+      } else {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void this.run(() => this.save());
-      }
+      } else if (event.key === " " && !(event.ctrlKey || event.metaKey)) { event.preventDefault(); this.togglePlayback(); }
+      else if (event.key === "Escape") { event.preventDefault(); void this.switchStage(); }
       return;
+      }
     }
     if (this.gesture) {
       if (event.key === "Escape") this.cancelGesture();
@@ -880,20 +1093,15 @@ export class ChartCreationWorkspace extends LitElement {
     } else if (modifier && event.key.toLowerCase() === "x") {
       this.cutSelection();
     } else if (modifier && event.key.toLowerCase() === "c") {
-      this.clipboard = copyChartSelectionGroup(this.chart, this.selectedIds);
+      this.clipboard = copyAuthorSelection(this.chart, this.selectedIds);
       this.requestUpdate();
-    } else if (modifier && event.key.toLowerCase() === "v" && this.clipboard?.length)
-      this.edit((p) => {
-        this.setSelection(
-          pasteChartSelectionGroup(
-            p,
-            this.clipboard!,
-            Math.max(0, snapTick(this.map().secondsToTick(this.seconds), this.snap)),
-          ),
-        );
-      });
+    } else if (modifier && event.key.toLowerCase() === "v" && this.hasClipboard) this.pasteSelection();
+    else if (!modifier && event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown"))
+      this.nudgeSelection(event.key === "ArrowUp" ? 1 : -1);
     else if (event.key === "Delete" || event.key === "Backspace")
       this.edit((p) => deleteChartSelectionGroup(p, this.selectedIds));
+    else if (!modifier && !event.altKey && (event.code === "BracketLeft" || event.code === "BracketRight"))
+      this.stepWidth((event.code === "BracketRight" ? 1 : -1) * (event.shiftKey ? 1 : 0.25));
     else if (!modifier && (event.key === "+" || event.key === "=")) this.setVerticalZoom(this.secondsPerScreen / 2);
     else if (!modifier && event.key === "-") this.setVerticalZoom(this.secondsPerScreen * 2);
     else if (event.key === " ") this.togglePlayback();
@@ -919,6 +1127,7 @@ export class ChartCreationWorkspace extends LitElement {
     if (used) event.preventDefault();
   };
   private togglePlayback() {
+    if (this.nativeUpdating || this.nativeGesture || !this.nativeSelectionReady) return;
     if (this.stageMode === "preview") {
       if (this.nativePreview?.snapshot.playing) this.nativePreview.pause();
       else
@@ -1172,7 +1381,85 @@ export class ChartCreationWorkspace extends LitElement {
       this.selectedIds = new Set(unique);
     this.selected = this.selectedIds.has(primary) ? primary : (ids[0] ?? "");
   }
+  private nudgeSelection(direction: -1 | 1) {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.audio || !this.selectedIds.size) return;
+    this.cancelWidth();
+    try { this.commitProject(nudgeChartSelectionOnGrid(this.chart, this.selectedIds, this.selected, direction, this.snap)); }
+    catch { this.error = this.t("creation.invalid_edit"); }
+  }
+  private nativePointerDown = (event: PointerEvent) => {
+    if (!this.nativeEditable || !this.nativeSelectionReady || this.nativeUpdating || this.busy || this.nativeGesture || event.button !== 0 || !event.isPrimary) return;
+    const handle = this.nativePreview;
+    if (!isNativeCreationPreview(handle)) return;
+    const canvas = event.composedPath().find(node => node instanceof HTMLCanvasElement && node.matches(".our-notes-player__canvas"));
+    const presentation = handle.getPresentation?.(), sources = handle.getSourceMap();
+    if (!(canvas instanceof HTMLCanvasElement) || !presentation || !sources) return;
+    const hit = presentation.pickNoteAtClientPoint(event.clientX, event.clientY), point = presentation.clientPointToNoteView(event.clientX, event.clientY);
+    const scope = this.scopeIds(), ids = hit && typeof hit.id === "number"
+      ? sources.sourcesForNote(hit.id).map(source => source.canonicalId).filter(id => scope.has(id)) : [];
+    const previous = [...this.selectedIds], primary = this.selected;
+    const additive = this.multiPick || event.shiftKey || event.ctrlKey || event.metaKey;
+    if (!ids.length || !point) { if (!additive) this.setSelection([]); this.requestUpdate(); return; }
+    event.preventDefault();
+    handle.pause();
+    this.cancelWidth();
+    if (additive) {
+      const selected = new Set(this.selectedIds), remove = ids.every(id => selected.has(id));
+      for (const id of ids) if (remove) selected.delete(id); else selected.add(id);
+      this.setSelection([...selected], ids[0]);
+      if (remove) { this.requestUpdate(); return; }
+    } else if (!ids.every(id => this.selectedIds.has(id))) this.setSelection(ids, ids[0]);
+    else this.selected = ids[0];
+    this.nativeGesture = {
+      pointer: event.pointerId, canvas, handle, epoch: this.nativeEpoch, base: this.chart,
+      ids: new Set(this.selectedIds), previous, primary,
+      lane: nativeLaneToAuthoredLane(point.lane, this.chart.laneBasis), x: event.clientX, y: event.clientY, moved: false,
+      mirror: this.nativeOptions.settings?.mirror ?? DEFAULT_RENDER_SETTINGS.mirror,
+    };
+    canvas.setPointerCapture(event.pointerId);
+    this.querySelector<HTMLElement>("[data-native-preview]")?.focus({ preventScroll: true });
+    this.requestUpdate();
+  };
+  private nativePointerMove = (event: PointerEvent) => {
+    const gesture = this.nativeGesture;
+    if (!gesture || gesture.pointer !== event.pointerId) return;
+    event.preventDefault();
+    if (gesture.epoch !== this.nativeEpoch || gesture.handle !== this.nativePreview || !this.nativeEditable || !this.nativeSelectionReady) { this.cancelNativeGesture(); return; }
+    gesture.moved ||= Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) >= 5;
+    if (!gesture.moved) return;
+    const point = gesture.handle.getPresentation?.()?.clientPointToNoteView(event.clientX, event.clientY);
+    if (!point) { gesture.candidate = undefined; gesture.error = ""; return; }
+    try {
+      const lane = nativeLaneToAuthoredLane(point.lane, gesture.base.laneBasis), step = 0.25;
+      const delta = Math.round(((lane - gesture.lane) * (gesture.mirror ? -1 : 1)) / step) * step;
+      gesture.candidate = moveChartSelection(gesture.base, gesture.ids, 0, delta, { placement: "overlap", grid: { step } });
+      gesture.error = "";
+    } catch { gesture.candidate = undefined; gesture.error = this.t("creation.invalid_edit"); }
+  };
+  private nativePointerEnd = (event: PointerEvent) => {
+    const gesture = this.nativeGesture;
+    if (!gesture || gesture.pointer !== event.pointerId) return;
+    if (event.type !== "pointerup") { this.cancelNativeGesture(); return; }
+    this.nativePointerMove(event);
+    if (this.nativeGesture !== gesture) return;
+    this.nativeGesture = undefined;
+    if (gesture.canvas.hasPointerCapture(gesture.pointer)) gesture.canvas.releasePointerCapture(gesture.pointer);
+    if (gesture.error) this.error = gesture.error;
+    if (gesture.candidate && !this.commitProject(gesture.candidate) && this.error) this.setSelection(gesture.previous, gesture.primary);
+    this.requestUpdate();
+  };
+  private cancelNativeGesture() {
+    const gesture = this.nativeGesture;
+    if (!gesture) return;
+    this.nativeGesture = undefined;
+    this.setSelection(gesture.previous, gesture.primary);
+    if (gesture.canvas.hasPointerCapture(gesture.pointer)) gesture.canvas.releasePointerCapture(gesture.pointer);
+    this.requestUpdate();
+  }
   private pruneSelection() {
+    const state = readAuthorCollections(this.chart);
+    if ((this.collectionScope.groupId && !state.groups.some(group => group.id === this.collectionScope.groupId)) || (this.collectionScope.layerId && !state.layers.some(layer => layer.id === this.collectionScope.layerId)))
+      this.collectionScope = { ...(state.groups.some(group => group.id === this.collectionScope.groupId) ? {groupId:this.collectionScope.groupId} : {}), ...(state.layers.some(layer => layer.id === this.collectionScope.layerId) ? {layerId:this.collectionScope.layerId} : {}) };
     const ids = new Set(this.selectionNodes().map((item) => item.note.id));
     this.setSelection(
       [...this.selectedIds].filter((id) => ids.has(id)),
@@ -1263,6 +1550,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.paint();
   }
   private cancelGesture() {
+    this.cancelNativeGesture();
     const g = this.gesture;
     if (!g) return;
     cancelAnimationFrame(this.gestureFrame);
@@ -1299,6 +1587,9 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private place(tick: number, lane: number) {
     const chart = this.chart;
+    if (readAuthorCollections(chart).layers.some(layer => layer.id === this.collectionScope.layerId && !layer.visible)) {
+      this.error = this.t("creation.invalid_edit"); return;
+    }
     try { assertAuthoredSpanOverlap(lane, this.defaultWidth, chart.laneBasis); }
     catch { this.error = this.t("creation.invalid_edit"); return; }
     const base = (at: number, position: number, size = this.defaultWidth): SingleNote =>
@@ -1409,7 +1700,8 @@ export class ChartCreationWorkspace extends LitElement {
     }
     ctx.globalAlpha = 1;
     const previewing = chart !== this.chart;
-    const projection=this.flatProjection(this.chart);
+    const display = this.editingProject(chart);
+    const projection=this.flatProjection(this.editingProject(this.chart));
     const baseNodes = previewing ? new Map(this.selectionNodes(this.chart).map(item => [item.note.id, item])) : undefined;
     const changed = new Set(previewing ? this.selectionNodes(chart).filter(item => {
       const old = baseNodes?.get(item.note.id);
@@ -1446,7 +1738,7 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.save();
       ctx.strokeStyle = this.canvasTheme?.assets.palette.outsideLine ?? color("primary");
       ctx.lineWidth = 1.5;ctx.setLineDash([5, 5]);
-      for (const line of chart.lines) {
+      for (const line of display.lines) {
         if (!line.points.some(point => changed.has(point.id))) continue;
         ctx.beginPath();
         line.points.forEach((point, index) => {
@@ -1468,8 +1760,8 @@ export class ChartCreationWorkspace extends LitElement {
         for(const edge of [lane,lane+size]){ctx.beginPath();ctx.roundRect(x(edge)-3,at-15,6,30,3);ctx.fill();}
       }
     };
-    for(const line of chart.lines)line.points.forEach((note,i)=>{const shape=resolveLinePointShape(line.points,i);overlay(note,shape.lane,shape.size,line.kind==="guide"?"guide":i===0?"slide-start":i===line.points.length-1?"slide-end":"slide-node")});
-    for(const note of chart.singles)overlay(note,note.lane,note.size);
+    for(const line of display.lines)line.points.forEach((note,i)=>{const shape=resolveLinePointShape(line.points,i);overlay(note,shape.lane,shape.size,line.kind==="guide"?"guide":i===0?"slide-start":i===line.points.length-1?"slide-end":"slide-node")});
+    for(const note of display.singles)overlay(note,note.lane,note.size);
     if (this.gesture?.kind === "box" && this.gesture.moved) {
       const g = this.gesture,
         x = Math.min(g.x, g.endX) - g.rect.left,
@@ -1554,10 +1846,17 @@ export class ChartCreationWorkspace extends LitElement {
     }
   }
   private commitProject(candidate: Project, mergeKey?: string): boolean {
-    if (this.busy || this.gesture) return false;
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating) return false;
     this.cancelWidth();
     try {
-      assertValidProject(candidate);
+      candidate = reconcileAuthorEdit(this.chart, candidate);
+      const previousIds = authorEntityIds(this.chart), state = readAuthorCollections(candidate);
+      const added = new Set([...authorEntityIds(candidate)].filter(id => !previousIds.has(id)));
+      if (state.groups.some(group => group.id === this.collectionScope.groupId))
+        candidate = assignAuthorSelection(candidate, new Set([...added].filter(id => !state.members[id]?.groupId)), { groupId: this.collectionScope.groupId });
+      if (state.layers.some(layer => layer.id === this.collectionScope.layerId))
+        candidate = assignAuthorSelection(candidate, new Set([...added].filter(id => !state.members[id]?.layerId)), { layerId: this.collectionScope.layerId });
+      assertValidProject(candidate); readAuthorCollections(candidate);
       assertEditedChartSpans(this.chart, candidate);
       const compiled = !candidate.meta.source || ["ss", "authored"].includes(candidate.meta.source)
         ? compileOurNotesCreation(candidate) : undefined;
@@ -1573,17 +1872,22 @@ export class ChartCreationWorkspace extends LitElement {
       this.rebuildPreview();
       this.requestUpdate();
       return true;
-    } catch {
-      this.error = this.t("creation.invalid_edit");
+    } catch (error) {
+      this.error = this.t(error instanceof AuthorNativeSpeedError ? "creation.profile_conflict" : "creation.invalid_edit");
       this.paint();
       return false;
     }
   }
   private cutSelection() {
     if (this.busy || this.gesture || !this.selectedIds.size) return;
-    const value = cutChartSelection(this.chart, this.selectedIds);
-    this.clipboard = value.clipboard;
-    this.commitProject(value.project);
+    const clipboard = copyAuthorSelection(this.chart, this.selectedIds), candidate = structuredClone(this.chart);
+    deleteChartSelectionGroup(candidate, this.selectedIds);
+    if (this.commitProject(candidate)) this.clipboard = clipboard;
+  }
+  private pasteSelection() {
+    if (!this.clipboard || this.busy || this.gesture) return;
+    try { const value = pasteAuthorSelection(this.chart, this.clipboard, Math.max(0, snapTick(this.map().secondsToTick(this.seconds), this.snap))); if (this.commitProject(value.project)) this.setSelection(value.ids); }
+    catch { this.error = this.t("creation.invalid_edit"); }
   }
   private copyBrush() {
     if (this.busy || this.gesture || this.pan) return;
@@ -1613,6 +1917,43 @@ export class ChartCreationWorkspace extends LitElement {
     if (this.commitProject(result.project)) this.setSelection(result.created);
     this.requestUpdate();
   }
+  private removeSelectedNodes() {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.audio) return;
+    this.cancelWidth();
+    try {
+      const result = removeLineControlPoints(this.chart, this.selectedIds);
+      if (result.removed.length) this.commitProject(result.project);
+    } catch { this.error = this.t("creation.invalid_edit"); }
+  }
+  private selectedConnectorIds(project = this.chart) {
+    return new Set(project.lines.filter(line => line.points.some(point => this.selectedIds.has(point.id))).map(line => line.id));
+  }
+  private selectedLineCritical() {
+    const ids = this.selectedConnectorIds();
+    const values = new Set(this.chart.lines.filter(line => ids.has(line.id)).map(line =>
+      line.critical === undefined ? "inherit" : line.critical ? "critical" : "normal"));
+    return values.size > 1 ? "mixed" : (values.values().next().value ?? "inherit");
+  }
+  private setSelectedLineCritical(value: string): boolean {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.audio
+      || !["inherit", "normal", "critical"].includes(value)) return false;
+    const ids = this.selectedConnectorIds();
+    if (!ids.size) return false;
+    this.cancelWidth();
+    const candidate = structuredClone(this.chart);
+    for (const line of candidate.lines) if (ids.has(line.id)) {
+      if (value === "inherit") delete line.critical;
+      else line.critical = value === "critical";
+    }
+    return this.commitProject(candidate);
+  }
+  private changeLineCritical = async (event: Event) => {
+    const field = event.target as HTMLElementTagNameMap["md-outlined-select"];
+    if (!this.setSelectedLineCritical(field.value)) {
+      await field.updateComplete;
+      field.select(this.selectedLineCritical());
+    }
+  };
   private async newProject() {
     await this.run(async (signal) => {
       await this.save();
@@ -1622,6 +1963,7 @@ export class ChartCreationWorkspace extends LitElement {
       this.preview = undefined;
       this.audio = undefined;
       const project = createEmptyProject({ source: "authored" });
+      this.collectionScope = {}; this.deletingProject = false;
       this.history.reset(project);
       this.original = structuredClone(project);
       this.source = undefined;
@@ -1661,6 +2003,7 @@ export class ChartCreationWorkspace extends LitElement {
     });
   }
   private renderNativeSettings() {
+    const native = this.nativePreviewSupported;
     const settings = { ...DEFAULT_RENDER_SETTINGS, ...this.nativeOptions.settings };
     const slider = (
       label: string,
@@ -1669,6 +2012,7 @@ export class ChartCreationWorkspace extends LitElement {
       max: number,
       step: number,
       change: (value: number) => void,
+      nativeOnly = true,
     ) => html`
       <label class="chart-studio__setting">
         <span>
@@ -1683,7 +2027,7 @@ export class ChartCreationWorkspace extends LitElement {
           .max=${max}
           .step=${step}
           .value=${value}
-          ?disabled=${this.busy}
+          ?disabled=${this.busy || (nativeOnly && !native)}
           @input=${(e: Event) => change(Number((e.target as HTMLElement & { value: number }).value))}
         ></md-slider>
       </label>
@@ -1693,11 +2037,12 @@ export class ChartCreationWorkspace extends LitElement {
       value: string,
       rows: readonly { value: string; label: string }[],
       change: (value: string) => void,
+      nativeOnly = true,
     ) => html`
       <md-outlined-select
         label=${label}
         .value=${value}
-        ?disabled=${this.busy}
+        ?disabled=${this.busy || (nativeOnly && !native)}
         @change=${(e: Event) => change((e.target as HTMLElement & { value: string }).value)}
       >
         ${rows.map(
@@ -1709,12 +2054,12 @@ export class ChartCreationWorkspace extends LitElement {
         )}
       </md-outlined-select>
     `;
-    const toggle = (label: string, value: boolean, change: (value: boolean) => void) => html`
+    const toggle = (label: string, value: boolean, change: (value: boolean) => void, nativeOnly = true) => html`
       <label>
         <md-checkbox
           aria-label=${label}
           .checked=${value}
-          ?disabled=${this.busy}
+          ?disabled=${this.busy || (nativeOnly && !native)}
           @change=${(e: Event) => change((e.target as HTMLInputElement).checked)}
         ></md-checkbox>
         ${label}
@@ -1725,18 +2070,18 @@ export class ChartCreationWorkspace extends LitElement {
         settings: { ...DEFAULT_RENDER_SETTINGS, ...this.nativeOptions.settings, [key]: value },
       });
     return html`
-      <div class="chart-creation__form">
+      <div class="chart-creation__form chart-studio__native-settings">
         ${select(
         this.t("preview"),
-        this.nativeMode,
-        ["play", "watch", "chart"].map((value) => ({ value, label: this.t(`creation.preview_${value}`) })),
+        native ? this.nativeMode : "chart",
+        (native ? ["play", "watch", "chart"] : ["chart"]).map((value) => ({ value, label: this.t(`creation.preview_${value}`) })),
         (value) => {
           this.nativeMode = value as typeof this.nativeMode;
           void this.applyNativeOptions({ mode: this.nativeMode });
         },
       )}
-        ${slider(this.nativeLabel("volume"), this.nativeOptions.volume ?? 0.82, 0, 1, 0.01, (value) => void this.applyNativeOptions({ volume: value }))}
-        ${toggle(this.nativeLabel("noteSe"), this.nativeOptions.noteSoundEnabled ?? true, (value) => void this.applyNativeOptions({ noteSoundEnabled: value }))}
+        ${slider(this.nativeLabel("volume"), this.nativeOptions.volume ?? 0.82, 0, 1, 0.01, (value) => void this.applyNativeOptions({ volume: value }), false)}
+        ${toggle(this.nativeLabel("noteSe"), native && (this.nativeOptions.noteSoundEnabled ?? true), (value) => void this.applyNativeOptions({ noteSoundEnabled: value }))}
         ${slider(this.nativeLabel("noteSe"), this.nativeOptions.noteSoundVolume ?? 0.75, 0, 1, 0.01, (value) => void this.applyNativeOptions({ noteSoundVolume: value }))}
         ${select(
         this.nativeLabel("playbackSpeed"),
@@ -1746,8 +2091,9 @@ export class ChartCreationWorkspace extends LitElement {
           this.rate = Number(value);
           void this.applyNativeOptions({ rate: this.rate });
         },
+        false,
       )}
-        ${toggle(this.nativeLabel("loop"), this.nativeOptions.loop ?? false, (value) => void this.applyNativeOptions({ loop: value }))}
+        ${toggle(this.nativeLabel("loop"), this.nativeOptions.loop ?? false, (value) => void this.applyNativeOptions({ loop: value }), false)}
         ${select(
         this.nativeLabel("noteSkin"),
         this.nativeSkin.noteSkin ?? "skin001",
@@ -1808,13 +2154,24 @@ export class ChartCreationWorkspace extends LitElement {
     this.laneStart = this.clampLaneStart(this.laneStart);
     this.error = "";
   }
+  private stepWidth(delta: number) {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || this.pan || !this.audio) return;
+    // A keyboard press starts a new operation after a cancelled slider gesture.
+    this.widthCancelled = false;
+    const item = this.selectionNodes().find(node => node.note.id === this.selected);
+    if (!item) { this.setDefaultWidth(Math.max(0, this.defaultWidth + delta)); return; }
+    const bounds = authoredWidthBounds(item.lane, item.size, this.chart.laneBasis);
+    if (!bounds) { this.error = this.t("creation.invalid_edit"); return; }
+    try { this.commitWidth(constrainLaneValue(Math.max(0, item.size + delta), bounds, { step: 0.25 })); }
+    catch { this.error = this.t("creation.invalid_edit"); }
+  }
   private previewWidth(value: number) {
-    if (this.widthCancelled || this.busy || this.gesture || !this.selected) return;
-    this.widthSession ??= { base: this.chart, id: this.selected };
+    if (this.widthCancelled || this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.selected) return;
+    this.widthSession ??= { base: this.chart, ids: this.nativeEditable ? new Set(this.selectedIds) : new Set([this.selected]) };
     try {
       this.widthSession.candidate = resizeChartSelection(
         this.widthSession.base,
-        new Set([this.widthSession.id]),
+        this.widthSession.ids,
         value,
         { placement: "overlap", resolveAutoLane: true },
       );
@@ -1825,7 +2182,7 @@ export class ChartCreationWorkspace extends LitElement {
     }
   }
   private commitWidth(value: number) {
-    if (this.widthCancelled || this.busy || this.gesture || !this.selected) return;
+    if (this.widthCancelled || this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.selected) return;
     this.previewWidth(value);
     const candidate = this.widthSession?.candidate;
     this.widthSession = undefined;
@@ -1856,7 +2213,7 @@ export class ChartCreationWorkspace extends LitElement {
           max=${maximum}
           step="0.25"
           .value=${value}
-          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.audio}
+          ?disabled=${this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !!this.pan || !this.audio}
           @pointerdown=${() => {
           this.widthCancelled = false;
         }}
@@ -1885,7 +2242,7 @@ export class ChartCreationWorkspace extends LitElement {
           min="0"
           step="any"
           .value=${live(String(value))}
-          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.audio}
+          ?disabled=${this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !!this.pan || !this.audio}
           @change=${(event: Event) => {
           const raw = (event.target as HTMLInputElement).value;
           const size = raw.trim() ? Number(raw) : NaN;
@@ -1918,7 +2275,7 @@ export class ChartCreationWorkspace extends LitElement {
         ${iconButton({
           label: this.t("undo"),
           icon: "undo",
-          disabled: this.busy || !this.history.canUndo,
+          disabled: this.busy || this.nativeUpdating || !this.history.canUndo,
           onClick: () => {
             this.cancelGesture();
             this.history.undo();
@@ -1931,7 +2288,7 @@ export class ChartCreationWorkspace extends LitElement {
         ${iconButton({
           label: this.t("redo"),
           icon: "redo",
-          disabled: this.busy || !this.history.canRedo,
+          disabled: this.busy || this.nativeUpdating || !this.history.canRedo,
           onClick: () => {
             this.cancelGesture();
             this.history.redo();
@@ -1980,8 +2337,8 @@ export class ChartCreationWorkspace extends LitElement {
       selection = [...chart.singles, ...chart.lines.flatMap((l) => l.points)].find((n) => n.id === this.selected);
     const selectedUpdate = (updater: (note: SingleNote | LinePoint) => void) =>
       this.edit((p) => {
-        const note = [...p.singles, ...p.lines.flatMap((l) => l.points)].find((n) => n.id === this.selected);
-        if (note) updater(note);
+        const ids = this.nativeEditable ? this.selectedIds : new Set([this.selected]);
+        for (const note of [...p.singles, ...p.lines.flatMap((l) => l.points)]) if (ids.has(note.id)) updater(note);
       });
     const filesPanel = html`
       <div class="chart-creation__actions">
@@ -1990,6 +2347,9 @@ export class ChartCreationWorkspace extends LitElement {
         </button>
         <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary()}>
           ${this.t("serverLibrary")}
+        </button>
+        <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary("bestdori")}>
+          Bestdori
         </button>
         <button class="button button--filled" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>
           ${this.t("importLocalAudio")}
@@ -2017,7 +2377,7 @@ export class ChartCreationWorkspace extends LitElement {
           @click=${() =>
             void this.run(async () => {
               await this.save();
-              downloadBlob(await this.store.export(this.projectId), "chart-project.zip");
+              downloadBlob(await this.store.export(this.projectId, this.activeRevision || undefined), "chart-project.zip");
             })}
         >
           ${this.c("export")}
@@ -2025,6 +2385,14 @@ export class ChartCreationWorkspace extends LitElement {
         <button class="button" ?disabled=${this.busy} @click=${() => this.pick("[data-backup]")}>
           ${this.t("creation.open_backup")}
         </button>
+        <button class="button button--tonal" ?disabled=${this.busy || !this.audio} @click=${() => void this.saveCopy()}>${this.t("creation.save_copy")}</button>
+        <button class="button button--text" ?disabled=${this.busy || !this.head} @click=${() => void this.restoreOriginal()}>${this.t("creation.restore_original")}</button>
+        <button class="button button--text" ?disabled=${this.busy || !this.head} @click=${() => { this.deletingProject = !this.deletingProject; }}>${this.t("creation.delete_project")}</button>
+        ${this.deletingProject ? html`<section class="chart-creation__form" aria-label=${this.t("creation.delete_project")}>
+          <p>${this.t("creation.delete_project_confirm")}</p>
+          <button class="button button--text" ?disabled=${this.busy} @click=${() => void this.deleteProject()}>${this.t("creation.delete_project")}</button>
+          <button class="button button--text" @click=${() => { this.deletingProject = false; }}>${this.c("cancel")}</button>
+        </section>` : nothing}
       </div>
     `;
     const audioPanel = html`
@@ -2053,12 +2421,19 @@ export class ChartCreationWorkspace extends LitElement {
       }
     `;
     const selectionPanel = html`
+      <chart-creation-collections .locale=${this.locale} .project=${chart} .selection=${this.selectedIds} .scope=${this.collectionScope} .busy=${this.busy || this.nativeUpdating || !!this.nativeGesture || !!this.gesture || !!this.widthSession || !this.audio} .forceSpeedAvailable=${this.visualProfilesAvailable && this.nativePreviewSupported} .globalNoteSpeed=${this.nativeOptions.settings?.noteSpeed ?? DEFAULT_RENDER_SETTINGS.noteSpeed} .onOperation=${this.collectionOperation} .onScope=${this.changeCollectionScope} .onSelect=${this.selectCollectionMembers}></chart-creation-collections>
       ${
         selection
           ? html`
               <section class="chart-creation__form" aria-label=${this.t("selection")}>
                 ${this.widthControl(this.selectionNodes(chart).find((item) => item.note.id === selection.id)?.size ?? selection.size, true)}
                 <div class="chart-creation__actions">
+                  ${([-1, 1] as const).map(direction => iconButton({
+                    label: `${this.t("beat")} ${direction > 0 ? "+" : "−"} · ${this.t("snap")}`,
+                    icon: direction > 0 ? "arrow_upward" : "arrow_downward",
+                    disabled: this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !this.audio,
+                    onClick: () => this.nudgeSelection(direction),
+                  }))}
                   <button
                     class="button button--text"
                     type="button"
@@ -2070,12 +2445,15 @@ export class ChartCreationWorkspace extends LitElement {
                   ${iconButton({ label: this.t("creation.flip"), icon: "swap_horiz", disabled: this.busy, onClick: () => this.commitProject(flipChartSelection(this.chart, this.selectedIds)) })}
                   ${iconButton({ label: this.t("creation.copy_brush"), icon: "format_paint", disabled: this.busy, onClick: () => this.copyBrush() })}
                   ${"ease" in selection ? iconButton({ label: this.t("creation.generate_nodes"), icon: "add", disabled: this.busy, onClick: () => this.generateSelectedNodes() }) : nothing}
+                  ${iconButton({ label: this.t("creation.remove_nodes"), icon: "remove",
+                    disabled: this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !this.audio || !removableLinePointIds(chart, this.selectedIds).length,
+                    onClick: () => this.removeSelectedNodes() })}
                 </div>
                 <button
                   class="button"
                   ?disabled=${this.busy}
                   @click=${() => {
-                    this.clipboard = copyChartSelectionGroup(this.chart, this.selectedIds);
+                    this.clipboard = copyAuthorSelection(this.chart, this.selectedIds);
                     this.requestUpdate();
                   }}
                 >
@@ -2107,6 +2485,16 @@ export class ChartCreationWorkspace extends LitElement {
                     }),
                   true,
                 )}
+                ${this.selectedConnectorIds(chart).size ? html`
+                  <md-outlined-select label=${this.t("creation.line_critical")}
+                    .value=${live(this.selectedLineCritical())}
+                    ?disabled=${this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !this.audio}
+                    @change=${this.changeLineCritical}>
+                    <md-select-option value="inherit"><div slot="headline">${this.t("creation.line_critical_inherit")}</div></md-select-option>
+                    <md-select-option value="normal"><div slot="headline">${this.t("creation.line_critical_normal")}</div></md-select-option>
+                    <md-select-option value="critical"><div slot="headline">${this.t("critical")}</div></md-select-option>
+                    ${this.selectedLineCritical() === "mixed" ? html`<md-select-option value="mixed" disabled><div slot="headline">${this.t("collections.mixed")}</div></md-select-option>` : nothing}
+                  </md-outlined-select>` : nothing}
 
                 <md-outlined-select
                   label=${this.t("noteType")}
@@ -2447,8 +2835,9 @@ export class ChartCreationWorkspace extends LitElement {
     const versionsPanel = html`
       <div class="chart-creation__form">
         <md-outlined-select
+          data-project
           label=${this.t("creation.projects")}
-          value=""
+          .value=${this.head ? this.projectId : ""}
           ?disabled=${this.busy}
           @change=${(e: Event) => {
             const id = (e.target as HTMLSelectElement).value;
@@ -2458,7 +2847,7 @@ export class ChartCreationWorkspace extends LitElement {
           ${this.documents.map(
             (document) => html`
               <md-select-option value=${document.id}>
-                <div slot="headline">${document.title || this.t("project")}</div>
+                <div slot="headline">${document.title || this.t("project")} · ${new Date(document.updatedAt).toLocaleString(this.locale)}</div>
               </md-select-option>
             `,
           )}
@@ -2644,13 +3033,7 @@ export class ChartCreationWorkspace extends LitElement {
               <button
                 class="button button--tonal"
                 ?disabled=${this.busy}
-                @click=${() =>
-                  void this.run(async () => {
-                    this.projectId = crypto.randomUUID();
-                    this.head = 0;
-                    this.activeRevision = 0;
-                    await this.save();
-                  })}
+                @click=${() => void this.saveCopy()}
               >
                 ${this.t("creation.save_copy")}
               </button>
@@ -2707,7 +3090,7 @@ export class ChartCreationWorkspace extends LitElement {
             ${iconButton({ icon: "add", label: `${this.t("creation.zoom_y")} +`, disabled: this.busy || !this.audio || Boolean(this.gesture) || this.secondsPerScreen <= 0.5,
               onClick: () => this.setVerticalZoom(this.secondsPerScreen / 2) })}
           </div>
-          <span class="chart-studio__preview-mode" ?hidden=${this.stageMode !== "preview"}>${this.t(`creation.preview_${this.nativeMode}`)}</span>
+          <span class="chart-studio__preview-mode" ?hidden=${this.stageMode !== "preview"}>${this.t(`creation.preview_${this.nativePreviewSupported ? this.nativeMode : "chart"}`)}</span>
           <div class="chart-studio__tools">
             <div class="chart-creation__actions">
               ${segmented({
@@ -2757,7 +3140,7 @@ export class ChartCreationWorkspace extends LitElement {
           label: this.t("undo"),
           icon: "undo",
           className: "chart-studio__history",
-          disabled: this.busy || !this.history.canUndo,
+          disabled: this.busy || this.nativeUpdating || !this.history.canUndo,
           onClick: () => {
             this.cancelGesture();
             this.history.undo();
@@ -2771,7 +3154,7 @@ export class ChartCreationWorkspace extends LitElement {
           label: this.t("redo"),
           icon: "redo",
           className: "chart-studio__history",
-          disabled: this.busy || !this.history.canRedo,
+          disabled: this.busy || this.nativeUpdating || !this.history.canRedo,
           onClick: () => {
             this.cancelGesture();
             this.history.redo();
@@ -2784,17 +3167,8 @@ export class ChartCreationWorkspace extends LitElement {
             </div>
             <button
               class="button"
-              ?disabled=${this.busy || !this.clipboard?.length || !this.audio}
-              @click=${() =>
-          this.edit((p) => {
-            this.setSelection(
-              pasteChartSelectionGroup(
-                p,
-                this.clipboard!,
-                Math.max(0, snapTick(this.map().secondsToTick(this.seconds), this.snap)),
-              ),
-            );
-          })}
+              ?disabled=${this.busy || !this.hasClipboard || !this.audio}
+              @click=${() => this.pasteSelection()}
             >
               ${this.t("creation.paste")}
             </button>
@@ -2894,7 +3268,10 @@ export class ChartCreationWorkspace extends LitElement {
             ></canvas>
             ${this.audio && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
             <output class="chart-studio__cursor" data-cursor aria-live="off" hidden></output>
-            <div data-native-preview class="chart-studio__native" ?hidden=${this.stageMode !== "preview"}></div>
+            <div data-native-preview class="chart-studio__native" ?hidden=${this.stageMode !== "preview"}
+              tabindex=${this.nativeEditable ? 0 : nothing}
+              @pointerdown=${this.nativePointerDown} @pointermove=${this.nativePointerMove}
+              @pointerup=${this.nativePointerEnd} @pointercancel=${this.nativePointerEnd} @lostpointercapture=${this.nativePointerEnd}></div>
             ${
               !this.audio
                 ? html`
@@ -2953,7 +3330,7 @@ export class ChartCreationWorkspace extends LitElement {
             <div class="chart-studio__panel-content">
               ${
                 this.stageMode === "preview"
-                  ? this.renderNativeSettings()
+                  ? html`${this.nativeEditable ? selectionPanel : nothing}${this.renderNativeSettings()}`
                   : html`
                       ${selectionPanel}${defaultsPanel}${viewControls}
                       ${this.field(

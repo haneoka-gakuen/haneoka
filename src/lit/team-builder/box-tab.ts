@@ -1,10 +1,11 @@
+import { CARD_SKILL_FACETS } from "../../lib/catalog-filters";
+import { matchesCardFilters, renderCardFilters } from "./card-filters";
 /** My cards: ownership, participation and growth, with filters and bulk edits. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import { ownMemberChanges, ownSnapChanges, type OwnedMember, type OwnedSnap } from "../../lib/team-builder/sync/box-view";
-import { cardRarityName } from "../shared/rarity-icon";
-import { filterChip, iconButton, segmented } from "../ui/controls";
+import { iconButton, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { modal } from "../ui/modal";
 import { tileMedia } from "../ui/tile";
@@ -24,28 +25,9 @@ export function visibleCards(host: TeamBuilder): Row[] {
   const kind = f.kind;
   const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number);
   const owned = kind === "members" ? view.members : view.snaps;
-  const query = f.query.normalize("NFKC").toLocaleLowerCase(host.locale).trim();
   return ids
     .filter((id) => (f.show === "owned" ? owned.has(id) : f.show === "unowned" ? !owned.has(id) : true))
-    .filter((id) => {
-      const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
-      if (!card) return false;
-      if (f.attributes.length && !f.attributes.includes(card.attribute)) return false;
-      if (f.rarities.length && !f.rarities.includes(card.rarity)) return false;
-      if (f.bands.length && !catalog.bandIds(kind, id).some((band) => f.bands.includes(band))) return false;
-      if (f.characters.length && !catalog.characterIds(kind, id).some((character) => f.characters.includes(character))) return false;
-      if (!query) return true;
-      const haystack = [
-        `#${id}`,
-        catalog.cardName(kind, id),
-        ...catalog.characterIds(kind, id).map((character) => catalog.characterName(character)),
-        ...catalog.bandIds(kind, id).map((band) => catalog.bandName(band)),
-      ]
-        .join(" ")
-        .normalize("NFKC")
-        .toLocaleLowerCase(host.locale);
-      return haystack.includes(query);
-    })
+    .filter((id) => matchesCardFilters(host, kind, id, f))
     .sort((a, b) => {
       const ca = kind === "members" ? catalog.member(a) : catalog.snap(a);
       const cb = kind === "members" ? catalog.member(b) : catalog.snap(b);
@@ -113,7 +95,6 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
 }
 
 export function renderBoxTab(host: TeamBuilder): TemplateResult {
-  const catalog = host.catalog!;
   const view = host.view!;
   const f = host.filters;
   const rows = visibleCards(host);
@@ -121,14 +102,8 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
     host.filters = { ...f, ...patch };
     host.requestUpdate();
   };
-  const toggleIn = (list: number[], value: number) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
-  const kinds = [...Object.values(catalog.data.members), ...Object.values(catalog.data.snapshots)];
-  const attributes = [...new Set(kinds.map((card) => card.attribute))].filter((value) => value >= 1 && value <= 5).sort();
-  const rarities = [...new Set(kinds.map((card) => card.rarity))].sort((a, b) => b - a);
-  const bands = Object.keys(catalog.data.bands).map(Number).filter((id) => catalog.bandName(id));
-  const characters = Object.keys(catalog.data.characters).map(Number).filter((id) => !f.bands.length || f.bands.includes(Number(catalog.data.characters[String(id)]?.bandId)));
   const ownedRows = rows.filter((row) => row.owned);
-  const activeFilters = f.bands.length + f.characters.length + f.attributes.length + f.rarities.length;
+  const activeFilters = f.bands.length + f.characters.length + f.attributes.length + f.rarities.length + Object.values(f.facets).reduce((sum, values) => sum + values.length, 0);
   const ownedCount = f.kind === "members" ? view.members.size : view.snaps.size;
   const usedCount = [...(f.kind === "members" ? view.members : view.snaps).values()].filter((row) => row.use).length;
   return html`
@@ -143,7 +118,11 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
               { value: "members", label: `${host.t("members", "Members")} ${view.members.size}`, icon: "person" },
               { value: "snaps", label: `${host.t("snapshots", "Snaps")} ${view.snaps.size}`, icon: "photo" },
             ],
-            onSelect: (kind) => set({ kind }),
+            onSelect: (kind) => {
+              const presentation = kind === "members" ? "member" : "support";
+              const inactive = new Set(CARD_SKILL_FACETS.filter((facet) => !(facet.kinds as readonly string[]).includes(presentation)).map((facet) => facet.key as string));
+              set({kind, facets: Object.fromEntries(Object.entries(f.facets).filter(([key]) => !inactive.has(key)))});
+            },
           })}
           ${segmented({
             label: host.t("showCards", "Show"),
@@ -174,25 +153,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
         </div>
         ${host.filtersOpen
           ? html`
-              <div class="tb-facets">
-                <div class="tb-facet" role="group" aria-label=${host.common("band", "Band")}>
-                  <span class="tb-facet__label">${host.common("band", "Band")}</span>
-                  <div class="cluster">${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: f.bands.includes(id), onToggle: () => set({ bands: toggleIn(f.bands, id), characters: [] }) }))}</div>
-                </div>
-                <div class="tb-facet" role="group" aria-label=${host.common("characters", "Characters")}>
-                  <span class="tb-facet__label">${host.t("character", "Character")}</span>
-                  <div class="cluster">${characters.map((id) => filterChip({ label: catalog.characterName(id), image: catalog.characterFace(id) || undefined, selected: f.characters.includes(id), onToggle: () => set({ characters: toggleIn(f.characters, id) }) }))}</div>
-                </div>
-                <div class="tb-facet" role="group" aria-label=${host.common("attribute", "Attribute")}>
-                  <span class="tb-facet__label">${host.common("attribute", "Attribute")}</span>
-                  <div class="cluster">${attributes.map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: f.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(f.attributes, id) }) }))}</div>
-                </div>
-                <div class="tb-facet" role="group" aria-label=${host.t("rarity", "Rarity")}>
-                  <span class="tb-facet__label">${host.t("rarity", "Rarity")}</span>
-                  <div class="cluster">${rarities.map((id) => filterChip({ label: cardRarityName(id), image: catalog.rarityIcon(id) || undefined, imageOnly: !!catalog.rarityIcon(id), selected: f.rarities.includes(id), onToggle: () => set({ rarities: toggleIn(f.rarities, id) }) }))}</div>
-                </div>
-                ${activeFilters ? html`<button class="button button--text" type="button" @click=${() => set({ bands: [], characters: [], attributes: [], rarities: [] })}>${host.t("clearFilters", "Clear filters")}</button>` : nothing}
-              </div>
+              <div class="chooser-filters">${renderCardFilters(host, f, set)}</div>
             `
           : nothing}
         <div class="row row--wrap tb-toolbar__row tb-bulk">

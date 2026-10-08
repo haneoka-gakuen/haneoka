@@ -1,3 +1,4 @@
+import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillFacetValues, skillTypeKey, skillTypeTitle, songMissions } from "../lib/catalog-filters";
 import { ref } from "lit/directives/ref.js";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
@@ -125,6 +126,8 @@ const EXTRA_FILTERS = [
   "artwork",
   "video",
   "skill",
+  ...CARD_SKILL_FACETS.map((facet) => facet.key),
+  "gekisouType",
   "school",
   "part",
   "birthdayMonth",
@@ -2396,6 +2399,7 @@ export class CatalogScreen extends LitElement {
     if (this.sort === "leaderSkill") return this.resolvedSkillName(item, "leader");
     if (this.sort === "liveSkill") return this.resolvedSkillName(item, "live");
     if (this.sort === "supportSkill") return this.resolvedSkillName(item, "support");
+    if (this.sort === "gekisouSupportSkill") return this.resolvedSkillName(item, "gekisouSupport");
     if (this.sort === "gekisouSkill")
       return this.resolvedSkillName(item, this.profile.presentation === "support" ? "gekisouSupport" : "gekisou");
     if (this.sort === "type") return this.localized(item.type ?? item.itemTypeName);
@@ -2561,6 +2565,9 @@ export class CatalogScreen extends LitElement {
     return kind === "character" ? this.character(Number(value)) : this.band(Number(value));
   }
   private facetValues(item: Item, key: string): string[] {
+    const skillTypes = skillFacetValues(item, key);
+    if (skillTypes) return skillTypes;
+    if (key === "gekisouType") return [...new Set(songMissions(item).filter(Boolean))];
     if (key === "character") return this.itemCharacterIds(item).map((id) => this.facetToken(item, id));
     if (this.profile.presentation === "system") {
       if (key === "status") return [this.entryState(item)];
@@ -2579,7 +2586,7 @@ export class CatalogScreen extends LitElement {
         String(row.difficultyName ?? row.difficulty),
       );
     if (key === "audio") return [item.musicUrl ? "yes" : "no"];
-    if (key === "artwork") return [this.image(item) ? "yes" : "no"];
+    if (key === "artwork") return [(["member", "support"].includes(this.profile.presentation) ? cardArtwork(item) : this.image(item)) ? "yes" : "no"];
     if (key === "video") return [item.mvUrl || (Array.isArray(item.videoIds) && item.videoIds.length) ? "yes" : "no"];
     if (key === "skill")
       return Object.entries((item.resolvedSkills as Item) || {})
@@ -2607,7 +2614,7 @@ export class CatalogScreen extends LitElement {
   }
   private matchesFacets(item: Item, omitted = "") {
     for (const [key, values] of Object.entries(this.facets)) {
-      if (!values.length || key === omitted || /^(min|max|releaseFrom|releaseTo)/.test(key)) continue;
+      if (!values.length || key === omitted || (key === "gekisouType" && this.settings.origin === "bestdori") || /^(min|max|releaseFrom|releaseTo)/.test(key)) continue;
       if (!this.facetValues(item, key).some((value) => values.includes(value))) return false;
     }
     const chartRanges = [
@@ -2775,11 +2782,25 @@ export class CatalogScreen extends LitElement {
           })),
       });
     }
+    for (const facet of CARD_SKILL_FACETS) {
+      if (!(facet.kinds as readonly string[]).includes(kind)) continue;
+      const options = new Map<string, {value: string; label: string; image?: string}>();
+      for (const item of this.expandedItems()) for (const skill of cardSkills(item, facet.role)) {
+        const value = skillTypeKey(skill);
+        if (value && !options.has(value)) options.set(value, { value, label: skillTypeTitle(this.localized(skill.skillName)), image: String(skill.icon || "") || undefined });
+      }
+      groups.push({ key: facet.key, label: this.detailLabel(facet.key), options: [...options.values()] });
+    }
+    if (kind === "song" && this.settings.origin !== "bestdori") groups.push({ key: "gekisouType", label: this.label("gekisouType", "Gekiso type"), options: [
+      { value: "Combo", label: this.label("gekisouMissionCombo", "COMBO") },
+      { value: "Luck", label: this.label("gekisouMissionLuck", "LUCK") },
+      { value: "JustCount", label: this.label("gekisouMissionJustCount", "JUST") },
+    ] });
     const fields =
       kind === "song"
         ? ["difficulty", "composer", "lyrics", "arrangement", "audio", "video", "artwork"]
         : ["member", "support"].includes(kind)
-          ? ["skill", "artwork"]
+          ? ["artwork"]
           : kind === "character"
             ? ["school", "part", "birthdayMonth", "artwork"]
             : kind === "system"
@@ -3821,7 +3842,7 @@ export class CatalogScreen extends LitElement {
         ["visual", "visual", "Visual"],
         ["total", "total", "Total"],
         ["supportSkill", "supportSkill", "Support skill"],
-        ["gekisouSkill", "gekisouSkill", "Gekisou skill"],
+        ["gekisouSupportSkill", "gekisouSupportSkill", "Gekiso support skill"],
         ["release", "release", "Release"],
       ],
       character: [
@@ -3891,7 +3912,12 @@ export class CatalogScreen extends LitElement {
       label: this.label(key, fallback),
     }));
   }
+  private missionTableIconSource = "";
   private renderStructuredList(items: Item[]) {
+    if (this.profile.presentation === "song" && this.settings.origin !== "bestdori" && this.missionTableIconSource !== this.dataServer()) {
+      this.missionTableIconSource = this.dataServer();
+      this.ensureMissionIcons();
+    }
     return html`
       <catalog-table-view
         .controller=${this}
@@ -4032,7 +4058,10 @@ export class CatalogScreen extends LitElement {
       }, item));
     const ids = this.itemCharacterIds(item);
     if (kind === "song")
-      return tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item));
+      return html`<div class="catalog-song-tile">
+        ${tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item))}
+        ${item.musicUrl ? iconButton({className:"catalog-song-tile__play",variant:"tonal",icon:"play_arrow",label:`${this.label("play", "Play")}: ${title}`,onClick:(event) => {event.preventDefault();event.stopPropagation();void this.toggleSong(this.itemId(item), String(item.musicUrl), false, item);}}) : nothing}
+      </div>`;
     const attribute = this.itemAttributeMark(item);
     return tile(this.unionTile({
       kind,

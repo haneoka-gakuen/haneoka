@@ -9,8 +9,60 @@ import {
   type LineEase,
 } from "../model";
 import { assertValidProject } from "../validation";
+import { snapTick } from "../timing";
 import { resizeChartSelection } from "./authoring";
-import { copyChartSelectionGroup, deleteChartSelectionGroup } from "./selection";
+import { chartSelectionNodes, copyChartSelectionGroup, deleteChartSelectionGroup, moveChartSelection } from "./selection";
+import { assertEditedChartSpans } from "./span";
+import { reconcileAuthorEdit } from "./collections";
+
+export function removableLinePointIds(project: Project, ids: ReadonlySet<string>): string[] {
+  return project.lines.flatMap(line => line.points.slice(1, -1).filter(point => ids.has(point.id)).map(point => point.id));
+}
+
+/** Remove selected interior controls while keeping each connector and its original endpoints. */
+export function removeLineControlPoints(project: Project, ids: ReadonlySet<string>): { project: Project; removed: string[] } {
+  assertValidProject(project);
+  const removed = removableLinePointIds(project, ids), selected = new Set(removed);
+  if (!removed.length) return { project: structuredCloneValue(project), removed };
+  let result = structuredCloneValue(project);
+  for (const line of result.lines) {
+    if (!line.points.some(point => selected.has(point.id))) continue;
+    line.points = line.points.filter(point => !selected.has(point.id));
+    for (const point of line.points) if (point.lane === "auto") {
+      delete point.resolvedLane;
+      delete point.resolvedSize;
+    }
+  }
+  result = reconcileAuthorEdit(project, result);
+  assertValidProject(result);
+  assertEditedChartSpans(project, result);
+  return { project: result, removed };
+}
+
+/** Move towards the primary note's adjacent musical grid; one delta preserves spacing and neighbour bounds. */
+export function nudgeChartSelectionOnGrid(
+  project: Project,
+  ids: ReadonlySet<string>,
+  primaryId: string,
+  direction: -1 | 1,
+  subdivision: number,
+): Project {
+  assertValidProject(project);
+  if ((direction !== -1 && direction !== 1) || !Number.isSafeInteger(subdivision) || subdivision < 1 || subdivision > project.resolution)
+    throw new RangeError("invalid_division");
+  const anchor = chartSelectionNodes(project).find(({ note }) => note.id === primaryId && ids.has(note.id));
+  if (!anchor) return structuredCloneValue(project);
+  const mode = direction > 0 ? "ceil" : "floor";
+  let target = snapTick(anchor.note.tick, subdivision, mode, project.resolution);
+  if (target === anchor.note.tick) {
+    if (!Number.isSafeInteger(anchor.note.tick + direction)) throw new RangeError("invalid_tick");
+    target = snapTick(anchor.note.tick + direction, subdivision, mode, project.resolution);
+  }
+  if (!Number.isSafeInteger(target)) throw new RangeError("invalid_tick");
+  const result = moveChartSelection(project, ids, target - anchor.note.tick, 0, { placement: "overlap" });
+  assertValidProject(result);
+  return result;
+}
 
 export interface NoteBrush {
   size?: number;

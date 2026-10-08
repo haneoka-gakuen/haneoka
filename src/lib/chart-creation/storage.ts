@@ -2,6 +2,7 @@ import { zip, unzip } from "fflate";
 import { assertValidProject } from "../../../packages/chart-editor/src/validation";
 import { structuredCloneValue, type Project } from "../../../packages/chart-editor/src/model";
 import { sha256Blob, AUDIO_LIMITS, type CreationAudio } from "./audio";
+import { readAuthorCollections } from "../../../packages/chart-editor/src/creation/collections";
 
 export interface AudioRef {
   sha256: string;
@@ -83,6 +84,7 @@ export class CreationStore {
       CreationRevision | undefined;
     if (!value) throw new Error("revision_missing");
     assertValidProject(value.chart);
+    readAuthorCollections(value.chart);
     const file = (await request(tx.objectStore("audio").get(value.audio.sha256))) as File | undefined;
     if (!file) throw new Error("audio_missing");
     await done;
@@ -95,9 +97,12 @@ export class CreationStore {
     audio: CreationAudio,
     original: Project,
     source?: CreationDocument["source"],
+    originalAudio?: { audio: AudioRef; file: File },
   ): Promise<CreationDocument> {
     assertValidProject(chart);
     assertValidProject(original);
+    readAuthorCollections(chart);
+    readAuthorCollections(original);
     const db = await this.db(),
       tx = db.transaction(["documents", "revisions", "audio"], "readwrite");
     const done = completion(tx);
@@ -124,11 +129,13 @@ export class CreationStore {
           head: revision,
           updatedAt: savedAt,
           original: structuredCloneValue(original),
-          originalAudio: ref,
+          originalAudio: structuredCloneValue(originalAudio?.audio ?? ref),
           ...(source ? { source } : {}),
         };
     if (!(await request(tx.objectStore("audio").getKey(audio.sha256))))
       tx.objectStore("audio").put(audio.file, audio.sha256);
+    if (!previous && originalAudio && !(await request(tx.objectStore("audio").getKey(originalAudio.audio.sha256))))
+      tx.objectStore("audio").put(originalAudio.file, originalAudio.audio.sha256);
     tx.objectStore("revisions").add({
       projectId: id,
       revision,
@@ -140,8 +147,51 @@ export class CreationStore {
     await done;
     return document;
   }
-  async export(id: string): Promise<Blob> {
-    const { document, value } = await this.open(id);
+  async original(id: string) {
+    const db = await this.db(),
+      tx = db.transaction(["documents", "audio"]),
+      done = completion(tx);
+    void done.catch(() => {});
+    const document = (await request(tx.objectStore("documents").get(id))) as CreationDocument | undefined;
+    if (!document) throw new Error("project_missing");
+    assertValidProject(document.original);
+    readAuthorCollections(document.original);
+    const file = (await request(tx.objectStore("audio").get(document.originalAudio.sha256))) as File | undefined;
+    if (!file) throw new Error("audio_missing");
+    await done;
+    return { document, chart: document.original, audio: document.originalAudio, file };
+  }
+  /** Project deletion is one local CAS transaction; audio shared by other projects/versions survives. */
+  async delete(id: string, head: number) {
+    const db = await this.db(),
+      tx = db.transaction(["documents", "revisions", "audio"], "readwrite"),
+      done = completion(tx);
+    void done.catch(() => {});
+    const document = (await request(tx.objectStore("documents").get(id))) as CreationDocument | undefined;
+    if (!document) throw new Error("project_missing");
+    if (document.head !== head) {
+      tx.abort();
+      throw new Error("save_conflict");
+    }
+    const [documents, revisions] = await Promise.all([
+      request(tx.objectStore("documents").getAll()) as Promise<CreationDocument[]>,
+      request(tx.objectStore("revisions").getAll()) as Promise<CreationRevision[]>,
+    ]);
+    const used = new Set([
+      ...documents.filter((row) => row.id !== id).map((row) => row.originalAudio.sha256),
+      ...revisions.filter((row) => row.projectId !== id).map((row) => row.audio.sha256),
+    ]);
+    const candidates = new Set([
+      document.originalAudio.sha256,
+      ...revisions.filter((row) => row.projectId === id).map((row) => row.audio.sha256),
+    ]);
+    for (const row of revisions) if (row.projectId === id) tx.objectStore("revisions").delete([id, row.revision]);
+    tx.objectStore("documents").delete(id);
+    for (const sha of candidates) if (!used.has(sha)) tx.objectStore("audio").delete(sha);
+    await done;
+  }
+  async export(id: string, revision?: number): Promise<Blob> {
+    const { document, value } = await this.open(id, revision);
     const db = await this.db(),
       tx = db.transaction("audio");
     const refs = [...new Map([document.originalAudio, value.audio].map((ref) => [ref.sha256, ref])).values()];
@@ -150,7 +200,16 @@ export class CreationStore {
     );
     const encoder = new TextEncoder();
     const manifest = encoder.encode(
-      JSON.stringify({ format: "haneoka.chart-creation", version: 1, document, value }, null, 2),
+      JSON.stringify(
+        {
+          format: "haneoka.chart-creation",
+          version: 1,
+          document: { ...document, title: value.chart.meta.title, head: value.revision, updatedAt: value.savedAt },
+          value,
+        },
+        null,
+        2,
+      ),
     );
     if (manifest.length > 4 * 1024 * 1024) throw new Error("archive_size");
     const entries: Record<string, Uint8Array> = { "project.yaml": manifest };
@@ -191,6 +250,8 @@ export class CreationStore {
     if (envelope?.format !== "haneoka.chart-creation" || envelope.version !== 1) throw new Error("archive_invalid");
     assertValidProject(envelope.document?.original);
     assertValidProject(envelope.value?.chart);
+    readAuthorCollections(envelope.document.original);
+    readAuthorCollections(envelope.value.chart);
     const original = envelope.document.original as Project,
       chart = envelope.value.chart as Project;
     const refs: AudioRef[] = [envelope.document.originalAudio, envelope.value.audio];
@@ -242,7 +303,8 @@ export class CreationStore {
     return id;
   }
   async close() {
-    if (this.database) (await this.database).close();
+    const pending = this.database;
     this.database = undefined;
+    if (pending) (await pending).close();
   }
 }

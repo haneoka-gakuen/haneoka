@@ -1,5 +1,6 @@
 import type { ChartDocument, ChartMode, SessionSnapshot } from "@haneoka/cassiopeia";
 import type { CassiopeiaSessionPort } from "@haneoka/cassiopeia/plugin";
+import type { NativeChartPresentation } from "@haneoka/cassiopeia-renderer-three";
 import type { EmbedEvent, EmbedLoader, EmbedLoaderOptions } from "@haneoka/embed-core";
 import type {
   OurNotesAssetManifest,
@@ -7,6 +8,7 @@ import type {
   OurNotesNoteEffectSkin,
   OurNotesNoteSeGroup,
   RenderSettings,
+  NativeChartVisualProfiles,
 } from "@haneoka/cassiopeia-plugin-our-notes";
 
 export interface ChartEmbedDocument {
@@ -16,6 +18,8 @@ export interface ChartEmbedDocument {
   readonly background?: string;
   readonly bgmOffsetMs?: number;
   readonly assets?: OurNotesAssetManifest;
+  /** Native visual-only profiles paired with this chart's numeric note/line IDs. */
+  readonly visualProfiles?: NativeChartVisualProfiles;
 }
 export interface ChartSkin {
   readonly noteSkin?: OurNotesNoteSkin;
@@ -31,6 +35,11 @@ export interface ChartPlaybackOptions {
   readonly loop?: boolean;
   readonly noteSoundEnabled?: boolean;
   readonly noteSoundVolume?: number;
+}
+export interface ChartUpdateOptions {
+  readonly bgmOffsetMs?: number;
+  /** Replaces the whole profile set; omitted clears profiles for the new chart epoch. */
+  readonly visualProfiles?: NativeChartVisualProfiles;
 }
 export interface ChartThemeContext {
   readonly loader: EmbedLoader<ChartEmbedDocument>;
@@ -90,6 +99,10 @@ export interface ChartEmbedHandle {
   pause(): void;
   seek(seconds: number): void;
   setOptions(options: ChartPlaybackOptions): Promise<void>;
+  /** Actual native renderer projection/picking; absent while loading/updating or after disposal. */
+  getPresentation?(): NativeChartPresentation | undefined;
+  /** Native-only chart replacement on the same renderer, paused at the clamped media position. */
+  setChart?(chart: ChartDocument, options?: ChartUpdateOptions): Promise<void>;
   /** Rebuilds the default theme/player paused at the current media position. */
   setSkin(skin: ChartSkin): Promise<void>;
   subscribe(listener: (event: ChartEmbedEvent) => void): () => void;

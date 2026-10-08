@@ -10,6 +10,7 @@ export type DataRow = Record<string, unknown>;
 export interface MemberCatalog {
   /** Growth caps from the card's selected source, keyed by training count. */
   levelLimits?: Record<string, number>;
+  catalogMetadata?: DataRow;
   id: number;
   characterId: number;
   bandId: number;
@@ -33,6 +34,7 @@ export interface MemberCatalog {
   rankUpItemId: number;
 }
 export interface SnapshotCatalog {
+  catalogMetadata?: DataRow;
   id: number;
   characterIds: number[];
   rarity: number;
@@ -127,6 +129,7 @@ export function adaptTeamBuilderData(
       return [
         key,
         {
+          catalogMetadata: pick(row, ["releasedAt", "resolvedSkills"]),
           id: Number(row.cardId ?? row.id ?? key),
           characterId,
           bandId: Number(characters[String(characterId)]?.bandId ?? 0),
@@ -179,6 +182,7 @@ export function adaptTeamBuilderData(
       return [
         key,
         {
+          catalogMetadata: pick(row, ["releasedAt", "resolvedSkills"]),
           id: Number(row.supportCardId ?? row.id ?? key),
           characterIds: positiveIds(row.characterIds ?? row.characterIDs),
           rarity: Number(row.rarity),
@@ -328,6 +332,7 @@ export function adaptTeamBuilderData(
                 pick(row, [
                   "id",
                   "skillName",
+                  "icon", "skillIconAssetName", "skillIconId",
                   "effects",
                   "gekisouMissionType",
                   "gekisouSupportSkillExecTiming",

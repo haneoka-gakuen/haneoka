@@ -10,14 +10,17 @@ import type { HaneokaReleaseIdentity } from "../../../packages/api-client/src/ha
 import type { CreationAudio } from "./audio";
 import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
 import { authoredSpanOverlaps } from "../../../packages/chart-editor/src/creation/span";
+import { prepareNativeSourceMap, type NativeCreationSourceMap } from "./native-source-map";
+import { compileAuthorNativeSpeedPlan } from "./native-speed-plan";
+import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-notes";
 
 /** This opt-in target uses the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
 export function compileOurNotesCreation(project: Project) {
   assertValidProject(project);
   if (project.meta.source && !["ss", "authored"].includes(project.meta.source))
     throw new Error("our_notes_source_mismatch");
-  const ss = serializeSs(project),
-    chart = buildChart(parseScore(ss));
+  const ss = serializeSs(project), root = parseScore(ss), sources = prepareNativeSourceMap(project, root),
+    chart = buildChart(root, sources.observer);
   const ids = new Set(chart.notes.map((note) => note.id));
   if (
     !Number.isFinite(chart.durationMs) ||
@@ -38,7 +41,22 @@ export function compileOurNotesCreation(project: Project) {
   chart.timeScaleChanges = project.timeScales
     .map((event) => ({ timeMs: tempo.tickToSeconds(event.tick) * 1000, scale: event.scale }))
     .sort((a, b) => a.timeMs - b.timeMs);
-  return { ss, chart, bgmOffsetMs: project.audioOffset * 1000, warnings: getExportDiagnostics(project, "ss") };
+  const sourceMap = sources.finish(chart), plan = compileAuthorNativeSpeedPlan(project, chart, sourceMap);
+  const visualProfiles: NativeChartVisualProfiles | undefined = plan ? { notes: plan.notes, lines: plan.lines } : undefined;
+  return { ss, chart, sourceMap, visualProfiles, bgmOffsetMs: project.audioOffset * 1000, warnings: getExportDiagnostics(project, "ss") };
+}
+
+export interface NativeCreationPreviewHandle extends ChartEmbedHandle {
+  getSourceMap(): NativeCreationSourceMap | undefined;
+  getCompiledProject(): Project;
+  updateProject(project: Project): Promise<void>;
+}
+
+export function isNativeCreationPreview(handle: ChartEmbedHandle | undefined): handle is NativeCreationPreviewHandle {
+  return !!handle && "getSourceMap" in handle && "updateProject" in handle && "getCompiledProject" in handle
+    && typeof handle.getSourceMap === "function" && typeof handle.updateProject === "function"
+    && typeof handle.getCompiledProject === "function"
+    && typeof handle.setChart === "function" && typeof handle.getPresentation === "function";
 }
 
 export interface NativeCreationPreviewOptions extends PublicSongSourceOptions, ChartPlaybackOptions {
@@ -56,7 +74,7 @@ export async function mountOurNotesCreationPreview(
   project: Project,
   audio: CreationAudio,
   options: NativeCreationPreviewOptions,
-): Promise<ChartEmbedHandle> {
+): Promise<NativeCreationPreviewHandle> {
   const compiled = compileOurNotesCreation(project);
   options.signal?.throwIfAborted();
   const [{ mountChart }, { haneokaChartTheme }] = await Promise.all([
@@ -78,6 +96,7 @@ export async function mountOurNotesCreationPreview(
     } as ChartDocument,
     audio: url,
     bgmOffsetMs: compiled.bgmOffsetMs,
+    ...(compiled.visualProfiles === undefined ? {} : { visualProfiles: compiled.visualProfiles }),
   };
   let handle: ChartEmbedHandle | undefined;
   let released = false;
@@ -126,6 +145,13 @@ export async function mountOurNotesCreationPreview(
     throw error;
   }
   const active = handle!;
+  let acceptedChart = document.chart;
+  let acceptedChartBytes = JSON.stringify(document.chart);
+  let sourceMap: NativeCreationSourceMap | undefined = compiled.sourceMap;
+  let compiledProject = project;
+  let sourceEpoch = 0;
+  let updating = false;
+  const invalidateSources = () => { ++sourceEpoch; sourceMap = undefined; updating = true; };
   const releaseOnAbort = () => {
     active.cancel();
     release();
@@ -134,6 +160,33 @@ export async function mountOurNotesCreationPreview(
   if (options.signal?.aborted) releaseOnAbort();
   return {
     ...active,
+    getSourceMap: () => active.snapshot.phase === "ready" && !updating ? sourceMap : undefined,
+    getCompiledProject: () => compiledProject,
+    async setChart(chart, value) {
+      invalidateSources();
+      if (!active.setChart) throw new Error("Native player does not support chart replacement");
+      await active.setChart(chart, value);
+    },
+    async updateProject(project) {
+      if (!active.setChart) throw new Error("Native player does not support chart replacement");
+      options.signal?.throwIfAborted();
+      const next = compileOurNotesCreation(project), epoch = ++sourceEpoch;
+      updating = true;
+      sourceMap = undefined;
+      const candidateChart = {
+        ...next.chart,
+        durationMs: Math.max(next.chart.durationMs, audio.analysis.duration * 1000 - next.bgmOffsetMs),
+      }, candidateBytes = JSON.stringify(candidateChart);
+      const nativeChart = candidateBytes === acceptedChartBytes ? acceptedChart : candidateChart;
+      await active.setChart(nativeChart, { bgmOffsetMs: next.bgmOffsetMs,
+        ...(next.visualProfiles === undefined ? {} : { visualProfiles: next.visualProfiles }) });
+      options.signal?.throwIfAborted();
+      if (active.snapshot.phase !== "ready") throw new DOMException("Native player changed", "AbortError");
+      if (epoch === sourceEpoch) {
+        sourceMap = next.sourceMap; compiledProject = project;
+        acceptedChart = nativeChart; acceptedChartBytes = candidateBytes; updating = false;
+      }
+    },
     get ready() {
       return active.ready;
     },
@@ -141,11 +194,13 @@ export async function mountOurNotesCreationPreview(
       return active.snapshot;
     },
     cancel() {
+      invalidateSources();
       options.signal?.removeEventListener("abort", releaseOnAbort);
       active.cancel();
       release();
     },
     async dispose() {
+      invalidateSources();
       options.signal?.removeEventListener("abort", releaseOnAbort);
       try {
         await active.dispose();

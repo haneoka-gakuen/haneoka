@@ -1,3 +1,4 @@
+import { songMissions, matchesSelections } from "../../lib/catalog-filters";
 /** Multi-song chooser on the shared selection pane. */
 import { html, type TemplateResult } from "lit";
 import type { SongRef } from "../../lib/team-builder/engine/api";
@@ -13,6 +14,7 @@ export interface SongPickerState {
   filtersOpen: boolean;
   bands: number[];
   attributes: number[];
+  gekisouTypes: string[];
   difficulty: number;
   change: (songs: SongRef[]) => void;
 }
@@ -43,6 +45,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       if (!catalog.difficultyRows(id).some((row) => Number(row.difficulty) === state.difficulty)) return false;
       if (state.bands.length && !catalog.songBands(id).some((band) => state.bands.includes(band))) return false;
       if (state.attributes.length && !state.attributes.includes(Number(song.musicType))) return false;
+      if (!matchesSelections(songMissions(song), state.gekisouTypes)) return false;
       return !query || `${catalog.songTitle(id)} ${catalog.songBands(id).map((band) => catalog.bandName(band)).join(" ")}`.normalize("NFKC").toLocaleLowerCase(host.locale).includes(query);
     })
     .sort((a, b) => b - a);
@@ -75,6 +78,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     search: (value) => update({ query: value }),
     filterLayout: "facets",
     filters: html`
+      ${chooserFacet({label:host.common("gekisouType", "Gekiso type"),value:state.gekisouTypes[0] || "",allLabel:all.label,options:[{value:"Combo",label:host.common("gekisouMissionCombo","COMBO")},{value:"Luck",label:host.common("gekisouMissionLuck","LUCK")},{value:"JustCount",label:host.common("gekisouMissionJustCount","JUST")}],change:(value) => update({gekisouTypes:value ? [value] : []})})}
       ${chooserFacet({
         label: host.common("band", "Band"),
         value: state.bands.length === 1 ? String(state.bands[0]) : "",

@@ -86,4 +86,5 @@ export interface BoxFilters {
   characters: number[];
   attributes: number[];
   rarities: number[];
+  facets: Record<string, string[]>;
 }

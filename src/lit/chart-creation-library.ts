@@ -6,7 +6,7 @@ import { songTile } from "./shared/song-tile";
 import { difficultyPicker } from "./ui/difficulty-picker";
 import { LazyImages } from "./ui/lazy-images";
 import { clientText, initializeI18nClient } from "../i18n/client";
-import { resolveLocalizedText } from "../lib/localized-text";
+import { localizedFallbacks, resolveLocalizedText } from "../lib/localized-text";
 import { creationSongCard, defaultCreationDifficulty, loadPublicCreationSongCardData, type CreationSongCardData } from "../lib/chart-creation/song-card";
 import { songTitle } from "../lib/song-display";
 import { readReleaseServer } from "../lib/release-server";
@@ -19,14 +19,20 @@ import {
   type PublicCreationSong,
 } from "../lib/chart-creation/public-songs";
 import type { HaneokaLocale, HaneokaReleaseIdentity } from "../../packages/api-client/src/haneoka";
+import { BESTDORI_SERVERS, isBestdoriServer, type BestdoriServer } from "../../packages/bestdori/src/transport";
+import { listBestdoriCreatorSongs, loadBestdoriCreatorSong, loadBestdoriCreationSongCardData, type BestdoriCreatorSong } from "../lib/chart-creation/bestdori-source";
 import "../styles/team-builder.css";
 
 type CatalogueRecord = Record<string, unknown>;
 
-export type PublicChartImport = Awaited<ReturnType<typeof loadPublicCreationSong>>;
+export type CreationLibraryProvider = "haneoka" | "bestdori";
+type CreationSong = PublicCreationSong | BestdoriCreatorSong;
+export type PublicChartImport = Awaited<ReturnType<typeof loadPublicCreationSong>> | Awaited<ReturnType<typeof loadBestdoriCreatorSong>>;
 export class ChartCreationLibrary extends LitElement {
   static properties = {
     locale: {},
+    provider: { state: true },
+    bestdoriRegion: { state: true },
     onImport: { attribute: false },
     opened: { state: true },
     busy: { state: true },
@@ -42,12 +48,14 @@ export class ChartCreationLibrary extends LitElement {
     filtersLoading: { state: true },
     filtersError: { state: true },
   };
-  declare locale: HaneokaLocale;
+  declare locale: string;
+  declare private provider: CreationLibraryProvider;
+  declare private bestdoriRegion: BestdoriServer;
   declare onImport: ((value: PublicChartImport, signal: AbortSignal) => Promise<void>) | undefined;
   declare private opened: boolean;
   declare private busy: boolean;
   declare private error: string;
-  declare private items: { id: string; value: PublicCreationSong }[];
+  declare private items: { id: string; value: CreationSong }[];
   declare private chosen: string;
   declare private difficulty: string;
   declare private query: string;
@@ -63,9 +71,10 @@ export class ChartCreationLibrary extends LitElement {
   private indexLoaded = false;
   private indexLocale = "";
   private searchSnapshot?: {
-    items: { id: string; value: PublicCreationSong }[];
+    items: { id: string; value: CreationSong }[];
     locale: string;
-    rows: { id: string; value: PublicCreationSong; searchText: string; bandIds: string[]; characterIds: string[] }[];
+    context: CreationSongCardData | undefined;
+    rows: { id: string; value: CreationSong; searchText: string; bandIds: string[]; characterIds: string[] }[];
     bands: [string, string][];
   };
   private server = "";
@@ -77,6 +86,8 @@ export class ChartCreationLibrary extends LitElement {
   constructor() {
     super();
     this.locale = "en";
+    this.provider = "haneoka";
+    this.bestdoriRegion = "jp";
     this.characterFilter = "";
     this.opened = false;
     this.busy = false;
@@ -142,10 +153,23 @@ export class ChartCreationLibrary extends LitElement {
     this.controller = undefined;
     this.busy = false;
   }
-  async show() {
+  private apiLocale(): HaneokaLocale {
+    return (localizedFallbacks(this.locale).find(locale => ["ja", "en", "zh-TW", "zh-CN", "ko"].includes(locale)) ?? "en") as HaneokaLocale;
+  }
+  private switchProvider(provider: CreationLibraryProvider, region = this.bestdoriRegion) {
+    if (provider === this.provider && region === this.bestdoriRegion) return;
+    this.cancelRequest();
+    this.provider = provider; this.bestdoriRegion = region;
+    if (provider === "haneoka") this.server = readReleaseServer();
+    this.identity = undefined; this.filterCatalog = undefined;
+    this.items = []; this.indexLoaded = false; this.chosen = ""; this.difficulty = "";
+    this.query = ""; this.bandFilter = ""; this.characterFilter = "";
+    if (this.opened) void this.loadIndex();
+  }
+  async show(provider: CreationLibraryProvider = "haneoka") {
     this.trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const server = readReleaseServer();
-    if (server !== this.server || (this.indexLocale && this.indexLocale !== this.locale)) {
+    if (provider !== this.provider || (provider === "haneoka" && server !== this.server) || (this.indexLocale && this.indexLocale !== this.locale)) {
       this.cancelRequest();
       this.identity = undefined;
       this.items = [];
@@ -156,6 +180,8 @@ export class ChartCreationLibrary extends LitElement {
       this.query = "";
       this.bandFilter = "";
       this.server = server;
+      this.provider = provider;
+      this.difficulty = "";
     }
     this.opened = true;
     await this.updateComplete;
@@ -163,7 +189,7 @@ export class ChartCreationLibrary extends LitElement {
     const dialog = this.querySelector<HTMLDialogElement>("dialog")!;
     if (!dialog.open) dialog.showModal();
     if (!this.indexLoaded) await this.loadIndex();
-    else if (!this.filterCatalog && this.identity) void this.loadFilters(this.identity);
+    else if (!this.filterCatalog) void this.loadFilters();
   }
   private close() {
     this.cancelRequest();
@@ -181,17 +207,16 @@ export class ChartCreationLibrary extends LitElement {
     this.indexLocale = this.locale;
     const report = beginLoading(this.t("serverLibrary"), { signal: controller.signal, scope: "owner" });
     try {
-      const page = await this.catalogue.load({
-        server: this.server,
-        locale: this.locale,
-        signal: controller.signal,
-      });
+      const provider = this.provider, region = this.bestdoriRegion;
+      const page = provider === "bestdori"
+        ? await listBestdoriCreatorSongs({ region, locale: this.locale, signal: controller.signal })
+        : await this.catalogue.load({ server: this.server, locale: this.apiLocale(), signal: controller.signal });
       controller.signal.throwIfAborted();
       if (this.controller !== controller || !this.isConnected || !this.opened) return;
-      this.identity = page.release;
+      this.identity = "release" in page ? page.release : undefined;
       this.items = page.items;
       this.indexLoaded = true;
-      void this.loadFilters(page.release);
+      void this.loadFilters();
       report.finish();
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -205,15 +230,19 @@ export class ChartCreationLibrary extends LitElement {
       }
     }
   }
-  private async loadFilters(identity: HaneokaReleaseIdentity) {
+  private async loadFilters() {
+    const identity = this.identity, provider = this.provider, region = this.bestdoriRegion, locale = this.locale, items = this.items;
+    if (provider === "haneoka" && !identity) return;
     this.filterController?.abort();
     const controller = this.filterController = new AbortController();
     this.filtersLoading = true;
     this.filtersError = false;
     try {
-      const context = await loadPublicCreationSongCardData({ identity, locale: this.locale, signal: controller.signal });
+      const context = provider === "bestdori"
+        ? await loadBestdoriCreationSongCardData({ region, locale, signal: controller.signal })
+        : await loadPublicCreationSongCardData({ identity: identity!, locale: this.apiLocale(), signal: controller.signal });
       controller.signal.throwIfAborted();
-      if (this.filterController !== controller || this.identity !== identity || !this.opened || !this.isConnected) return;
+      if (this.filterController !== controller || this.identity !== identity || this.provider !== provider || this.bestdoriRegion !== region || this.locale !== locale || this.items !== items || !this.opened || !this.isConnected) return;
       this.filterCatalog = context;
     } catch {
       if (!controller.signal.aborted && this.filterController === controller) this.filtersError = true;
@@ -229,7 +258,9 @@ export class ChartCreationLibrary extends LitElement {
     return row.character ? this.record(row.character) : row;
   }
   private image(source: unknown) {
-    return typeof source === "string" && source && this.identity ? (this.filterCatalog?.assetUrl(source) ?? pinnedPublicUrl(source, this.identity)) : "";
+    if (typeof source !== "string" || !source) return "";
+    if (this.filterCatalog) return this.filterCatalog.assetUrl(source);
+    return this.provider === "bestdori" ? new URL(source, "https://haneoka.org").href : this.identity ? pinnedPublicUrl(source, this.identity) : "";
   }
   private renderFilters() {
     const { bands: fallbackBands, rows } = this.searchIndex();
@@ -249,6 +280,14 @@ export class ChartCreationLibrary extends LitElement {
         ? [{ id, name, image: this.image(character.faceImage ?? character.thumbnailImage) }] : [];
     });
     return html`
+      ${chooserFacet({ label: clientText(this.locale, "source"), allLabel: this.t("serverLibrary"), value: this.provider === "bestdori" ? "bestdori" : "",
+        options: [{ value: "bestdori", label: "Bestdori" }],
+        change: value => this.switchProvider(value === "bestdori" ? "bestdori" : "haneoka"),
+      })}
+      ${this.provider === "bestdori" ? chooserFacet({ label: clientText(this.locale, "server"), allLabel: "JP", value: this.bestdoriRegion === "jp" ? "" : this.bestdoriRegion,
+        options: BESTDORI_SERVERS.filter(region => region !== "jp").map(region => ({ value: region, label: region.toUpperCase() })),
+        change: value => { const region = value || "jp"; if (isBestdoriServer(region)) this.switchProvider("bestdori", region); },
+      }) : nothing}
       ${chooserFacet({ label: clientText(this.locale, "bands"), allLabel: clientText(this.locale, "all"), value: this.bandFilter,
         options: bands.map(({ id, name, image }) => ({ value: id, label: name, image })),
         change: (value) => { this.bandFilter = value; this.characterFilter = ""; },
@@ -258,7 +297,7 @@ export class ChartCreationLibrary extends LitElement {
         change: (value) => { this.characterFilter = value; },
       })}
       ${this.filtersLoading ? chooserGroup(clientText(this.locale, "loading"), loadingState(clientText(this.locale, "loading"), { local: true })) : nothing}
-      ${this.filtersError ? chooserGroup(this.t("loadFailed"), html`<button class="button button--text" @click=${() => this.identity && this.loadFilters(this.identity)}>${clientText(this.locale, "retry")}</button>`) : nothing}
+      ${this.filtersError ? chooserGroup(this.t("loadFailed"), html`<button class="button button--text" @click=${() => this.loadFilters()}>${clientText(this.locale, "retry")}</button>`) : nothing}
     `;
   }
 
@@ -267,23 +306,27 @@ export class ChartCreationLibrary extends LitElement {
     const changed = this.chosen !== id;
     this.chosen = id;
     const rows = this.items.find((item) => item.id === id)!.value.difficulty;
-    if (changed || !rows.some((row) => row.difficultyName === this.difficulty))
-      this.difficulty = defaultCreationDifficulty(rows)?.key ?? "";
+    if (changed || !rows.some((row) => (row.difficultyName ?? row.difficulty) === this.difficulty))
+      this.difficulty = defaultCreationDifficulty<CatalogueRecord>(rows)?.key ?? "";
   }
   private async importChosen() {
-    if (this.busy || !this.identity || !this.chosen || !this.difficulty || !this.onImport) return;
+    if (this.busy || (this.provider === "haneoka" && !this.identity) || !this.chosen || !this.difficulty || !this.onImport) return;
     this.busy = true;
     this.error = "";
     const controller = (this.controller = new AbortController());
     const report = beginLoading(this.t("importServerBoth"), { signal: controller.signal, scope: "owner" });
     try {
-      const value = await loadPublicCreationSong({
-        identity: this.identity,
+      const value = this.provider === "bestdori"
+        ? await loadBestdoriCreatorSong({ region: this.bestdoriRegion, locale: this.locale, songId: this.chosen, difficulty: this.difficulty, withAudio: true, signal: controller.signal })
+        : await loadPublicCreationSong({
+        identity: this.identity!,
         songId: this.chosen,
         difficulty: this.difficulty,
-        locale: this.locale,
+        locale: this.apiLocale(),
         signal: controller.signal,
       });
+      controller.signal.throwIfAborted();
+      if (this.controller !== controller || !this.opened || !this.isConnected) return;
       await this.onImport(value, controller.signal);
       controller.signal.throwIfAborted();
       report.finish();
@@ -301,23 +344,36 @@ export class ChartCreationLibrary extends LitElement {
     }
   }
   private searchIndex() {
-    if (this.searchSnapshot?.items === this.items && this.searchSnapshot.locale === this.locale)
+    if (this.searchSnapshot?.items === this.items && this.searchSnapshot.locale === this.locale && this.searchSnapshot.context === this.filterCatalog)
       return this.searchSnapshot;
+    const bandCharacters = new Map<string, string[]>();
+    for (const [id, character] of this.filterCatalog?.characters ?? []) {
+      const band = String(this.characterRecord(character).bandId ?? "");
+      bandCharacters.set(band, [...(bandCharacters.get(band) ?? []), String(id)]);
+    }
+    const characterIds = (value: CreationSong): string[] => {
+      const raw = this.record(value);
+      const declared = raw.vocalCharacterIds ?? raw.characterIds;
+      if (Array.isArray(declared)) return declared.map(String);
+      const band = this.filterCatalog?.bands.get(Number(raw.bandId));
+      if (Array.isArray(band?.memberCharacterIds)) return band.memberCharacterIds.map(String);
+      return bandCharacters.get(String(raw.bandId)) ?? [];
+    };
     const rows = this.items.map(({ id, value }) => ({
       id,
       value,
       bandIds: [...new Set([...(Array.isArray(this.record(value).bandIds) ? this.record(value).bandIds as unknown[] : []), this.record(value).bandId].filter((id) => id !== undefined && id !== null).map(String))],
-      characterIds: (Array.isArray(this.record(value).vocalCharacterIds) ? this.record(value).vocalCharacterIds as unknown[] : []).map(String),
+      characterIds: characterIds(value),
       searchText: [id, String(value.musicId),
         songTitle(value as unknown as Record<string, unknown>, this.locale).text,
         resolveLocalizedText(value.musicTitle, this.locale).text,
-        resolveLocalizedText(value.bandName, this.locale).text,
+        this.filterCatalog ? creationSongCard(value, this.filterCatalog, this.locale).artist : resolveLocalizedText(value.bandName, this.locale).text,
       ].join(" ").normalize("NFKC").toLocaleLowerCase(),
     }));
     const bands = [...new Map(rows.map(({ value }) => [
       String(this.record(value).bandId ?? ""), resolveLocalizedText(value.bandName, this.locale).text,
     ] as [string, string])).entries()].filter(([id, name]) => id && name);
-    return this.searchSnapshot = { items: this.items, locale: this.locale, rows, bands };
+    return this.searchSnapshot = { items: this.items, locale: this.locale, context: this.filterCatalog, rows, bands };
   }
   private categoryMark(item: CatalogueRecord) {
     const labels = ["", "original", "virtual", "jpop", "anime", "game"];
@@ -331,8 +387,7 @@ export class ChartCreationLibrary extends LitElement {
     const query = this.query.normalize("NFKC").trim().toLocaleLowerCase();
     const matching = rows.filter((row) =>
       (!this.bandFilter || row.bandIds.includes(this.bandFilter)) && (!this.characterFilter || row.characterIds.includes(this.characterFilter)) && row.searchText.includes(query));
-    const picture = (value: unknown) =>
-      typeof value === "string" && value && this.identity ? pinnedPublicUrl(value, this.identity) : "";
+    const picture = (value: unknown) => this.image(value);
     const items = matching.map(({ id, value }) => {
       const dto = this.filterCatalog ? creationSongCard(this.record(value), this.filterCatalog, this.locale) : undefined;
       const row = dto?.data ?? { ...value, jacketUrl: picture(value.jacketUrl), jacketThumbUrl: picture(this.record(value).jacketThumbUrl) };
@@ -351,14 +406,14 @@ export class ChartCreationLibrary extends LitElement {
         "",
         this.categoryMark(row),
         id === this.chosen
-          ? value.difficulty.find((entry) => entry.difficultyName.toLowerCase() === this.difficulty)
-          : defaultCreationDifficulty(value.difficulty)?.row,
+          ? value.difficulty.find((entry) => String(entry.difficultyName ?? entry.difficulty).toLowerCase() === this.difficulty)
+          : defaultCreationDifficulty<CatalogueRecord>(value.difficulty)?.row,
       );
       return { ...tile, aspectRatio: 1, value: id };
     });
     return selectionPane({
       id: "chart-creation-library",
-      title: this.t("serverLibrary"),
+      title: this.provider === "bestdori" ? "Bestdori" : this.t("serverLibrary"),
       closeLabel: clientText(this.locale, "close"),
       close: () => this.close(),
       searchLabel: this.t("searchServerLibrary"),
