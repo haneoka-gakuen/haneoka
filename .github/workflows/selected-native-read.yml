@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: resource-intl
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
     steps:
       - uses: actions/checkout@v7
         with:

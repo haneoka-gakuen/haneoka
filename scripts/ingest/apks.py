@@ -338,10 +338,10 @@ def _embedded_catalog(asset_pack: Path, scratch: Path) -> tuple[Path, Path, str,
 
 
 def _authorization(config: ServerConfig) -> str:
-    value = os.environ.get(AUTHORIZATION_ENVIRONMENT, "").strip()
+    value = os.environ.get(config.authorization_env, "").strip()
     if config.authorization_required and not value:
         raise ValueError(
-            f"{config.id} requires the server-scoped {AUTHORIZATION_ENVIRONMENT} variable"
+            f"{config.id} requires its server-scoped authorization variable"
         )
     if value and " " not in value:
         value = f"Basic {value}"

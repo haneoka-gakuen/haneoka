@@ -102,9 +102,11 @@ jobs:
 
   payload:
     name: Assemble and publish the global payload
+    environment: resource-intl
     needs: engine
     runs-on: ubuntu-latest
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

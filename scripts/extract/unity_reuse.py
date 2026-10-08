@@ -20,6 +20,9 @@ def extractor_identity() -> str:
     from core.config import PROJECT_ROOT
 
     digest = hashlib.sha256()
+    import json
+    from core.private_config import runtime_settings
+    digest.update(json.dumps(runtime_settings()["bundleCrypto"], sort_keys=True).encode("utf-8"))
     for name in EXTRACTOR_SOURCES:
         digest.update(name.encode("utf-8"))
         digest.update((PROJECT_ROOT / "scripts" / name).read_bytes())

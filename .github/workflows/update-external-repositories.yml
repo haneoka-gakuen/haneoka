@@ -53,6 +53,7 @@ jobs:
           pnpm dependencies:verify
           pnpm format:check
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
+          PYTHONPATH=scripts python3 -m unittest discover -s scripts/core/tests
           pnpm typecheck
           pnpm lint
           pnpm build

@@ -1,5 +1,5 @@
 {
   "$schema": "../server.schema.json",
-  "id": "intl",
+  "id": "intl-test",
   "configurationEnv": "RESOURCE_PIPELINE_CONFIG"
 }

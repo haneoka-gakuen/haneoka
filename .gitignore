@@ -30,6 +30,7 @@ worker/database/*.sqlite
 worker/database/*.sqlite3
 
 # Environment and secrets
+/.secrets/
 .dev.vars*
 .env*
 !.dev.vars.example

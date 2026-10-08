@@ -27,6 +27,8 @@ jobs:
     environment: resource-intl
     outputs:
       release_promoted: ${{ steps.project.outputs.release_promoted }}
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
     steps:
       - uses: actions/checkout@v7
         with:

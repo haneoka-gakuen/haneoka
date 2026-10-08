@@ -61,6 +61,7 @@ jobs:
     timeout-minutes: 20
     environment: resource-${{ inputs.server }}
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       NODE_OPTIONS: --max-old-space-size=1024
       AWS_EC2_METADATA_DISABLED: "true"
     steps:

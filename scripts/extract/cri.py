@@ -46,9 +46,6 @@ USM_ENCODING_FALLBACKS = ("cp932", "gb18030", "big5", "cp949", "latin-1")
 # Both live releases carry the v2 id already; adoption now only matches the
 # current transform id. A DECODE_CONTRACT bump therefore means exactly one
 # full re-decode, and nothing else ever does.
-COMPATIBLE_HCA_KEY_SHA256 = (
-    "cd0b2ad6de5baa070f1c00baa33658b493a138919f00a4ed8418a7ff6af6ba2f"
-)
 NOTE_SE_DECODE_PROFILE = "note-se-original-stream-once-v1"
 USM_DECODE_PROFILE = "usm-alpha-full-range-packed-h264-bt709-v4"
 RestoreOutput = Callable[[dict[str, Any], Path], None]
@@ -1748,7 +1745,7 @@ def extract_cri(
         try:
             previous_transform = str((reuse_manifest or {}).get("transformId") or "")
             compatible_key = (
-                sha256_bytes(config.cri_hca_key) == COMPATIBLE_HCA_KEY_SHA256
+                sha256_bytes(config.cri_hca_key) == config.cri_compatibility_key_sha256
             )
             cached = (
                 _cached_records(reuse_manifest, transform_id)

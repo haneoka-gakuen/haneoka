@@ -84,6 +84,7 @@ jobs:
       pending_by_shard: ${{ steps.unity_reuse.outputs.pending_by_shard }}
       unity_matrix: ${{ steps.unity_reuse.outputs.unity_matrix || steps.identity.outputs.unity_matrix }}
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       PACKAGE_R2_KEY: ${{ inputs.package_r2_key }}
       SOURCE_ID_INPUT: ${{ inputs.source_id }}
       RESOURCE_CDN_AUTHORIZATION: ${{ secrets.RESOURCE_CDN_AUTHORIZATION || secrets.resource_cdn_authorization }}
@@ -219,7 +220,7 @@ jobs:
             fi
             if ! python scripts/pipeline.py --server "$RESOURCE_SERVER" ingest \
               --input "$RUNNER_TEMP/package-input" --concurrency 32 "${ingest_extra[@]}" > "$RUNNER_TEMP/source.json"; then
-              if jq -e '.masterRemoteRoot // empty' "scripts/config/servers/$RESOURCE_SERVER.json" > /dev/null; then
+              if [[ "$(python -m core.config --server "$RESOURCE_SERVER" --field has-master)" == "true" ]]; then
                 echo "Live Master ingestion failed; retaining the published release" >&2
                 exit 1
               fi
@@ -272,7 +273,7 @@ jobs:
         run: |
           SOURCE_ID="$(jq -r .sourceId "$RUNNER_TEMP/source.json")"
           BUILD_ID="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" build-id --source "$SOURCE_ID" | jq -r .buildId)"
-          SHARD_COUNT="$(jq -r .extractionShards "scripts/config/servers/$RESOURCE_SERVER.json")"
+          SHARD_COUNT="$(python -m core.config --server "$RESOURCE_SERVER" --field extraction-shards)"
           echo "source_id=$SOURCE_ID" >> "$GITHUB_OUTPUT"
           echo "build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
           echo "shard_count=$SHARD_COUNT" >> "$GITHUB_OUTPUT"

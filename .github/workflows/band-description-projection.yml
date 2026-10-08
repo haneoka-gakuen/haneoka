@@ -29,6 +29,8 @@ jobs:
       matrix:
         server: [intl, jp]
     environment: resource-${{ matrix.server }}
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
     steps:
       - uses: actions/checkout@v7
         with:

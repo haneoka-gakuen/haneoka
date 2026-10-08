@@ -39,7 +39,6 @@ MAX_IMAGE_BYTES = 32 * 1024 * 1024
 REGIONAL_ANNOUNCEMENT_ID_STRIDE = 1 << 51
 RETRY_DELAYS = (0.0, 1.0, 3.0)
 PUBLIC_BASE_URL = "https://haneoka.org"
-TRUSTED_GAME_HOST_SUFFIXES = (".gamerfusiontech.com", ".bilibiligame.net")
 
 _IMAGE_TYPES = {
     "image/avif": "avif",
@@ -513,7 +512,7 @@ def public_announcement_document(
     }
 
 
-def _trusted_bootstrap_urls(value: str, *, allow_path: bool) -> tuple[str, ...]:
+def _trusted_bootstrap_urls(value: str, *, allow_path: bool, host_suffixes: tuple[str, ...]) -> tuple[str, ...]:
     urls: list[str] = []
     for candidate in value.split("|"):
         candidate = candidate.strip()
@@ -529,7 +528,7 @@ def _trusted_bootstrap_urls(value: str, *, allow_path: bool) -> tuple[str, ...]:
         if (
             parsed.scheme.lower() != "https"
             or not any(
-                hostname.endswith(suffix) for suffix in TRUSTED_GAME_HOST_SUFFIXES
+                hostname.endswith(suffix) for suffix in host_suffixes
             )
             or parsed.username is not None
             or parsed.password is not None
@@ -583,10 +582,10 @@ def _fetch_regional_announcement_servers(
             continue
         if region.id in found:
             raise ValueError(f"server list contains duplicate region {name}")
-        api_roots = _trusted_bootstrap_urls(_text(_first(fields, 3)), allow_path=False)
+        api_roots = _trusted_bootstrap_urls(_text(_first(fields, 3)), allow_path=False, host_suffixes=config.announcements_host_suffixes)
         if not api_roots:
             raise ValueError(f"server list has no trusted ApiServerRoot for {name}")
-        cdn_roots = _trusted_bootstrap_urls(_text(_first(fields, 2)), allow_path=True)
+        cdn_roots = _trusted_bootstrap_urls(_text(_first(fields, 2)), allow_path=True, host_suffixes=config.announcements_host_suffixes)
         cdn_hosts = frozenset(
             (urllib.parse.urlsplit(url).hostname or "").lower()
             for url in cdn_roots

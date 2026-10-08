@@ -64,6 +64,7 @@ def _output_configuration(config: ServerConfig) -> dict[str, object]:
         "unityVersion": config.unity_version,
         "criHcaKey": config.cri_hca_key,
         "masterCrypto": config.master_crypto,
+        "bundleCrypto": config.bundle_crypto,
     }
 
 

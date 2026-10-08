@@ -34,6 +34,7 @@ jobs:
     permissions:
       contents: read
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       RESOURCE_SERVER: ${{ inputs.server || 'jp-cbt' }}
       APPLY_CHANGES: ${{ github.event_name == 'schedule' || inputs.apply == true }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

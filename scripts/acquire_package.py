@@ -1,9 +1,4 @@
-"""Discover production Android packages before staging them in R2.
-
-The international publisher serves a direct APK from its own website. The
-Japanese publisher links only to Google Play, so the JP transport is an APKPure
-XAPK mirror whose direct-download link embeds the Play versionCode.
-"""
+"""Discover configured Android packages before staging them in R2."""
 
 from __future__ import annotations
 
@@ -19,12 +14,10 @@ from pathlib import Path
 
 from core.contracts import PACKAGE_MAX_BYTES
 from core.storage import cas_key
+from core.config import load_server_config
 
 USER_AGENT = "HaneokaResourcePipeline/1.0"
-INTL_SITE = "https://bdon.biligames.com/"
-JP_MIRROR = "https://apkpure.com/bang-dream-our-notes/com.bushiroad.sirius/download"
-JP_XAPK_LINK = re.compile(r"https://d\.apkpure\.com/b/XAPK/com\.bushiroad\.sirius\?versionCode=(\d+)")
-SERVERS = ("jp", "intl")
+SERVERS = ("jp", "intl", "intl-test")
 
 
 def _host(url: str) -> str:
@@ -64,17 +57,34 @@ def _read_small(url: str, hosts: set[str], limit: int = 2_000_000) -> str:
     return data.decode("utf-8")
 
 
-def _discover_intl() -> tuple[str, str, set[str], dict[str, str]]:
-    page = _read_small(INTL_SITE, {"bdon.biligames.com"})
-    scripts = re.findall(
-        r"(?:https?:)?//s1\.biligames\.com/fe-static/game-global-bangdreamon/gw/js/chunk-common\.[a-f0-9]+\.js",
-        page,
-    )
+def _hosts(settings: dict, field: str) -> set[str]:
+    values = settings.get(field)
+    if not isinstance(values, list) or not values or any(
+        not isinstance(value, str) or not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", value)
+        for value in values
+    ):
+        raise ValueError(f"package acquisition requires an explicit {field} allowlist")
+    return set(values)
+
+
+def _pattern(settings: dict, field: str) -> re.Pattern:
+    value = settings.get(field)
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        raise ValueError(f"package acquisition requires {field}")
+    try:
+        return re.compile(value)
+    except re.error:
+        raise ValueError(f"package acquisition has an invalid {field}") from None
+
+
+def _discover_script(settings: dict) -> tuple[str, str, set[str], dict[str, str]]:
+    page = _read_small(settings["sourceUrl"], _hosts(settings, "discoveryHosts"))
+    scripts = _pattern(settings, "scriptPattern").findall(page)
     if len(set(scripts)) != 1:
         raise ValueError("international official site did not expose one application script")
     script_url = "https:" + scripts[0] if scripts[0].startswith("//") else scripts[0]
-    script = _read_small(script_url, {"s1.biligames.com"})
-    urls = set(re.findall(r"https://l\d+-pkg-download\.biligames\.com/sirius/apk/[A-Za-z0-9_.-]+\.apk", script))
+    script = _read_small(script_url, _hosts(settings, "scriptHosts"))
+    urls = set(_pattern(settings, "downloadPattern").findall(script))
     if len(urls) != 1:
         raise ValueError("international official site did not expose one APK URL")
     url = urls.pop()
@@ -84,14 +94,14 @@ def _discover_intl() -> tuple[str, str, set[str], dict[str, str]]:
     fingerprint = {"file": filename}
     if version:
         fingerprint["versionName"] = version.group(1)
-    return url, "publisher-website", {host}, fingerprint
+    return url, "configured-source", {host}, fingerprint
 
 
-def _discover_jp() -> tuple[str, str, set[str], dict[str, str]]:
-    page = _read_small(JP_MIRROR, {"apkpure.com"})
+def _discover_variant(settings: dict) -> tuple[str, str, set[str], dict[str, str]]:
+    page = _read_small(settings["sourceUrl"], _hosts(settings, "discoveryHosts"))
     # The download page embeds the direct XAPK link once per variant; the
     # versionCode query parameter is the authoritative Play versionCode.
-    codes = set(JP_XAPK_LINK.findall(page))
+    codes = set(_pattern(settings, "variantPattern").findall(page))
     if not codes:
         raise ValueError("Japanese mirror exposed no XAPK download variant")
     code = max(int(value) for value in codes)
@@ -100,9 +110,9 @@ def _discover_jp() -> tuple[str, str, set[str], dict[str, str]]:
     if version:
         fingerprint["versionName"] = version.group(1)
     return (
-        f"https://d.apkpure.com/b/XAPK/com.bushiroad.sirius?versionCode={code}",
-        "apkpure-mirror",
-        {"d.apkpure.com", "data.winudf.com"},
+        settings["urlTemplate"].format(versionCode=code),
+        "configured-source",
+        _hosts(settings, "downloadHosts"),
         fingerprint,
     )
 
@@ -139,7 +149,16 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--probe", action="store_true", help="discover the publisher fingerprint without downloading")
     args = parser.parse_args()
-    url, provenance, hosts, fingerprint = _discover_intl() if args.server == "intl" else _discover_jp()
+    settings = load_server_config(args.server).package_acquisition
+    if not isinstance(settings, dict) or not isinstance(settings.get("sourceUrl"), str):
+        raise ValueError("package acquisition is not configured")
+    strategy = settings.get("strategy")
+    if strategy == "publisher-script":
+        url, provenance, hosts, fingerprint = _discover_script(settings)
+    elif strategy == "mirror-variant":
+        url, provenance, hosts, fingerprint = _discover_variant(settings)
+    else:
+        raise ValueError("package acquisition strategy is not supported")
     if args.probe:
         print(json.dumps({"server": args.server, "provenance": provenance, **fingerprint}, sort_keys=True))
         return 0

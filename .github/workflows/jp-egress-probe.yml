@@ -13,9 +13,16 @@ jobs:
     timeout-minutes: 10
     environment: resource-jp
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       JP_VERSION_SUBSCRIPTION: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
     steps:
       - uses: actions/checkout@v7
+      - name: Resolve configured endpoint
+        env:
+          PYTHONPATH: scripts
+        run: |
+          python -m core.config --server jp --mask-github
+          python -c 'from core.config import load_server_config; import os; c = load_server_config("jp"); f = open(os.environ["GITHUB_ENV"], "a"); f.write("PROBE_ENDPOINT=" + c.version_endpoint + "\n"); f.close()'
       - name: Probe direct announcement service
         shell: bash
         run: |
@@ -24,7 +31,7 @@ jobs:
             --output /dev/null --write-out '%{http_code}' \
             -H 'content-type: application/grpc' -H 'te: trailers' -H 'x-platform: Android' \
             -A 'grpc-dotnet/2.66.0' --data-binary "@$RUNNER_TEMP/frame" \
-            https://api.bang-dream-on.jp/app.announcement.AnnouncementService/GetList)
+            "$PROBE_ENDPOINT")
           echo "Direct announcement service: HTTP $code"
       - name: Start JP API egress
         if: env.JP_VERSION_SUBSCRIPTION != ''
@@ -39,6 +46,6 @@ jobs:
             --proxy "$JP_VERSION_PROXY" --output /dev/null --write-out '%{http_code}' \
             -H 'content-type: application/grpc' -H 'te: trailers' -H 'x-platform: Android' \
             -A 'grpc-dotnet/2.66.0' --data-binary "@$RUNNER_TEMP/frame" \
-            https://api.bang-dream-on.jp/app.announcement.AnnouncementService/GetList)
+            "$PROBE_ENDPOINT")
           echo "JP-proxied announcement service: HTTP $code"
           test "$code" = 200

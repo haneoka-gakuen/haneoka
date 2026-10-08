@@ -23,6 +23,7 @@ from core.config import ServerConfig, load_server_config
 from core.contracts import SOURCE_SCHEMA
 from core.fingerprints import build_fingerprint
 from core.manifests import read_json, stable_json, write_json
+from core.private_config import redact_private_text
 from core.paths import build_layout, source_layout
 from core.storage import cas_key
 from extract.master import extract_master, validate_master_manifest
@@ -74,7 +75,7 @@ def build_id(config: ServerConfig, source_id: str) -> str:
 
 
 def _print(value: object) -> None:
-    sys.stdout.write(stable_json(value, pretty=True))
+    sys.stdout.write(redact_private_text(stable_json(value, pretty=True)))
 
 
 def _source_summary(manifest: dict) -> dict:
@@ -310,9 +311,7 @@ def command_cdn_credential(args: argparse.Namespace) -> None:
                 value = cdn_authorization(config.version_basic_user, info.cdn_password)
                 origin = "server"
     if not value:
-        from ingest.apks import AUTHORIZATION_ENVIRONMENT
-
-        raw = os.environ.get(AUTHORIZATION_ENVIRONMENT, "").strip()
+        raw = os.environ.get(config.authorization_env, "").strip()
         if raw:
             value = f"Basic {raw}" if " " not in raw else raw
     _print(

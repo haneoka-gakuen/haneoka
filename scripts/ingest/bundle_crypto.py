@@ -15,10 +15,9 @@ from typing import Iterable
 
 import UnityPy
 from Crypto.Cipher import AES
+from core.private_config import runtime_settings
 
 ENCRYPTED_HEADER_BYTES = 16 * 1024
-KEY = bytes.fromhex("7372a4ee777db361ad896c99e408a182")
-NONCE_SEED = bytes.fromhex("ee24a70238e2a0e5")
 UNITY_SIGNATURE = b"UnityFS\0"
 
 
@@ -28,8 +27,15 @@ def decrypt_header(buffer: mmap.mmap, filename: str) -> None:
         raise ValueError("bundle decryption requires a plain filename")
     if buffer[: len(UNITY_SIGNATURE)] == UNITY_SIGNATURE:
         return
-    nonce = hashlib.sha256(NONCE_SEED + filename.encode("utf-8")).digest()[:8]
-    cipher = AES.new(KEY, AES.MODE_ECB)
+    settings = runtime_settings().get("bundleCrypto", {})
+    try:
+        key, seed = bytes.fromhex(settings["key"]), bytes.fromhex(settings["nonceSeed"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("private bundle crypto configuration is invalid") from None
+    if len(key) != 16 or len(seed) != 8:
+        raise ValueError("private bundle crypto configuration has invalid lengths")
+    nonce = hashlib.sha256(seed + filename.encode("utf-8")).digest()[:8]
+    cipher = AES.new(key, AES.MODE_ECB)
     limit = min(len(buffer), ENCRYPTED_HEADER_BYTES)
     for offset in range(0, limit, 16):
         mask = cipher.encrypt(nonce + (offset // 16).to_bytes(8, "big"))

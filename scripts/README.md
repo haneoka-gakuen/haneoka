@@ -28,13 +28,20 @@ The scheduled GitHub Actions run checks the jp and intl production servers at
 00:05, 06:05, 12:05 and 18:05 Asia/Tokyo. When the publisher fingerprint
 (versionCode/versionName from the mirror page) still matches the published
 source's package, the run reuses the stored R2 package instead of
-re-downloading from the publisher; only a real update pays that transfer. `scripts/acquire_package.py` reads the Android APK URL from
-the publisher's `bdon.biligames.com` application script (international) or the
-APKPure XAPK mirror whose direct link embeds the Play versionCode (Japanese),
-downloads the current file and stores it under a SHA-256 content-addressed R2
-key. The **APK file hash is calculated anew on every run**; it is not pinned,
-so normal APK updates create new keys. `aws s3 cp` uploads large packages
-through the S3 multipart API.
+re-downloading from the publisher; only a real update pays that transfer. `scripts/acquire_package.py` discovers the package using the selected environment's private acquisition settings, downloads the current file, and stores it under a SHA-256 content-addressed R2 key. Package updates create new keys; large uploads use multipart transfer.
+
+### Private runtime configuration
+
+Each `scripts/config/servers/<server>.json` contains only its identity and a reference to `RESOURCE_PIPELINE_CONFIG`. Set that JSON secret in the matching `resource-<server>` GitHub Environment. It contains the validated server settings, acquisition URLs and allowlists, CRI key, Master crypto parameters, and `bundleCrypto` (`key`, `nonceSeed`). Never place these values in repository variables or browser build variables.
+
+For local operation, use a private JSON file with mode 0600:
+
+```sh
+export RESOURCE_PIPELINE_CONFIG_FILE=/absolute/path/to/private/server.json
+PYTHONPATH=scripts python -m core.config --server intl-test
+```
+
+`RESOURCE_PIPELINE_CONFIG` and `RESOURCE_PIPELINE_CONFIG_FILE` are mutually exclusive; missing, mismatched, or malformed settings fail before acquisition. CI masks private fields and diagnostics redact configured values. The `intl-test` server is included in scheduled and manual resource builds and cross-server content browsing; it is absent from the default Settings server choices. Formal JP/Intl availability takes precedence over its test-only badge.
 
 `probe-source` downloads only the current Addressables catalog and computes the
 source identity before the expensive bundle download. A scheduled run skips the
@@ -99,8 +106,8 @@ the game service hands out at runtime. The `jp` configuration therefore asks
 the service directly, resolves the live resource
 version, and anchors every catalog and bundle download under `remoteRoot`. The
 lookup needs HTTP/2 (`curl --http2-prior-knowledge`) and its endpoint is
-operational knowledge: supply it through the `HANEOKA_VERSION_ENDPOINT`
-environment variable (a repo secret in CI), never in committed files.
+operational configuration: supply it in the environment-scoped
+`RESOURCE_PIPELINE_CONFIG` secret, never in committed files.
 
 The international server keeps its flat `catalog_{version}.bin` layout, so it
 still discovers new versions by probing. The CBT CDNs remain reachable: the

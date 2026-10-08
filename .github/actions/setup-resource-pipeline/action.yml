@@ -4,6 +4,12 @@ description: Install Python and cached pipeline dependencies.
 runs:
   using: composite
   steps:
+    - name: Mask private pipeline configuration
+      if: env.RESOURCE_PIPELINE_CONFIG != ''
+      shell: bash
+      env:
+        PYTHONPATH: scripts
+      run: python -m core.config --server "$RESOURCE_SERVER" --mask-github
     - name: Set up Python
       uses: actions/setup-python@v6
       with:

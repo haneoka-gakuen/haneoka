@@ -2,19 +2,20 @@ name: Resource pipeline
 
 on:
   schedule:
-    # 04:05, 12:05, 20:05 Asia/Tokyo (UTC+9) for jp and intl.
+    # 04:05, 12:05, 20:05 Asia/Tokyo (UTC+9) for current resource servers.
     - cron: "5 3 * * *"
     - cron: "5 11 * * *"
     - cron: "5 19 * * *"
   workflow_dispatch:
     inputs:
       server:
-        description: Server configuration id ("all" runs JP and Intl together)
+        description: Server configuration id ("all" runs all current servers)
         required: true
         default: intl
         type: choice
         options:
           - intl
+          - intl-test
           - jp
           - jp-cbt
           - intl-cbt
@@ -122,9 +123,34 @@ jobs:
       secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
       jp_version_subscription: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
 
+  pipeline_intl_test:
+    name: Build and publish Intl test resources
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && (inputs.server == 'intl-test' || inputs.server == 'all')) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/resource-pipeline-run.yml
+    with:
+      github_environment: ${{ github.event_name == 'schedule' && 'resource-intl-test' || inputs.github_environment || 'resource-intl-test' }}
+      server: intl-test
+      package_r2_key: ${{ inputs.package_r2_key }}
+      source_id: ${{ inputs.source_id }}
+      # On schedule events the inputs context is empty, which would feed ''
+      # into boolean-typed callee inputs and fail input validation.
+      ktx2: ${{ github.event_name == 'schedule' || inputs.ktx2 || false }}
+      basis_reencode: ${{ inputs.basis_reencode || false }}
+      force: ${{ inputs.force || false }}
+      no_reuse: ${{ inputs.no_reuse || false }}
+    secrets:
+      cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+      r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+      secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
+      jp_version_subscription: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
+
   pipeline_manual:
     name: Build and publish manually selected resources
-    if: ${{ github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && inputs.server != 'intl' && inputs.server != 'jp' && inputs.server != 'all' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && inputs.server != 'intl' && inputs.server != 'jp' && inputs.server != 'intl-test' && inputs.server != 'all' }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml
@@ -153,6 +179,8 @@ jobs:
     permissions:
       contents: read
     environment: ${{ inputs.server == 'jp' && 'resource-jp' || 'resource-intl' }}
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
     steps:
       - name: Require one production server
         env:
@@ -193,9 +221,9 @@ jobs:
 
   rebuild-site:
     name: Rebuild site pages
-    needs: [pipeline_intl, pipeline_jp]
+    needs: [pipeline_intl, pipeline_jp, pipeline_intl_test]
     # Rebuild once after either production server promotes an immutable release.
-    if: ${{ always() && (needs.pipeline_intl.outputs.release_promoted == 'true' || needs.pipeline_jp.outputs.release_promoted == 'true') }}
+    if: ${{ always() && (needs.pipeline_intl.outputs.release_promoted == 'true' || needs.pipeline_jp.outputs.release_promoted == 'true' || needs.pipeline_intl_test.outputs.release_promoted == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       actions: write

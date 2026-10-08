@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import ipaddress
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+from core.private_config import load_private_settings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +53,11 @@ class ServerConfig:
     announcements_regions: tuple[AnnouncementRegion, ...] = ()
     announcements_proxy_env: str = ""
     announcements_language: str = ""
+    package_acquisition: dict = field(default_factory=dict)
+    bundle_crypto: dict[str, str] = field(default_factory=dict)
+    announcements_host_suffixes: tuple[str, ...] = ()
+    authorization_env: str = "RESOURCE_CDN_AUTHORIZATION"
+    cri_compatibility_key_sha256: str = ""
 
 
 def validate_server_id(value: str) -> str:
@@ -93,7 +100,7 @@ def _validate_service_endpoint(value: str, file: Path) -> None:
 def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     server = validate_server_id(server)
     file = CONFIG_ROOT / f"{server}.json"
-    value = json.loads(file.read_text("utf-8"))
+    value = load_private_settings(server, file)
     if value.get("id") != server:
         raise ValueError(f"server configuration id mismatch: {file}")
     allowed = {
@@ -117,6 +124,10 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "masterRemoteRoot",
         "masterVersionEndpoint",
         "announcements",
+        "packageAcquisition",
+        "bundleCrypto",
+        "authorizationEnv",
+        "criCompatibilityKeySha256",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
@@ -181,6 +192,12 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     authorization_required = value.get("authorizationRequired")
     if not isinstance(authorization_required, bool):
         raise ValueError(f"invalid authorizationRequired: {file}")
+    authorization_env = value.get("authorizationEnv", "RESOURCE_CDN_AUTHORIZATION")
+    if not isinstance(authorization_env, str) or not ENV_NAME.fullmatch(authorization_env):
+        raise ValueError(f"invalid authorizationEnv: {file}")
+    compatible_key_sha = value.get("criCompatibilityKeySha256", "")
+    if not isinstance(compatible_key_sha, str) or (compatible_key_sha and not HEX_64.fullmatch(compatible_key_sha)):
+        raise ValueError(f"invalid CRI compatibility key identity: {file}")
     if not value["criHcaKey"].isdigit():
         raise ValueError(f"invalid criHcaKey: {file}")
     crypto = value.get("masterCrypto", {})
@@ -223,7 +240,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
     announcements = value.get("announcements", {})
     if not isinstance(announcements, dict):
         raise ValueError(f"invalid announcements block: {file}")
-    unknown_announcements = sorted(set(announcements) - {"endpoint", "serverList", "proxyEnv", "language"})
+    unknown_announcements = sorted(set(announcements) - {"endpoint", "serverList", "proxyEnv", "language", "hostSuffixes"})
     if unknown_announcements:
         raise ValueError(
             f"unknown announcements fields in {file}: {unknown_announcements}"
@@ -246,6 +263,13 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
             f"unknown announcements.serverList fields in {file}: {unknown_server_list}"
         )
     announcements_regions: list[AnnouncementRegion] = []
+    host_suffixes = announcements.get("hostSuffixes", [])
+    if not isinstance(host_suffixes, list) or any(
+        not isinstance(suffix, str) or suffix.count(".") < 2
+        or not re.fullmatch(r"\.[a-z0-9]+(?:[.-][a-z0-9]+)*", suffix)
+        for suffix in host_suffixes
+    ):
+        raise ValueError(f"invalid announcements host allowlist: {file}")
     region_names: set[str] = set()
     regions_value = server_list.get("regions", {})
     if not isinstance(regions_value, dict):
@@ -278,6 +302,8 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
             AnnouncementRegion(name.strip(), region_id, language)
         )
     if server_list:
+        if not host_suffixes:
+            raise ValueError(f"announcements.serverList requires hostSuffixes: {file}")
         if not announcements_endpoint:
             raise ValueError(
                 f"announcements.serverList requires announcements.endpoint: {file}"
@@ -350,6 +376,15 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
             raise ValueError(
                 f"masterRemoteRoot must use the configured CDN origin: {file}"
             )
+    bundle_crypto = value.get("bundleCrypto")
+    if (not isinstance(bundle_crypto, dict) or set(bundle_crypto) != {"key", "nonceSeed"}
+        or not isinstance(bundle_crypto.get("key"), str)
+        or not re.fullmatch(r"[a-f0-9]{32}", bundle_crypto["key"])
+        or not isinstance(bundle_crypto.get("nonceSeed"), str)
+        or not re.fullmatch(r"[a-f0-9]{16}", bundle_crypto["nonceSeed"])):
+        raise ValueError(f"invalid bundleCrypto: {file}")
+    if not isinstance(value.get("packageAcquisition", {}), dict):
+        raise ValueError(f"invalid packageAcquisition: {file}")
     return ServerConfig(
         id=server,
         package_name=value["packageName"],
@@ -378,4 +413,32 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         announcements_regions=tuple(announcements_regions),
         announcements_proxy_env=announcements_proxy_env,
         announcements_language=announcements_language,
+        package_acquisition=value.get("packageAcquisition", {}),
+        bundle_crypto=bundle_crypto,
+        announcements_host_suffixes=tuple(host_suffixes),
+        authorization_env=authorization_env,
+        cri_compatibility_key_sha256=compatible_key_sha,
     )
+
+
+def main() -> None:
+    import argparse
+    from core.private_config import github_masks
+
+    parser = argparse.ArgumentParser(description="Validate private pipeline configuration and print operational flags.")
+    parser.add_argument("--server", required=True)
+    parser.add_argument("--field", choices=("extraction-shards", "has-master", "has-announcements"))
+    parser.add_argument("--mask-github", action="store_true")
+    args = parser.parse_args()
+    config = load_server_config(args.server)
+    if args.mask_github:
+        for command in github_masks(load_private_settings(args.server, config.file)):
+            print(command)
+        return
+    summary = {"server": config.id, "extraction-shards": config.extraction_shards,
+               "has-master": bool(config.master_remote_root), "has-announcements": bool(config.announcements_endpoint)}
+    print(json.dumps(summary[args.field] if args.field else summary))
+
+
+if __name__ == "__main__":
+    main()

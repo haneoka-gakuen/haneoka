@@ -54,6 +54,7 @@ jobs:
     environment:
       name: ${{ inputs.github_environment || format('resource-{0}', inputs.server) }}
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       RESOURCE_SERVER: ${{ inputs.server }}
       SOURCE_ID: ${{ inputs.source_id }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.cloudflare_account_id || secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -73,7 +74,7 @@ jobs:
           subscription_url: ${{ env.JP_VERSION_SUBSCRIPTION }}
       - name: Refresh announcement snapshot
         run: |
-          if ! jq -e '.announcements.endpoint // empty' "scripts/config/servers/$RESOURCE_SERVER.json" > /dev/null; then
+          if [[ "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then
             echo "No announcement endpoint is configured for $RESOURCE_SERVER"
             exit 0
           fi
