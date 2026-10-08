@@ -10,7 +10,7 @@ export async function readSiteSettings(env: Env): Promise<SiteSettings> {
     `SELECT show_test_server_content AS enabled, version, updated_at AS updatedAt
      FROM site_setting WHERE id = 1`,
   ).first<{ enabled: number; version: number; updatedAt: number }>();
-  return { showTestServerContent: row?.enabled === 1, version: row?.version ?? 1, updatedAt: row?.updatedAt ?? 0 };
+  return { showTestServerContent: row?.enabled !== 0, version: row?.version ?? 1, updatedAt: row?.updatedAt ?? 0 };
 }
 
 /** Stream the flag into HTML; immutable scripts, styles and resource JSON keep their own caches. */
