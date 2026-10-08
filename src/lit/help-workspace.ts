@@ -3,6 +3,11 @@ import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
 import { updateEntityHeading } from "../lib/detail-navigation";
 import { parseEntitySelection } from "../lib/resource-route";
+import { currentReleaseServer } from "./shared/catalog";
+import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
+import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { serverAvailabilityBadge } from "./shared/server-availability";
 import { segmented } from "./ui/controls";
 import { errorState, loadingState } from "./ui/state";
 import {
@@ -37,6 +42,8 @@ export class HelpWorkspace extends LitElement {
   declare selectedTopic: string;
   declare error: string;
   private request?: AbortController;
+  private unionHelp?: CrossCatalogPresentation;
+  private unionTips?: CrossCatalogPresentation;
   private loading?: LoadingReporter;
   constructor() {
     super();
@@ -84,7 +91,26 @@ export class HelpWorkspace extends LitElement {
     this.phase = "loading";
     this.error = "";
     try {
-      const d = await fetchJson<JsonRecord>(catalogUrl("help"), { signal: controller.signal });
+      let d: JsonRecord;
+      const server = currentReleaseServer() as OfficialCatalogServer;
+      if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(server)) {
+        const catalogs = await fetchCrossServerCatalogs(["help", "help-tips"], server, this.locale, { signal: controller.signal });
+        if (Object.values(catalogs.help!.sourceAvailability).every((value) => value !== "loaded")) throw new Error("Help catalog unavailable");
+        this.unionHelp = crossCatalogPresentation(catalogs.help!);
+        this.unionTips = crossCatalogPresentation(catalogs["help-tips"]!);
+        const categories = new Map<string, JsonRecord>();
+        for (const source of [server, ...OFFICIAL_CATALOG_SERVERS.filter((value) => value !== server)])
+          for (const category of recordValues((catalogs.help!.documents[source] as JsonRecord | undefined)?.categories))
+            if (!categories.has(String(category.categoryId))) categories.set(String(category.categoryId), { ...category, subcategories: [] });
+        for (const topic of this.unionHelp.items) {
+          const category = categories.get(String(topic.helpCategoryId));
+          if (category) (category.subcategories as JsonRecord[]).push(topic);
+        }
+        d = { categories: Object.fromEntries(categories), loadingTips: Object.fromEntries(this.unionTips.items.map((tip) => [String(tip.tipId), tip])) };
+      } else {
+        this.unionHelp = undefined; this.unionTips = undefined;
+        d = await fetchJson<JsonRecord>(catalogUrl("help"), { signal: controller.signal });
+      }
       if (this.request !== controller || controller.signal.aborted) {
         progress.cancel();
         return;
@@ -244,6 +270,7 @@ export class HelpWorkspace extends LitElement {
                         >
                           <summary>
                             <span>${this.text(item.title) || "—"}</span>
+                            ${(() => { const entry = (this.mode === "tips" ? this.unionTips : this.unionHelp)?.entries.get(item); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })()}
                             <svg class="material-icon" width="20" height="20">
                               <use href="/icons.svg#expand_more"></use>
                             </svg>

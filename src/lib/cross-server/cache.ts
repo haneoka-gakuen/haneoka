@@ -1,5 +1,6 @@
 import { fetchCurrentTeamBuilderIdentity } from "../team-builder/data/fetch";
 import type { CrossCatalogIdentity, CrossCatalogResource, OfficialCatalogServer } from "./catalog";
+import { crossCatalogApi } from "./definitions";
 
 interface Pending {
   controller: AbortController;
@@ -125,10 +126,12 @@ export class CrossServerPublicCache {
     return await this.observe(key, load, signal) as CrossCatalogIdentity;
   }
 
-  private async readDocument(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id?: string, signal?: AbortSignal) {
+  private async readDocument(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id?: string, signal?: AbortSignal, ids?: readonly string[]) {
     signal?.throwIfAborted();
-    const path = `/api/v1/servers/${identity.server}/${resource}${id === undefined ? "" : `/${encodeURIComponent(id)}`}`;
-    const key = JSON.stringify([identity.server, identity.releaseId, identity.sourceId, path]);
+    const path = `/api/v1/servers/${identity.server}/${crossCatalogApi(resource)}${id === undefined ? "" : `/${encodeURIComponent(id)}`}`;
+    const query = new URLSearchParams({ release: identity.releaseId });
+    for (const value of ids || []) query.append("id", value);
+    const key = JSON.stringify([identity.server, identity.releaseId, identity.sourceId, path, ids || []]);
     const cached = this.documents.get(key);
     if (cached) {
       this.documents.delete(key);
@@ -139,7 +142,7 @@ export class CrossServerPublicCache {
     }
     return this.observe(key, async (sharedSignal) => {
       const fetcher = this.fetcher;
-      const response = await fetcher(`${path}?release=${encodeURIComponent(identity.releaseId)}`, {
+      const response = await fetcher(`${path}?${query}`, {
         // The URL pins one release, so the HTTP cache may answer it.
         signal: sharedSignal,
       });
@@ -150,13 +153,8 @@ export class CrossServerPublicCache {
       const text = await response.text();
       sharedSignal.throwIfAborted();
       const value: unknown = JSON.parse(text);
-      if (!object(value)) throw new Error("Cross-server data must be an object");
+      if (!object(value) && !(id === undefined && Array.isArray(value))) throw new Error("Cross-server data must be an object");
       if (id !== undefined && !Object.keys(value).length) throw new Error("Cross-server entity is empty");
-      if (id === undefined) {
-        const rows = resource === "events" ? value.entries : value;
-        if (!object(rows) || Object.values(rows).some((row) => !object(row)))
-          throw new Error("Cross-server collection rows malformed");
-      }
       sharedSignal.throwIfAborted();
       this.store(key, value, new TextEncoder().encode(text).byteLength);
       return value;
@@ -168,6 +166,9 @@ export class CrossServerPublicCache {
   }
   readEntity(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id: string, signal?: AbortSignal) {
     return this.readDocument(resource, identity, id, signal);
+  }
+  readEntities(resource: CrossCatalogResource, identity: CrossCatalogIdentity, ids: readonly string[], signal?: AbortSignal) {
+    return this.readDocument(resource, identity, undefined, signal, ids);
   }
 }
 

@@ -9,6 +9,11 @@
  */
 
 import { LitElement, html, nothing } from "lit";
+import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
+import { crossServerPublicCache } from "../lib/cross-server/cache";
+import { crossCatalogPresentation, pinCrossCatalogValue, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { serverAvailabilityBadge } from "./shared/server-availability";
 import { syncEntityNavigation, updateEntityHeading } from "../lib/detail-navigation";
 import { entityHref, parseResourceRoute, type ReleaseServer } from "../lib/resource-route";
 import {
@@ -62,6 +67,7 @@ export class TgwCardWorkspace extends LitElement {
   private server: ReleaseServer = "intl";
   private error = "";
   private request?: AbortController;
+  private unionTiers?: CrossCatalogPresentation;
   private loading?: LoadingReporter;
   private localeListener = () => {
     this.locale = preferredLocale(this.locale);
@@ -114,7 +120,7 @@ export class TgwCardWorkspace extends LitElement {
   }
   private entityLink(id: string) {
     return entityHref({
-      server: this.server,
+      server: this.unionTiers?.byId.get(id)?.displayServer || this.server,
       locale: this.locale as Locale,
       kind: "tgw-card",
       id,
@@ -145,6 +151,29 @@ export class TgwCardWorkspace extends LitElement {
         if (String(detail.id || "") !== this.entityId) throw new Error(uiText(this.locale, "unavailable"));
         entities = [detail as Tier];
         pointName = index.pointName;
+      } else if (OFFICIAL_CATALOG_SERVERS.includes(this.server as OfficialCatalogServer)) {
+        const dto = await fetchCrossServerCatalog("tgw-card", this.server as OfficialCatalogServer, this.locale, { signal: controller.signal });
+        if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded")) throw new Error("T.G.W catalog unavailable");
+        const presentation = crossCatalogPresentation(dto);
+        const full = new Map<string, Tier>();
+        await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
+          const identity = dto.identities[server];
+          const selected = dto.entries.filter((entry) => entry.displayServer === server);
+          if (!identity || !selected.length) return;
+          for (let offset = 0; offset < selected.length; offset += 80) {
+            const chunk = selected.slice(offset, offset + 80), ids = chunk.map((entry) => entry.perServer[server]!.id);
+            const details = await crossServerPublicCache().readEntities("tgw-card", identity, ids, controller.signal) as { items: Record<string, Tier> };
+            for (const entry of chunk) {
+              const id = entry.perServer[server]!.id, detail = details.items?.[id];
+              if (!detail || String(detail.id) !== id) throw new Error("T.G.W detail unavailable");
+              const row = pinCrossCatalogValue({ ...entry.perServer[server]!.row, ...detail }, identity) as Tier;
+              presentation.entries.set(row, entry); full.set(entry.key, row);
+            }
+          }
+        }));
+        this.unionTiers = presentation;
+        entities = dto.entries.map((entry) => full.get(entry.key)!).sort((a, b) => a.rank - b.rank);
+        pointName = ((dto.documents[this.server as OfficialCatalogServer] || Object.values(dto.documents)[0]) as JsonRecord | undefined)?.pointName;
       } else {
         const document = await fetchJson<JsonRecord>(catalogUrl("tgw-card", "", this.server), {
           signal: controller.signal,
@@ -369,7 +398,7 @@ export class TgwCardWorkspace extends LitElement {
             <img class="tgw-art__number" src=${String(tier.image || "")} alt="" decoding="async" />
           </figure>
           <div class="tgw-summary__copy">
-            <h2 class="tgw-summary__title" id=${`tgw-rank-title-${tier.rank}`}>${this.name(tier.title)}</h2>
+            <h2 class="tgw-summary__title" id=${`tgw-rank-title-${tier.rank}`}>${this.name(tier.title)}${(() => { const entry = this.unionTiers?.entries.get(tier); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })()}</h2>
             <span class="tgw-summary__tier">${this.tierLabel(kind)}</span>
             <dl class="tgw-summary__points">
               <dt>${this.text("requiredPoints", "Total points required")}</dt>

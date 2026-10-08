@@ -14,6 +14,10 @@ import { clearAppBarActions } from "../lib/app-bar";
 import { syncEntityNavigation, updateEntityHeading } from "../lib/detail-navigation";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
 import { entityHref, parseResourceRoute, type ReleaseServer } from "../lib/resource-route";
+import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
+import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { serverAvailabilityBadge } from "./shared/server-availability";
 import { segmented } from "./ui/controls";
 import { errorState, loadingState } from "./ui/state";
 import {
@@ -151,12 +155,13 @@ export class MissionWorkspace extends LitElement {
   }
   private entityLink(id: string) {
     return entityHref({
-      server: this.server,
+      server: this.unionMissions?.byId.get(id)?.displayServer || this.server,
       locale: this.locale as Locale,
       kind: "missions",
       id,
     });
   }
+  private unionMissions?: CrossCatalogPresentation;
   private syncEntityHeading() {
     if (!this.entityId || !this.missions[0]) return;
     const title = this.name(this.missions[0].title) || this.entityId;
@@ -173,9 +178,16 @@ export class MissionWorkspace extends LitElement {
     this.phase = "loading";
     this.error = "";
     try {
-      const document = this.entityId
-        ? await fetchJson<JsonRecord>(catalogUrl("missions", this.entityId, this.server), { signal: controller.signal })
-        : await fetchJson<JsonRecord>(catalogUrl("missions", "", this.server), { signal: controller.signal });
+      let document: JsonRecord;
+      if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(this.server as OfficialCatalogServer)) {
+        const dto = await fetchCrossServerCatalog("missions", this.server as OfficialCatalogServer, this.locale, { signal: controller.signal });
+        if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded")) throw new Error("Mission catalog unavailable");
+        this.unionMissions = crossCatalogPresentation(dto);
+        document = { entries: Object.fromEntries(this.unionMissions.items.map((mission) => [String(mission.id), mission])) };
+      } else {
+        this.unionMissions = undefined;
+        document = await fetchJson<JsonRecord>(catalogUrl("missions", this.entityId, this.server), { signal: controller.signal });
+      }
       if (this.request !== controller || controller.signal.aborted) {
         progress.cancel();
         return;
@@ -374,6 +386,7 @@ export class MissionWorkspace extends LitElement {
               <li class="mission-row">
                 <a class="mission-row__condition" href=${this.entityLink(mission.id)}>
                   ${this.name(mission.title) || "—"}
+                  ${(() => { const entry = this.unionMissions?.byId.get(mission.id); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })()}
                 </a>
                 <span class="mission-row__rewards">
                   ${(Array.isArray(mission.rewards) ? mission.rewards : []).map((reward) =>

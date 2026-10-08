@@ -21,6 +21,20 @@ import {
 import { searchableCatalogPages } from "./searchable-catalog";
 import { searchableStoryPages } from "./searchable-stories";
 import { RELEASE_SERVERS, type ReleaseServer } from "./resource-route";
+import { PUBLIC_RELEASE_SERVERS } from "./temporary-public-routing";
+
+let previewPageServers: Promise<ReleaseServer[]> | undefined;
+
+/** Preview routes exist after an immutable preview release is available. Settings stays formal-only. */
+export async function staticCatalogPageServers(configuredOnly = false): Promise<ReleaseServer[]> {
+  if (!previewPageServers) previewPageServers = staticCatalogRelease("intl-test")
+    .then(() => ["intl-test"] as ReleaseServer[])
+    .catch(() => []);
+  const formal = configuredOnly
+    ? staticResourceServers().filter((server) => server === "jp" || server === "intl")
+    : [...PUBLIC_RELEASE_SERVERS];
+  return [...formal, ...await previewPageServers];
+}
 
 export const ENTITY_PAYLOAD_SCHEMA = "haneoka-entity-payload-v1";
 

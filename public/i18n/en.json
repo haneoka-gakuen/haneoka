@@ -2686,6 +2686,8 @@
   "initial": "Initial",
   "catalogJapanOnly": "Japan only",
   "catalogInternationalOnly": "International only",
+  "catalogTestOnly": "Test only",
+  "catalogTestServer": "Test environment",
   "catalogViewingServerData": "Viewing {server} data.",
   "rankUpItem": "Rank-up material",
   "notes": "Notes",

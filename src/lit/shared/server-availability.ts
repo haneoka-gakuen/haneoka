@@ -1,9 +1,12 @@
 import { html, nothing } from "lit";
 import { clientText } from "../../i18n/client";
 import bushimo from "../../assets/icons/bushimo-circle.svg?url";
+import testMark from "../../assets/icons/test-circle.svg?url";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
+import { exclusiveCatalogServer } from "../../lib/cross-server/availability";
+import type { CrossCatalogEntry } from "../../lib/cross-server/catalog";
 
-export type FormalCatalogServer = "jp" | "intl";
+export type FormalCatalogServer = "jp" | "intl" | "intl-test";
 
 // Use the same publisher marks as the release selector in SettingsDocument.
 const bilibiliBody = bilibiliSvg
@@ -13,13 +16,11 @@ const bilibiliBody = bilibiliSvg
 const bilibili = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="256" fill="#00a1d6"/><g fill="#fff" transform="translate(76 76) scale(15)">${bilibiliBody}</g></svg>`)}`;
 
 export function exclusiveServer(availability: readonly FormalCatalogServer[]): FormalCatalogServer | undefined {
-  return availability.length === 1 && (availability[0] === "jp" || availability[0] === "intl")
-    ? availability[0]
-    : undefined;
+  return exclusiveCatalogServer(availability);
 }
 
 export function serverAvailabilityImage(server: FormalCatalogServer): string {
-  return server === "jp" ? bushimo : bilibili;
+  return server === "intl-test" ? testMark : server === "jp" ? bushimo : bilibili;
 }
 
 export function serverAvailabilityLabel(availability: readonly FormalCatalogServer[], locale: string): string {
@@ -28,7 +29,14 @@ export function serverAvailabilityLabel(availability: readonly FormalCatalogServ
     ? clientText(locale, "catalogJapanOnly", "Japan only")
     : server === "intl"
       ? clientText(locale, "catalogInternationalOnly", "International only")
-      : "";
+      : server === "intl-test"
+        ? clientText(locale, "catalogTestOnly", "Test only")
+        : "";
+}
+
+export function catalogServerMark(entry: Pick<CrossCatalogEntry, "exclusive"> | undefined, locale: string) {
+  if (!entry?.exclusive) return undefined;
+  return { image: serverAvailabilityImage(entry.exclusive), label: serverAvailabilityLabel([entry.exclusive], locale) };
 }
 
 /** Both-server entries reserve no badge; exclusivity uses the existing server emblem. */

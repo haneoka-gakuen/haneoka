@@ -17,6 +17,10 @@ import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 import { entityHref, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
+import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
+import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { catalogServerMark, serverAvailabilityBadge } from "./shared/server-availability";
 import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -98,6 +102,7 @@ export class SpineWorkspace extends LitElement {
   private lazyImages = new LazyImages();
   private generation = 0;
   private catalogRequest?: AbortController;
+  private unionModels?: CrossCatalogPresentation;
   private selectionRequest?: AbortController;
   private initializationTimer?: number;
   private ssrStageRemoved = false;
@@ -240,6 +245,17 @@ export class SpineWorkspace extends LitElement {
     // the SpineStage lifecycle.
     if (this.selected && this.modelPhase !== "ready") void this.select(this.selected, false);
     try {
+      const server = readReleaseServer();
+      if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(server as OfficialCatalogServer)) {
+        const catalog = await fetchCrossServerCatalog("spine", server as OfficialCatalogServer, this.locale, { signal: controller.signal });
+        if (!this.isConnected || controller.signal.aborted || this.catalogRequest !== controller) return;
+        if (Object.values(catalog.sourceAvailability).every((value) => value !== "loaded")) throw new Error("Spine catalog unavailable");
+        this.unionModels = crossCatalogPresentation(catalog);
+        this.models = this.unionModels.items;
+        this.phase = "ready";
+        return;
+      }
+      this.unionModels = undefined;
       const data = await fetchJson<Value>(this.url(), { signal: controller.signal });
       if (!this.isConnected || controller.signal.aborted || this.catalogRequest !== controller) return;
       this.models = Object.values((data.models as Record<string, Value>) || {});
@@ -269,7 +285,7 @@ export class SpineWorkspace extends LitElement {
     if (updateUrl && id !== this.entityId) {
       openDetailLocation(
         entityHref({
-          server: readReleaseServer(),
+          server: this.unionModels?.byId.get(id)?.displayServer || readReleaseServer(),
           locale: preferredLocale(this.locale) as Locale,
           kind: "spine",
           id,
@@ -737,6 +753,7 @@ export class SpineWorkspace extends LitElement {
       image: this.preview(model),
       placeholder: icon("animation", 32),
       fit: "contain",
+      serverMark: catalogServerMark(this.unionModels?.entries.get(model), this.locale),
       onOpen: () => this.select(String(model.id)),
     });
   }
@@ -747,6 +764,7 @@ export class SpineWorkspace extends LitElement {
         title: this.modelTitle(model),
         subtitle: this.familyName(model.family || model.spineVersion || "Spine"),
         image: this.preview(model),
+        trailing: (() => { const entry = this.unionModels?.entries.get(model); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })(),
         onOpen: () => this.select(String(model.id)),
       })),
     );
@@ -772,6 +790,7 @@ export class SpineWorkspace extends LitElement {
             }
             <span class="table-entity__copy">
               <strong>${this.modelTitle(model)}</strong>
+              ${(() => { const entry = this.unionModels?.entries.get(model); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })()}
               <small>${this.familyName(model.family)}</small>
             </span>
           </button>

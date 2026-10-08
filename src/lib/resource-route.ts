@@ -1,6 +1,6 @@
 import { isLocale, type Locale } from "@haneoka/i18n";
 
-export const RELEASE_SERVERS = ["jp", "intl", "jp-cbt", "intl-cbt"] as const;
+export const RELEASE_SERVERS = ["jp", "intl", "intl-test", "jp-cbt", "intl-cbt"] as const;
 export type ReleaseServer = (typeof RELEASE_SERVERS)[number];
 export const isReleaseServer = (value: unknown): value is ReleaseServer =>
   typeof value === "string" && RELEASE_SERVERS.includes(value as ReleaseServer);

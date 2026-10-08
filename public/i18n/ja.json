@@ -2686,6 +2686,8 @@
   "initial": "初期値",
   "catalogJapanOnly": "日本版のみ",
   "catalogInternationalOnly": "グローバル版のみ",
+  "catalogTestOnly": "テスト環境のみ",
+  "catalogTestServer": "テスト環境",
   "catalogViewingServerData": "{server}のデータを表示しています",
   "rankUpItem": "ランクアップ素材",
   "notes": "ノーツ数",

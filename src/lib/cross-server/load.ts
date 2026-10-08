@@ -2,6 +2,7 @@ import {
   mergeCrossServerCatalog, OFFICIAL_CATALOG_SERVERS,
   type CrossCatalogResource, type CrossCatalogIdentity, type CrossCatalogRow, type CrossCatalogSnapshot, type OfficialCatalogServer,
 } from "./catalog";
+import { crossCatalogRows, type CrossCatalogDocument } from "./definitions";
 
 export interface CrossCatalogReader {
   readIdentity(server: OfficialCatalogServer): Promise<CrossCatalogIdentity>;
@@ -9,22 +10,16 @@ export interface CrossCatalogReader {
   readEntity?(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id: string): Promise<unknown>;
 }
 const object = (value: unknown): value is CrossCatalogRow => !!value && typeof value === "object" && !Array.isArray(value);
-function collection(resource: CrossCatalogResource, value: unknown): Record<string, CrossCatalogRow> {
-  if (!object(value)) throw new Error("Cross-server collection must be an object");
-  const rows = resource === "events" ? value.entries : value;
-  if (!object(rows) || Object.values(rows).some((row) => !object(row))) throw new Error("Cross-server collection rows malformed");
-  return rows as Record<string, CrossCatalogRow>;
-}
 
 /** Each server is observed once, then all required collections use that immutable pin. */
 export async function loadCrossServerCatalog(
   resource: CrossCatalogResource,
-  options: { selectedServer: OfficialCatalogServer; locale: string; reader: CrossCatalogReader },
+  options: { selectedServer: OfficialCatalogServer; locale: string; reader: CrossCatalogReader; withDependencies?: boolean },
 ) {
   const dependencies: CrossCatalogResource[] = resource === "cards" || resource === "support-cards" || resource === "characters"
     ? ["bands", "characters", resource]
     : resource === "songs" ? ["bands", "characters", "songs"] : resource === "events" ? ["bands", "characters", "events"] : [resource];
-  const resources = [...new Set(dependencies)];
+  const resources = options.withDependencies === false ? [resource] : [...new Set(dependencies)];
   const failures: { server: OfficialCatalogServer; resource: CrossCatalogResource | "identity"; message: string }[] = [];
   const sources: CrossCatalogSnapshot[] = [];
   await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
@@ -36,7 +31,7 @@ export async function loadCrossServerCatalog(
       failures.push({ server, resource: "identity", message: error instanceof Error ? error.message : String(error) });
       return;
     }
-    const snapshot: CrossCatalogSnapshot = { identity, collections: {} };
+    const snapshot: CrossCatalogSnapshot = { identity, collections: {}, documents: {} };
     // Every collection is pinned to the same identity: request them together
     // instead of one round trip after another, then record results in order.
     const reads = resources.map((name) => options.reader.readCollection(name, identity).then(
@@ -47,7 +42,8 @@ export async function loadCrossServerCatalog(
       const read = await reads[index]!;
       try {
         if (!read.ok) throw read.error;
-        snapshot.collections[name] = collection(name, read.value);
+        snapshot.collections[name] = crossCatalogRows(name, read.value);
+        snapshot.documents![name] = read.value as CrossCatalogDocument;
       } catch (error) { failures.push({ server, resource: name, message: error instanceof Error ? error.message : String(error) }); }
     }
     if (resource === "events" && snapshot.collections.events && options.reader.readEntity) {

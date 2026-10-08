@@ -2171,3 +2171,8 @@ VALUES('20000000-0000-4000-8000-000000000014','entity-comments',NULL,
   '{"ja":"各項目についてのコメント。","en":"Comments about catalogue entries.","zh-TW":"討論各項目內容。","zh-CN":"讨论各项目内容。","ko":"각 항목에 대한 이야기입니다."}',
   'comment',140,1,'public','verified','verified','admin',NULL,1,0,0);
 INSERT INTO community_forum_purpose VALUES('entity-comments','20000000-0000-4000-8000-000000000014',0);
+
+INSERT INTO resource_server
+  (slug, display_name, region, status, resource_prefix, version,
+   created_at, updated_at, created_by, updated_by)
+VALUES ('intl-test', 'Intl Test', 'global', 'active', 'servers/intl-test', 1, 0, 0, NULL, NULL);

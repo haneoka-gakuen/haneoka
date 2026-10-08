@@ -5,7 +5,7 @@ import {
   type CrossCatalogIdentity, type OfficialCatalogServer,
 } from "./catalog";
 
-const HOME_FIELDS: Record<Exclude<CrossCatalogResource, "events">, string[]> = {
+const HOME_FIELDS = {
   cards: ["cardId", "assetId", "prefix", "characterId", "cardType", "rarity", "releasedAt"],
   "support-cards": ["supportCardId", "assetId", "prefix", "cardName", "characterId", "characterIds", "cardType", "rarity", "releasedAt"],
   songs: ["musicId", "musicTitle", "bandId", "bandIds", "bandName", "artistId", "artistName", "musicType", "publishedAt", "jacketUrl", "jacketThumbUrl",
@@ -13,8 +13,9 @@ const HOME_FIELDS: Record<Exclude<CrossCatalogResource, "events">, string[]> = {
   characters: ["characterId", "characterName", "englishName", "nickname", "bandId", "bandPart", "colorCode", "birthday", "slug",
     "faceImage", "thumbnailImage", "profileImage", "voiceActor", "description"],
   bands: ["bandId", "bandName", "description", "logo", "icon", "color", "colorCode"],
-};
-function compact(row: CrossCatalogRow, resource: Exclude<CrossCatalogResource, "events">): CrossCatalogRow {
+} satisfies Partial<Record<CrossCatalogResource, string[]>>;
+type HomeResource = keyof typeof HOME_FIELDS;
+function compact(row: CrossCatalogRow, resource: HomeResource): CrossCatalogRow {
   const keys = HOME_FIELDS[resource], result = Object.fromEntries(Object.entries(row).filter(([key]) => keys.includes(key)));
   const images = row.images as CrossCatalogRow | undefined;
   if (images?.thumbnail !== undefined) result.images = { thumbnail: images.thumbnail };
@@ -22,8 +23,8 @@ function compact(row: CrossCatalogRow, resource: Exclude<CrossCatalogResource, "
 }
 /** Association happens on full source evidence first; compacting must never weaken the matcher. */
 export function compactCrossServerHomeCatalog(dto: CrossCatalogDTO): CrossCatalogDTO {
-  if (dto.resource === "events") throw new Error("Event home content uses its own edition projection");
-  const output = structuredClone(dto), resource = dto.resource;
+  if (!Object.hasOwn(HOME_FIELDS, dto.resource)) throw new Error("Resource has no compact home projection");
+  const output = structuredClone({ ...dto, documents: {} }), resource = dto.resource as HomeResource;
   for (const entry of output.entries) {
     for (const variant of Object.values(entry.perServer)) if (variant) {
       variant.row = compact(variant.row, resource);

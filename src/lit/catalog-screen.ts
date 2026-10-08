@@ -16,6 +16,8 @@ import {
   type OfficialCatalogServer,
 } from "../lib/cross-server/catalog";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
+import { isCrossCatalogResource } from "../lib/cross-server/definitions";
+import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { fetchCrossServerDetail } from "../lib/cross-server/detail";
 import { specList } from "./ui/spec";
 import {
@@ -628,13 +630,22 @@ export class CatalogScreen extends LitElement {
   private unionBands: Partial<Record<OfficialCatalogServer, Map<number, Item>>> = {};
   private unionFacetKeys = { character: new Map<string, string>(), collectionBand: new Map<string, string>() };
   private unionMarks: Partial<Record<OfficialCatalogServer, Map<string, string>>> = {};
+  private unionSongMeta = new Map<string, Item>();
+  private unionSongMetaReads = new Map<string, Promise<void>>();
+  private itemSongMeta(item: Item): Item | undefined {
+    const entry = this.unionEntry(item), identity = entry?.perServer[entry.displayServer]?.identity;
+    if (identity && identity.server !== this.dataServer())
+      return this.unionSongMeta.get(JSON.stringify(identity));
+    return this.songMetaCompatible() ? this.songMeta : undefined;
+  }
   private unionDetail?: Awaited<ReturnType<typeof fetchCrossServerDetail>> & { exclusive?: OfficialCatalogServer | null };
   private unionRequests = new RequestScope();
   private unionResource(): CrossCatalogResource | undefined {
+    const resource = this.profile.collection || this.settings.resource;
     return this.settings.origin !== "bestdori" &&
-      ["jp", "intl"].includes(this.dataServer()) &&
-      ["cards", "support-cards", "songs", "events", "characters"].includes(this.settings.resource)
-      ? (this.settings.resource as CrossCatalogResource)
+      ["jp", "intl", "intl-test"].includes(this.dataServer()) &&
+      isCrossCatalogResource(resource)
+      ? resource
       : undefined;
   }
   private unionEntry(item: Item) {
@@ -785,7 +796,7 @@ export class CatalogScreen extends LitElement {
     return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer()]);
   }
   private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
-    return JSON.stringify([scopeKey, ...(["jp", "intl"] as const).map((server) => {
+    return JSON.stringify([scopeKey, ...(["jp", "intl", "intl-test"] as const).map((server) => {
       const pin = dto.identities[server];
       return [server, pin?.releaseId || "", pin?.sourceId || "", dto.sourceAvailability[server]];
     })]);
@@ -797,6 +808,7 @@ export class CatalogScreen extends LitElement {
     this.unionCharacters = snapshot.characters;
     this.unionBands = snapshot.bands;
     this.unionMarks = snapshot.marks;
+    this.catalogDocument = (snapshot.dto.documents[this.dataServer() as OfficialCatalogServer] || {}) as Item;
     // These controller maps are cleared by detail preparation; never alias cached mutable maps.
     this.unionFacetKeys = { character: new Map(snapshot.facetKeys.character), collectionBand: new Map(snapshot.facetKeys.collectionBand) };
     this.items = snapshot.items;
@@ -806,8 +818,7 @@ export class CatalogScreen extends LitElement {
     this.bands = [...(snapshot.bands[server]?.values() || [])];
     if (this.settings.resource === "characters") {
       const bandIds = new Set(this.bands.map((band) => Number(band.bandId)));
-      const peer = server === "jp" ? "intl" : "jp";
-      for (const band of snapshot.bands[peer]?.values() || []) {
+      for (const peer of ["jp", "intl", "intl-test"] as const) for (const band of snapshot.bands[peer]?.values() || []) {
         if (bandIds.has(Number(band.bandId))) continue;
         this.bands.push(band);
         bandIds.add(Number(band.bandId));
@@ -842,7 +853,7 @@ export class CatalogScreen extends LitElement {
       const catalogs = await fetchCrossServerCatalogs([resource, "characters", "bands"], selectedServer, this.settings.locale, { signal, revalidate: !!cached });
       if (!current()) return;
       const dto = catalogs[resource];
-      if (!dto || (["jp", "intl"] as const).every((server) => dto.sourceAvailability[server] !== "loaded"))
+      if (!dto || (["jp", "intl", "intl-test"] as const).every((server) => dto.sourceAvailability[server] !== "loaded"))
         throw new Error("Cross-server catalogue unavailable");
       const sourceKey = this.unionPresentationSourceKey(dto, scopeKey);
       const samePin = unionPresentations.get(sourceKey);
@@ -854,7 +865,7 @@ export class CatalogScreen extends LitElement {
       const facetKeys = { character: new Map<string, string>(), collectionBand: new Map<string, string>() };
       this.indexUnionFacets(catalogs.characters, catalogs.bands, dto, facetKeys);
       // Both servers' marks are independent: start them together.
-      const markReads = new Map((["jp", "intl"] as const).map((server) => {
+      const markReads = new Map((["jp", "intl", "intl-test"] as const).map((server) => {
         const identity = dto.identities[server];
         if (!identity || unionPresentationMarks.has(JSON.stringify([server, identity.releaseId, identity.sourceId])))
           return [server, null] as const;
@@ -862,7 +873,7 @@ export class CatalogScreen extends LitElement {
         read.catch(() => undefined);
         return [server, read] as const;
       }));
-      for (const server of ["jp", "intl"] as const) {
+      for (const server of ["jp", "intl", "intl-test"] as const) {
         const identity = dto.identities[server];
         if (!identity) continue;
         const ownCharacters = new Map<number, Item>(), ownBands = new Map<number, Item>();
@@ -922,7 +933,9 @@ export class CatalogScreen extends LitElement {
     catch { return nothing; }
     if ((preference !== "jp" && preference !== "intl") || detail.perServer[preference] || detail.exclusive === preference)
       return nothing;
-    const server = this.label(detail.activeServer === "jp" ? "settingsJapan" : "settingsGlobal", detail.activeServer);
+    const server = detail.activeServer === "intl-test"
+      ? this.label("catalogTestServer", "Test environment")
+      : this.label(detail.activeServer === "jp" ? "settingsJapan" : "settingsGlobal", detail.activeServer);
     return html`<p class="detail-copy">${clientText(this.settings.locale, "catalogViewingServerData", "Viewing {server} data.", { server })}</p>`;
   }
   private async ensureUnionDetail(payload: EntityPayload): Promise<void> {
@@ -2304,9 +2317,9 @@ export class CatalogScreen extends LitElement {
     return this.localized(skill?.skillName) || this.displayValue(skill?.id) || "";
   }
   private songMetaValue(item: Item, key: string) {
-    if (this.itemSourceServer(item) !== this.dataServer()) return Number.NaN;
-    if (!this.songMetaCompatible()) return Number.NaN;
-    const song = this.songMeta[String(item.musicId || "")] as Item | undefined;
+    const metadata = this.itemSongMeta(item);
+    if (!metadata) return Number.NaN;
+    const song = metadata[String(item.musicId || "")] as Item | undefined;
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
     const index = this.profile.perDifficulty
       ? Math.max(0, Number(item.__difficultyIndex ?? 0))
@@ -2331,6 +2344,7 @@ export class CatalogScreen extends LitElement {
         );
     }
     if (this.settings.resource === "song-meta" && this.metaTier !== "theory") {
+      if (this.itemSourceServer(item) !== this.dataServer()) return Number.NaN;
       const profile =
         (chart.profiles as Record<string, Item> | undefined)?.[
           this.metaTier === "band" ? `band:${this.metaBand}` : "current"
@@ -2419,6 +2433,19 @@ export class CatalogScreen extends LitElement {
       !["time", "score", "eff", "bpm", "n", "nps", "sr"].includes(this.sort)
     )
       return;
+    for (const server of ["jp", "intl", "intl-test"] as const) {
+      const identity = this.unionCatalog?.identities[server];
+      if (!identity || server === this.dataServer()) continue;
+      const key = JSON.stringify(identity);
+      if (this.unionSongMetaReads.has(key)) continue;
+      const read = crossServerPublicCache().readCollection("song-meta", identity).then((value) => {
+        this.unionSongMeta.set(key, value as Item);
+        while (this.unionSongMeta.size > 12) this.unionSongMeta.delete(this.unionSongMeta.keys().next().value!);
+        this.expandedCache = undefined; this.resultCache = undefined; this.requestUpdate();
+      }, () => { this.unionSongMetaReads.delete(key); });
+      this.unionSongMetaReads.set(key, read);
+      while (this.unionSongMetaReads.size > 12) this.unionSongMetaReads.delete(this.unionSongMetaReads.keys().next().value!);
+    }
     this.songMetaProvision ??= fetch(this.songMetaUrl(), { headers: { accept: "application/json" } }).then(
       async (response) => {
         await this.readSongMeta(response);

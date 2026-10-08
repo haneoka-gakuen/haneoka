@@ -26,6 +26,11 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
 import { releaseServerPath, writeReleaseServer } from "../lib/release-server";
 import { OutfitStage } from "./runtime/outfit-stage";
+import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
+import { crossCatalogDocuments, type CrossCatalogDocuments } from "../lib/cross-server/documents";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { isCrossCatalogResource } from "../lib/cross-server/definitions";
+import { catalogServerMark } from "./shared/server-availability";
 type Value = Record<string, unknown>;
 const read = readPath;
 const values = recordValues;
@@ -104,6 +109,8 @@ export class AnonTokyoWorkspace extends LitElement {
   declare error: string;
   declare outfitError: string;
   private bands: Value[] = [];
+  private unionDocument?: CrossCatalogDocuments;
+  private loadRequest?: AbortController;
   private referenceData?: Value;
   private outfitStage?: OutfitStage;
   private outfitRecipeKey = "";
@@ -146,6 +153,7 @@ export class AnonTokyoWorkspace extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    this.loadRequest?.abort();
     clearBrowseBar();
     this.releaseLocation?.();
     this.paneFocus.detach();
@@ -195,11 +203,20 @@ export class AnonTokyoWorkspace extends LitElement {
     }
   }
   private openItem(item: Value) {
+    if (this.openForeignItem(item, "item")) return;
     void this.loadReferenceData();
     this.selectedItem = String(item.id);
     const params = new URLSearchParams(location.search);
     params.set("item", this.selectedItem);
     openDetailLocation(`${location.pathname}?${params}`);
+  }
+  private openForeignItem(item: Value, parameter: "item" | "character"): boolean {
+    const source = this.unionDocument?.entries.get(item) || this.unionDocument?.byId.get(String(item.id));
+    if (!source || source.identity.server === this.server()) return false;
+    const params = new URLSearchParams(location.search);
+    params.set(parameter, String(item.id));
+    openDetailLocation(`${releaseServerPath(location.pathname, source.identity.server)}?${params}`);
+    return true;
   }
   private closeItem() {
     const params = new URLSearchParams(location.search);
@@ -243,10 +260,25 @@ export class AnonTokyoWorkspace extends LitElement {
     return currentReleaseServer();
   }
   private async load() {
+    this.loadRequest?.abort();
+    const controller = new AbortController(); this.loadRequest = controller;
     this.phase = "loading";
     this.error = "";
     this.referenceData = undefined;
     try {
+      const resource = `anon-tokyo/${this.mode}`, server = this.server() as OfficialCatalogServer;
+      const union = OFFICIAL_CATALOG_SERVERS.includes(server) && isCrossCatalogResource(resource);
+      if (union) {
+        const dto = await fetchCrossServerCatalog(resource, server, this.locale, { signal: controller.signal });
+        if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded")) throw new Error("ANON TOKYO catalog unavailable");
+        const documents = crossCatalogDocuments(dto);
+        // Feature metadata follows a source that actually contains this family.
+        const active = dto.entries[0]?.displayServer;
+        if (active && documents.document.available === false)
+          Object.assign(documents.document, { available: true, reason: "", localization: (dto.documents[active] as Value)?.localization });
+        this.unionDocument = documents; this.document = documents.document;
+      } else {
+      this.unionDocument = undefined;
       const base = catalogUrl("anon-tokyo", "", this.server());
       const requestedByMode: Record<string, string[]> = {
         outfits: ["characters", "reloading", "render-recipes", "spine-parts"],
@@ -298,6 +330,8 @@ export class AnonTokyoWorkspace extends LitElement {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         this.document = (await response.json()) as Value;
       }
+      }
+      if (!this.isConnected || controller.signal.aborted || this.loadRequest !== controller) return;
       if (this.mode === "tasks") await this.loadReferenceData();
       this.phase = "ready";
       if (this.selectedItem && this.mode !== "outfits") void this.loadReferenceData();
@@ -366,7 +400,11 @@ export class AnonTokyoWorkspace extends LitElement {
   private collection(): Value[] {
     return (MODE_GROUPS[this.mode] || [])
       .flatMap(([path, entityGroup]) =>
-        values(read(this.document, path)).map((item): Value => ({ ...item, entityGroup })),
+        values(read(this.document, path)).map((item): Value => {
+          const row = { ...item, entityGroup }, entry = this.unionDocument?.entries.get(item);
+          if (entry) this.unionDocument!.entries.set(row, entry);
+          return row;
+        }),
       )
       .sort(
         (a, b) =>
@@ -485,7 +523,7 @@ export class AnonTokyoWorkspace extends LitElement {
       this.view === "grid"
         ? html`
             <div class="collection collection--anon">
-              ${shown.map((item) => tile({ kind: "anon", title: title(item), subtitle: this.subtitle(item), label: this.entityTitle(item), image: this.media(item), fit: "contain", onOpen: () => this.openItem(item), onImageError: nextImageCandidate, placeholder: icon(this.mode === "fever" ? "music_note" : this.mode === "characters" ? "person" : "inventory_2", 32) }))}
+              ${shown.map((item) => tile({ kind: "anon", title: title(item), subtitle: this.subtitle(item), label: this.entityTitle(item), image: this.media(item), fit: "contain", serverMark: catalogServerMark(this.unionDocument?.entries.get(item), this.locale), onOpen: () => this.openItem(item), onImageError: nextImageCandidate, placeholder: icon(this.mode === "fever" ? "music_note" : this.mode === "characters" ? "person" : "inventory_2", 32) }))}
             </div>
           `
         : this.view === "list"
@@ -655,6 +693,8 @@ export class AnonTokyoWorkspace extends LitElement {
     });
   }
   private selectCharacter(id: string) {
+    const character = values(this.document?.characters).find((row) => String(row.id) === id);
+    if (character && this.openForeignItem(character, "character")) return;
     this.selectedCharacter = id;
     this.selectedItem = "";
     this.outfitSelections = {};
@@ -754,6 +794,7 @@ export class AnonTokyoWorkspace extends LitElement {
                 selected: selectedId === item.id,
                 kind: "outfit",
                 onOpen: () => {
+                  if (this.openForeignItem(item, "item")) return;
                   const value = item.id === selectedId ? "" : String(item.id);
                   const next = { ...this.outfitSelections, [this.tab]: value };
                   if (value && this.tab === 5) {

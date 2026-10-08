@@ -16,6 +16,10 @@ import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 import { entityHref, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
+import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
+import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { catalogServerMark, serverAvailabilityBadge } from "./shared/server-availability";
 import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { viewerBufferSize } from "./runtime/viewer-resolution";
@@ -180,6 +184,7 @@ export class Live2DWorkspace extends LitElement {
   declare lookX: number;
   declare lookY: number;
   private characters: Value[] = [];
+  private unionModels?: CrossCatalogPresentation;
   private bands: Value[] = [];
   private viewer?: Viewer;
   private resizeObserver?: ResizeObserver;
@@ -455,6 +460,20 @@ export class Live2DWorkspace extends LitElement {
     // parallel without creating a second viewer instance.
     if (this.selected && this.modelPhase !== "ready") void this.select(this.selected, false);
     try {
+      const server = readReleaseServer();
+      if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(server as OfficialCatalogServer)) {
+        const catalogs = await fetchCrossServerCatalogs(["live2d", "characters", "bands"], server as OfficialCatalogServer, this.locale, { signal: controller.signal });
+        if (controller.signal.aborted || this.catalogAbortController !== controller || !this.isConnected) return;
+        if (Object.values(catalogs.live2d?.sourceAvailability || {}).every((value) => value !== "loaded"))
+          throw new Error("Live2D catalog unavailable");
+        this.unionModels = crossCatalogPresentation(catalogs.live2d!);
+        this.models = this.unionModels.items;
+        this.characters = crossCatalogPresentation(catalogs.characters!).items;
+        this.bands = crossCatalogPresentation(catalogs.bands!).items;
+        this.phase = "ready";
+        return;
+      }
+      this.unionModels = undefined;
       const [value, characters, bands] = await Promise.all([
         fetchJson<Record<string, Value>>(this.url(), { signal: controller.signal }),
         fetchJson<Record<string, Value>>(catalogUrl("characters"), { signal: controller.signal }),
@@ -479,7 +498,7 @@ export class Live2DWorkspace extends LitElement {
     if (updateUrl && key !== this.entityId) {
       openDetailLocation(
         entityHref({
-          server: readReleaseServer(),
+          server: this.unionModels?.byId.get(key)?.displayServer || readReleaseServer(),
           locale: preferredLocale(this.locale) as Locale,
           kind: "live2d",
           id: key,
@@ -1495,7 +1514,7 @@ export class Live2DWorkspace extends LitElement {
   private renderModelGrid(models: Value[]) {
     return html`
       <div class="collection collection--model">
-        ${models.map((model) => modelTile({ model, character: this.character(Number(model.characterId || 0)), locale: this.locale, onOpen: () => this.select(this.key(model)) }))}
+        ${models.map((model) => modelTile({ model, character: this.character(Number(model.characterId || 0)), locale: this.locale, serverMark: catalogServerMark(this.unionModels?.entries.get(model), this.locale), onOpen: () => this.select(this.key(model)) }))}
       </div>
     `;
   }
@@ -1506,6 +1525,7 @@ export class Live2DWorkspace extends LitElement {
         title: this.modelTitle(model),
         subtitle: this.characterName(model),
         image: this.preview(model),
+        trailing: (() => { const entry = this.unionModels?.entries.get(model); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })(),
         onOpen: () => this.select(this.key(model)),
       })),
     );
@@ -1531,6 +1551,7 @@ export class Live2DWorkspace extends LitElement {
             }
             <span class="table-entity__copy">
               <strong>${this.modelTitle(model)}</strong>
+              ${(() => { const entry = this.unionModels?.entries.get(model); return entry?.exclusive ? serverAvailabilityBadge([entry.exclusive], this.locale) : nothing; })()}
               <small>${this.characterName(model)}</small>
             </span>
           </button>

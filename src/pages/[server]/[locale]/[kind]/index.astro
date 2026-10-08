@@ -7,6 +7,7 @@ import StoryDocument from "../../../../components/StoryDocument.astro";
 import { findRoute, titleOf } from "../../../../config/routes";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-server";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 import { isStoryMode, RESOURCE_KINDS, type ResourceKind, type StoryMode } from "../../../../lib/resource-route";
 
 const CATALOG_ROUTES: Readonly<Partial<Record<ResourceKind, string>>> = {
@@ -33,8 +34,8 @@ const CATALOG_ROUTES: Readonly<Partial<Record<ResourceKind, string>>> = {
   missions: "/catalog/missions",
 };
 
-export function getStaticPaths() {
-  return RELEASE_SERVERS.flatMap((server) =>
+export async function getStaticPaths() {
+  return (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
       RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge")
         .map((kind) => ({ params: { server, locale, kind } })),

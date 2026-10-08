@@ -26,6 +26,7 @@ export function modelTile(options: {
   locale: string;
   href?: string;
   onOpen?: () => void;
+  serverMark?: { image: string; label: string };
 }) {
   const { model, character, locale } = options;
   const title = modelTitle(model, locale);
@@ -52,6 +53,7 @@ export function modelTile(options: {
     natural: false,
     fit: "cover",
     href: options.href,
+    serverMark: options.serverMark,
     onOpen: options.onOpen,
     onImageError: nextImageCandidate,
   });

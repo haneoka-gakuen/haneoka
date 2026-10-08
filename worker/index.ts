@@ -608,7 +608,7 @@ async function activeResourceServers(env: Env): Promise<readonly ResourceServerR
 function releaseRegistryCacheRequest(request: Request): Request {
   const url = new URL(request.url);
   url.pathname = "/api/v1/releases";
-  url.search = "";
+  url.search = "?scope=formal-v2";
   return new Request(url, request);
 }
 
@@ -627,7 +627,7 @@ async function handleReleaseRegistryApi(
       const result = await env.DB.prepare(
         `SELECT slug, display_name AS displayName, region
          FROM resource_server
-         WHERE status = 'active'
+         WHERE status = 'active' AND slug IN ('jp', 'intl')
          ORDER BY region, display_name COLLATE NOCASE, slug`,
       ).all<ReleaseRegistryRow>();
       const releases = result.results.map((row) => {

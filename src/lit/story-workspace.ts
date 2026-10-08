@@ -62,6 +62,10 @@ import {
   returnStateFromLocation,
 } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
+import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
+import { crossCatalogPresentation, pinCrossCatalogValue, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { catalogServerMark } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
@@ -178,6 +182,8 @@ export class StoryWorkspace extends LitElement {
   declare limit: number;
   private detailRequests = new RequestScope();
   private catalogRequests = new RequestScope();
+  private unionStories?: CrossCatalogPresentation;
+  private unionChapters = new Map<OfficialCatalogServer, Map<string, JsonRecord>>();
   private readonly appBarOwner = `story-workspace-${++storyWorkspaceOwnerId}`;
   private pageServer = "";
   private appBarRegistered = false;
@@ -566,6 +572,42 @@ export class StoryWorkspace extends LitElement {
     // A canonical story page needs only its own chapter, spot and cast, which
     // the build prepared; the full story index is for the collection.
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+    const server = this.dataServer() as OfficialCatalogServer;
+    if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(server)) {
+      const catalogs = await fetchCrossServerCatalogs(["stories", "characters", "bands"], server, this.locale, { signal });
+      if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+      const dto = catalogs.stories!;
+      if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded")) throw new Error("Story catalog unavailable");
+      this.unionStories = crossCatalogPresentation(dto);
+      this.episodes = Object.fromEntries(this.unionStories.items.map((row) => [String(row.storyId || row.id), row]));
+      this.unionChapters.clear();
+      const chapters = new Map<string, JsonRecord>(), spots = new Map<string, JsonRecord>(), events = new Map<string, JsonRecord>();
+      for (const source of [server, ...OFFICIAL_CATALOG_SERVERS.filter((value) => value !== server)]) {
+        const identity = dto.identities[source], document = dto.documents[source] as JsonRecord | undefined;
+        if (!identity || !document) continue;
+        const ownChapters = new Map<string, JsonRecord>();
+        for (const chapter of recordValues(document.chapters)) {
+          const id = String(chapter.chapterId);
+          const pinned = pinCrossCatalogValue(chapter, identity) as JsonRecord;
+          ownChapters.set(id, pinned);
+          if (!chapters.has(id)) chapters.set(id, pinned);
+        }
+        this.unionChapters.set(source, ownChapters);
+        for (const spot of recordValues(document.homeSpots)) {
+          const id = String(spot.homeSpotId || spot.spotId || spot.id);
+          if (!spots.has(id)) spots.set(id, pinCrossCatalogValue(spot, identity) as JsonRecord);
+        }
+        for (const event of recordValues(document.storyEvents)) {
+          const id = String(event.eventId || event.id || event.chapterId);
+          if (!events.has(id)) events.set(id, event);
+        }
+      }
+      this.chapters = [...chapters.values()]; this.spots = [...spots.values()]; this.storyEvents = [...events.values()];
+      this.characters = crossCatalogPresentation(catalogs.characters!).items;
+      this.bands = crossCatalogPresentation(catalogs.bands!).items;
+      return;
+    }
+    this.unionStories = undefined; this.unionChapters.clear();
     const [stories, characters, bands] = await Promise.all([
       fetchJson<JsonRecord>(catalogUrl("stories"), { signal }),
       fetchJson<Record<string, JsonRecord>>(catalogUrl("characters"), { signal }),
@@ -698,9 +740,10 @@ export class StoryWorkspace extends LitElement {
     return this.chapters.filter((c) => this.chapterKind(c) === key);
   }
   private chapterEpisodes(chapter: JsonRecord | undefined) {
-    return (Array.isArray(chapter?.episodes) ? chapter.episodes : [])
-      .map(String)
-      .map((id) => this.episodes[id])
+    const episodes = this.unionStories
+      ? Object.values(this.episodes).filter((episode) => String(episode.chapterId) === String(chapter?.chapterId))
+      : (Array.isArray(chapter?.episodes) ? chapter.episodes : []).map(String).map((id) => this.episodes[id]);
+    return episodes
       .filter(
         (episode) =>
           episode &&
@@ -717,7 +760,9 @@ export class StoryWorkspace extends LitElement {
       return this.chapters.find(
         (item) => String(item.chapterId) === String(episode.chapterId ?? episode.chapterKey ?? episode.eventId ?? ""),
       );
-    return this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId));
+    const entry = this.unionStories?.entries.get(episode) || this.unionStories?.byId.get(this.episodeId(episode));
+    return (entry && this.unionChapters.get(entry.displayServer)?.get(String(episode.chapterId))) ||
+      this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId));
   }
   /**
    * A chapter's authored name, or nothing. It used to fall back to
@@ -1220,7 +1265,7 @@ export class StoryWorkspace extends LitElement {
     if (!this.isBestdori() && id !== this.entityId) {
       openDetailLocation(
         entityHref({
-          server: readReleaseServer(),
+          server: this.unionStories?.entries.get(source || this.episodes[id] || {})?.displayServer || this.unionStories?.byId.get(id)?.displayServer || readReleaseServer(),
           locale: preferredLocale(this.locale) as Locale,
           kind: "stories",
           id,
@@ -1653,6 +1698,7 @@ export class StoryWorkspace extends LitElement {
         fit: this.isBestdori() && !this.isCardSection() ? "fill" : this.isCardSection() ? "contain" : "cover",
         natural: this.origin === "release" && !["home", "afterlive"].includes(this.mode),
         onOpen: () => void this.openStory(id, episode),
+        serverMark: catalogServerMark(this.unionStories?.entries.get(episode), this.locale),
         onImageError: this.imageError,
         duration: this.duration(episode),
       }),

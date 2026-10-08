@@ -12,7 +12,7 @@ import {
   type EntityLink,
   type ResourceKind,
 } from "../../../../lib/resource-route";
-import { staticResourceServers } from "../../../../lib/entity-graph";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 import { searchableCatalogPages, type SearchableCatalogPage } from "../../../../lib/searchable-catalog";
 import { searchableHelpPages, type SearchableHelpTopic } from "../../../../lib/searchable-help";
 import { searchableModelPages, type SearchableModelPage } from "../../../../lib/searchable-models";
@@ -29,7 +29,7 @@ type RouteProps = {
 
 export async function getStaticPaths() {
   const output: Array<{ params: Record<string, string>; props: RouteProps }> = [];
-  for (const server of staticResourceServers().filter(isPublicReleaseServer)) {
+  for (const server of await staticCatalogPageServers(true)) {
     const [catalog, models, stories, help] = await Promise.all([
       searchableCatalogPages(server),
       searchableModelPages(server),

@@ -2,10 +2,11 @@
 import AnonTokyoDocument from "../../../../components/AnonTokyoDocument.astro";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-server";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 import { ANON_TOKYO_MODES, type AnonTokyoMode } from "../../../../lib/resource-route";
 
-export function getStaticPaths() {
-  return RELEASE_SERVERS.flatMap((server) =>
+export async function getStaticPaths() {
+  return (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
       ANON_TOKYO_MODES.map((mode) => ({ params: { server, locale, mode }, props: { server, locale, mode } })),
     ),

@@ -20,9 +20,10 @@ import "../../styles/catalog.css";
 import { renderCatalog } from "../../server/render-catalog";
 import { catalogEntityData, type EntityPayload } from "../../lib/entity-graph";
 import { serializePageData } from "../../lib/page-data";
-import { loadStaticCrossServerCatalog } from "../../lib/cross-server/static";
+import { loadStaticCrossServerEntry } from "../../lib/cross-server/static";
 import { loadCrossServerDetail } from "../../lib/cross-server/detail";
 import type { CrossCatalogResource, OfficialCatalogServer } from "../../lib/cross-server/catalog";
+import { isCrossCatalogResource } from "../../lib/cross-server/definitions";
 
 interface Props {
   page: SearchableCatalogPage;
@@ -55,10 +56,10 @@ const seoTitleValues = Object.fromEntries(
 ) as Record<Locale, string>;
 const payload = await catalogEntityData(server,page.resource,page.id) as EntityPayload | undefined;
 if(!payload)throw new Error(`Missing page data: ${server}/${page.resource}/${page.id}`);
-if (["jp", "intl"].includes(server) && ["cards", "support-cards", "songs", "events", "characters"].includes(page.resource)) {
+if (["jp", "intl", "intl-test"].includes(server) && isCrossCatalogResource(page.resource)) {
   const pin = await staticCatalogRelease(server);
   if (pin.releaseId === payload.releaseId && pin.server === payload.server && pin.sourceId === payload.sourceId) {
-    const union = await loadStaticCrossServerCatalog(page.resource as CrossCatalogResource, server as OfficialCatalogServer, locale);
+    const union = await loadStaticCrossServerEntry(page.resource, server as OfficialCatalogServer, locale, page.id);
     const entry = union.entries.find(entry => entry.perServer[server as OfficialCatalogServer]?.id === page.id);
     const own = entry?.perServer[server as OfficialCatalogServer];
     if (entry && own?.identity.releaseId === pin.releaseId && own.identity.sourceId === pin.sourceId) {

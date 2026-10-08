@@ -2686,6 +2686,8 @@
   "initial": "初始值",
   "catalogJapanOnly": "僅日服",
   "catalogInternationalOnly": "僅國際服",
+  "catalogTestOnly": "測試內容",
+  "catalogTestServer": "測試環境",
   "catalogViewingServerData": "正在查看{server}的資料",
   "rankUpItem": "升階素材",
   "notes": "音符數",

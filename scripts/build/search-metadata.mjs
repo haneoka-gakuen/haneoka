@@ -21,7 +21,7 @@ function documentTitle(html) {
 /** Add search-only classification and title weighting without changing the served document. */
 export function withSearchMetadata(html, sourcePath) {
   const prefix = sourcePath.split(/[\\/]/u)[0];
-  const server = ["jp", "intl", "jp-cbt", "intl-cbt"].includes(prefix) ? prefix : "global";
+  const server = ["jp", "intl", "intl-test", "jp-cbt", "intl-cbt"].includes(prefix) ? prefix : "global";
   const category = searchCategory(sourcePath);
   const title = documentTitle(html);
   const metadata = `<meta data-pagefind-filter="server:${server}"><meta data-pagefind-filter="section:${category.section}"><meta data-pagefind-meta="kind:${category.kind}">`;
