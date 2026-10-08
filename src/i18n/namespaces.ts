@@ -105,6 +105,7 @@ const COMMON_FLAT_KEYS = [
   "playInOrder",
   "expandPlayer",
   "clearQueue",
+  "closePlayerAndClearQueue",
   "volume",
   "queue",
   "shuffle",

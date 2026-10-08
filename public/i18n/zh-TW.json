@@ -714,6 +714,7 @@
   "playInOrder": "依序播放",
   "expandPlayer": "展開播放器",
   "clearQueue": "清空佇列",
+  "closePlayerAndClearQueue": "關閉播放器並清空播放清單",
   "seek": "播放位置",
   "loop": "循環",
   "watch": "觀看",

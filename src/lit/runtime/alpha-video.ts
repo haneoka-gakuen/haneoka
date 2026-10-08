@@ -72,7 +72,7 @@ export class AlphaVideo {
   }
 
   constructor(
-    private readonly video: HTMLVideoElement,
+    private video: HTMLVideoElement,
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: AlphaVideoCallbacks,
   ) {
@@ -86,12 +86,7 @@ export class AlphaVideo {
     if (!gl) throw new Error("WebGL video compositing unavailable");
     this.gl = gl;
     this.resources = this.createResources();
-    video.addEventListener("loadeddata", this.onDecoded);
-    video.addEventListener("seeked", this.onDecoded);
-    video.addEventListener("playing", this.onPlaying);
-    video.addEventListener("seeking", this.onSeeking);
-    video.addEventListener("pause", this.onPaused);
-    video.addEventListener("ended", this.onPaused);
+    this.bindVideo(video, true);
     canvas.addEventListener("webglcontextlost", this.onContextLost);
     canvas.addEventListener("webglcontextrestored", this.onContextRestored);
   }
@@ -103,6 +98,31 @@ export class AlphaVideo {
     this.lastTime = this.lastPresented = this.lastQuality = undefined;
     this.lastUploadAt = -Infinity;
     this.resumeAfterRestore = false;
+  }
+  private bindVideo(video: HTMLVideoElement, attach: boolean): void {
+    const events = {
+      loadeddata: this.onDecoded,
+      seeked: this.onDecoded,
+      playing: this.onPlaying,
+      seeking: this.onSeeking,
+      pause: this.onPaused,
+      ended: this.onPaused,
+    };
+    for (const [name, callback] of Object.entries(events)) {
+      if (attach) video.addEventListener(name, callback);
+      else video.removeEventListener(name, callback);
+    }
+  }
+  /** Promote a decoded surface without recreating the compositor or displaying a stale frame. */
+  setVideo(video: HTMLVideoElement, packed: boolean): void {
+    if (this.disposed || video.readyState < 2 || video.seeking)
+      throw new Error("Video handoff requires a decoded frame");
+    this.configure(packed);
+    this.bindVideo(this.video, false);
+    this.video = video;
+    this.bindVideo(video, true);
+    this.draw(video.currentTime, undefined, true);
+    this.schedule();
   }
   private createResources(): Resources {
     const gl = this.gl;
@@ -313,12 +333,7 @@ export class AlphaVideo {
     if (this.disposed) return;
     this.disposed = true;
     this.cancelFrames();
-    this.video.removeEventListener("loadeddata", this.onDecoded);
-    this.video.removeEventListener("seeked", this.onDecoded);
-    this.video.removeEventListener("playing", this.onPlaying);
-    this.video.removeEventListener("seeking", this.onSeeking);
-    this.video.removeEventListener("pause", this.onPaused);
-    this.video.removeEventListener("ended", this.onPaused);
+    this.bindVideo(this.video, false);
     this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored);
     const r = this.resources;

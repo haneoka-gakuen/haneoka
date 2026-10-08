@@ -76,6 +76,20 @@ export class ImageGallery extends LitElement {
   private movieGeneration = 0;
   private movieDeadline?: ReturnType<typeof setTimeout>;
   private desiredBackdrop = false;
+  private movieStarting = false;
+  private nextMovie?: {
+    index: number;
+    identity: string;
+    video: HTMLVideoElement;
+    packed: boolean;
+    controller: AbortController;
+    ready: Promise<void>;
+    url?: string;
+    error?: unknown;
+  };
+  private currentMovieUrl?: string;
+  private movieFetchLifetime?: AbortController;
+  private movieBlobs = new Map<string, Promise<Blob>>();
   private viewer?: PhotoSwipe;
   private releaseFocus?: () => void;
   private generation = 0;
@@ -163,6 +177,10 @@ export class ImageGallery extends LitElement {
   private stopMovie() {
     this.movieGeneration++;
     this.clearMovieDeadline();
+    this.releaseNextMovie();
+    this.movieFetchLifetime?.abort();
+    this.movieFetchLifetime = undefined;
+    this.movieBlobs.clear();
     this.movieRenderer?.dispose();
     this.movieRenderer = undefined;
     if (this.movieVideo) {
@@ -170,9 +188,12 @@ export class ImageGallery extends LitElement {
       this.movieVideo.removeAttribute("src");
       this.movieVideo.load();
     }
+    if (this.currentMovieUrl) URL.revokeObjectURL(this.currentMovieUrl);
+    this.currentMovieUrl = undefined;
     this.movieVideo = undefined;
     this.movieCanvas = undefined;
     this.movieIdentity = "";
+    this.movieStarting = false;
     this.movieBusy = this.movieReady = this.movieBackdrop = false;
   }
   private failMovie() {
@@ -181,6 +202,108 @@ export class ImageGallery extends LitElement {
     this.stopMovie();
     this.movieIdentity = identity;
     this.error = uiText(this.locale, "unavailable");
+  }
+  private releaseNextMovie() {
+    const next = this.nextMovie;
+    this.nextMovie = undefined;
+    if (!next) return;
+    next.controller.abort();
+    next.video.pause();
+    next.video.removeAttribute("src");
+    next.video.load();
+    if (next.url) URL.revokeObjectURL(next.url);
+  }
+  private clipIdentity(active: GalleryImage, index: number, clip: GalleryClip): string {
+    return JSON.stringify([
+      active.id,
+      index,
+      clip,
+      active.videoSequence?.background || active.animatedOverlay?.background,
+    ]);
+  }
+  private movieBlob(url: string): Promise<Blob> {
+    let pending = this.movieBlobs.get(url);
+    if (pending) return pending;
+    this.movieFetchLifetime ??= new AbortController();
+    const signal = AbortSignal.any([this.movieFetchLifetime.signal, AbortSignal.timeout(30_000)]);
+    pending = fetch(url, { signal }).then(async (response) => {
+      if (!response.ok) throw new Error(`Video preload failed (${response.status})`);
+      const blob = await response.blob();
+      signal.throwIfAborted();
+      return blob;
+    });
+    this.movieBlobs.set(url, pending);
+    return pending;
+  }
+  private prepareNextMovie(active: GalleryImage) {
+    const clips = active.videoSequence?.clips;
+    if (!clips || clips.length < 2 || !this.movieVideo) return;
+    const index = this.clipIndex + 1 < clips.length ? this.clipIndex + 1 : 0;
+    const clip = clips[index]!,
+      identity = this.clipIdentity(active, index, clip);
+    if (this.nextMovie?.identity === identity) return;
+    this.releaseNextMovie();
+    const video = [...this.querySelectorAll<HTMLVideoElement>("video.image-gallery__decoder")].find(
+      (value) => value !== this.movieVideo,
+    );
+    const source = alphaVideoSource(clip, Boolean(clip.backdrop));
+    if (!video || !source) return;
+    const controller = new AbortController();
+    const next = {
+      index,
+      identity,
+      video,
+      packed: source.packed,
+      controller,
+      ready: Promise.resolve(),
+      url: undefined as string | undefined,
+      error: undefined as unknown,
+    };
+    this.nextMovie = next;
+    // Only the upcoming segment is fetched; a complete Blob cannot stall on a later network range.
+    const deadline = setTimeout(
+      () => controller.abort(new DOMException("Video preload timed out", "TimeoutError")),
+      30_000,
+    );
+    next.ready = (async () => {
+      const blob = await this.movieBlob(source.url);
+      controller.signal.throwIfAborted();
+      if (this.nextMovie !== next || !this.isConnected) return;
+      next.url = URL.createObjectURL(blob);
+      video.crossOrigin = "anonymous";
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = Boolean(clip.loop);
+      await new Promise<void>((resolve, reject) => {
+        const clean = () => {
+          video.removeEventListener("loadeddata", decoded);
+          video.removeEventListener("error", failed);
+          controller.signal.removeEventListener("abort", aborted);
+        };
+        const decoded = () => {
+          clean();
+          resolve();
+        };
+        const failed = () => {
+          clean();
+          reject(new Error("Video preload decode failed"));
+        };
+        const aborted = () => {
+          clean();
+          reject(controller.signal.reason);
+        };
+        video.addEventListener("loadeddata", decoded, { once: true });
+        video.addEventListener("error", failed, { once: true });
+        controller.signal.addEventListener("abort", aborted, { once: true });
+        video.src = next.url!;
+        video.load();
+      });
+      controller.signal.throwIfAborted();
+    })()
+      .catch((error) => {
+        next.error = error;
+      })
+      .finally(() => clearTimeout(deadline));
   }
   private syncMovie() {
     if (!this.isConnected) return;
@@ -194,14 +317,17 @@ export class ImageGallery extends LitElement {
       if (this.movieVideo) this.stopMovie();
       return;
     }
-    const identity = JSON.stringify([
-      active!.id,
-      this.clipIndex,
-      clip,
-      active!.videoSequence?.background || active!.animatedOverlay?.background,
-    ]);
+    const identity = this.clipIdentity(active!, this.clipIndex, clip);
     if (identity === this.movieIdentity) return;
-    const video = this.querySelector<HTMLVideoElement>("video.image-gallery__decoder");
+    const prepared =
+      this.nextMovie?.identity === identity &&
+      !this.nextMovie.error &&
+      this.nextMovie.video.readyState >= 2 &&
+      !this.nextMovie.video.seeking
+        ? this.nextMovie
+        : undefined;
+    const video =
+      prepared?.video ?? this.movieVideo ?? this.querySelector<HTMLVideoElement>("video.image-gallery__decoder");
     const canvas = this.querySelector<HTMLCanvasElement>("canvas.image-gallery__clip");
     if (!video || !canvas) return;
     const source = alphaVideoSource(clip, Boolean(clip.backdrop));
@@ -210,25 +336,27 @@ export class ImageGallery extends LitElement {
       this.failMovie();
       return;
     }
-    const reused = this.movieVideo === video && this.movieCanvas === canvas && this.movieRenderer;
+    const previousVideo = this.movieVideo;
+    const reused = this.movieCanvas === canvas && this.movieRenderer;
     if (!reused) this.stopMovie();
     else {
       this.movieGeneration++;
       this.clearMovieDeadline();
-      video.pause();
+      this.movieVideo?.pause();
     }
     this.movieVideo = video;
     this.movieCanvas = canvas;
     this.movieIdentity = identity;
     this.desiredBackdrop = Boolean(clip.backdrop);
+    this.movieStarting = !prepared && this.clipIndex === 0 && (active!.videoSequence?.clips.length ?? 0) > 1;
     this.error = "";
     try {
       if (!this.movieRenderer) {
         const renderer = new AlphaVideo(video, canvas, {
           frame: () => {
             if (this.movieRenderer !== renderer || !this.isConnected) return;
-            this.clearMovieDeadline();
-            this.movieBusy = false;
+            if (!this.movieStarting) this.clearMovieDeadline();
+            this.movieBusy = this.movieStarting;
             this.movieReady = true;
             this.movieBackdrop = this.desiredBackdrop;
           },
@@ -244,28 +372,93 @@ export class ImageGallery extends LitElement {
         });
         this.movieRenderer = renderer;
       }
-      this.movieRenderer.configure(source.packed);
+      if (prepared) {
+        this.nextMovie = undefined;
+        if (this.currentMovieUrl) URL.revokeObjectURL(this.currentMovieUrl);
+        this.currentMovieUrl = prepared.url;
+        this.waitForMovie();
+        this.movieRenderer.setVideo(video, prepared.packed);
+        if (previousVideo && previousVideo !== video) {
+          previousVideo.removeAttribute("src");
+          previousVideo.load();
+        }
+      } else {
+        this.releaseNextMovie();
+        if (this.currentMovieUrl) URL.revokeObjectURL(this.currentMovieUrl);
+        this.currentMovieUrl = undefined;
+        this.movieRenderer.configure(source.packed);
+      }
       video.crossOrigin = "anonymous";
       video.muted = true;
       video.playsInline = true;
       video.loop = Boolean(clip.loop);
-      video.src = source.url;
-      video.load();
-      this.waitForMovie();
+      if (!prepared) {
+        this.movieReady = false;
+        video.src = source.url;
+        video.load();
+        this.waitForMovie();
+      }
+      this.prepareNextMovie(active!);
+      // This selected three-part movie alone is warmed; only two decoders exist.
+      // Later bytes can arrive while the first upcoming decoder is prepared.
+      for (const following of active!.videoSequence?.clips.slice(this.clipIndex + 2) ?? []) {
+        const upcoming = alphaVideoSource(following, Boolean(following.backdrop));
+        if (upcoming) void this.movieBlob(upcoming.url).catch(() => undefined);
+      }
       const generation = this.movieGeneration;
-      void video.play().catch(() => {
+      const startup = !prepared && this.clipIndex === 0 ? this.nextMovie : undefined;
+      void (async () => {
+        // Pay cold-network preparation before starting, not at the first cut.
+        if (startup) {
+          await startup.ready;
+          if (startup.error) throw startup.error;
+        }
+        if (!this.isConnected || generation !== this.movieGeneration) return;
+        this.movieStarting = false;
+        await video.play();
+      })().catch(() => {
         if (this.isConnected && generation === this.movieGeneration) this.failMovie();
       });
     } catch {
       this.failMovie();
     }
   }
-  private onClipEnded() {
-    if (!this.movieVideo?.ended) return;
+  private onClipEnded(event: Event) {
+    if (event.currentTarget !== this.movieVideo || !this.movieVideo?.ended) return;
     const active = this.images.find((image) => image.id === this.active) || this.images[0];
-    if (active?.videoSequence && this.clipIndex < active.videoSequence.clips.length - 1) this.clipIndex++;
+    if (!active?.videoSequence || this.clipIndex >= active.videoSequence.clips.length - 1) return;
+    const next = this.nextMovie,
+      generation = this.movieGeneration;
+    if (!next) {
+      this.clipIndex++;
+      return;
+    }
+    if (next.video.readyState >= 2 && !next.error) {
+      this.clipIndex++;
+      return;
+    }
+    this.movieReady = false;
+    this.waitForMovie();
+    void next.ready.then(() => {
+      if (!this.isConnected || generation !== this.movieGeneration || this.nextMovie !== next) return;
+      if (next.error) this.failMovie();
+      else this.clipIndex++;
+    });
   }
   private replaySequence() {
+    const next = this.nextMovie;
+    if (next?.index === 0 && !next.error && next.video.readyState < 2) {
+      const generation = this.movieGeneration;
+      this.movieVideo?.pause();
+      this.movieReady = false;
+      this.waitForMovie();
+      void next.ready.then(() => {
+        if (!this.isConnected || generation !== this.movieGeneration || this.nextMovie !== next) return;
+        if (next.error) this.failMovie();
+        else this.replaySequence();
+      });
+      return;
+    }
     this.clipIndex = 0;
     this.movieIdentity = "";
     this.error = "";
@@ -438,20 +631,28 @@ export class ImageGallery extends LitElement {
                 alt=""
                 decoding="async"
               />
-              <video
-                class="image-gallery__decoder"
-                muted
-                playsinline
-                crossorigin="anonymous"
-                preload="auto"
-                @ended=${() => this.onClipEnded()}
-                @waiting=${this.waitForMovie}
-                @progress=${this.movieProgress}
-                @error=${() => {
-                  if (this.movieVideo?.error) this.failMovie();
-                }}
-                aria-hidden="true"
-              ></video>
+              ${[0, 1].map(
+                () => html`
+                  <video
+                    class="image-gallery__decoder"
+                    muted
+                    playsinline
+                    crossorigin="anonymous"
+                    preload="auto"
+                    @ended=${(event: Event) => this.onClipEnded(event)}
+                    @waiting=${(event: Event) => {
+                      if (event.currentTarget === this.movieVideo) this.waitForMovie();
+                    }}
+                    @progress=${(event: Event) => {
+                      if (event.currentTarget === this.movieVideo) this.movieProgress();
+                    }}
+                    @error=${() => {
+                      if (this.movieVideo?.error) this.failMovie();
+                    }}
+                    aria-hidden="true"
+                  ></video>
+                `,
+              )}
               <canvas
                 class="image-gallery__clip${this.movieReady ? " is-current" : ""}"
                 role="img"

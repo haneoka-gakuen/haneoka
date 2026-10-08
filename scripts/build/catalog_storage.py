@@ -472,6 +472,7 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
                 "bandIds",
                 "composer",
                 "difficulty",
+                "gekisou",
                 "jacketThumbUrl",
                 "jacketUrl",
                 "lyricist",
@@ -491,7 +492,7 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
     ),
     "song-meta": ResourceSpec(
         (),
-        projection=ProjectionSpec(include=("0", "1", "2", "3")),
+        projection=ProjectionSpec(include=("0", "1", "2", "3", "gekisou")),
     ),
     "comics": ResourceSpec(
         (),

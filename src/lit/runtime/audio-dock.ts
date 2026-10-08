@@ -115,6 +115,7 @@ export class AudioDock extends LitElement {
   declare draggedIndex: number;
   declare dropIndex: number;
   private audio = new Audio();
+  private playbackGeneration = 0;
   private restoredTime = 0;
   private inertTargets = new Set<HTMLElement>();
   private dockObserver?: ResizeObserver;
@@ -152,29 +153,41 @@ export class AudioDock extends LitElement {
     this.audio.preload = "metadata";
     this.restore();
     this.audio.volume = this.volume;
-    this.audio.addEventListener("play", () => {
+    this.observeAudio(this.audio);
+  }
+
+  private observeAudio(audio: HTMLAudioElement) {
+    const active = () => audio === this.audio && Boolean(this.track);
+    audio.addEventListener("play", () => {
+      if (!active() || audio.paused) return;
       this.playing = true;
       this.emitState();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
     });
-    this.audio.addEventListener("pause", () => {
+    audio.addEventListener("pause", () => {
+      if (!active() || !audio.paused) return;
       this.playing = false;
       this.persist();
       this.emitState();
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
     });
-    this.audio.addEventListener("timeupdate", () => (this.currentTime = this.audio.currentTime || 0));
-    this.audio.addEventListener("durationchange", () => {
-      this.duration = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+    audio.addEventListener("timeupdate", () => {
+      if (active()) this.currentTime = audio.currentTime || 0;
     });
-    this.audio.addEventListener("loadedmetadata", () => {
+    audio.addEventListener("durationchange", () => {
+      if (active()) this.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    });
+    audio.addEventListener("loadedmetadata", () => {
+      if (!active()) return;
       if (this.restoredTime > 0) {
-        this.audio.currentTime = clamp(this.restoredTime, 0, this.duration || this.restoredTime);
-        this.currentTime = this.audio.currentTime;
+        audio.currentTime = clamp(this.restoredTime, 0, this.duration || this.restoredTime);
+        this.currentTime = audio.currentTime;
         this.restoredTime = 0;
       }
     });
-    this.audio.addEventListener("ended", () => void this.next(true));
+    audio.addEventListener("ended", () => {
+      if (active() && audio.ended) void this.next(true);
+    });
   }
 
   createRenderRoot() {
@@ -194,8 +207,11 @@ export class AudioDock extends LitElement {
     if (this.track) void this.prepare(false, false);
     if ("mediaSession" in navigator) {
       try {
-        navigator.mediaSession.setActionHandler("play", () => void this.audio.play());
+        navigator.mediaSession.setActionHandler("play", () => {
+          if (this.track && this.audio.paused) void this.togglePlayback();
+        });
         navigator.mediaSession.setActionHandler("pause", () => this.audio.pause());
+        navigator.mediaSession.setActionHandler("stop", () => this.clearQueue());
         navigator.mediaSession.setActionHandler("previoustrack", () => void this.previous());
         navigator.mediaSession.setActionHandler("nexttrack", () => void this.next());
         navigator.mediaSession.setActionHandler("seekto", (details) => {
@@ -253,6 +269,7 @@ export class AudioDock extends LitElement {
     // lives in the rail / app bar), and the compact full player is a sheet
     // over the page, so neither reserves anything.
     const publishHeight = () => {
+      if (dock !== this.observedDock || !this.track) return;
       const root = document.documentElement.style;
       const docked = dock.dataset.state === "full" && !compactQuery.matches;
       root.setProperty("--audio-dock-height", docked ? `${Math.ceil(dock.offsetHeight) + 16}px` : "0px");
@@ -275,7 +292,7 @@ export class AudioDock extends LitElement {
     const requested = normalizedTrack(track);
     if (!requested || !normalizedQueue.length) return;
     if (this.track?.id === requested.id && this.track.url === requested.url) {
-      this.playing ? this.audio.pause() : await this.audio.play().catch(() => undefined);
+      await this.togglePlayback();
       return;
     }
     this.audio.pause();
@@ -360,6 +377,8 @@ export class AudioDock extends LitElement {
   private async prepare(reset: boolean, shouldPlay = true) {
     const track = this.track;
     if (!track) return;
+    const generation = ++this.playbackGeneration;
+    const audio = this.audio;
     if (this.audio.dataset.haneokaSource !== track.url) {
       this.audio.dataset.haneokaSource = track.url;
       this.audio.src = track.url;
@@ -372,7 +391,8 @@ export class AudioDock extends LitElement {
     }
     this.audio.volume = this.volume;
     this.updateMetadata(track);
-    if (shouldPlay) await this.audio.play().catch(() => undefined);
+    if (shouldPlay) await audio.play().catch(() => undefined);
+    if (generation !== this.playbackGeneration || audio !== this.audio) return;
     this.persist();
   }
 
@@ -471,18 +491,53 @@ export class AudioDock extends LitElement {
   }
 
   private clearQueue() {
-    if (history.state?.__haneoka_audio_overlay) history.back();
-    this.audio.pause();
-    this.audio.removeAttribute("src");
-    this.audio.load();
-    delete this.audio.dataset.haneokaSource;
+    const returnFocus =
+      this.contains(document.activeElement) ||
+      Boolean(document.activeElement?.closest("[data-nav-player], [data-app-bar-player]"));
+    if (history.state?.__haneoka_audio_overlay) {
+      const { __haneoka_audio_overlay: _overlay, ...state } = history.state;
+      history.replaceState(state, "", location.href);
+    }
+    ++this.playbackGeneration;
+    // Retire the old element so its queued events and play promises cannot
+    // change a player that is closed or has already started another track.
+    const audio = this.audio;
+    this.audio = new Audio();
+    this.audio.preload = "metadata";
+    this.audio.volume = this.volume;
+    this.observeAudio(this.audio);
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
     this.queue = [];
     this.index = -1;
+    this.playing = false;
+    this.restoredTime = 0;
     this.currentTime = 0;
     this.duration = 0;
     this.queueOpen = false;
+    this.draggedIndex = -1;
+    this.dropIndex = -1;
+    this.sheetDrag = undefined;
+    this.releaseQueueFocus?.();
+    this.releaseQueueFocus = undefined;
+    this.queuePanel = undefined;
     this.setOverlayIsolation(false);
-    if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+    this.dockObserver?.disconnect();
+    this.observedDock = undefined;
+    document.documentElement.style.removeProperty("--audio-dock-height");
+    document.documentElement.style.removeProperty("--audio-dock-clearance");
+    this.syncCollapsedSlots();
+    if (returnFocus) document.querySelector<HTMLElement>("#main-content")?.focus({ preventScroll: true });
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = "none";
+      try {
+        navigator.mediaSession.setPositionState();
+      } catch {
+        /* Position state is optional in Media Session. */
+      }
+    }
     this.persist();
     this.emitState();
   }
@@ -506,7 +561,7 @@ export class AudioDock extends LitElement {
     );
   }
   private onPopState = () => {
-    const overlay = history.state?.__haneoka_audio_overlay;
+    const overlay = this.track && history.state?.__haneoka_audio_overlay;
     this.queueOpen = overlay === "queue";
     this.setOverlayIsolation(Boolean(overlay));
   };
@@ -523,6 +578,7 @@ export class AudioDock extends LitElement {
     });
   }
   private openOverlay(kind: "queue") {
+    if (!this.track) return;
     if (history.state?.__haneoka_audio_overlay !== kind)
       history.pushState({ ...history.state, __haneoka_audio_overlay: kind }, "", location.href);
     this.queueOpen = true;
@@ -543,10 +599,13 @@ export class AudioDock extends LitElement {
     this.audio.pause();
   }
   private async togglePlayback() {
+    if (!this.track) return;
+    const generation = this.playbackGeneration;
+    const audio = this.audio;
     if (this.playing) this.audio.pause();
     else
-      await this.audio.play().catch(() => {
-        this.playing = false;
+      await audio.play().catch(() => {
+        if (generation === this.playbackGeneration && audio === this.audio) this.playing = false;
       });
   }
 
@@ -641,9 +700,7 @@ export class AudioDock extends LitElement {
             <button class="icon-button audio-queue-panel__skip" aria-label=${this.t("next")} @click=${() => this.next()}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#skip_next"></use></svg>
             </button>
-            <button class="icon-button" aria-label=${this.t("clearQueue")} @click=${this.clearQueue}>
-              <svg class="material-icon" width="18" height="18"><use href="/icons.svg#delete_sweep"></use></svg>
-            </button>
+            ${this.renderCloseButton("audio-queue-panel__clear")}
             <button class="icon-button" aria-label=${this.t("close")} @click=${this.closeOverlay}>
               <svg class="material-icon" width="18" height="18"><use href="/icons.svg#close"></use></svg>
             </button>
@@ -862,6 +919,7 @@ export class AudioDock extends LitElement {
             icon: "keyboard_arrow_down",
             onClick: () => this.setExpanded(false),
           })}
+          ${this.renderCloseButton("player__close")}
         </div>
       </aside>
       ${this.renderQueue()}
@@ -927,6 +985,7 @@ export class AudioDock extends LitElement {
             ${this.playing ? icon("pause", 24) : icon("play_arrow", 24)}
           </button>
           ${iconButton({ label: this.t("next"), icon: "skip_next", className: "now-playing__next", onClick: () => void this.next() })}
+          ${this.renderCloseButton("now-playing__close")}
         </span>
       </section>
     `;
@@ -960,6 +1019,14 @@ export class AudioDock extends LitElement {
         this.mode
       ],
     );
+  }
+  private renderCloseButton(className: string) {
+    return iconButton({
+      label: this.t("closePlayerAndClearQueue"),
+      icon: "close",
+      className,
+      onClick: () => this.clearQueue(),
+    });
   }
   private modeIconName() {
     return {

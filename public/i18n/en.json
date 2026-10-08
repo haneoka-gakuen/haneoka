@@ -714,6 +714,7 @@
   "playInOrder": "Play in order",
   "expandPlayer": "Expand player",
   "clearQueue": "Clear queue",
+  "closePlayerAndClearQueue": "Close player and clear queue",
   "seek": "Seek",
   "loop": "Loop",
   "watch": "Watch",

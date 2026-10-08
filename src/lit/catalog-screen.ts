@@ -636,6 +636,63 @@ export class CatalogScreen extends LitElement {
   private unionMarks: Partial<Record<OfficialCatalogServer, Map<string, string>>> = {};
   private unionSongMeta = new Map<string, Item>();
   private unionSongMetaReads = new Map<string, Promise<void>>();
+  private songMissionRequests = new RequestScope();
+  private songMissionSignal?: AbortSignal;
+  private songMissionBatches = new Set<string>();
+  private hasSongMissionFields(item: Item) {
+    const value = item.gekisou as Item | undefined;
+    const types = value?.missionTypes ?? value?.missionPattern;
+    return Array.isArray(types) && types.length === 3 && types.every((type) =>
+      type === 0 || type === "0" || type === "None" || ["Combo", "Luck", "JustCount"].includes(String(type)) ||
+      ((typeof type === "number" || (typeof type === "string" && type.trim() !== "")) &&
+        Number.isInteger(Number(type)) && Number(type) >= 1 && Number(type) <= 3));
+  }
+  private ensureSongMissions() {
+    if (!this.isConnected || this.settings.origin === "bestdori" || this.settings.entityContext) return;
+    const items = this.items;
+    const groups = new Map<string, { identity: CrossCatalogIdentity; rows: Map<string, Item> }>();
+    for (const item of items) {
+      if (this.hasSongMissionFields(item)) continue;
+      const entry = this.unionEntry(item);
+      const variant = entry?.perServer[entry.displayServer];
+      const identity = variant?.identity || this.nativeCatalogPin;
+      if (!identity || !["jp", "intl", "intl-test"].includes(identity.server)) continue;
+      const pinned: CrossCatalogIdentity = { ...identity, server: identity.server as OfficialCatalogServer };
+      const key = JSON.stringify(identity);
+      let group = groups.get(key);
+      if (!group) {
+        group = { identity: pinned, rows: new Map() };
+        groups.set(key, group);
+      }
+      group.rows.set(variant?.id || this.itemId(item), item);
+    }
+    const signal = this.songMissionSignal ??= this.songMissionRequests.begin();
+    for (const [pin, group] of groups) {
+      const ids = [...group.rows.keys()].sort();
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const batch = ids.slice(offset, offset + 100);
+        const key = JSON.stringify([pin, batch]);
+        if (this.songMissionBatches.has(key)) continue;
+        this.songMissionBatches.add(key);
+        void crossServerPublicCache().readEntities("songs", group.identity, batch, signal).then((value) => {
+          if (!this.isConnected || !this.songMissionRequests.current(signal) || this.items !== items) return;
+          const entities = (value as { items?: Record<string, Item> }).items || {};
+          for (const id of batch) {
+            const row = group.rows.get(id)!;
+            const entity = entities[id];
+            if (entity && this.hasSongMissionFields(entity)) row.gekisou = entity.gekisou;
+          }
+          this.facetCache = undefined;
+          this.expandedCache = undefined;
+          this.resultCache = undefined;
+          this.requestUpdate();
+        }, () => {
+          // Keep the catalogue usable; another explicit table/filter action can retry.
+          if (this.songMissionRequests.current(signal)) this.songMissionBatches.delete(key);
+        });
+      }
+    }
+  }
   private itemSongMeta(item: Item): Item | undefined {
     const entry = this.unionEntry(item), identity = entry?.perServer[entry.displayServer]?.identity;
     if (identity && identity.server !== this.dataServer())
@@ -806,6 +863,11 @@ export class CatalogScreen extends LitElement {
     })]);
   }
   private applyUnionPresentation(snapshot: UnionPresentationSnapshot) {
+    if (this.items !== snapshot.items) {
+      this.songMissionRequests.cancel();
+      this.songMissionSignal = undefined;
+      this.songMissionBatches.clear();
+    }
     const restoring = this.phase !== "ready";
     this.unionCatalog = snapshot.dto;
     this.unionItems = snapshot.itemEntries;
@@ -1428,6 +1490,9 @@ export class CatalogScreen extends LitElement {
     this.resetCommentsActivation();
     this.unionRequests.cancel();
     this.catalogRequests.cancel();
+    this.songMissionRequests.cancel();
+    this.songMissionSignal = undefined;
+    this.songMissionBatches.clear();
     this.nativeReferenceRequests.cancel();
     this.nativeReference = undefined;
     this.disposeSongDisplay?.();
@@ -1894,6 +1959,9 @@ export class CatalogScreen extends LitElement {
     });
   }
   private async load() {
+    this.songMissionRequests.cancel();
+    this.songMissionSignal = undefined;
+    this.songMissionBatches.clear();
     if (this.settings.entityContext && this.settings.origin === "bestdori" && !this.selectedId) {
       this.phase = "error";
       this.setEntityReady(false);
@@ -2428,6 +2496,8 @@ export class CatalogScreen extends LitElement {
   }
   private ensureSongMeta() {
     if (this.profile.presentation !== "song") return;
+    if (this.profile.perDifficulty || this.view === "table" || this.filtersOpen || this.facets.gekisouType?.length)
+      this.ensureSongMissions();
     // The meta table reads per-chart metrics on every row, so it always needs
     // the join; the songs table only needs it for the table view, filters, or
     // a metric sort.

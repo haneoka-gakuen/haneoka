@@ -714,6 +714,7 @@
   "playInOrder": "순서대로 재생",
   "expandPlayer": "플레이어 펼치기",
   "clearQueue": "대기열 비우기",
+  "closePlayerAndClearQueue": "플레이어 닫기 및 재생 대기열 비우기",
   "seek": "재생 위치",
   "loop": "루프",
   "watch": "감상",

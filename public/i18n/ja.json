@@ -714,6 +714,7 @@
   "playInOrder": "順番に再生",
   "expandPlayer": "プレーヤーを開く",
   "clearQueue": "キューを消去",
+  "closePlayerAndClearQueue": "プレーヤーを閉じて再生キューを消去",
   "seek": "再生位置",
   "loop": "ループ",
   "watch": "視聴",
