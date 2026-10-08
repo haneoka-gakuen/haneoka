@@ -17,6 +17,7 @@ import {
 } from "../lib/cross-server/catalog";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { isCrossCatalogResource } from "../lib/cross-server/definitions";
+import { showTestServerContent } from "../lib/test-server-visibility";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { fetchCrossServerDetail } from "../lib/cross-server/detail";
 import { specList } from "./ui/spec";
@@ -793,7 +794,7 @@ export class CatalogScreen extends LitElement {
     }
   }
   private unionPresentationScope(): string {
-    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer()]);
+    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showTestServerContent()]);
   }
   private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
     return JSON.stringify([scopeKey, ...(["jp", "intl", "intl-test"] as const).map((server) => {

@@ -1,6 +1,7 @@
 import { fetchCurrentTeamBuilderIdentity } from "../team-builder/data/fetch";
 import type { CrossCatalogIdentity, CrossCatalogResource, OfficialCatalogServer } from "./catalog";
 import { crossCatalogApi } from "./definitions";
+import { visibleContentServers } from "../test-server-visibility";
 
 interface Pending {
   controller: AbortController;
@@ -104,6 +105,7 @@ export class CrossServerPublicCache {
   }
 
   async readIdentity(server: OfficialCatalogServer, signal?: AbortSignal, revalidate = false): Promise<CrossCatalogIdentity> {
+    if (!visibleContentServers([server]).length) throw new Error("Test server content is disabled");
     signal?.throwIfAborted();
     const current = this.identities.get(server);
     const age = current ? this.now() - current.observedAt : Infinity;
@@ -127,6 +129,7 @@ export class CrossServerPublicCache {
   }
 
   private async readDocument(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id?: string, signal?: AbortSignal, ids?: readonly string[]) {
+    if (!visibleContentServers([identity.server]).length) throw new Error("Test server content is disabled");
     signal?.throwIfAborted();
     const path = `/api/v1/servers/${identity.server}/${crossCatalogApi(resource)}${id === undefined ? "" : `/${encodeURIComponent(id)}`}`;
     const query = new URLSearchParams({ release: identity.releaseId });

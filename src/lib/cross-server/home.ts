@@ -47,7 +47,7 @@ export async function loadStaticCrossServerHome(selectedServer: OfficialCatalogS
     },
     readCollection: (resource: CrossCatalogResource, identity: CrossCatalogIdentity) => fetchStaticCatalog(resource, identity.server, identity),
   };
-  const catalogs = await loadCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands"], { selectedServer, locale, reader });
+  const catalogs = await loadCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands"], { selectedServer, locale, reader, servers: ["jp", "intl"] });
   const serverMarks: Partial<Record<OfficialCatalogServer, { identity: CrossCatalogIdentity; marks: Record<string, string> }>> = {};
   await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
     const identity = catalogs.cards?.identities[server];

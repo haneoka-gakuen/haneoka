@@ -25,20 +25,20 @@
     "directory": "./.output/public",
     "binding": "ASSETS",
     "not_found_handling": "none",
-    // Legacy catalog query links redirect before the collection's static
-    // document is served. Canonical resource pages and hashed assets stay direct.
+    // HTML receives current site policy; hashed scripts, styles and fonts stay direct.
     "run_worker_first": [
       "/api/*",
       "/artifacts/*",
       "/assets/*",
       "/catalog/assets/*",
-      "/ja/catalog/*",
-      "/en/catalog/*",
-      "/zh-TW/catalog/*",
-      "/zh-CN/catalog/*",
-      "/ko/catalog/*",
       "/intl/*",
+      "/intl-test/*",
       "/jp/*",
+      "/ja/*",
+      "/en/*",
+      "/zh-TW/*",
+      "/zh-CN/*",
+      "/ko/*",
       "/jp-cbt/*",
       "/intl-cbt/*",
       "/community/*",

@@ -598,6 +598,26 @@ export class AdminWorkspace extends LitElement {
       await this.load(false);
     });
   }
+  private changeTestServerContent(event: Event) {
+    const control = event.currentTarget as HTMLElement & { selected: boolean };
+    const settings = this.document.siteSettings as Value | undefined;
+    if (!settings || this.busy) return;
+    const enabled = control.selected;
+    control.selected = settings.showTestServerContent === true;
+    void this.mutate("site-settings", async (assertCurrent) => {
+      const result = await this.request("/api/v1/admin/site-settings", {
+        method: "PUT",
+        body: JSON.stringify({ showTestServerContent: enabled, expectedVersion: settings.version }),
+      });
+      assertCurrent();
+      if (result.siteSettings) {
+        this.document = { ...this.document, siteSettings: result.siteSettings };
+        const saved = result.siteSettings as Value;
+        document.documentElement.dataset.showTestServerContent = saved.showTestServerContent === true ? "1" : "0";
+        document.documentElement.dataset.siteSettingsVersion = String(saved.version);
+      } else await this.load(false);
+    });
+  }
   private addRestriction(user: Value, kind: "sign_in" | "upload" | "write", event: Event) {
     const container = (event.currentTarget as HTMLElement).closest(".admin-action-panel");
     const duration = Number(
@@ -1701,6 +1721,16 @@ export class AdminWorkspace extends LitElement {
     `;
     return html`
       <div class="admin-overview">
+        ${this.document.siteSettings ? html`
+          <section class="admin-summary surface">
+            <label class="cluster">
+              <md-switch .selected=${(this.document.siteSettings as Value).showTestServerContent === true}
+                ?disabled=${Boolean(this.busy)} @change=${this.changeTestServerContent}
+                aria-label=${this.label("showTestServerContent", "Show test server content")}></md-switch>
+              <strong>${this.label("showTestServerContent", "Show test server content")}</strong>
+            </label>
+            <p>${this.label("showTestServerContentHint", "Include test server entries in catalogs and the team builder.")}</p>
+          </section>` : nothing}
         <section class="admin-work-queue" aria-labelledby="admin-queue-heading">
           <div class="admin-section-heading">
             <h3 id="admin-queue-heading">${this.label("workspace.needsAttention", "Needs attention")}</h3>

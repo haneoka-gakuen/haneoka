@@ -1,10 +1,10 @@
-import { loadCrossServerCatalog, type CrossCatalogReader } from "./load";
+import { loadCrossServerCatalog, type CrossCatalogReader, type CrossCatalogLoadOptions } from "./load";
 import type { CrossCatalogResource, OfficialCatalogServer } from "./catalog";
 
 /** Share the two observed identities and each dependency request across one multi-panel load. */
 export async function loadCrossServerCatalogs(
   resources: readonly CrossCatalogResource[],
-  options: { selectedServer: OfficialCatalogServer; locale: string; reader: CrossCatalogReader },
+  options: CrossCatalogLoadOptions,
 ) {
   const identities = new Map<OfficialCatalogServer, ReturnType<CrossCatalogReader["readIdentity"]>>();
   const collections = new Map<string, ReturnType<CrossCatalogReader["readCollection"]>>();

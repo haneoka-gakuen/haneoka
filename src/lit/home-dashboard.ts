@@ -11,6 +11,8 @@ import type { Catalog, MessageParams } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
+import { showTestServerContent } from "../lib/test-server-visibility";
+import { fetchCrossServerCatalogs, crossCatalogSeedSources } from "../lib/cross-server/fetch";
 import { announcementPath } from "../lib/announcements";
 import { announcementText, announcementRow } from "./shared/announcement";
 import { fetchAnnouncements, type Announcement } from "../lib/announcements";
@@ -286,7 +288,7 @@ export class HomeDashboard extends LitElement {
     if (!this.seed || this.seed.server !== readReleaseServer()) {
       void this.load();
       void this.loadProfiles();
-    }
+    } else if (showTestServerContent()) void this.loadTestCatalogs();
     window.addEventListener("haneoka:session-changed", this.onCommunityContextChange);
     window.addEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
     window.addEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
@@ -641,6 +643,30 @@ export class HomeDashboard extends LitElement {
     this.seed = undefined;
     this.applyDocuments(documents);
     if (results.every((result) => result.status === "rejected")) this.phase = "error";
+  }
+  private async loadTestCatalogs() {
+    if (!showTestServerContent()) return;
+    const seed = this.seed, server = this.sourceServer() as OfficialCatalogServer;
+    const signal = this.catalogRequests.begin();
+    try {
+      const catalogs = await fetchCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands"], server, this.locale, {
+        signal, servers: ["intl-test"], initialSources: crossCatalogSeedSources(this.crossServerCatalogs),
+      });
+      if (!this.isConnected || !this.catalogRequests.current(signal) || this.seed !== seed || !showTestServerContent()) return;
+      this.crossServerCatalogs = catalogs;
+      if (seed) this.applyDocuments(seed.documents);
+      this.requestUpdate();
+      const identity = catalogs.cards?.identities["intl-test"];
+      if (seed && identity) {
+        const response = await fetch(`/api/v1/servers/intl-test/ui-marks?release=${encodeURIComponent(identity.releaseId)}`, { signal });
+        if (response.ok && response.headers.get("x-haneoka-release-id") === identity.releaseId && response.headers.get("x-haneoka-source-id") === identity.sourceId) {
+          const marks = await response.json() as Record<string, string>;
+          if (this.catalogRequests.current(signal) && this.seed === seed && showTestServerContent())
+            this.seed = { ...seed, serverMarks: { ...seed.serverMarks, "intl-test": { identity, marks } } };
+        }
+      }
+      this.requestUpdate();
+    } catch { /* Formal home content is already available. */ }
   }
   private async loadLivePanels() {
     const server = this.sourceServer();

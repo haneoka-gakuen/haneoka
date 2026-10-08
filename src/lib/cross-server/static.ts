@@ -7,6 +7,7 @@ import { crossCatalogApi, crossCatalogDefinition, crossCatalogRows } from "./def
 export function loadStaticCrossServerCatalog(resource: CrossCatalogResource, selectedServer: OfficialCatalogServer, locale: string) {
   return loadCrossServerCatalog(resource, {
     selectedServer, locale,
+    servers: ["jp", "intl"],
     reader: {
       async readIdentity(server) {
         const identity = await staticCatalogRelease(server);
@@ -21,7 +22,7 @@ export function loadStaticCrossServerCatalog(resource: CrossCatalogResource, sel
 /** Entity pages inspect one original ID, rather than rebuilding the entire union per page. */
 export function loadStaticCrossServerEntry(resource: CrossCatalogResource, selectedServer: OfficialCatalogServer, locale: string, id: string) {
   return loadCrossServerCatalog(resource, {
-    selectedServer, locale, withDependencies: false,
+    selectedServer, locale, withDependencies: false, servers: ["jp", "intl"],
     reader: {
       async readIdentity(server) { return { ...await staticCatalogRelease(server), server }; },
       async readCollection(name, identity) {

@@ -5,6 +5,7 @@ import { resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
 import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
+import { readSiteSettings } from "./site-settings";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -777,6 +778,7 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
   ).first<OverviewRow>();
   if (!counts) throw new Error("Admin overview query returned no row");
   return json(request, {
+    siteSettings: await readSiteSettings(env),
     overview: {
       activeUsers: counts.activeUsers,
       blockedPosts: counts.blockedPosts,
@@ -4127,6 +4129,35 @@ const decodedPathSegment = (value: string): string | null => {
   }
 };
 
+const putSiteSettings = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  if (!body) return error(request, 400, "invalid_body", "A JSON body is required");
+  const version = expectedVersion(body);
+  if (version === null || typeof body.showTestServerContent !== "boolean")
+    return error(request, 422, "invalid_site_settings", "showTestServerContent and expectedVersion are required");
+  const started = await startOperation(request, env, access, "site.content_visibility.update", "site_setting", "1");
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  try {
+    const updated = await env.DB.prepare(
+      `UPDATE site_setting SET show_test_server_content = ?, version = version + 1, updated_at = ?
+       WHERE id = 1 AND version = ?`,
+    ).bind(body.showTestServerContent ? 1 : 0, Date.now(), version).run();
+    if (Number(updated.meta.changes || 0) !== 1) {
+      await failOperation(env, started.operationId, "version_conflict");
+      return error(request, 409, "version_conflict", "Site settings changed; refresh and retry");
+    }
+    const operation = await transitionOperation(env, started.operationId, "succeeded",
+      { showTestServerContent: body.showTestServerContent, version: version + 1 }, null, null);
+    return json(request, { operation: operationValue(operation), siteSettings: await readSiteSettings(env) });
+  } catch (failure) {
+    await failOperation(env, started.operationId, "site_settings_update_failed");
+    throw failure;
+  }
+};
+
 export const handleAdminRequest = async (request: Request, env: Env): Promise<Response | null> => {
   const url = new URL(request.url);
   if (url.pathname !== ADMIN_PREFIX && !url.pathname.startsWith(`${ADMIN_PREFIX}/`)) return null;
@@ -4180,6 +4211,7 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
 
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "overview") return getOverview(request, env);
+  if (method === "PUT" && path.length === 1 && path[0] === "site-settings") return putSiteSettings(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "users") return getUsers(request, env, url);
   if (method === "GET" && path.length === 1 && path[0] === "posts") return getPosts(request, env, url);
   if (method === "GET" && path.length === 3 && path[0] === "posts" && path[2] === "history") {

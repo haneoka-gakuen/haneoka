@@ -1857,7 +1857,9 @@
       "selectHint": "請選擇板塊以管理名稱、分組與存取權限。"
     },
     "save": "儲存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "showTestServerContent": "顯示測試伺服器內容",
+    "showTestServerContentHint": "在圖鑑與配隊工具中顯示測試伺服器內容。"
   },
   "aboutPage": {
     "eyebrow": "BanG Dream! Our Notes 資料庫",

@@ -1857,7 +1857,9 @@
       "selectHint": "Choose a forum to manage its name, group and access permissions."
     },
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "showTestServerContent": "Show test server content",
+    "showTestServerContentHint": "Include test server entries in catalogs and the team builder."
   },
   "aboutPage": {
     "eyebrow": "BanG Dream! Our Notes database",

@@ -233,6 +233,11 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
           seed = localStorage.getItem(SEED_KEY) || seed;
         } catch {}
         next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";
+        // A prefetched document must not undo a newer administrative setting observed in this tab.
+        if (Number(document.documentElement.dataset.siteSettingsVersion || 0) > Number(next.documentElement.dataset.siteSettingsVersion || 0)) {
+          next.documentElement.dataset.showTestServerContent = document.documentElement.dataset.showTestServerContent || "0";
+          next.documentElement.dataset.siteSettingsVersion = document.documentElement.dataset.siteSettingsVersion;
+        }
       });
       document.addEventListener("astro:after-swap", () => {
         delete document.documentElement.dataset.navigationHref;

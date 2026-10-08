@@ -1857,7 +1857,9 @@
       "selectHint": "이름, 그룹 및 접근 권한을 관리할 포럼을 선택하세요."
     },
     "save": "저장",
-    "cancel": "취소"
+    "cancel": "취소",
+    "showTestServerContent": "테스트 서버 콘텐츠 표시",
+    "showTestServerContentHint": "도감과 팀 편성 도구에 테스트 서버 콘텐츠를 표시합니다."
   },
   "aboutPage": {
     "eyebrow": "BanG Dream! Our Notes 데이터베이스",

@@ -9,20 +9,28 @@ export interface CrossCatalogReader {
   readCollection(resource: CrossCatalogResource, identity: CrossCatalogIdentity): Promise<unknown>;
   readEntity?(resource: CrossCatalogResource, identity: CrossCatalogIdentity, id: string): Promise<unknown>;
 }
+export interface CrossCatalogLoadOptions {
+  selectedServer: OfficialCatalogServer;
+  locale: string;
+  reader: CrossCatalogReader;
+  withDependencies?: boolean;
+  servers?: readonly OfficialCatalogServer[];
+  initialSources?: readonly CrossCatalogSnapshot[];
+}
 const object = (value: unknown): value is CrossCatalogRow => !!value && typeof value === "object" && !Array.isArray(value);
 
 /** Each server is observed once, then all required collections use that immutable pin. */
 export async function loadCrossServerCatalog(
   resource: CrossCatalogResource,
-  options: { selectedServer: OfficialCatalogServer; locale: string; reader: CrossCatalogReader; withDependencies?: boolean },
+  options: CrossCatalogLoadOptions,
 ) {
   const dependencies: CrossCatalogResource[] = resource === "cards" || resource === "support-cards" || resource === "characters"
     ? ["bands", "characters", resource]
     : resource === "songs" ? ["bands", "characters", "songs"] : resource === "events" ? ["bands", "characters", "events"] : [resource];
   const resources = options.withDependencies === false ? [resource] : [...new Set(dependencies)];
   const failures: { server: OfficialCatalogServer; resource: CrossCatalogResource | "identity"; message: string }[] = [];
-  const sources: CrossCatalogSnapshot[] = [];
-  await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
+  const sources: CrossCatalogSnapshot[] = [...options.initialSources || []];
+  await Promise.all((options.servers ?? OFFICIAL_CATALOG_SERVERS).map(async (server) => {
     let identity: CrossCatalogIdentity;
     try {
       identity = await options.reader.readIdentity(server);

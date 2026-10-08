@@ -1,6 +1,7 @@
 import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { OFFICIAL_CATALOG_SERVERS } from "../../cross-server/catalog";
 import { fetchTeamBuilderData } from "./fetch";
+import { visibleContentServers } from "../../test-server-visibility";
 
 const COLLECTIONS = ["members", "snapshots", "characters", "bands", "bandItems", "songs", "events"] as const;
 const GROWTH = ["memberCardLevels", "memberCardAwake", "memberCardRanks", "supportCardLevels", "supportCardRanks"] as const;
@@ -158,7 +159,8 @@ export function mergeTeamBuilderData(sources: readonly TeamBuilderData[], unavai
 
 /** A missing optional source does not prevent using the current server. */
 export async function fetchCrossServerTeamBuilderData(server: string, signal?: AbortSignal): Promise<TeamBuilderData> {
-  const servers = [server, ...OFFICIAL_CATALOG_SERVERS.filter((peer) => peer !== server)];
+  if (!visibleContentServers([server]).length) server = "intl";
+  const servers = visibleContentServers([server, ...OFFICIAL_CATALOG_SERVERS.filter((peer) => peer !== server)]);
   const results = await Promise.allSettled(servers.map((peer) => fetchTeamBuilderData(peer, signal)));
   signal?.throwIfAborted();
   const primary = results[0]!;

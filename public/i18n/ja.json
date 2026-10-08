@@ -1857,7 +1857,9 @@
       "selectHint": "名前、グループ、アクセス権限を管理するフォーラムを選択してください。"
     },
     "save": "保存",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "showTestServerContent": "テストサーバーの内容を表示",
+    "showTestServerContentHint": "図鑑と編成ツールにテストサーバーの内容を表示します。"
   },
   "aboutPage": {
     "eyebrow": "BanG Dream! Our Notes データベース",

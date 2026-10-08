@@ -2,6 +2,7 @@ import { DEFAULT_LOCALE, isLocale } from "@haneoka/i18n";
 import { navigationDocumentUrl } from "./document-url";
 import { homePath, isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
 import { formalServerForHidden, PUBLIC_RELEASE_SERVERS, temporaryPublicRedirectTarget } from "./temporary-public-routing";
+import { isTestContentServer, showTestServerContent } from "./test-server-visibility";
 export { isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
 export { isPublicReleaseServer } from "./temporary-public-routing";
 export const RELEASE_SERVERS: readonly ReleaseServer[] = PUBLIC_RELEASE_SERVERS;
@@ -9,6 +10,7 @@ const KEY = "haneoka.release-server";
 
 export function normalizeReleaseServer(value: unknown): ReleaseServer {
   const current = value === "gl-cbt" ? "intl-cbt" : value;
+  if (typeof document !== "undefined" && typeof current === "string" && isTestContentServer(current) && !showTestServerContent()) return "intl";
   return formalServerForHidden(current) ?? (isReleaseServer(current) ? current : "intl");
 }
 

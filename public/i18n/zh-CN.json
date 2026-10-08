@@ -1857,7 +1857,9 @@
       "selectHint": "选择板块以管理名称、分组和访问权限。"
     },
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "showTestServerContent": "显示测试服务器内容",
+    "showTestServerContentHint": "在图鉴和配队工具中显示测试服务器内容。"
   },
   "aboutPage": {
     "eyebrow": "BanG Dream! Our Notes 资料库",
