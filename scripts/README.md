@@ -43,6 +43,16 @@ PYTHONPATH=scripts python -m core.config --server intl-test
 
 `RESOURCE_PIPELINE_CONFIG` and `RESOURCE_PIPELINE_CONFIG_FILE` are mutually exclusive; missing, mismatched, or malformed settings fail before acquisition. CI masks private fields and diagnostics redact configured values. The `intl-test` server is included in scheduled and manual resource builds and cross-server content browsing; it is absent from the default Settings server choices. Formal JP/Intl availability takes precedence over its test-only badge.
 
+Keep readable local copies under the ignored `.secrets/resource-pipeline/` directory. Validate and synchronize them with:
+
+```sh
+python scripts/sync_pipeline_config.py --server intl-test --check
+python scripts/sync_pipeline_config.py --server intl-test
+# Validate or synchronize all configured servers with --all.
+```
+
+The helper validates the private file, uploads compact JSON through standard input, and records its checksum in the local manifest. GitHub must receive a single-line secret: pretty JSON registers standalone braces and brackets as masked values, which can suppress matrix job outputs. Reusable workflow callers must explicitly forward `RESOURCE_PIPELINE_CONFIG`, including when its value comes from the selected Environment.
+
 `probe-source` downloads only the current Addressables catalog and computes the
 source identity before the expensive bundle download. A scheduled run skips the
 build when both this identity and the pipeline fingerprint equal the published
