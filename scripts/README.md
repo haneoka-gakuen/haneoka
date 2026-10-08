@@ -24,8 +24,8 @@ complete split-APK set.
 
 ## Production package discovery
 
-The scheduled GitHub Actions run checks the jp and intl production servers at
-00:05, 06:05, 12:05 and 18:05 Asia/Tokyo. When the publisher fingerprint
+The scheduled GitHub Actions run checks jp, intl, and intl-test at
+04:05, 12:05, and 20:05 Asia/Tokyo (03:05, 11:05, and 19:05 Asia/Taipei). When the publisher fingerprint
 (versionCode/versionName from the mirror page) still matches the published
 source's package, the run reuses the stored R2 package instead of
 re-downloading from the publisher; only a real update pays that transfer. `scripts/acquire_package.py` discovers the package using the selected environment's private acquisition settings, downloads the current file, and stores it under a SHA-256 content-addressed R2 key. Package updates create new keys; large uploads use multipart transfer.
@@ -61,6 +61,21 @@ With `ingest --reuse`, a new source first restores every bundle name already
 present in a prior published source from the R2 CAS (verified by size and
 SHA-256, CDN download as fallback), so hot updates only fetch what actually
 changed.
+
+Live identity discovery using a retained package has a five-minute total limit;
+package-based source probing has a ten-minute limit. A failed live catalog or
+Master lookup stops that server's run and leaves its published release intact.
+It does not repeat the same lookup after downloading the unchanged package.
+Embedded-only servers can still fall back to inspecting their package.
+
+Versioned catalogs without a version pointer use the configured catalog version
+as a floor and also check the live Master resource version. The catalog scan
+stops after three consecutive missing versions, searches at most 128 higher
+build numbers on each line, and checks higher lines starting at build zero.
+Larger gaps, changed version schemes, removed floors without a usable Master
+candidate, and changed CDN roots can require a private configuration update.
+The schedule and discovery rules provide periodic update checks; they do not
+guarantee that every future version can be discovered without maintenance.
 
 ### Delta builds
 

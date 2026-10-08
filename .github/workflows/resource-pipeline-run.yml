@@ -138,7 +138,15 @@ jobs:
                 # decide the source identity without transferring the package.
                 identity_json=""
                 if [[ "${{ inputs.force }}" != "true" ]]; then
-                  identity_json="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-identity || true)"
+                  if ! identity_json="$(timeout --kill-after=10s 5m python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-identity)"; then
+                    # A live catalog/Master failure cannot be repaired by
+                    # transferring the unchanged package and probing it again.
+                    if [[ "$(python -m core.config --server "$RESOURCE_SERVER" --field has-master)" == "true" ]]; then
+                      echo "Live source discovery failed or exceeded 5 minutes; retaining the published release" >&2
+                      exit 1
+                    fi
+                    identity_json=""
+                  fi
                 fi
                 if [[ -n "$identity_json" ]]; then
                   probed_source="$(printf '%s' "$identity_json" | jq -r .sourceId)"
@@ -185,7 +193,7 @@ jobs:
             fi
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-package \
               --key "$PACKAGE_R2_KEY" --output "$RUNNER_TEMP/package-input"
-            python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-source \
+            timeout --kill-after=10s 10m python scripts/pipeline.py --server "$RESOURCE_SERVER" probe-source \
               --input "$RUNNER_TEMP/package-input" > "$RUNNER_TEMP/source-probe.json"
             probed_source="$(jq -r .sourceId "$RUNNER_TEMP/source-probe.json")"
             wanted_build="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" build-id \
