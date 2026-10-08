@@ -178,6 +178,7 @@ const HOME_ROOT_KEYS = [
   "catalogCompat.spanMinutes",
   "catalogCompat.startsIn",
   "catalogCompat.endsIn",
+  "catalogCompat.endedAgo",
   "catalogCompat.releasedToday",
   "catalogCompat.releasedAgo",
   "catalogCompat.releasesIn",
