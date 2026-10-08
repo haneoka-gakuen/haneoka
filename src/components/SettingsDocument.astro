@@ -107,6 +107,7 @@ const groups: Group[] = [
 ];
 const japaneseLabel = "forceJapaneseTitles";
 const estimatedDifficultyLabel = "showDifficultyEstimates";
+const spoilersLabel = "showSpoilerContent";
 ---
 
 <Base locale={locale} route="/settings" title={title} titleKey="settings">
@@ -161,6 +162,18 @@ const estimatedDifficultyLabel = "showDifficultyEstimates";
                     ></md-switch>
                   </div>
                 )}
+                {group.name === "release" && (
+                  <div class="settings-toggle">
+                    <label for="spoiler-content">
+                      <Icon name="visibility" size={20} />
+                      <I18nText keyName={spoilersLabel} fallback="Show spoiler content" locale={locale} />
+                    </label>
+                    <md-switch id="spoiler-content" data-spoiler-content-toggle icons
+                      aria-label={t(locale, spoilersLabel, "Show spoiler content")}
+                      data-i18n-aria-label={spoilersLabel}
+                      data-i18n-aria-label-fallback="Show spoiler content"></md-switch>
+                  </div>
+                )}
                 {group.name === "locale" && (
                   <div class="settings-toggle">
                     <label for="difficulty-estimates">
@@ -198,6 +211,7 @@ const estimatedDifficultyLabel = "showDifficultyEstimates";
   import { difficultyEstimatesEnabled, setDifficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
   import { isReleaseServer, readReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
+  import { spoilerContentEnabled, setSpoilerContentEnabled, observeSpoilerContent } from "../lib/spoiler-content";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   let disposeSettings: (() => void) | undefined;
@@ -208,9 +222,11 @@ const estimatedDifficultyLabel = "showDifficultyEstimates";
     const controller = new AbortController();
     const { signal } = controller;
     let stopDifficultyDisplay: (() => void) | undefined;
+    let stopSpoilerContent: (() => void) | undefined;
     disposeSettings = () => {
       controller.abort();
       stopDifficultyDisplay?.();
+      stopSpoilerContent?.();
     };
     const updateSummary = (group: string) => {
       const selected = settings.querySelector<HTMLInputElement>(`input[name="${group}"]:checked`);
@@ -281,6 +297,11 @@ const estimatedDifficultyLabel = "showDifficultyEstimates";
       setDifficultyEstimatesEnabled(estimatedDifficulty.selected);
     }, { signal });
     const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
+    const spoilers = settings.querySelector<HTMLElement & { selected: boolean }>("[data-spoiler-content-toggle]");
+    const syncSpoilers = () => { if (spoilers) spoilers.selected = spoilerContentEnabled(); };
+    syncSpoilers();
+    stopSpoilerContent = observeSpoilerContent(syncSpoilers);
+    spoilers?.addEventListener("change", () => { setSpoilerContentEnabled(spoilers.selected); }, { signal });
     if (japanese) japanese.selected = japaneseSongTitles();
     japanese?.addEventListener(
       "change",

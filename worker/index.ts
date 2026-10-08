@@ -6,7 +6,7 @@ import { version } from "@sonolus/core";
 import { sonolusShareRedirectTarget } from "./sonolus-share";
 export { CommunityMediaContainer } from "./community-media-container";
 import { handleAdminRequest } from "./admin";
-import { applySiteSettings, readSiteSettings } from "./site-settings";
+import { applySiteSettings, readSiteSettings, testContentAllowed } from "./site-settings";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
 import { handleAvatarRequest } from "./avatar";
 import { handleAppealRequest } from "./appeals";
@@ -3477,16 +3477,18 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   if (url.pathname.startsWith("/api/")) return errorResponse(request, 404, "route_not_found", "API route not found");
   const documentRequest = url.pathname.endsWith("/") || url.pathname.endsWith(".html") || !/\.[^/]+$/u.test(url.pathname);
   if (!documentRequest) return serveStaticAsset(request, env);
+  const previewRequest = url.pathname.split("/")[1]?.includes("-test");
+  const previewSettings = previewRequest ? await readSiteSettings(env) : undefined;
+  if (previewSettings && !testContentAllowed(request, previewSettings))
+    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   const headers = new Headers(request.headers);
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
   const assetRequest = new Request(request, { headers });
   const [response, settings] = await Promise.all([
     serveCanonicalResourceDocument(assetRequest, env).then((value) => value ?? serveStaticAsset(assetRequest, env)),
-    readSiteSettings(env),
+    previewSettings ? Promise.resolve(previewSettings) : readSiteSettings(env),
   ]);
-  if (!settings.showTestServerContent && url.pathname.split("/")[1]?.includes("-test"))
-    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   return applySiteSettings(request, response, settings);
 }
 

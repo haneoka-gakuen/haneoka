@@ -3901,5 +3901,6 @@
   "gekisouPhase3": "Gekiso phase 3",
   "gekisouType": "Gekiso type",
   "gekisouSupportSkill": "Gekiso support skill",
-  "catalogFiltersUnavailable": "Additional card filters could not be loaded. Your cards are still available."
+  "catalogFiltersUnavailable": "Additional card filters could not be loaded. Your cards are still available.",
+  "showSpoilerContent": "Show spoiler content"
 }

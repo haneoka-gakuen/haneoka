@@ -1387,3 +1387,12 @@
     scroll-snap-align: start;
   }
 }
+
+@layer pages {
+  .home-event__additional { display: grid; gap: .5rem; padding: 1rem; }
+  .home-event__additional-entry { display: flex; align-items: center; gap: .75rem; color: inherit; text-decoration: none; border-radius: var(--md-sys-shape-corner-medium, 12px); padding: .5rem; }
+  .home-event__additional-entry:is(:hover, :focus-visible) { background: var(--md-sys-color-surface-container-high); }
+  .home-event__additional-entry > span { display: grid; gap: .25rem; flex: 1; min-width: 0; }
+  .home-event__additional-entry small { color: var(--md-sys-color-on-surface-variant); }
+  .home-event__additional-image { width: 96px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; }
+}

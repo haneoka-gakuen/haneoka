@@ -141,6 +141,7 @@ const COMMON_FLAT_KEYS = [
   "metaScoreFactor",
   "forceJapaneseTitles",
   "showDifficultyEstimates",
+  "showSpoilerContent",
   "grid",
   "list",
   "table",

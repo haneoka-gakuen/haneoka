@@ -1,5 +1,6 @@
 import { staticCatalogRelease, fetchStaticCatalog } from "../static-catalog-source";
 import { loadCrossServerCatalogs } from "./bundle";
+import { homeEventDisplay } from "../home-event-display";
 import {
   OFFICIAL_CATALOG_SERVERS, type CrossCatalogDTO, type CrossCatalogRow, type CrossCatalogResource,
   type CrossCatalogIdentity, type OfficialCatalogServer,
@@ -13,9 +14,11 @@ const HOME_FIELDS = {
   characters: ["characterId", "characterName", "englishName", "nickname", "bandId", "bandPart", "colorCode", "birthday", "slug",
     "faceImage", "thumbnailImage", "profileImage", "voiceActor", "description"],
   bands: ["bandId", "bandName", "description", "logo", "icon", "color", "colorCode"],
+  events: ["id", "kind", "sourceTable", "sourceTables", "raw", "title", "image", "backgroundImage", "logo", "startAt", "endAt", "eventType", "homeStoryId", "effects"],
 } satisfies Partial<Record<CrossCatalogResource, string[]>>;
 type HomeResource = keyof typeof HOME_FIELDS;
 function compact(row: CrossCatalogRow, resource: HomeResource): CrossCatalogRow {
+  if (resource === "events") return homeEventDisplay(row);
   const keys = HOME_FIELDS[resource], result = Object.fromEntries(Object.entries(row).filter(([key]) => keys.includes(key)));
   const images = row.images as CrossCatalogRow | undefined;
   if (images?.thumbnail !== undefined) result.images = { thumbnail: images.thumbnail };
@@ -46,8 +49,9 @@ export async function loadStaticCrossServerHome(selectedServer: OfficialCatalogS
       return { ...identity, server };
     },
     readCollection: (resource: CrossCatalogResource, identity: CrossCatalogIdentity) => fetchStaticCatalog(resource, identity.server, identity),
+    readEntity: (resource: CrossCatalogResource, identity: CrossCatalogIdentity, id: string) => fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, identity.server, identity),
   };
-  const catalogs = await loadCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands"], { selectedServer, locale, reader, servers: ["jp", "intl"] });
+  const catalogs = await loadCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands", "events"], { selectedServer, locale, reader, servers: selectedServer === "intl-test" ? ["jp", "intl", "intl-test"] : ["jp", "intl"] });
   const serverMarks: Partial<Record<OfficialCatalogServer, { identity: CrossCatalogIdentity; marks: Record<string, string> }>> = {};
   await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
     const identity = catalogs.cards?.identities[server];

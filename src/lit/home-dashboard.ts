@@ -13,6 +13,8 @@ import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
 import { showTestServerContent } from "../lib/test-server-visibility";
 import { fetchCrossServerCatalogs, crossCatalogSeedSources } from "../lib/cross-server/fetch";
+import { homeEventDisplay } from "../lib/home-event-display";
+import { pinCrossCatalogValue } from "../lib/cross-server/presentation";
 import { announcementPath } from "../lib/announcements";
 import { announcementText, announcementRow } from "./shared/announcement";
 import { fetchAnnouncements, type Announcement } from "../lib/announcements";
@@ -91,7 +93,7 @@ export interface HomeSeed {
   announcements: Announcement[];
   profiles: { characters: JsonRecord[]; cast: JsonRecord[] };
   fanInfo?: HomeFanInfo;
-  crossServerCatalogs?: Partial<Record<Exclude<CrossCatalogResource, "events">, CrossCatalogDTO>>;
+  crossServerCatalogs?: Partial<Record<CrossCatalogResource, CrossCatalogDTO>>;
   serverMarks?: Partial<
     Record<OfficialCatalogServer, { identity: CrossCatalogIdentity; marks: Record<string, string> }>
   >;
@@ -115,6 +117,7 @@ type Birthday = {
 };
 /** A rotating window (gacha banner, event, live) the game is showing right now. */
 type Spotlight = {
+  sourceServer: HomeSeed["server"];
   id: string;
   title: string;
   image: string;
@@ -434,15 +437,17 @@ export class HomeDashboard extends LitElement {
   private rowServer(row: JsonRecord): HomeSeed["server"] {
     return (row.homeSourceServer as HomeSeed["server"] | undefined) || this.sourceServer();
   }
-  private catalogRows(resource: "cards" | "support-cards" | "songs", fallback: unknown): JsonRecord[] {
+  private catalogRows(resource: "cards" | "support-cards" | "songs" | "events", fallback: unknown): JsonRecord[] {
     const catalog = this.crossServerCatalogs[resource];
     return catalog
       ? catalog.entries.map((entry) => ({
-          ...crossServerDisplayRow(entry),
+          ...(resource === "events"
+            ? pinCrossCatalogValue(homeEventDisplay({ ...entry.perServer[entry.displayServer]!.row, ...entry.nameOverrides }), entry.perServer[entry.displayServer]!.identity) as JsonRecord
+            : crossServerDisplayRow(entry)),
           homeCatalogEntry: entry,
           homeSourceServer: entry.displayServer,
         }))
-      : values(fallback);
+      : values(fallback, resource === "events" ? "entries" : undefined);
   }
   private sameVariant(entry: CrossCatalogEntry, row: JsonRecord) {
     const server = this.rowServer(row) as OfficialCatalogServer;
@@ -603,7 +608,7 @@ export class HomeDashboard extends LitElement {
       if (typeof path === "string")
         this.marks.set(logical, `/runtime/${this.sourceServer()}/${path.replace(/^runtime\//u, "")}`);
     this.banners = this.carousel(documents["home-banners"], now);
-    this.events = values(documents.events, "entries").map((entry) => this.spotlightOf(entry, "events"));
+    this.events = this.catalogRows("events", documents.events).map((entry) => this.spotlightOf(entry, "events"));
     this.phase = "ready";
   }
   private async load() {
@@ -649,7 +654,7 @@ export class HomeDashboard extends LitElement {
     const seed = this.seed, server = this.sourceServer() as OfficialCatalogServer;
     const signal = this.catalogRequests.begin();
     try {
-      const catalogs = await fetchCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands"], server, this.locale, {
+      const catalogs = await fetchCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands", "events"], server, this.locale, {
         signal, servers: ["intl-test"], initialSources: crossCatalogSeedSources(this.crossServerCatalogs),
       });
       if (!this.isConnected || !this.catalogRequests.current(signal) || this.seed !== seed || !showTestServerContent()) return;
@@ -717,6 +722,7 @@ export class HomeDashboard extends LitElement {
   };
   private spotlightOf(entry: JsonRecord, resource: string): Spotlight {
     return {
+      sourceServer: this.rowServer(entry),
       id: String(entry.id || ""),
       title: localizedText(entry.title, this.locale) || "—",
       image: String(entry.image || ""),
@@ -1162,6 +1168,9 @@ export class HomeDashboard extends LitElement {
   private renderEvents() {
     const featured = this.featuredEvent();
     const event = featured?.entry;
+    const eventServer = event?.sourceServer ?? this.sourceServer();
+    const mark = event ? this.exclusiveMark(event.details) : null;
+    const additionalEvents = this.events.filter((entry) => entry.id !== event?.id).sort((a, b) => b.startAt - a.startAt);
     const title = event ? localizedText(event.details.title, this.locale) || event.title : "";
     const countdown = event ? this.eventPhrase(event.startAt, event.endAt) : "";
     const targets = event
@@ -1183,12 +1192,12 @@ export class HomeDashboard extends LitElement {
     const bonusTargets = unique
       .filter((target) => target.homeTargetKind === "band" || target.homeTargetKind === "attribute")
       .map((target) => {
-        const band = this.bands.find((entry) => Number(entry.bandId) === Number(target.bandId));
+        const band = event ? this.relationshipBand(target.bandId, event.details) : this.bands.find((entry) => Number(entry.bandId) === Number(target.bandId));
         const source = String(
           (target.homeTargetKind === "band"
             ? band?.icon || target.icon
             : target.image ||
-              this.marks.get(
+              this.marksFor(event?.details).get(
                 (
                   {
                     1: "CardType-Red.png",
@@ -1213,7 +1222,11 @@ export class HomeDashboard extends LitElement {
           </span>
         `;
       });
-    const bonusCharacters = this.characters
+    const sourceCharacters = this.crossServerCatalogs.characters?.entries.flatMap((entry) => {
+      const variant = entry.perServer[eventServer as OfficialCatalogServer];
+      return variant ? [variant.row] : [];
+    }) ?? this.characters;
+    const bonusCharacters = sourceCharacters
       .filter((character) =>
         unique.some((target) => target.homeTargetKind === "band" && Number(target.bandId) === Number(character.bandId)),
       )
@@ -1223,7 +1236,7 @@ export class HomeDashboard extends LitElement {
             class="home-event__character"
             aria-label=${localizedText(character.characterName, this.locale)}
             title=${localizedText(character.characterName, this.locale)}
-            href=${entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "characters", id: String(character.characterId) })}
+            href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "characters", id: String(character.characterId) })}
           >
             <img
               src=${String(character.faceImage || character.thumbnailImage || CHARACTER_AVATAR(character.characterId))}
@@ -1249,7 +1262,7 @@ export class HomeDashboard extends LitElement {
                 <div class="home-event__card">
                   <a
                     class="home-event__media media-loading"
-                    href=${entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "events", id: event.id })}
+                    href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "events", id: event.id })}
                     aria-label=${`${title} · ${countdown}`}
                   >
                     ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale)}
@@ -1260,9 +1273,10 @@ export class HomeDashboard extends LitElement {
                     <header class="home-event__heading">
                       <h3>
                         <a
-                          href=${entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "events", id: event.id })}
+                          href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "events", id: event.id })}
                         >
                           ${title}
+                          ${mark ? html`<img class="catalog-server-availability" src=${mark.image} alt=${mark.label} title=${mark.label} width="18" height="18" />` : nothing}
                         </a>
                       </h3>
                       <p class="home-event__range">
@@ -1290,7 +1304,7 @@ export class HomeDashboard extends LitElement {
                     <nav class="home-event__links" aria-label=${uiText(this.locale, "events")}>
                       <a
                         class="button button--tonal home-event__action"
-                        href=${entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "events", id: event.id })}
+                        href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "events", id: event.id })}
                         aria-label=${this.text("viewDetails", "View details")}
                         title=${this.text("viewDetails", "View details")}
                       >
@@ -1299,7 +1313,7 @@ export class HomeDashboard extends LitElement {
                       </a>
                       <a
                         class="button button--tonal home-event__action"
-                        href=${`/${this.sourceServer()}/${this.locale}/events/tracker/`}
+                        href=${`/${eventServer}/${this.locale}/events/tracker/`}
                         aria-label=${this.text("eventTracker", "Event tracker")}
                         title=${this.text("eventTracker", "Event tracker")}
                       >
@@ -1308,7 +1322,7 @@ export class HomeDashboard extends LitElement {
                       </a>
                       <a
                         class="button button--tonal home-event__action"
-                        href=${event.details.homeStoryId ? entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "stories", id: String(event.details.homeStoryId) }) : resourceCollectionHref("/catalog/stories/event", this.sourceServer(), this.locale as Locale)}
+                        href=${event.details.homeStoryId ? entityHref({ server: eventServer, locale: this.locale as Locale, kind: "stories", id: String(event.details.homeStoryId) }) : resourceCollectionHref("/catalog/stories/event", eventServer, this.locale as Locale)}
                         aria-label=${this.text("eventStory", "Event story")}
                         title=${this.text("eventStory", "Event story")}
                       >
@@ -1328,6 +1342,16 @@ export class HomeDashboard extends LitElement {
                 </div>
               `
         }
+        ${additionalEvents.length ? html`<div class="home-event__additional">
+          ${additionalEvents.map((entry) => {
+            const badge = this.exclusiveMark(entry.details);
+            return html`<a class="home-event__additional-entry" href=${entityHref({ server: entry.sourceServer, locale: this.locale as Locale, kind: "events", id: entry.id })}>
+              <img class="home-event__additional-image" src=${entry.image} alt="" loading="lazy" decoding="async" />
+              <span><strong>${localizedText(entry.details.title, this.locale) || entry.title}</strong><small>${this.eventPhrase(entry.startAt, entry.endAt)}</small></span>
+              ${badge ? html`<img class="catalog-server-availability" src=${badge.image} alt=${badge.label} title=${badge.label} width="18" height="18" />` : nothing}
+            </a>`;
+          })}
+        </div>` : nothing}
       </section>
     `;
   }

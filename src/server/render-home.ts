@@ -25,7 +25,7 @@ const pick = (entry: JsonRecord, keys: string[]) =>
 const rows = (value: unknown) => Object.values((value || {}) as Record<string, JsonRecord>);
 async function snapshot(server: ReleaseServer, locale: Locale): Promise<HomeSeed> {
   const release = await staticCatalogRelease(server);
-  const homeUnion = server === "intl" || server === "jp" ? await loadStaticCrossServerHome(server, locale) : {};
+  const homeUnion = server === "intl" || server === "jp" || server === "intl-test" ? await loadStaticCrossServerHome(server, locale) : {};
   const keys = [
     "catalog/summary",
     "songs",

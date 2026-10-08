@@ -3901,5 +3901,6 @@
   "gekisouPhase3": "撃奏区間3",
   "gekisouType": "撃奏タイプ",
   "gekisouSupportSkill": "撃奏サポートスキル",
-  "catalogFiltersUnavailable": "追加のカード絞り込み情報を読み込めませんでした。カードは引き続き表示できます。"
+  "catalogFiltersUnavailable": "追加のカード絞り込み情報を読み込めませんでした。カードは引き続き表示できます。",
+  "showSpoilerContent": "ネタバレを含む内容を表示"
 }

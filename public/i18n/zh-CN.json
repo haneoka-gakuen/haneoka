@@ -3901,5 +3901,6 @@
   "gekisouPhase3": "激奏阶段3",
   "gekisouType": "激奏类型",
   "gekisouSupportSkill": "激奏支援技能",
-  "catalogFiltersUnavailable": "卡牌的额外筛选信息加载失败。已有卡牌仍然可以查看。"
+  "catalogFiltersUnavailable": "卡牌的额外筛选信息加载失败。已有卡牌仍然可以查看。",
+  "showSpoilerContent": "显示剧透内容"
 }
