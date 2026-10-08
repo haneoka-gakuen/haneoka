@@ -71,17 +71,27 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
   const cleanupJobs = async (settled = false) => Promise.allSettled([...jobs].map(async id => {
     await client.cancel(id); if (settled) jobs.delete(id);
   }));
+  const refreshCanConfirm = () => {
+    state.canConfirm = false;
+    if (!state.preview || !state.confirmations.some(choice => choice.include)) return;
+    try {
+      applyConfirmedScreenshotImport(state.preview, inventory, data, context, state.confirmations, state.existingValues);
+      state.canConfirm = true;
+    } catch {
+      // Conflicting supplied levels remain in review until a concrete choice.
+    }
+  };
   const review = () => {
     const preview = previewScreenshotImportBatch(inventory, data, context, results, selections);
     const confirmations = preview.cards.map(card => {
       const previous = state.confirmations.find(choice => choice.key === card.key);
       const legal = practiceRanges(data, card.kind, card.cardId, inventory[card.kind].find(entry => entry.cardId === card.cardId)).level ?? [];
-      return previous ? { ...previous, level: previous.level !== undefined &&
+      return previous ? { ...previous, level: previous.level === "keep" && card.existingInstanceId !== null ? "keep" as const : typeof previous.level === "number" &&
         (previous.levelSource === "manual" ? legal : card.observedLevels).includes(previous.level) ? previous.level : undefined }
         : { key: card.key, include: false };
     });
     state = { ...state, phase: "review", preview, results: [...results], confirmations,
-      canConfirm: confirmations.some(choice => choice.include), error: null }; emit();
+      canConfirm: false, error: null }; refreshCanConfirm(); emit();
   };
   return {
     state: () => state,
@@ -139,19 +149,26 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
     include(key: string, include: boolean) {
       if (closed || state.phase !== "review" || !state.preview?.cards.some(card => card.key === key)) throw new RangeError("recognition-review-selection");
       state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, include } : choice) };
-      state.canConfirm = state.confirmations.some(choice => choice.include); emit();
+      refreshCanConfirm(); emit();
     },
-    level(key: string, level: number | undefined, source: "observed" | "manual" = "observed") {
+    existingValues(existingValues: "keep" | "overwrite") {
+      if (closed || state.phase !== "review" || !state.preview) throw new RangeError("recognition-review-selection");
+      const existing = new Set(state.preview.cards.filter(card => card.existingInstanceId !== null).map(card => card.key));
+      state = { ...state, existingValues, confirmations: state.confirmations.map(choice => existing.has(choice.key)
+        ? { ...choice, level: undefined, levelSource: undefined } : choice) };
+      refreshCanConfirm(); emit();
+    },
+    level(key: string, level: number | "keep" | undefined, source: "observed" | "manual" = "observed") {
       const proposal = state.preview?.cards.find(card => card.key === key);
       if (closed || state.phase !== "review" || !proposal) throw new RangeError("recognition-review-level");
       const legal = source === "manual" ? practiceRanges(data, proposal.kind, proposal.cardId,
         inventory[proposal.kind].find(entry => entry.cardId === proposal.cardId)).level ?? [] : proposal.observedLevels;
-      if (level !== undefined && !legal.includes(level)) throw new RangeError("recognition-review-level");
-      state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, level, levelSource: level === undefined ? undefined : source } : choice) }; emit();
+      if (level === "keep" ? proposal.existingInstanceId === null : level !== undefined && !legal.includes(level)) throw new RangeError("recognition-review-level");
+      state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, level, levelSource: typeof level === "number" ? source : undefined } : choice) }; refreshCanConfirm(); emit();
     },
     merge(current: InventoryV1, currentData: TeamBuilderData, currentContext: ScreenshotReviewContext) {
       if (closed || state.phase !== "review" || !state.preview || !state.canConfirm) throw new RangeError("recognition-review-required");
-      return applyConfirmedScreenshotImport(state.preview, current, currentData, currentContext, state.confirmations);
+      return applyConfirmedScreenshotImport(state.preview, current, currentData, currentContext, state.confirmations, state.existingValues);
     },
     /** Parent calls on close, account/source/revision change, and disconnection. */
     async close() {

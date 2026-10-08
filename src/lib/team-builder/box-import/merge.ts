@@ -4,8 +4,9 @@ import type { TeamBuilderData } from "../data";
 import { BoxImportError } from "./types";
 import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext } from "./preview";
 export interface BoxConfirmation {
-  cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number>> }[];
-  maps: { key: string; include: boolean; value?: number }[];
+  existingValues?: "keep" | "overwrite";
+  cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number | "keep">> }[];
+  maps: { key: string; include: boolean; value?: number | "keep" }[];
 }
 /** No persistence. Existing values/flags survive unless the user selects a supplied concrete field. */
 export function applyConfirmedBoxImport(
@@ -38,10 +39,12 @@ export function applyConfirmedBoxImport(
     const fields: Record<string, number> = {};
     for (const [field, values] of Object.entries(proposal.values) as [BoxPracticeField, number[]][]) {
       const selected = choice.fields?.[field];
-      if (selected !== undefined) {
+      if (selected === "keep") {
+        if (!owned) throw new BoxImportError("box_unconfirmed_value");
+      } else if (selected !== undefined) {
         if (!values.includes(selected)) throw new BoxImportError("box_unconfirmed_value");
         fields[field] = selected;
-      } else if (!owned) {
+      } else if (!owned || confirmation.existingValues === "overwrite") {
         if (values.length > 1) throw new BoxImportError("box_conflict_required");
         if (values.length === 1) fields[field] = values[0]!;
       }
@@ -57,6 +60,12 @@ export function applyConfirmedBoxImport(
     const proposal = preview.maps.find((r) => r.key === choice.key);
     if (!proposal) throw new BoxImportError("box_unknown_confirmation");
     if (!choice.include) continue;
+    const existing = Object.hasOwn(preview.original[proposal.map], String(proposal.id));
+    if (choice.value === "keep") {
+      if (!existing) throw new BoxImportError("box_unconfirmed_value");
+      continue;
+    }
+    if (choice.value === undefined && existing && confirmation.existingValues !== "overwrite") continue;
     const selected = choice.value ?? (proposal.values.length === 1 ? proposal.values[0] : undefined);
     if (selected === undefined || !proposal.values.includes(selected))
       throw new BoxImportError("box_conflict_required");

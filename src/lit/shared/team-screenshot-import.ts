@@ -3,8 +3,9 @@ import "@material/web/checkbox/checkbox.js";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import type { ScreenshotImportPreview, ScreenshotCardConfirmation, ScreenshotRecognitionResult } from "../../lib/team-builder/screenshot-import";
+import { screenshotLevelDefault } from "../../lib/team-builder/screenshot-import";
 import { tile, tileMedia, type TileOptions } from "../ui/tile";
-import { iconButton } from "../ui/controls";
+import { iconButton, segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
 import { renderLevelSwitch } from "../ui/level-switch";
 
@@ -13,6 +14,7 @@ export interface ScreenshotImportDialogState {
   preview?: ScreenshotImportPreview;
   results?: readonly ScreenshotRecognitionResult[];
   confirmations: readonly ScreenshotCardConfirmation[];
+  existingValues?: "keep" | "overwrite";
   /** Local Blob-derived crop URLs, never a public screenshot resource URL. */
   crops: Readonly<Record<string, string>>;
   error: string | null;
@@ -28,7 +30,8 @@ export interface ScreenshotImportDialogActions {
   correct: (image: number, observation: number) => void;
   candidate: (image: number, observation: number, cardId: number) => void;
   include: (key: string, value: boolean) => void;
-  level: (key: string, value: number | undefined, source: "observed" | "manual") => void;
+  level: (key: string, value: number | "keep" | undefined, source: "observed" | "manual") => void;
+  existingValues: (value: "keep" | "overwrite") => void;
   confirm: () => void;
   expandedSource?: (key: string) => boolean;
   expandSource?: (key: string, expanded: boolean) => void;
@@ -80,16 +83,26 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
         ${state.error ? html`<p class="team-builder__error" role="alert">${t("failedMessage", "Screenshot recognition failed")}</p>` : nothing}
         ${state.preview ? html`
+          <p class="team-builder__hint" id="team-screenshot-existing-hint">${t("existingHint", "Applies to existing entries in this import. New entries are added normally. Overwrite uses supplied values; conflicting values need a choice. Each entry can still be adjusted.")}</p>
+          ${segmented<"keep" | "overwrite">({
+            label: t("existingHint", "Applies to existing entries in this import."),
+            value: state.existingValues ?? "keep",
+            options: [
+              { value: "keep", label: t("existingKeep", "Keep all existing values") },
+              { value: "overwrite", label: t("existingOverwrite", "Overwrite all existing values") },
+            ],
+            onSelect: actions.existingValues,
+          })}
           <div class="collection collection--member">
             ${state.preview.cards.map(proposal => {
               const options = actions.card(proposal.kind, proposal.cardId);
               const choice = state.confirmations.find(value => value.key === proposal.key);
               const existing = proposal.existingInstanceId !== null;
-              const conflict = !existing && proposal.observedLevels.length > 1;
-              const defaultLevel = existing ? proposal.existingLevel : conflict ? null :
-                proposal.observedLevels.length === 1 ? proposal.observedLevels[0]! : proposal.defaultPractice?.level ?? null;
-              const defaultLabel = existing ? t("keepLevel", "Keep saved level") : conflict ? t("chooseLevel", "Choose level") :
-                proposal.observedLevels.length === 1 ? t("observedLevel", "Screenshot level") : t("defaultLevel", "Default level");
+              const defaultChoice = screenshotLevelDefault(proposal, state.existingValues);
+              const conflict = defaultChoice.source === "conflict";
+              const defaultLevel = defaultChoice.value;
+              const defaultLabel = defaultChoice.source === "saved" ? t("keepLevel", "Keep saved level") : conflict ? t("chooseLevel", "Choose level") :
+                defaultChoice.source === "observed" ? t("observedLevel", "Screenshot level") : t("defaultLevel", "Default level");
               const defaultText = defaultLevel === null ? defaultLabel : `${defaultLabel}: ${defaultLevel}`;
               return html`<div role="group" aria-label=${options?.label ?? t("reviewCard", "Review card")}>
                 ${options ? tile({ ...options, href: undefined, onOpen: () => {
@@ -105,13 +118,14 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                   <p class="team-builder__hint">${defaultText}</p>
                   ${(() => {
                     const levels = [...new Set(actions.levels?.(proposal.kind, proposal.cardId) ?? [])].filter(Number.isSafeInteger).sort((a,b)=>a-b);
-                    const selectedLevel = choice?.level === undefined ? defaultLevel : choice.level;
+                    const selectedLevel = choice?.level === "keep" ? proposal.existingLevel : choice?.level === undefined ? defaultLevel : choice.level;
                     const value = selectedLevel !== null && levels.includes(selectedLevel) ? selectedLevel : null;
                     const change = (level: number) => actions.level(proposal.key, level, proposal.observedLevels.includes(level) ? "observed" : "manual");
                     return levels.length > 1 ? renderLevelSwitch(t("level", "Visible level"), levels, value, change, String,
                       { unknownLabel: selectedLevel === null ? t("chooseLevel", "Choose level") : String(selectedLevel), commitOnChange: true })
                       : levels.length === 1 ? html`<button class="button button--outlined" @click=${()=>change(levels[0])}>${t("level", "Visible level")}: ${levels[0]}</button>` : nothing;
                   })()}
+                  ${existing && choice?.level !== "keep" ? html`<button type="button" class="button button--text" @click=${()=>actions.level(proposal.key, "keep", "manual")}>${t("keepLevel", "Keep saved level")}: ${proposal.existingLevel ?? t("levelUnknown", "Level not recognized")}</button>` : nothing}
                   ${choice?.level !== undefined ? html`<button class="button button--text" @click=${()=>actions.level(proposal.key, undefined, "manual")}>${defaultText}</button>` : nothing}
                 </div>
                 ${!proposal.observedLevels.length ? html`<small>${t("levelUnknown", "Level not recognized")}</small>` : nothing}

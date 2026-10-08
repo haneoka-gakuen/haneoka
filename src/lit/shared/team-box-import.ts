@@ -6,9 +6,9 @@ import "@material/web/textfield/outlined-text-field.js";
 import type { BoxCandidate } from "../../lib/team-builder/box-import/types";
 import type { BoxPreview } from "../../lib/team-builder/box-import/preview";
 import type { BoxConfirmation } from "../../lib/team-builder/box-import/merge";
-import { buildBoxImportReview, setBoxCardIncluded, setBoxField, setBoxMap, selectAvailableBoxItems, type BoxReviewField } from "../../lib/team-builder/box-review-model";
+import { buildBoxImportReview, setBoxCardIncluded, setBoxField, setBoxMap, setBoxExistingValues, selectAvailableBoxItems, type BoxReviewField } from "../../lib/team-builder/box-review-model";
 import { tile, tileMedia, type TileOptions } from "../ui/tile";
-import { iconButton } from "../ui/controls";
+import { iconButton, segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
 
 export interface BoxImportDialogState {
@@ -50,10 +50,13 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
   const field = (key: string, row: BoxReviewField) => {
     const selected = state.confirmation.cards.find(choice => choice.key === key)?.fields?.[row.field];
     const caption = `${sourceLabel(row.defaultSource)}${row.defaultValue === null ? "" : `: ${row.defaultValue}`}`;
-    return row.values.length ? html`<md-outlined-select label=${actions.fieldName(row.field)} .value=${selected === undefined ? "keep" : String(selected)} .displayText=${selected === undefined ? caption : String(selected)}
+    const proposal = state.preview?.cards.find(card => card.key === key);
+    const keepLabel = `${t("keep", "Keep saved value")}: ${proposal?.existing[row.field] ?? t("unknown", "Unknown")}`;
+    return row.values.length ? html`<md-outlined-select label=${actions.fieldName(row.field)} .value=${selected === undefined ? "auto" : String(selected)} .displayText=${selected === "keep" ? keepLabel : selected === undefined ? caption : String(selected)}
       @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value;
-        actions.confirmation(setBoxField(state.confirmation, key, row.field, value === "keep" ? undefined : Number(value))); }}>
-      <md-select-option value="keep"><span slot="headline">${caption}</span></md-select-option>
+        actions.confirmation(setBoxField(state.confirmation, key, row.field, value === "auto" ? undefined : value === "keep" ? "keep" : Number(value))); }}>
+      <md-select-option value="auto"><span slot="headline">${caption}</span></md-select-option>
+      ${proposal?.existingInstanceId != null ? html`<md-select-option value="keep"><span slot="headline">${keepLabel}</span></md-select-option>` : nothing}
       ${row.values.map(value => html`<md-select-option value=${String(value)}><span slot="headline">${value}</span></md-select-option>`)}
     </md-outlined-select>` : html`<span>${actions.fieldName(row.field)} · ${sourceLabel(row.source)}${row.value === null ? "" : `: ${row.value}`}</span>`;
   };
@@ -78,6 +81,16 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
       ${model && state.preview ? html`
         <label class="team-builder__check"><md-checkbox .checked=${state.bindingConfirmed} aria-label=${t("bind", "Use the current {server} card data", { server: state.serverLabel })}
           @change=${(event: Event) => actions.bind((event.target as HTMLInputElement).checked)}></md-checkbox><span>${t("bind", "Use the current {server} card data", { server: state.serverLabel })}</span></label>
+        <p class="team-builder__hint" id="team-box-existing-hint">${t("existingHint", "Applies to existing entries in this import. New entries are added normally. Overwrite uses supplied values; conflicting values need a choice. Each entry can still be adjusted.")}</p>
+        ${segmented<"keep" | "overwrite">({
+          label: t("existingHint", "Applies to existing entries in this import."),
+          value: state.confirmation.existingValues ?? "keep",
+          options: [
+            { value: "keep", label: t("existingKeep", "Keep all existing values") },
+            { value: "overwrite", label: t("existingOverwrite", "Overwrite all existing values") },
+          ],
+          onSelect: value => actions.confirmation(setBoxExistingValues(state.preview!, state.confirmation, value)),
+        })}
         <div class="team-builder__actions"><button type="button" class="button button--text" @click=${() => actions.confirmation(selectAvailableBoxItems(state.preview!, state.confirmation, true))}>${t("selectAvailable", "Select available entries")}</button>
           <button type="button" class="button button--text" @click=${() => actions.confirmation(selectAvailableBoxItems(state.preview!, state.confirmation, false))}>${t("clear", "Clear selection")}</button></div>
         <div class="collection collection--member">${model.cards.map(row => {
@@ -100,9 +113,10 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
               @change=${(event: Event) => actions.confirmation(setBoxMap(state.confirmation, row.proposal.key, { include: (event.target as HTMLInputElement).checked }))}></md-checkbox><span>${actions.mapName(row.proposal.map, row.proposal.id)}</span></label>
             <small>${t("saved", "Saved")}: ${row.proposal.existing ?? t("unknown", "Unknown")}</small>
             <md-outlined-select label=${t("boxValue", "Box value")} .value=${row.choice.value === undefined ? "auto" : String(row.choice.value)}
-              .displayText=${row.value === null ? t("chooseValue", "Choose a value") : String(row.value)}
-              @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value; actions.confirmation(setBoxMap(state.confirmation, row.proposal.key, { value: value === "auto" ? undefined : Number(value) })); }}>
-              <md-select-option value="auto"><span slot="headline">${row.defaultValue === null ? t("chooseValue", "Choose a value") : String(row.defaultValue)}</span></md-select-option>
+              .displayText=${row.value === null ? row.requiresChoice ? t("chooseValue", "Choose a value") : t("unknown", "Unknown") : String(row.value)}
+              @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value; actions.confirmation(setBoxMap(state.confirmation, row.proposal.key, { value: value === "auto" ? undefined : value === "keep" ? "keep" : Number(value) })); }}>
+              <md-select-option value="auto"><span slot="headline">${row.defaultValue === null ? row.existing && state.confirmation.existingValues !== "overwrite" ? t("unknown", "Unknown") : t("chooseValue", "Choose a value") : String(row.defaultValue)}</span></md-select-option>
+              ${row.existing ? html`<md-select-option value="keep"><span slot="headline">${t("keep", "Keep saved value")}: ${row.proposal.existing ?? t("unknown", "Unknown")}</span></md-select-option>` : nothing}
               ${row.proposal.values.map(value => html`<md-select-option value=${String(value)}><span slot="headline">${value}</span></md-select-option>`)}
             </md-outlined-select>
           </div>`)}</div>` }) : nothing}

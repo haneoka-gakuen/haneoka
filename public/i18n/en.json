@@ -3297,6 +3297,11 @@
     "native-normal-complete-member-order-domain": "All skill orders compared",
     "explicit-personal-solo-score-domain": "Personal Solo score",
     "previousResult": "Previous result",
+    "importExisting": {
+      "keep": "Keep all existing values",
+      "overwrite": "Overwrite all existing values",
+      "hint": "For existing entries in this import. New entries are added normally. Overwrite uses supplied values and keeps missing fields; conflicts need a choice. You can still adjust each entry."
+    },
     "screenshotImport": {
       "title": "Import screenshots",
       "chooseImages": "Choose screenshots",

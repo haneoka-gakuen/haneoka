@@ -4749,12 +4749,12 @@ export class CatalogScreen extends LitElement {
         alphaLayout: typeof value?.alphaLayout === "string" ? value.alphaLayout : undefined,
       };
     };
-    // The gacha sequence mirrors the in-game pull: the eye cut-in anime flows
-    // into the Live2D performance and parks on the showcase loop. Only the
-    // transparent Live2D segments composite over the card background; the
-    // opaque cut-in carries its own full picture.
+    // Play both authored anime segments, then the Live2D intro and terminal
+    // showcase loop. Only the transparent Live2D segments composite over the
+    // card background; both opaque anime segments carry their own picture.
     const clips = [
       { ...media("gacha") },
+      { ...media("showcase") },
       { ...media("gachaIntro"), backdrop: true },
       { ...media("showcaseLoop"), loop: true, backdrop: true },
     ].filter((clip) => clip.url || clip.alphaPackedUrl);

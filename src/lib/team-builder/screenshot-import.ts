@@ -44,9 +44,17 @@ export interface ScreenshotImportPreview {
 export interface ScreenshotCardConfirmation {
   key: string;
   include: boolean;
-  /** Omitted means keep the existing value; no missing field can clear practice. */
-  level?: number;
+  /** Omitted follows the bulk default; "keep" preserves the saved level explicitly. */
+  level?: number | "keep";
   levelSource?: "observed" | "manual";
+}
+
+export function screenshotLevelDefault(card: ScreenshotCardProposal, existingValues: "keep" | "overwrite" = "keep") {
+  if (card.existingInstanceId !== null && (existingValues === "keep" || !card.observedLevels.length))
+    return { value: card.existingLevel, source: "saved" as const };
+  if (card.observedLevels.length > 1) return { value: null, source: "conflict" as const };
+  if (card.observedLevels.length === 1) return { value: card.observedLevels[0]!, source: "observed" as const };
+  return { value: card.defaultPractice?.level ?? null, source: "preset" as const };
 }
 
 const int = (value: unknown, low = 0) => typeof value === "number" && Number.isSafeInteger(value) && value >= low && value <= 0x7fffffff;
@@ -148,6 +156,7 @@ export function previewScreenshotImportBatch(
 export function applyConfirmedScreenshotImport(
   preview: ScreenshotImportPreview, current: InventoryV1, data: TeamBuilderData,
   context: ScreenshotReviewContext, confirmations: readonly ScreenshotCardConfirmation[],
+  existingValues: "keep" | "overwrite" = "keep",
 ): InventoryV1 {
   if (!sameContext(context, data) || canonical(context) !== canonical(preview.context) ||
       canonical(current) !== canonical(preview.original) || !validateInventory(current, data).valid)
@@ -163,15 +172,18 @@ export function applyConfirmedScreenshotImport(
   let next: InventoryV1 = upgradeInventory(current);
   for (const confirmation of accepted) {
     const card = preview.cards.find(value => value.key === confirmation.key)!;
-    if (!card.existingInstanceId && card.observedLevels.length > 1 && confirmation.level === undefined)
+    if (screenshotLevelDefault(card, existingValues).source === "conflict" && confirmation.level === undefined)
       throw new RangeError("screenshot-level-conflict-confirmation-required");
-    if (confirmation.level !== undefined && (!int(confirmation.level, 1) ||
+    if (confirmation.level === "keep" && card.existingInstanceId === null)
+      throw new RangeError("screenshot-level-evidence-required");
+    if (confirmation.level !== undefined && confirmation.level !== "keep" && (!int(confirmation.level, 1) ||
         (confirmation.levelSource !== "manual" && !card.observedLevels.includes(confirmation.level))))
       throw new RangeError("screenshot-level-evidence-required");
     const beforeAdd = next;
     next = addInventoryEntries(next, card.kind, [{ cardId: card.cardId }], data);
     next = initializeNewCardPractice(beforeAdd, next, data);
-    const level = confirmation.level ?? (!card.existingInstanceId && card.observedLevels.length === 1 ? card.observedLevels[0] : undefined);
+    const level = confirmation.level === "keep" ? undefined : confirmation.level ??
+      ((!card.existingInstanceId || existingValues === "overwrite") && card.observedLevels.length === 1 ? card.observedLevels[0] : undefined);
     if (level !== undefined) {
       const entry = next[card.kind].find(value => value.cardId === card.cardId)!;
       next = updateInventoryEntries(next, card.kind, [entry.instanceId], { level });

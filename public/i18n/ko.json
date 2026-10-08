@@ -3297,6 +3297,11 @@
     "native-normal-complete-member-order-domain": "모든 스킬 순서 비교",
     "explicit-personal-solo-score-domain": "개인 Solo 점수",
     "previousResult": "이전 결과",
+    "importExisting": {
+      "keep": "기존 값 모두 유지",
+      "overwrite": "기존 값 모두 덮어쓰기",
+      "hint": "이번 가져오기에 포함된 기존 항목에 적용합니다. 새 항목은 정상적으로 추가됩니다. 덮어쓰기는 입력된 값만 사용하고 누락된 필드는 기존 값을 유지합니다. 값이 충돌하면 개별 확인이 필요하며 각 항목을 조정할 수 있습니다."
+    },
     "screenshotImport": {
       "title": "스크린샷 가져오기",
       "chooseImages": "스크린샷 선택",

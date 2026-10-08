@@ -50,12 +50,16 @@ export class ImportController {
   box: BoxImportDialogState | null = null;
   private boxContext: BoxReviewContext | null = null;
   private boxBase: InventoryV2 | null = null;
+  private boxStore: TeamBuilder["store"] = null;
+  private boxOwner: string | null | undefined;
   private loading?: LoadingReporter;
   private generation = 0;
   private expanded: Record<string, boolean> = {};
   screenshot: ScreenshotImportDialogState | null = null;
   private session: ReturnType<typeof createScreenshotImportSession> | null = null;
   private screenshotBase: InventoryV2 | null = null;
+  private screenshotStore: TeamBuilder["store"] = null;
+  private screenshotOwner: string | null | undefined;
   private correcting: { image: number; observation: number; kind: "members" | "snapshots"; query: string } | null = null;
   constructor(private readonly host: TeamBuilder) {}
 
@@ -75,6 +79,8 @@ export class ImportController {
     const context = this.context();
     if (!context || !this.host.view) return;
     this.boxContext = context;
+    this.boxStore = this.host.store;
+    this.boxOwner = this.host.snapshot?.owner;
     this.boxBase = viewInventory(this.host, this.host.view);
     this.box = { phase: "select", candidates: [], selectedCandidateId: "", preview: null, confirmation: { cards: [], maps: [] }, serverLabel: "", bindingConfirmed: false, progress: null, error: null, canConfirm: false };
     this.host.requestUpdate();
@@ -84,6 +90,7 @@ export class ImportController {
     this.loading?.cancel();
     this.box = null;
     this.boxBase = null;
+    this.boxStore = null;
     this.host.requestUpdate();
   }
   private async parse(input: { files: readonly File[] } | { text: string }) {
@@ -155,7 +162,11 @@ export class ImportController {
     const state = this.box;
     if (!state?.canConfirm || !state.preview || !this.boxBase || !this.boxContext) return;
     try {
-      const next = applyConfirmedBoxImport(this.boxBase, state.preview, state.confirmation, this.host.data!, this.boxContext);
+      const context = this.context();
+      if (!context || !this.host.view || this.host.store !== this.boxStore || this.host.snapshot?.owner !== this.boxOwner)
+        throw new BoxImportError("box_review_changed");
+      const current = viewInventory(this.host, this.host.view);
+      const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
       this.commit(next, this.boxBase);
       this.closeBox();
     } catch (error) {
@@ -164,11 +175,13 @@ export class ImportController {
     }
   }
   private text(key: string, fallback: string, params?: Record<string, string | number>) {
+    if (key.startsWith("existing")) return this.host.t(`importExisting.${key.slice(8).toLowerCase()}`, fallback, params);
     if (["close", "cancel", "clear"].includes(key)) return clientText(this.host.locale, key, fallback, params);
     if (["members", "snapshots", "unknown", "notUnlocked"].includes(key)) return this.host.t(key, fallback, params);
     return this.host.t(`boxImport.${key}`, fallback, params);
   }
   private boxError(code: string) {
+    if (code === "box_review_changed") return this.text("changed", "Your account, data or inventory changed. Open the import again.");
     if (code === "box_no_player") return this.text("empty", "No supported Box records found.");
     if (code === "box_invalid_list") return this.text("invalidList", "Choose one CSV or TSV file up to 1 MiB, or paste a card list with IDs, names and levels.");
     if (code.endsWith("_budget")) return this.text("tooLarge", "This file exceeds the supported size or record limit.");
@@ -188,6 +201,8 @@ export class ImportController {
       return;
     }
     this.screenshotBase = viewInventory(this.host, view);
+    this.screenshotStore = this.host.store;
+    this.screenshotOwner = this.host.snapshot?.owner;
     let loading: LoadingReporter | undefined;
     let loadingPhase = "";
     const session = createScreenshotImportSession({
@@ -220,6 +235,7 @@ export class ImportController {
     this.session = null;
     this.screenshot = null;
     this.correcting = null;
+    this.screenshotStore = null;
     if (session) void session.close();
     this.host.requestUpdate();
   }
@@ -271,7 +287,7 @@ export class ImportController {
         });
       }
       return renderScreenshotImportDialog(this.screenshot, {
-        text: (key, fallback) => clientText(host.locale, ["close", "cancel"].includes(key) ? key : `teamBuilder.screenshotImport.${key}`, fallback),
+        text: (key, fallback) => key.startsWith("existing") ? this.text(key, fallback) : clientText(host.locale, ["close", "cancel"].includes(key) ? key : `teamBuilder.screenshotImport.${key}`, fallback),
         card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
         levels: (kind, id) => practiceRanges(host.data!, kind, id).level ?? [],
         files: (files) => void session.files(files).catch(() => { this.screenshot = { ...(session.state() as ScreenshotImportDialogState), error: "invalid-image" }; host.requestUpdate(); }),
@@ -285,18 +301,23 @@ export class ImportController {
         candidate: (image, observation, id) => session.correct(image, observation, id),
         include: (key, value) => session.include(key, value),
         level: (key, value, source) => session.level(key, value, source),
+        existingValues: (value) => session.existingValues(value),
         expandedSource: (key) => this.expanded[`s-${key}`] ?? false,
         expandSource: (key, value) => { this.expanded = { ...this.expanded, [`s-${key}`]: value }; host.requestUpdate(); },
         confirm: () => {
           const context = this.context();
           if (!context || !this.screenshotBase) return;
           try {
-            const next = session.merge(this.screenshotBase, host.data!, context);
+            if (!host.view || host.store !== this.screenshotStore || host.snapshot?.owner !== this.screenshotOwner)
+              throw new RangeError("screenshot-review-stale");
+            const next = session.merge(viewInventory(host, host.view), host.data!, context);
             this.commit(next, this.screenshotBase);
             this.closeScreenshots();
-          } catch {
+          } catch (error) {
             this.closeScreenshots();
-            host.notice = host.t("importFailed", "The import could not be applied.");
+            host.notice = error instanceof RangeError && error.message === "screenshot-review-stale"
+              ? this.text("changed", "Your account, data or inventory changed. Open the import again.")
+              : host.t("importFailed", "The import could not be applied.");
           }
         },
       });

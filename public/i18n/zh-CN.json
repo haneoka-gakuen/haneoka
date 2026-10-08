@@ -3297,6 +3297,11 @@
     "native-normal-complete-member-order-domain": "比较所有技能顺序",
     "explicit-personal-solo-score-domain": "个人 Solo 分数",
     "previousResult": "上次结果",
+    "importExisting": {
+      "keep": "全部保留现有值",
+      "overwrite": "全部覆盖现有值",
+      "hint": "批量处理本次导入的已有条目，新条目照常新增。覆盖仅使用已提供的值，缺失字段保持原值；冲突值需逐项确认，仍可逐项调整。"
+    },
     "screenshotImport": {
       "title": "导入截图",
       "chooseImages": "选择截图",

@@ -3297,6 +3297,11 @@
     "native-normal-complete-member-order-domain": "すべてのスキル順を比較",
     "explicit-personal-solo-score-domain": "個人Soloスコア",
     "previousResult": "前回の結果",
+    "importExisting": {
+      "keep": "既存の値をすべて保持",
+      "overwrite": "既存の値をすべて上書き",
+      "hint": "今回のインポートに含まれる既存の項目に適用します。新しい項目は通常どおり追加されます。上書きには入力された値だけを使い、未入力の項目は保持します。値が競合する場合は個別に確認し、各項目を調整できます。"
+    },
     "screenshotImport": {
       "title": "スクリーンショットを取り込む",
       "chooseImages": "スクリーンショットを選択",
