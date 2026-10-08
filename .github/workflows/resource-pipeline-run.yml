@@ -393,6 +393,10 @@ jobs:
     if: needs.prepare.outputs.skip != 'true' && needs.prepare.outputs.unity_matrix != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    environment:
+      name: ${{ inputs.github_environment }}
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
     permissions:
       contents: read
     strategy:
@@ -496,11 +500,14 @@ jobs:
     if: ${{ always() && needs.prepare.result == 'success' && needs.prepare.outputs.skip != 'true' && (needs.unity.result == 'success' || (needs.unity.result == 'skipped' && needs.prepare.outputs.delta == 'true' && needs.prepare.outputs.unity_matrix == '[]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    environment:
+      name: ${{ inputs.github_environment }}
     permissions:
       contents: read
     outputs:
       release_promoted: ${{ steps.publish_release.outputs.release_promoted }}
     env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       HANEOKA_MODEL_PREVIEW_POLICY: required
       HANEOKA_MODEL_PREVIEW_WORKERS: "4"
     steps:
