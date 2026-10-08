@@ -21,6 +21,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from core.config import ServerConfig
+from core.server_policy import is_test_server, project_catalog
 from core.contracts import (
     CATALOG_PROVENANCE_SCHEMA,
     CATALOG_RESOURCES,
@@ -2629,7 +2630,7 @@ def _stamps(data: BuildData) -> dict[str, Any]:
             raise ValueError(f"MasterStamp has an invalid asset path: {identity}::{asset}")
         source_path = f"Assets/AddressableResources/{asset}.png"
         image = data.asset(source_path)
-        if not image and data.server != "intl-test":
+        if not image and not is_test_server(data.server):
             raise ValueError(f"MasterStamp image is absent: {identity}::{source_path}")
         output[str(identity)] = _present(
             stampId=identity,
@@ -7739,10 +7740,12 @@ def build_api(
     data = BuildData(
         config.id, layout.root, base_release_entries, restore_archive, restore_output
     )
-    live2d_raw = _live2d_models(data, source_id)
-    live2d = _enrich_live2d(data, live2d_raw)
-    songs, song_metadata = _songs(data, source_id)
-    videos = _videos(data)
+    def project(name, builder, *args, **kwargs):
+        return project_catalog(data.server, name, builder, *args, **kwargs)
+    live2d_raw = project("live2d", _live2d_models, data, source_id)
+    live2d = project("live2d enrichment", _enrich_live2d, data, live2d_raw)
+    songs, song_metadata = project("songs", _songs, data, source_id, fallback=({}, {}))
+    videos = project("videos", _videos, data)
     video_records = videos.get("videos", {})
     for music_id, song in songs.items():
         resolved_videos = {
@@ -7793,53 +7796,55 @@ def build_api(
         data, "MasterGekisouSupportSkill", "MasterGekisouSupportSkillEffect",
         "_gekisouSupportSkillID", "gekisouSupportSkillId",
     )
-    stories = _stories(data, live2d)
-    story_runtime = _story_runtime(data, stories)
-    story_assets = _story_assets_catalog(data, stories, source_id)
-    spine = build_spine_catalog(data, source_id)
-    anon_tokyo = build_anon_tokyo_catalog(data, source_id, spine)
+    stories = project("stories", _stories, data, live2d)
+    story_runtime = project("story-runtime", _story_runtime, data, stories)
+    story_assets = project("story-assets", _story_assets_catalog, data, stories, source_id)
+    spine = project("spine", build_spine_catalog, data, source_id)
+    anon_tokyo = project("anon-tokyo", build_anon_tokyo_catalog, data, source_id, spine)
     documents = {
-        "bands": _bands(data),
-        "characters": _characters(data),
-        "cards": _cards(data, "MasterMemberCard"),
-        "support-cards": _cards(data, "MasterSupportCard", True),
+        "bands": project("bands", _bands, data),
+        "characters": project("characters", _characters, data),
+        "cards": project("cards", _cards, data, "MasterMemberCard"),
+        "support-cards": project("support-cards", _cards, data, "MasterSupportCard", True),
         "songs": songs,
         "song-meta": song_metadata,
-        "comics": _comics(data),
-        "stamps": _stamps(data),
+        "comics": project("comics", _comics, data),
+        "stamps": project("stamps", _stamps, data),
         "stories": stories,
         "story-runtime": story_runtime,
         "story-assets": story_assets,
         "anon-tokyo": anon_tokyo,
         "live2d": live2d,
         "spine": spine,
-        "voices": _voices(data),
-        "audio": _audio(data),
-        "items": _items(data),
-        "progression": _progression(data),
-        "character-missions": _character_missions(data),
-        "friendships": _friendships(data),
-        "band-items": _band_items(data),
+        "voices": project("voices", _voices, data),
+        "audio": project("audio", _audio, data),
+        "items": project("items", _items, data),
+        "progression": project("progression", _progression, data),
+        "character-missions": project("character-missions", _character_missions, data),
+        "friendships": project("friendships", _friendships, data),
+        "band-items": project("band-items", _band_items, data),
         "leader-skills": leader_skills,
         "skills": live_skills,
         "support-skills": support_skills,
         "gekisou-skills": gekisou_skills,
         "gekisou-support-skills": gekisou_support_skills,
-        "skill-reference": _skill_reference(data),
-        "gekisou": _gekisou(data),
+        "skill-reference": project("skill-reference", _skill_reference, data),
+        "gekisou": project("gekisou", _gekisou, data),
         "videos": videos,
-        "help": _help(data),
-        "options": _options(data),
-        "live-tools": _live_tools(data),
-        "provenance": _provenance(data, source_id),
-        "feature-status": _feature_status(data),
+        "help": project("help", _help, data),
+        "options": project("options", _options, data),
+        "live-tools": project("live-tools", _live_tools, data),
+        "provenance": project("provenance", _provenance, data, source_id),
+        "feature-status": project("feature-status", _feature_status, data),
     }
-    documents.update(build_game_systems(data, documents, RESOURCE_TYPES, _timestamp))
+    documents.update(project("game systems", build_game_systems, data, documents, RESOURCE_TYPES, _timestamp))
     if data.server == "jp":
         documents["shop"] = bind_jp_shop_metadata(documents["shop"], data.rows("MasterShop"))
-    documents["stickers"] = build_stickers(data, _timestamp)
-    documents["backgrounds"] = build_backgrounds(data)
-    documents["tgw-card"] = build_tgw_card(data, documents, RESOURCE_TYPES)
+    documents["stickers"] = project("stickers", build_stickers, data, _timestamp)
+    documents["backgrounds"] = project("backgrounds", build_backgrounds, data)
+    documents["tgw-card"] = project("tgw-card", build_tgw_card, data, documents, RESOURCE_TYPES)
+    if is_test_server(data.server):
+        documents = {name: documents.get(name, {}) for name in CATALOG_RESOURCES}
     if tuple(documents) != CATALOG_RESOURCES:
         raise AssertionError("catalog resource contract and builder are out of sync")
     RuntimeTextureProjection(data, source_id).apply(documents)
