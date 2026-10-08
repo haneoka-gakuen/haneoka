@@ -68,12 +68,19 @@ Master lookup stops that server's run and leaves its published release intact.
 It does not repeat the same lookup after downloading the unchanged package.
 Embedded-only servers can still fall back to inspecting their package.
 
-Versioned catalogs without a version pointer use the configured catalog version
-as a floor and also check the live Master resource version. The catalog scan
+Intl and intl-test read their live resource version from the Master version
+service and download that exact catalog generation. This follows version jumps
+and rollbacks without scanning a configured floor or requiring old catalogs to
+remain published. Catalog hashes and contents still participate in the source
+identity, so an update within the same version is detected. If the announced
+catalog is unavailable, the run fails and retains the published release.
+
+Servers without a usable live resource-version pointer use the configured
+catalog version as a floor. This fallback catalog scan
 stops after three consecutive missing versions, searches at most 128 higher
 build numbers on each line, and checks higher lines starting at build zero.
-Larger gaps, changed version schemes, removed floors without a usable Master
-candidate, and changed CDN roots can require a private configuration update.
+Larger gaps or removed floors can require a fallback configuration update;
+changed version schemes, service endpoints, and CDN roots require maintenance.
 The schedule and discovery rules provide periodic update checks; they do not
 guarantee that every future version can be discovered without maintenance.
 

@@ -551,14 +551,16 @@ def _resolve_catalog_version(
     unity_version: str,
     master_resource_version: str = "",
 ) -> str:
-    """Resolve the newest catalog version published at or above ``floor``.
+    """Use the live Master resource version, or discover a pointerless catalog.
+
+    The Master version response provides the resource generation its tables
+    reference. Prefer that exact generation and let the caller download and
+    validate its catalog; an unavailable live generation must fail rather than
+    silently use another one. This also follows version jumps and rollbacks
+    without requiring the configured fallback floor to remain published.
 
     Versioned-catalog CDNs (e.g. intl-cbt) publish ``catalog_{version}.hash`` with
     no version pointer, so the live version has to be discovered by probing.
-
-    The live Master resource version is also probed as a candidate when it is a
-    four-part numeric version. Every accepted candidate has both its ``.hash``
-    and ``.bin`` successfully downloaded.
 
     The build (4th) component is a contiguous hotfix counter within a line and is
     walked upward from the floor — this tracks every hot-update, the common case
@@ -576,6 +578,10 @@ def _resolve_catalog_version(
 
     Non four-part-numeric schemes are returned unchanged.
     """
+    if re.fullmatch(r"\d+(?:\.\d+){3}", master_resource_version):
+        sys.stderr.write(f"catalog: using live Master resource version {master_resource_version}\n")
+        return master_resource_version
+
     parts = floor.split(".")
     if len(parts) != 4 or not all(part.isdigit() for part in parts):
         return floor
@@ -629,20 +635,6 @@ def _resolve_catalog_version(
     build = line_max(base[0], base[1], base[2], base[3])
     if build is not None:
         best = (base[0], base[1], base[2], build)
-
-    if re.fullmatch(r"\d+(?:\.\d+){3}", master_resource_version):
-        try:
-            master_candidate = tuple(
-                int(part) for part in master_resource_version.split(".")
-            )
-        except ValueError:
-            master_candidate = None
-        if (
-            master_candidate is not None
-            and master_candidate > best
-            and exists(master_candidate)
-        ):
-            best = master_candidate
 
     # Probe each higher dimension at build 0 (patch, then minor, then major),
     # drilling into the build dimension on any line the CDN publishes.
