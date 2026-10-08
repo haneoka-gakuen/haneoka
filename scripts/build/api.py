@@ -2629,7 +2629,7 @@ def _stamps(data: BuildData) -> dict[str, Any]:
             raise ValueError(f"MasterStamp has an invalid asset path: {identity}::{asset}")
         source_path = f"Assets/AddressableResources/{asset}.png"
         image = data.asset(source_path)
-        if not image:
+        if not image and data.server != "intl-test":
             raise ValueError(f"MasterStamp image is absent: {identity}::{source_path}")
         output[str(identity)] = _present(
             stampId=identity,
@@ -2637,6 +2637,10 @@ def _stamps(data: BuildData) -> dict[str, Any]:
             characterIds=[int(value) for value in row.get("_characterIds", [])],
             releasedAt=_timestamp(row.get("_startAt")),
             image=image,
+            assetAvailability=(
+                {"status": "unavailable", "reason": "missing-preview-asset", "sourcePath": source_path}
+                if not image else None
+            ),
         )
     return output
 
