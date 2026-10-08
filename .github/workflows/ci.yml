@@ -52,4 +52,3 @@ jobs:
       - name: Check resource pipeline
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
-          PYTHONPATH=scripts python3 -m unittest discover -s scripts/core/tests

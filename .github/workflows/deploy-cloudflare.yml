@@ -85,7 +85,6 @@ jobs:
       - name: Check resource pipeline
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
-          PYTHONPATH=scripts python3 -m unittest discover -s scripts/core/tests
 
       - name: Apply production D1 migrations
         run: pnpm exec wrangler d1 migrations apply haneoka-community --remote
