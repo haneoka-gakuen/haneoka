@@ -40,6 +40,8 @@ on:
         description: Whether this invocation promoted a new current release.
         value: ${{ jobs.release.outputs.release_promoted }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG:
+        required: true
       cloudflare_account_id:
         required: true
       r2_access_key_id:
@@ -826,6 +828,7 @@ jobs:
       github_environment: ${{ inputs.github_environment }}
       source_id: ${{ needs.prepare.outputs.source_id }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       cloudflare_account_id: ${{ secrets.cloudflare_account_id }}
       r2_access_key_id: ${{ secrets.r2_access_key_id }}
       r2_secret_access_key: ${{ secrets.r2_secret_access_key }}

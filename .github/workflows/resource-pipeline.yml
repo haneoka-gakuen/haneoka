@@ -93,6 +93,7 @@ jobs:
       force: ${{ inputs.force || false }}
       no_reuse: ${{ inputs.no_reuse || false }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -116,6 +117,7 @@ jobs:
       force: ${{ inputs.force || false }}
       no_reuse: ${{ inputs.no_reuse || false }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -141,6 +143,7 @@ jobs:
       force: ${{ inputs.force || false }}
       no_reuse: ${{ inputs.no_reuse || false }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -164,6 +167,7 @@ jobs:
       force: ${{ inputs.force || false }}
       no_reuse: ${{ inputs.no_reuse || false }}
     secrets:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}

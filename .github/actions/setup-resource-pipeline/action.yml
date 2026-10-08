@@ -4,8 +4,7 @@ description: Install Python and cached pipeline dependencies.
 runs:
   using: composite
   steps:
-    - name: Mask private pipeline configuration
-      if: env.RESOURCE_PIPELINE_CONFIG != ''
+    - name: Validate and mask private pipeline configuration
       shell: bash
       env:
         PYTHONPATH: scripts

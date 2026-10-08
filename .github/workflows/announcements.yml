@@ -29,6 +29,8 @@ on:
         type: string
         required: false
     secrets:
+      RESOURCE_PIPELINE_CONFIG:
+        required: true
       cloudflare_account_id:
         required: true
       r2_access_key_id:
