@@ -27,12 +27,11 @@ let previewPageServers: Promise<ReleaseServer[]> | undefined;
 
 /** Preview routes exist after an immutable preview release is available. Settings stays formal-only. */
 export async function staticCatalogPageServers(configuredOnly = false): Promise<ReleaseServer[]> {
+  if (!configuredOnly) return [...PUBLIC_RELEASE_SERVERS];
   if (!previewPageServers) previewPageServers = staticCatalogRelease("intl-test")
     .then(() => ["intl-test"] as ReleaseServer[])
     .catch(() => []);
-  const formal = configuredOnly
-    ? staticResourceServers().filter((server) => server === "jp" || server === "intl")
-    : [...PUBLIC_RELEASE_SERVERS];
+  const formal = staticResourceServers().filter((server) => server === "jp" || server === "intl");
   return [...formal, ...await previewPageServers];
 }
 

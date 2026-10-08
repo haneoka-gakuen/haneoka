@@ -3223,6 +3223,58 @@ async function documentEntityAvailability(
   return availability;
 }
 
+/** Preview documents are aliases of Intl whenever that page or native entity exists there. */
+async function previewDocumentRedirect(request: Request, env: Env): Promise<Response | null> {
+  const source = new URL(request.url), parts = source.pathname.split("/").filter(Boolean);
+  if (parts[0] !== "intl-test" || !SERVER_FIRST_LOCALES.has(parts[1] || "")) return null;
+  const target = new URL(source);
+  target.pathname = source.pathname.replace(/^\/intl-test(?=\/)/u, "/intl");
+  for (const key of ["server", "release", "releaseId", "source", "sourceId"]) target.searchParams.delete(key);
+  const returnTo = target.searchParams.get("return");
+  if (returnTo?.startsWith("/intl-test/")) target.searchParams.set("return", returnTo.replace(/^\/intl-test\//u, "/intl/"));
+  const redirect = () => new Response(null, { status: 302, headers: { Location: target.pathname + target.search, "Cache-Control": "no-store" } });
+  const route = parseResourceRoute(source.pathname);
+  const collection = route && (!route.id || (route.kind === "stories" && STORY_MODES.has(route.id)));
+  if (collection || parts[2] === "assets" || (parts[2] === "events" && parts[3] === "tracker")) {
+    if (route?.kind === "circle" || route?.kind === "challenge") target.pathname = `/intl/${parts[1]}/catalog/`;
+    return redirect();
+  }
+  if (route?.id) {
+    const formal = await documentEntityAvailability(env, { ...route, server: "intl", id: route.id });
+    return formal ? redirect() : null;
+  }
+  const headers = new Headers(request.headers);
+  headers.delete("If-None-Match"); headers.delete("If-Modified-Since");
+  const sibling = await env.ASSETS.fetch(new Request(target, { method: "HEAD", headers }));
+  if (sibling.status < 400) return redirect();
+  // Settings and shared tools use a locale-only address rather than a server prefix.
+  target.pathname = `/${parts.slice(1).join("/")}/`;
+  target.searchParams.set("server", "intl");
+  const shared = await env.ASSETS.fetch(new Request(target, { method: "HEAD", headers }));
+  return shared.status < 400 ? redirect() : null;
+}
+
+function previewDetailShell(request: Request, shell: Response, route: ResourceRoute & { id: string }): Response {
+  const headers = new Headers(shell.headers);
+  for (const key of ["Content-Length", "Content-Encoding", "ETag"]) headers.delete(key);
+  const workspace = {
+    element(element: Element) {
+      element.removeAttribute("data-prerendered"); element.removeAttribute("data-page-data");
+      element.setAttribute("entity-id", route.id);
+      if (element.tagName === "catalog-screen") {
+        const config = JSON.parse(element.getAttribute("config") || "{}");
+        element.setAttribute("config", JSON.stringify({ ...config, server: route.server, entityId: route.id, entityContext: true }));
+      }
+      element.setInnerContent("");
+    },
+  };
+  return new HTMLRewriter()
+    .on("catalog-screen, story-workspace, help-workspace, live2d-workspace, spine-workspace, mission-workspace, tgw-card-workspace", workspace)
+    .on('script[type="application/json"]', { element(element) { if (element.getAttribute("id") !== "haneoka-i18n-seed") element.remove(); } })
+    .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", new URL(request.url).origin + new URL(request.url).pathname); } })
+    .transform(new Response(shell.body, { status: 200, headers }));
+}
+
 /**
  * A server can have a valid entity after the static detail matrix was built.
  * Serve the bounded server-first collection shell in that case, but only
@@ -3279,6 +3331,8 @@ async function serveCanonicalResourceDocument(request: Request, env: Env): Promi
       ? storyCollectionPath({ server: route.server, locale: route.locale, mode: availability.storyMode })
       : resourcePath({ server: route.server, locale: route.locale, kind: route.kind });
   const shell = await env.ASSETS.fetch(new Request(url, request));
+  if (route.server === "intl-test" && shell.ok)
+    return previewDetailShell(request, shell, route as ResourceRoute & { id: string });
   return shell.status === 404 ? new Response("Not found", { status: 404 }) : shell;
 }
 
@@ -3478,6 +3532,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const documentRequest = url.pathname.endsWith("/") || url.pathname.endsWith(".html") || !/\.[^/]+$/u.test(url.pathname);
   if (!documentRequest) return serveStaticAsset(request, env);
   const previewRequest = url.pathname.split("/")[1]?.includes("-test");
+  if (previewRequest) {
+    const redirect = await previewDocumentRedirect(request, env);
+    if (redirect) return redirect;
+  }
   const previewSettings = previewRequest ? await readSiteSettings(env) : undefined;
   if (previewSettings && !testContentAllowed(request, previewSettings))
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });

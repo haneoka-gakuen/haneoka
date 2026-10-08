@@ -69,6 +69,21 @@ export async function getStaticPaths() {
     for (const page of help)
       entries.push({ kind: "help", id: page.id, title: page.titles, page, group: "help" });
 
+    if (server === "intl-test") {
+      const [formalCatalog, formalModels, formalStories, formalHelp] = await Promise.all([
+        searchableCatalogPages("intl"), searchableModelPages("intl"),
+        searchableStoryPages("intl"), searchableHelpPages("intl"),
+      ]);
+      const formalIds = new Set([
+        ...formalCatalog.map((page) => `${resourceKindForCollection(page.collection)}:${page.id}`),
+        ...formalModels.map((page) => `${page.kind}:${page.id}`),
+        ...formalStories.map((page) => `stories:${page.storyId}`),
+        ...formalHelp.map((page) => `help:${page.id}`),
+      ]);
+      for (let index = entries.length - 1; index >= 0; index--)
+        if (formalIds.has(`${entries[index]!.kind}:${entries[index]!.id}`)) entries.splice(index, 1);
+    }
+
     const groups = new Map<string, typeof entries>();
     for (const entry of entries) {
       const peers = groups.get(entry.group) ?? [];

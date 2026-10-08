@@ -209,7 +209,7 @@ const spoilersLabel = "showSpoilerContent";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
   import { japaneseSongTitles, setJapaneseSongTitles } from "../lib/song-display";
   import { difficultyEstimatesEnabled, setDifficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
-  import { isReleaseServer, readReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
+  import { isReleaseServer, readSelectedReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
   import { spoilerContentEnabled, setSpoilerContentEnabled, observeSpoilerContent } from "../lib/spoiler-content";
 
@@ -248,7 +248,7 @@ const spoilersLabel = "showSpoilerContent";
     select("theme", document.documentElement.dataset.themePreference || "system");
     select("seed", currentSeed());
     select("density", currentDensity());
-    select("release", readReleaseServer());
+    select("release", readSelectedReleaseServer());
     syncLocale();
     requestAnimationFrame(() => {
       if (!signal.aborted) settings.dataset.ready = "true";
@@ -276,7 +276,7 @@ const spoilersLabel = "showSpoilerContent";
         } else if (name === "release" && isReleaseServer(value)) {
           // The URL prefix is the release server's address: a change of server
           // is a change of page, not an in-place data swap.
-          const current = readReleaseServer();
+          const current = readSelectedReleaseServer();
           writeReleaseServer(value);
           if (value !== current) {
             location.assign(releaseServerPath(`${location.pathname}${location.search}${location.hash}`, value));

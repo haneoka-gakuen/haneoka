@@ -24,13 +24,14 @@ const { locale, route, title, titleKey, server, entity } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
 const itemActive = (target: string) => target === "/community" ? ["/community", "/community/feeds"].includes(route) : isRouteActive(target, route);
+const navigationServer = server === "intl-test" ? "intl" : server ?? "intl";
 const navigationHref = (target: string) => {
-  if (target === "/") return `/${server ?? "intl"}/${locale}/`;
-  if (target === "/announcements") return `/${server ?? "intl"}/${locale}/announcements/`;
-  const resource = resourceCollectionHref(target, server ?? "intl", locale);
+  if (target === "/") return `/${navigationServer}/${locale}/`;
+  if (target === "/announcements") return `/${navigationServer}/${locale}/announcements/`;
+  const resource = resourceCollectionHref(target, navigationServer, locale);
   if (resource) return resource;
   const href = localePath(target, locale);
-  return server && target.startsWith("/catalog") ? `${href}?server=${server}` : href;
+  return server && target.startsWith("/catalog") ? `${href}?server=${navigationServer}` : href;
 };
 const navigation = PRIMARY_DESTINATIONS.map((destination) => ({
   ...destination,
@@ -324,6 +325,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   import { trapFocus } from "../lib/overlay";
   import { syncEntityNavigation } from "../lib/detail-navigation";
   import { fitAppBarActions } from "../lib/app-bar-overflow";
+  import { readSelectedReleaseServer } from "../lib/release-server";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
   const SCROLL_KEY = "haneoka.navigation.scroll.v3";
   const TREE_KEY = "haneoka.navigation.tree.v1";
@@ -382,6 +384,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   const initializeShell = () => {
     const host = shell();
     if (!host || host.dataset.initialized === "true") return;
+    readSelectedReleaseServer();
     host.dataset.initialized = "true";
     syncToggles(persistentQuery.matches && root.dataset.nav !== "collapsed");
     host.querySelectorAll("[data-nav-toggle]").forEach((node) =>

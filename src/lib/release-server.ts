@@ -10,18 +10,19 @@ const KEY = "haneoka.release-server";
 
 export function normalizeReleaseServer(value: unknown): ReleaseServer {
   const current = value === "gl-cbt" ? "intl-cbt" : value;
-  if (typeof document !== "undefined" && typeof current === "string" && isTestContentServer(current) && !showTestServerContent()) return "intl";
+  if (typeof current === "string" && isTestContentServer(current)) return "intl";
   return formalServerForHidden(current) ?? (isReleaseServer(current) ? current : "intl");
 }
 
-export function readReleaseServer(): ReleaseServer {
+/** The global selection always points at a formal server, including on preview details. */
+export function readSelectedReleaseServer(): ReleaseServer {
   const routeServer =
     typeof location === "undefined" ? undefined : releaseServerFromPath(navigationDocumentUrl().pathname);
-  if (routeServer) return normalizeReleaseServer(routeServer);
+  if (routeServer) return writeReleaseServer(routeServer);
   try {
     const queryServer =
       typeof location === "undefined" ? undefined : navigationDocumentUrl().searchParams.get("server");
-    if (isReleaseServer(queryServer) || queryServer === "gl-cbt") return normalizeReleaseServer(queryServer);
+    if (isReleaseServer(queryServer) || queryServer === "gl-cbt") return writeReleaseServer(queryServer);
   } catch {}
   try {
     const stored = localStorage.getItem(KEY);
@@ -31,6 +32,13 @@ export function readReleaseServer(): ReleaseServer {
   } catch {
     return "intl";
   }
+}
+
+/** A preview detail keeps its own data source without becoming a global selection. */
+export function readReleaseServer(): ReleaseServer {
+  const source = typeof location === "undefined" ? undefined : releaseServerFromPath(navigationDocumentUrl().pathname);
+  const selected = readSelectedReleaseServer();
+  return source === "intl-test" && showTestServerContent() ? source : selected;
 }
 
 export function writeReleaseServer(value: unknown): ReleaseServer {

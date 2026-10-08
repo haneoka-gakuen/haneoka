@@ -104,11 +104,13 @@ export function resourcePath({ server, locale, kind, id }: ResourceRoute): strin
   if (!isReleaseServer(server) || !isLocale(locale) || !isResourceKind(kind))
     throw new TypeError("Invalid resource route");
   if (id !== undefined && !isResourceId(id)) throw new TypeError("Invalid resource identity");
+  if (server === "intl-test" && id === undefined) server = "intl";
   return `/${server}/${locale}/${kind}/${id === undefined ? "" : `${encodeURIComponent(id)}/`}`;
 }
 
 export function homePath(server: ReleaseServer, locale: Locale): string {
   if (!isReleaseServer(server) || !isLocale(locale)) throw new TypeError("Invalid home route");
+  if (server === "intl-test") server = "intl";
   return `/${server}/${locale}/`;
 }
 
@@ -275,6 +277,7 @@ export function legacyEntityRedirectTarget(pathname: string, search = ""): strin
 
 /** Map logical catalogue destinations to the selected server's collections. */
 export function resourceCollectionHref(route: string, server: ReleaseServer, locale: Locale): string | undefined {
+  if (server === "intl-test") server = "intl";
   const source = new URL(route, "https://route.invalid");
   const parts = source.pathname.replace(/^\/+|\/+$/gu, "").split("/");
   if (parts.length === 1 && parts[0] === "calendar")
