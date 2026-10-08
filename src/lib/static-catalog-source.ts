@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import nodePath from "node:path";
 import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { openReleaseCatalog, ReleaseCatalogError, type ReleaseCatalog } from "../server/release-catalog";
 
 /**
@@ -21,6 +22,8 @@ const RETRYABLE = new Set([403, 429, 500, 502, 503, 504]);
 const RELEASE_ID_PATTERN = /^r-[a-f0-9]{20}$/u;
 const SOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const REQUEST_TIMEOUT_MS = 30_000;
+const ERROR_BODY_BYTES = 4096;
+const ERROR_BODY_TIMEOUT_MS = 1000;
 
 const headers = (): HeadersInit => ({
   accept: "application/json",
@@ -41,13 +44,15 @@ export interface OptionalStaticCatalogResult {
 }
 
 class StaticCatalogConsistencyError extends Error {}
+type StaticCatalogHttpDiagnostics = Record<string, string | number | boolean>;
 class StaticCatalogHttpError extends Error {
   constructor(
     readonly status: number,
     path: string,
     server: string,
+    readonly diagnostics: StaticCatalogHttpDiagnostics,
   ) {
-    super(`Static catalog request failed for ${server}/${path.split("?")[0]} (${status})`);
+    super(`Static catalog request failed for ${server}/${path.split("?")[0]} (${status}) ${JSON.stringify(diagnostics)}`);
   }
 }
 
@@ -118,7 +123,82 @@ async function releaseResponseBody(response: Response): Promise<void> {
   }
 }
 
-async function fetchResponse(path: string, server: string, releaseId?: string, method = "GET"): Promise<Response> {
+const safeDiagnosticId = (value: unknown): string | undefined =>
+  typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(value) ? value : undefined;
+
+function errorBodyFields(value: unknown): StaticCatalogHttpDiagnostics {
+  const error = asRecord(asRecord(value)?.error);
+  const code = error?.code;
+  const requestId = safeDiagnosticId(error?.requestId);
+  return {
+    ...(typeof code === "string" && /^[a-z][a-z0-9_]{0,79}$/u.test(code) ? { errorCode: code } : {}),
+    ...(requestId ? { bodyRequestId: requestId } : {}),
+  };
+}
+
+/** Read only a small complete JSON error; never include response text in logs. */
+async function boundedErrorBody(response: Response): Promise<StaticCatalogHttpDiagnostics> {
+  if (!response.body || !response.headers.get("content-type")?.includes("application/json"))
+    return { errorBody: "not-json-or-empty" };
+  const stream = response.body as ReadableStream<Uint8Array> | Readable;
+  const reader = ("getReader" in stream ? stream : Readable.toWeb(stream)).getReader();
+  const bytes = Buffer.alloc(ERROR_BODY_BYTES);
+  let length = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel().catch(() => {});
+  }, ERROR_BODY_TIMEOUT_MS);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (timedOut) return { errorBody: "timeout" };
+      if (done) return { errorBody: "json", ...errorBodyFields(JSON.parse(bytes.toString("utf8", 0, length))) };
+      const chunk = value as Uint8Array;
+      const take = Math.min(chunk.length, ERROR_BODY_BYTES - length);
+      bytes.set(chunk.subarray(0, take), length);
+      length += take;
+      if (take < chunk.length || length === ERROR_BODY_BYTES) return { errorBody: "byte-limit" };
+    }
+  } catch {
+    return { errorBody: "unreadable-or-invalid-json" };
+  } finally {
+    clearTimeout(timer);
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+function httpDiagnostics(
+  response: Response,
+  path: string,
+  releaseId?: string,
+  sourceId?: string,
+): StaticCatalogHttpDiagnostics {
+  const route = new URL(path, "https://catalog.invalid/");
+  const requestId = safeDiagnosticId(response.headers.get("x-request-id"));
+  const ray = safeDiagnosticId(response.headers.get("cf-ray"));
+  const observedReleaseId = response.headers.get("x-haneoka-release-id") || "";
+  const observedSourceId = response.headers.get("x-haneoka-source-id") || "";
+  return {
+    routeHash: createHash("sha256").update(path).digest("hex"),
+    idCount: route.searchParams.getAll("id").length,
+    ...(releaseId && RELEASE_ID_PATTERN.test(releaseId) ? { expectedReleaseId: releaseId } : {}),
+    ...(sourceId && SOURCE_ID_PATTERN.test(sourceId) ? { expectedSourceId: sourceId } : {}),
+    ...(RELEASE_ID_PATTERN.test(observedReleaseId) ? { observedReleaseId } : {}),
+    ...(SOURCE_ID_PATTERN.test(observedSourceId) ? { observedSourceId } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(ray ? { cfRay: ray } : {}),
+  };
+}
+
+async function fetchResponse(
+  path: string,
+  server: string,
+  releaseId?: string,
+  method = "GET",
+  sourceId?: string,
+): Promise<Response> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let response: Response;
     try {
@@ -135,6 +215,7 @@ async function fetchResponse(path: string, server: string, releaseId?: string, m
       continue;
     }
     if (response.ok) return response;
+    let diagnostics: StaticCatalogHttpDiagnostics = {};
     try {
       if (response.status === 404 && response.headers.get("content-type")?.includes("application/json")) {
         const body = asRecord(await response.json());
@@ -144,6 +225,9 @@ async function fetchResponse(path: string, server: string, releaseId?: string, m
             `Static catalog release identity failed for ${server}/${path.split("?")[0]}: ${error.code}`,
           );
         }
+        diagnostics = errorBodyFields(body);
+      } else if (attempt > 0 || !RETRYABLE.has(response.status)) {
+        diagnostics = await boundedErrorBody(response).catch(() => ({ errorBody: "unreadable" }));
       }
     } finally {
       await releaseResponseBody(response);
@@ -152,7 +236,10 @@ async function fetchResponse(path: string, server: string, releaseId?: string, m
       await wait(1500);
       continue;
     }
-    throw new StaticCatalogHttpError(response.status, path, server);
+    throw new StaticCatalogHttpError(response.status, path, server, {
+      ...httpDiagnostics(response, path, releaseId, sourceId),
+      ...diagnostics,
+    });
   }
   throw new Error(`Static catalog request exhausted retries for ${server}/${path.split("?")[0]}`);
 }
@@ -198,7 +285,7 @@ async function fetchJson(path: string, server: string, release?: StaticCatalogRe
         }
         console.warn(`Static catalog: rebuilding invalid cache for ${server}/${path.split("?")[0]}`);
       }
-      const response = await fetchResponse(path, server, release?.releaseId);
+      const response = await fetchResponse(path, server, release?.releaseId, "GET", release?.sourceId);
       try {
         observedRelease(response, release);
         const value: unknown = await response.json();
