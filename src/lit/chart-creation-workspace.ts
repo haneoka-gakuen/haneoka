@@ -1954,6 +1954,28 @@ export class ChartCreationWorkspace extends LitElement {
       field.select(this.selectedLineCritical());
     }
   };
+  private selectedLineKind() {
+    const ids = this.selectedConnectorIds();
+    const values = new Set(this.chart.lines.filter(line => ids.has(line.id)).map(line => line.kind));
+    return values.size > 1 ? "mixed" : (values.values().next().value ?? "long");
+  }
+  private setSelectedLineKind(value: string): boolean {
+    if (this.busy || this.gesture || this.nativeGesture || this.nativeUpdating || !this.nativeSelectionReady || !this.audio
+      || (value !== "long" && value !== "guide")) return false;
+    const ids = this.selectedConnectorIds();
+    if (!ids.size || this.chart.lines.filter(line => ids.has(line.id)).every(line => line.kind === value)) return false;
+    this.cancelWidth();
+    const candidate = structuredClone(this.chart);
+    for (const line of candidate.lines) if (ids.has(line.id)) line.kind = value;
+    return this.commitProject(candidate);
+  }
+  private changeLineKind = async (event: Event) => {
+    const field = event.target as HTMLElementTagNameMap["md-outlined-select"];
+    if (!this.setSelectedLineKind(field.value)) {
+      await field.updateComplete;
+      field.select(this.selectedLineKind());
+    }
+  };
   private async newProject() {
     await this.run(async (signal) => {
       await this.save();
@@ -2486,14 +2508,25 @@ export class ChartCreationWorkspace extends LitElement {
                   true,
                 )}
                 ${this.selectedConnectorIds(chart).size ? html`
+                  <md-outlined-select label=${this.t("creation.line_kind")}
+                    .value=${live(this.selectedLineKind())}
+                    ?disabled=${this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !this.audio}
+                    @change=${this.changeLineKind}>
+                    <md-select-option value="long" .selected=${this.selectedLineKind() === "long"}><div slot="headline">${this.t("hold")}</div></md-select-option>
+                    <md-select-option value="guide" .selected=${this.selectedLineKind() === "guide"}><div slot="headline">${this.t("guide")}</div></md-select-option>
+                    <md-select-option value="mixed" disabled ?hidden=${this.selectedLineKind() !== "mixed"}
+                      .selected=${this.selectedLineKind() === "mixed"}><div slot="headline">${this.t("collections.mixed")}</div></md-select-option>
+                  </md-outlined-select>
+                  <p>${this.t("creation.line_kind_hint")}</p>
                   <md-outlined-select label=${this.t("creation.line_critical")}
                     .value=${live(this.selectedLineCritical())}
                     ?disabled=${this.busy || this.nativeUpdating || !this.nativeSelectionReady || !!this.nativeGesture || !!this.gesture || !this.audio}
                     @change=${this.changeLineCritical}>
-                    <md-select-option value="inherit"><div slot="headline">${this.t("creation.line_critical_inherit")}</div></md-select-option>
-                    <md-select-option value="normal"><div slot="headline">${this.t("creation.line_critical_normal")}</div></md-select-option>
-                    <md-select-option value="critical"><div slot="headline">${this.t("critical")}</div></md-select-option>
-                    ${this.selectedLineCritical() === "mixed" ? html`<md-select-option value="mixed" disabled><div slot="headline">${this.t("collections.mixed")}</div></md-select-option>` : nothing}
+                    <md-select-option value="inherit" .selected=${this.selectedLineCritical() === "inherit"}><div slot="headline">${this.t("creation.line_critical_inherit")}</div></md-select-option>
+                    <md-select-option value="normal" .selected=${this.selectedLineCritical() === "normal"}><div slot="headline">${this.t("creation.line_critical_normal")}</div></md-select-option>
+                    <md-select-option value="critical" .selected=${this.selectedLineCritical() === "critical"}><div slot="headline">${this.t("critical")}</div></md-select-option>
+                    <md-select-option value="mixed" disabled ?hidden=${this.selectedLineCritical() !== "mixed"}
+                      .selected=${this.selectedLineCritical() === "mixed"}><div slot="headline">${this.t("collections.mixed")}</div></md-select-option>
                   </md-outlined-select>` : nothing}
 
                 <md-outlined-select

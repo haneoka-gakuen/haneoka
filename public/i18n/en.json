@@ -387,7 +387,9 @@
       "remove_nodes": "Remove intermediate nodes",
       "line_critical": "Connector Critical",
       "line_critical_inherit": "Default (no override)",
-      "line_critical_normal": "Normal"
+      "line_critical_normal": "Normal",
+      "line_kind": "Connector type",
+      "line_kind_hint": "Changing Hold/Guide changes judged nodes and generated Combo."
     },
     "collections": {
       "title": "Groups and layers",
@@ -2636,7 +2638,9 @@
       "failed": "Loading failed"
     },
     "gekisouStages": "GEKISO Sections",
-    "cardMovieGacha": "Gacha animation"
+    "cardMovieGacha": "Gacha animation",
+    "cardMovieAnimated": "Animated card art",
+    "cardMovieReplay": "Replay gacha animation"
   },
   "chartPlayer": {
     "play": "Play",

@@ -387,7 +387,9 @@
       "remove_nodes": "移除中间节点",
       "line_critical": "连接器 Critical",
       "line_critical_inherit": "默认（不覆盖）",
-      "line_critical_normal": "普通"
+      "line_critical_normal": "普通",
+      "line_kind": "连接器类型",
+      "line_kind_hint": "切换 Hold／Guide 会改变判定节点与生成的 Combo。"
     },
     "collections": {
       "title": "分组与图层",
@@ -2636,7 +2638,9 @@
       "failed": "加载失败"
     },
     "gekisouStages": "激奏段",
-    "cardMovieGacha": "抽卡动画"
+    "cardMovieGacha": "抽卡动画",
+    "cardMovieAnimated": "动态卡图",
+    "cardMovieReplay": "重播抽卡动画"
   },
   "chartPlayer": {
     "play": "游玩",

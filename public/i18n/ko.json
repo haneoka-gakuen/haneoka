@@ -387,7 +387,9 @@
       "remove_nodes": "중간 노드 삭제",
       "line_critical": "연결선 Critical",
       "line_critical_inherit": "기본값 (재정의 없음)",
-      "line_critical_normal": "일반"
+      "line_critical_normal": "일반",
+      "line_kind": "연결선 유형",
+      "line_kind_hint": "Hold/Guide를 변경하면 판정 대상 노드와 생성되는 Combo가 바뀝니다."
     },
     "collections": {
       "title": "그룹과 레이어",
@@ -2636,7 +2638,9 @@
       "failed": "로드 실패"
     },
     "gekisouStages": "격주 구간",
-    "cardMovieGacha": "뽑기 연출"
+    "cardMovieGacha": "뽑기 연출",
+    "cardMovieAnimated": "움직이는 카드 일러스트",
+    "cardMovieReplay": "뽑기 연출 다시 재생"
   },
   "chartPlayer": {
     "play": "플레이",

@@ -387,7 +387,9 @@
       "remove_nodes": "中間ノードを削除",
       "line_critical": "ラインのCritical",
       "line_critical_inherit": "デフォルト（上書きなし）",
-      "line_critical_normal": "通常"
+      "line_critical_normal": "通常",
+      "line_kind": "ラインの種類",
+      "line_kind_hint": "Hold／Guide を変更すると、判定対象のノードと生成される Combo が変わります。"
     },
     "collections": {
       "title": "グループとレイヤー",
@@ -2636,7 +2638,9 @@
       "failed": "読み込みに失敗しました"
     },
     "gekisouStages": "撃奏区間",
-    "cardMovieGacha": "ガチャ演出"
+    "cardMovieGacha": "ガチャ演出",
+    "cardMovieAnimated": "動くカードイラスト",
+    "cardMovieReplay": "ガチャ演出をもう一度再生"
   },
   "chartPlayer": {
     "play": "プレイ",
