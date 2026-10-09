@@ -68,6 +68,7 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
     match: [
       "/catalog",
       "/tools",
+      "/song-puzzle",
       "/stamp-maker",
       "/team-builder",
       "/chart-editor",
