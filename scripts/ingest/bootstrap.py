@@ -54,6 +54,7 @@ def resolve_resource_endpoints(config: ServerConfig, settings: dict) -> tuple[di
     # Check a tiny real catalog hash before choosing a node. curl bounds the
     # complete connection across all DNS addresses, unlike urllib's socket timeout.
     selected = None
+    failures = []
     for index, cdn in enumerate(cdns):
         candidate = replace(config, remote_root=cdn + discovery["assetPath"])
         request = _request(f"{candidate.remote_root}/catalog_{resource_version}.hash", candidate)
@@ -68,14 +69,20 @@ def resolve_resource_endpoints(config: ServerConfig, settings: dict) -> tuple[di
                     capture_output=True, timeout=17, check=False,
                 )
             except subprocess.TimeoutExpired:
+                failures.append(f"node {index + 1}: process timeout")
                 continue
             if result.returncode == 0 and result.stdout == b"200" and output.is_file() and re.fullmatch(
                 rb"[a-fA-F0-9]{32}\s*", output.read_bytes(),
             ):
                 selected = (index, cdn)
                 break
+            status = result.stdout.decode("ascii", "replace").strip() or "unknown"
+            failures.append(f"node {index + 1}: HTTP {status}, curl {result.returncode}")
     if selected is None:
-        raise RuntimeError("all announced CDN nodes failed the bounded catalog hash check; retaining the published release")
+        raise RuntimeError(
+            "all announced CDN nodes failed the bounded catalog hash check "
+            f"(resource {resource_version}; {'; '.join(failures)}); retaining the published release"
+        )
     index, cdn = selected
     resolved = {**settings, "remoteRoot": cdn + discovery["assetPath"],
                 "masterRemoteRoot": cdn + discovery["masterPath"],
