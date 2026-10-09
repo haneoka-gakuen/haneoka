@@ -1,0 +1,99 @@
+Reward recommendation trial — local acceptance record, 2026-10-10
+
+Scope
+Based on main 47be822. The trial is available on the team builder's Live reward
+trial tab, or /zh-CN/team-builder?trial=event-pt. Existing card filters, source
+identities and five locale namespaces from main are preserved.
+
+This contribution includes the inventory-based reward trial, search optimizations
+and its input-correction interface. No new dependencies, server API, account
+operations, gitlink updates or production deployment are included.
+
+Model boundaries
+- Solo: all PERFECT, 120 equally weighted skill orders, rewards settled for each
+  score before averaging. Event PT and shop medals have independent winners.
+- Include the long-run value of earned CP using a separately optimized challenge
+  team and the selected event's allowed challenge charts. This is not an integer
+  stamina-budget planner or a guarantee about an individual play's payout.
+- Gekisou: user baseline JUST (default 25%), skill effects applied by the model,
+  every range fixed at rank 1, deterministic native Luck samples (default 32).
+  Completed search proves an optimum in those fixed samples, not across the full
+  Luck probability distribution. Game formulas still require empirical auditing.
+- No hidden inventory/chart candidate cap. Exact bounds may fall back to Infinity
+  for unsupported combinations. Large inventories can still take a long time.
+- Cancellation preserves completed chart tasks; an interrupted chart starts over.
+  Job checkpoints are local IndexedDB data, outside the cloud card synchronization.
+
+UI acceptance
+- Shared Haneoka surfaces, semantic colors, outlined Material controls and icons.
+- Live Boost options are exactly 0, 1, 2, 3, 4, 5, 10 in the trial and existing
+  event/resource-plan controls. Zero is unboosted (1x); nonzero rows come from the
+  pinned master data. Invalid saved costs are flagged rather than silently coerced.
+- Validation actions open a card editor or the account tab, expand folded inputs,
+  scroll to the field and focus its control. Invalid fields have inline messages;
+  correcting a value removes its mark. Account edits have a return-to-trial action.
+- Missing practice is not filled automatically. Unsupported rules/data remain
+  separate from editable input errors.
+- Desktop 1365px and narrow 390px/320px, light and dark themes: no horizontal
+  document overflow. Actual pointer/keyboard checks cover zero-cost selection,
+  card level correction, account bonus correction and a folded minimum-bonus input.
+- Isolated Edge browser, synthetic inventory, no login or real account/card access.
+  Browser page-error list was empty. Built-in Codex browser behavior is not certified.
+
+Reproducible calculation tests
+  node scripts/test-pt-recommendation.mjs
+11 suites / 72 case groups pass. Fixtures are synthetic. Receipts are written to
+the ignored .local-dev/pt-tests directory. Coverage includes independent small
+enumeration, rounding/reward thresholds, legal teams/photo bindings, shard agreement,
+different winners per song, distinct-song ranking, exact ties, cancellation/resume,
+stale inputs, failed tasks, score-cache eviction and unsupported-bound fallbacks.
+Order-equivalence regression checks 6,720 original order scores; local score bounds
+cover 30,240 scores. These are model/algorithm tests, not empirical game validation.
+
+  node scripts/benchmark-team-builder.mjs --case gekiso-small --budget-ms 5000
+The benchmark uses synthetic inputs and a test-only time budget. A time-limited
+result must not be reported as globally optimal unless its proof flag is true.
+
+Actual browser/Worker workflow
+Five distinct member characters, two photos, seven songs/eight ordinary charts and
+three challenge charts, separate PT/medal tasks (22 total). Gekisou defaults were
+checked at 25%/32 samples; the workflow used 3 samples for its runtime. Stopping
+after one completed task, reloading and resuming retained that task; all 22 tasks
+then completed without errors. Both rankings contained five distinct songs.
+The actual reward-cutoff path was checked. A separate explicitly synthetic UI-only
+fixture checked the continue-all action; it is not search-correctness evidence.
+Changing JUST afterwards correctly marked results stale.
+
+Engineering checks and limits
+- Targeted ESLint: pass for trial controller/fields/boost controls, eligibility,
+  scheduler, test suites and benchmark/test runners.
+- git diff --check: pass.
+- All five locale catalogs include the same trial keys.
+- Astro check in the final PR dependency environment: main 49 errors, PR 49 errors,
+  zero warnings in the summary; no added diagnostic signatures. One unused-host
+  hint disappeared. Worker tsc: main 63 errors, PR 63, identical signatures.
+  Main and PR were checked with matching installed dependencies and the pinned
+  chart-converter submodule. Earlier local 31be918 preview baselines were 47/52;
+  those counts must not be compared directly to the newer main environment.
+- Full workspace typecheck/build/lint were not claimed passing. Only dependencies
+  needed by the team-builder preview were prepared; existing workspace diagnostics
+  and optional renderer/package builds remain outside this local acceptance.
+- No merge, CI success, production rollout or real-account synchronization is
+  established by these checks.
+
+Manual reproduction
+1. Open the trial tab; add an inventory with at least five different characters.
+2. Leave one card level and one account bonus unfilled. Click their Review actions;
+   confirm correct input focus, fill them and return to the trial.
+3. Select an event, playable ordinary charts and its allowed challenge charts.
+   Verify multiple difficulties of one song remain selected together.
+4. Choose one of the seven Live Boost costs, review assumptions and start.
+5. Stop after a chart completes, reload, accept inputs and continue.
+6. Switch between PT and medal rankings; modify any input and check stale status.
+
+Visual evidence
+docs/assets/team-builder-trial/setup-desktop.png
+docs/assets/team-builder-trial/setup-mobile-dark.png
+docs/assets/team-builder-trial/input-corrections.png
+These are intentional interface-review screenshots of Haneoka with synthetic
+inventory and public catalog labels; no account identifiers or private inventory.
