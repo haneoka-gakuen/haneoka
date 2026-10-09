@@ -59,6 +59,8 @@ class ServerConfig:
     authorization_env: str = "RESOURCE_CDN_AUTHORIZATION"
     cri_compatibility_key_sha256: str = ""
     cdn_discovery: dict = field(default_factory=dict)
+    remote_root_mirrors: tuple[str, ...] = ()
+    master_remote_root_mirrors: tuple[str, ...] = ()
 
 
 def validate_server_id(value: str) -> str:
@@ -130,6 +132,8 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "authorizationEnv",
         "criCompatibilityKeySha256",
         "cdnDiscovery",
+        "remoteRootMirrors",
+        "masterRemoteRootMirrors",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
@@ -239,6 +243,14 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         raise ValueError(f"invalid masterVersionEndpoint: {file}")
     if master_version_endpoint:
         _validate_service_endpoint(master_version_endpoint, file)
+    mirrors = {}
+    for key in ("remoteRootMirrors", "masterRemoteRootMirrors"):
+        urls = value.get(key, [])
+        if not isinstance(urls, list) or len(urls) > 4 or any(not isinstance(url, str) or not url for url in urls):
+            raise ValueError(f"invalid resource mirror list: {file}")
+        for url in urls:
+            _validate_service_endpoint(url, file)
+        mirrors[key] = tuple(dict.fromkeys(url.rstrip("/") for url in urls))
     cdn_discovery = value.get("cdnDiscovery", {})
     if not isinstance(cdn_discovery, dict):
         raise ValueError(f"invalid cdnDiscovery block: {file}")
@@ -448,6 +460,8 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         authorization_env=authorization_env,
         cri_compatibility_key_sha256=compatible_key_sha,
         cdn_discovery=cdn_discovery,
+        remote_root_mirrors=mirrors["remoteRootMirrors"],
+        master_remote_root_mirrors=mirrors["masterRemoteRootMirrors"],
     )
 
 

@@ -449,6 +449,37 @@ def _download(
     url: str,
     output: Path,
     config: ServerConfig,
+    **options,
+) -> bool:
+    trusted_url = _trusted_download_url(url, config)
+    parsed = urllib.parse.urlsplit(trusted_url)
+    primary = urllib.parse.urlsplit(config.remote_root)
+    relative_path = parsed.path[len(primary.path.rstrip("/")):]
+    candidates = [(trusted_url, config)]
+    for mirror in config.remote_root_mirrors:
+        alternate = urllib.parse.urlsplit(mirror)
+        alternate_url = urllib.parse.urlunsplit((alternate.scheme, alternate.netloc,
+                                                alternate.path.rstrip("/") + relative_path,
+                                                parsed.query, ""))
+        candidates.append((alternate_url, replace(config, remote_root=mirror, remote_root_mirrors=())))
+    failure = None
+    for index, (candidate, settings) in enumerate(candidates):
+        try:
+            if _download_one(candidate, output, settings, **options):
+                if index:
+                    sys.stderr.write("download: recovered object from an announced CDN mirror\n")
+                return True
+        except RuntimeError as error:
+            failure = error
+    if failure is not None:
+        raise failure
+    return False
+
+
+def _download_one(
+    url: str,
+    output: Path,
+    config: ServerConfig,
     *,
     expected_bytes: int = 0,
     unity_version: str = "",
@@ -513,9 +544,10 @@ def _download(
                 break
         except urllib.error.HTTPError as error:
             failure = error
-            if error.code in {400, 403, 404} and missing_ok:
+            if (error.code in {403, 404} or (error.code == 400 and quiet)) and missing_ok:
                 # Some CDNs answer absent objects with 400 (malformed-version
-                # gate), 403, or 404; a probe treats all three as a miss.
+                # gate), 403, or 404; only an exploratory catalog probe treats
+                # 400 as a miss. A known object gets the normal retry budget.
                 temporary.unlink(missing_ok=True)
                 if not quiet:
                     sys.stderr.write(f"warning: {error.code} for {url}, skipping (missing_ok)\n")
@@ -1010,7 +1042,8 @@ def _resolve_master(
     ):
         raise ValueError("invalid live Master version")
     root = f"{config.master_remote_root}/{version}"
-    master_config = replace(config, remote_root=config.master_remote_root, authorization_required=False)
+    master_config = replace(config, remote_root=config.master_remote_root,
+                            remote_root_mirrors=config.master_remote_root_mirrors, authorization_required=False)
     manifest_file = scratch / "MasterManifest.json"
     _download(f"{root}/MasterManifest.json", manifest_file, master_config, authorization=authorization)
     manifest = validate_master_manifest(read_json(manifest_file), expected_version=version)
@@ -1028,7 +1061,8 @@ def _materialize_master(
     directory = root / "master"
     directory.mkdir(parents=True, exist_ok=True)
     _copy_file(resolution.manifest_file, directory / "MasterManifest.json", "Master manifest")
-    master_config = replace(config, remote_root=config.master_remote_root, authorization_required=False)
+    master_config = replace(config, remote_root=config.master_remote_root,
+                            remote_root_mirrors=config.master_remote_root_mirrors, authorization_required=False)
 
     def materialize(entry: dict[str, Any]) -> dict[str, Any]:
         target = directory / entry["name"]

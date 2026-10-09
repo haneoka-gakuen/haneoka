@@ -79,7 +79,9 @@ def resolve_resource_endpoints(config: ServerConfig, settings: dict) -> tuple[di
     index, cdn = selected
     resolved = {**settings, "remoteRoot": cdn + discovery["assetPath"],
                 "masterRemoteRoot": cdn + discovery["masterPath"],
-                "masterVersionEndpoint": master_endpoint}
+                "masterVersionEndpoint": master_endpoint,
+                "remoteRootMirrors": [root + discovery["assetPath"] for root in cdns if root != cdn],
+                "masterRemoteRootMirrors": [root + discovery["masterPath"] for root in cdns if root != cdn]}
     return resolved, {"server": config.id, "resolved": True, "cdnCandidates": len(cdns),
                       "selectedNode": index + 1, "resourceVersion": resource_version,
                       "endpointsChanged": any(resolved[key] != settings.get(key) for key in

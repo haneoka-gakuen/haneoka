@@ -89,6 +89,11 @@ the first node fails. The resolved settings remain in a mode-0600 runner file;
 new roots are masked in diagnostics. CDN directory changes and Master API host
 changes no longer require replacing those roots in GitHub Secrets. Resuming an
 immutable source explicitly with `source_id` skips live endpoint discovery.
+Announced asset and Master mirrors are also retained for individual downloads,
+so a later object failure can recover on the peer node. Known-object HTTP 400
+responses receive the normal retry budget; only exploratory catalog-version
+probes treat 400 as an absent candidate. Length and hash verification remain in
+place when a mirror supplies the original bytes.
 
 Servers without a usable live resource-version pointer use the configured
 catalog version as a floor. This fallback catalog scan
