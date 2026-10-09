@@ -1,6 +1,11 @@
 packages:
   - "."
   - "packages/*"
+  - "!packages/cassiopeia-plugin-sekai"
+  - "!packages/editor-plugin-host"
+  - "!packages/altair-plugin-sandbox"
+  - ".dependencies/cassiopeia-plugin-sekai"
+  - ".dependencies/altair-plugin-sandbox"
   - ".dependencies/design-tokens"
   - ".dependencies/cassiopeia"
   - ".dependencies/cassiopeia-plugin-our-notes"

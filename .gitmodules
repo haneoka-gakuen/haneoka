@@ -75,3 +75,13 @@
 	path = .dependencies/sonolus-our-notes
 	url = https://github.com/haneoka-gakuen/sonolus-our-notes.git
 	branch = main
+
+[submodule "cassiopeia-plugin-sekai"]
+	path = .dependencies/cassiopeia-plugin-sekai
+	url = https://github.com/haneoka-gakuen/cassiopeia-plugin-sekai.git
+	branch = main
+
+[submodule "altair-plugin-sandbox"]
+	path = .dependencies/altair-plugin-sandbox
+	url = https://github.com/haneoka-gakuen/altair-plugin-sandbox.git
+	branch = main

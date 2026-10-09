@@ -77,7 +77,8 @@
     "build:frontend": "pnpm prepare:frontend && pnpm build:embeds && astro build && pnpm finalize:frontend",
     "sonolus:engine": "SONOLUS_BUILD_JOBS=1 SONOLUS_COMPILER_WORKERS=1 pnpm --filter @haneoka/sonolus-our-notes build",
     "sonolus:release:prepared": "node packages/sonolus/scripts/build-worker-assets.ts",
-    "sonolus:payload:prepared": "SONOLUS_ENGINE_ONLY=1 SONOLUS_OUTPUT_DIR=data/sonolus/current node packages/sonolus/scripts/build-worker-assets.ts"
+    "sonolus:payload:prepared": "SONOLUS_ENGINE_ONLY=1 SONOLUS_OUTPUT_DIR=data/sonolus/current node packages/sonolus/scripts/build-worker-assets.ts",
+    "build:standalone-tools": "pnpm --filter @haneoka/cassiopeia-plugin-sekai build && pnpm --filter @haneoka/altair-plugin-sandbox build"
   },
   "dependencies": {
     "@bbob/parser": "catalog:",
