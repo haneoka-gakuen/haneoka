@@ -58,6 +58,7 @@ class ServerConfig:
     announcements_host_suffixes: tuple[str, ...] = ()
     authorization_env: str = "RESOURCE_CDN_AUTHORIZATION"
     cri_compatibility_key_sha256: str = ""
+    cdn_discovery: dict = field(default_factory=dict)
 
 
 def validate_server_id(value: str) -> str:
@@ -128,6 +129,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         "bundleCrypto",
         "authorizationEnv",
         "criCompatibilityKeySha256",
+        "cdnDiscovery",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
@@ -237,6 +239,33 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         raise ValueError(f"invalid masterVersionEndpoint: {file}")
     if master_version_endpoint:
         _validate_service_endpoint(master_version_endpoint, file)
+    cdn_discovery = value.get("cdnDiscovery", {})
+    if not isinstance(cdn_discovery, dict):
+        raise ValueError(f"invalid cdnDiscovery block: {file}")
+    if cdn_discovery:
+        required = {"endpoint", "clientVersion", "environment", "hostSuffixes", "assetPath", "masterPath"}
+        if set(cdn_discovery) != required:
+            raise ValueError(f"invalid cdnDiscovery fields: {file}")
+        endpoint = cdn_discovery["endpoint"]
+        if not isinstance(endpoint, str) or not endpoint:
+            raise ValueError(f"invalid cdnDiscovery endpoint: {file}")
+        _validate_service_endpoint(endpoint, file)
+        if not isinstance(cdn_discovery["clientVersion"], str) or not re.fullmatch(r"\d+(?:\.\d+){1,3}", cdn_discovery["clientVersion"]):
+            raise ValueError(f"invalid cdnDiscovery clientVersion: {file}")
+        if not isinstance(cdn_discovery["environment"], str) or not re.fullmatch(r"[ -~]{1,128}", cdn_discovery["environment"]):
+            raise ValueError(f"invalid cdnDiscovery environment: {file}")
+        suffixes = cdn_discovery["hostSuffixes"]
+        if not isinstance(suffixes, list) or not suffixes or any(
+            not isinstance(suffix, str) or suffix.count(".") < 2
+            or not re.fullmatch(r"\.[a-z0-9]+(?:[.-][a-z0-9]+)*", suffix)
+            for suffix in suffixes
+        ):
+            raise ValueError(f"invalid cdnDiscovery host allowlist: {file}")
+        for key in ("assetPath", "masterPath"):
+            if not isinstance(cdn_discovery[key], str) or not re.fullmatch(r"/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", cdn_discovery[key]):
+                raise ValueError(f"invalid cdnDiscovery resource path: {file}")
+        if not master_version_endpoint or not value.get("masterRemoteRoot") or offline or closed:
+            raise ValueError(f"cdnDiscovery requires a live Master service: {file}")
     announcements = value.get("announcements", {})
     if not isinstance(announcements, dict):
         raise ValueError(f"invalid announcements block: {file}")
@@ -418,6 +447,7 @@ def load_server_config(server: str = "jp-cbt") -> ServerConfig:
         announcements_host_suffixes=tuple(host_suffixes),
         authorization_env=authorization_env,
         cri_compatibility_key_sha256=compatible_key_sha,
+        cdn_discovery=cdn_discovery,
     )
 
 

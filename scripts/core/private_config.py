@@ -35,7 +35,7 @@ class _PrivateDiagnostics:
 def _remember(value: Any, sensitive: bool = False) -> None:
     if isinstance(value, dict):
         for name, child in value.items():
-            _remember(child, sensitive or name in {"masterCrypto", "bundleCrypto", "criHcaKey", "packageAcquisition", "hostSuffixes"})
+            _remember(child, sensitive or name in {"masterCrypto", "bundleCrypto", "criHcaKey", "packageAcquisition", "hostSuffixes", "cdnDiscovery"})
     elif isinstance(value, list):
         for child in value:
             _remember(child, sensitive)

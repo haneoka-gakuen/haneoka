@@ -23,7 +23,7 @@ from core.config import ServerConfig, load_server_config
 from core.contracts import SOURCE_SCHEMA
 from core.fingerprints import build_fingerprint
 from core.manifests import read_json, stable_json, write_json
-from core.private_config import redact_private_text
+from core.private_config import redact_private_text, runtime_settings, github_masks
 from core.paths import build_layout, source_layout
 from core.storage import cas_key
 from extract.master import extract_master, validate_master_manifest
@@ -287,6 +287,25 @@ def command_probe_identity(args: argparse.Namespace) -> None:
             str(document["sha256"]),
         )
     )
+
+
+def command_resolve_server(args: argparse.Namespace) -> None:
+    from ingest.bootstrap import resolve_resource_endpoints
+
+    config = load_server_config(args.server)
+    settings, summary = resolve_resource_endpoints(config, runtime_settings())
+    masks = github_masks(settings)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    temporary.touch(mode=0o600)
+    temporary.chmod(0o600)
+    temporary.write_text(json.dumps(settings, ensure_ascii=False, separators=(",", ":")), "utf-8")
+    temporary.replace(output)
+    if args.mask_github:
+        for mask in masks:
+            print(mask)
+    _print(summary)
 
 
 def command_cdn_credential(args: argparse.Namespace) -> None:
@@ -1181,6 +1200,10 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
     root.add_argument("--server", default="jp-cbt", help="server configuration id")
     commands = root.add_subparsers(dest="command", required=True)
+    resolver = commands.add_parser("resolve-server", help="resolve live resource endpoints into a private runtime configuration")
+    resolver.add_argument("--output", required=True)
+    resolver.add_argument("--mask-github", action="store_true")
+    resolver.set_defaults(run=command_resolve_server)
 
     ingest = commands.add_parser(
         "ingest", help="normalize an APK, APKS/XAPK, or split APK directory"

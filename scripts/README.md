@@ -30,6 +30,11 @@ The scheduled GitHub Actions run checks jp, intl, and intl-test at
 source's package, the run reuses the stored R2 package instead of
 re-downloading from the publisher; only a real update pays that transfer. `scripts/acquire_package.py` discovers the package using the selected environment's private acquisition settings, downloads the current file, and stores it under a SHA-256 content-addressed R2 key. Package updates create new keys; large uploads use multipart transfer.
 
+Intl package discovery reads the official website's live JSON download
+configuration (`publisher-json`) using the private `sourceUrl`, `discoveryHosts`,
+`urlPath` field sequence, and `downloadPattern` allowlist. It keeps the package
+filename/version fingerprint independent of website script layout changes.
+
 ### Private runtime configuration
 
 Each `scripts/config/servers/<server>.json` contains only its identity and a reference to `RESOURCE_PIPELINE_CONFIG`. Set that JSON secret in the matching `resource-<server>` GitHub Environment. It contains the validated server settings, acquisition URLs and allowlists, CRI key, Master crypto parameters, and `bundleCrypto` (`key`, `nonceSeed`). Never place these values in repository variables or browser build variables.
@@ -75,12 +80,22 @@ remain published. Catalog hashes and contents still participate in the source
 identity, so an update within the same version is detected. If the announced
 catalog is unavailable, the run fails and retains the published release.
 
+Their private `cdnDiscovery` block specifies the server-list endpoint, client
+version, exact environment name, allowed host suffixes, and asset/Master path
+suffixes. Before acquisition, `resolve-server` selects only that environment's
+announced CDN/API roots, reads its live Master resource version, and checks a
+32-byte catalog hash with a bounded request. It can try the announced mirror if
+the first node fails. The resolved settings remain in a mode-0600 runner file;
+new roots are masked in diagnostics. CDN directory changes and Master API host
+changes no longer require replacing those roots in GitHub Secrets. Resuming an
+immutable source explicitly with `source_id` skips live endpoint discovery.
+
 Servers without a usable live resource-version pointer use the configured
 catalog version as a floor. This fallback catalog scan
 stops after three consecutive missing versions, searches at most 128 higher
 build numbers on each line, and checks higher lines starting at build zero.
 Larger gaps or removed floors can require a fallback configuration update;
-changed version schemes, service endpoints, and CDN roots require maintenance.
+changed version schemes or bootstrap interfaces require maintenance.
 The schedule and discovery rules provide periodic update checks; they do not
 guarantee that every future version can be discovered without maintenance.
 

@@ -97,6 +97,28 @@ def _discover_script(settings: dict) -> tuple[str, str, set[str], dict[str, str]
     return url, "configured-source", {host}, fingerprint
 
 
+def _discover_json(settings: dict) -> tuple[str, str, set[str], dict[str, str]]:
+    document = json.loads(_read_small(settings["sourceUrl"], _hosts(settings, "discoveryHosts")))
+    if not isinstance(document, dict) or document.get("code") != 0:
+        raise ValueError("publisher download configuration returned an unsuccessful response")
+    path = settings.get("urlPath")
+    if not isinstance(path, list) or not path or any(not isinstance(key, str) or not key for key in path):
+        raise ValueError("publisher download configuration requires an explicit urlPath")
+    value = document
+    for key in path:
+        if not isinstance(value, dict) or key not in value:
+            raise ValueError("publisher download configuration has no configured APK field")
+        value = value[key]
+    if not isinstance(value, str) or not _pattern(settings, "downloadPattern").fullmatch(value):
+        raise ValueError("publisher download configuration returned an unapproved APK URL")
+    filename = urllib.parse.urlsplit(value).path.rsplit("/", 1)[-1]
+    version = re.search(r"(\d+\.\d+\.\d+)", filename)
+    fingerprint = {"file": filename}
+    if version:
+        fingerprint["versionName"] = version.group(1)
+    return value, "configured-source", {_host(value)}, fingerprint
+
+
 def _discover_variant(settings: dict) -> tuple[str, str, set[str], dict[str, str]]:
     page = _read_small(settings["sourceUrl"], _hosts(settings, "discoveryHosts"))
     # The download page embeds the direct XAPK link once per variant; the
@@ -155,6 +177,8 @@ def main() -> int:
     strategy = settings.get("strategy")
     if strategy == "publisher-script":
         url, provenance, hosts, fingerprint = _discover_script(settings)
+    elif strategy == "publisher-json":
+        url, provenance, hosts, fingerprint = _discover_json(settings)
     elif strategy == "mirror-variant":
         url, provenance, hosts, fingerprint = _discover_variant(settings)
     else:

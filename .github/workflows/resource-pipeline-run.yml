@@ -106,6 +106,12 @@ jobs:
             python scripts/pipeline.py --server "$RESOURCE_SERVER" fetch-source \
               --source "$SOURCE_ID_INPUT" --role package --role master-manifest --role master-data > "$RUNNER_TEMP/source.json"
           else
+            python scripts/pipeline.py --server "$RESOURCE_SERVER" resolve-server \
+              --output "$RUNNER_TEMP/resolved-resource-config.json" --mask-github
+            unset RESOURCE_PIPELINE_CONFIG
+            export RESOURCE_PIPELINE_CONFIG_FILE="$RUNNER_TEMP/resolved-resource-config.json"
+            echo "RESOURCE_PIPELINE_CONFIG=" >> "$GITHUB_ENV"
+            echo "RESOURCE_PIPELINE_CONFIG_FILE=$RESOURCE_PIPELINE_CONFIG_FILE" >> "$GITHUB_ENV"
             if [[ -z "$PACKAGE_R2_KEY" && "${{ inputs.no_reuse }}" != "true" ]]; then
               # Reuse the stored package when the publisher fingerprint is
               # unchanged; only a real update pays the publisher download.
