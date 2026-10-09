@@ -18,7 +18,7 @@ import {
   convertShopPrice,
   fetchShopFxRates,
   formatMoney,
-  jpShopReferencePrice,
+  shopPaymentPrices,
   localeShopCurrency,
   moneyName,
   shopPriceEntries,
@@ -679,9 +679,7 @@ function renderExchangeGoods(c: Controller, item: Item) {
 function renderShopFacts(c: Controller, item: Item) {
   const payment = (item.payment || {}) as Item;
   const rows: Array<{ label: string; value: unknown }> = [];
-  const reference = jpShopReferencePrice(payment, c.itemSourceServer(item));
-  if (reference !== undefined)
-    rows.push({ label: c.label("jpShopMasterPrice", "JPY reference price"), value: formatMoney(reference, "jpy", c.settings.locale) });
+  const prices = shopPaymentPrices(payment, c.itemSourceServer(item));
   if (payment.advertisement) {
     rows.push({ label: c.detailLabel("price"), value: c.label("watchAd", "Watch an ad") });
   } else {
@@ -691,7 +689,7 @@ function renderShopFacts(c: Controller, item: Item) {
     // currency rows keep the emblem figure.
     const fx = c.fx as ShopFxState | null;
     const target = localeShopCurrency(c.settings.locale);
-    for (const { code, amount } of shopPriceEntries(payment.prices)) {
+    for (const { code, amount } of shopPriceEntries(prices)) {
       const price = formatMoney(amount, code, c.settings.locale);
       const rate = fx?.status === "ready" && code !== target ? fx.rates?.rates[code] : undefined;
       // While rates load, the conversion's line is held by a placeholder of
@@ -713,7 +711,7 @@ function renderShopFacts(c: Controller, item: Item) {
         `,
       });
     }
-    if (!availableShopCurrencies(payment.prices).length) {
+    if (!availableShopCurrencies(prices).length) {
       if (payment.storePurchase && !Number(payment.price || 0))
         rows.push({ label: c.detailLabel("price"), value: c.label("inAppPurchase", "In-app purchase") });
       else if (Number(payment.price || 0))
@@ -1600,5 +1598,5 @@ export function initializeGameSystemDetail(c: Controller, item: Item) {
   // Cash shop entries boot the rate fetch that fills the per-currency
   // conversions; the rates land as one shared session fetch.
   const payment = (item.payment || {}) as Item;
-  if (availableShopCurrencies(payment.prices).length) void loadShopFx(c);
+  if (availableShopCurrencies(shopPaymentPrices(payment, c.itemSourceServer(item))).length) void loadShopFx(c);
 }

@@ -42,7 +42,7 @@ import { difficultyKey } from "./ui/difficulty-picker";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { formatMoney, jpShopReferencePrice, shopPriceLine } from "../lib/shop-currency";
+import { shopPaymentPrices, shopPriceLine } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
 import { facet } from "./ui/facet";
@@ -2349,11 +2349,8 @@ export class CatalogScreen extends LitElement {
     // Cash listings lead with the storefront price in the visitor's region's
     // currency (zh-Hans reads the NT$/HK$ tiers first); entries without a
     // regional price keep the game-currency emblem row or the headline.
-    const regional = shopPriceLine(this.settings.locale, payment.prices);
+    const regional = shopPriceLine(this.settings.locale, shopPaymentPrices(payment, this.itemSourceServer(item)));
     if (regional) return regional;
-    const reference = jpShopReferencePrice(payment, this.itemSourceServer(item));
-    if (reference !== undefined)
-      return `${formatMoney(reference, "jpy", this.settings.locale)} · ${this.label("jpShopMasterPrice", "JPY reference price")}`;
     const price = Number(payment.price || 0);
     if (price) {
       const amount = price.toLocaleString(this.settings.locale, { minimumFractionDigits: price % 1 ? 2 : 0 });

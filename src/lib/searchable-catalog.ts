@@ -2,7 +2,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resolveLocalizedText } from "./localized-text";
 import { disambiguateTitles } from "./title-disambiguation";
-import { formatMoney, jpShopReferencePrice, moneyName, shopPriceEntries } from "./shop-currency";
+import { formatMoney, shopPaymentPrices, moneyName, shopPriceEntries } from "./shop-currency";
 import { resourcePath } from "./resource-route";
 import {
   asRecord,
@@ -495,9 +495,7 @@ function factsFor(
   // Cash shop entries read one spec row per storefront currency, named by
   // the currency itself the way the screen's detail pane does.
   if (definition.collection === "shop") {
-    const reference = jpShopReferencePrice(value.payment, server);
-    if (reference !== undefined) facts.push({ key: "jpShopMasterPrice", value: formatMoney(reference, "jpy", locale) });
-    for (const { code, amount } of shopPriceEntries(asRecord(value.payment)?.prices))
+    for (const { code, amount } of shopPriceEntries(shopPaymentPrices(value.payment, server)))
       facts.push({ key: moneyName(code, locale), value: formatMoney(amount, code, locale) });
   }
   if (value.rank != null) facts.push({ key: "rank", value: String(value.rank) });

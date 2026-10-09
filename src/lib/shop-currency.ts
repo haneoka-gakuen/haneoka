@@ -86,6 +86,13 @@ export function jpShopReferencePrice(payment: unknown, server: string): number |
   return master.value;
 }
 
+/** Presentation-only currency entries; original payment/provider metadata stays intact. */
+export function shopPaymentPrices(payment: unknown, server: string): unknown {
+  const source = payment && typeof payment === "object" ? payment as Record<string, unknown> : {};
+  const amount = jpShopReferencePrice(source, server);
+  return amount === undefined ? source.prices : { jpy: amount };
+}
+
 /**
  * Fixed cross-region symbols rather than per-locale CLDR ones: CLDR writes
  * TWD as a bare "$" in zh-TW (and USD as "$" in ja/en), which inside one
