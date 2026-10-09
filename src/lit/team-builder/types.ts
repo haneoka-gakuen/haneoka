@@ -1,8 +1,11 @@
 import type { SongRef } from "../../lib/team-builder/engine/api";
 
-export type Tab = "build" | "box" | "account" | "teams";
+export type Tab = "build" | "box" | "account" | "teams" | "pt";
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
 export interface BuildSettings {
+  ptMode: "solo" | "gekiso";
+  ptJust: number;
+  ptLuckSamples: number;
   goal: GoalKind;
   songs: SongRef[];
   criterion: "mean" | "min";
@@ -44,6 +47,9 @@ export interface BuildSettings {
   gekisoRank: number;
 }
 export const DEFAULT_SETTINGS: BuildSettings = {
+  ptMode: "solo",
+  ptJust: 25,
+  ptLuckSamples: 32,
   goal: "score",
   songs: [],
   criterion: "mean",

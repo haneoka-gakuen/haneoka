@@ -1,3 +1,4 @@
+import { boostControl } from "./boost-control";
 /** Team search: goal, songs, play, candidates and constraints; results beside them. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -291,9 +292,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               ], onSelect: (measure) => set({ measure }) })}
               ${s.route === "challenge"
                 ? segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })
-                : html`<div class="tb-field"><span class="tb-field__label">${host.t("boosts", "Boosts per live")}<output>${s.boosts}</output></span>
-                    <md-slider class="md3-slider" labeled min="0" max="10" step="1" .value=${s.boosts} aria-label=${host.t("boosts", "Boosts per live")}
-                      @change=${(e: Event) => set({ boosts: Number((e.target as HTMLInputElement).value) })}></md-slider></div>`}
+                : boostControl(host, s.boosts, boosts => set({ boosts }))}
             </section>`
           : nothing}
         ${s.goal === "plan"
@@ -302,7 +301,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               ${eventSection(host)}
               <div class="tb-number-grid">
                 <md-outlined-text-field type="number" min="0" label=${host.t("planBudget", "Boosts to spend")} .value=${live(String(s.planBudget))} @change=${(e: Event) => set({ planBudget: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}></md-outlined-text-field>
-                <md-outlined-text-field type="number" min="0" max="10" label=${host.t("boosts", "Boosts per live")} .value=${live(String(s.planBoostsPerLive))} @change=${(e: Event) => set({ planBoostsPerLive: Math.max(0, Math.min(10, Number((e.target as HTMLInputElement).value) || 0)) })}></md-outlined-text-field>
+                ${boostControl(host, s.planBoostsPerLive, planBoostsPerLive => set({ planBoostsPerLive }))}
                 <md-outlined-text-field type="number" min="0" label=${host.t("planStartCp", "Challenge points now")} .value=${live(String(s.planStartingCp))} @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}></md-outlined-text-field>
               </div>
               ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}

@@ -5,6 +5,7 @@
 import type { EngineMaster } from "./master";
 import type { ChartSource } from "./chart";
 import { ORDERS, type OrderScores } from "./live";
+import { FULL_SKILL_ORDER_PLAN, restoreOrderScores, skillOrderPlan } from "./order-equivalence";
 import { windowMs, type SlotSkill } from "./skills";
 import { LiveModel, type GekisouSetup, type LiveNote, type LuckRecord, type Performer } from "./full/model";
 import { chanceOf, Factory, type CheckCtx } from "./full/conditions";
@@ -308,7 +309,10 @@ export function scoreOrdersGekiso(
   const ranges = chart.rangePercent.length;
   const scores = new Float64Array(ORDERS.length);
   const rangeScore = new Float64Array(ranges);
-  ORDERS.forEach((order, orderIndex) => {
+  // Debug callbacks observe every original order/note, so retain their complete execution trace.
+  const orderPlan = debug ? FULL_SKILL_ORDER_PLAN : skillOrderPlan(slots);
+  for (const orderIndex of orderPlan.representatives) {
+    const order = ORDERS[orderIndex]!;
     let life = master.live.lifeBase;
     const channel = new Float32Array(7);
     const active: { end: number; channel: number; delta: number }[] = [];
@@ -375,7 +379,8 @@ export function scoreOrdersGekiso(
     }
     for (let r = 0; r < ranges; r++) score += Math.floor((rangeScore[r]! * chart.rangePercent[r]!) / 100);
     scores[orderIndex] = score;
-  });
+  }
+  restoreOrderScores(scores, orderPlan);
   let min = Infinity,
     max = -Infinity,
     minOrder = 0,

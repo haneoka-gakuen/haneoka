@@ -7,6 +7,8 @@ import { conversionWeights, linearChart, linearPlayChart, playBoundsChart, playO
 import { memberEventPercent, snapEventPercent, type MemberState, type SnapState } from "./power";
 import { type ObjectiveAdapter, type Team, type Totals } from "./search";
 import { resolveSlotSkill, windowMs, type SlotSkill } from "./skills";
+import { exchangedReward, type CpExchange } from "./pt-value";
+import { liveScoreCache } from "./live-score-cache";
 
 export type Criterion = "mean" | "min" | "max";
 export interface LiveDetail {
@@ -20,6 +22,10 @@ export interface EventDetail extends LiveDetail {
   bonus: number;
   ranks: Map<number, number>;
   challengePoints: number;
+  rewardSum?: number;
+  comparisonSum?: number;
+  directMin?: number;
+  directMax?: number;
 }
 
 interface Shared {
@@ -117,9 +123,9 @@ function liveCore(context: LiveContext) {
     Math.max(0, ((totals.power * (low.total + totals.skillLow)) / divisor) * (1 - low.relativeError) - low.absoluteError);
   const evaluate = (team: Team, power: number): LiveDetail => {
     const skills = team.members.map((member, slot) => slotSkill(member, team.snaps[slot]!));
-    const scores = judgements
+    const scores = liveScoreCache.score(context.live, context.play, context.settings, power, skills, () => judgements
       ? scoreOrdersPlay(context.live, power, skills, judgements, context.settings)
-      : scoreOrdersAP(context.live, power, skills, context.settings);
+      : scoreOrdersAP(context.live, power, skills, context.settings));
     return { scores, skills };
   };
   const playBounds = judgements ? playBoundsChart(context.live, judgements) : null;
@@ -318,17 +324,27 @@ export function eventObjective(
   challengePointWeight = 0,
   /** A proven upper bound on any team's score in any order: rank bounds never assume a rank above it. */
   scoreCap = Infinity,
+  ranking: "legacy" | "pt-only" = "legacy",
+  exchange?: CpExchange,
 ): ObjectiveAdapter<EventDetail | { bonus: number; mean: number }> {
   const bonusType = measure === "points" ? 0 : 1;
-  const value = (bonus: number, rank: number) =>
-    (measure === "points" ? eventPoints(route, bonus, rank) : eventItems(route, bonus, rank)) +
-    challengePointWeight * (route.challengePoints.get(rank) ?? 0) * route.rate;
+  const direct = (bonus: number, rank: number) =>
+    measure === "points" ? eventPoints(route, bonus, rank) : eventItems(route, bonus, rank);
+  const value = (bonus: number, rank: number) => {
+    const cp = route.kind === "live" ? (route.challengePoints.get(rank) ?? 0) * route.rate : 0;
+    return exchange ? exchangedReward(direct(bonus, rank), cp, exchange) : direct(bonus, rank) + challengePointWeight * cp;
+  };
   const memberBonus = (i: number) => memberEventPercent(route.effects, context.members[i]!, bonusType);
   const snapBonus = (j: number) => snapEventPercent(route.effects, context.snaps[j]!, bonusType);
   // Ties on points prefer the stronger team.
-  const TIE = 1 / 2 ** 36;
+  const TIE = ranking === "pt-only" ? 0 : 1 / 2 ** 36;
   /** Search range of the bonus inversion (BP; 10000 = 100 %). */
-  const MAX_BONUS = 1_000_000;
+  // In the strict trial, inversion must stay inside the validated integer domain.
+  // An arbitrary million-BP endpoint can overflow native settlement even when every legal team is safe.
+  const topFive = (values: number[]) => values.sort((a, b) => b - a).slice(0, 5).reduce((a, b) => a + b, 0);
+  const MAX_BONUS = ranking === "pt-only"
+    ? topFive(context.members.map((_, i) => memberBonus(i))) + topFive(context.snaps.map((_, i) => snapBonus(i)))
+    : 1_000_000;
   if (route.kind === "skip" || !context.chart) {
     return {
       skill: () => [0, 0],
@@ -348,6 +364,11 @@ export function eventObjective(
   }
   const live = context as LiveContext & { chart: CompiledChart };
   const core = liveCore(live);
+  // scoreRank starts at 2 even when the table omits that zero-score row.
+  // A PT-only bound must retain its possible payout below the next threshold.
+  const rankTargets = ranking === "pt-only"
+    ? [{ rank: 2, required: 0 }, ...live.chart.ranks.filter((row) => row.rank > 2)]
+    : live.chart.ranks;
   const rankOf = (score: number) => scoreRank(live.chart, score);
   /** Least bonus whose payoff at `rank` reaches `target` (payoffs rise with bonus). */
   const bonusFor = (rank: number, target: number) => {
@@ -377,7 +398,7 @@ export function eventObjective(
       // Like `bound`, payoff only: some order must bring the payoff to the limit, at a rank its score reaches.
       let targets = targetCache.get(limit);
       if (!targets) {
-        targets = live.chart.ranks
+        targets = rankTargets
           .filter((row) => row.required <= scoreCap)
           .map((row) => ({ bonus: bonusFor(row.rank, limit), product: row.required * core.productScale }))
           .filter((row) => Number.isFinite(row.bonus));
@@ -434,17 +455,22 @@ export function eventObjective(
       const ranks = new Map<number, number>();
       let total = 0,
         challenge = 0;
+      let rewardSum = 0, directMin = Infinity, directMax = -Infinity;
       detail.scores.scores.forEach((score, index) => {
         const rank = rankOf(score);
         ranks.set(rank, (ranks.get(rank) ?? 0) + 1);
         perOrder[index] = value(bonus, rank);
         total += perOrder[index]!;
         challenge += (route.challengePoints.get(rank) ?? 0) * route.rate;
+        const reward = direct(bonus, rank);
+        rewardSum += reward;
+        directMin = Math.min(directMin, reward);
+        directMax = Math.max(directMax, reward);
       });
       const mean = total / ORDERS.length;
       return {
         key: mean + TIE * detail.scores.mean,
-        detail: { ...detail, perOrder, mean, bonus, ranks, challengePoints: route.kind === "live" ? challenge / ORDERS.length : 0 },
+        detail: { ...detail, perOrder, mean, bonus, ranks, rewardSum, comparisonSum: total, directMin, directMax, challengePoints: route.kind === "live" ? challenge / ORDERS.length : 0 },
       };
     },
   };

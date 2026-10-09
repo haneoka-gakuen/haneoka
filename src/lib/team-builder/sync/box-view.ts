@@ -91,6 +91,7 @@ export function readBox(entries: Entries): BoxView {
     else if (head === "cm") player.characterMemory[parts[1]!] = num(entry.v);
     else if (head === "mm") player.musicMemory[parts[1]!] = num(entry.v);
     else if (key === "p.vip") player.vipRank = num(entry.v);
+    else if (key === "p.total") player.characterTotalRank = num(entry.v);
     else if (head === "team" && entry.v && typeof entry.v === "object" && !Array.isArray(entry.v)) {
       const value = entry.v as Record<string, unknown>;
       teams.push({

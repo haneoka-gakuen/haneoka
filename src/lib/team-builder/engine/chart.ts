@@ -37,6 +37,13 @@ export interface CompiledChart {
 }
 
 export const chartKey = (songId: number, difficulty: number) => `${songId}:${difficulty}`;
+/** Gekisou lives use battle thresholds, not solo score thresholds. */
+export function battleRank(chart: Pick<CompiledChart, "ranks">, score: number): number {
+  let rank = 2;
+  for (const row of chart.ranks)
+    if (row.battleRequired > 0 && row.battleRequired <= score && row.rank > rank) rank = row.rank;
+  return rank;
+}
 export const difficultyFactor = (playLevel: number) => f(f((playLevel - 5) * f(0.005)) + 1);
 
 /** Keeps only notes that score; skip-valid types exclude combo-only notes (120). */

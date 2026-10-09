@@ -2,17 +2,11 @@
 import type { EngineMaster } from "./master";
 import type { CompiledChart } from "./chart";
 import { windowMs, type SlotSkill } from "./skills";
+import { ORDERS, restoreOrderScores, skillOrderPlan } from "./order-equivalence";
+
+export { ORDERS } from "./order-equivalence";
 
 const f = Math.fround;
-export const ORDERS: readonly (readonly number[])[] = (() => {
-  const out: number[][] = [];
-  const visit = (chosen: number[]) => {
-    if (chosen.length === 5) out.push(chosen);
-    else for (let slot = 0; slot < 5; slot++) if (!chosen.includes(slot)) visit([...chosen, slot]);
-  };
-  visit([]);
-  return out;
-})();
 
 /** Simulate judgements: 6 Just, 5 Perfect, 4 Great, 3 Good, 2 Bad, 1 Miss. */
 export interface PlayModel {
@@ -177,7 +171,9 @@ export function scoreOrdersAP(prepared: PreparedLive, power: number, slots: read
     }
     return low;
   };
-  ORDERS.forEach((order, orderIndex) => {
+  const orderPlan = skillOrderPlan(slots);
+  for (const orderIndex of orderPlan.representatives) {
+    const order = ORDERS[orderIndex]!;
     const commands = orderCommands(prepared, slots, order, master.live.lifeBase);
     let general = f(1),
       perfectUp = f(0),
@@ -199,7 +195,8 @@ export function scoreOrdersAP(prepared: PreparedLive, power: number, slots: read
       score += sums[n]! - sums[index]!;
     }
     scores[orderIndex] = score;
-  });
+  }
+  restoreOrderScores(scores, orderPlan);
   return summarize(power, scores);
 }
 
@@ -359,7 +356,9 @@ export function scoreOrdersPlay(
   }
   const convertsBreaks = slots.some((slot) => slot?.convert?.judgements.some((j) => j <= 2));
   if (convertsBreaks || damage[3] || damage[4]) throw new Error("conversions that change damage need the full simulation");
-  ORDERS.forEach((order, orderIndex) => {
+  const orderPlan = skillOrderPlan(slots);
+  for (const orderIndex of orderPlan.representatives) {
+    const order = ORDERS[orderIndex]!;
     const lives = orderLives(prepared, judgements, slots, order);
     let combo = 0,
       pendingCombo = 0,
@@ -442,7 +441,8 @@ export function scoreOrdersPlay(
       pendingCombo = judgement <= 2 ? 0 : pendingCombo + 1;
     }
     scores[orderIndex] = score;
-  });
+  }
+  restoreOrderScores(scores, orderPlan);
   return summarize(power, scores);
 }
 

@@ -1,3 +1,4 @@
+import { ptField } from "./pt-fields";
 /** Account-wide power bonuses: character ranks, band items, TGW card rank. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -6,9 +7,9 @@ import { icon } from "../ui/icon";
 import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 
-function stepper(host: TeamBuilder, label: string, value: number | null, min: number, max: number, change: (value: number | null) => void, unit = "") {
+function stepper(host: TeamBuilder, key: string, label: string, value: number | null, min: number, max: number, change: (value: number | null) => void, unit = "") {
   const clamp = (next: number) => Math.max(min, Math.min(max, next));
-  return html`
+  return ptField(host, key, html`
     <span class="tb-stepper" role="group" aria-label=${label}>
       ${iconButton({ icon: "remove", label: `${label} −1`, size: 18, className: "icon-button--small", disabled: value !== null && value <= min, onClick: () => change(clamp((value ?? min) - 1)) })}
       <input class="tb-stepper__value" type="number" inputmode="numeric" min=${min} max=${max} aria-label=${label} placeholder="—"
@@ -19,18 +20,19 @@ function stepper(host: TeamBuilder, label: string, value: number | null, min: nu
         }} />${unit}
       ${iconButton({ icon: "add", label: `${label} +1`, size: 18, className: "icon-button--small", disabled: value !== null && value >= max, onClick: () => change(clamp((value ?? min - 1) + 1)) })}
     </span>
-  `;
+  `);
 }
 
 export function renderAccountTab(host: TeamBuilder): TemplateResult {
   const catalog = host.catalog!;
   const master = catalog.master;
   const view = host.view!;
+  const memorySongs = [...new Set([...host.settings.songs, ...host.settings.planChallengeSongs].map((s) => s.songId))];
   const player = view.player;
   const characters = [...master.characters.values()].filter((character) => catalog.characterName(character.id));
   const maxRank = master.maxCharacterRank;
-  // Every character counts, unranked ones at 1, exactly as the engine sums them.
-  const total = [...master.characters.keys()].reduce((sum, id) => sum + (player.characterRanks[String(id)] ?? 1), 0);
+  const completeRanks = [...master.characters.keys()].every((id) => Number.isSafeInteger(player.characterRanks[String(id)]) && player.characterRanks[String(id)]! >= 1);
+  const total = player.characterTotalRank ?? (completeRanks ? [...master.characters.keys()].reduce((sum, id) => sum + player.characterRanks[String(id)]!, 0) : null);
   const bands = [...new Set(characters.map((character) => character.bandId))].filter(Boolean);
   const vipRanks = [...master.vipBonus.keys()].sort((a, b) => a - b);
   const maxVip = Math.max(1, ...vipRanks, 1);
@@ -46,11 +48,12 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
       <section class="surface stack">
         ${sectionHeading({ icon: "trending_up", label: host.t("accountTitle", "Account bonuses") })}
         <div class="tb-account__summary">
-          <div class="tb-metric"><span class="tb-metric__label">${host.t("totalRank", "Total character rank")}</span><strong class="tb-metric__value tabular">${total}</strong>
-            <span class="tb-metric__detail">${host.t("totalRankAuto", "Sum of the ranks below")}</span></div>
+          <div class="tb-metric"><span class="tb-metric__label">${host.t("totalRank", "Total character rank")}</span><strong class="tb-metric__value tabular">${total ?? "—"}</strong>
+            ${stepper(host, "p.total", host.t("totalRank", "Total character rank"), player.characterTotalRank, 1, 2_147_483_647, (value) => host.write([{ key: "p.total", value }]))}
+            <span class="tb-metric__detail">${host.t("pt.totalHelp", "Enter the game's total, or leave blank to sum only when every character rank is filled.")}</span></div>
           <div class="tb-field">
             <span class="tb-field__label">${host.t("vipRank", "T.G.W card rank")}</span>
-            ${stepper(host, host.t("vipRank", "T.G.W card rank"), player.vipRank, 1, maxVip, (value) => host.write([{ key: "p.vip", value }]))}
+            ${stepper(host, "p.vip", host.t("vipRank", "T.G.W card rank"), player.vipRank, 1, maxVip, (value) => host.write([{ key: "p.vip", value }]))}
             ${master.vipBonus.get(player.vipRank ?? 1) ? html`<span class="tb-field__note">+${(master.vipBonus.get(player.vipRank ?? 1)! / 100).toFixed(2)}%</span>` : nothing}
           </div>
         </div>
@@ -75,7 +78,7 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
                       <div class="tb-rank" style=${`--character:${catalog.characterColor(character.id)}`}>
                         ${catalog.characterFace(character.id) ? html`<img class="tb-avatar" src=${catalog.characterFace(character.id)} alt="" loading="lazy" />` : nothing}
                         <span class="tb-rank__name">${catalog.characterName(character.id)}</span>
-                        ${stepper(host, catalog.characterName(character.id), player.characterRanks[String(character.id)] ?? null, 1, maxRank, (value) => host.write([{ key: `cr.${character.id}`, value }]))}
+                        ${stepper(host, `cr.${character.id}`, catalog.characterName(character.id), player.characterRanks[String(character.id)] ?? null, 1, maxRank, (value) => host.write([{ key: `cr.${character.id}`, value }]))}
                       </div>
                     `,
                   )}
@@ -100,7 +103,7 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
                     (item) => html`
                       <div class="tb-item">
                         <span class="tb-item__name">${item.name}</span>
-                        ${stepper(host, item.name, player.bandItems[String(item.id)] ?? null, 0, item.max, (value) => host.write([{ key: `bi.${item.id}`, value }]))}
+                        ${stepper(host, `bi.${item.id}`, item.name, player.bandItems[String(item.id)] ?? null, 0, item.max, (value) => host.write([{ key: `bi.${item.id}`, value }]))}
                       </div>
                     `,
                   )}
@@ -108,6 +111,18 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
             </div>
           `,
         )}
+      </section>
+      <section class="surface stack">
+        ${sectionHeading({ icon: "favorite", label: host.t("pt.characterMemory", "Character memory points") })}
+        <p>${host.t("pt.memoryHelp", "Enter the direct power points used by the model. Unknown is not zero; set zero only when you have confirmed there is no bonus.")}</p>
+        <button class="button button--text button--small" type="button" @click=${() => host.write(characters.filter((c) => player.characterMemory[String(c.id)] == null).map((c) => ({ key: `cm.${c.id}`, value: 0 })))}>${host.t("pt.confirmZero", "Set unfilled memory bonuses to confirmed zero")}</button>
+        <div class="tb-rank-grid">${characters.map((c) => html`<div class="tb-rank"><span class="tb-rank__name">${catalog.characterName(c.id)}</span>${stepper(host, `cm.${c.id}`, `${catalog.characterName(c.id)} · ${host.t("pt.characterMemory", "Character memory points")}`, player.characterMemory[String(c.id)] ?? null, 0, 2_147_483_647, (value) => host.write([{ key: `cm.${c.id}`, value }]))}</div>`)}</div>
+      </section>
+      <section class="surface stack">
+        ${sectionHeading({ icon: "music_note", label: host.t("pt.musicMemory", "Song memory points") })}
+        <p>${host.t("pt.musicMemoryHelp", "Memory bonuses for the selected songs. Zero must be entered explicitly.")}</p>
+        <button class="button button--text button--small" type="button" @click=${() => host.write(memorySongs.filter((id) => player.musicMemory[String(id)] == null).map((id) => ({ key: `mm.${id}`, value: 0 })))}>${host.t("pt.confirmZero", "Set unfilled memory bonuses to confirmed zero")}</button>
+        <div class="tb-item-grid">${memorySongs.map((id) => html`<div class="tb-item"><span class="tb-item__name">${catalog.songTitle(id)}</span>${stepper(host, `mm.${id}`, `${catalog.songTitle(id)} · ${host.t("pt.musicMemory", "Song memory points")}`, player.musicMemory[String(id)] ?? null, 0, 2_147_483_647, (value) => host.write([{ key: `mm.${id}`, value }]))}</div>`)}</div>
       </section>
     </div>
   `;

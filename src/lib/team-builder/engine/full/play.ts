@@ -80,6 +80,8 @@ export interface Accuracy {
 export interface LivePlay {
   frames: PlayFrame[];
   dt: number[];
+  /** Notes on which the player's baseline JUST rate is defined, before skill conversion. */
+  justEligibleIds: readonly number[];
 }
 
 /** The play of a stated accuracy built from the theoretical best play (Gekisou off: every note Perfect; on: Just where
@@ -120,5 +122,5 @@ export function judgementStream(master: EngineMaster, chart: FullChart, gekisou:
   if (every > 0) for (let i = every - 1; i < total; i += every) grade[i] = 1;
   const out: PlayFrame[] = times.map((timeMs) => ({ timeMs, judged: [] }));
   rows.forEach((r, i) => out[r.frame]!.judged.push({ noteId: r.note.id, judgement: grade[i]!, timeMs: r.note.timeMs }));
-  return { frames: out, dt: times.map(() => DT) };
+  return { frames: out, dt: times.map(() => DT), justEligibleIds: eligible.map((i) => rows[i]!.note.id) };
 }
