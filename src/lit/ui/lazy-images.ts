@@ -67,6 +67,8 @@ export interface LazyImageOptions {
   root?: Element | null;
   /** Restricts observation when a parent owns only part of its light-DOM tree. */
   filter?: (image: HTMLImageElement) => boolean;
+  /** Observe a containing card when its offscreen subtree skips layout. */
+  observationTarget?: (image: HTMLImageElement) => Element;
 }
 
 type FinishImage = (state: "loaded" | "error" | "cancelled") => void;
@@ -115,7 +117,11 @@ export class LazyImages {
   private rootMargin: string;
   private root: Element | null;
   private filter: (image: HTMLImageElement) => boolean;
+  private observationTarget: (image: HTMLImageElement) => Element;
   private observed = new Set<HTMLImageElement>();
+  private observationInputs = new WeakMap<HTMLImageElement, { inputs: string; frame: Element | null; target: Element }>();
+  private targets = new Map<Element, Set<HTMLImageElement>>();
+  private imageTargets = new WeakMap<HTMLImageElement, Element>();
   private pending = new Set<HTMLImageElement>();
 
   constructor(options: LazyImageOptions = {}) {
@@ -123,6 +129,7 @@ export class LazyImages {
     this.rootMargin = options.rootMargin ?? "240px";
     this.root = options.root ?? null;
     this.filter = options.filter ?? (() => true);
+    this.observationTarget = options.observationTarget ?? ((image) => image);
   }
 
   /** Call from `updated()`: picks up whatever the last render added. */
@@ -139,7 +146,25 @@ export class LazyImages {
       )
         this.cancel(image);
     });
-    const images = [...root.querySelectorAll<HTMLImageElement>("img[data-src]")].filter(this.filter);
+    const images = [...root.querySelectorAll<HTMLImageElement>("img[data-src]")].filter((image) => {
+      if (!this.filter(image)) return false;
+      // A deferred image can survive keyed sorting and unrelated UI updates.
+      // Register it once for the same inputs, then rebind when its source,
+      // candidates or declared dimensions change. This avoids repeated frame
+      // subtree scans and observe() calls for every offscreen thumbnail.
+      const source = image.dataset.src?.trim() || "";
+      const inputs = JSON.stringify([
+        source, this.candidates(source), image.dataset.fallbacks, image.dataset.fallback,
+        image.getAttribute("width"), image.getAttribute("height"),
+      ]);
+      const frame = image.closest(".media-loading");
+      const target = this.observationTarget(image);
+      const previous = this.observationInputs.get(image);
+      if (this.observed.has(image) && previous?.inputs === inputs && previous.frame === frame && previous.target === target) return false;
+      if (this.observed.has(image)) this.cancel(image);
+      this.observationInputs.set(image, { inputs, frame, target });
+      return true;
+    });
     images.forEach((image) => syncMediaFrame(image));
     if (!images.length) return;
     if (!("IntersectionObserver" in window)) {
@@ -147,12 +172,23 @@ export class LazyImages {
       return;
     }
     this.observer ??= new IntersectionObserver(
-      (entries) => entries.forEach((entry) => entry.isIntersecting && this.load(entry.target as HTMLImageElement)),
+      (entries) => entries.forEach((entry) => {
+        if (entry.isIntersecting)
+          for (const image of [...(this.targets.get(entry.target) ?? [])]) this.load(image);
+      }),
       { root: this.root, rootMargin: this.rootMargin },
     );
     images.forEach((image) => {
       this.observed.add(image);
-      this.observer?.observe(image);
+      const target = this.observationTarget(image);
+      this.imageTargets.set(image, target);
+      let images = this.targets.get(target);
+      if (!images) {
+        images = new Set();
+        this.targets.set(target, images);
+        this.observer?.observe(target);
+      }
+      images.add(image);
     });
   }
 
@@ -176,7 +212,6 @@ export class LazyImages {
       .filter((value, index, values) => value && values.indexOf(value) === index);
     image.classList.remove("is-loaded", "is-error");
     this.observed.delete(image);
-    this.observer?.unobserve(image);
     image.removeAttribute("data-candidates");
     image.removeAttribute("data-candidate-index");
     if (!candidates.length) {
@@ -190,7 +225,6 @@ export class LazyImages {
 
     const frame = image.closest<HTMLElement>(".media-loading");
     const controller = new AbortController();
-    let request: PendingImage;
     const settle: FinishImage = (state) => {
       if (pendingImageFinishes.get(image)?.finish !== settle) return;
       pendingImageFinishes.delete(image);
@@ -216,7 +250,7 @@ export class LazyImages {
       syncMediaFrame(image);
       if (frame && frame !== image.closest(".media-loading")) syncMediaFrame(image, frame);
     };
-    request = { owner: this, inputSource: source, source: candidates[0], finish: settle };
+    const request: PendingImage = { owner: this, inputSource: source, source: candidates[0], finish: settle };
     pendingImageFinishes.set(image, request);
     this.pending.add(image);
     delete image.dataset.cancelled;
@@ -244,13 +278,24 @@ export class LazyImages {
     }
     this.pending.delete(image);
     this.observed.delete(image);
-    this.observer?.unobserve(image);
+    this.observationInputs.delete(image);
+    const target = this.imageTargets.get(image);
+    if (target) {
+      this.imageTargets.delete(image);
+      const images = this.targets.get(target);
+      images?.delete(image);
+      if (!images?.size) {
+        this.targets.delete(target);
+        this.observer?.unobserve(target);
+      }
+    }
   }
 
   disconnect() {
     this.pending.forEach((image) => this.cancel(image));
     this.pending.clear();
     this.observed.clear();
+    this.targets.clear();
     this.observer?.disconnect();
     this.observer = undefined;
   }

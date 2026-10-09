@@ -1,5 +1,7 @@
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillFacetValues, skillTypeKey, skillTypeTitle, songMissions } from "../lib/catalog-filters";
 import { ref } from "lit/directives/ref.js";
+import { repeat } from "lit/directives/repeat.js";
+import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
@@ -1212,7 +1214,11 @@ export class CatalogScreen extends LitElement {
     // CharacterDetailArchive owns its own light-DOM loader; leave those
     // related tiles to it while this screen owns the browse/detail siblings.
     filter: (image) => !image.closest("character-detail-archive"),
+    observationTarget: (image) => this.settings.origin === "bestdori"
+      ? image.closest(".catalog-song-tile") ?? image
+      : image,
   });
+  private readonly viewportGrid = new ViewportGrid();
   private selectedId = "";
   private releaseLocation?: () => void;
   private pendingNavigation = "";
@@ -1512,6 +1518,7 @@ export class CatalogScreen extends LitElement {
     this.disposeMedia.forEach((dispose) => dispose());
     this.disposeMedia = [];
     this.lazyImages.disconnect();
+    this.viewportGrid.disconnect();
     clearAppBarActions(this.entityAppBarOwner);
     clearAppBarIdentity(this.entityAppBarOwner);
     clearAppBarSearch(this.entityAppBarOwner);
@@ -1691,6 +1698,12 @@ export class CatalogScreen extends LitElement {
     }
     // tile() defers its artwork as `data-src`; this is what promotes it.
     this.lazyImages.observe(this);
+    this.viewportGrid.sync(
+      this.settings.origin === "bestdori" && this.profile.presentation === "song" && this.view === "grid"
+        ? this.querySelector<HTMLElement>("#browse-results > .collection--song")
+        : null,
+      this.closest(".page-stage"),
+    );
     this.restoreLocationState();
   }
   private localizedImageCandidates = (source: string) =>
@@ -4030,6 +4043,9 @@ export class CatalogScreen extends LitElement {
             `
           : undefined,
       });
+    const viewport = this.settings.origin === "bestdori" && kind === "song" && this.view === "grid"
+      ? this.viewportGrid.initialWindow(items.length, this.closest(".page-stage"))
+      : undefined;
     const collection =
       this.view === "table"
         ? html`
@@ -4049,7 +4065,12 @@ export class CatalogScreen extends LitElement {
               })),
             )
           : html`
-              <div class=${`collection collection--${kind}`}>${items.map((item) => this.renderTile(item))}</div>
+              <div class=${`collection collection--${kind}`}
+                ?data-viewport-grid=${Boolean(viewport)}
+                style=${viewport ? `--viewport-grid-item-block-size:${viewport.blockSize}px` : nothing}
+              >${this.settings.origin === "bestdori" && kind === "song"
+                ? repeat(items, (item) => this.itemKey(item), (item, index) => this.renderTile(item, !!viewport && index >= viewport.end))
+                : items.map((item) => this.renderTile(item))}</div>
             `;
     return collection;
   }
@@ -4111,7 +4132,7 @@ export class CatalogScreen extends LitElement {
     };
   }
 
-  private renderTile(item: Item) {
+  private renderTile(item: Item, offscreen = false) {
     const kind = this.profile.presentation;
     const image = this.image(item);
     const title = this.itemTitle(item);
@@ -4140,7 +4161,7 @@ export class CatalogScreen extends LitElement {
       }, item));
     const ids = this.itemCharacterIds(item);
     if (kind === "song")
-      return html`<div class="catalog-song-tile">
+      return html`<div class="catalog-song-tile" ?data-viewport-grid-offscreen=${offscreen}>
         ${tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item))}
         ${item.musicUrl ? iconButton({className:"catalog-song-tile__play",variant:"tonal",icon:"play_arrow",label:`${this.label("play", "Play")}: ${title}`,onClick:(event) => {event.preventDefault();event.stopPropagation();void this.toggleSong(this.itemId(item), String(item.musicUrl), false, item);}}) : nothing}
       </div>`;

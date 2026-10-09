@@ -38,6 +38,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import type { HomeSpotStage } from "./runtime/home-spot-stage";
 import { projectHaneokaTranscript, type HaneokaTranscriptEntry } from "@haneoka/vega-plugin-haneoka/transcript";
 import { advText } from "./ui/adv-text";
+import { parseAdvRichText, type AdvRichTextNode } from "@haneoka/vega-plugin-richtext";
 import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
 import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
 import { inputChip, segmented } from "./ui/controls";
@@ -147,6 +148,7 @@ export class StoryWorkspace extends LitElement {
     detailLoading: { state: true },
     detailError: { state: true },
     detailMode: { state: true },
+    transcriptQuery: { state: true },
     storyCommentsReady: { state: true },
     storyCommentsFailed: { state: true },
     limit: { state: true },
@@ -175,6 +177,7 @@ export class StoryWorkspace extends LitElement {
   declare detailLoading: boolean;
   declare detailError: string;
   declare detailMode: "text" | "play";
+  declare private transcriptQuery: string;
   declare private storyCommentsReady: boolean;
   declare private storyCommentsFailed: boolean;
   private storyCommentsImport?: Promise<void>;
@@ -268,6 +271,7 @@ export class StoryWorkspace extends LitElement {
     this.detailCard = null;
     this.detailLoading = false;
     this.detailMode = "text";
+    this.transcriptQuery = "";
     this.storyCommentsReady = false;
     this.storyCommentsFailed = false;
     this.detailError = "";
@@ -280,6 +284,7 @@ export class StoryWorkspace extends LitElement {
     return !this.hasAttribute("data-prerendered") || Boolean(this.detailEpisode) || this.phase === "error";
   }
   protected update(changed: Map<string, unknown>): void {
+    if (changed.has("locale")) this.transcriptQuery = "";
     if (this.hasAttribute("data-prerendered")) {
       this.removeAttribute("data-prerendered");
       this.replaceChildren();
@@ -1283,6 +1288,7 @@ export class StoryWorkspace extends LitElement {
       openDetailLocation(`${location.pathname}?${params}`);
     }
     const signal = this.detailRequests.begin();
+    if (!this.detailEpisode || this.episodeId(this.detailEpisode) !== id) this.transcriptQuery = "";
     this.dataset.entityReady = "false";
     this.detailError = "";
     const cardEpisode = (
@@ -2134,6 +2140,9 @@ export class StoryWorkspace extends LitElement {
   private renderDetail(episode: JsonRecord) {
     const ids = this.characterIds(episode);
     const commands = this.transcript(episode);
+    const visibleCommands = this.searchTranscript(commands);
+    const dialogueCount = (entries: readonly HaneokaTranscriptEntry[]) =>
+      entries.filter((entry) => ["dialogue", "message", "subtitle"].includes(entry.kind)).length;
     return html`
       <section
         class=${this.entityId ? "story-detail story-detail--page" : "story-detail pane-layer"}
@@ -2242,12 +2251,42 @@ export class StoryWorkspace extends LitElement {
                       ? html`
                           <section class="story-detail__transcript">
                             ${renderDetailSectionHeading(uiText(this.locale, "storyText"), "storyText", {
-                              count: commands.filter((entry) =>
-                                ["dialogue", "message", "subtitle"].includes(entry.kind),
-                              ).length,
+                              count: dialogueCount(visibleCommands),
                               level: 2,
                             })}
-                            <div class="story-transcript">${this.renderTranscript(commands)}</div>
+                            <div class="field-stack">
+                              <md-outlined-text-field
+                                class="is-search"
+                                type="search"
+                                label=${`${uiText(this.locale, "search")} · ${uiText(this.locale, "storyText")}`}
+                                supporting-text=${`${dialogueCount(visibleCommands)} / ${dialogueCount(commands)}`}
+                                .value=${this.transcriptQuery}
+                                @input=${(event: Event) => {
+                                  this.transcriptQuery = String((event.target as HTMLElement & { value?: string }).value || "");
+                                }}
+                              >
+                                <svg slot="leading-icon" class="material-icon" width="20" height="20" aria-hidden="true">
+                                  <use href="/icons.svg#search"></use>
+                                </svg>
+                                ${this.transcriptQuery
+                                  ? html`
+                                      <button
+                                        slot="trailing-icon"
+                                        class="icon-button"
+                                        type="button"
+                                        aria-label=${uiText(this.locale, "reset")}
+                                        @click=${(event: Event) => {
+                                          this.transcriptQuery = "";
+                                          (event.currentTarget as HTMLElement).closest<HTMLElement>("md-outlined-text-field")?.focus();
+                                        }}
+                                      >${icon("close", 20)}</button>
+                                    `
+                                  : nothing}
+                              </md-outlined-text-field>
+                            </div>
+                            ${visibleCommands.length
+                              ? html`<div class="story-transcript">${this.renderTranscript(visibleCommands)}</div>`
+                              : emptyState({ title: uiText(this.locale, "empty"), icon: "search_off" })}
                           </section>
                         `
                       : this.detailLoading
@@ -2272,6 +2311,24 @@ export class StoryWorkspace extends LitElement {
       this.transcriptCache.set(episode, entries);
     }
     return entries;
+  }
+  private searchTranscript(entries: readonly HaneokaTranscriptEntry[]): readonly HaneokaTranscriptEntry[] {
+    const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
+    const query = normalize(this.transcriptQuery);
+    if (!query) return entries;
+    const visibleText = (nodes: readonly AdvRichTextNode[]): string =>
+      nodes.map((node): string => {
+        if (node.type === "text") return node.value;
+        if (node.type === "ruby") return node.base;
+        if (node.type === "break" || node.type === "space") return " ";
+        return visibleText(node.children);
+      }).join("");
+    return entries.filter((entry) =>
+      ["dialogue", "message", "subtitle"].includes(entry.kind) &&
+      normalize([
+        visibleText(parseAdvRichText(this.transcriptSpeaker(entry.command).text)),
+        visibleText(parseAdvRichText(resolveLocalizedText(entry.command.text, this.locale).text)),
+      ].join(" ")).includes(query));
   }
   private renderTranscript(entries: readonly HaneokaTranscriptEntry[]) {
     const textKinds = new Set(["dialogue", "message", "location", "conversation", "subtitle", "choices"]);

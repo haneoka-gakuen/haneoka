@@ -5,6 +5,11 @@ import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-asset
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { beginLoading, prepareMaterialProgress, type LoadingMetrics } from "../../lib/loading-progress";
 import { clientText } from "../../i18n/client";
+import { relationships as jaRelationships } from "../../../public/i18n/ja.json";
+import { relationships as enRelationships } from "../../../public/i18n/en.json";
+import { relationships as zhTWRelationships } from "../../../public/i18n/zh-TW.json";
+import { relationships as zhCNRelationships } from "../../../public/i18n/zh-CN.json";
+import { relationships as koRelationships } from "../../../public/i18n/ko.json";
 import { CUBISM_CORE_URLS, CUBISM_WEB_RUNTIME_URL } from "../../lib/cubism-runtime";
 import { fetchJson, uiText } from "../shared/catalog";
 import { PlaybackControlsController } from "../ui/playback-controls";
@@ -37,6 +42,13 @@ import {
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 
 type RecordValue = Record<string, unknown>;
+const speakerNameJoiners: Readonly<Record<string, string>> = Object.freeze({
+  ja: jaRelationships.speakerNameSeparator,
+  en: enRelationships.speakerNameSeparator,
+  "zh-TW": zhTWRelationships.speakerNameSeparator,
+  "zh-CN": zhCNRelationships.speakerNameSeparator,
+  ko: koRelationships.speakerNameSeparator,
+});
 type CubismProvision = {
   createCubismWebRuntimeAdapter(options: RecordValue): CubismRuntimeAdapter;
 };
@@ -142,6 +154,7 @@ export class VegaStoryStage extends LitElement {
   private continuousPlay = false;
   private sequenceListeners = new Set<() => void>();
   private stopCompletionObserver?: () => void;
+  private stopSpeakerLocaleObserver?: () => void;
   private completionEmitted = false;
   private transportFrame = 0;
   private scrubbing = false;
@@ -369,6 +382,7 @@ export class VegaStoryStage extends LitElement {
         story: hydrated,
         state: playerState,
         resolveLocalizedText: this.localizedTextResolver(),
+        displayNameJoiner: this.speakerNameJoiner(),
         renderBackend: "vega-three-webgl2",
         theme: "haneoka",
         shell: {
@@ -384,6 +398,21 @@ export class VegaStoryStage extends LitElement {
       }
       this.stopBootStateObserver();
       this.handle = player;
+      player.player.runtime.displayNameJoiner = this.speakerNameJoiner();
+      const speakerLocaleSubscription = player.shell?.subscribe(({ settings }) => {
+        const separator = this.speakerNameJoiner(settings.uiLanguage === "auto" ? this.locale : settings.uiLanguage);
+        if (player.player.runtime.displayNameJoiner === separator) return;
+        player.player.runtime.displayNameJoiner = separator;
+        player.player.setLocale(settings.language, { refresh: true });
+      });
+      this.stopSpeakerLocaleObserver = speakerLocaleSubscription
+        ? () => {
+            if (typeof speakerLocaleSubscription === "function") void speakerLocaleSubscription();
+            else if ("dispose" in speakerLocaleSubscription) void speakerLocaleSubscription.dispose();
+            else if ("destroy" in speakerLocaleSubscription) void speakerLocaleSubscription.destroy();
+            else void speakerLocaleSubscription.close();
+          }
+        : undefined;
       player.shell?.setSetting("uiLanguage", this.locale);
       player.player.setLocale(this.locale, { refresh: true });
       this.appliedLocale = this.locale;
@@ -422,10 +451,16 @@ export class VegaStoryStage extends LitElement {
   private refreshPlayerLocale() {
     const player = this.handle;
     if (!player) return;
+    player.player.runtime.displayNameJoiner = this.speakerNameJoiner();
     player.shell?.setSetting("uiLanguage", this.locale);
     player.player.setLocale(this.locale, { refresh: true });
     this.appliedLocale = this.locale;
     this.requestUpdate();
+  }
+  private speakerNameJoiner(locale = this.locale): string {
+    // Display punctuation follows the UI even when dialogue falls back to
+    // another content language. Keep the authored target delimiter intact.
+    return speakerNameJoiners[locale] ?? enRelationships.speakerNameSeparator;
   }
   private legacySettings() {
     const defaults = { autoDelay: 0.5, bgmVolume: 1, voiceVolume: 1, seVolume: 1 };
@@ -787,6 +822,8 @@ export class VegaStoryStage extends LitElement {
     this.stopBootStateObserver();
     this.stopCompletionObserver?.();
     this.stopCompletionObserver = undefined;
+    this.stopSpeakerLocaleObserver?.();
+    this.stopSpeakerLocaleObserver = undefined;
     const engine = this.engine;
     const handle = this.handle;
     this.engine = undefined;

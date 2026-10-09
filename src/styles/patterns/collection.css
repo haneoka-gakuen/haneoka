@@ -18,6 +18,16 @@
   padding: 0;
   list-style: none;
 }
+/* The viewport helper marks only distant cards; its real sample stays visible.
+ * Reserve the current measured block size while skipping offscreen content. */
+.collection[data-viewport-grid] > .catalog-song-tile[data-viewport-grid-offscreen]:not([data-viewport-grid-sample]) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: var(--viewport-grid-item-block-size);
+}
+.collection[data-viewport-grid] > .catalog-song-tile[data-viewport-grid-offscreen]:not([data-viewport-grid-sample]):hover,
+.collection[data-viewport-grid] > .catalog-song-tile[data-viewport-grid-offscreen]:not([data-viewport-grid-sample]):focus-within {
+  content-visibility: visible;
+}
 /* auto-fill, not auto-fit: a grid holding three songs keeps the tracks a
  * full grid would have, so its tiles are the same size as everywhere else and
  * sit at the leading edge instead of stretching across the pane. */
