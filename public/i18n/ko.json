@@ -1291,7 +1291,8 @@
       "playbackUnavailable": "재생할 수 없습니다",
       "rangeNotes": "노트 수[A,B)",
       "rangeDensity": "노트/초",
-      "rangeBpm": "BPM"
+      "rangeBpm": "BPM",
+      "overviewSelectRange": "구간 선택"
     }
   },
   "tools": {

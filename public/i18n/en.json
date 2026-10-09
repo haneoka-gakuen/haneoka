@@ -1291,7 +1291,8 @@
       "playbackUnavailable": "Playback unavailable",
       "rangeNotes": "Notes [A,B)",
       "rangeDensity": "Notes/s",
-      "rangeBpm": "BPM"
+      "rangeBpm": "BPM",
+      "overviewSelectRange": "Select range"
     }
   },
   "tools": {

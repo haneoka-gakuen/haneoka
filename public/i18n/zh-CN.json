@@ -1291,7 +1291,8 @@
       "playbackUnavailable": "暂无法播放",
       "rangeNotes": "音符数[A,B)",
       "rangeDensity": "音符/秒",
-      "rangeBpm": "BPM"
+      "rangeBpm": "BPM",
+      "overviewSelectRange": "选取区间"
     }
   },
   "tools": {

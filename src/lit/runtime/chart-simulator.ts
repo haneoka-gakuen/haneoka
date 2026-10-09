@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html, svg, nothing, type PropertyValues } from "lit";
 import { clientText } from "../../i18n/client";
 import { chartPath, parseResourceRoute } from "../../lib/resource-route";
 import {
@@ -13,6 +13,11 @@ import {
   type ChartPlaybackShare,
   type ChartRangeIndex,
 } from "../../lib/chart-playback-range";
+import {
+  chartOverviewPointToTime,
+  sameChartOverviewGeometry,
+  type ChartOverviewGeometry,
+} from "../../lib/chart-overview-geometry";
 import { fetchJson, uiText } from "../shared/catalog";
 import { loadingState } from "../ui/state";
 import { icon } from "../ui/icon";
@@ -142,10 +147,33 @@ type NoteSoundSwap = {
   target: OurNotesNoteSeGroup;
   player?: NoteSoundPlayer;
 };
+type OverviewDrawInputs = {
+  canvas: HTMLCanvasElement;
+  host: HTMLElement;
+  chart: ChartDocument;
+  skin: Awaited<ReturnType<typeof loadDetailedOverviewSkin>>;
+  height: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  dpr: number;
+  epoch: number;
+  mode: "simple" | "watch";
+  phase: "loading" | "ready" | "error";
+};
+type OverviewPointer = {
+  id: number;
+  canvas: HTMLCanvasElement;
+  host: HTMLElement;
+  chart: ChartDocument;
+  epoch: number;
+  revision: number;
+  startMs: number;
+};
 
 const SETTINGS_KEY = "haneoka:chart-player:v1";
 let rangePanelSequence = 0;
 const RANGE_COPY = {
+  overviewSelectRange: "Select range",
   rangePlayback: "A/B loop",
   setA: "Set A",
   setB: "Set B",
@@ -213,6 +241,9 @@ export class ChartSimulator extends LitElement {
     rangeStatus: { state: true },
     rangeExpanded: { state: true },
     sharedPlaybackUrl: { state: true },
+    overviewGeometry: { state: true },
+    overviewSelecting: { state: true },
+    overviewDraft: { state: true },
   };
   declare source: string;
   declare audioUrl: string;
@@ -249,6 +280,14 @@ export class ChartSimulator extends LitElement {
   declare rangeStatus: RangeCopyKey | undefined;
   declare rangeExpanded: boolean;
   declare sharedPlaybackUrl: string;
+  declare overviewGeometry: ChartOverviewGeometry | undefined;
+  declare overviewSelecting: boolean;
+  declare overviewDraft: { startMs: number; currentMs: number } | undefined;
+  private overviewPointer?: OverviewPointer;
+  private overviewRevision = 0;
+  private overviewFrame = 0;
+  private overviewResizeObserver?: ResizeObserver;
+  private overviewPaint?: { inputs: OverviewDrawInputs; geometry: ChartOverviewGeometry | undefined };
   private readonly rangePanelId = `chart-playback-range-${++rangePanelSequence}`;
   private playbackIdentity?: ChartPlaybackIdentity;
   private rangeIndex?: ChartRangeIndex;
@@ -327,6 +366,9 @@ export class ChartSimulator extends LitElement {
     this.rangeLoop = false;
     this.rangeExpanded = false;
     this.sharedPlaybackUrl = "";
+    this.overviewGeometry = undefined;
+    this.overviewSelecting = false;
+    this.overviewDraft = undefined;
     this.rangeADraft = "";
     this.rangeBDraft = "";
     this.rangeStatus = undefined;
@@ -352,6 +394,7 @@ export class ChartSimulator extends LitElement {
     ]);
     void this.load();
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
+    window.addEventListener("resize", this.overviewViewportResize);
   }
   disconnectedCallback() {
     this.persistSettings();
@@ -362,9 +405,13 @@ export class ChartSimulator extends LitElement {
     this.viewportFullscreen.dispose();
     this.transportVisibility.dispose();
     document.removeEventListener("fullscreenchange", this.fullscreenChanged);
+    window.removeEventListener("resize", this.overviewViewportResize);
     super.disconnectedCallback();
   }
-  updated() {
+  updated(changed: PropertyValues<this>) {
+    if (changed.has("mode")) {
+      this.invalidateOverview();
+    }
     const key = this.playbackSourceKey();
     if (this.source && key !== this.loadedKey) void this.load();
     else if (!this.source && key !== this.loadedKey) {
@@ -382,7 +429,7 @@ export class ChartSimulator extends LitElement {
     this.transportVisibility.bind(this.querySelector<HTMLElement>(".playback-controls"));
     this.transportVisibility.setFullscreen(this.fullscreen);
     this.transportVisibility.setPlaying(this.playing);
-    if (this.mode === "simple") requestAnimationFrame(() => this.drawOverview());
+    if (this.mode === "simple" && this.phase === "ready") this.scheduleOverviewDraw();
   }
 
   private playbackSourceKey() {
@@ -406,6 +453,7 @@ export class ChartSimulator extends LitElement {
     if (this.clock) this.clock.audio.loop = this.loop && !this.rangeLoop;
   }
   private clearRange() {
+    this.cancelOverviewPointer();
     this.rangeSeekPending = false;
     this.sharedPlaybackUrl = "";
     this.rangeA = undefined;
@@ -436,6 +484,7 @@ export class ChartSimulator extends LitElement {
     this.rangeChanged();
   }
   private rangeChanged(clearStatus = true) {
+    this.cancelOverviewPointer();
     if (!this.mediaDuration()) return;
     const incomplete = this.rangeA === undefined || this.rangeB === undefined;
     const invalid = !incomplete && !this.currentRange();
@@ -445,6 +494,7 @@ export class ChartSimulator extends LitElement {
     this.syncLoop();
   }
   private setRangeLoop(enabled: boolean) {
+    this.cancelOverviewPointer();
     const range = this.currentRange();
     this.rangeLoop = enabled && Boolean(range);
     if (this.rangeLoop) {
@@ -1036,6 +1086,13 @@ export class ChartSimulator extends LitElement {
     });
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(root);
+    const overviewHost = this.querySelector<HTMLElement>(".chart-simple-overview");
+    if (overviewHost) {
+      this.overviewResizeObserver = new ResizeObserver(() => {
+        if (ownsClock() && this.mode === "simple" && this.phase === "ready") this.scheduleOverviewDraw();
+      });
+      this.overviewResizeObserver.observe(overviewHost);
+    }
     this.duration = (this.clock.durationMs || this.chart.durationMs) / 1000;
     this.resize();
     this.draw();
@@ -1057,18 +1114,246 @@ export class ChartSimulator extends LitElement {
     this.draw();
     this.drawOverview();
   }
-  private drawOverview() {
+  private overviewInputs(): OverviewDrawInputs | undefined {
     const host = this.querySelector<HTMLElement>(".chart-simple-overview");
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
     if (!host || !canvas || !this.chart || !this.overviewSkin) return;
-    drawDetailedChartOverview(canvas, this.chart, this.overviewSkin, host.clientHeight || 720);
+    return {
+      host,
+      canvas,
+      chart: this.chart,
+      skin: this.overviewSkin,
+      height: Math.max(360, host.clientHeight || 720),
+      viewportWidth: host.clientWidth,
+      viewportHeight: host.clientHeight,
+      dpr: Math.max(1, Math.min(1.5, devicePixelRatio || 1)),
+      epoch: this.loadEpoch,
+      mode: this.mode,
+      phase: this.phase,
+    };
   }
+  private sameOverviewInputs(first: OverviewDrawInputs, second: OverviewDrawInputs) {
+    return (
+      first.canvas === second.canvas &&
+      first.host === second.host &&
+      first.chart === second.chart &&
+      first.skin === second.skin &&
+      first.height === second.height &&
+      first.viewportWidth === second.viewportWidth &&
+      first.viewportHeight === second.viewportHeight &&
+      first.dpr === second.dpr &&
+      first.epoch === second.epoch &&
+      first.mode === second.mode &&
+      first.phase === second.phase
+    );
+  }
+  private scheduleOverviewDraw() {
+    const inputs = this.overviewInputs();
+    if (!inputs || (this.overviewPaint && this.sameOverviewInputs(this.overviewPaint.inputs, inputs))) return;
+    if (this.overviewFrame) return;
+    this.overviewFrame = requestAnimationFrame(() => {
+      this.overviewFrame = 0;
+      if (this.isConnected) this.drawOverview();
+    });
+  }
+  private overviewViewportResize = () => {
+    if (this.mode === "simple" && this.phase === "ready") this.scheduleOverviewDraw();
+  };
+  private invalidateOverview() {
+    this.cancelOverviewPointer();
+    cancelAnimationFrame(this.overviewFrame);
+    this.overviewFrame = 0;
+    this.overviewPaint = undefined;
+    this.overviewGeometry = undefined;
+    this.overviewSelecting = false;
+    this.overviewRevision += 1;
+  }
+  private drawOverview(force = false) {
+    const inputs = this.overviewInputs();
+    if (!inputs) {
+      this.invalidateOverview();
+      return;
+    }
+    if (!force && this.overviewPaint && this.sameOverviewInputs(this.overviewPaint.inputs, inputs)) return;
+    const previous = this.overviewGeometry;
+    const previousInputs = this.overviewPaint?.inputs;
+    this.overviewGeometry = undefined;
+    const paint = { inputs, geometry: undefined as ChartOverviewGeometry | undefined };
+    this.overviewPaint = paint;
+    try {
+      paint.geometry = drawDetailedChartOverview(inputs.canvas, inputs.chart, inputs.skin, inputs.height);
+      const next =
+        inputs.phase === "ready" && inputs.mode === "simple" && inputs.viewportWidth > 0 && inputs.viewportHeight > 0
+          ? paint.geometry
+          : undefined;
+      if (
+        !sameChartOverviewGeometry(previous, next) ||
+        previousInputs?.canvas !== inputs.canvas ||
+        previousInputs?.viewportWidth !== inputs.viewportWidth ||
+        previousInputs?.viewportHeight !== inputs.viewportHeight
+      ) {
+        this.cancelOverviewPointer();
+        this.overviewRevision += 1;
+      }
+      this.overviewGeometry = next;
+    } finally {
+      if (!this.overviewGeometry) this.cancelOverviewPointer();
+    }
+  }
+  private canSelectOverview() {
+    if (this.phase !== "ready" || this.mode !== "simple" || !this.overviewGeometry || !this.mediaDuration())
+      return false;
+    const inputs = this.overviewInputs();
+    return Boolean(inputs && this.overviewPaint && this.sameOverviewInputs(this.overviewPaint.inputs, inputs));
+  }
+  private setOverviewSelecting(enabled: boolean) {
+    this.cancelOverviewPointer();
+    this.overviewSelecting = enabled && this.canSelectOverview();
+  }
+  private cancelOverviewPointer() {
+    const pointer = this.overviewPointer;
+    this.overviewPointer = undefined;
+    this.overviewDraft = undefined;
+    window.removeEventListener("keydown", this.overviewEscape, true);
+    try {
+      if (pointer?.canvas.hasPointerCapture?.(pointer.id)) {
+        pointer.canvas.releasePointerCapture(pointer.id);
+      }
+    } catch {
+      // The captured canvas may already have left the document.
+    }
+  }
+  private overviewEscape = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && this.overviewPointer) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.cancelOverviewPointer();
+    }
+  };
+  private overviewPoint(event: PointerEvent, canvas: HTMLCanvasElement, host: HTMLElement, clampPoint: boolean) {
+    const geometry = this.overviewGeometry;
+    if (!geometry || !this.mediaDuration()) return;
+    const rect = canvas.getBoundingClientRect();
+    const viewport = host.getBoundingClientRect();
+    if (!host.offsetWidth || !host.offsetHeight) return;
+    const scaleX = viewport.width / host.offsetWidth;
+    const scaleY = viewport.height / host.offsetHeight;
+    const viewportLeft = viewport.left + host.clientLeft * scaleX;
+    const viewportTop = viewport.top + host.clientTop * scaleY;
+    const left = Math.max(rect.left, viewportLeft);
+    const top = Math.max(rect.top, viewportTop);
+    const right = Math.min(rect.right, viewportLeft + host.clientWidth * scaleX);
+    const bottom = Math.min(rect.bottom, viewportTop + host.clientHeight * scaleY);
+    if (right <= left || bottom <= top) return;
+    if (!clampPoint && (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom))
+      return;
+    const point = chartOverviewPointToTime(
+      geometry,
+      rect,
+      clampPoint ? clamp(event.clientX, left, right) : event.clientX,
+      clampPoint ? clamp(event.clientY, top, bottom) : event.clientY,
+      clampPoint ? "clamp" : "reject",
+    );
+    return point ? Math.min(point.timeMs, this.mediaDuration() * 1000) : undefined;
+  }
+  private ownsOverviewPointer(event: PointerEvent) {
+    const pointer = this.overviewPointer;
+    return (
+      pointer &&
+      pointer.id === event.pointerId &&
+      pointer.canvas === event.currentTarget &&
+      pointer.canvas.isConnected &&
+      pointer.epoch === this.loadEpoch &&
+      pointer.revision === this.overviewRevision &&
+      pointer.chart === this.chart &&
+      this.overviewSelecting &&
+      this.canSelectOverview()
+    );
+  }
+  private overviewPointerDown = (event: PointerEvent) => {
+    if (
+      !event.isPrimary ||
+      event.button !== 0 ||
+      this.overviewPointer ||
+      !this.overviewSelecting ||
+      !this.canSelectOverview()
+    )
+      return;
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    const host = canvas.closest<HTMLElement>(".chart-simple-overview");
+    if (!host || !this.chart) return;
+    const startMs = this.overviewPoint(event, canvas, host, false);
+    if (startMs === undefined) return;
+    this.rangePlaybackIntent = false;
+    this.resumeAfterScrub = false;
+    this.scrubClock = undefined;
+    this.transportVisibility.setScrubbing(false);
+    this.clock?.pause();
+    this.playing = this.clock?.playing ?? false;
+    this.overviewPointer = {
+      id: event.pointerId,
+      canvas,
+      host,
+      chart: this.chart,
+      epoch: this.loadEpoch,
+      revision: this.overviewRevision,
+      startMs,
+    };
+    this.overviewDraft = { startMs, currentMs: startMs };
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      this.cancelOverviewPointer();
+      return;
+    }
+    window.addEventListener("keydown", this.overviewEscape, true);
+    event.preventDefault();
+  };
+  private overviewPointerMove = (event: PointerEvent) => {
+    if (!this.overviewPointer || this.overviewPointer.id !== event.pointerId) return;
+    if (!this.ownsOverviewPointer(event) || (event.pointerType === "mouse" && (event.buttons & 1) === 0)) {
+      this.cancelOverviewPointer();
+      return;
+    }
+    const pointer = this.overviewPointer;
+    const currentMs = this.overviewPoint(event, pointer.canvas, pointer.host, true);
+    if (currentMs === undefined) {
+      this.cancelOverviewPointer();
+      return;
+    }
+    this.overviewDraft = { startMs: pointer.startMs, currentMs };
+    event.preventDefault();
+  };
+  private overviewPointerUp = (event: PointerEvent) => {
+    if (!this.overviewPointer || this.overviewPointer.id !== event.pointerId) return;
+    const pointer = this.overviewPointer;
+    const currentMs = this.ownsOverviewPointer(event)
+      ? this.overviewPoint(event, pointer.canvas, pointer.host, true)
+      : undefined;
+    this.cancelOverviewPointer();
+    if (currentMs === undefined) return;
+    const range = validChartPlaybackRange(
+      Math.min(pointer.startMs, currentMs) / 1000,
+      Math.max(pointer.startMs, currentMs) / 1000,
+      this.mediaDuration(),
+    );
+    if (!range) return;
+    this.rangeA = range.start;
+    this.rangeB = range.end;
+    this.rangeADraft = String(range.start);
+    this.rangeBDraft = String(range.end);
+    this.rangeChanged();
+    event.preventDefault();
+  };
+  private overviewPointerCancel = (event: PointerEvent) => {
+    if (this.overviewPointer?.id === event.pointerId) this.cancelOverviewPointer();
+  };
   /** Renders the simple overview and downloads it as a framed PNG. */
   async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
     const chart = this.chart;
     if (!canvas || this.phase !== "ready" || !chart) return;
-    this.drawOverview();
+    this.drawOverview(true);
     const localize = (value: number) => value.toLocaleString(this.locale || undefined);
     const stats = meta.stats.map((stat) => {
       if (stat.value !== "—" || !stat.id) return stat;
@@ -1268,6 +1553,9 @@ export class ChartSimulator extends LitElement {
     }
   }
   private dispose() {
+    this.invalidateOverview();
+    this.overviewResizeObserver?.disconnect();
+    this.overviewResizeObserver = undefined;
     this.loadEpoch++;
     this.loadAbort?.abort();
     this.loadAbort = undefined;
@@ -1377,6 +1665,7 @@ export class ChartSimulator extends LitElement {
                 .value=${this.rangeADraft}
                 ?disabled=${!this.mediaDuration()}
                 @input=${(event: Event) => {
+                  this.cancelOverviewPointer();
                   this.rangeADraft = (event.currentTarget as HTMLElement & { value: string }).value;
                 }}
                 @change=${(event: Event) => this.commitRangePoint("a", (event.currentTarget as HTMLElement & { value: string }).value)}
@@ -1391,6 +1680,7 @@ export class ChartSimulator extends LitElement {
                 .value=${this.rangeBDraft}
                 ?disabled=${!this.mediaDuration()}
                 @input=${(event: Event) => {
+                  this.cancelOverviewPointer();
                   this.rangeBDraft = (event.currentTarget as HTMLElement & { value: string }).value;
                 }}
                 @change=${(event: Event) => this.commitRangePoint("b", (event.currentTarget as HTMLElement & { value: string }).value)}
@@ -1449,6 +1739,68 @@ export class ChartSimulator extends LitElement {
           `,
         })}
       </section>
+    `;
+  }
+  private renderRangeStatus() {
+    if (!this.rangeStatus && !this.sharedPlaybackUrl) return nothing;
+    return html`
+      <p class="chart-runtime__range-status" role="status" aria-live="polite">
+        ${this.rangeStatus ? this.rangeText(this.rangeStatus) : nothing}
+        ${
+          this.sharedPlaybackUrl
+            ? html`
+                <a class="button button--text" href=${this.sharedPlaybackUrl}>${this.rangeText("shareTime")}</a>
+              `
+            : nothing
+        }
+      </p>
+    `;
+  }
+  private renderOverviewSelection() {
+    const geometry = this.overviewGeometry;
+    if (!geometry) return nothing;
+    const range = this.currentRange();
+    const draft = this.overviewDraft;
+    const start = draft ? Math.min(draft.startMs, draft.currentMs) : range ? range.start * 1000 : undefined;
+    const end = draft ? Math.max(draft.startMs, draft.currentMs) : range ? range.end * 1000 : undefined;
+    if (start === undefined || end === undefined || end <= start) return nothing;
+    return svg`
+      <svg
+        class="chart-overview-selection"
+        width=${geometry.cssWidth}
+        height=${geometry.cssHeight}
+        viewBox=${`0 0 ${geometry.cssWidth} ${geometry.cssHeight}`}
+        preserveAspectRatio="none"
+        data-preview=${draft ? "true" : "false"}
+        aria-hidden="true"
+        focusable="false"
+      >
+        ${geometry.columns.map((column) => {
+          const from = Math.max(start, column.startMs);
+          const to = Math.min(end, column.endMs);
+          if (to <= from) return nothing;
+          const top = geometry.cssHeight - ((to - column.startMs) / 1000) * geometry.heightPerSecond;
+          const bottom = geometry.cssHeight - ((from - column.startMs) / 1000) * geometry.heightPerSecond;
+          return svg`<rect x=${column.leftCss} y=${top} width=${geometry.columnWidth} height=${bottom - top}></rect>`;
+        })}
+      </svg>
+    `;
+  }
+  private renderOverviewControls() {
+    if (this.phase !== "ready" || this.mode !== "simple") return nothing;
+    return html`
+      <div class="chart-overview-controls">
+        <label class="chart-runtime__setting chart-runtime__setting--toggle">
+          <span>${this.rangeText("overviewSelectRange")}</span>
+          <md-switch
+            .selected=${this.overviewSelecting}
+            ?disabled=${!this.canSelectOverview()}
+            aria-label=${this.rangeText("overviewSelectRange")}
+            @change=${(event: Event) => this.setOverviewSelecting((event.currentTarget as HTMLElement & { selected: boolean }).selected)}
+          ></md-switch>
+        </label>
+        ${this.renderRangeControls()} ${this.renderRangeStatus()}
+      </div>
     `;
   }
   private renderSettingsPanel() {
@@ -1677,8 +2029,24 @@ export class ChartSimulator extends LitElement {
                 `
               : nothing
         }
-        <div class="chart-simple-overview" ?hidden=${this.phase !== "ready" || this.mode !== "simple"}>
-          <canvas aria-label=${this.label}></canvas>
+        <div class="chart-simple-view" ?hidden=${this.phase !== "ready" || this.mode !== "simple"}>
+          ${this.renderOverviewControls()}
+          <div
+            class="chart-simple-overview"
+            data-selection-mode=${this.overviewSelecting && this.canSelectOverview() ? "true" : "false"}
+          >
+            <div class="chart-overview-track">
+              <canvas
+                aria-label=${this.label}
+                @pointerdown=${this.overviewPointerDown}
+                @pointermove=${this.overviewPointerMove}
+                @pointerup=${this.overviewPointerUp}
+                @pointercancel=${this.overviewPointerCancel}
+                @lostpointercapture=${this.overviewPointerCancel}
+              ></canvas>
+              ${this.renderOverviewSelection()}
+            </div>
+          </div>
         </div>
         <div
           class="chart-runtime__stage"
@@ -1790,25 +2158,7 @@ export class ChartSimulator extends LitElement {
                     </div>
                   </div>
                 </footer>
-                ${this.renderSettingsPanel()}
-                ${
-                  this.rangeStatus || this.sharedPlaybackUrl
-                    ? html`
-                        <p class="chart-runtime__range-status" role="status" aria-live="polite">
-                          ${this.rangeStatus ? this.rangeText(this.rangeStatus) : nothing}
-                          ${
-                            this.sharedPlaybackUrl
-                              ? html`
-                                  <a class="button button--text" href=${this.sharedPlaybackUrl}>
-                                    ${this.rangeText("shareTime")}
-                                  </a>
-                                `
-                              : nothing
-                          }
-                        </p>
-                      `
-                    : nothing
-                }
+                ${this.renderSettingsPanel()} ${this.renderRangeStatus()}
               `
             : nothing
         }

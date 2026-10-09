@@ -1291,7 +1291,8 @@
       "playbackUnavailable": "再生できません",
       "rangeNotes": "ノーツ数[A,B)",
       "rangeDensity": "ノーツ/秒",
-      "rangeBpm": "BPM"
+      "rangeBpm": "BPM",
+      "overviewSelectRange": "範囲を選択"
     }
   },
   "tools": {
