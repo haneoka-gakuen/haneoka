@@ -145,6 +145,7 @@ const sections: NavSection[] = [
       { route: "/catalog/help", icon: "help", label: "help" },
       { route: "/player-profile", icon: "person_search", label: "playerProfile.title" },
       { route: "/team-builder", icon: "groups", label: "teamBuilder.title" },
+      { route: "/tools/song-puzzle", icon: "extension", label: "songSlidePuzzle.title" },
       { route: "/stamp-maker", icon: "image", label: "stampMaker.title" },
       { route: "/chart-editor/create", icon: "edit", label: "chartEditor" },
     ],

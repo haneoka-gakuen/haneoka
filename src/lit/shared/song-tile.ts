@@ -27,6 +27,7 @@ export interface SongTileDeps {
   artist(item: Item): string | ReadonlyArray<string | TemplateResult> | TemplateResult;
   /** Localized band emblem, or "". */
   bandIcon(item: Item): string;
+  performerAdornment?(item: Item): TemplateResult | typeof nothing;
   /** Locale-resolved artwork URL. */
   imageForLocale(source: string): string;
   /** The live music-type emblem, or "". */
@@ -72,8 +73,18 @@ export function songTile(
   difficulty?: Item,
 ): TileOptions {
   const title = deps.title(item);
-  const bandIds = [...new Set((Array.isArray(item.bandIds) ? item.bandIds : []).map(Number).filter((id) => Number.isFinite(id) && id > 0))];
-  const bandIcons = [...new Set((bandIds.length ? bandIds.map((bandId) => deps.bandIcon({ ...item, bandId })) : [deps.bandIcon(item)]).filter(Boolean))];
+  const bandIds = [
+    ...new Set(
+      (Array.isArray(item.bandIds) ? item.bandIds : []).map(Number).filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  ];
+  const bandIcons = [
+    ...new Set(
+      (bandIds.length ? bandIds.map((bandId) => deps.bandIcon({ ...item, bandId })) : [deps.bandIcon(item)]).filter(
+        Boolean,
+      ),
+    ),
+  ];
   const attribute = deps.attributeMark(item);
   const imageCandidates = songJacketCandidates(item, deps.image(item));
   const image = imageCandidates[0] || "";
@@ -82,19 +93,23 @@ export function songTile(
     title: title.text,
     titleLanguage: title.locale,
     subtitle: deps.artist(item) as string,
-    adornment: bandIcons.length
-      ? bandIcons.map((bandIcon) => html`
-          <img
-            src=${deps.imageForLocale(bandIcon)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            @error=${(event: Event) => {
+    adornment: deps.performerAdornment
+      ? deps.performerAdornment(item)
+      : bandIcons.length
+        ? bandIcons.map(
+            (bandIcon) => html`
+              <img
+                src=${deps.imageForLocale(bandIcon)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                @error=${(event: Event) => {
               (event.currentTarget as HTMLImageElement).hidden = true;
             }}
-          />
-        `)
-      : nothing,
+              />
+            `,
+          )
+        : nothing,
     label: title.text,
     image,
     imageCandidates,

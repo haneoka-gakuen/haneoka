@@ -1,5 +1,6 @@
 ---
 import RouteDocument from "../../components/RouteDocument.astro";
+import SongSlidePuzzleDocument from "../../components/SongSlidePuzzleDocument.astro";
 import StampMakerDocument from "../../components/StampMakerDocument.astro";
 import { ROUTES, titleOf, type RouteDefinition } from "../../config/routes";
 import { LOCALES, type Locale } from "../../i18n/locales";
@@ -27,7 +28,9 @@ export function getStaticPaths() {
 const { locale, entry, title } = Astro.props as { locale: Locale; entry: RouteDefinition; title: string };
 if (entry.staticRedirect) return Astro.redirect(`/${locale}${entry.staticRedirect}/`, 308);
 ---
-{entry.kind === "stamp-maker" ? (
+{entry.kind === "song-puzzle" ? (
+  <SongSlidePuzzleDocument locale={locale} />
+) : entry.kind === "stamp-maker" ? (
   <StampMakerDocument locale={locale} />
 ) : (
   <RouteDocument locale={locale} entry={entry} title={title} />

@@ -27,6 +27,7 @@ export const ANON_I18N_NAMESPACE = "anon" as const;
 export const SPINE_I18N_NAMESPACE = "spine" as const;
 export const LIVE2D_I18N_NAMESPACE = "live2d" as const;
 export const HELP_I18N_NAMESPACE = "help" as const;
+export const SONG_PUZZLE_I18N_NAMESPACE = "songSlidePuzzle" as const;
 export const STAMP_MAKER_I18N_NAMESPACE = "stampMaker" as const;
 export const TEAM_BUILDER_I18N_NAMESPACE = "teamBuilder" as const;
 
@@ -46,6 +47,7 @@ export const I18N_NAMESPACES = [
   SPINE_I18N_NAMESPACE,
   LIVE2D_I18N_NAMESPACE,
   HELP_I18N_NAMESPACE,
+  SONG_PUZZLE_I18N_NAMESPACE,
   STAMP_MAKER_I18N_NAMESPACE,
   TEAM_BUILDER_I18N_NAMESPACE,
 ] as const;
@@ -60,6 +62,7 @@ const COMMON_FLAT_KEYS = [
   "emptyModelResource",
   "seo.siteTitle",
   "calendar.title",
+  "songSlidePuzzle.title",
   "refresh",
   "settings",
   "search",
@@ -237,6 +240,7 @@ const namespaceRootKeys: Readonly<Record<MainI18nNamespace, readonly string[]>> 
   spine: SPINE_ROOT_KEYS,
   live2d: LIVE2D_ROOT_KEYS,
   help: HELP_ROOT_KEYS,
+  songSlidePuzzle: ["songSlidePuzzle"],
   stampMaker: STAMP_MAKER_ROOT_KEYS,
   teamBuilder: ["teamBuilder", "liveMusicTypes", "songTypes", "character", "characters", "genre"],
 };
@@ -351,6 +355,7 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
     pathname === "/tools/stamp-maker" || pathname.startsWith("/tools/stamp-maker/")
   )
     return STAMP_MAKER_I18N_NAMESPACE;
+  if (pathname === "/tools/song-puzzle" || pathname.startsWith("/tools/song-puzzle/")) return SONG_PUZZLE_I18N_NAMESPACE;
   if (pathname === "/team-builder" || pathname.startsWith("/team-builder/")) return TEAM_BUILDER_I18N_NAMESPACE;
   if (pathname.includes("anon-tokyo")) return ANON_I18N_NAMESPACE;
   if (pathname.includes("chart-editor") || pathname.includes("story-editor")) return EDITOR_I18N_NAMESPACE;

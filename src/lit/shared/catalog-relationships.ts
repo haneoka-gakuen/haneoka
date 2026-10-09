@@ -3,6 +3,13 @@ import { resolveLocalizedText, resolveRelationshipText, type RelationshipTextOpt
 
 type Character = Record<string, unknown>;
 
+/** Source-qualified portraits share the same layout as member/snapshot relations. */
+export function catalogPortraitStack(values: ReadonlyArray<{key:string;name:unknown;image:string}>) {
+  return html`<span class="avatar-stack">${values
+    .filter((item,index,list)=>item.image && list.findIndex(other=>other.key===item.key)===index)
+    .map(item=>html`<img src=${item.image} alt="" loading="lazy" decoding="async" />`)}</span>`;
+}
+
 /** One caller-scoped catalogue lookup; IDs never cross a server context here. */
 export function catalogCharacterRelationship(
   ids: readonly number[],

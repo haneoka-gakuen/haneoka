@@ -2,7 +2,7 @@ import type { Locale } from "../i18n/locales";
 import { group, t } from "../i18n/messages";
 
 export type PageKind =
-  "home" | "index" | "catalog" | "tgw-card" | "missions" | "event-tracker" | "stamp-maker" | "legal" | "notice";
+  "home" | "index" | "catalog" | "tgw-card" | "missions" | "event-tracker" | "song-puzzle" | "stamp-maker" | "legal" | "notice";
 export interface RouteDefinition {
   route: string;
   kind: PageKind;
@@ -100,6 +100,7 @@ export const ROUTES: RouteDefinition[] = [
   },
   { route: "/catalog/assets", kind: "notice", key: "assets", titleKey: "assets" },
   { route: "/catalog/events/tracker", kind: "event-tracker", key: "event-tracker", titleKey: "eventTracker.title" },
+  { route: "/tools/song-puzzle", kind: "song-puzzle", key: "song-puzzle", titleKey: "songSlidePuzzle.title" },
   { route: "/stamp-maker", kind: "stamp-maker", key: "stamp-maker", titleKey: "stampMaker.title" },
   {
     route: "/tools/stamp-maker",

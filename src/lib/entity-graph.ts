@@ -1,4 +1,5 @@
 import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
+import { resolveSongPerformer } from "./song-performer";
 import { itemRelations } from "../server/item-relations";
 import {gekisouMissionIcons} from "./gekisou";
 import {
@@ -166,6 +167,11 @@ const SONG_TILE_FIELDS = [
   "musicTitle",
   "bandId",
   "bandIds",
+  "artistId",
+  "artistName",
+  "bandName",
+  "vocalCharacterIds",
+  "characterIds",
   "musicType",
   "musicCategories",
   "jacketThumbUrl",
@@ -525,7 +531,6 @@ function cardAux(graph: Graph, item: RecordValue, support: boolean): RecordValue
 /** Everything the character archive's tabs list, filtered to one character. */
 function characterAux(graph: Graph, item: RecordValue): { aux: RecordValue; bandIds: number[] } {
   const id = Number(item.characterId || 0);
-  const bandId = Number(item.bandId || 0);
   const has = (row: RecordValue) => characterIdsOf(row).includes(id);
   const collection = (name: string) => graph.collections.get(name) || [];
   const byKey = (list: Array<[string, RecordValue]>, fields: readonly string[], keep: (row: RecordValue) => boolean) =>
@@ -551,8 +556,7 @@ function characterAux(graph: Graph, item: RecordValue): { aux: RecordValue; band
         .map((talk) => ({ storyKey: talk.storyKey })),
     }));
   const songs = byKey(collection("songs"), SONG_TILE_FIELDS, (row) => {
-    const ids = Array.isArray(row.bandIds) ? numbers(row.bandIds) : numbers(row.bandId);
-    return ids.includes(bandId);
+    return resolveSongPerformer(row,{game:"our-notes",server:graph.server,sourceId:graph.release.sourceId,bands:graph.bands,characters:graph.characters}).participantCharacterIds.includes(id);
   });
   const friendships = byKey(graph.friendships, ["friendshipId", "characterIds", "storyBanner", "rewards"], has);
   const aux: RecordValue = {
@@ -669,10 +673,11 @@ export async function buildEntityPayloads(
     if (item.artistName === undefined) delete item.artistName;
     if (item.bandName === undefined) delete item.bandName;
     if (resource === "gacha") enrichCardReferences(graph, item);
-    const characterIds = new Set(characterIdsOf(item));
-    for (const vocal of numbers(item.vocalCharacterIds)) characterIds.add(vocal);
-    const bandIds = new Set([...numbers(item.bandId), ...numbers(item.bandIds)]);
-    for (const characterId of characterIds) {
+    const performer=resource==="songs" ? resolveSongPerformer(item,{game:"our-notes",server,sourceId:graph.release.sourceId,bands:graph.bands,characters:graph.characters}) : undefined;
+    const characterIds = new Set(performer?.participantCharacterIds ?? characterIdsOf(item));
+    if(!performer) for (const vocal of numbers(item.vocalCharacterIds)) characterIds.add(vocal);
+    const bandIds = new Set(performer?.bandIds ?? [...numbers(item.bandId), ...numbers(item.bandIds)]);
+    if(!performer) for (const characterId of characterIds) {
       const band = Number(graph.characters.get(characterId)?.bandId || 0);
       if (band) bandIds.add(band);
     }

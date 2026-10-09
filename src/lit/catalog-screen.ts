@@ -86,6 +86,9 @@ import { eventArtwork } from "./ui/event-artwork";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { detailLayout } from "./ui/detail-layout";
 import { upgradeCost } from "./ui/upgrade-cost";
+import { resolveSongPerformer, type PerformerRegistry, type SongPerformer, type PerformerPortrait } from "../lib/song-performer";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
+import { loadPlaylistCatalogSource, auditedCryChicPortraits } from "../lib/playlist-tracks";
 import { renderItemRelations, type ItemRelationsController } from "./shared/item-relations";
 import type { ItemRelations } from "../server/item-relations";
 import "./ui/image-gallery";
@@ -1460,6 +1463,7 @@ export class CatalogScreen extends LitElement {
       };
     }
     this.settings.locale = selection?.route.locale || document.documentElement.dataset.locale || this.settings.locale;
+    if (this.settings.origin === "bestdori") void this.loadPerformerPortraits();
     this.dataset.entityReady = "false";
     this.detailReady = false;
     this.profile = profiles[this.settings.resource] ?? fallbackProfile;
@@ -2295,10 +2299,10 @@ export class CatalogScreen extends LitElement {
     const faceted = source.filter((item) => this.matchesFacets(item));
     const items = needle
       ? faceted.filter((item) =>
-          (typeof item.__haystack === "string" && item.__haystack
+          `${this.profile.presentation === "song" ? JSON.stringify([...this.songPerformer(item).names,...this.songPerformer(item).portraits.map(p=>p.name),...this.songPerformer(item).unresolvedNames]) : ""} ${typeof item.__haystack === "string" && item.__haystack
             ? item.__haystack
             : `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
-          )
+          }`
             .toLocaleLowerCase(this.settings.locale)
             .includes(needle),
         )
@@ -2547,7 +2551,35 @@ export class CatalogScreen extends LitElement {
       },
     );
   }
+  private performerRegistries = new Map<string,{characters:unknown;bands:unknown;portraits:unknown;identity:string;registry:PerformerRegistry}>();
+  private performerPortraits?: PerformerPortrait[];
+  private async loadPerformerPortraits() {
+    try {
+      const source=await loadPlaylistCatalogSource("our-notes",this.dataServer());
+      if(!this.isConnected || this.settings.origin!=="bestdori")return;
+      this.performerPortraits=auditedCryChicPortraits(source);
+      this.performerRegistries.clear();this.facetCache=undefined;this.resultCache=undefined;this.requestUpdate();
+    } catch { /* Source names remain available when a portrait archive is unavailable. */ }
+  }
+  private songPerformer(item:Item):SongPerformer {
+    const gbp=this.settings.origin==="bestdori";
+    const server=gbp?this.bestdoriRegion():this.itemSourceServer(item);
+    const characters=gbp?this.characters:this.unionCharacters[server as OfficialCatalogServer]??this.characters;
+    const bands=gbp?this.bands:this.unionBands[server as OfficialCatalogServer]??this.bands;
+    const entry=this.unionEntry(item);
+    const pin=gbp ? undefined : entry ? entry.perServer[entry.displayServer]?.identity : this.nativeCatalogPin?.server===server ? this.nativeCatalogPin : undefined;
+    const identity=JSON.stringify([gbp ? "gbp" : "our-notes",server,pin?.releaseId,pin?.sourceId]);
+    const cached=this.performerRegistries.get(server);
+    if(cached?.characters===characters&&cached.bands===bands&&cached.portraits===this.performerPortraits&&cached.identity===identity)
+      return resolveSongPerformer(item,cached.registry);
+    const rows=(source:unknown,id:string)=>source instanceof Map?source as Map<number,Item>:new Map(asItems(source).map(row=>[Number(row[id]),row]));
+    const registry:PerformerRegistry={game:gbp?"gbp":"our-notes",server,sourceId:pin?.server===server ? pin.sourceId : undefined,
+      characters:rows(characters,"characterId"),bands:rows(bands,"bandId"),portraitFallbacks:this.performerPortraits};
+    this.performerRegistries.set(server,{characters,bands,portraits:this.performerPortraits,identity,registry});
+    return resolveSongPerformer(item,registry);
+  }
   private itemCharacterIds(item: Item) {
+    if (this.profile.presentation === "song") return this.songPerformer(item).participantCharacterIds;
     return [
       ...new Set(
         (Array.isArray(item.characterIds)
@@ -2567,7 +2599,7 @@ export class CatalogScreen extends LitElement {
   }
   private itemBandIds(item: Item) {
     const direct = Array.isArray(item.bandIds) ? item.bandIds.map(Number) : item.bandId ? [Number(item.bandId)] : [];
-    if (this.profile.presentation === "song") return [...new Set(direct.filter(Boolean))];
+    if (this.profile.presentation === "song") return this.songPerformer(item).bandIds;
     return [
       ...new Set([
         ...direct,
@@ -2612,6 +2644,10 @@ export class CatalogScreen extends LitElement {
     return members;
   }
   itemArtistContent(item: Item) {
+    if(this.profile.presentation==="song") {
+      const names=this.songPerformer(item).names;
+      if(names.length) return localizedList(names,this.settings.locale);
+    }
     for (const value of [item.artistName, item.bandName])
       if (this.localized(value)) return localizedContent(value, this.settings.locale);
     return localizedList(
@@ -2629,6 +2665,10 @@ export class CatalogScreen extends LitElement {
     return this.tileDescription(item);
   }
   private itemArtist(item: Item) {
+    if(this.profile.presentation==="song") {
+      const names=this.songPerformer(item).names;
+      if(names.length) return this.formatList(names.map(name=>this.localized(name)));
+    }
     return (
       this.localized(item.artistName) ||
       this.localized(item.bandName) ||
@@ -4117,6 +4157,7 @@ export class CatalogScreen extends LitElement {
             this.imageSource(this.first(entry, ["jacketUrl", "jacketThumbUrl", "jacket", "thumbnail", "image"])),
           artist: (entry) => this.itemArtistContent(entry),
           bandIcon: (entry) => String(this.itemBand(entry, Number(entry.bandId || 0))?.icon || ""),
+          performerAdornment: (entry) => songPerformerAdornment(this.songPerformer(entry), (source) => this.imageForLocale(source)),
           imageForLocale: (source) => this.imageForLocale(source),
           attributeMark: (entry) => this.itemAttributeMark(entry, true),
           attributeLabel: (entry) => this.fieldValue(entry, "musicType"),

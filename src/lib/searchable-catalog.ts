@@ -1,3 +1,4 @@
+import { resolveSongPerformer } from "./song-performer";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resolveLocalizedText } from "./localized-text";
@@ -384,6 +385,10 @@ function factsFor(
   };
 
   if (definition.kind === "song") {
+    const performer=resolveSongPerformer(value,{game:"our-notes",server,bands,characters});
+    push("band",performer.names.map(name=>text(name,locale)).filter(Boolean).join(" · "));
+    push("characters",performer.participantCharacterIds.map(id=>text(characters.get(id)?.characterName,locale)).filter(Boolean).join(" · "));
+    push("characters",performer.unresolvedNames.join(" · "));
     push("composer", value.composer);
     push("lyrics", value.lyricist);
     push("arrangement", value.arranger);
@@ -588,7 +593,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
             return [
               locale,
               definition.kind === "song"
-                ? text(value.bandName, locale) || bandNameForId(Number(value.bandId || 0), bands, locale)
+                ? resolveSongPerformer(value,{game:"our-notes",server,bands,characters}).names.map(name=>text(name,locale)).filter(Boolean).join(" · ") || text(value.artistName || value.bandName, locale)
                 : bandNameForId(Number(value.bandId || 0), bands, locale),
             ];
           if (definition.subtitle === "characters")

@@ -35,7 +35,9 @@ import type {
 } from "../lib/community-forums";
 import { COMMUNITY_UPLOAD_LIMITS } from "../config/community";
 import { clientGroup } from "../i18n/client";
-import { resolvePlaylistTracks } from "../lib/playlist-tracks";
+import { resolvePlaylistTracks, loadPlaylistCatalogSource } from "../lib/playlist-tracks";
+import { resolveSongPerformer, type SongPerformer } from "../lib/song-performer";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import {
   openDetailLocation,
@@ -65,7 +67,6 @@ import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus, paneSection, renderPane } from "./ui/pane";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import {
-  catalogUrl,
   currentReleaseServer,
   localizedText,
   preferredLocale,
@@ -499,6 +500,32 @@ export class CommunityWorkspace extends LitElement {
   private disposeSongDisplay?: () => void;
   private releaseLocation?: () => void;
   private playlistSequence = 0;
+  private playlistPlaybackIntent = 0;
+  private playlistChallengeError = "";
+  private playlistLegacyKey(value:string, detail=false):string {
+    if(/^\d+$/u.test(value)) return detail ? `catalog:jp:band:${value}` : `bestdori:jp:${value}`;
+    const legacy=/^(our-notes|bestdori):(\d+)$/u.exec(value);
+    if(!legacy)return value;
+    const [,provider,id]=legacy;
+    const server=provider==="bestdori" ? "jp" : currentReleaseServer();
+    if(detail && provider==="bestdori") return String(this.items.find(item=>item.bandId===`bestdori:jp:${id}`)?.id || `catalog:jp:band:${id}`);
+    return detail ? `${provider}:${server}:band:${id}` : `${provider}:${server}:${id}`;
+  }
+  private playlistPlaying = new Map<string,number>();
+  private playlistBrokenArt = new Set<string>();
+  private playlistArtwork(playlist:Value | null | undefined) {
+    const candidates=[...(Array.isArray(playlist?.artCandidates) ? playlist.artCandidates.map(String) : []),String(playlist?.thumbnail || "")];
+    const image=candidates.find(source=>source && !this.playlistBrokenArt.has(source)) || "";
+    return image ? html`<img src=${image} alt="" loading="lazy" decoding="async" @error=${()=>{this.playlistBrokenArt.add(image);this.requestUpdate();}} />` : icon("queue_music",32);
+  }
+  private playlistPlaybackMessages = new Map<string,string>();
+  private async requestPlaylistPlay(playlist:Value,startIndex=-1) {
+    const id=String(playlist.id || playlist.playlistId || "");
+    const intent=++this.playlistPlaybackIntent;
+    this.playlistPlaying.set(id,intent);this.playlistPlaybackMessages.delete(id);this.requestUpdate();
+    try {await this.playPlaylist(playlist,startIndex,intent);} catch(error) {if(intent===this.playlistPlaybackIntent)this.playlistPlaybackMessages.set(id,error instanceof Error ? error.message:String(error));}
+    finally {if(this.playlistPlaying.get(id)===intent)this.playlistPlaying.delete(id);this.requestUpdate();}
+  }
   private restorePlaylist = () => {
     if (this.mode !== "playlists") return;
     const id = new URLSearchParams(location.search).get("playlist") || "";
@@ -511,6 +538,7 @@ export class CommunityWorkspace extends LitElement {
     }
   };
   private async openPlaylist(id: string, push = true) {
+    id=this.playlistLegacyKey(id,true);
     if (push) {
       const params = new URLSearchParams(location.search);
       params.set("playlist", id);
@@ -674,6 +702,7 @@ export class CommunityWorkspace extends LitElement {
     this.releaseLocation?.();
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.playlistSequence++;
+    this.playlistPlaybackIntent++;
     this.paneFocus.detach();
     window.clearTimeout(this.undoTimer);
     clearAppBarActions(COMMUNITY_BAR_OWNER);
@@ -845,7 +874,7 @@ export class CommunityWorkspace extends LitElement {
       if (query.get("state") === "archived") this.postState = "archived";
       this.playlistSort = query.get("sort") || "order";
       this.playlistOrder = query.get("order") === "desc" ? "desc" : "asc";
-      this.playlistBand = query.get("band") || "";
+      this.playlistBand = this.playlistLegacyKey(query.get("band") || "");
       this.setDocumentTitle(
         this.routeKind === "post-new"
           ? this.label("newPost", "New post")
@@ -1165,52 +1194,33 @@ export class CommunityWorkspace extends LitElement {
         return;
       }
       if (this.mode === "playlists") {
-        const response = await fetch("/api/v1/garupa/playlists", { headers: { accept: "application/json" } });
-        if (response.ok) {
-          const data = (await response.json()) as Value;
-          this.items = Array.isArray(data.playlists) ? (data.playlists as Value[]) : Array.isArray(data) ? data : [];
-        } else {
-          const [ourSongs, ourBands, bestdoriSongs, bestdoriBands] = await Promise.all([
-            fetch(catalogUrl("songs")).then((result) => result.json() as Promise<Value>),
-            fetch(catalogUrl("bands")).then((result) => result.json() as Promise<Value>),
-            fetch(`${this.bestdoriBase()}/songs`).then((result) => result.json() as Promise<Value>),
-            fetch(`${this.bestdoriBase()}/bands`).then((result) => result.json() as Promise<Value>),
-          ]);
-          const records = (value: Value) =>
-            Object.values(value).filter((entry): entry is Value => !!entry && typeof entry === "object");
-          const playlists = (songs: Value, bands: Value, prefix: string, provider: string) =>
-            records(bands).flatMap((band) => {
-              const bandId = Number(band.bandId || 0);
-              if (band.official === false) return [];
-              const tracks = records(songs).filter((song) => Number(song.bandId || 0) === bandId);
-              if (!bandId || !tracks.length) return [];
-              const name = localizedText(band.bandName || band.name, this.locale) || String(bandId);
-              return [
-                {
-                  id: `${prefix}:${bandId}`,
-                  bandId: `${prefix}:${bandId}`,
-                  title: `${name} (${provider})`,
-                  source: "band",
-                  provider,
-                  order: bandId,
-                  thumbnail: String(tracks[0]?.jacketThumbUrl || tracks[0]?.jacketUrl || ""),
-                  tracks: tracks.map((track) => ({
-                    ...track,
-                    title: track.musicTitle || track.title,
-                    artist: name,
-                    detailPath:
-                      prefix === "bestdori"
-                        ? `/community/songs-bestdori?song=${track.musicId || track.id}`
-                        : `/catalog/songs?song=${track.musicId || track.id}`,
-                  })),
-                },
-              ];
-            });
-          this.items = [
-            ...playlists(ourSongs, ourBands, "our-notes", "Our Notes"),
-            ...playlists(bestdoriSongs, bestdoriBands, "bestdori", "GBP"),
-          ];
-        }
+        const [wire, native, gbp] = await Promise.all([
+          fetch("/api/v1/garupa/playlists", { headers: { accept: "application/json" }, signal }).then(async response => {
+            if(!response.ok) return {data:null,error:`HTTP ${response.status}`};
+            const data=await response.json() as Value;
+            return Array.isArray(data.playlists) ? {data,error:""} : {data:null,error:this.label("unavailable","Unavailable")};
+          }).catch(error=>({data:null,error:error instanceof Error ? error.message:String(error)})),
+          loadPlaylistCatalogSource("our-notes", currentReleaseServer()),
+          loadPlaylistCatalogSource("bestdori", "jp"),
+        ]);
+        if (!this.requests.current(signal)) return;
+        this.playlistChallengeError=wire.error;
+        const supplied = wire.data && Array.isArray(wire.data.playlists) ? wire.data.playlists as Value[] : [];
+        const makeBands = (source: Awaited<ReturnType<typeof loadPlaylistCatalogSource>>) => [...source.registry.bands].flatMap(([bandId, band]) => {
+          if (source.provider === "bestdori" ? band.official !== true : band.official === false) return [];
+          const tracks = Object.values(source.songs).filter(song => resolveSongPerformer(song, source.registry).bandIds.includes(bandId));
+          if (!tracks.length) return [];
+          return [{id: source.provider==="bestdori" ? String(supplied.find(item=>item.source==="band" && Number(item.bandId)===bandId)?.id || `${source.provider}:${source.server}:band:${bandId}`) : `${source.provider}:${source.server}:band:${bandId}`, bandId: `${source.provider}:${source.server}:${bandId}`,
+            title: band.bandName || band.name, bandName: band.bandName || band.name, source:"band", provider:source.provider,
+            thumbnail:String(band.logo || band.icon || tracks[0]?.jacketUrl || tracks[0]?.jacketThumbUrl || ""), artCandidates:[band.logo,band.icon,tracks[0]?.jacketUrl,tracks[0]?.jacketThumbUrl].filter(Boolean), contain:Boolean(band.logo || band.icon),
+            tracks:tracks.map(track=>({ ...track, assetRef:{kind:"song",provider:source.provider,server:source.server,musicId:track.musicId || track.id} }))}];
+        });
+        const challenges = supplied.filter(item=>String(item.source || item.type)==="stage-challenge").sort((left,right)=>Number(right.sourceId)-Number(left.sourceId)).map(item=>{
+          const stage=String(item.assetBundleName || "").match(/(\d+)$/u)?.[1] || String(item.sourceId || "");
+          return {...item, bandId:Number(item.bandId)>0 ? `bestdori:jp:${item.bandId}` : "", bandName:gbp.registry.bands.get(Number(item.bandId))?.bandName, thumbnail:stage ? `/api/v1/garupa/bestdori/jp/media/stage-challenge/${encodeURIComponent(stage)}` : "", contain:true};
+        });
+        const others=supplied.filter(item=>!["band","stage-challenge"].includes(String(item.source || item.type)));
+        this.items=[...makeBands(native),...makeBands(gbp),...challenges,...others].map((item,order)=>({...item,order}));
         this.phase = "ready";
         if (this.routeKind === "playlist-detail") await this.openPlaylist(this.entityId, false);
         return;
@@ -4717,7 +4727,7 @@ export class CommunityWorkspace extends LitElement {
       .filter((item) => {
         if (
           this.playlistBand &&
-          String(item.bandId || item.band || "") !== this.playlistBand
+          String(item.bandId || item.band || "") !== this.playlistLegacyKey(this.playlistBand)
         )
           return false;
         return (
@@ -4760,19 +4770,27 @@ export class CommunityWorkspace extends LitElement {
   }
   /** A track's supporting line: its artist, or the band it belongs to. */
   private trackArtist(track: Value) {
-    return localizedText(track.artist || track.bandName, this.locale);
+    const performer=track.displayPerformer as SongPerformer | undefined;
+    return performer?.names.length ? performer.names.map(name=>localizedText(name,this.locale)).filter(Boolean).join(" · ") : localizedText(track.artist || track.artistName || track.bandName, this.locale);
   }
   /**
    * Plays a playlist, optionally starting at one of its rows. `startIndex`
    * counts rows as shown, which may include tracks without audio, so it is
    * resolved against the playable subset rather than used as an offset.
    */
-  private async playPlaylist(playlist: Value, startIndex = -1) {
-    const rows = this.playlistTracks(playlist);
+  private async playPlaylist(playlist: Value, startIndex = -1, intent = ++this.playlistPlaybackIntent) {
+    const current=()=>this.isConnected && intent===this.playlistPlaybackIntent;
+    let rows:Value[];
+    try { rows=await resolvePlaylistTracks(this.playlistTracks(playlist),currentReleaseServer()); }
+    catch(error) {if(current())throw error;return;}
+    if(!current())return;
     const tracks = rows.filter((track) => track.musicUrl || track.url);
-    if (!tracks.length) return;
+    if (!tracks.length) throw new Error(this.label("playlistPage.audioUnavailable","Audio unavailable"));
     const requested = startIndex >= 0 ? rows[startIndex] : undefined;
-    const { AudioDock } = await import("./runtime/audio-dock");
+    let AudioDock:typeof import("./runtime/audio-dock").AudioDock;
+    try {({AudioDock}=await import("./runtime/audio-dock"));}
+    catch(error) {if(current())throw error;return;}
+    if(!current())return;
     let dock = document.querySelector("audio-dock") as InstanceType<
       typeof AudioDock
     > | null;
@@ -4787,7 +4805,7 @@ export class CommunityWorkspace extends LitElement {
       titleSource: track.musicTitle || track.title || track.name,
       titleLanguage: songTitle(track, this.locale).locale,
       artistSource: track.artist || track.bandName,
-      artist: localizedText(track.artist || track.bandName, this.locale),
+      artist: this.trackArtist(track),
       cover: String(
         track.jacketUrl || track.jacketThumbUrl || track.cover || "",
       ),
@@ -4799,6 +4817,7 @@ export class CommunityWorkspace extends LitElement {
       : "";
     const first =
       (startId && queue.find((entry) => entry.id === startId)) || queue[0]!;
+    if(!current())return;
     await dock.playTrack(first, queue);
   }
   private renderPlaylistBandSelect() {
@@ -4831,7 +4850,7 @@ export class CommunityWorkspace extends LitElement {
         ${bands.map(
           (band) => html`
             <md-select-option value=${band}
-              ><div slot="headline">${band}</div></md-select-option
+              ><div slot="headline">${localizedText(this.items.find(item=>String(item.bandId || item.band)===band)?.bandName,this.locale) || band}</div></md-select-option
             >
           `,
         )}
@@ -4876,40 +4895,33 @@ export class CommunityWorkspace extends LitElement {
           body: html`
             <section class="page page--compact playlist-detail">
               <header class="playlist-hero">
-                <span class="playlist-hero__art">
-                  ${
-                    playlist?.thumbnail
-                      ? html`
-                          <img
-                            src=${String(playlist?.thumbnail)}
-                            alt=""
-                            loading="lazy"
-                          />
-                        `
-                      : icon("queue_music", 32)
-                  }
+                <span class=${`playlist-hero__art${playlist?.contain ? " playlist-hero__art--contain" : ""}`}>
+                  ${this.playlistArtwork(playlist)}
                 </span>
-                <span class="playlist-hero__copy">
+                <div class="playlist-hero__copy">
                   <h2>
                     ${playlist ? this.playlistTitle(playlist) : this.entityId}
                   </h2>
                   <p>${this.label("songs", "Songs")} · ${tracks.length}</p>
-                </span>
-                ${
+                </div>
+                <div class="playlist-hero__actions">${
                   tracks.some((track) => track.musicUrl || track.url)
                     ? html`
                         <button
                           class="button"
-                          @click=${() => playlist && this.playPlaylist(playlist)}
+                          ?disabled=${this.busy || this.playlistPlaying.has(String(playlist?.id || playlist?.playlistId || ""))}
+                          @click=${() => playlist && this.requestPlaylistPlay(playlist)}
                         >
                           ${icon("playlist_play", 18)}${this.label("playlistPage.playAll", "Play all")}
                         </button>
                       `
                     : nothing
                 }
+                </div>
               </header>
               ${this.busy ? loadingState(this.label("loading", "Loading")) : nothing}
               ${this.message ? errorState(this.message, this.label("retry", "Retry"), () => void this.openPlaylist(this.entityId, false)) : nothing}
+              ${playlist && this.playlistPlaybackMessages.has(String(playlist.id || playlist.playlistId || "")) ? errorState(this.playlistPlaybackMessages.get(String(playlist.id || playlist.playlistId || ""))!,this.label("retry","Retry"),()=>void this.requestPlaylistPlay(playlist)) : nothing}
               <ul class="list list--divided" role="list">
                 ${tracks.map(
                   (track, index) => html`
@@ -4931,7 +4943,7 @@ export class CommunityWorkspace extends LitElement {
                             ${songTitle(track, this.locale).text}
                           </span>
                           <span class="list-item__supporting"
-                            >${this.trackArtist(track)}</span
+                            >${track.displayPerformer ? songPerformerAdornment(track.displayPerformer as SongPerformer) : nothing}${this.trackArtist(track)}</span
                           >
                         </span>
                       </a>
@@ -4944,7 +4956,7 @@ export class CommunityWorkspace extends LitElement {
                                 aria-label=${`${this.label("play", "Play")} · ${songTitle(track, this.locale).text}`}
                                 @click=${() => {
                                   if (playlist)
-                                    void this.playPlaylist(playlist, index);
+                                    void this.requestPlaylistPlay(playlist,index);
                                 }}
                               >
                                 ${icon("play_arrow", 20)}
@@ -5011,6 +5023,7 @@ export class CommunityWorkspace extends LitElement {
               `
             : nothing
         }
+        ${this.playlistChallengeError ? html`<section class="playlist-group"><header><h2>${this.label("playlistPage.stageChallenges","Stage Challenge")}</h2></header>${errorState(`${this.label("unavailable","Unavailable")} · ${this.playlistChallengeError}`,this.label("retry","Retry"),()=>void this.load(false,true))}</section>` : nothing}
         ${groups
           .filter(([, entries]) => entries.length)
           .map(
@@ -5022,54 +5035,24 @@ export class CommunityWorkspace extends LitElement {
                   </h2>
                   <span>${entries.length}</span>
                 </header>
-                <!-- A playlist is a name and a track count. That is a list
-                     item, so it is one, in the same divided list every other
-                     collection on the site uses for its list view. It used to
-                     be a grid of text-only outlined cards behind a grid/list
-                     switch — two presentations of one row, neither of which
-                     matched anything else. -->
-                <ul class="list list--divided" role="list">
-                  ${entries.map(
-                    (playlist) => html`
-                      <li>
-                        <a
-                          class="list-item list-item--two-line list-item--interactive"
-                          href=${`${this.path("/community/playlists")}?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
-                          @click=${(event: MouseEvent) => {
-                            if (
-                              event.button ||
-                              event.metaKey ||
-                              event.ctrlKey ||
-                              event.shiftKey ||
-                              event.altKey
-                            )
-                              return;
-                            event.preventDefault();
-                            void this.openPlaylist(
-                              String(playlist.id || playlist.playlistId || ""),
-                            );
-                          }}
-                        >
-                          <span
-                            class="list-item__avatar list-item__avatar--square"
-                            >${icon("queue_music", 20)}</span
-                          >
-                          <span class="list-item__body">
-                            <span class="list-item__headline"
-                              >${this.playlistTitle(playlist)}</span
-                            >
-                            <span class="list-item__supporting">
-                              ${this.label(String(playlist.source || playlist.type) === "band" ? "playlistPage.systemPlaylist" : "playlistPage.inGamePlaylist", "")}
-                            </span>
-                          </span>
-                          <span class="list-item__trailing list-item__meta">
-                            ${this.playlistTracks(playlist).length}
-                            ${this.label("playlistPage.tracks", "Songs")}
-                          </span>
-                        </a>
-                      </li>
-                    `,
-                  )}
+                <ul class="playlist-grid" role="list">
+                  ${entries.map(playlist=>html`
+                    <li class="playlist-card">
+                      <a class="playlist-card__open" href=${`${this.path("/community/playlists")}?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                        @click=${(event:MouseEvent)=>{if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();void this.openPlaylist(String(playlist.id || playlist.playlistId || ""));}}>
+                        <span class=${`playlist-card__art${playlist.contain ? " playlist-card__art--contain" : ""}`}>
+                          ${this.playlistArtwork(playlist)}
+                        </span>
+                        <div class="playlist-card__body"><h3 class="playlist-card__title">${this.playlistTitle(playlist)}</h3>
+                          <div class="playlist-card__meta"><span>${playlist.provider==="our-notes" ? "Our Notes" : "GBP"} · ${this.label(String(playlist.source || playlist.type)==="band" ? "playlistPage.systemPlaylist" : "playlistPage.inGamePlaylist","")}</span>
+                            <span class="playlist-card__count">${this.playlistTracks(playlist).length} ${this.label("playlistPage.tracks","Songs")}</span></div>
+                        </div>
+                      </a>
+                      <div class="playlist-card__actions"><button class="button button--tonal" type="button" ?disabled=${!this.playlistTracks(playlist).length || this.playlistPlaying.has(String(playlist.id || playlist.playlistId || ""))}
+                        aria-label=${`${this.label("playlistPage.playAll","Play all")} · ${this.playlistTitle(playlist)}`}
+                        @click=${()=>void this.requestPlaylistPlay(playlist)}>${icon("playlist_play",18)}${this.label("playlistPage.playAll","Play all")}</button></div>
+                      ${this.playlistPlaying.has(String(playlist.id || playlist.playlistId || "")) ? html`<p class="playlist-card__status">${this.label("loading","Loading")}</p>` : this.playlistPlaybackMessages.has(String(playlist.id || playlist.playlistId || "")) ? html`<p class="playlist-card__status">${this.playlistPlaybackMessages.get(String(playlist.id || playlist.playlistId || ""))}</p>` : !this.playlistTracks(playlist).length ? html`<p class="playlist-card__status">${this.label("playlistPage.audioUnavailable","Audio unavailable")}</p>` : nothing}
+                    </li>`)}
                 </ul>
               </section>
             `,

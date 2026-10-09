@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import type { Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+import "../styles/song-slide-puzzle.css";
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "songSlidePuzzle.title", "Song cover puzzle");
+const route = "/tools/song-puzzle";
+---
+<Base locale={locale} route={route} title={title} titleKey="songSlidePuzzle.title">
+  <AppShell locale={locale} route={route} title={title} titleKey="songSlidePuzzle.title">
+    <song-slide-puzzle locale={locale}></song-slide-puzzle>
+  </AppShell>
+</Base>
+<script>import "../lit/song-puzzle";</script>
