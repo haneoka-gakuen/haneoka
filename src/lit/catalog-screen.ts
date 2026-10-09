@@ -5014,7 +5014,11 @@ export class CatalogScreen extends LitElement {
           band-id=${Number(item.bandId || 1)}
           label=${this.chartPageTitle(item)}
           locale=${this.settings.locale}
-          server=${this.dataServer()}
+          server=${this.itemSourceServer(item)}
+          share-url=${this.chartPageHref(item)}
+          @haneoka:chart-playback-restored=${() => {
+            this.chartMode = "watch";
+          }}
           .mode=${this.chartMode}
         ></chart-simulator>
       </section>
@@ -5866,7 +5870,11 @@ export class CatalogScreen extends LitElement {
                   band-id=${Number(item.bandId || 1)}
                   label=${this.itemTitle(item)}
                   locale=${this.settings.locale}
-                  server=${this.dataServer()}
+                  server=${this.itemSourceServer(item)}
+                  share-url=${this.chartPageHref(item)}
+                  @haneoka:chart-playback-restored=${() => {
+                    this.chartMode = "watch";
+                  }}
                   .mode=${this.chartMode}
                 ></chart-simulator>
               </aside>

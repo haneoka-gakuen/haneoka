@@ -1,7 +1,22 @@
 import { LitElement, html, nothing } from "lit";
+import { clientText } from "../../i18n/client";
+import { chartPath, parseResourceRoute } from "../../lib/resource-route";
+import {
+  chartPlaybackShareUrl,
+  readChartPlaybackShare,
+  matchesChartPlaybackShare,
+  sameChartPlaybackIdentity,
+  validChartPlaybackRange,
+  chartRangeIndex,
+  chartRangeStatistics,
+  type ChartPlaybackIdentity,
+  type ChartPlaybackShare,
+  type ChartRangeIndex,
+} from "../../lib/chart-playback-range";
 import { fetchJson, uiText } from "../shared/catalog";
 import { loadingState } from "../ui/state";
 import { icon } from "../ui/icon";
+import { accordion } from "../ui/accordion";
 import { type ChartDocument } from "@haneoka/cassiopeia";
 import {
   CassiopeiaRuntime,
@@ -47,31 +62,30 @@ import { loadingIndicator } from "../ui/loading-indicator";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "bpm": "catalog.analysis.fields.bpm",
-  "close": "common.actions.close",
-  "collapse": "common.actions.collapse",
-  "effects": "catalog.fields.effects",
-  "error": "common.states.error",
-  "expand": "common.actions.expand",
-  "fullscreen": "common.actions.fullscreen",
-  "loading": "common.states.loading",
-  "loop": "common.actions.loop",
-  "mirror": "editors.chart.labels.mirror",
-  "none": "common.states.none",
-  "notes": "editors.chart.labels.notes",
-  "nps": "catalog.analysis.fields.nps",
-  "pause": "common.actions.pause",
-  "play": "common.actions.play",
-  "playback": "media.audio.playback",
-  "reset": "common.actions.reset",
-  "settings": "navigation.settings",
-  "simple": "common.layout.simple",
-  "stage": "media.models.labels.stage",
-  "time": "common.fields.time",
-  "volume": "media.audio.volume",
-  "watch": "common.actions.watch"
+  bpm: "catalog.analysis.fields.bpm",
+  close: "common.actions.close",
+  collapse: "common.actions.collapse",
+  effects: "catalog.fields.effects",
+  error: "common.states.error",
+  expand: "common.actions.expand",
+  fullscreen: "common.actions.fullscreen",
+  loading: "common.states.loading",
+  loop: "common.actions.loop",
+  mirror: "editors.chart.labels.mirror",
+  none: "common.states.none",
+  notes: "editors.chart.labels.notes",
+  nps: "catalog.analysis.fields.nps",
+  pause: "common.actions.pause",
+  play: "common.actions.play",
+  playback: "media.audio.playback",
+  reset: "common.actions.reset",
+  settings: "navigation.settings",
+  simple: "common.layout.simple",
+  stage: "media.models.labels.stage",
+  time: "common.fields.time",
+  volume: "media.audio.volume",
+  watch: "common.actions.watch",
 };
-
 
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
 type RuntimeDescriptor = {
@@ -130,6 +144,27 @@ type NoteSoundSwap = {
 };
 
 const SETTINGS_KEY = "haneoka:chart-player:v1";
+let rangePanelSequence = 0;
+const RANGE_COPY = {
+  rangePlayback: "A/B loop",
+  setA: "Set A",
+  setB: "Set B",
+  rangeA: "A (seconds)",
+  rangeB: "B (seconds)",
+  rangeLoop: "Loop A–B",
+  clearRange: "Clear range",
+  invalidRange: "Choose A before B.",
+  shareTime: "Share time",
+  linkCopied: "Link copied",
+  copyFailed: "Could not copy link",
+  shareSourceChanged: "Shared chart changed",
+  shareUnavailable: "Sharing unavailable",
+  playbackUnavailable: "Playback unavailable",
+  rangeNotes: "Notes [A,B)",
+  rangeDensity: "Notes/s",
+  rangeBpm: "BPM",
+} as const;
+type RangeCopyKey = keyof typeof RANGE_COPY;
 
 const logicalName = (output: RuntimeOutput) => {
   const file = output.path.split("/").pop() || "";
@@ -145,6 +180,7 @@ export class ChartSimulator extends LitElement {
   static properties = {
     source: { type: String },
     audioUrl: { type: String, attribute: "audio-url" },
+    shareUrl: { type: String, attribute: "share-url" },
     bandId: { type: Number, attribute: "band-id" },
     label: { type: String },
     server: { type: String },
@@ -169,9 +205,18 @@ export class ChartSimulator extends LitElement {
     volume: { state: true },
     transportCollapsed: { state: true },
     transportAutoHidden: { state: true },
+    rangeA: { state: true },
+    rangeB: { state: true },
+    rangeLoop: { state: true },
+    rangeADraft: { state: true },
+    rangeBDraft: { state: true },
+    rangeStatus: { state: true },
+    rangeExpanded: { state: true },
+    sharedPlaybackUrl: { state: true },
   };
   declare source: string;
   declare audioUrl: string;
+  declare shareUrl: string;
   declare bandId: number;
   declare label: string;
   declare server: string;
@@ -196,6 +241,22 @@ export class ChartSimulator extends LitElement {
   declare volume: number;
   declare transportCollapsed: boolean;
   declare transportAutoHidden: boolean;
+  declare rangeA: number | undefined;
+  declare rangeB: number | undefined;
+  declare rangeLoop: boolean;
+  declare rangeADraft: string;
+  declare rangeBDraft: string;
+  declare rangeStatus: RangeCopyKey | undefined;
+  declare rangeExpanded: boolean;
+  declare sharedPlaybackUrl: string;
+  private readonly rangePanelId = `chart-playback-range-${++rangePanelSequence}`;
+  private playbackIdentity?: ChartPlaybackIdentity;
+  private rangeIndex?: ChartRangeIndex;
+  private rangeSeekPending = false;
+  private rangePlaybackIntent = false;
+  private pendingShare?: ChartPlaybackShare;
+  private observedShareUrl = "";
+  private appliedShareUrl = "";
   private pluginRuntime?: CassiopeiaRuntime;
   private runtime() {
     return (this.pluginRuntime ??= new CassiopeiaRuntime([
@@ -223,6 +284,8 @@ export class ChartSimulator extends LitElement {
   private availableNoteEffectSkins: readonly OurNotesNoteEffectSkin[] = ["effect001"];
   private sourceFilesCache?: { server: string; promise: Promise<Set<string>> };
   private resumeAfterScrub = false;
+  private scrubClock?: MediaClock;
+  private loadEpoch = 0;
   private viewportFullscreen: ViewportFullscreenController;
   private transportVisibility = new PlaybackControlsController((snapshot) => {
     this.transportCollapsed = snapshot.collapsed;
@@ -233,6 +296,7 @@ export class ChartSimulator extends LitElement {
     super();
     this.source = "";
     this.audioUrl = "";
+    this.shareUrl = "";
     this.bandId = 1;
     this.label = "Chart";
     this.server = "intl";
@@ -258,6 +322,14 @@ export class ChartSimulator extends LitElement {
     this.volume = 0.8;
     this.transportCollapsed = false;
     this.transportAutoHidden = false;
+    this.rangeA = undefined;
+    this.rangeB = undefined;
+    this.rangeLoop = false;
+    this.rangeExpanded = false;
+    this.sharedPlaybackUrl = "";
+    this.rangeADraft = "";
+    this.rangeBDraft = "";
+    this.rangeStatus = undefined;
     this.viewportFullscreen = new ViewportFullscreenController({
       owner: this,
       onChange: (active) => {
@@ -272,12 +344,20 @@ export class ChartSimulator extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
-    void Promise.all([import("@material/web/slider/slider.js"), import("@material/web/progress/circular-progress.js")]);
+    void Promise.all([
+      import("@material/web/slider/slider.js"),
+      import("@material/web/progress/circular-progress.js"),
+      import("@material/web/textfield/outlined-text-field.js"),
+      import("@material/web/switch/switch.js"),
+    ]);
     void this.load();
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
   }
   disconnectedCallback() {
     this.persistSettings();
+    this.clearRange();
+    this.pendingShare = undefined;
+    this.appliedShareUrl = "";
     this.dispose();
     this.viewportFullscreen.dispose();
     this.transportVisibility.dispose();
@@ -285,12 +365,210 @@ export class ChartSimulator extends LitElement {
     super.disconnectedCallback();
   }
   updated() {
-    const key = `${this.server}:${this.source}`;
+    const key = this.playbackSourceKey();
     if (this.source && key !== this.loadedKey) void this.load();
+    else if (!this.source && key !== this.loadedKey) {
+      this.dispose();
+      this.clearRange();
+      this.loadedKey = key;
+      this.phase = "loading";
+    }
+    const url = location.href;
+    if (url !== this.observedShareUrl) {
+      this.observedShareUrl = url;
+      this.pendingShare = readChartPlaybackShare(new URL(url));
+      this.restorePlaybackShare();
+    }
     this.transportVisibility.bind(this.querySelector<HTMLElement>(".playback-controls"));
     this.transportVisibility.setFullscreen(this.fullscreen);
     this.transportVisibility.setPlaying(this.playing);
     if (this.mode === "simple") requestAnimationFrame(() => this.drawOverview());
+  }
+
+  private playbackSourceKey() {
+    return `${this.server}\u0000${this.source}\u0000${this.audioUrl}`;
+  }
+  private mediaSeconds() {
+    const value = this.clock?.audio.currentTime;
+    return value !== undefined && Number.isFinite(value) ? Math.max(0, value) : 0;
+  }
+  private mediaDuration() {
+    const duration = this.clock?.durationMs;
+    return duration !== undefined && Number.isFinite(duration) && duration > 0 ? duration / 1000 : 0;
+  }
+  private currentRange() {
+    return validChartPlaybackRange(this.rangeA, this.rangeB, this.mediaDuration());
+  }
+  private rangeText(key: RangeCopyKey) {
+    return clientText(this.locale, `media.chartPlayer.${key}`, RANGE_COPY[key]);
+  }
+  private syncLoop() {
+    if (this.clock) this.clock.audio.loop = this.loop && !this.rangeLoop;
+  }
+  private clearRange() {
+    this.rangeSeekPending = false;
+    this.sharedPlaybackUrl = "";
+    this.rangeA = undefined;
+    this.rangeB = undefined;
+    this.rangeADraft = "";
+    this.rangeBDraft = "";
+    this.rangeLoop = false;
+    this.rangeStatus = undefined;
+    this.syncLoop();
+  }
+  private setRangePoint(point: "a" | "b") {
+    if (!this.mediaDuration()) return;
+    const value = Math.floor(this.mediaSeconds() * 1000) / 1000;
+    if (point === "a") {
+      this.rangeA = value;
+      this.rangeADraft = String(value);
+    } else {
+      this.rangeB = value;
+      this.rangeBDraft = String(value);
+    }
+    this.rangeChanged();
+  }
+  private commitRangePoint(point: "a" | "b", value: string) {
+    const number = value.trim() ? Number(value) : undefined;
+    const parsed = number !== undefined && Number.isFinite(number) && number >= 0 ? number : undefined;
+    if (point === "a") this.rangeA = parsed;
+    else this.rangeB = parsed;
+    this.rangeChanged();
+  }
+  private rangeChanged(clearStatus = true) {
+    if (!this.mediaDuration()) return;
+    const incomplete = this.rangeA === undefined || this.rangeB === undefined;
+    const invalid = !incomplete && !this.currentRange();
+    if (invalid) this.rangeStatus = "invalidRange";
+    else if (clearStatus || this.rangeStatus === "invalidRange") this.rangeStatus = undefined;
+    if (!this.currentRange()) this.rangeLoop = false;
+    this.syncLoop();
+  }
+  private setRangeLoop(enabled: boolean) {
+    const range = this.currentRange();
+    this.rangeLoop = enabled && Boolean(range);
+    if (this.rangeLoop) {
+      this.loop = false;
+      const time = this.mediaSeconds();
+      if (this.clock?.playing && range && (time < range.start || time >= range.end)) this.seek(range.start);
+    }
+    this.syncLoop();
+  }
+  private repeatRange(resume = false) {
+    const clock = this.clock,
+      range = this.currentRange();
+    if (!clock || !this.rangeLoop || !range || this.rangeSeekPending) return false;
+    if (resume && (!this.rangePlaybackIntent || this.scrubClock === clock)) return false;
+    const time = this.mediaSeconds();
+    if (!resume && (!clock.advancing || (time >= range.start && time < range.end))) return false;
+    this.rangeSeekPending = true;
+    if (!this.seek(range.start)) {
+      this.rangeSeekPending = false;
+      this.rangeLoop = false;
+      this.syncLoop();
+      return false;
+    }
+    // A no-op seek need not emit seeked. Only an actual media seek stays pending.
+    if (!clock.audio.seeking) this.rangeSeekPending = false;
+    if (resume)
+      void clock.play().catch(() => {
+        if (this.clock === clock) {
+          this.playing = false;
+          this.rangePlaybackIntent = false;
+          this.rangeStatus = "playbackUnavailable";
+        }
+      });
+    return true;
+  }
+  private canonicalSharePage(): URL | undefined {
+    const href = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href;
+    if (!href) return;
+    const canonical = new URL(href);
+    if (canonical.protocol !== "https:" || /^(?:localhost|127\.|\[::1\])/u.test(canonical.hostname)) return;
+    const selected = new URL(this.shareUrl || location.href, canonical);
+    const resource = parseResourceRoute(selected.pathname);
+    if (resource?.kind === "songs" && resource.id && resource.server === this.server) {
+      if (!this.shareUrl && resource.view !== "chart") return;
+      const target = new URL(
+        chartPath({ server: resource.server, locale: resource.locale, id: resource.id }),
+        canonical,
+      );
+      for (const key of ["difficulty", "chartDifficulty"]) {
+        const value = selected.searchParams.get(key);
+        if (value !== null) target.searchParams.set(key, value);
+      }
+      return target;
+    }
+    // The existing Bestdori parent supplies its real detail/share route.
+    if (
+      this.shareUrl &&
+      /\/community\/songs-bestdori\/detail\/?$/u.test(selected.pathname) &&
+      selected.searchParams.has("song")
+    ) {
+      const target = new URL(selected.pathname, canonical);
+      for (const key of ["song", "difficulty", "chartDifficulty", "chart"]) {
+        const value = selected.searchParams.get(key);
+        if (value !== null) target.searchParams.set(key, value);
+      }
+      return target;
+    }
+  }
+  private async sharePlayback() {
+    const identity = this.playbackIdentity,
+      page = this.canonicalSharePage();
+    if (!identity || !page || !this.mediaDuration()) {
+      this.rangeStatus = "shareUnavailable";
+      return;
+    }
+    const url = chartPlaybackShareUrl(page, identity, this.mediaSeconds(), this.currentRange(), this.rangeLoop);
+    this.sharedPlaybackUrl = url.href;
+    const ownsShare = () => identity === this.playbackIdentity && this.sharedPlaybackUrl === url.href;
+    try {
+      await navigator.clipboard.writeText(url.href);
+      if (ownsShare()) this.rangeStatus = "linkCopied";
+    } catch {
+      if (ownsShare()) this.rangeStatus = "copyFailed";
+    }
+  }
+  private restorePlaybackShare() {
+    const shared = this.pendingShare,
+      identity = this.playbackIdentity;
+    if (
+      !shared ||
+      !identity ||
+      this.phase !== "ready" ||
+      !this.mediaDuration() ||
+      this.appliedShareUrl === this.observedShareUrl
+    )
+      return;
+    this.pendingShare = undefined;
+    this.appliedShareUrl = this.observedShareUrl;
+    if (!matchesChartPlaybackShare(shared.identity, identity)) {
+      this.rangeStatus = "shareSourceChanged";
+      return;
+    }
+    const range = shared.range
+      ? validChartPlaybackRange(shared.range.start, shared.range.end, this.mediaDuration())
+      : undefined;
+    if (shared.range && !range) {
+      this.rangeStatus = "invalidRange";
+      return;
+    }
+    this.rangeA = range?.start;
+    this.rangeB = range?.end;
+    this.rangeADraft = range ? String(range.start) : "";
+    this.rangeBDraft = range ? String(range.end) : "";
+    this.rangeLoop = shared.loop && Boolean(range);
+    if (this.rangeLoop) this.loop = false;
+    this.syncLoop();
+    this.rangePlaybackIntent = false;
+    this.resumeAfterScrub = false;
+    this.scrubClock = undefined;
+    this.clock?.pause();
+    this.playing = false;
+    this.mode = "watch";
+    if (!this.seek(Math.min(shared.time, this.mediaDuration()))) return;
+    this.dispatchEvent(new CustomEvent("haneoka:chart-playback-restored", { bubbles: true, composed: true }));
   }
 
   private descriptorUrl(source: string) {
@@ -464,11 +742,22 @@ export class ChartSimulator extends LitElement {
 
   private async load() {
     if (!this.source) return;
+    const key = this.playbackSourceKey();
+    const previousIdentity = this.playbackIdentity;
+    const changed = key !== this.loadedKey;
     this.dispose();
+    if (changed) {
+      this.clearRange();
+      this.rangeExpanded = false;
+      this.currentTime = 0;
+      this.duration = 0;
+      this.appliedShareUrl = "";
+      this.pendingShare = readChartPlaybackShare(new URL(location.href));
+    }
     const controller = new AbortController();
     this.loadAbort = controller;
     const { signal } = controller;
-    this.loadedKey = `${this.server}:${this.source}`;
+    this.loadedKey = key;
     this.phase = "loading";
     await this.updateComplete;
     try {
@@ -478,13 +767,35 @@ export class ChartSimulator extends LitElement {
         this.runtimeAssets(signal),
       ]);
       if (!response.ok) throw new Error(`Chart ${response.status}`);
-      const source = await response.text();
+      const sourceBytes = await response.arrayBuffer();
+      const source = new TextDecoder().decode(sourceBytes);
       signal.throwIfAborted();
+      const hash = globalThis.crypto?.subtle ? await crypto.subtle.digest("SHA-256", sourceBytes) : undefined;
+      signal.throwIfAborted();
+      if (this.playbackSourceKey() !== key) return;
+      this.playbackIdentity = hash
+        ? {
+            hash: Array.from(new Uint8Array(hash), (value) => value.toString(16).padStart(2, "0")).join(""),
+            releaseId: response.headers.get("x-haneoka-release-id") || undefined,
+            sourceId: response.headers.get("x-haneoka-source-id") || undefined,
+          }
+        : undefined;
+      if (
+        previousIdentity &&
+        this.playbackIdentity &&
+        !sameChartPlaybackIdentity(previousIdentity, this.playbackIdentity)
+      ) {
+        this.clearRange();
+        this.appliedShareUrl = "";
+        this.pendingShare = readChartPlaybackShare(new URL(location.href));
+      }
       this.chart = this.runtime().require(OUR_NOTES_RULES).parse(source);
+      this.rangeIndex = chartRangeIndex(this.chart.notes, this.chart.bpmChanges);
       this.assets = assets;
       await this.initialize(signal);
       signal.throwIfAborted();
       this.phase = "ready";
+      this.restorePlaybackShare();
       await this.updateComplete;
       this.resize();
     } catch (error) {
@@ -680,11 +991,15 @@ export class ChartSimulator extends LitElement {
     this.clock = this.runtime()
       .require(WEB_HOST)
       .createClock(this.audioUrl, { volume: this.volume, playbackRate: this.playbackRate, loop: false });
-    this.clock.audio.loop = this.loop;
+    this.syncLoop();
     const clock = this.clock;
+    const ownsClock = () => this.clock === clock && !signal.aborted;
     const updateDuration = () => {
-      if (this.clock !== clock || !this.chart) return;
-      this.duration = Math.max(clock.durationMs, this.chart.durationMs) / 1000;
+      if (!ownsClock() || !this.chart) return;
+      this.duration = (clock.durationMs || this.chart.durationMs) / 1000;
+      this.rangeChanged(false);
+      this.restorePlaybackShare();
+      this.requestUpdate();
     };
     clock.audio.addEventListener("loadedmetadata", updateDuration);
     clock.audio.addEventListener("durationchange", updateDuration);
@@ -696,14 +1011,32 @@ export class ChartSimulator extends LitElement {
     });
     this.attachSession();
     this.clock.audio.addEventListener("play", () => {
+      if (!ownsClock()) return;
+      this.rangePlaybackIntent = true;
       this.playing = true;
+      if (this.rangeStatus === "playbackUnavailable") this.rangeStatus = undefined;
       this.animateFrames();
     });
-    this.clock.audio.addEventListener("pause", () => (this.playing = false));
-    this.clock.audio.addEventListener("ended", () => (this.playing = false));
+    this.clock.audio.addEventListener("pause", () => {
+      if (!ownsClock()) return;
+      this.playing = false;
+      if (!clock.audio.ended && this.scrubClock !== clock) this.rangePlaybackIntent = false;
+    });
+    this.clock.audio.addEventListener("timeupdate", () => {
+      if (ownsClock()) this.draw();
+    });
+    this.clock.audio.addEventListener("seeked", () => {
+      if (!ownsClock()) return;
+      this.rangeSeekPending = false;
+      this.draw();
+    });
+    this.clock.audio.addEventListener("ended", () => {
+      if (!ownsClock()) return;
+      if (!this.repeatRange(true)) this.playing = false;
+    });
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(root);
-    this.duration = Math.max(this.clock.durationMs, this.chart.durationMs) / 1000;
+    this.duration = (this.clock.durationMs || this.chart.durationMs) / 1000;
     this.resize();
     this.draw();
   }
@@ -775,13 +1108,14 @@ export class ChartSimulator extends LitElement {
   }
   private draw() {
     if (!this.renderer || !this.session || !this.frames) return;
-    const time = this.clock?.timeMs || this.currentTime * 1000;
+    if (this.repeatRange()) return;
+    const time = this.clock?.timeMs ?? this.currentTime * 1000;
     const snapshot = this.session.updateReusable(time);
     const effectVolume = this.volume * 0.875;
     this.noteSounds?.flush(effectVolume);
     this.noteSounds?.setLongLineActive(this.playing && snapshot.activeLongLine, effectVolume);
     this.renderer.render(this.frames.buildReusable(time, snapshot, this.playerSettings));
-    this.currentTime = time / 1000;
+    this.currentTime = this.clock ? this.mediaSeconds() : Math.max(0, time / 1000);
   }
   private animateFrames = () => {
     cancelAnimationFrame(this.animationFrame);
@@ -792,37 +1126,89 @@ export class ChartSimulator extends LitElement {
     this.animationFrame = requestAnimationFrame(frame);
   };
   private async toggle() {
-    if (!this.clock) return;
-    if (this.playing) this.clock.pause();
-    else {
-      if (this.duration && this.currentTime >= this.duration - 0.05) this.seek(0);
-      await Promise.all([this.noteSounds?.unlock(), this.clock.play()]);
+    const clock = this.clock;
+    this.resumeAfterScrub = false;
+    this.scrubClock = undefined;
+    if (!clock?.source) {
+      this.rangeStatus = "playbackUnavailable";
+      return;
+    }
+    if (clock.playing) {
+      this.rangePlaybackIntent = false;
+      clock.pause();
+    } else {
+      const range = this.rangeLoop ? this.currentRange() : undefined;
+      const time = this.mediaSeconds();
+      if (range && (time < range.start || time >= range.end)) this.seek(range.start);
+      else if (this.mediaDuration() && time >= this.mediaDuration() - 0.05) this.seek(0);
+      try {
+        this.rangePlaybackIntent = true;
+        await Promise.all([this.noteSounds?.unlock(), clock.play()]);
+      } catch {
+        if (clock === this.clock) {
+          if (clock.playing) {
+            if (this.rangeStatus === "playbackUnavailable") this.rangeStatus = undefined;
+          } else if (this.rangePlaybackIntent) {
+            this.rangePlaybackIntent = false;
+            this.rangeStatus = "playbackUnavailable";
+          }
+        }
+      }
     }
   }
   private seek(seconds: number) {
-    if (!this.clock || !this.session || !this.frames) return;
-    this.clock.seek(seconds * 1000);
+    if (!this.clock || !this.session || !this.frames || !Number.isFinite(seconds)) return false;
+    try {
+      this.clock.seek(clamp(seconds, 0, this.mediaDuration() || this.duration) * 1000);
+    } catch {
+      this.rangeSeekPending = false;
+      this.rangeStatus = "playbackUnavailable";
+      return false;
+    }
     this.frames.reset();
     this.session.reset(this.clock.timeMs);
-    this.currentTime = seconds;
+    this.currentTime = this.mediaSeconds();
     this.draw();
+    return true;
   }
   private previewSeek(seconds: number) {
+    const clock = this.clock;
+    if (!clock) return;
     this.transportVisibility.setScrubbing(true);
-    if (this.playing) {
-      this.resumeAfterScrub = true;
-      this.clock?.pause();
+    if (this.scrubClock !== clock) {
+      this.resumeAfterScrub = clock.playing;
+      this.scrubClock = clock;
+    }
+    if (clock.playing) {
+      this.rangePlaybackIntent = false;
+      clock.pause();
     }
     this.seek(seconds);
   }
   private async commitSeek(seconds: number) {
+    const clock = this.clock;
+    const resume = this.scrubClock === clock && this.resumeAfterScrub;
+    this.resumeAfterScrub = false;
+    this.scrubClock = undefined;
     try {
       this.seek(seconds);
-      if (!this.resumeAfterScrub) return;
-      this.resumeAfterScrub = false;
-      await Promise.all([this.noteSounds?.unlock(), this.clock?.play()]);
+      if (!resume) return;
+      const range = this.rangeLoop ? this.currentRange() : undefined;
+      const time = this.mediaSeconds();
+      if (range && (time < range.start || time >= range.end)) this.seek(range.start);
+      this.rangePlaybackIntent = true;
+      await Promise.all([this.noteSounds?.unlock(), clock?.play()]);
+    } catch {
+      if (clock && clock === this.clock) {
+        if (clock.playing) {
+          if (this.rangeStatus === "playbackUnavailable") this.rangeStatus = undefined;
+        } else if (this.rangePlaybackIntent) {
+          this.rangePlaybackIntent = false;
+          this.rangeStatus = "playbackUnavailable";
+        }
+      }
     } finally {
-      this.transportVisibility.setScrubbing(false);
+      if (clock === this.clock) this.transportVisibility.setScrubbing(false);
     }
   }
   private fullscreenChanged = () => {
@@ -830,7 +1216,8 @@ export class ChartSimulator extends LitElement {
   };
   private toggleLoop() {
     this.loop = !this.loop;
-    if (this.clock) this.clock.audio.loop = this.loop;
+    if (this.loop) this.rangeLoop = false;
+    this.syncLoop();
   }
   private collapseTransport = () => {
     this.transportVisibility.collapse();
@@ -881,6 +1268,7 @@ export class ChartSimulator extends LitElement {
     }
   }
   private dispose() {
+    this.loadEpoch++;
     this.loadAbort?.abort();
     this.loadAbort = undefined;
     this.noteSoundSwap?.controller.abort();
@@ -896,6 +1284,11 @@ export class ChartSimulator extends LitElement {
     this.transportVisibility.setPlaying(false);
     this.transportVisibility.setScrubbing(false);
     this.resumeAfterScrub = false;
+    this.scrubClock = undefined;
+    this.rangeSeekPending = false;
+    this.rangePlaybackIntent = false;
+    this.playbackIdentity = undefined;
+    this.rangeIndex = undefined;
     this.resizeObserver?.disconnect();
     this.stagePointer = undefined;
     this.clock?.destroy();
@@ -912,7 +1305,7 @@ export class ChartSimulator extends LitElement {
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
   }
   private ui(key: ChartUiKey) {
-    if (key === "collapse" || key === "expand") return uiText(this.locale, (uiLabelPaths[key] ?? key));
+    if (key === "collapse" || key === "expand") return uiText(this.locale, uiLabelPaths[key] ?? key);
     return uiText(this.locale, `media.chartPlayer.${key}`);
   }
   private renderSettingSlider(
@@ -953,6 +1346,109 @@ export class ChartSimulator extends LitElement {
           @change=${(event: Event) => this.setRenderOption(key, (event.currentTarget as HTMLInputElement).checked)}
         />
       </label>
+    `;
+  }
+  private renderRangeControls() {
+    const range = this.currentRange();
+    const stats = range && this.rangeIndex ? chartRangeStatistics(this.rangeIndex, range) : undefined;
+    const number = new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2 });
+    const bpm =
+      stats?.minimumBpm === undefined
+        ? "—"
+        : stats.minimumBpm === stats.maximumBpm
+          ? number.format(stats.minimumBpm)
+          : `${number.format(stats.minimumBpm)}–${number.format(stats.maximumBpm!)}`;
+    return html`
+      <section class="chart-runtime__range">
+        ${accordion({
+          id: this.rangePanelId,
+          label: this.rangeText("rangePlayback"),
+          expanded: this.rangeExpanded,
+          onExpandedChange: (expanded) => (this.rangeExpanded = expanded),
+          content: html`
+            <div class="chart-runtime__settings-content">
+              <md-outlined-text-field
+                class="chart-runtime__setting"
+                type="number"
+                min="0"
+                max=${this.mediaDuration()}
+                step="0.01"
+                label=${this.rangeText("rangeA")}
+                .value=${this.rangeADraft}
+                ?disabled=${!this.mediaDuration()}
+                @input=${(event: Event) => {
+                  this.rangeADraft = (event.currentTarget as HTMLElement & { value: string }).value;
+                }}
+                @change=${(event: Event) => this.commitRangePoint("a", (event.currentTarget as HTMLElement & { value: string }).value)}
+              ></md-outlined-text-field>
+              <md-outlined-text-field
+                class="chart-runtime__setting"
+                type="number"
+                min="0"
+                max=${this.mediaDuration()}
+                step="0.01"
+                label=${this.rangeText("rangeB")}
+                .value=${this.rangeBDraft}
+                ?disabled=${!this.mediaDuration()}
+                @input=${(event: Event) => {
+                  this.rangeBDraft = (event.currentTarget as HTMLElement & { value: string }).value;
+                }}
+                @change=${(event: Event) => this.commitRangePoint("b", (event.currentTarget as HTMLElement & { value: string }).value)}
+              ></md-outlined-text-field>
+              <div class="chart-runtime__range-actions">
+                <button
+                  class="button button--text"
+                  type="button"
+                  ?disabled=${!this.mediaDuration()}
+                  @click=${() => this.setRangePoint("a")}
+                >
+                  ${this.rangeText("setA")}
+                </button>
+                <button
+                  class="button button--text"
+                  type="button"
+                  ?disabled=${!this.mediaDuration()}
+                  @click=${() => this.setRangePoint("b")}
+                >
+                  ${this.rangeText("setB")}
+                </button>
+                <button class="button button--text" type="button" @click=${this.clearRange}>
+                  ${this.rangeText("clearRange")}
+                </button>
+              </div>
+              <label class="chart-runtime__setting chart-runtime__setting--toggle">
+                <span>${this.rangeText("rangeLoop")}</span>
+                <md-switch
+                  .selected=${this.rangeLoop}
+                  ?disabled=${!range}
+                  aria-label=${this.rangeText("rangeLoop")}
+                  @change=${(event: Event) => this.setRangeLoop((event.currentTarget as HTMLElement & { selected: boolean }).selected)}
+                ></md-switch>
+              </label>
+              ${
+                stats
+                  ? html`
+                      <dl class="chart-runtime__range-stats">
+                        <div>
+                          <dt>${this.rangeText("rangeNotes")}</dt>
+                          <dd>${number.format(stats.notes)}</dd>
+                        </div>
+                        <div>
+                          <dt>${this.rangeText("rangeDensity")}</dt>
+                          <dd>${number.format(stats.notesPerSecond)}</dd>
+                        </div>
+                        <div>
+                          <dt>${this.rangeText("rangeBpm")}</dt>
+                          <dd>${bpm}</dd>
+                        </div>
+                      </dl>
+                    `
+                  : nothing
+              }
+            </div>
+          `,
+        })}
+      </section>
     `;
   }
   private renderSettingsPanel() {
@@ -1005,19 +1501,22 @@ export class ChartSimulator extends LitElement {
               </select>
             </label>
           </section>
+          ${this.renderRangeControls()}
           <section>
             <h4>${this.ui("notes")}</h4>
             <label class="chart-runtime__setting chart-runtime__setting--select">
               <span>${this.ui("noteSkin")}</span>
               <select
                 @change=${(event: Event) => {
-                  const position = this.currentTime;
-                  const resume = this.playing;
+                  const position = this.mediaSeconds();
+                  const resume = this.clock?.playing ?? false;
                   this.noteSkin = (event.currentTarget as HTMLSelectElement).value as OurNotesNoteSkin;
                   this.persistSettings();
-                  void this.load().then(async () => {
-                    if (this.phase !== "ready") return;
-                    this.seek(position);
+                  const loading = this.load();
+                  const epoch = this.loadEpoch;
+                  void loading.then(async () => {
+                    if (this.phase !== "ready" || epoch !== this.loadEpoch) return;
+                    if (!this.seek(position)) return;
                     if (resume) await this.toggle();
                   });
                 }}
@@ -1035,13 +1534,15 @@ export class ChartSimulator extends LitElement {
               <span>${this.ui("noteEffectSkin")}</span>
               <select
                 @change=${(event: Event) => {
-                  const position = this.currentTime;
-                  const resume = this.playing;
+                  const position = this.mediaSeconds();
+                  const resume = this.clock?.playing ?? false;
                   this.noteEffectSkin = (event.currentTarget as HTMLSelectElement).value as OurNotesNoteEffectSkin;
                   this.persistSettings();
-                  void this.load().then(async () => {
-                    if (this.phase !== "ready") return;
-                    this.seek(position);
+                  const loading = this.load();
+                  const epoch = this.loadEpoch;
+                  void loading.then(async () => {
+                    if (this.phase !== "ready" || epoch !== this.loadEpoch) return;
+                    if (!this.seek(position)) return;
                     if (resume) await this.toggle();
                   });
                 }}
@@ -1061,13 +1562,15 @@ export class ChartSimulator extends LitElement {
               <span>${this.ui("liveQuality")}</span>
               <select
                 @change=${(event: Event) => {
-                  const position = this.currentTime;
-                  const resume = this.playing;
+                  const position = this.mediaSeconds();
+                  const resume = this.clock?.playing ?? false;
                   this.liveQuality = Number((event.currentTarget as HTMLSelectElement).value) as OurNotesLiveQuality;
                   this.persistSettings();
-                  void this.load().then(async () => {
-                    if (this.phase !== "ready") return;
-                    this.seek(position);
+                  const loading = this.load();
+                  const epoch = this.loadEpoch;
+                  void loading.then(async () => {
+                    if (this.phase !== "ready" || epoch !== this.loadEpoch) return;
+                    if (!this.seek(position)) return;
                     if (resume) await this.toggle();
                   });
                 }}
@@ -1225,6 +1728,7 @@ export class ChartSimulator extends LitElement {
                         max=${this.duration || 1}
                         step="0.01"
                         .value=${String(this.currentTime)}
+                        ?disabled=${!this.mediaDuration()}
                         aria-label=${uiText(this.locale, "common.actions.seek")}
                         @input=${(event: Event) =>
                           this.previewSeek(Number((event.target as HTMLElement & { value?: number }).value))}
@@ -1234,6 +1738,16 @@ export class ChartSimulator extends LitElement {
                       <small>${this.format(this.duration)}</small>
                     </div>
                     <div class="chart-runtime__actions">
+                      <button
+                        class="icon-button"
+                        type="button"
+                        ?disabled=${!this.playbackIdentity || !this.mediaDuration() || !this.canonicalSharePage()}
+                        aria-label=${this.rangeText("shareTime")}
+                        title=${this.rangeText("shareTime")}
+                        @click=${() => void this.sharePlayback()}
+                      >
+                        ${icon("share", 20)}
+                      </button>
                       <button
                         class="icon-button"
                         aria-pressed=${this.settingsOpen}
@@ -1277,6 +1791,24 @@ export class ChartSimulator extends LitElement {
                   </div>
                 </footer>
                 ${this.renderSettingsPanel()}
+                ${
+                  this.rangeStatus || this.sharedPlaybackUrl
+                    ? html`
+                        <p class="chart-runtime__range-status" role="status" aria-live="polite">
+                          ${this.rangeStatus ? this.rangeText(this.rangeStatus) : nothing}
+                          ${
+                            this.sharedPlaybackUrl
+                              ? html`
+                                  <a class="button button--text" href=${this.sharedPlaybackUrl}>
+                                    ${this.rangeText("shareTime")}
+                                  </a>
+                                `
+                              : nothing
+                          }
+                        </p>
+                      `
+                    : nothing
+                }
               `
             : nothing
         }

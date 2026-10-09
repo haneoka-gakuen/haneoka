@@ -1274,7 +1274,24 @@
       "noteFlick": "플릭",
       "noteSlide": "슬라이드",
       "loading": "불러오는 중…",
-      "runtimeError": "Our Notes 채보 런타임을 불러오지 못했습니다."
+      "runtimeError": "Our Notes 채보 런타임을 불러오지 못했습니다.",
+      "rangePlayback": "A/B 반복",
+      "setA": "A 설정",
+      "setB": "B 설정",
+      "rangeA": "A(초)",
+      "rangeB": "B(초)",
+      "rangeLoop": "A–B 반복",
+      "clearRange": "구간 지우기",
+      "invalidRange": "A를 B보다 앞에 설정하세요.",
+      "shareTime": "재생 위치 공유",
+      "linkCopied": "링크 복사됨",
+      "copyFailed": "링크를 복사할 수 없습니다",
+      "shareSourceChanged": "공유된 채보가 변경됨",
+      "shareUnavailable": "공유할 수 없습니다",
+      "playbackUnavailable": "재생할 수 없습니다",
+      "rangeNotes": "노트 수[A,B)",
+      "rangeDensity": "노트/초",
+      "rangeBpm": "BPM"
     }
   },
   "tools": {

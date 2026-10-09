@@ -1274,7 +1274,24 @@
       "noteFlick": "フリック",
       "noteSlide": "スライド",
       "loading": "読み込み中…",
-      "runtimeError": "アワーノーツの譜面ランタイムを読み込めませんでした。"
+      "runtimeError": "アワーノーツの譜面ランタイムを読み込めませんでした。",
+      "rangePlayback": "A/Bリピート",
+      "setA": "Aを設定",
+      "setB": "Bを設定",
+      "rangeA": "A（秒）",
+      "rangeB": "B（秒）",
+      "rangeLoop": "A–Bを繰り返す",
+      "clearRange": "範囲をクリア",
+      "invalidRange": "AをBより前に設定してください。",
+      "shareTime": "再生位置を共有",
+      "linkCopied": "リンクをコピーしました",
+      "copyFailed": "リンクをコピーできませんでした",
+      "shareSourceChanged": "共有された譜面が変更されています",
+      "shareUnavailable": "共有できません",
+      "playbackUnavailable": "再生できません",
+      "rangeNotes": "ノーツ数[A,B)",
+      "rangeDensity": "ノーツ/秒",
+      "rangeBpm": "BPM"
     }
   },
   "tools": {
