@@ -28,6 +28,18 @@ import { renderSongPicker, type SongPickerState } from "./team-builder/song-pick
 import { ImportController } from "./team-builder/importers";
 import { Catalog } from "./team-builder/catalog";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "account": "navigation.account",
+  "all": "common.states.all",
+  "challenge": "navigation.challenge",
+  "error": "common.states.error",
+  "score": "catalog.analysis.fields.score",
+  "skip": "common.actions.skip",
+  "title": "common.fields.title"
+};
+
+
 const SETTINGS_KEY = "pref.build";
 export interface ManualTeam {
   members: (number | null)[];
@@ -116,10 +128,10 @@ export class TeamBuilder extends LitElement {
   }
   t(key: string, fallback: string, params?: Record<string, string | number>) {
     const readable = fallback.replace(/\{([^}]+)\}/gu, (token, name: string) => (params?.[name] === undefined ? token : String(params[name])));
-    return clientText(this.locale, `teamBuilder.${key}`, readable, params);
+    return clientText(this.locale, `tools.teamBuilder.${key}`, readable, params);
   }
   common(key: string, fallback: string) {
-    return clientText(this.locale, key, fallback);
+    return clientText(this.locale, (uiLabelPaths[key] ?? key), fallback);
   }
 
   async load(server: string) {
@@ -399,7 +411,7 @@ export class TeamBuilder extends LitElement {
         <div class="team-builder tb">
           ${this.loadError
             ? html`<div class="state state--error"><p class="state__title">${this.loadError}</p>
-                <div class="state__actions"><button class="button button--tonal" type="button" @click=${() => void this.load(readReleaseServer() || this.server)}>${this.common("retry", "Retry")}</button></div></div>`
+                <div class="state__actions"><button class="button button--tonal" type="button" @click=${() => void this.load(readReleaseServer() || this.server)}>${this.common("common.actions.retry", "Retry")}</button></div></div>`
             : html`<div class="state"><p class="state__title">${this.t("loadingData", "Loading card data")}</p></div>`}
         </div>
       `;
@@ -412,8 +424,8 @@ export class TeamBuilder extends LitElement {
           ${this.renderTabs()}
           ${this.renderSync()}
         </header>
-        ${this.notice ? html`<div class="banner" role="status"><span>${this.notice}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => { this.notice = ""; this.requestUpdate(); }}>${this.common("close", "Close")}</button></div></div>` : nothing}
-        ${this.catalogMetadataError ? html`<div class="banner" role="status"><span>${this.common("catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span><button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("retry", "Retry")}</button></div>` : nothing}
+        ${this.notice ? html`<div class="banner" role="status"><span>${this.notice}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => { this.notice = ""; this.requestUpdate(); }}>${this.common("common.actions.close", "Close")}</button></div></div>` : nothing}
+        ${this.catalogMetadataError ? html`<div class="banner" role="status"><span>${this.common("catalog.availability.catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span><button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("common.actions.retry", "Retry")}</button></div>` : nothing}
         <section id="tb-panel" class="tb-tabpanel" role="tabpanel" tabindex="-1">${panel}</section>
         ${renderCardEditor(this)}
         ${this.songPicker ? renderSongPicker(this) : nothing}

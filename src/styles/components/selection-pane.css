@@ -1,0 +1,112 @@
+/* Shared selectionPane presentation, extracted without declaration changes. */
+@layer pages {
+  .selection-pane {
+    width: min(900px, calc(100vw - 24px));
+    max-height: calc(100dvh - 32px);
+    height: min(800px, calc(100dvh - 32px));
+    padding: 0;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .selection-pane:modal {
+    display: flex;
+    flex-direction: column;
+  }
+  .selection-pane::backdrop {
+    background: color-mix(in srgb, var(--md-sys-color-scrim) 40%, transparent);
+  }
+  .selection-pane .sheet__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: var(--md-sys-spacing-2);
+    min-height: 56px;
+    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-4);
+  }
+  .selection-pane__actions {
+    display: flex;
+    gap: var(--md-sys-spacing-1);
+  }
+  .selection-pane__body {
+    display: grid;
+    align-content: start;
+    min-height: 0;
+    gap: var(--md-sys-spacing-3);
+    padding: var(--md-sys-spacing-4);
+    overflow: auto;
+    flex: 1;
+  }
+  .selection-pane__footer {
+    flex-shrink: 0;
+    padding: var(--md-sys-spacing-3) var(--md-sys-spacing-4);
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .selection-pane__choice {
+    isolation: isolate;
+    cursor: pointer;
+  }
+  .selection-pane__choice:has(md-checkbox[disabled]) {
+    cursor: default;
+  }
+  .selection-pane__choice-media {
+    position: relative;
+    display: grid;
+    min-width: 0;
+  }
+  .selection-pane__choice-checkbox {
+    position: absolute;
+    z-index: 2;
+    inset-inline-end: 4px;
+    inset-block-end: 4px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent);
+  }
+  .selection-pane__choice-media .tile__mark--bottom-end,
+  .selection-pane__choice-media .tile__server-mark {
+    inset-inline-end: 52px;
+  }
+  .selection-pane__choice:has(md-checkbox:focus-within) {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+  .team-builder__picker-preview {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: var(--md-sys-spacing-2);
+  }
+  .team-builder__picker-preview > .button {
+    justify-self: end;
+  }
+  .team-builder__fields {
+    display: grid;
+    min-width: 0;
+    gap: var(--md-sys-spacing-3);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  }
+  .team-builder__hint {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  :is(.selection-pane) :is(md-outlined-select, md-outlined-text-field) {
+    width: 100%;
+    min-width: 0;
+  }
+  .selection-pane :is(.collection--member, .collection--support) .tile__subtitle {
+    height: auto;
+    align-items: start;
+    white-space: normal;
+  }
+  @media (max-width: 599px) {
+    .selection-pane .collection:not(.collection--system) {
+      --tile-min: 120px;
+    }
+    .selection-pane .team-builder__fields {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

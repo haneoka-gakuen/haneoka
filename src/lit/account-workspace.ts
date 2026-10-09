@@ -11,15 +11,15 @@ import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
-  appeal: "communityPage.appeal",
-  appealStatement: "communityPage.appealStatement",
-  submitAppeal: "communityPage.submitAppeal",
-  appealSubmitted: "communityPage.appealSubmitted",
-  appealFailed: "communityPage.appealFailed",
-  close: "close",
-  save: "save",
-  privacy: "homePage.privacy",
-  terms: "homePage.terms",
+  appeal: "community.page.appeal",
+  appealStatement: "community.page.appealStatement",
+  submitAppeal: "community.page.submitAppeal",
+  appealSubmitted: "community.page.appealSubmitted",
+  appealFailed: "community.page.appealFailed",
+  close: "common.actions.close",
+  save: "account.page.save",
+  privacy: "home.dashboard.privacy",
+  terms: "home.dashboard.terms",
 };
 
 type Value = Record<string, unknown>;
@@ -145,7 +145,7 @@ export class AccountWorkspace extends LitElement {
   }
 
   private label(key: string, fallback: string) {
-    return clientText(preferredLocale(), ACCOUNT_LABEL_KEYS[key] ?? `accountPage.${key}`, fallback);
+    return clientText(preferredLocale(), ACCOUNT_LABEL_KEYS[key] ?? `account.page.${key}`, fallback);
   }
   private user() {
     return (this.session?.user as Value | undefined) || null;

@@ -135,7 +135,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
             ],
             onSelect: (show) => set({ show }),
           })}
-          <md-outlined-text-field class="tb-search" type="search" label=${host.common("search", "Search")} .value=${live(f.query)}
+          <md-outlined-text-field class="tb-search" type="search" label=${host.common("common.actions.search", "Search")} .value=${live(f.query)}
             @input=${(event: Event) => set({ query: (event.target as HTMLInputElement).value })}>
             <span slot="leading-icon">${icon("search", 20)}</span>
           </md-outlined-text-field>
@@ -173,7 +173,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
             ${icon("upgrade", 18)}${host.t("bulkMax", "Full growth")}</button>
           <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
           <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openScreenshots()}>${icon("photo_camera", 18)}${host.t("importScreens", "Screenshots")}</button>
-          <button class="button button--text button--small" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("export", "Export")}</button>
+          <button class="button button--text button--small" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
         </div>
         ${host.notice && undoStack
           ? html`<div class="banner tb-undo" role="status"><span>${host.notice}</span><div class="banner__actions">
@@ -252,7 +252,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
             <span class="tb-editor__subtitle">${options.subtitle}</span>
             ${owned ? nothing : html`<span class="badge badge--primary">${host.t("notOwnedYet", "Not owned yet: any change adds it")}</span>`}
           </div>
-          ${iconButton({ icon: "close", label: host.common("close", "Close"), onClick: close })}
+          ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
         </header>
         <div class="tb-editor__fields">${fields}</div>
         <div class="cluster">

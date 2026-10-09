@@ -71,7 +71,7 @@ export class CommunityEditor extends LitElement {
     else this.editor?.commands.focus();
   }
   private text(key: string, params?: MessageParams) {
-    return this.labels ? this.labels(key, key, params) : clientText(this.locale, `communityPage.${key}`, key, params);
+    return this.labels ? this.labels(key, key, params) : clientText(this.locale, `community.page.${key}`, key, params);
   }
   protected firstUpdated() {
     this.mount();
@@ -306,7 +306,7 @@ export class CommunityEditor extends LitElement {
       { command: "unlink", icon: "link_off", label: "unlink" },
     ];
     const inserts = [
-      { command: "list", icon: "format_list_bulleted", label: "list" },
+      { command: "list", icon: "format_list_bulleted", label: "common.layout.list" },
       { command: "orderedList", icon: "format_list_numbered", label: "orderedList" },
       { command: "quote", icon: "format_quote", label: "quote" },
       { command: "code", icon: "code", label: "code" },

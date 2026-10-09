@@ -45,9 +45,9 @@ const withoutSiteSuffix = (title: string): string =>
   title.replace(/\s*·\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
 
 export function pageTitle(locale: Locale, route: string, title: string): string {
-  if (route === "/") return `haneoka - ${serverText(locale, "seo.homeTitle", undefined, title)}`;
+  if (route === "/") return `haneoka - ${serverText(locale, "common.seo.homeTitle", undefined, title)}`;
   const name = withoutSiteSuffix(title);
-  const site = serverText(locale, "seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
+  const site = serverText(locale, "common.seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
   return `${name && name !== "haneoka" ? `${name} · ` : ""}haneoka - ${site}`;
 }
 
@@ -56,15 +56,15 @@ export function pageKeywords(locale: Locale, route: string, title: string): stri
   const kind =
     parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
   const category = kind
-    ? serverText(locale, `seo.keywords.resources.${kind}`, undefined, "")
+    ? serverText(locale, `common.seo.keywords.resources.${kind}`, undefined, "")
     : route === "/stamp-maker" || route === "/tools/stamp-maker"
-      ? serverText(locale, "seo.keywords.stampMaker", undefined, "")
+      ? serverText(locale, "common.seo.keywords.stampMaker", undefined, "")
       : route.startsWith("/chart-editor")
-        ? serverText(locale, "seo.keywords.chartEditor", undefined, "")
+        ? serverText(locale, "common.seo.keywords.chartEditor", undefined, "")
         : "";
   return [
     ...new Set(
-      [withoutSiteSuffix(title), serverText(locale, "seo.keywords.base", undefined, ""), category]
+      [withoutSiteSuffix(title), serverText(locale, "common.seo.keywords.base", undefined, ""), category]
         .flatMap((value) => value.split(",").map((term) => term.trim()))
         .filter(Boolean),
     ),
@@ -131,8 +131,8 @@ export function pageStructuredData(
     { name: "haneoka", item: home },
     ...(collectionUrl && canonicalResource
       ? [
-          { name: t(locale, "catalog", "Catalog"), item: address("/catalog") },
-          { name: t(locale, collection?.label || canonicalResource.kind, canonicalResource.kind), item: collectionUrl },
+          { name: t(locale, "navigation.catalog", "Catalog"), item: address("/catalog") },
+          { name: collection ? t(locale, collection.label, canonicalResource.kind) : canonicalResource.kind, item: collectionUrl },
         ]
       : parent && parent.route !== "/" && canonicalPath(parent.route) !== canonicalPath(route)
         ? [{ name: t(locale, parent.label, parent.id), item: address(parent.route) }]
@@ -155,7 +155,7 @@ export function pageStructuredData(
 export function pageDescription(locale: Locale, route: string, title: string): string {
   const kind =
     parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
-  const resource = kind ? serverText(locale, `seo.resources.${kind}`, undefined, "") : "";
+  const resource = kind ? serverText(locale, `common.seo.resources.${kind}`, undefined, "") : "";
   if (resource) return resource;
   const key =
     route === "/"
@@ -187,5 +187,5 @@ export function pageDescription(locale: Locale, route: string, title: string): s
                               : route === "/privacy"
                                 ? "privacy"
                                 : "general";
-  return serverText(locale, `seo.descriptions.${key}`, { title }, title).trim();
+  return serverText(locale, `common.seo.descriptions.${key}`, { title }, title).trim();
 }

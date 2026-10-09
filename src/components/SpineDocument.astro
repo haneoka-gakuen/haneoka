@@ -1,5 +1,5 @@
 ---
 import Base from "../layouts/Base.astro"; import AppShell from "./AppShell.astro"; import type { Locale } from "../i18n/locales"; import { t } from "../i18n/messages"; import { resourcePath } from "../lib/resource-route"; import type { ReleaseServer } from "../lib/release-server"; import "../lit/spine-workspace"; import "../styles/catalog.css"; import "../styles/viewer.css";
-const { locale, server } = Astro.props as { locale: Locale; server?: ReleaseServer }; const title = t(locale, "spine", "Spine");
+const { locale, server } = Astro.props as { locale: Locale; server?: ReleaseServer }; const title = t(locale, "navigation.spine", "Spine");
 ---
-<Base locale={locale} route="/catalog/spine" canonicalRoute={server ? resourcePath({ server, locale, kind: "spine" }) : undefined} title={title} titleKey="spine"><AppShell locale={locale} route="/catalog/spine" title={title} titleKey="spine" server={server}><spine-workspace locale={locale}></spine-workspace></AppShell></Base><script>import "../lit/spine-workspace";</script>
+<Base locale={locale} route="/catalog/spine" canonicalRoute={server ? resourcePath({ server, locale, kind: "spine" }) : undefined} title={title} titleKey="navigation.spine"><AppShell locale={locale} route="/catalog/spine" title={title} titleKey="navigation.spine" server={server}><spine-workspace locale={locale}></spine-workspace></AppShell></Base><script>import "../lit/spine-workspace";</script>

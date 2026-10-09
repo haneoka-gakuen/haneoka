@@ -77,6 +77,50 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, inputChip, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "all": "common.states.all",
+  "ascending": "common.layout.ascending",
+  "back": "common.actions.back",
+  "band": "catalog.fields.band",
+  "cancel": "common.actions.cancel",
+  "cards": "navigation.cards",
+  "clear": "common.actions.clear",
+  "close": "common.actions.close",
+  "collection": "catalog.fields.collection",
+  "community": "navigation.community",
+  "confirm": "common.actions.confirm",
+  "descending": "common.layout.descending",
+  "details": "common.actions.details",
+  "download": "common.actions.download",
+  "error": "common.states.error",
+  "id": "common.fields.id",
+  "initial": "common.fields.initial",
+  "list": "common.layout.list",
+  "loadMore": "common.actions.loadMore",
+  "loading": "common.states.loading",
+  "lock": "media.models.labels.lock",
+  "media": "navigation.media",
+  "moreActions": "common.actions.moreActions",
+  "mute": "common.actions.mute",
+  "order": "common.layout.order",
+  "play": "common.actions.play",
+  "preview": "common.actions.preview",
+  "refresh": "common.actions.refresh",
+  "release": "catalog.fields.release",
+  "retry": "common.actions.retry",
+  "search": "common.actions.search",
+  "server": "settings.labels.server",
+  "songs": "navigation.songs",
+  "sort": "common.actions.sort",
+  "stamp": "story.labels.stamp",
+  "title": "common.fields.title",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable",
+  "view": "common.actions.view"
+};
+
 type Value = Record<string, unknown>;
 type UploadEntry = {
   key: string;
@@ -411,7 +455,7 @@ export class CommunityWorkspace extends LitElement {
     return communityMarkup(body, this.label("spoiler", "Spoiler"), this.locale);
   }
   private get copy(): Value {
-    return clientGroup<Value>("communityPage");
+    return clientGroup<Value>("community.page");
   }
   private onLocale = () => {
     this.locale = preferredLocale(this.locale);
@@ -1451,8 +1495,8 @@ export class CommunityWorkspace extends LitElement {
       );
     return interpolateMessage(typeof value === "string" && value
       ? value
-      : uiText(this.locale, path) !== path
-        ? uiText(this.locale, path)
+      : uiText(this.locale, (uiLabelPaths[path] ?? path)) !== path
+        ? uiText(this.locale, (uiLabelPaths[path] ?? path))
         : fallback, params);
   }
   private async request(path: string, init: RequestInit = {}): Promise<Value> {

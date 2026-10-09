@@ -115,9 +115,9 @@ function slotPicker(host: TeamBuilder): TemplateResult | typeof nothing {
   return selectionPane({
     id: "tb-slot-picker",
     title: kind === "members" ? host.t("pickMember", "Choose a member") : host.t("pickSnap", "Choose a snap"),
-    closeLabel: host.common("close", "Close"),
+    closeLabel: host.common("common.actions.close", "Close"),
     close,
-    searchLabel: host.common("search", "Search"),
+    searchLabel: host.common("common.actions.search", "Search"),
     filterLabel: host.t("filters", "Filters"),
     filtersOpen: host.slotFiltersOpen,
     toggleFilters: () => {host.slotFiltersOpen = !host.slotFiltersOpen;host.requestUpdate();},
@@ -172,7 +172,7 @@ export function renderTeamsTab(host: TeamBuilder): TemplateResult {
             <button class="button button--text button--small" type="button" ?disabled=${!manualReady(host)}
               @click=${() => saveTeam(host, [host.manual.members[host.manual.leader]!, ...host.manual.members.filter((_, index) => index !== host.manual.leader) as number[]], [host.manual.snaps[host.manual.leader] ?? null, ...host.manual.snaps.filter((_, index) => index !== host.manual.leader)], host.settings.songs[0] ?? null)}>
               ${icon("bookmark_add", 18)}${host.t("saveTeam", "Save team")}</button>
-            <button class="button button--text button--small" type="button" @click=${() => { host.manual = { members: [null, null, null, null, null], snaps: [null, null, null, null, null], leader: 2 }; host.manualResults = null; suggestions = null; host.requestUpdate(); }}>${host.common("clear", "Clear")}</button>
+            <button class="button button--text button--small" type="button" @click=${() => { host.manual = { members: [null, null, null, null, null], snaps: [null, null, null, null, null], leader: 2 }; host.manualResults = null; suggestions = null; host.requestUpdate(); }}>${host.common("common.actions.clear", "Clear")}</button>
           </div>
         </div>
         <ol class="tb-formation tb-formation--edit">

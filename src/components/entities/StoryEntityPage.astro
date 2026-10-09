@@ -26,7 +26,7 @@ interface Props {
   next?: EntityLink;
 }
 const { page, locale, server = "intl", canonical = false, returnTo, previous, next } = Astro.props;
-const modeLabel = (target: Locale) => t(target, page.mode === "birthday" ? "birthdayStory" : `storyNavigation.${page.mode}`, page.mode);
+const modeLabel = (target: Locale) => t(target, page.mode === "birthday" ? "story.labels.birthdayStory" : `story.navigation.${page.mode}`, page.mode);
 const sectionRoute = `/catalog/stories/${page.mode}`;
 const sectionRouteDefinition = findRoute(sectionRoute);
 if (!sectionRouteDefinition) throw new Error(`Missing route definition for ${sectionRoute}`);

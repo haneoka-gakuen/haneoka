@@ -156,7 +156,7 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   if (titleRoom() >= minimum && !compactOnly.length) return;
   const more = overflowButton(actions);
   more.hidden = false;
-  more.setAttribute("aria-label", clientText(document.documentElement.dataset.locale || "en", "moreActions", "More"));
+  more.setAttribute("aria-label", clientText(document.documentElement.dataset.locale || "en", "common.actions.moreActions", "More"));
   for (const node of candidates(actions)) {
     if (titleRoom() >= minimum) break;
     node.dataset[HIDDEN] = "true";

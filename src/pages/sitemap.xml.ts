@@ -17,7 +17,7 @@ import {
 
 import { isPublicReleaseServer } from "../lib/release-server";
 
-const XML_ROUTES = ROUTES.filter(({ route }) => !shouldNoindex(route));
+const XML_ROUTES = ROUTES.filter(({ route, staticRedirect }) => !staticRedirect && !shouldNoindex(route));
 
 export const GET: APIRoute = async () => {
   const configured = process.env.STATIC_RESOURCE_SERVERS?.split(",")

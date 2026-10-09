@@ -11,6 +11,20 @@ import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { readCommunityViewer, CommunityRealmChanged } from "../lib/community-viewer";
 import { JsonResponseError } from "./shared/catalog";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "all": "common.states.all",
+  "community": "navigation.community",
+  "empty": "common.states.empty",
+  "loadMore": "common.actions.loadMore",
+  "loading": "common.states.loading",
+  "retry": "common.actions.retry",
+  "search": "common.actions.search",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable"
+};
+
+
 type RecordValue = Record<string, unknown>;
 interface SearchResult {
   url: string;
@@ -88,7 +102,7 @@ export class GlobalSearch extends LitElement {
     this.total = 0; this.catalogMore = false;
   }
   createRenderRoot() { return this; }
-  private label(key: string) { return clientText(this.locale, key); }
+  private label(key: string) { return clientText(this.locale, (uiLabelPaths[key] ?? key)); }
   private syncUrl() {
     const params = new URLSearchParams(location.search);
     if (this.query) params.set("q", this.query); else params.delete("q");

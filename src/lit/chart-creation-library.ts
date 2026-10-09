@@ -23,6 +23,12 @@ import { BESTDORI_SERVERS, isBestdoriServer, type BestdoriServer } from "../../p
 import { listBestdoriCreatorSongs, loadBestdoriCreatorSong, loadBestdoriCreationSongCardData, type BestdoriCreatorSong } from "../lib/chart-creation/bestdori-source";
 import "../styles/team-builder.css";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "release": "catalog.fields.release"
+};
+
+
 type CatalogueRecord = Record<string, unknown>;
 
 export type CreationLibraryProvider = "haneoka" | "bestdori";
@@ -142,7 +148,7 @@ export class ChartCreationLibrary extends LitElement {
     } else this.images?.disconnect();
   }
   private t(key: string) {
-    return clientText(this.locale, `chartEditorPage.${key}`);
+    return clientText(this.locale, `editors.chart.${key}`);
   }
   private cancelRequest() {
     this.catalogue.cancel();
@@ -280,24 +286,24 @@ export class ChartCreationLibrary extends LitElement {
         ? [{ id, name, image: this.image(character.faceImage ?? character.thumbnailImage) }] : [];
     });
     return html`
-      ${chooserFacet({ label: clientText(this.locale, "source"), allLabel: this.t("serverLibrary"), value: this.provider === "bestdori" ? "bestdori" : "",
+      ${chooserFacet({ label: clientText(this.locale, "common.fields.source"), allLabel: this.t("serverLibrary"), value: this.provider === "bestdori" ? "bestdori" : "",
         options: [{ value: "bestdori", label: "Bestdori" }],
         change: value => this.switchProvider(value === "bestdori" ? "bestdori" : "haneoka"),
       })}
-      ${this.provider === "bestdori" ? chooserFacet({ label: clientText(this.locale, "server"), allLabel: "JP", value: this.bestdoriRegion === "jp" ? "" : this.bestdoriRegion,
+      ${this.provider === "bestdori" ? chooserFacet({ label: clientText(this.locale, "settings.labels.server"), allLabel: "JP", value: this.bestdoriRegion === "jp" ? "" : this.bestdoriRegion,
         options: BESTDORI_SERVERS.filter(region => region !== "jp").map(region => ({ value: region, label: region.toUpperCase() })),
         change: value => { const region = value || "jp"; if (isBestdoriServer(region)) this.switchProvider("bestdori", region); },
       }) : nothing}
-      ${chooserFacet({ label: clientText(this.locale, "bands"), allLabel: clientText(this.locale, "all"), value: this.bandFilter,
+      ${chooserFacet({ label: clientText(this.locale, "catalog.fields.bands"), allLabel: clientText(this.locale, "common.states.all"), value: this.bandFilter,
         options: bands.map(({ id, name, image }) => ({ value: id, label: name, image })),
         change: (value) => { this.bandFilter = value; this.characterFilter = ""; },
       })}
-      ${chooserFacet({ label: clientText(this.locale, "characters"), allLabel: clientText(this.locale, "all"), value: this.characterFilter,
+      ${chooserFacet({ label: clientText(this.locale, "navigation.characters"), allLabel: clientText(this.locale, "common.states.all"), value: this.characterFilter,
         options: characters.map(({ id, name, image }) => ({ value: id, label: name, image })),
         change: (value) => { this.characterFilter = value; },
       })}
-      ${this.filtersLoading ? chooserGroup(clientText(this.locale, "loading"), loadingState(clientText(this.locale, "loading"), { local: true })) : nothing}
-      ${this.filtersError ? chooserGroup(this.t("loadFailed"), html`<button class="button button--text" @click=${() => this.loadFilters()}>${clientText(this.locale, "retry")}</button>`) : nothing}
+      ${this.filtersLoading ? chooserGroup(clientText(this.locale, "common.states.loading"), loadingState(clientText(this.locale, "common.states.loading"), { local: true })) : nothing}
+      ${this.filtersError ? chooserGroup(this.t("loadFailed"), html`<button class="button button--text" @click=${() => this.loadFilters()}>${clientText(this.locale, "common.actions.retry")}</button>`) : nothing}
     `;
   }
 
@@ -378,7 +384,7 @@ export class ChartCreationLibrary extends LitElement {
   private categoryMark(item: CatalogueRecord) {
     const labels = ["", "original", "virtual", "jpop", "anime", "game"];
     const names = (Array.isArray(item.musicCategories) ? item.musicCategories : [])
-      .map((id) => labels[Number(id)]).filter(Boolean).map((key) => clientText(this.locale, `songTypes.${key}`));
+      .map((id) => labels[Number(id)]).filter(Boolean).map((key) => clientText(this.locale, `catalog.songs.types.${key}`));
     return names.length ? [{ at: "bottom-start" as const, text: new Intl.ListFormat(this.locale, { type: "unit" }).format(names) }] : [];
   }
   render() {
@@ -401,7 +407,7 @@ export class ChartCreationLibrary extends LitElement {
           bandIcon: (entry) => this.filterCatalog?.assetUrl(this.filterCatalog.bands.get(Number(entry.bandId))?.icon) || dto?.bandIconUrl || "",
           imageForLocale: (source) => source,
           attributeMark: () => dto?.attributeIconUrl ?? "",
-          attributeLabel: () => dto?.attributeLabelKey ? clientText(this.locale, dto.attributeLabelKey) : "",
+          attributeLabel: () => dto?.attributeLabelKey ? clientText(this.locale, (uiLabelPaths[dto.attributeLabelKey] ?? dto.attributeLabelKey)) : "",
         },
         "",
         this.categoryMark(row),
@@ -414,10 +420,10 @@ export class ChartCreationLibrary extends LitElement {
     return selectionPane({
       id: "chart-creation-library",
       title: this.provider === "bestdori" ? "Bestdori" : this.t("serverLibrary"),
-      closeLabel: clientText(this.locale, "close"),
+      closeLabel: clientText(this.locale, "common.actions.close"),
       close: () => this.close(),
       searchLabel: this.t("searchServerLibrary"),
-      filterLabel: clientText(this.locale, "filter"),
+      filterLabel: clientText(this.locale, "common.actions.filter"),
       filtersOpen: this.filtersOpen,
       toggleFilters: () => (this.filtersOpen = !this.filtersOpen),
       query: this.query,
@@ -426,16 +432,16 @@ export class ChartCreationLibrary extends LitElement {
       items,
       selected: this.chosen,
       select: (id) => this.choose(id),
-      countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "loading") : String(matching.length),
-      emptyLabel: this.busy ? "" : clientText(this.locale, "empty"),
+      countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "common.states.loading") : String(matching.length),
+      emptyLabel: this.busy ? "" : clientText(this.locale, "common.states.empty"),
       filters: this.renderFilters(),
       preview: html`
-        ${this.busy ? loadingState(clientText(this.locale, "loading"), { local: true }) : nothing}
+        ${this.busy ? loadingState(clientText(this.locale, "common.states.loading"), { local: true }) : nothing}
         ${
           this.error
             ? html`
                 <p role="alert">${this.error}</p>
-                ${!this.indexLoaded ? html`<button class="button button--text" ?disabled=${this.busy} @click=${() => void this.loadIndex()}>${clientText(this.locale, "retry")}</button>` : nothing}
+                ${!this.indexLoaded ? html`<button class="button button--text" ?disabled=${this.busy} @click=${() => void this.loadIndex()}>${clientText(this.locale, "common.actions.retry")}</button>` : nothing}
               `
             : nothing
         }

@@ -31,6 +31,35 @@ import { crossCatalogDocuments, type CrossCatalogDocuments } from "../lib/cross-
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { isCrossCatalogResource } from "../lib/cross-server/definitions";
 import { catalogServerMark } from "./shared/server-availability";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "band": "catalog.fields.band",
+  "bands": "catalog.fields.bands",
+  "catalog": "navigation.catalog",
+  "category": "common.fields.category",
+  "chapter": "story.labels.chapter",
+  "character": "catalog.fields.character",
+  "characters": "navigation.characters",
+  "details": "common.actions.details",
+  "error": "common.states.error",
+  "fever": "editors.chart.labels.fever",
+  "grid": "common.layout.grid",
+  "level": "common.fields.level",
+  "list": "common.layout.list",
+  "loading": "common.states.loading",
+  "music": "navigation.music",
+  "no": "common.states.no",
+  "preview": "common.actions.preview",
+  "rarity": "catalog.cards.fields.rarity",
+  "shop": "navigation.shop",
+  "time": "common.fields.time",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable",
+  "view": "common.actions.view",
+  "yes": "common.states.yes"
+};
+
 type Value = Record<string, unknown>;
 const read = readPath;
 const values = recordValues;
@@ -354,9 +383,9 @@ export class AnonTokyoWorkspace extends LitElement {
     }
   }
   private label(key: string) {
-    const value = clientText(this.locale, `anonTokyoPage.${key}`, "");
+    const value = clientText(this.locale, `catalog.anonTokyo.${key}`, "");
     if (value) return value;
-    const common = uiText(this.locale, key);
+    const common = uiText(this.locale, (uiLabelPaths[key] ?? key));
     return common !== key
       ? common
       : key.replace(/([a-z])([A-Z])/gu, "$1 $2").replace(/^./u, (letter) => letter.toUpperCase());
@@ -375,7 +404,7 @@ export class AnonTokyoWorkspace extends LitElement {
     if (this.mode === "fever" && item.cueName && !named) return this.label("backgroundMusic");
     if (named && !/^(?:normal|helper|deliveryman|customer):\d+$/u.test(named)) return named;
     if (this.mode === "customers" && item.customerKind) return this.label(String(item.customerKind));
-    if (this.mode === "staff" && item.nameKey && clientText(this.locale, `anonTokyoPage.${String(item.nameKey)}`, ""))
+    if (this.mode === "staff" && item.nameKey && clientText(this.locale, `catalog.anonTokyo.${String(item.nameKey)}`, ""))
       return this.label(String(item.nameKey));
     if (this.mode === "fever" && item.bandId)
       return `${this.anonBandName(Number(item.bandId))} · ${this.label(String(item.entityGroup || "stages"))}`;
@@ -441,11 +470,11 @@ export class AnonTokyoWorkspace extends LitElement {
     return this.text(item.description) || `#${item.rawId}`;
   }
   render() {
-    if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
+    if (this.phase === "loading") return loadingState(uiText(this.locale, "common.states.loading"));
     if (this.phase === "error" || !this.document)
       return errorState(
-        uiText(this.locale, "unavailable"),
-        uiText(this.locale, "retry"),
+        uiText(this.locale, "common.states.unavailable"),
+        uiText(this.locale, "common.actions.retry"),
         () => void this.load(),
         this.error,
       );
@@ -569,18 +598,18 @@ export class AnonTokyoWorkspace extends LitElement {
           values.map((value) =>
             inputChip(
               `${this.label(FIELD_ALIASES[key] || key)}: ${this.facetValue(key, value)}`,
-              uiText(this.locale, "remove"),
+              uiText(this.locale, "common.actions.remove"),
               () => this.toggleFacet(key, value),
             ),
           ),
         ),
         results: html`
-          ${filtered.length ? collection : emptyState({ title: uiText(this.locale, "empty"), icon: "search_off" })}${
+          ${filtered.length ? collection : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })}${
             shown.length < filtered.length
               ? html`
                   <div class="load-more">
                     <button class="button button--tonal" @click=${() => (this.visible += 80)}>
-                      ${uiText(this.locale, "loadMore")}
+                      ${uiText(this.locale, "common.actions.loadMore")}
                     </button>
                   </div>
                 `
@@ -588,12 +617,12 @@ export class AnonTokyoWorkspace extends LitElement {
           }
         `,
         filters: {
-          label: uiText(this.locale, "filter"),
+          label: uiText(this.locale, "common.actions.filter"),
           open: this.filtersOpen,
           count:
             Object.values(this.facets).reduce((sum, values) => sum + values.length, 0) + Number(Boolean(this.query)),
-          closeLabel: uiText(this.locale, "close"),
-          resetLabel: uiText(this.locale, "reset"),
+          closeLabel: uiText(this.locale, "common.actions.close"),
+          resetLabel: uiText(this.locale, "common.actions.reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => {
@@ -605,7 +634,7 @@ export class AnonTokyoWorkspace extends LitElement {
           body: html`
             <md-outlined-text-field
               type="search"
-              label=${uiText(this.locale, "search")}
+              label=${uiText(this.locale, "common.actions.search")}
               .value=${this.query}
               @input=${(event: Event) => {
                 this.query = (event.target as HTMLInputElement).value;
@@ -666,7 +695,7 @@ export class AnonTokyoWorkspace extends LitElement {
       kind: "anon",
       style: this.mode === "guide" ? "" : "--detail-media-size:220px",
       open: true,
-      backLabel: uiText(this.locale, "close"),
+      backLabel: uiText(this.locale, "common.actions.close"),
       onClose: () => this.closeItem(),
       body: detailLayout(
         image
@@ -723,7 +752,7 @@ export class AnonTokyoWorkspace extends LitElement {
     const labels = ["", "headwear", "top", "bottom", "shoes", "set"];
     return html`
       <section class="outfit-workspace">
-        <div class="outfit-characters" role="group" aria-label=${uiText(this.locale, "characters")}>
+        <div class="outfit-characters" role="group" aria-label=${uiText(this.locale, "navigation.characters")}>
           ${characters.map(
             (item) => html`
               <button
@@ -771,7 +800,7 @@ export class AnonTokyoWorkspace extends LitElement {
           </div>
           ${
             this.outfitError
-              ? errorState(this.label("modelUnavailable"), uiText(this.locale, "retry"), () => {
+              ? errorState(this.label("modelUnavailable"), uiText(this.locale, "common.actions.retry"), () => {
                   this.outfitRecipeKey = "";
                   this.requestUpdate();
                 })

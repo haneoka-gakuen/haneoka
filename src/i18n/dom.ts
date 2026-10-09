@@ -1,6 +1,5 @@
 import { isLocale, languageTagFor } from "@haneoka/i18n";
 import { initializeI18nClient, readI18nSeed } from "./client";
-import { catalogLookupKeys } from "./keys";
 
 let installed = false;
 
@@ -11,10 +10,8 @@ export function installI18nDom(): void {
   let request: AbortController | undefined;
   const message = (key: string, fallback: string) => {
     const catalog = client.current();
-    for (const candidate of catalogLookupKeys(key)) {
-      const resolved = catalog.resolve(candidate);
-      if (resolved.fallbackReason !== "missing") return resolved;
-    }
+    const resolved = catalog.resolve(key);
+    if (resolved.fallbackReason !== "missing") return resolved;
     return { text: fallback, lang: "und" };
   };
 

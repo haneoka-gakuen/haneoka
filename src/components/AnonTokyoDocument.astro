@@ -14,7 +14,7 @@ const { locale, mode = "characters", server } = Astro.props as {
 };
 const route = `/catalog/anon-tokyo/${mode}`;
 const canonicalRoute = server ? `/${server}/${locale}/anon-tokyo/${mode}/` : undefined;
-const key = mode === "outfits" ? "anonTokyoPage.dressingRoom" : `anonTokyoPage.${mode}`;
+const key = mode === "outfits" ? "catalog.anonTokyo.dressingRoom" : `catalog.anonTokyo.${mode}`;
 const title = `ANON TOKYO · ${t(locale, key, mode)}`;
 // The <title> prefers explicit values over the titleKey translation, so the
 // brand prefix survives into the document head in every language.

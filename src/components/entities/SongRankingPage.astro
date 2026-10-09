@@ -23,7 +23,7 @@ const [intlCards, jpCards] = await Promise.all([rankingCardCatalog("intl"), rank
 const cards = {intl:intlCards, jp:jpCards};
 const pageDataId = `ranking-cards-${page.id}`;
 const rankingTitles = Object.fromEntries(
-  LOCALES.map((target) => [target, t(target, "songRanking.title", "Song ranking")]),
+  LOCALES.map((target) => [target, t(target, "catalog.rankings.songs.title", "Song ranking")]),
 ) as Record<Locale, string>;
 const title = page.titles[locale];
 const canonicalHref = rankingPath({ server, locale, id: page.id });

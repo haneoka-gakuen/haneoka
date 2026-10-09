@@ -9,6 +9,12 @@ export interface SearchCategory {
   labelKey: string;
 }
 
+const categoryLabelPaths: Readonly<Record<string, string>> = {
+  songs: "navigation.songs", characters: "navigation.characters", cards: "navigation.cards",
+  events: "navigation.events", gacha: "navigation.gacha", stamps: "navigation.stamps",
+  comics: "navigation.comics", items: "navigation.items", bandItems: "navigation.bandItems", catalog: "navigation.catalog",
+};
+
 const categories: Record<string, string> = {
   songs: "songs", characters: "characters", "member-cards": "cards", "support-cards": "cards",
   cards: "cards", events: "events", gacha: "gacha", stamps: "stamps", stickers: "stamps",
@@ -25,9 +31,9 @@ export function searchCategory(path: string): SearchCategory {
   if (["ja", "en", "zh-CN", "zh-TW", "ko"].includes(segments[0] || "")) segments.shift();
   if (segments[0] === "catalog") segments.shift();
   const resource = segments[0] || "";
-  if (resource === "stories") return { section: "stories", kind: "stories", labelKey: "stories" };
+  if (resource === "stories") return { section: "stories", kind: "stories", labelKey: "navigation.stories" };
   if (["help", "docs", "about", "guide", "guides"].includes(resource))
-    return { section: "help", kind: "help", labelKey: "help" };
+    return { section: "help", kind: "help", labelKey: "navigation.help" };
   const labelKey = categories[resource] || "catalog";
-  return { section: "catalog", kind: labelKey, labelKey };
+  return { section: "catalog", kind: labelKey, labelKey: categoryLabelPaths[labelKey]! };
 }

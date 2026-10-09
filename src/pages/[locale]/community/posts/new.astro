@@ -7,4 +7,4 @@ export function getStaticPaths() {
 }
 const { locale } = Astro.props as { locale: Locale };
 ---
-<CommunityRoute mode="feeds" route="/community/posts/new" titleKey="newPost" fallback="New post" locale={locale} />
+<CommunityRoute mode="feeds" route="/community/posts/new" titleKey="community.page.newPost" fallback="New post" locale={locale} />

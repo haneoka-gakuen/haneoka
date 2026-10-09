@@ -88,6 +88,40 @@ import {
   moveChartSelection,
   deleteChartSelectionGroup,
 } from "../../packages/chart-editor/src/creation/selection";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "cancel": "common.actions.cancel",
+  "chart": "navigation.chart",
+  "circle": "navigation.circle",
+  "close": "common.actions.close",
+  "difficulty": "catalog.songs.fields.difficulty",
+  "effects": "catalog.fields.effects",
+  "error": "common.states.error",
+  "export": "common.actions.export",
+  "files": "catalog.fields.files",
+  "fullscreen": "common.actions.fullscreen",
+  "height": "catalog.characters.fields.height",
+  "level": "common.fields.level",
+  "loading": "common.states.loading",
+  "loop": "common.actions.loop",
+  "mirror": "editors.chart.labels.mirror",
+  "none": "common.states.none",
+  "pause": "common.actions.pause",
+  "play": "common.actions.play",
+  "preview": "common.actions.preview",
+  "remove": "common.actions.remove",
+  "retry": "common.actions.retry",
+  "source": "common.fields.source",
+  "speed": "media.playback.fields.speed",
+  "stop": "common.actions.stop",
+  "title": "common.fields.title",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable",
+  "volume": "media.audio.volume",
+  "watch": "common.actions.watch"
+};
+
 interface EditAudioTransport {
   clock: MediaClock;
   play(): Promise<void>;
@@ -346,10 +380,10 @@ export class ChartCreationWorkspace extends LitElement {
     return this;
   }
   private t(key: string) {
-    return clientText(this.locale, `chartEditorPage.${key}`);
+    return clientText(this.locale, `editors.chart.${key}`);
   }
   private c(key: string) {
-    return clientText(this.locale, key);
+    return clientText(this.locale, (uiLabelPaths[key] ?? key));
   }
   private apiLocale(): HaneokaLocale {
     return (localizedFallbacks(this.locale).find(locale => ["ja", "en", "zh-TW", "zh-CN", "ko"].includes(locale)) ?? "en") as HaneokaLocale;
@@ -467,7 +501,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.conflict = error instanceof Error && error.message === "save_conflict";
         this.error = clientText(
           this.locale,
-          `chartEditorPage.creation.${error instanceof Error ? error.message : "failed"}`,
+          `editors.chart.creation.${error instanceof Error ? error.message : "failed"}`,
           this.t("loadFailed"),
         );
         report.fail(error);
@@ -3167,7 +3201,7 @@ export class ChartCreationWorkspace extends LitElement {
           },
         })}
               <output aria-live="polite">
-                ${clientText(this.locale, "chartEditorPage.selectedCount", undefined, { count: this.selectedIds.size })}
+                ${clientText(this.locale, "editors.chart.selectedCount", undefined, { count: this.selectedIds.size })}
               </output>
               ${iconButton({
           label: this.t("undo"),

@@ -133,7 +133,7 @@ function formatBytes(value: number, locale: string): string {
 function formatFileCount(completed: number, total: number | undefined, locale: string): string {
   const word = clientText(
     locale,
-    completed === 1 ? "loading.file" : "loading.files",
+    completed === 1 ? "common.loading.file" : "common.loading.files",
     completed === 1 ? "file" : "files",
   );
   const count = total === undefined ? `${completed} ${word}` : `${completed} / ${total} ${word}`;
@@ -312,7 +312,7 @@ class LoadingCoordinator {
 
   private loadingLabel(): string {
     const locale = localeFor();
-    return clientText(locale, "loading", "Loading");
+    return clientText(locale, "common.states.loading", "Loading");
   }
 
   private snapshot(): ProgressState {
@@ -404,12 +404,12 @@ class LoadingCoordinator {
   private statusText(state: ProgressState, document: Document): string {
     const locale = localeFor(document);
     if (state.failed.length && !state.active.length)
-      return `${state.label} · ${clientText(locale, "loading.failed", "Loading failed")}`;
+      return `${state.label} · ${clientText(locale, "common.loading.failed", "Loading failed")}`;
     const label = state.stageLabel || state.label;
     if (state.processedTasks !== undefined) {
       const count = state.totalTasks === undefined
         ? String(state.processedTasks) : `${state.processedTasks} / ${state.totalTasks}`;
-      return `${label} · ${count} ${state.countLabel || clientText(locale, "story.preparationTasks", "preparation tasks")}`;
+      return `${label} · ${count} ${state.countLabel || clientText(locale, "story.playback.preparationTasks", "preparation tasks")}`;
     }
     if (state.loadedBytes !== undefined) {
       const bytes =

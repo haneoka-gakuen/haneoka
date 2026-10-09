@@ -5,11 +5,11 @@ import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-asset
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { beginLoading, prepareMaterialProgress, type LoadingMetrics } from "../../lib/loading-progress";
 import { clientText } from "../../i18n/client";
-import { relationships as jaRelationships } from "../../../public/i18n/ja.json";
-import { relationships as enRelationships } from "../../../public/i18n/en.json";
-import { relationships as zhTWRelationships } from "../../../public/i18n/zh-TW.json";
-import { relationships as zhCNRelationships } from "../../../public/i18n/zh-CN.json";
-import { relationships as koRelationships } from "../../../public/i18n/ko.json";
+import { story as jaRelationships } from "../../../public/i18n/ja.json";
+import { story as enRelationships } from "../../../public/i18n/en.json";
+import { story as zhTWRelationships } from "../../../public/i18n/zh-TW.json";
+import { story as zhCNRelationships } from "../../../public/i18n/zh-CN.json";
+import { story as koRelationships } from "../../../public/i18n/ko.json";
 import { CUBISM_CORE_URLS, CUBISM_WEB_RUNTIME_URL } from "../../lib/cubism-runtime";
 import { fetchJson, uiText } from "../shared/catalog";
 import { PlaybackControlsController } from "../ui/playback-controls";
@@ -41,13 +41,27 @@ import {
 } from "@haneoka/vega-theme-haneoka";
 import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "collapse": "common.actions.collapse",
+  "error": "common.states.error",
+  "expand": "common.actions.expand",
+  "fullscreen": "common.actions.fullscreen",
+  "instantText": "story.labels.instantText",
+  "live2d": "navigation.live2d",
+  "loading": "common.states.loading",
+  "pause": "common.actions.pause",
+  "textSize": "story.labels.textSize"
+};
+
+
 type RecordValue = Record<string, unknown>;
 const speakerNameJoiners: Readonly<Record<string, string>> = Object.freeze({
-  ja: jaRelationships.speakerNameSeparator,
-  en: enRelationships.speakerNameSeparator,
-  "zh-TW": zhTWRelationships.speakerNameSeparator,
-  "zh-CN": zhCNRelationships.speakerNameSeparator,
-  ko: koRelationships.speakerNameSeparator,
+  ja: jaRelationships.relationships.speakerNameSeparator,
+  en: enRelationships.relationships.speakerNameSeparator,
+  "zh-TW": zhTWRelationships.relationships.speakerNameSeparator,
+  "zh-CN": zhCNRelationships.relationships.speakerNameSeparator,
+  ko: koRelationships.relationships.speakerNameSeparator,
 });
 type CubismProvision = {
   createCubismWebRuntimeAdapter(options: RecordValue): CubismRuntimeAdapter;
@@ -249,7 +263,7 @@ export class VegaStoryStage extends LitElement {
     const active = () => !signal.aborted && this.isConnected && this.loadController === controller;
     const url = (resource: string, id = "") =>
       `/api/v1/servers/${encodeURIComponent(server)}/${resource}${id ? `/${encodeURIComponent(id)}` : ""}`;
-    let loadingReporter = beginLoading(uiText(this.locale, "loading"), { signal });
+    let loadingReporter = beginLoading(uiText(this.locale, "common.states.loading"), { signal });
     let hadCountedProgress = false;
     loadingReporter.update({ stageLabel: this.ui("resources") });
     this.phase = "loading";
@@ -365,7 +379,7 @@ export class VegaStoryStage extends LitElement {
         // reporter so its completed counters cannot leave a false 100%.
         if (!determinate && hadCountedProgress) {
           loadingReporter.cancel();
-          loadingReporter = beginLoading(uiText(this.locale, "loading"), { signal });
+          loadingReporter = beginLoading(uiText(this.locale, "common.states.loading"), { signal });
         }
         hadCountedProgress = determinate;
         const metrics: LoadingMetrics = {
@@ -460,7 +474,7 @@ export class VegaStoryStage extends LitElement {
   private speakerNameJoiner(locale = this.locale): string {
     // Display punctuation follows the UI even when dialogue falls back to
     // another content language. Keep the authored target delimiter intact.
-    return speakerNameJoiners[locale] ?? enRelationships.speakerNameSeparator;
+    return speakerNameJoiners[locale] ?? enRelationships.relationships.speakerNameSeparator;
   }
   private legacySettings() {
     const defaults = { autoDelay: 0.5, bgmVolume: 1, voiceVolume: 1, seVolume: 1 };
@@ -520,7 +534,7 @@ export class VegaStoryStage extends LitElement {
   }
 
   private bootLoadingLabel() {
-    return [uiText(this.locale, "loading"), this.bootStageLabel()].filter(Boolean).join(" · ");
+    return [uiText(this.locale, "common.states.loading"), this.bootStageLabel()].filter(Boolean).join(" · ");
   }
 
   private bootProgress() {
@@ -618,8 +632,8 @@ export class VegaStoryStage extends LitElement {
   }
 
   private ui(key: StoryTransportKey) {
-    if (key === "collapse" || key === "expand") return uiText(this.locale, key);
-    return clientText(this.locale, `story.${key}`, key);
+    if (key === "collapse" || key === "expand") return uiText(this.locale, (uiLabelPaths[key] ?? key));
+    return clientText(this.locale, `story.playback.${key}`, key);
   }
 
   private collapseTransport = () => {
@@ -886,7 +900,7 @@ export class VegaStoryStage extends LitElement {
                   <div class="notice" role="alert">
                     <p>${this.issue}</p>
                     <button class="button button--tonal" type="button" @click=${this.retryPlayer}>
-                      ${uiText(this.locale, "retry")}
+                      ${uiText(this.locale, "common.actions.retry")}
                     </button>
                   </div>
                 </div>
@@ -909,7 +923,7 @@ export class VegaStoryStage extends LitElement {
                     <svg class="material-icon" width="24" height="24" aria-hidden="true">
                       <use href="/icons.svg#play_arrow"></use>
                     </svg>
-                    ${uiText(this.locale, "play")}
+                    ${uiText(this.locale, "common.actions.play")}
                   </button>
                 </div>
               `
@@ -922,7 +936,7 @@ export class VegaStoryStage extends LitElement {
                 <div class="vega-story-runtime__transport-error" role="alert">
                   <p>${this.transportIssue}</p>
                   <button class="button button--tonal" type="button" @click=${this.retryTransportSeek}>
-                    ${uiText(this.locale, "retry")}
+                    ${uiText(this.locale, "common.actions.retry")}
                   </button>
                 </div>
               `
@@ -946,7 +960,7 @@ export class VegaStoryStage extends LitElement {
         class="chart-runtime__controls playback-controls"
         ?hidden=${!this.transportVisible || this.transportCollapsed}
         data-collapsed=${this.transportCollapsed ? "true" : "false"}
-        aria-label=${uiText(this.locale, "morePlaybackControls")}
+        aria-label=${uiText(this.locale, "media.audio.morePlaybackControls")}
       >
         <div
           class="playback-controls__expanded"
@@ -957,8 +971,8 @@ export class VegaStoryStage extends LitElement {
             class="icon-button"
             type="button"
             aria-pressed=${this.started ? this.autoMode : nothing}
-            aria-label=${this.started ? this.ui("auto") : uiText(this.locale, "play")}
-            .title=${this.started ? this.ui("auto") : uiText(this.locale, "play")}
+            aria-label=${this.started ? this.ui("auto") : uiText(this.locale, "common.actions.play")}
+            .title=${this.started ? this.ui("auto") : uiText(this.locale, "common.actions.play")}
             @click=${this.toggleAutoMode}
           >
             <svg class="material-icon" width="24" height="24">
@@ -988,8 +1002,8 @@ export class VegaStoryStage extends LitElement {
               class="icon-button"
               type="button"
               aria-pressed=${this.fullscreenActive}
-              aria-label=${uiText(this.locale, this.fullscreenActive ? "fullscreenExit" : "fullscreen")}
-              title=${uiText(this.locale, this.fullscreenActive ? "fullscreenExit" : "fullscreen")}
+              aria-label=${uiText(this.locale, this.fullscreenActive ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
+              title=${uiText(this.locale, this.fullscreenActive ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
               @click=${() => void this.toggleFullscreen()}
             >
               <svg class="material-icon" width="20" height="20">

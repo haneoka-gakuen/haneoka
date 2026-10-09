@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import "../../styles/components/selection-pane.css";
 import { live } from "lit/directives/live.js";
 import "@material/web/checkbox/checkbox.js";
 import { tile, tileMedia, type TileOptions } from "./tile";

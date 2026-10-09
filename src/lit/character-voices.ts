@@ -19,6 +19,21 @@ import { emptyState } from "./ui/state";
 import "../styles/character-voices.css";
 import { loadingIndicator } from "./ui/loading-indicator";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "character": "catalog.fields.character",
+  "empty": "common.states.empty",
+  "error": "common.states.error",
+  "loading": "common.states.loading",
+  "none": "common.states.none",
+  "refresh": "common.actions.refresh",
+  "retry": "common.actions.retry",
+  "stop": "common.actions.stop",
+  "title": "common.fields.title",
+  "unavailable": "common.states.unavailable"
+};
+
+
 type PlaybackState = Extract<DialogueRowState, "idle" | "loading" | "playing" | "error" | "cancelled">;
 
 interface ClipStatus {
@@ -94,7 +109,7 @@ export class CharacterVoices extends LitElement {
   }
 
   private t(key: string) {
-    return uiText(this.locale, key);
+    return uiText(this.locale, (uiLabelPaths[key] ?? key));
   }
 
   private character(id: number) {

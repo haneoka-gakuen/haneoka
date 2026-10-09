@@ -308,7 +308,7 @@ function compareTable(host: TeamBuilder, hits: EngineHit[]): TemplateResult {
   return html`
     <section class="surface stack tb-compare">
       <div class="row row--between"><strong class="tb-subtitle">${host.t("comparison", "Comparison")}</strong>
-        <button class="button button--text button--small" type="button" @click=${() => { host.compare = []; host.requestUpdate(); }}>${host.common("clear", "Clear")}</button></div>
+        <button class="button button--text button--small" type="button" @click=${() => { host.compare = []; host.requestUpdate(); }}>${host.common("common.actions.clear", "Clear")}</button></div>
       <div class="scroll-x"><table class="table tb-compare__table">
         <thead><tr><th></th>${picked.map((hit) => html`<th>#${hits.indexOf(hit) + 1}</th>`)}</tr></thead>
         <tbody>${rows.map(([label, value]) => {

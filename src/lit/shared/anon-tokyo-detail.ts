@@ -21,9 +21,9 @@ const domains: Record<string, { path: string; route?: string; label: string }> =
   goods: { path: "goods.items", route: "goods", label: "goods" },
   outfit: { path: "goods.reloading", route: "outfits", label: "outfits" },
   decoration: { path: "shop.decorations", route: "decorations", label: "decorations" },
-  character: { path: "characters", route: "characters", label: "characters" },
+  character: { path: "characters", route: "characters", label: "navigation.characters" },
   tag: { path: "goods.tags", label: "tags" },
-  category: { path: "goods.categories", label: "category" },
+  category: { path: "goods.categories", label: "common.fields.category" },
   task: { path: "tasks.main", route: "tasks", label: "tasks" },
   attribute: { path: "progression.attributes", label: "attributes" },
 };

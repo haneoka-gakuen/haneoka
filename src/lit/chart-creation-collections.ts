@@ -21,6 +21,17 @@ import type { AuthorCollectionOperation } from "../../packages/chart-editor/src/
 import { clientText } from "../i18n/client";
 import { iconButton, segmented } from "./ui/controls";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "cancel": "common.actions.cancel",
+  "next": "common.actions.next",
+  "previous": "common.actions.previous",
+  "rename": "common.actions.rename",
+  "reorder": "common.actions.reorder",
+  "title": "common.fields.title"
+};
+
+
 export interface ChartCollectionScope {
   groupId?: string;
   layerId?: string;
@@ -73,10 +84,10 @@ export class ChartCreationCollections extends LitElement {
     return this;
   }
   private t(key: string) {
-    return clientText(this.locale, `chartEditorPage.collections.${key}`);
+    return clientText(this.locale, `editors.chart.collections.${key}`);
   }
   private c(key: string) {
-    return clientText(this.locale, key);
+    return clientText(this.locale, (uiLabelPaths[key] ?? key));
   }
   private get scopeKey() {
     return this.kind === "group" ? "groupId" : "layerId";

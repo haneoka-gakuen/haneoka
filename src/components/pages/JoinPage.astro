@@ -36,12 +36,12 @@ interface JoinCopy {
 }
 
 const { locale } = Astro.props as { locale: Locale };
-const copy = group<JoinCopy>(locale, "joinPage");
+const copy = group<JoinCopy>(locale, "legal.join");
 const repo = "https://github.com/haneoka-gakuen/haneoka";
 const forum = (slug: string) => `/${locale}/community/forums/${slug}/`;
 const DISCORD = "https://discord.gg/GKU3bwS9sN";
 const QQ_GROUP = "754989697";
-const k = (key: keyof JoinCopy) => `joinPage.${key}`;
+const k = (key: keyof JoinCopy) => `legal.join.${key}`;
 ---
 
 <article class="about join" aria-labelledby="join-heading">

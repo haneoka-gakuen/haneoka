@@ -139,7 +139,7 @@ export class EventTracker extends LitElement {
     super.disconnectedCallback();
   }
   private label(key: string, fallback: string) {
-    return clientText(this.locale, `eventTracker.${key}`, fallback);
+    return clientText(this.locale, `tools.eventTracker.${key}`, fallback);
   }
   private sourceServer(): "jp" | "intl" {
     return this.region === "jp" ? "jp" : "intl";
@@ -369,7 +369,7 @@ export class EventTracker extends LitElement {
                         (Array.isArray(song.musicCategories) ? song.musicCategories : [])
                           .map((id) => ["", "original", "virtual", "jpop", "anime", "game"][Number(id)])
                           .filter(Boolean)
-                          .map((name) => clientText(this.locale, `songTypes.${name}`, name)),
+                          .map((name) => clientText(this.locale, `catalog.songs.types.${name}`, name)),
                         this.locale,
                         "unit",
                       );
@@ -386,7 +386,7 @@ export class EventTracker extends LitElement {
                           attributeLabel: (entry) => {
                             const name =
                               ["", "red", "blue", "green", "yellow", "purple"][Number(entry.musicType)] || "";
-                            return name ? clientText(this.locale, `liveMusicTypes.${name}`, name) : "";
+                            return name ? clientText(this.locale, `catalog.songs.liveTypes.${name}`, name) : "";
                           },
                         },
                         "",

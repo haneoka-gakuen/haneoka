@@ -7,12 +7,12 @@ import { t } from "../../i18n/messages";
 import "../../styles/search.css";
 export const getStaticPaths = () => LOCALES.map(locale => ({params:{locale},props:{locale}}));
 const { locale } = Astro.props as {locale:Locale};
-const title = t(locale,"search","Search");
+const title = t(locale,"common.actions.search","Search");
 ---
-<Base locale={locale} route="/search" title={title} titleKey="search" noindex>
-  <AppShell locale={locale} route="/search" title={title} titleKey="search">
+<Base locale={locale} route="/search" title={title} titleKey="common.actions.search" noindex>
+  <AppShell locale={locale} route="/search" title={title} titleKey="common.actions.search">
     <form slot="search" class="global-search-bar" role="search" data-global-search-form>
-      <md-filled-text-field type="search" name="q" label={t(locale,"searchPage.placeholder","Search everything")} data-global-search-input>
+      <md-filled-text-field type="search" name="q" label={t(locale,"common.search.placeholder","Search everything")} data-global-search-input>
         <Icon slot="leading-icon" name="search" />
       </md-filled-text-field>
       <button class="icon-button" type="submit" aria-label={title}><Icon name="arrow_forward" /></button>

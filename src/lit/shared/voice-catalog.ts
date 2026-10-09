@@ -3,7 +3,7 @@ import type { JsonRecord } from "./catalog";
 
 /** Voice classification stays local; only its copy resolves through i18n. */
 export function voiceText(locale: string, key: string, ...values: Array<string | number>): string {
-  return clientText(locale, `voice.${key}`, key, values);
+  return clientText(locale, `media.voice.${key}`, key, values);
 }
 
 /** Category order follows the master-type IDs in the voice catalog. */

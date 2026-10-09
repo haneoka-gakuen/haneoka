@@ -85,7 +85,7 @@ export class HelpWorkspace extends LitElement {
     this.request?.abort();
     this.loading?.cancel();
     const controller = new AbortController();
-    const progress = beginLoading(uiText(this.locale, "loading"), { scope: "owner", signal: controller.signal });
+    const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner", signal: controller.signal });
     this.request = controller;
     this.loading = progress;
     this.phase = "loading";
@@ -164,11 +164,11 @@ export class HelpWorkspace extends LitElement {
     const entries = this.filteredEntries();
     if (this.entityId) {
       clearAppBarActions("help");
-      if (this.phase === "loading") return loadingState(uiText(this.locale, "loading"));
+      if (this.phase === "loading") return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.phase === "error")
         return errorState(
-          uiText(this.locale, "unavailable"),
-          uiText(this.locale, "retry"),
+          uiText(this.locale, "common.states.unavailable"),
+          uiText(this.locale, "common.actions.retry"),
           () => void this.load(),
           this.error,
         );
@@ -207,11 +207,11 @@ export class HelpWorkspace extends LitElement {
     setAppBarActions(
       "help",
       segmented({
-        label: uiText(this.locale, "view"),
+        label: uiText(this.locale, "common.actions.view"),
         value: this.mode,
         options: [
-          { value: "manual" as const, label: uiText(this.locale, "manual"), icon: "menu_book" },
-          { value: "tips" as const, label: uiText(this.locale, "loadingTips"), icon: "lightbulb" },
+          { value: "manual" as const, label: uiText(this.locale, "settings.labels.manual"), icon: "menu_book" },
+          { value: "tips" as const, label: uiText(this.locale, "settings.labels.loadingTips"), icon: "lightbulb" },
         ],
         onSelect: (mode) => {
           this.mode = mode;
@@ -223,11 +223,11 @@ export class HelpWorkspace extends LitElement {
       <section class="help-workspace">
         ${
           this.phase === "loading"
-            ? loadingState(uiText(this.locale, "loading"))
+            ? loadingState(uiText(this.locale, "common.states.loading"))
             : this.phase === "error"
               ? errorState(
-                  uiText(this.locale, "unavailable"),
-                  uiText(this.locale, "retry"),
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
                   () => void this.load(),
                   this.error,
                 )

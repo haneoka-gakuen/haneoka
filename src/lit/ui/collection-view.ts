@@ -9,14 +9,14 @@ export const collectionView = (value: string | null): CollectionView =>
   value === "list" || value === "table" ? value : "grid";
 export const viewSwitch = (locale: string, value: CollectionView, onSelect: (view: CollectionView) => void) =>
   segmented({
-    label: uiText(locale, "view"),
+    label: uiText(locale, "common.actions.view"),
     value,
     onSelect,
     iconOnly: true,
     options: [
-      { value: "grid", label: uiText(locale, "grid"), icon: "grid_view" },
-      { value: "list", label: uiText(locale, "list"), icon: "table_rows" },
-      { value: "table", label: uiText(locale, "table"), icon: "view_list" },
+      { value: "grid", label: uiText(locale, "common.layout.grid"), icon: "grid_view" },
+      { value: "list", label: uiText(locale, "common.layout.list"), icon: "table_rows" },
+      { value: "table", label: uiText(locale, "common.layout.table"), icon: "view_list" },
     ],
   });
 export interface CollectionListEntry {

@@ -6,11 +6,17 @@ import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import "@material/web/textfield/outlined-text-field.js";
 import "@material/web/slider/slider.js";
+import "@material/web/switch/switch.js";
+import "@material/web/progress/linear-progress.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { catalogUrl, localizedText } from "./shared/catalog";
 import { readReleaseServer, RELEASE_SERVERS } from "../lib/release-server";
 import { segmented } from "./ui/controls";
+import { selectionPane } from "./ui/selection-pane";
+import { chooserFacet } from "./ui/chooser-filters";
+import { accordion } from "./ui/accordion";
+import { operationProgress } from "./ui/operation-progress";
 import {
   goalBoard,
   neighbors,
@@ -38,6 +44,12 @@ export class SongPuzzle extends LitElement {
   private songs: Song[] = [];
   private song = "";
   private query = "";
+  private pickerOpen = false;
+  private pickerFiltersOpen = false;
+  private advancedOpen = false;
+  private stepsOpen = false;
+  private pickerBand = "";
+  private pickerTrigger?: HTMLElement;
   private size = 3;
   private goalBlank = 8;
   private tiles = goalBoard(3);
@@ -84,6 +96,7 @@ export class SongPuzzle extends LitElement {
   private readonly localeReady = () => {
     this.locale = getI18nClient()?.committed || this.locale;
     this.nameSongs();
+    this.pickerBand = "";
     this.requestUpdate();
   };
   connectedCallback() {
@@ -98,6 +111,7 @@ export class SongPuzzle extends LitElement {
         this.coverReady &&
         this.mode === "play" &&
         !this.pendingChange &&
+        !this.pickerOpen &&
         !this.replayTimer &&
         !solved(this.tiles, this.position().goal)
       )
@@ -130,17 +144,94 @@ export class SongPuzzle extends LitElement {
     );
     for (const song of this.songs) song.name = song.labels[this.locale as Locale] || song.id;
   }
+  protected updated() {
+    const dialog = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
+    if (this.pickerOpen && dialog?.isConnected && !dialog.open) dialog.showModal();
+  }
+  private closePicker() {
+    this.querySelector<HTMLDialogElement>("dialog.selection-pane")?.close();
+    this.pickerOpen = false;
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      if (this.isConnected) this.pickerTrigger?.focus();
+    });
+  }
+  private renderSongPicker() {
+    const query = this.query.normalize("NFKC").toLocaleLowerCase(this.locale).trim();
+    const filtered = this.songs.filter(
+      (song) =>
+        (!this.pickerBand || localizedText(song.band, this.locale) === this.pickerBand) &&
+        (!query ||
+          `${song.id} ${song.name} ${localizedText(song.band, this.locale)} ${localizedText(song.artist, this.locale)}`
+            .normalize("NFKC")
+            .toLocaleLowerCase(this.locale)
+            .includes(query)),
+    );
+    const bands = [...new Set(this.songs.map((song) => localizedText(song.band, this.locale)).filter(Boolean))];
+    return selectionPane({
+      id: "puzzle-song-picker",
+      title: this.text("song"),
+      closeLabel: clientText(this.locale, "common.actions.close", "Close"),
+      close: () => this.closePicker(),
+      searchLabel: this.text("search"),
+      filterLabel: clientText(this.locale, "common.actions.filter", "Filter"),
+      filtersOpen: this.pickerFiltersOpen,
+      toggleFilters: () => {
+        this.pickerFiltersOpen = !this.pickerFiltersOpen;
+        this.requestUpdate();
+      },
+      query: this.query,
+      search: (value) => {
+        this.query = value;
+        this.requestUpdate();
+      },
+      filterLayout: "facets",
+      filters: chooserFacet({
+        label: clientText(this.locale, "catalog.fields.band", "Band"),
+        allLabel: clientText(this.locale, "common.states.all", "All"),
+        value: this.pickerBand,
+        options: bands.map((band) => ({ value: band, label: band })),
+        change: (value) => {
+          this.pickerBand = value;
+          this.requestUpdate();
+        },
+      }),
+      kind: "song",
+      items: filtered.map((song) => ({
+        value: song.id,
+        title: song.name,
+        label: song.name,
+        image: song.cover,
+        subtitle: localizedText(song.band, this.locale) || localizedText(song.artist, this.locale),
+        kind: "song",
+      })),
+      selected: this.song,
+      select: (id) => {
+        if (!this.songs.some((song) => song.id === id)) return;
+        this.closePicker();
+        if (id === this.song) return;
+        this.change(() => {
+          this.song = id;
+          this.resetBoard(true);
+          this.checkCover();
+        });
+      },
+      countLabel: String(filtered.length),
+      emptyLabel: this.text("noResults"),
+      preview: nothing,
+    });
+  }
   protected firstUpdated() {
     this.defaultCellSize();
   }
   private defaultCellSize() {
     if (this.cellSizeChosen) return;
-    const width = this.querySelector<HTMLElement>(".puzzle-main")?.clientWidth ?? window.innerWidth;
-    this.cellSize = (width < 600 ? [88, 64, 56, 48, 48, 48] : [128, 104, 88, 80, 72, 64])[this.size - 3]!;
+    const width = this.querySelector<HTMLElement>(".puzzle-play")?.clientWidth ?? window.innerWidth;
+    this.cellSize = (width < 600 ? [96, 64, 56, 48, 48, 48] : [128, 104, 88, 80, 72, 64])[this.size - 3]!;
     this.requestUpdate();
   }
   private text(key: string, values: Record<string, string | number> = {}) {
-    let value = clientText(this.locale, `songSlidePuzzle.${key}`, key);
+    let value = clientText(this.locale, `tools.songPuzzle.${key}`, key);
     for (const [name, replacement] of Object.entries(values))
       value = value.replaceAll(`{${name}}`, String(replacement));
     return value;
@@ -158,6 +249,8 @@ export class SongPuzzle extends LitElement {
     this.coverEpoch++;
     this.songs = [];
     this.song = "";
+    this.query = "";
+    this.pickerBand = "";
     const sourceServer = this.server;
     this.message = "";
     this.requestUpdate();
@@ -542,68 +635,58 @@ export class SongPuzzle extends LitElement {
     const goal = this.position().goal,
       song = this.songs.find((entry) => entry.id === this.song),
       valid = solvable(this.position());
-    const filtered = this.songs.filter((entry) =>
-      `${entry.id} ${entry.name} ${JSON.stringify(entry.title)} ${JSON.stringify(entry.band)} ${JSON.stringify(entry.artist)}`
-        .toLocaleLowerCase(this.locale)
-        .includes(this.query.toLocaleLowerCase(this.locale)),
-    );
     const button = (key: string, action: () => void, disabled = false) => html`
-      <button type="button" class="button button--tonal" ?disabled=${disabled} @click=${action}>
+      <button
+        type="button"
+        class=${key === "shuffle" || key === "solve" ? "button" : "button button--tonal"}
+        ?disabled=${disabled}
+        @click=${action}
+      >
         ${this.text(key)}
       </button>
     `;
-    const choices = song && !filtered.some((entry) => entry.id === song.id) ? [song, ...filtered] : filtered;
     const finished = solved(this.tiles, goal);
+    const status = this.busy
+      ? this.text("searching")
+      : !this.loaded
+        ? this.message
+          ? this.text(this.message)
+          : this.text("loading")
+        : !valid
+          ? this.text("unsolvable")
+          : this.message
+            ? this.text(this.message, { moves: this.solution?.path.length ?? 0 })
+            : finished && this.coverReady
+              ? this.text("completed")
+              : this.text("ready");
     return html`
       <section
         class="page song-slide-puzzle"
         data-mode=${this.mode}
         data-drag=${this.dragEnabled ? "enabled" : "disabled"}
       >
-        <header class="puzzle-header">
-          <h2>${this.text("title")}</h2>
-          <p class="puzzle-header__copy">${this.text("rules")}</p>
-        </header>
-        <div class="puzzle-setup">
-          <div class="puzzle-field">
-            <md-outlined-text-field
-              label=${this.text("search")}
-              type="search"
-              .value=${live(this.query)}
-              @input=${(e: Event) => {
-                this.query = (e.target as HTMLInputElement).value;
-                this.requestUpdate();
-              }}
-            ></md-outlined-text-field>
-          </div>
-          <div class="puzzle-field">
-            <md-outlined-select
-              label=${this.text("song")}
-              .value=${live(this.song)}
-              @change=${(e: Event) => {
-                const value = (e.target as HTMLSelectElement).value;
-                this.change(() => {
-                  this.song = value;
-                  this.resetBoard(true);
-                  this.checkCover();
-                });
-              }}
-            >
-              ${choices.map(
-                (entry) => html`
-                  <md-select-option value=${entry.id}><span slot="headline">${entry.name}</span></md-select-option>
-                `,
-              )}
-            </md-outlined-select>
+        <header class="puzzle-toolbar">
+          <button
+            type="button"
+            class="button button--tonal puzzle-song"
+            ?disabled=${!this.loaded}
+            aria-label=${`${this.text("song")}${song ? ` · ${song.name}` : ""}`}
+            @click=${(event: Event) => {
+              this.pickerTrigger = event.currentTarget as HTMLElement;
+              this.pickerOpen = true;
+              this.requestUpdate();
+            }}
+          >
             ${
-              this.loaded && !filtered.length
+              song
                 ? html`
-                    <p>${this.text("noResults")}</p>
+                    <img class="puzzle-song__cover" src=${song.cover} alt="" />
                   `
                 : nothing
             }
-          </div>
-          <div class="puzzle-field">
+            <span class="puzzle-song__name">${song?.name || this.text("song")}</span>
+          </button>
+          <div class="puzzle-spec">
             <md-outlined-select
               label=${this.text("size")}
               .value=${live(String(this.size))}
@@ -626,12 +709,11 @@ export class SongPuzzle extends LitElement {
               )}
             </md-outlined-select>
           </div>
-        </div>
-
+        </header>
         ${
           this.pendingChange
             ? html`
-                <section class="puzzle-result" role="alert">
+                <section class="surface puzzle-confirm" role="alert">
                   <p>${this.text("resetConfirm")}</p>
                   <div class="puzzle-actions">
                     ${button("confirm", () => {
@@ -648,8 +730,10 @@ export class SongPuzzle extends LitElement {
               `
             : nothing
         }
-        <div class="puzzle-mode">
-          ${segmented({
+        <div class="puzzle-session">
+          <section class="puzzle-play">
+            <div class="puzzle-mode">
+              ${segmented({
             label: this.text("mode"),
             value: this.mode,
             options: [
@@ -663,9 +747,9 @@ export class SongPuzzle extends LitElement {
               this.requestUpdate();
             },
           })}
-        </div>
+            </div>
 
-        ${
+            ${
           this.selected >= 0
             ? html`
                 <p>
@@ -674,25 +758,6 @@ export class SongPuzzle extends LitElement {
               `
             : nothing
         }
-        <div class="puzzle-workspace">
-          <div class="puzzle-main">
-            <div class="puzzle-actions">
-              ${button("shuffle", () => this.change(() => this.resetBoard(true)), !this.loaded || !this.coverReady)}
-              ${button("reset", () => this.change(() => this.resetBoard(false)), !this.loaded || !this.coverReady)}
-              ${this.history.length ? button("undo", () => this.undo()) : nothing}
-              ${
-                this.busy
-                  ? button("cancel", () => {
-                      this.cancel();
-                      this.message = "cancelled";
-                      this.requestUpdate();
-                    })
-                  : !this.solution && !finished
-                    ? button("hint", () => this.showHint(), !valid || !this.loaded || !this.coverReady)
-                    : nothing
-              }
-            </div>
-
             ${
               !this.loaded
                 ? html`
@@ -713,13 +778,7 @@ export class SongPuzzle extends LitElement {
                         <p>${this.text("loading")}</p>
                       `
                     : html`
-                        <div
-                          class="puzzle-board-viewport"
-                          role="region"
-                          aria-label=${this.text("board")}
-                          tabindex="0"
-                          aria-describedby="puzzle-instructions"
-                        >
+                        <div class="puzzle-board-viewport" role="region" aria-label=${this.text("board")} tabindex="0">
                           <div
                             class="puzzle-board"
                             role="group"
@@ -739,7 +798,7 @@ export class SongPuzzle extends LitElement {
                                   data-dragging=${String(index === this.dragStart?.index)}
                                   aria-pressed=${this.mode === "edit" ? String(this.selected === index) : nothing}
                                   aria-disabled=${String(this.mode === "play" && !legal)}
-                                  aria-label=${`${tile === 0 ? this.text("blank") : this.text("tile", { tile })}, ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}, ${this.text(this.mode === "edit" ? "edit" : legal ? "move" : "notMovable")}`}
+                                  aria-label=${`${tile === 0 ? this.text("blank") : this.text("tile", { tile })}, ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}`}
                                   style=${styleMap({ "--puzzle-fragment-x": `${((source % this.size) / (this.size - 1)) * 100}%`, "--puzzle-fragment-y": `${(Math.floor(source / this.size) / (this.size - 1)) * 100}%` })}
                                   @click=${(event: MouseEvent) => {
                                     if (this.suppressClick && event.detail > 0) {
@@ -781,159 +840,11 @@ export class SongPuzzle extends LitElement {
                         </div>
                       `
             }
-            <div class="puzzle-board-toolbar">
-              <label class="puzzle-option">
-                <input
-                  type="checkbox"
-                  .checked=${this.numbers}
-                  @change=${() => {
-                    this.numbers = !this.numbers;
-                    this.requestUpdate();
-                  }}
-                />
-                ${this.text("numbers")}
-              </label>
-              <label class="puzzle-option">
-                <input
-                  type="checkbox"
-                  .checked=${this.reference}
-                  @change=${() => {
-                    this.reference = !this.reference;
-                    this.requestUpdate();
-                  }}
-                />
-                ${this.text("reference")}
-              </label>
-              ${
-                this.mode === "edit"
-                  ? html`
-                      <label class="puzzle-option">
-                        <input
-                          type="checkbox"
-                          .checked=${this.dragEnabled}
-                          @change=${() => {
-                            this.dragEnabled = !this.dragEnabled;
-                            if (!this.dragEnabled) {
-                              this.clearDrag();
-                              this.selected = -1;
-                              this.suppressClick = true;
-                            }
-                            this.requestUpdate();
-                          }}
-                        />
-                        ${this.text("drag")}
-                      </label>
-                    `
-                  : nothing
-              }
-              <label class="puzzle-field">
-                ${this.text("zoom")}
-                <md-slider
-                  aria-label=${this.text("zoom")}
-                  min="48"
-                  max="128"
-                  step="8"
-                  .value=${String(this.cellSize)}
-                  @input=${(e: Event) => {
-                    this.cellSizeChosen = true;
-                    this.cellSize = Number((e.target as HTMLInputElement).value);
-                    this.requestUpdate();
-                  }}
-                ></md-slider>
-              </label>
+            <div class="puzzle-actions">
+              ${button("shuffle", () => this.change(() => this.resetBoard(true)), !this.loaded || !this.coverReady)}
+              ${button("reset", () => this.change(() => this.resetBoard(false)), !this.loaded || !this.coverReady)}
+              ${this.history.length ? button("undo", () => this.undo()) : nothing}
             </div>
-            <p class="puzzle-help" id="puzzle-instructions">
-              ${this.text(this.mode === "edit" ? "editHelp" : "playHelp")}
-            </p>
-          </div>
-          <aside class="puzzle-aside">
-            <details class="puzzle-panel">
-              <summary>${this.text("advanced")}</summary>
-              <div class="puzzle-setup">
-                <div class="puzzle-field">
-                  <md-outlined-select
-                    label=${this.text("server")}
-                    .value=${live(this.server)}
-                    @change=${(e: Event) => {
-                      const value = (e.target as HTMLSelectElement).value;
-                      this.change(() => {
-                        this.invalidate();
-                        this.server = value;
-                        void this.loadSongs();
-                      });
-                    }}
-                  >
-                    ${RELEASE_SERVERS.map(
-                      (server) => html`
-                        <md-select-option value=${server}>
-                          <span slot="headline">${this.text(server === "jp" ? "jp" : "intl")}</span>
-                        </md-select-option>
-                      `,
-                    )}
-                  </md-outlined-select>
-                </div>
-                <div class="puzzle-field">
-                  <md-outlined-select
-                    label=${this.text("goalBlank")}
-                    .value=${live(String(this.goalBlank))}
-                    @change=${(e: Event) => {
-                      const value = Number((e.target as HTMLSelectElement).value);
-                      this.change(() => {
-                        this.goalBlank = value;
-                        this.resetBoard(false);
-                      });
-                    }}
-                  >
-                    ${goal.map(
-                      (_, index) => html`
-                        <md-select-option value=${String(index)}>
-                          <span slot="headline">
-                            ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}
-                          </span>
-                        </md-select-option>
-                      `,
-                    )}
-                  </md-outlined-select>
-                </div>
-                <div class="puzzle-field">
-                  <md-outlined-text-field
-                    label=${this.text("shuffleSteps")}
-                    type="number"
-                    min="1"
-                    max="1000"
-                    .value=${live(this.scrambleDraft)}
-                    @input=${(e: Event) => {
-                      this.scrambleDraft = (e.target as HTMLInputElement).value;
-                    }}
-                    @change=${(e: Event) => {
-                      this.scrambleDraft = (e.target as HTMLInputElement).value;
-                      this.scrambleSteps = Math.max(1, Math.min(1000, Math.floor(Number(this.scrambleDraft) || 20)));
-                      this.scrambleDraft = String(this.scrambleSteps);
-                      this.requestUpdate();
-                    }}
-                  ></md-outlined-text-field>
-                </div>
-                <div class="puzzle-field">
-                  <md-outlined-text-field
-                    label=${this.text("searchBudget")}
-                    type="number"
-                    min="1"
-                    max="120"
-                    .value=${live(this.budgetDraft)}
-                    ?disabled=${this.busy}
-                    @input=${(e: Event) => {
-                      if (!this.busy) this.budgetDraft = (e.target as HTMLInputElement).value;
-                    }}
-                    @change=${(e: Event) => {
-                      if (this.busy) return;
-                      this.budgetDraft = (e.target as HTMLInputElement).value;
-                      this.normalizeBudget();
-                      this.requestUpdate();
-                    }}
-                  ></md-outlined-text-field>
-                </div>
-              </div>
-            </details>
             <dl class="puzzle-metrics">
               <div>
                 <dt>${this.text("moves")}</dt>
@@ -943,54 +854,80 @@ export class SongPuzzle extends LitElement {
                 <dt>${this.text("elapsed")}</dt>
                 <dd>${this.elapsedSeconds}s</dd>
               </div>
-              <div>
-                <dt>${this.text("solutionLength")}</dt>
-                <dd>${this.solution?.path.length ?? "—"}</dd>
-              </div>
             </dl>
+            <figure class="puzzle-reference" ?hidden=${!this.reference || !this.loaded || !this.coverReady}>
+              ${
+                song
+                  ? html`
+                      <img src=${song.cover} alt=${song.name} />
+                      <figcaption>${song.name}</figcaption>
+                    `
+                  : nothing
+              }
+            </figure>
+          </section>
+          <section
+            class="surface puzzle-result"
+            data-state=${this.busy ? "searching" : valid ? "ready" : "invalid"}
+            data-certainty=${this.solution ? "proven" : "pending"}
+          >
+            <header class="puzzle-result__header">
+              <h2 class="md-title-large">${this.text("solution")}</h2>
+              <span class="puzzle-result__status" role="status">${status}</span>
+            </header>
+            ${
+              this.busy
+                ? html`
+                    <div class="puzzle-result__progress">${operationProgress(this.text("searching"))}</div>
+                  `
+                : this.solution?.path.length
+                  ? html`
+                      <div class="puzzle-result__progress">
+                        ${operationProgress(this.text("replay"), this.replayIndex / this.solution.path.length)}
+                        <output class="puzzle-result__position">
+                          ${this.replayIndex} / ${this.solution.path.length}
+                        </output>
+                      </div>
+                    `
+                  : nothing
+            }
             <div class="puzzle-actions">
-              ${!this.busy && !finished ? button("solve", () => this.solve(), !valid || !this.loaded || !this.coverReady) : nothing}
+              ${
+                this.busy
+                  ? button("cancel", () => {
+                      this.cancel();
+                      this.message = "cancelled";
+                      this.requestUpdate();
+                    })
+                  : !finished && !this.solution
+                    ? button("solve", () => this.solve(), !valid || !this.loaded || !this.coverReady)
+                    : nothing
+              }
+              ${!this.busy && !finished && !this.solution ? button("hint", () => this.showHint(), !valid || !this.loaded || !this.coverReady) : nothing}
               ${
                 this.solution
                   ? html`
-                      ${button("step", () => this.step(), this.replayIndex >= this.solution.path.length)}${button(this.replayTimer ? "pause" : "replay", () => this.replay(), !this.solution.path.length)}${button("stopReplay", () => this.rewind(), !this.solution.path.length)}
+                      ${button("step", () => this.step(), this.replayIndex >= this.solution.path.length)}
+                      ${button(this.replayTimer ? "pause" : "replay", () => this.replay(), !this.solution.path.length)}
+                      ${button("stopReplay", () => this.rewind(), !this.solution.path.length)}
                     `
                   : nothing
               }
             </div>
-            <section
-              class="puzzle-solver-status"
-              data-state=${this.busy ? "searching" : valid ? "ready" : "invalid"}
-              data-certainty=${this.solution ? "proven" : "pending"}
-            >
-              <p aria-live="polite">
-                ${!this.loaded ? (this.message ? this.text(this.message) : this.text("loading")) : !valid ? this.text("unsolvable") : (this.message ? this.text(this.message) : "") || (finished && this.coverReady ? this.text("completed") : this.text("ready"))}
-              </p>
-              ${
-                this.busy
-                  ? html`
-                      <p aria-live="polite">${this.text("searching")}</p>
-                    `
-                  : nothing
-              }${
-                this.progress
-                  ? html`
-                      <p aria-live="off">
-                        ${this.text("progress", { nodes: this.progress.nodes, bound: this.progress.bound, seconds: (this.progress.elapsedMs / 1000).toFixed(1) })}
-                      </p>
-                    `
-                  : nothing
-              }
-            </section>
-            <p>
-              ${this.text("replayProgress", { step: this.replayIndex, total: this.solution?.path.length ?? 0, remaining: this.solution ? this.solution.path.length - this.replayIndex : 0 })}
-            </p>
-            <p class="puzzle-caption">${this.text("budgetHint", { seconds: this.budgetSeconds })}</p>
             ${
               this.solution
                 ? html`
-                    <ol class="puzzle-steps">
-                      ${this.solution.path.map((tile, index) => {
+                    ${accordion({
+                      id: "puzzle-steps",
+                      label: this.text("steps"),
+                      expanded: this.stepsOpen,
+                      onExpandedChange: (expanded) => {
+                        this.stepsOpen = expanded;
+                        this.requestUpdate();
+                      },
+                      content: html`
+                        <ol class="puzzle-steps">
+                          ${this.solution.path.map((tile, index) => {
                         return html`
                           <li>
                             <button
@@ -1006,22 +943,173 @@ export class SongPuzzle extends LitElement {
                           </li>
                         `;
                       })}
-                    </ol>
+                        </ol>
+                      `,
+                    })}
                   `
                 : nothing
             }
-            <figure class="puzzle-reference" ?hidden=${!this.reference || !this.loaded || !this.coverReady}>
+          </section>
+        </div>
+        ${accordion({
+          id: "puzzle-advanced",
+          label: this.text("advanced"),
+          expanded: this.advancedOpen,
+          onExpandedChange: (expanded) => {
+            this.advancedOpen = expanded;
+            this.requestUpdate();
+          },
+          className: "puzzle-settings",
+          content: html`
+            <div class="puzzle-options">
+              <label class="control-row">
+                <md-switch
+                  aria-label=${this.text("numbers")}
+                  .selected=${this.numbers}
+                  @change=${() => {
+                    this.numbers = !this.numbers;
+                    this.requestUpdate();
+                  }}
+                ></md-switch>
+                ${this.text("numbers")}
+              </label>
+              <label class="control-row">
+                <md-switch
+                  aria-label=${this.text("reference")}
+                  .selected=${this.reference}
+                  @change=${() => {
+                    this.reference = !this.reference;
+                    this.requestUpdate();
+                  }}
+                ></md-switch>
+                ${this.text("reference")}
+              </label>
               ${
-                song
+                this.mode === "edit"
                   ? html`
-                      <img src=${song.cover} alt=${song.name} />
-                      <figcaption>${song.name}</figcaption>
+                      <label class="control-row">
+                        <md-switch
+                          aria-label=${this.text("drag")}
+                          .selected=${this.dragEnabled}
+                          @change=${() => {
+                            this.dragEnabled = !this.dragEnabled;
+                            if (!this.dragEnabled) {
+                              this.clearDrag();
+                              this.selected = -1;
+                              this.suppressClick = true;
+                            }
+                            this.requestUpdate();
+                          }}
+                        ></md-switch>
+                        ${this.text("drag")}
+                      </label>
                     `
                   : nothing
               }
-            </figure>
-          </aside>
-        </div>
+            </div>
+            <div class="puzzle-fields">
+              <div class="puzzle-field">
+                <md-outlined-select
+                  label=${this.text("server")}
+                  .value=${live(this.server)}
+                  @change=${(e: Event) => {
+                      const value = (e.target as HTMLSelectElement).value;
+                      this.change(() => {
+                        this.invalidate();
+                        this.server = value;
+                        void this.loadSongs();
+                      });
+                    }}
+                >
+                  ${RELEASE_SERVERS.map(
+                      (server) => html`
+                        <md-select-option value=${server}>
+                          <span slot="headline">${this.text(server === "jp" ? "jp" : "intl")}</span>
+                        </md-select-option>
+                      `,
+                    )}
+                </md-outlined-select>
+              </div>
+              <div class="puzzle-field">
+                <md-outlined-select
+                  label=${this.text("goalBlank")}
+                  .value=${live(String(this.goalBlank))}
+                  @change=${(e: Event) => {
+                      const value = Number((e.target as HTMLSelectElement).value);
+                      this.change(() => {
+                        this.goalBlank = value;
+                        this.resetBoard(false);
+                      });
+                    }}
+                >
+                  ${goal.map(
+                      (_, index) => html`
+                        <md-select-option value=${String(index)}>
+                          <span slot="headline">
+                            ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}
+                          </span>
+                        </md-select-option>
+                      `,
+                    )}
+                </md-outlined-select>
+              </div>
+              <div class="puzzle-field">
+                <md-outlined-text-field
+                  label=${this.text("shuffleSteps")}
+                  type="number"
+                  min="1"
+                  max="1000"
+                  .value=${live(this.scrambleDraft)}
+                  @input=${(e: Event) => {
+                      this.scrambleDraft = (e.target as HTMLInputElement).value;
+                    }}
+                  @change=${(e: Event) => {
+                      this.scrambleDraft = (e.target as HTMLInputElement).value;
+                      this.scrambleSteps = Math.max(1, Math.min(1000, Math.floor(Number(this.scrambleDraft) || 20)));
+                      this.scrambleDraft = String(this.scrambleSteps);
+                      this.requestUpdate();
+                    }}
+                ></md-outlined-text-field>
+              </div>
+              <div class="puzzle-field">
+                <md-outlined-text-field
+                  label=${this.text("searchBudget")}
+                  type="number"
+                  min="1"
+                  max="120"
+                  .value=${live(this.budgetDraft)}
+                  ?disabled=${this.busy}
+                  @input=${(e: Event) => {
+                      if (!this.busy) this.budgetDraft = (e.target as HTMLInputElement).value;
+                    }}
+                  @change=${(e: Event) => {
+                      if (this.busy) return;
+                      this.budgetDraft = (e.target as HTMLInputElement).value;
+                      this.normalizeBudget();
+                      this.requestUpdate();
+                    }}
+                ></md-outlined-text-field>
+              </div>
+            </div>
+            <label class="puzzle-zoom">
+              ${this.text("zoom")}
+              <md-slider
+                class="md3-slider"
+                aria-label=${this.text("zoom")}
+                min="48"
+                max="128"
+                step="8"
+                .value=${this.cellSize}
+                @input=${(e: Event) => {
+                    this.cellSizeChosen = true;
+                    this.cellSize = Number((e.target as HTMLInputElement).value);
+                    this.requestUpdate();
+                  }}
+              ></md-slider>
+            </label>
+          `,
+        })}
+        ${this.pickerOpen ? this.renderSongPicker() : nothing}
       </section>
     `;
   }

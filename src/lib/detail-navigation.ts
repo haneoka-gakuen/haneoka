@@ -113,7 +113,7 @@ export function syncEntityNavigation(): void {
           resourcePath({ ...selection.route, id: undefined })
         : resourcePath({ ...selection.route, id: undefined });
       back.dataset.i18nAriaLabel = "back";
-      back.setAttribute("aria-label", clientText(selection.route.locale, "back", "Back"));
+      back.setAttribute("aria-label", clientText(selection.route.locale, "common.actions.back", "Back"));
       const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       icon.setAttribute("class", "material-icon");
       icon.setAttribute("width", "24");

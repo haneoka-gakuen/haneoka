@@ -1,3 +1,4 @@
+import { SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 /**
  * Missions — group overview, then one group's list.
  *
@@ -139,7 +140,7 @@ export class MissionWorkspace extends LitElement {
     super.disconnectedCallback();
   }
   private text(key: string, fallback: string, params?: Record<string, string | number>) {
-    return clientText(this.locale, `system.${key}`, fallback, params);
+    return clientText(this.locale, SYSTEM_LABEL_PATHS[key] ?? key, fallback, params);
   }
   private name(value: unknown, locale = this.locale) {
     return localizedText(value, locale);
@@ -172,7 +173,7 @@ export class MissionWorkspace extends LitElement {
     this.request?.abort();
     this.loading?.cancel();
     const controller = new AbortController();
-    const progress = beginLoading(uiText(this.locale, "loading"), { scope: "owner", signal: controller.signal });
+    const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner", signal: controller.signal });
     this.request = controller;
     this.loading = progress;
     this.phase = "loading";
@@ -193,7 +194,7 @@ export class MissionWorkspace extends LitElement {
         return;
       }
       if (this.entityId) {
-        if (String(document.id || "") !== this.entityId) throw new Error(uiText(this.locale, "unavailable"));
+        if (String(document.id || "") !== this.entityId) throw new Error(uiText(this.locale, "common.states.unavailable"));
         this.missions = [document as Mission];
       } else {
         this.missions = recordValues(document.entries) as Mission[];
@@ -370,7 +371,7 @@ export class MissionWorkspace extends LitElement {
     return html`
       <section class="mission-group">
         <header class="mission-group__header">
-          <button class="icon-button" type="button" @click=${() => this.closeGroup()} aria-label=${uiText(this.locale, "back")}>
+          <button class="icon-button" type="button" @click=${() => this.closeGroup()} aria-label=${uiText(this.locale, "common.actions.back")}>
             ${icon("arrow_back", 24)}
           </button>
           <span class="mission-group__icon">${icon(CATEGORY_ICONS[group.category], 20)}</span>
@@ -482,10 +483,10 @@ export class MissionWorkspace extends LitElement {
     return html`
       <div class="mission-workspace__filter">
         ${segmented({
-          label: uiText(this.locale, "view"),
+          label: uiText(this.locale, "common.actions.view"),
           value: this.mode,
           options: [
-            { value: "all" as const, label: uiText(this.locale, "all"), icon: "apps" },
+            { value: "all" as const, label: uiText(this.locale, "common.states.all"), icon: "apps" },
             { value: "regular" as const, label: this.text("regularMission", "Mission"), icon: "fact_check" },
             { value: "limited" as const, label: this.text("limitedMission", "Limited mission"), icon: "schedule" },
           ],
@@ -505,11 +506,11 @@ export class MissionWorkspace extends LitElement {
       <section class="mission-workspace">
         ${
           this.phase === "loading"
-            ? loadingState(uiText(this.locale, "loading"))
+            ? loadingState(uiText(this.locale, "common.states.loading"))
             : this.phase === "error"
               ? errorState(
-                  uiText(this.locale, "unavailable"),
-                  uiText(this.locale, "retry"),
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
                   () => void this.load(),
                   this.error,
                 )

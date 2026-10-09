@@ -58,12 +58,12 @@ const home = await renderHome(server, locale);
 </script>
 <CatalogIndexPage locale={locale} server={server} />
 <footer class="home-footer">
-  <p>haneoka · <I18nText keyName="homePage.fanArchive" fallback="Unofficial archive and community" locale={locale} /></p>
-  <nav aria-label={t(locale, "homePage.legalNavigation", "Policies and project information")}>
+  <p>haneoka · <I18nText keyName="home.dashboard.fanArchive" fallback="Unofficial archive and community" locale={locale} /></p>
+  <nav aria-label={t(locale, "home.dashboard.legalNavigation", "Policies and project information")}>
     <a class="text-link" href="https://bdon.moe" target="_blank" rel="noreferrer"><Icon name="favorite" size={14} /> MoeNotes <Icon name="open_in_new" size={14} /></a>
-    <a class="text-link" href={localePath("/privacy", locale)}><I18nText keyName="privacy" fallback="Privacy Policy" locale={locale} /></a>
-    <a class="text-link" href={localePath("/terms", locale)}><I18nText keyName="terms" fallback="Terms of Use" locale={locale} /></a>
-    <a class="text-link" href={localePath("/about", locale)}><I18nText keyName="about" fallback="About" locale={locale} /></a>
+    <a class="text-link" href={localePath("/privacy", locale)}><I18nText keyName="legal.privacy.title" fallback="Privacy Policy" locale={locale} /></a>
+    <a class="text-link" href={localePath("/terms", locale)}><I18nText keyName="legal.terms.title" fallback="Terms of Use" locale={locale} /></a>
+    <a class="text-link" href={localePath("/about", locale)}><I18nText keyName="navigation.about" fallback="About" locale={locale} /></a>
   </nav>
 </footer>
 <style is:global>

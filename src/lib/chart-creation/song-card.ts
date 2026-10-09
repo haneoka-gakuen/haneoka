@@ -130,7 +130,7 @@ export function creationSongCard<T extends Row>(row: T, context: CreationSongCar
     bandIconUrl: context.assetUrl(primaryBand?.icon),
     artist,
     attributeIconUrl,
-    attributeLabelKey: color ? `liveMusicTypes.${color.toLowerCase()}` : "",
+    attributeLabelKey: color ? `catalog.songs.liveTypes.${color.toLowerCase()}` : "",
     characterMap: context.characters,
     bandMap: context.bands,
     characters: characterIds

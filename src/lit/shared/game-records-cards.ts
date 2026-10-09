@@ -24,7 +24,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
     return this;
   }
   protected label(key: string, fallback: string) {
-    return clientText(this.locale, `songRanking.${key}`, fallback);
+    return clientText(this.locale, `catalog.rankings.songs.${key}`, fallback);
   }
 
   protected formatScore(value: number | null) {

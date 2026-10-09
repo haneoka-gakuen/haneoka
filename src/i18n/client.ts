@@ -1,3 +1,4 @@
+import { namespaceDependencyClosure, type MainI18nNamespace } from "./namespaces";
 import {
   createCatalog,
   isLocale,
@@ -11,7 +12,7 @@ import {
   type MessageParams,
   type UiLocale,
 } from "@haneoka/i18n";
-import { COMMON_I18N_NAMESPACE, I18N_NAMESPACES, UNSEEDED_I18N_VERSION, catalogLookupKeys } from "./keys";
+import { COMMON_I18N_NAMESPACE, I18N_NAMESPACES, UNSEEDED_I18N_VERSION } from "./keys";
 
 const SEED_ID = "haneoka-i18n-seed";
 const LOCALE_READY_EVENT = "haneoka:locale-ready";
@@ -149,7 +150,7 @@ export class MainI18nClient {
   constructor(options: I18nClientOptions = {}) {
     const seed = options.seed === undefined ? readI18nSeed() : parseSeed(options.seed);
     this.catalogVersion = options.version || seed?.version || UNSEEDED_I18N_VERSION;
-    this.allowedNamespaces = new Set(options.namespaces || [...I18N_NAMESPACES]);
+    this.allowedNamespaces = new Set(namespaceDependencyClosure((options.namespaces || [...I18N_NAMESPACES]) as MainI18nNamespace[]));
     this.loader = options.load;
     const documentLocale = typeof document === "undefined" ? undefined : document.documentElement?.dataset?.locale;
     this.currentLocale = seed?.locale || normalizeLocale(documentLocale);
@@ -338,8 +339,8 @@ export class MainI18nClient {
   }
 
   private validateNamespaces(namespaces: readonly string[]): readonly string[] {
-    const requestedNamespaces = [...new Set(namespaces)];
-    if (!requestedNamespaces.length) throw new Error("At least one i18n namespace is required");
+    if (!namespaces.length) throw new Error("At least one i18n namespace is required");
+    const requestedNamespaces = [...namespaceDependencyClosure([...new Set(namespaces)] as MainI18nNamespace[])];
     for (const namespace of requestedNamespaces) {
       if (!this.allowedNamespaces.has(namespace)) throw new Error(`Unsupported i18n namespace: ${namespace}`);
     }
@@ -565,9 +566,5 @@ export function clientGroup<T = Record<string, unknown>>(key: string): T {
 export const clientText = (locale: string, key: string, fallback = key, params?: MessageParams): string => {
   if (!isLocale(locale)) locale = "en";
   const client = initializeI18nClient();
-  for (const candidate of catalogLookupKeys(key)) {
-    const catalog = client.current();
-    if (catalog.has(candidate)) return catalog.text(candidate, params, fallback);
-  }
-  return fallback;
+  return client.current().text(key, params, fallback);
 };

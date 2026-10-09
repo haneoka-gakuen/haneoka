@@ -9,6 +9,35 @@ import { wavyProgress } from "../ui/wavy-progress";
 import { trapFocus } from "../../lib/overlay";
 import { preferredLocale, uiText } from "../shared/catalog";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "close": "common.actions.close",
+  "closePlayerAndClearQueue": "media.audio.closePlayerAndClearQueue",
+  "collapse": "common.actions.collapse",
+  "expandPlayer": "media.audio.expandPlayer",
+  "musicPlayer": "media.audio.musicPlayer",
+  "mute": "common.actions.mute",
+  "next": "common.actions.next",
+  "none": "common.states.none",
+  "pause": "common.actions.pause",
+  "play": "common.actions.play",
+  "playInOrder": "media.audio.playInOrder",
+  "playbackPosition": "media.audio.playbackPosition",
+  "previous": "common.actions.previous",
+  "queue": "media.audio.queue",
+  "remove": "common.actions.remove",
+  "reorder": "common.actions.reorder",
+  "repeat": "media.audio.repeat",
+  "repeatQueue": "media.audio.repeatQueue",
+  "repeatTrack": "media.audio.repeatTrack",
+  "sequential": "media.audio.sequential",
+  "shuffle": "common.actions.shuffle",
+  "stop": "common.actions.stop",
+  "unmute": "common.actions.unmute",
+  "volume": "media.audio.volume"
+};
+
+
 export interface AudioTrack {
   id: string;
   songKey?: string;
@@ -88,7 +117,7 @@ export class AudioDock extends LitElement {
       });
   }
   private t(key: string): string {
-    return uiText(this.uiLanguage, key);
+    return uiText(this.uiLanguage, (uiLabelPaths[key] ?? key));
   }
   static properties = {
     queue: { state: true },

@@ -64,13 +64,13 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       close();
     }
   };
-  const all = { value: "", label: host.common("all", "All") };
+  const all = { value: "", label: host.common("common.states.all", "All") };
   return selectionPane({
     id: "tb-song-picker",
     title: state.single ? host.t("chooseSong", "Choose a song") : host.t("chooseSongs", "Choose songs"),
-    closeLabel: host.common("close", "Close"),
+    closeLabel: host.common("common.actions.close", "Close"),
     close,
-    searchLabel: host.common("search", "Search"),
+    searchLabel: host.common("common.actions.search", "Search"),
     filterLabel: host.t("filters", "Filters"),
     filtersOpen: state.filtersOpen,
     toggleFilters: () => update({ filtersOpen: !state.filtersOpen }),
@@ -78,16 +78,16 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     search: (value) => update({ query: value }),
     filterLayout: "facets",
     filters: html`
-      ${chooserFacet({label:host.common("gekisouType", "Gekiso type"),value:state.gekisouTypes[0] || "",allLabel:all.label,options:[{value:"Combo",label:host.common("gekisouMissionCombo","COMBO")},{value:"Luck",label:host.common("gekisouMissionLuck","LUCK")},{value:"JustCount",label:host.common("gekisouMissionJustCount","JUST")}],change:(value) => update({gekisouTypes:value ? [value] : []})})}
+      ${chooserFacet({label:host.common("catalog.analysis.fields.gekisouType", "Gekiso type"),value:state.gekisouTypes[0] || "",allLabel:all.label,options:[{value:"Combo",label:host.common("catalog.songs.gekisou.gekisouMissionCombo","COMBO")},{value:"Luck",label:host.common("catalog.songs.gekisou.gekisouMissionLuck","LUCK")},{value:"JustCount",label:host.common("catalog.songs.gekisou.gekisouMissionJustCount","JUST")}],change:(value) => update({gekisouTypes:value ? [value] : []})})}
       ${chooserFacet({
-        label: host.common("band", "Band"),
+        label: host.common("catalog.fields.band", "Band"),
         value: state.bands.length === 1 ? String(state.bands[0]) : "",
         allLabel: all.label,
         options: Object.keys(catalog.data.bands).map(Number).filter((id) => catalog.bandName(id)).map((id) => ({ value: String(id), label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined })),
         change: (value: string) => update({ bands: value ? [Number(value)] : [] }),
       })}
       ${chooserFacet({
-        label: host.common("attribute", "Attribute"),
+        label: host.common("catalog.fields.attribute", "Attribute"),
         value: state.attributes.length === 1 ? String(state.attributes[0]) : "",
         allLabel: all.label,
         options: [1, 2, 3, 4, 5].map((id) => ({ value: String(id), label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined })),
@@ -110,7 +110,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
               <span class="tb-results__meta">${host.t("selectedSongs", "{count} selected", { count: state.songs.length })}</span>
               <span class="row__spacer"></span>
               <button class="button button--text" type="button" @click=${() => update({ songs: [...state.songs.filter((song) => song.difficulty !== state.difficulty || !ids.includes(song.songId)), ...ids.map((songId) => ({ songId, difficulty: state.difficulty }))] })}>${host.t("selectMatching", "Select all shown")}</button>
-              <button class="button button--text" type="button" @click=${() => update({ songs: [] })}>${host.common("clear", "Clear")}</button>
+              <button class="button button--text" type="button" @click=${() => update({ songs: [] })}>${host.common("common.actions.clear", "Clear")}</button>
               <button class="button" type="button" @click=${() => { state.change(state.songs); close(); }}>${host.t("useSongs", "Use these songs")}</button>
             </div>`}
       </div>

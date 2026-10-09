@@ -6,11 +6,11 @@ import { t } from "../i18n/messages";
 import "../lit/admin-workspace";
 import "../styles/admin.css";
 const { locale, section = "overview" } = Astro.props as { locale: Locale; section?: string };
-const title = t(locale, "adminPage.title", "Admin");
+const title = t(locale, "admin.page.title", "Admin");
 
 ---
-<Base locale={locale} route={`/admin/${section}`} title={title} titleKey="adminPage.title">
-  <AppShell locale={locale} route={`/admin/${section}`} title={title} titleKey="adminPage.title">
+<Base locale={locale} route={`/admin/${section}`} title={title} titleKey="admin.page.title">
+  <AppShell locale={locale} route={`/admin/${section}`} title={title} titleKey="admin.page.title">
     <admin-workspace section={section}></admin-workspace>
   </AppShell>
 </Base>

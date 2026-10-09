@@ -12,7 +12,7 @@ export function getStaticPaths() {
 }
 const { locale } = Astro.props as { locale: Locale };
 const route = "/community/songs-bestdori";
-const titleKey = "communityPage.songsBestDori";
+const titleKey = "community.page.songsBestDori";
 const title = t(locale, titleKey, "GBP songs");
 const config = catalogConfig({ resource: "songs", locale, origin: "bestdori" });
 ---

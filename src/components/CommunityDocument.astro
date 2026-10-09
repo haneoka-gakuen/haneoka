@@ -10,11 +10,11 @@ const { locale, path } = Astro.props as { locale: Locale; path?: string };
 const mode = path || "feeds";
 const route = `/community${path ? `/${path}` : ""}`;
 const modeTitleKeys: Record<string, string> = {
-  feeds: "communityPage.feedRecommended", latest: "communityPage.feedLatest", following: "communityPage.feedFollowing", mine: "communityPage.mine", bookmarks: "communityPage.bookmarks",
-  notifications: "communityPage.notifications", activity: "communityPage.activity", tags: "communityPage.tags",
-  playlists: "communityPage.playlistPage.title",
+  feeds: "community.page.feedRecommended", latest: "community.page.feedLatest", following: "community.page.feedFollowing", mine: "community.page.mine", bookmarks: "community.page.bookmarks",
+  notifications: "community.page.notifications", activity: "community.page.activity", tags: "community.page.tags",
+  playlists: "community.page.playlistPage.title",
 };
-const titleKey = modeTitleKeys[mode] || "community";
+const titleKey = modeTitleKeys[mode] || "navigation.community";
 const title = t(locale, titleKey, mode === "feeds" ? "Community" : mode);
 
 ---

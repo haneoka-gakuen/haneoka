@@ -72,6 +72,34 @@ import { STAMP_LANGUAGES } from "../lib/stamp-maker/languages";
 
 import { registerImportedFont, removeImportedFont, type StampFont } from "../lib/stamp-maker/fonts";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "background": "story.labels.background",
+  "backgroundColor": "media.models.labels.backgroundColor",
+  "bands": "catalog.fields.bands",
+  "catalog": "navigation.catalog",
+  "characters": "navigation.characters",
+  "close": "common.actions.close",
+  "download": "common.actions.download",
+  "drag": "media.models.labels.drag",
+  "empty": "common.states.empty",
+  "export": "common.actions.export",
+  "height": "catalog.characters.fields.height",
+  "loading": "common.states.loading",
+  "preview": "common.actions.preview",
+  "reset": "common.actions.reset",
+  "retry": "common.actions.retry",
+  "scale": "media.models.labels.scale",
+  "server": "settings.labels.server",
+  "settings": "navigation.settings",
+  "size": "common.layout.size",
+  "stamp": "story.labels.stamp",
+  "stamps": "navigation.stamps",
+  "unavailable": "common.states.unavailable",
+  "vertical": "common.layout.vertical"
+};
+
+
 type Mode = "original" | "textless";
 type ValueControl = HTMLElement & { value: string | number };
 
@@ -490,8 +518,8 @@ export class StampMaker extends LitElement {
   }
 
   private t(key: string) {
-    if (["loading", "retry", "close"].includes(key)) return clientText(this.locale, key);
-    return clientText(this.locale, `stampMaker.${key}`);
+    if (["loading", "retry", "close"].includes(key)) return clientText(this.locale, (uiLabelPaths[key] ?? key));
+    return clientText(this.locale, `tools.stampMaker.${key}`);
   }
   private get originals() {
     const cached = this.originalsCache;
@@ -1670,7 +1698,7 @@ export class StampMaker extends LitElement {
                     this.characterError
                       ? html`
                           <p class="field-note" role="alert">
-                            ${clientText(this.locale, "error")}
+                            ${clientText(this.locale, "common.states.error")}
                             <button class="button button--text" type="button" @click=${this.loadCharacters}>
                               ${this.t("retry")}
                             </button>
@@ -1870,7 +1898,7 @@ export class StampMaker extends LitElement {
             if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close();
           }}
         >
-          ${chooserHeader({ title: this.t("choose"), filterLabel: clientText(this.locale, "filter", "Filter"),
+          ${chooserHeader({ title: this.t("choose"), filterLabel: clientText(this.locale, "common.actions.filter", "Filter"),
             filtersOpen: this.pickerFiltersOpen, toggleFilters: () => (this.pickerFiltersOpen = !this.pickerFiltersOpen),
             closeLabel: this.t("close"), close: () => this.querySelector<HTMLDialogElement>("dialog")?.close(),
             actions: this.pickerBrowsingLocale !== "textless" ? filterChip({ label: this.t("original"), selected: this.pickerOriginal, onToggle: () => (this.pickerOriginal = !this.pickerOriginal) }) : nothing,
@@ -1883,7 +1911,7 @@ export class StampMaker extends LitElement {
                 <div
                   class="settings-options stamp-maker__language-options"
                   role="radiogroup"
-                  aria-label=${clientText(this.locale, "language")}
+                  aria-label=${clientText(this.locale, "settings.labels.language")}
                 >
                   ${Object.entries(STAMP_LANGUAGES)
                     .filter(([language]) =>
@@ -1931,10 +1959,10 @@ export class StampMaker extends LitElement {
                   }
                 </div>
               </div>
-                ${chooserFacet({ label: clientText(this.locale, "bands", "Bands"), allLabel: clientText(this.locale, "all", "All"), value: this.pickerBand,
+                ${chooserFacet({ label: clientText(this.locale, "catalog.fields.bands", "Bands"), allLabel: clientText(this.locale, "common.states.all", "All"), value: this.pickerBand,
                   options: this.pickerBands.map(({id,name,image})=>({value:id,label:name,image})),
                   change: value => { this.pickerBand = value; this.pickerCharacter = ""; } })}
-                ${chooserFacet({ label: clientText(this.locale, "characters", "Characters"), allLabel: clientText(this.locale, "all", "All"), value: this.pickerCharacter,
+                ${chooserFacet({ label: clientText(this.locale, "navigation.characters", "Characters"), allLabel: clientText(this.locale, "common.states.all", "All"), value: this.pickerCharacter,
                   options: this.pickerCharacters.map(({id,name,image})=>({value:id,label:name,image})), change: value => (this.pickerCharacter = value) })}
               `)}
               <div class="collection stamp-maker__grid">

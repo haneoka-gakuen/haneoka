@@ -297,7 +297,7 @@ export class AdminWorkspace extends LitElement {
   }
 
   private label(path: string, fallback: string) {
-    return clientText(preferredLocale(), `adminPage.${path}`, fallback);
+    return clientText(preferredLocale(), `admin.page.${path}`, fallback);
   }
   private date(value: unknown) {
     const number = typeof value === "number" ? value : Date.parse(String(value || ""));
@@ -3195,7 +3195,7 @@ export class AdminWorkspace extends LitElement {
                       this.forumConflict = null;
                     }}
                     >
-                      ${clientText(preferredLocale(), "cancel", "Cancel")}
+                      ${clientText(preferredLocale(), "common.actions.cancel", "Cancel")}
                     </button>
                     <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
                   </footer>
@@ -3322,7 +3322,7 @@ export class AdminWorkspace extends LitElement {
               this.groupConflict = null;
             }}
           >
-            ${clientText(preferredLocale(), "cancel", "Cancel")}
+            ${clientText(preferredLocale(), "common.actions.cancel", "Cancel")}
           </button>
           <button class="button" ?disabled=${!!this.busy}>${this.label("save", "Save")}</button>
         </footer>
@@ -3392,7 +3392,7 @@ export class AdminWorkspace extends LitElement {
             <button
               class="icon-button"
               type="button"
-              aria-label=${clientText(preferredLocale(), "cancel", "Cancel")}
+              aria-label=${clientText(preferredLocale(), "common.actions.cancel", "Cancel")}
               @click=${() => this.closeMovePost()}
             >
               ${icon("close", 24)}
@@ -3433,7 +3433,7 @@ export class AdminWorkspace extends LitElement {
           </div>
           <footer class="admin-forum-actions">
             <button class="button button--text" type="button" @click=${() => this.closeMovePost()}>
-              ${clientText(preferredLocale(), "cancel", "Cancel")}
+              ${clientText(preferredLocale(), "common.actions.cancel", "Cancel")}
             </button>
             <button class="button" ?disabled=${!!this.busy || !this.moveTarget || !this.moveReason.trim()}>
               ${this.label("forum.confirmMove", "Move post")}
@@ -3917,7 +3917,7 @@ export class AdminWorkspace extends LitElement {
           </form>
           <form @submit=${this.dispatchRun}>
             <h3>${this.label("resources.sourceTitle", "Build from a saved source")}</h3>
-            <md-outlined-select name="sourceKind" label=${clientText(preferredLocale(), "source", "Source")}>
+            <md-outlined-select name="sourceKind" label=${clientText(preferredLocale(), "common.fields.source", "Source")}>
               <md-select-option value="github" selected><div slot="headline">GitHub</div></md-select-option>
               ${
                 this.readyPackage
@@ -4047,7 +4047,7 @@ export class AdminWorkspace extends LitElement {
                         <p>${this.error}</p>
                         <div>
                           <a class="button button--tonal" href="/account">
-                            ${clientText(preferredLocale(), "account", "Account")}
+                            ${clientText(preferredLocale(), "navigation.account", "Account")}
                           </a>
                           <button class="button" @click=${() => this.refresh()}>${this.label("retry", "Retry")}</button>
                         </div>
@@ -4083,7 +4083,7 @@ export class AdminWorkspace extends LitElement {
                                           <button
                                             class="icon-button"
                                             type="submit"
-                                            aria-label=${clientText(preferredLocale(), "search", "Search")}
+                                            aria-label=${clientText(preferredLocale(), "common.actions.search", "Search")}
                                           >
                                             ${icon("arrow_forward", 20)}
                                           </button>

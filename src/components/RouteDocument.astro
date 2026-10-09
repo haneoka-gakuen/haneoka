@@ -10,7 +10,7 @@ import EventTrackerPage from "./pages/EventTrackerPage.astro";
 import { nativeMetaPublicationFor } from "../server/native-meta-publication";
 import { staticCatalogRelease } from "../lib/static-catalog-source";
 import { catalogConfig } from "../config/catalog-labels";
-import type { RouteDefinition } from "../config/routes";
+import { legalPageMessageRoot, type RouteDefinition } from "../config/routes";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resourceCollectionHref } from "../lib/resource-route";
@@ -34,7 +34,7 @@ const documentDescriptionValues =
   entry.kind === "legal" && entry.page
     ? Object.fromEntries(LOCALES.map((target) => [
         target,
-        t(target, `${entry.page}.description`, t(target, `${entry.page}.summary`, title)),
+        t(target, `${legalPageMessageRoot(entry.page!)}.description`, t(target, `${legalPageMessageRoot(entry.page!)}.summary`, title)),
       ]))
     : undefined;
 const nativeMetaReference = process.env.NATIVE_META_REFERENCE_RECEIPTS_JSON && entry.kind === "catalog" && ["songs", "song-meta"].includes(entry.resource || "")

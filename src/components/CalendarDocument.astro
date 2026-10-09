@@ -10,8 +10,8 @@ import "../styles/calendar.css";
 
 const { locale, server = "intl" } = Astro.props as { locale: Locale; server?: ReleaseServer };
 const calendar = await loadCalendarData(server, locale);
-const labels: Record<string, string> = { ...(group<Record<string, string>>(locale, "calendar") || {}), filter: t(locale, "filter", "Filter"), close: t(locale, "close", "Close"), reset: t(locale, "reset", "Reset") };
-const title = labels.title || t(locale, "calendar.title", "Calendar");
+const labels: Record<string, string> = { ...(group<Record<string, string>>(locale, "tools.calendar") || {}), filter: t(locale, "common.actions.filter", "Filter"), close: t(locale, "common.actions.close", "Close"), reset: t(locale, "common.actions.reset", "Reset") };
+const title = labels.title || t(locale, "tools.calendar.title", "Calendar");
 const body = await renderCalendar(calendar, locale, labels);
 const dataId = `calendar-data-${server}`;
 ---
@@ -21,9 +21,9 @@ const dataId = `calendar-data-${server}`;
   route="/calendar"
   canonicalRoute={`/${server}/${locale}/calendar/`}
   title={title}
-  titleKey="calendar.title"
+  titleKey="tools.calendar.title"
 >
-  <AppShell locale={locale} server={server} route="/calendar" title={title} titleKey="calendar.title">
+  <AppShell locale={locale} server={server} route="/calendar" title={title} titleKey="tools.calendar.title">
     <calendar-page class="page" locale={locale} data-page-data={dataId} data-prerendered>
       <Fragment set:html={body} />
     </calendar-page>

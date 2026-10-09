@@ -16,7 +16,7 @@ import bushimo from "../assets/icons/bushimo-circle.svg?url";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 
 const { locale } = Astro.props as { locale: Locale };
-const title = t(locale, "settings", "Settings");
+const title = t(locale, "navigation.settings", "Settings");
 const bilibiliBody = bilibiliSvg
   .replace(/^<svg[^>]*>/, "")
   .replace(/<title>.*?<\/title>/, "")
@@ -42,46 +42,46 @@ interface Group {
 const groups: Group[] = [
   {
     name: "theme",
-    key: "appearance",
+    key: "settings.labels.appearance",
     label: "Appearance",
     icon: "palette",
     initial: "system",
     options: [
-      { value: "light", icon: "light_mode", keyName: "themeLight", label: "Light" },
-      { value: "system", icon: "brightness_auto", keyName: "themeSystem", label: "Follow system" },
-      { value: "dark", icon: "dark_mode", keyName: "themeDark", label: "Dark" },
+      { value: "light", icon: "light_mode", keyName: "settings.labels.themeLight", label: "Light" },
+      { value: "system", icon: "brightness_auto", keyName: "settings.labels.themeSystem", label: "Follow system" },
+      { value: "dark", icon: "dark_mode", keyName: "settings.labels.themeDark", label: "Dark" },
     ],
   },
   {
     name: "seed",
-    key: "themeColor",
+    key: "settings.labels.themeColor",
     label: "Theme color",
     icon: "format_paint",
     initial: "haneoka",
     options: [
-      { value: "haneoka", swatch: "haneoka", keyName: "tuneDefault", label: "Original key" },
+      { value: "haneoka", swatch: "haneoka", keyName: "settings.labels.tuneDefault", label: "Original key" },
       ...[1, 2, 3, 4, 5].map((id) => ({
         value: `band-${id}`,
         swatch: `band-${id}`,
-        keyName: `band.${id}`,
+        keyName: `catalog.bands.names.${id}`,
         label: `Band ${id}`,
       })),
     ],
   },
   {
     name: "density",
-    key: "density",
+    key: "common.layout.density",
     label: "Spacing",
     icon: "density_medium",
     initial: "comfortable",
     options: [
-      { value: "comfortable", icon: "density_medium", keyName: "comfortable", label: "Comfortable" },
-      { value: "compact", icon: "density_small", keyName: "compact", label: "Compact" },
+      { value: "comfortable", icon: "density_medium", keyName: "common.layout.comfortable", label: "Comfortable" },
+      { value: "compact", icon: "density_small", keyName: "common.layout.compact", label: "Compact" },
     ],
   },
   {
     name: "locale",
-    key: "language",
+    key: "settings.labels.language",
     label: "Language",
     icon: "language",
     initial: locale,
@@ -95,23 +95,23 @@ const groups: Group[] = [
   },
   {
     name: "release",
-    key: "releaseServer",
+    key: "settings.labels.releaseServer",
     label: "Release server",
     icon: "dns",
     initial: "intl",
     options: [
-      { value: "jp", image: bushimo, keyName: "settingsJapan", label: "Japan" },
-      { value: "intl", image: bilibili, keyName: "settingsGlobal", label: "Global" },
+      { value: "jp", image: bushimo, keyName: "settings.labels.settingsJapan", label: "Japan" },
+      { value: "intl", image: bilibili, keyName: "settings.labels.settingsGlobal", label: "Global" },
     ],
   },
 ];
-const japaneseLabel = "forceJapaneseTitles";
-const estimatedDifficultyLabel = "showDifficultyEstimates";
-const spoilersLabel = "showSpoilerContent";
+const japaneseLabel = "settings.labels.forceJapaneseTitles";
+const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
+const spoilersLabel = "settings.labels.showSpoilerContent";
 ---
 
-<Base locale={locale} route="/settings" title={title} titleKey="settings">
-  <AppShell locale={locale} route="/settings" title={title} titleKey="settings">
+<Base locale={locale} route="/settings" title={title} titleKey="navigation.settings">
+  <AppShell locale={locale} route="/settings" title={title} titleKey="navigation.settings">
     <section class="page">
       <div class="settings-content">
         {[groups.slice(0, 3), groups.slice(3, 4), groups.slice(4)].map((card) => (

@@ -49,15 +49,15 @@ const inInformation = route === "/about" || informationPages.some((item) => item
 
 <div class="app-shell" data-shell data-route={route}>
   <a class="skip-link" href="#main-content">
-    <I18nText keyName="content" fallback="Content" locale={locale} />
+    <I18nText keyName="common.fields.content" fallback="Content" locale={locale} />
   </a>
   <button
     class="nav-scrim"
     type="button"
     tabindex="-1"
     data-nav-close
-    aria-label={t(locale, "close", "Close")}
-    data-i18n-aria-label="close" data-i18n-aria-label-fallback="Close"
+    aria-label={t(locale, "common.actions.close", "Close")}
+    data-i18n-aria-label="common.actions.close" data-i18n-aria-label-fallback="Close"
   ></button>
 
   <!--
@@ -76,8 +76,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
   <nav
     class="nav"
     id="global-navigation"
-    aria-label={t(locale, "primaryNavigation", "Primary navigation")}
-    data-i18n-aria-label="primaryNavigation" data-i18n-aria-label-fallback="Primary navigation"
+    aria-label={t(locale, "navigation.primaryNavigation", "Primary navigation")}
+    data-i18n-aria-label="navigation.primaryNavigation" data-i18n-aria-label-fallback="Primary navigation"
     data-nav
   >
     <div class="nav__header">
@@ -87,8 +87,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         data-nav-toggle
         aria-controls="global-navigation"
         aria-expanded="false"
-        aria-label={t(locale, "menu", "Menu")}
-        data-i18n-aria-label="menu" data-i18n-aria-label-fallback="Menu"
+        aria-label={t(locale, "navigation.menu", "Menu")}
+        data-i18n-aria-label="navigation.menu" data-i18n-aria-label-fallback="Menu"
       >
         <span class="nav__toggle-icon" aria-hidden="true">
           <Icon name="menu" />
@@ -229,8 +229,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
             href={entity.backHref}
             data-entity-back
             data-entity-fallback-href={entity.backHref}
-            aria-label={t(locale, "back", "Back")}
-            data-i18n-aria-label="back"
+            aria-label={t(locale, "common.actions.back", "Back")}
+            data-i18n-aria-label="common.actions.back"
           >
             <Icon name="arrow_back" />
           </a>
@@ -241,8 +241,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
             data-nav-toggle
             aria-controls="global-navigation"
             aria-expanded="false"
-            aria-label={t(locale, "menu", "Menu")}
-            data-i18n-aria-label="menu" data-i18n-aria-label-fallback="Menu"
+            aria-label={t(locale, "navigation.menu", "Menu")}
+            data-i18n-aria-label="navigation.menu" data-i18n-aria-label-fallback="Menu"
           >
             <Icon name="menu" />
           </button>
@@ -274,8 +274,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
               data-nav-toggle
               aria-controls="global-navigation"
               aria-expanded="false"
-              aria-label={t(locale, "menu", "Menu")}
-              data-i18n-aria-label="menu" data-i18n-aria-label-fallback="Menu"
+              aria-label={t(locale, "navigation.menu", "Menu")}
+              data-i18n-aria-label="navigation.menu" data-i18n-aria-label-fallback="Menu"
             >
               <Icon name="menu" />
             </button>
@@ -285,7 +285,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                 href={entity.previous.href}
                 data-entity-navigation="previous"
                 data-entity-base-href={entity.previous.href}
-                aria-label={`${t(locale, "previous", "Previous")}${entity.previous.title ? `: ${entity.previous.title}` : ""}`}
+                aria-label={`${t(locale, "common.actions.previous", "Previous")}${entity.previous.title ? `: ${entity.previous.title}` : ""}`}
               >
                 <Icon name="chevron_left" />
               </a>
@@ -296,7 +296,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                 href={entity.next.href}
                 data-entity-navigation="next"
                 data-entity-base-href={entity.next.href}
-                aria-label={`${t(locale, "next", "Next")}${entity.next.title ? `: ${entity.next.title}` : ""}`}
+                aria-label={`${t(locale, "common.actions.next", "Next")}${entity.next.title ? `: ${entity.next.title}` : ""}`}
               >
                 <Icon name="chevron_right" />
               </a>
@@ -309,8 +309,8 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       <md-linear-progress
         data-page-progress-control
         indeterminate
-        aria-label={t(locale, "loading", "Loading")}
-        data-i18n-aria-label="loading" data-i18n-aria-label-fallback="Loading"
+        aria-label={t(locale, "common.states.loading", "Loading")}
+        data-i18n-aria-label="common.states.loading" data-i18n-aria-label-fallback="Loading"
       ></md-linear-progress>
       <span class="app-shell__progress-fallback" data-page-progress-fallback aria-hidden="true"></span>
       <span class="app-shell__progress-status" data-page-progress-status role="status" aria-live="polite"></span>

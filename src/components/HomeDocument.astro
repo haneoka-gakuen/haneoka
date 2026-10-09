@@ -7,13 +7,13 @@ import type { Locale } from "../i18n/locales";
 import type { ReleaseServer } from "../lib/release-server";
 const { locale, server } = Astro.props as { locale: Locale; server?: ReleaseServer };
 const canonicalRoute = server ? `/${server}/${locale}/` : undefined;
-const title = t(locale, "homePage.overview", "haneoka");
-const seoTitle = t(locale, "seo.homeTitle", "BanG Dream! Our Notes Archive");
+const title = t(locale, "home.dashboard.overview", "haneoka");
+const seoTitle = t(locale, "common.seo.homeTitle", "BanG Dream! Our Notes Archive");
 
 ---
 
-<Base locale={locale} route="/" canonicalRoute={canonicalRoute} title={title} titleKey="homePage.overview" seoTitleValues={{ [locale]: seoTitle }}>
-  <AppShell locale={locale} server={server} route="/" title={title} titleKey="homePage.overview">
+<Base locale={locale} route="/" canonicalRoute={canonicalRoute} title={title} titleKey="home.dashboard.overview" seoTitleValues={{ [locale]: seoTitle }}>
+  <AppShell locale={locale} server={server} route="/" title={title} titleKey="home.dashboard.overview">
     <HomePage locale={locale} server={server} />
   </AppShell>
 </Base>

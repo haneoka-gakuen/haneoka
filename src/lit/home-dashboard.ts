@@ -6,7 +6,6 @@ import { CommunityReactions } from "../lib/community-reaction";
 import { navigateDetailPage } from "../lib/detail-navigation";
 import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
 import { initializeI18nClient } from "../i18n/client";
-import { catalogLookupKeys } from "../i18n/keys";
 import type { Catalog, MessageParams } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
@@ -68,6 +67,35 @@ import {
   birthdayRefreshAt,
   type BirthdayGachaPeriod,
 } from "../lib/home-birthday";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "attribute": "catalog.fields.attribute",
+  "band": "catalog.fields.band",
+  "bands": "catalog.fields.bands",
+  "cards": "navigation.cards",
+  "character": "catalog.fields.character",
+  "characters": "navigation.characters",
+  "community": "navigation.community",
+  "empty": "common.states.empty",
+  "error": "common.states.error",
+  "eventStory": "story.labels.eventStory",
+  "events": "navigation.events",
+  "gacha": "navigation.gacha",
+  "live": "catalog.songs.fields.live",
+  "loading": "common.states.loading",
+  "moveDown": "common.actions.moveDown",
+  "moveUp": "common.actions.moveUp",
+  "next": "common.actions.next",
+  "previous": "common.actions.previous",
+  "server": "settings.labels.server",
+  "songs": "navigation.songs",
+  "stories": "navigation.stories",
+  "support": "navigation.support",
+  "title": "common.fields.title",
+  "unavailable": "common.states.unavailable"
+};
+
 
 type ModuleId = "songs" | "cards" | "birthdays" | "community" | "news" | "fanInfo";
 export interface HomeFanInfo {
@@ -518,7 +546,7 @@ export class HomeDashboard extends LitElement {
 
   /* ---------- copy ---------- */
   private text(key: string, fallback: string) {
-    return clientText(this.locale, key, clientText(this.locale, `homePage.${key}`, fallback));
+    return clientText(this.locale, (uiLabelPaths[key] ?? key), clientText(this.locale, `home.dashboard.${key}`, fallback));
   }
   private count(value: number) {
     return value.toLocaleString(this.locale);
@@ -1254,7 +1282,7 @@ export class HomeDashboard extends LitElement {
     `;
     return html`
       <section class="home-card home-event" aria-labelledby="home-event-title">
-        <h2 id="home-event-title" class="sr-only">${uiText(this.locale, "events")}</h2>
+        <h2 id="home-event-title" class="sr-only">${uiText(this.locale, "navigation.events")}</h2>
         ${
           event
             ? html`
@@ -1265,7 +1293,7 @@ export class HomeDashboard extends LitElement {
                     aria-label=${`${title} · ${countdown}`}
                   >
                     ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale)}
-                    <span class="home-event__overline">${uiText(this.locale, "events")}</span>
+                    <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
                     <span class="home-event__countdown tabular" role="timer" aria-live="off">${countdown}</span>
                   </a>
                   <div class="home-event__body">
@@ -1300,7 +1328,7 @@ export class HomeDashboard extends LitElement {
                       }
                     </header>
                     <div class="home-event__bonuses">${bonusContents}</div>
-                    <nav class="home-event__links" aria-label=${uiText(this.locale, "events")}>
+                    <nav class="home-event__links" aria-label=${uiText(this.locale, "navigation.events")}>
                       <a
                         class="button button--tonal home-event__action"
                         href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "events", id: event.id })}
@@ -1367,7 +1395,7 @@ export class HomeDashboard extends LitElement {
                     class="button button--text"
                     href=${resourceCollectionHref(`/catalog/${kind}`, this.sourceServer(), this.locale as Locale)}
                   >
-                    ${uiText(this.locale, kind === "member-cards" ? "memberCards" : "supportCards")}
+                    ${uiText(this.locale, kind === "member-cards" ? "navigation.memberCards" : "navigation.supportCards")}
                   </a>
                 `,
               )}
@@ -1422,7 +1450,7 @@ export class HomeDashboard extends LitElement {
                     label: [
                       title,
                       names,
-                      uiText(this.locale, kind === "member-cards" ? "memberCards" : "supportCards"),
+                      uiText(this.locale, kind === "member-cards" ? "navigation.memberCards" : "navigation.supportCards"),
                       rarityName,
                       this.releaseLabel(releasedAt),
                     ]
@@ -1486,10 +1514,10 @@ export class HomeDashboard extends LitElement {
     };
     return html`
       <span class="home-card__rail-buttons">
-        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "previous")} title=${uiText(this.locale, "previous")} @click=${() => page(-1)}>
+        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "common.actions.previous")} title=${uiText(this.locale, "common.actions.previous")} @click=${() => page(-1)}>
           ${icon("chevron_left", 24)}
         </button>
-        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "next")} title=${uiText(this.locale, "next")} @click=${() => page(1)}>
+        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "common.actions.next")} title=${uiText(this.locale, "common.actions.next")} @click=${() => page(1)}>
           ${icon("chevron_right", 24)}
         </button>
       </span>
@@ -1830,8 +1858,8 @@ export class HomeDashboard extends LitElement {
         <a
           class="icon-button home-birthday-calendar"
           href=${resourceCollectionHref("/calendar", this.sourceServer(), this.locale as Locale)}
-          aria-label=${clientText(this.locale, "calendar.title", "Calendar")}
-          title=${clientText(this.locale, "calendar.title", "Calendar")}
+          aria-label=${clientText(this.locale, "tools.calendar.title", "Calendar")}
+          title=${clientText(this.locale, "tools.calendar.title", "Calendar")}
         >
           ${icon("event", 20)}
         </a>
@@ -1954,7 +1982,7 @@ export class HomeDashboard extends LitElement {
                           <div style="min-width:0;max-width:100%;overflow-x:auto">
                             <div style="display:flex;align-items:center;gap:var(--md-sys-spacing-2);width:max-content">
                               ${segmented({
-                                label: `${this.text("birthdaysTitle", "Birthday countdown")} · ${uiText(this.locale, "gacha")}`,
+                                label: `${this.text("birthdaysTitle", "Birthday countdown")} · ${uiText(this.locale, "navigation.gacha")}`,
                                 value: this.birthdayChoiceKey(featured),
                                 options: choices.map((item) => {
                                   const pool = this.birthdayRecruitment(item);
@@ -1986,7 +2014,7 @@ export class HomeDashboard extends LitElement {
                             <span
                               class="home-birthday-recruitment-time"
                               style="display:inline"
-                              aria-label=${`${uiText(this.locale, "gacha")}: ${recruitmentStatus}`}
+                              aria-label=${`${uiText(this.locale, "navigation.gacha")}: ${recruitmentStatus}`}
                             >
                               ${recruitmentStatus}
                             </span>
@@ -1999,8 +2027,8 @@ export class HomeDashboard extends LitElement {
                             <a
                               class="icon-button"
                               href=${entityHref({ server: this.sourceServer(), locale: this.locale as Locale, kind: "stories", id: String(story.storyKey || story.storyId) })}
-                              aria-label=${clientText(this.locale, "birthdayStory", uiText(this.locale, "story"))}
-                              title=${clientText(this.locale, "birthdayStory", uiText(this.locale, "story"))}
+                              aria-label=${clientText(this.locale, "story.labels.birthdayStory", uiText(this.locale, "navigation.story"))}
+                              title=${clientText(this.locale, "story.labels.birthdayStory", uiText(this.locale, "navigation.story"))}
                             >
                               ${icon("auto_stories", 20)}
                             </a>
@@ -2156,7 +2184,7 @@ export class HomeDashboard extends LitElement {
       ? [date, entry.venue].filter(Boolean).join(" · ")
       : entry.summary ||
           (["live", "real-live"].includes(entry.category || "")
-            ? clientText(this.locale, "calendar.live", "Live")
+            ? clientText(this.locale, "tools.calendar.live", "Live")
             : "");
   }
   private renderFanInfo() {
@@ -2336,7 +2364,7 @@ export class HomeDashboard extends LitElement {
 
   private communityMessages?: Catalog;
   private communityLabel(key: string, fallback: string, params?: MessageParams) {
-    for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
+    for (const candidate of ["community.page." + key, ...(uiLabelPaths[key] ? [uiLabelPaths[key]!] : [key])])
       if (this.communityMessages?.has(candidate)) return this.communityMessages.text(candidate, params, fallback);
     return fallback;
   }

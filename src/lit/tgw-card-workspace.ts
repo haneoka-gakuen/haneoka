@@ -104,7 +104,7 @@ export class TgwCardWorkspace extends LitElement {
     super.disconnectedCallback();
   }
   private text(key: string, fallback: string, params?: MessageParams) {
-    return clientText(this.locale, `tgw.${key}`, fallback, params);
+    return clientText(this.locale, `catalog.tgwCard.${key}`, fallback, params);
   }
   private name(value: unknown) {
     return localizedText(value, this.locale);
@@ -136,7 +136,7 @@ export class TgwCardWorkspace extends LitElement {
     this.request?.abort();
     const controller = new AbortController();
     this.request = controller;
-    const progress = beginLoading(uiText(this.locale, "loading"), { scope: "owner", signal: controller.signal });
+    const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner", signal: controller.signal });
     this.loading = progress;
     this.phase = "loading";
     this.error = "";
@@ -148,7 +148,7 @@ export class TgwCardWorkspace extends LitElement {
           fetchJson<JsonRecord>(catalogUrl("tgw-card", this.entityId, this.server), { signal: controller.signal }),
           fetchJson<JsonRecord>(catalogUrl("tgw-card", "", this.server), { signal: controller.signal }),
         ]);
-        if (String(detail.id || "") !== this.entityId) throw new Error(uiText(this.locale, "unavailable"));
+        if (String(detail.id || "") !== this.entityId) throw new Error(uiText(this.locale, "common.states.unavailable"));
         entities = [detail as Tier];
         pointName = index.pointName;
       } else if (OFFICIAL_CATALOG_SERVERS.includes(this.server as OfficialCatalogServer)) {
@@ -192,7 +192,7 @@ export class TgwCardWorkspace extends LitElement {
           for (const summary of chunk) {
             const detail = details.items?.[String(summary.id)];
             if (!detail || String(detail.id || "") !== String(summary.id))
-              throw new Error(uiText(this.locale, "unavailable"));
+              throw new Error(uiText(this.locale, "common.states.unavailable"));
             entities.push({ ...summary, ...detail });
           }
         }
@@ -303,10 +303,10 @@ export class TgwCardWorkspace extends LitElement {
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainder = seconds % 60;
     if (hours)
-      parts.push(clientText(this.locale, "spanHours", `${number.format(hours)} h`, { count: number.format(hours) }));
+      parts.push(clientText(this.locale, "common.time.spanHours", `${number.format(hours)} h`, { count: number.format(hours) }));
     if (minutes)
       parts.push(
-        clientText(this.locale, "spanMinutes", `${number.format(minutes)} m`, { count: number.format(minutes) }),
+        clientText(this.locale, "common.time.spanMinutes", `${number.format(minutes)} m`, { count: number.format(minutes) }),
       );
     if (remainder || !parts.length)
       parts.push(this.text("durationSeconds", `${number.format(remainder)} s`, { count: number.format(remainder) }));
@@ -495,11 +495,11 @@ export class TgwCardWorkspace extends LitElement {
       <section class="page tgw-card" aria-label="T.G.W CARD">
         ${
           this.phase === "loading"
-            ? loadingState(uiText(this.locale, "loading"))
+            ? loadingState(uiText(this.locale, "common.states.loading"))
             : this.phase === "error"
               ? errorState(
-                  uiText(this.locale, "unavailable"),
-                  uiText(this.locale, "retry"),
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
                   () => void this.load(),
                   this.error,
                 )

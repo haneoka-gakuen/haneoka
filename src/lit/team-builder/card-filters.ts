@@ -10,6 +10,28 @@ import { cardRarityName } from "../shared/rarity-icon";
 import type { TeamBuilder } from "../team-builder";
 import type { BoxFilters } from "./types";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "attribute": "catalog.fields.attribute",
+  "availableImage": "media.availability.availableImage",
+  "band": "catalog.fields.band",
+  "bands": "catalog.fields.bands",
+  "character": "catalog.fields.character",
+  "characters": "navigation.characters",
+  "maximum": "common.fields.maximum",
+  "minimum": "common.fields.minimum",
+  "no": "common.states.no",
+  "performance": "catalog.cards.fields.performance",
+  "rarity": "catalog.cards.fields.rarity",
+  "release": "catalog.fields.release",
+  "support": "navigation.support",
+  "technique": "catalog.cards.fields.technique",
+  "total": "common.fields.total",
+  "visual": "catalog.cards.fields.visual",
+  "yes": "common.states.yes"
+};
+
+
 export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps", id: number, f: BoxFilters): boolean {
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
@@ -44,8 +66,8 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
   const catalog = host.catalog!;
   const kind = f.kind;
   const cards = Object.values(kind === "members" ? catalog.data.members : catalog.data.snapshots);
-  const label = (key: string) => clientText(host.locale, key, key);
-  const all = host.common("all", "All");
+  const label = (key: string) => clientText(host.locale, (uiLabelPaths[key] ?? key), key);
+  const all = host.common("common.states.all", "All");
   const group = (title: string, values: string[], options: {value: string; label: string; image?: string; imageOnly?: boolean}[], change: (values: string[]) => void) => chooserGroup(title, html`
     ${filterChip({label: all, selected: !values.length, onToggle: () => change([])})}
     ${options.map((option) => filterChip({...option, selected: values.includes(option.value), onToggle: () => change(values.includes(option.value) ? values.filter((value) => value !== option.value) : [...values, option.value])}))}

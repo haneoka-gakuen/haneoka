@@ -45,6 +45,34 @@ import {
 } from "./chart-image-export";
 import { loadingIndicator } from "../ui/loading-indicator";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "bpm": "catalog.analysis.fields.bpm",
+  "close": "common.actions.close",
+  "collapse": "common.actions.collapse",
+  "effects": "catalog.fields.effects",
+  "error": "common.states.error",
+  "expand": "common.actions.expand",
+  "fullscreen": "common.actions.fullscreen",
+  "loading": "common.states.loading",
+  "loop": "common.actions.loop",
+  "mirror": "editors.chart.labels.mirror",
+  "none": "common.states.none",
+  "notes": "editors.chart.labels.notes",
+  "nps": "catalog.analysis.fields.nps",
+  "pause": "common.actions.pause",
+  "play": "common.actions.play",
+  "playback": "media.audio.playback",
+  "reset": "common.actions.reset",
+  "settings": "navigation.settings",
+  "simple": "common.layout.simple",
+  "stage": "media.models.labels.stage",
+  "time": "common.fields.time",
+  "volume": "media.audio.volume",
+  "watch": "common.actions.watch"
+};
+
+
 type RuntimeOutput = { objectId: string | number; path: string; type: string };
 type RuntimeDescriptor = {
   sourcePath?: string;
@@ -884,8 +912,8 @@ export class ChartSimulator extends LitElement {
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
   }
   private ui(key: ChartUiKey) {
-    if (key === "collapse" || key === "expand") return uiText(this.locale, key);
-    return uiText(this.locale, `chartPlayer.${key}`);
+    if (key === "collapse" || key === "expand") return uiText(this.locale, (uiLabelPaths[key] ?? key));
+    return uiText(this.locale, `media.chartPlayer.${key}`);
   }
   private renderSettingSlider(
     key: NumericRenderSetting,
@@ -1173,7 +1201,7 @@ export class ChartSimulator extends LitElement {
                   class="chart-runtime__controls playback-controls"
                   data-collapsed=${this.transportCollapsed ? "true" : "false"}
                   data-auto-hidden=${this.transportAutoHidden ? "true" : "false"}
-                  aria-label=${uiText(this.locale, "morePlaybackControls")}
+                  aria-label=${uiText(this.locale, "media.audio.morePlaybackControls")}
                 >
                   <div
                     class="playback-controls__expanded"
@@ -1197,7 +1225,7 @@ export class ChartSimulator extends LitElement {
                         max=${this.duration || 1}
                         step="0.01"
                         .value=${String(this.currentTime)}
-                        aria-label=${uiText(this.locale, "seek")}
+                        aria-label=${uiText(this.locale, "common.actions.seek")}
                         @input=${(event: Event) =>
                           this.previewSeek(Number((event.target as HTMLElement & { value?: number }).value))}
                         @change=${(event: Event) =>
@@ -1230,8 +1258,8 @@ export class ChartSimulator extends LitElement {
                         class="icon-button"
                         @click=${this.toggleFullscreen}
                         aria-pressed=${this.fullscreen}
-                        aria-label=${uiText(this.locale, this.fullscreen ? "fullscreenExit" : "fullscreen")}
-                        title=${uiText(this.locale, this.fullscreen ? "fullscreenExit" : "fullscreen")}
+                        aria-label=${uiText(this.locale, this.fullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
+                        title=${uiText(this.locale, this.fullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
                       >
                         ${icon(this.fullscreen ? "fullscreen_exit" : "fullscreen", 20)}
                       </button>

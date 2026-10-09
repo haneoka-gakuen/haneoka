@@ -20,6 +20,17 @@ import { renderScreenshotImportDialog, type ScreenshotImportDialogState } from "
 import { selectionPane } from "../ui/selection-pane";
 import type { TeamBuilder } from "../team-builder";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "bandItems": "navigation.bandItems",
+  "cancel": "common.actions.cancel",
+  "clear": "common.actions.clear",
+  "close": "common.actions.close",
+  "empty": "common.states.empty",
+  "support": "navigation.support"
+};
+
+
 /** The legacy document the import tools review against. */
 export function viewInventory(host: TeamBuilder, view: BoxView): InventoryV2 {
   const identity = host.data!.identity;
@@ -176,7 +187,7 @@ export class ImportController {
   }
   private text(key: string, fallback: string, params?: Record<string, string | number>) {
     if (key.startsWith("existing")) return this.host.t(`importExisting.${key.slice(8).toLowerCase()}`, fallback, params);
-    if (["close", "cancel", "clear"].includes(key)) return clientText(this.host.locale, key, fallback, params);
+    if (["close", "cancel", "clear"].includes(key)) return clientText(this.host.locale, (uiLabelPaths[key] ?? key), fallback, params);
     if (["members", "snapshots", "unknown", "notUnlocked"].includes(key)) return this.host.t(key, fallback, params);
     return this.host.t(`boxImport.${key}`, fallback, params);
   }
@@ -251,7 +262,7 @@ export class ImportController {
     const host = this.host;
     if (this.box) {
       const state = this.box;
-      return renderBoxImportDialog({ ...state, serverLabel: host.data?.identity.server === "jp" ? clientText(host.locale, "settingsJapan", "Japan") : clientText(host.locale, "settingsGlobal", "Global"), error: state.error ? this.boxError(state.error) : null }, {
+      return renderBoxImportDialog({ ...state, serverLabel: host.data?.identity.server === "jp" ? clientText(host.locale, "settings.labels.settingsJapan", "Japan") : clientText(host.locale, "settings.labels.settingsGlobal", "Global"), error: state.error ? this.boxError(state.error) : null }, {
         text: (key, fallback, params) => this.text(key, fallback, params),
         card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
         mapName: (map, id) => host.catalog!.text(map === "bandItems" ? host.data!.bandItems[String(id)]?.name : host.data!.characters[String(id)]?.characterName) || host.t("unknown", "Unknown or not entered"),
@@ -277,9 +288,9 @@ export class ImportController {
         const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number)
           .filter((id) => !correcting.query || catalog.cardName(kind, id).toLocaleLowerCase(host.locale).includes(correcting.query.toLocaleLowerCase(host.locale)));
         return selectionPane({
-          id: "tb-screenshot-correct", title: host.t("correctCard", "Choose the right card"), closeLabel: host.common("close", "Close"),
+          id: "tb-screenshot-correct", title: host.t("correctCard", "Choose the right card"), closeLabel: host.common("common.actions.close", "Close"),
           close: () => { this.correcting = null; host.requestUpdate(); },
-          searchLabel: host.common("search", "Search"), filterLabel: host.t("filters", "Filters"), filtersOpen: false, toggleFilters: () => undefined,
+          searchLabel: host.common("common.actions.search", "Search"), filterLabel: host.t("filters", "Filters"), filtersOpen: false, toggleFilters: () => undefined,
           query: correcting.query, search: (query) => { this.correcting = { ...correcting, query }; host.requestUpdate(); }, filters: nothing,
           kind: kind === "members" ? "member" : "support", items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })), selected: "",
           select: (value) => { session.correct(correcting.image, correcting.observation, Number(value)); this.correcting = null; host.requestUpdate(); },
@@ -287,7 +298,7 @@ export class ImportController {
         });
       }
       return renderScreenshotImportDialog(this.screenshot, {
-        text: (key, fallback) => key.startsWith("existing") ? this.text(key, fallback) : clientText(host.locale, ["close", "cancel"].includes(key) ? key : `teamBuilder.screenshotImport.${key}`, fallback),
+        text: (key, fallback) => key.startsWith("existing") ? this.text(key, fallback) : clientText(host.locale, ["close", "cancel"].includes(key) ? key : `tools.teamBuilder.screenshotImport.${key}`, fallback),
         card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
         levels: (kind, id) => practiceRanges(host.data!, kind, id).level ?? [],
         files: (files) => void session.files(files).catch(() => { this.screenshot = { ...(session.state() as ScreenshotImportDialogState), error: "invalid-image" }; host.requestUpdate(); }),

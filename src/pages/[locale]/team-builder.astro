@@ -10,11 +10,11 @@ export function getStaticPaths() {
 }
 const { locale } = Astro.props as { locale: Locale };
 const route = "/team-builder";
-const title = t(locale, "teamBuilder.title", "Team builder");
+const title = t(locale, "tools.teamBuilder.title", "Team builder");
 ---
 
-<Base locale={locale} route={route} title={title} titleKey="teamBuilder.title">
-  <AppShell locale={locale} route={route} title={title} titleKey="teamBuilder.title">
+<Base locale={locale} route={route} title={title} titleKey="tools.teamBuilder.title">
+  <AppShell locale={locale} route={route} title={title} titleKey="tools.teamBuilder.title">
     <TeamBuilderPage locale={locale} />
   </AppShell>
 </Base>

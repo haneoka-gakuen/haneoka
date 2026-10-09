@@ -23,7 +23,7 @@ export function difficultyPicker(options: {
     <span
       class=${`difficulty-picker${options.compact ? " difficulty-picker--compact" : ""}`}
       role="radiogroup"
-      aria-label=${uiText(options.locale, "difficulty")}
+      aria-label=${uiText(options.locale, "catalog.songs.fields.difficulty")}
       @click=${(event: Event) => event.stopPropagation()}
       @keydown=${rovingKeydown(keys, options.selected, select)}
     >

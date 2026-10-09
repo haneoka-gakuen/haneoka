@@ -1,3 +1,4 @@
+import { catalogLabelPath } from "../config/catalog-labels";
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillFacetValues, skillTypeKey, skillTypeTitle, songMissions } from "../lib/catalog-filters";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -123,6 +124,156 @@ import {
 } from "../lib/resource-route";
 import { normalizeReleaseServer, type ReleaseServer } from "../lib/release-server";
 import { LOCALES, type Locale } from "../i18n/locales";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "all": "common.states.all",
+  "arrangement": "catalog.songs.fields.arrangement",
+  "arranger": "catalog.songs.fields.arranger",
+  "artworkCard": "catalog.cards.fields.artworkCard",
+  "ascending": "common.layout.ascending",
+  "attribute": "catalog.fields.attribute",
+  "audio": "navigation.audio",
+  "awakening": "catalog.cards.fields.awakening",
+  "background": "story.labels.background",
+  "band": "catalog.fields.band",
+  "bands": "catalog.fields.bands",
+  "birthday": "catalog.characters.fields.birthday",
+  "bpm": "catalog.analysis.fields.bpm",
+  "cards": "navigation.cards",
+  "catalog": "navigation.catalog",
+  "catalogTestServer": "catalog.availability.catalogTestServer",
+  "category": "common.fields.category",
+  "challenge": "navigation.challenge",
+  "character": "catalog.fields.character",
+  "characterRank": "catalog.characters.fields.characterRank",
+  "characters": "navigation.characters",
+  "chart": "navigation.chart",
+  "circle": "navigation.circle",
+  "close": "common.actions.close",
+  "comfortable": "common.layout.comfortable",
+  "composer": "catalog.songs.fields.composer",
+  "constellation": "catalog.characters.fields.constellation",
+  "content": "common.fields.content",
+  "current": "common.fields.current",
+  "descending": "common.layout.descending",
+  "details": "common.actions.details",
+  "diary": "catalog.characters.fields.diary",
+  "difficulty": "catalog.songs.fields.difficulty",
+  "downloadChart": "common.actions.downloadChart",
+  "eff": "catalog.analysis.fields.eff",
+  "effects": "catalog.fields.effects",
+  "effectsByLevel": "catalog.cards.fields.effectsByLevel",
+  "empty": "common.states.empty",
+  "error": "common.states.error",
+  "events": "navigation.events",
+  "exchange": "navigation.exchange",
+  "favoriteFood": "catalog.characters.fields.favoriteFood",
+  "filter": "common.actions.filter",
+  "friendship": "catalog.characters.fields.friendship",
+  "friendships": "catalog.characters.fields.friendships",
+  "gacha": "navigation.gacha",
+  "gekisouMissionCombo": "catalog.songs.gekisou.gekisouMissionCombo",
+  "gekisouMissionJustCount": "catalog.songs.gekisou.gekisouMissionJustCount",
+  "gekisouMissionLuck": "catalog.songs.gekisou.gekisouMissionLuck",
+  "gekisouSkill": "catalog.cards.fields.gekisouSkill",
+  "gekisouSupportSkill": "catalog.cards.fields.gekisouSupportSkill",
+  "gekisouType": "catalog.analysis.fields.gekisouType",
+  "genre": "catalog.songs.fields.genre",
+  "grid": "common.layout.grid",
+  "hatedFood": "catalog.characters.fields.hatedFood",
+  "height": "catalog.characters.fields.height",
+  "help": "navigation.help",
+  "hobby": "catalog.characters.fields.hobby",
+  "id": "common.fields.id",
+  "items": "navigation.items",
+  "justable": "catalog.analysis.fields.justable",
+  "justableRate": "catalog.analysis.fields.justableRate",
+  "language": "settings.labels.language",
+  "leaderSkill": "catalog.cards.fields.leaderSkill",
+  "level": "common.fields.level",
+  "list": "common.layout.list",
+  "live": "catalog.songs.fields.live",
+  "live2d": "navigation.live2d",
+  "liveSkill": "catalog.cards.fields.liveSkill",
+  "loading": "common.states.loading",
+  "luck": "catalog.analysis.fields.luck",
+  "lyricist": "catalog.songs.fields.lyricist",
+  "lyrics": "catalog.songs.fields.lyrics",
+  "maximum": "common.fields.maximum",
+  "media": "navigation.media",
+  "memberCards": "navigation.memberCards",
+  "metaMode": "catalog.analysis.fields.metaMode",
+  "metaModeGekisou": "catalog.analysis.fields.metaModeGekisou",
+  "metaModeLive": "catalog.analysis.fields.metaModeLive",
+  "metaNativeScore": "catalog.analysis.fields.metaNativeScore",
+  "metaScore": "catalog.analysis.fields.metaScore",
+  "metaScoreFactor": "catalog.analysis.fields.metaScoreFactor",
+  "metaTier": "catalog.analysis.fields.metaTier",
+  "minimum": "common.fields.minimum",
+  "missions": "navigation.missions",
+  "model": "media.models.labels.model",
+  "musicType": "catalog.songs.fields.musicType",
+  "mv": "catalog.songs.fields.mv",
+  "n": "catalog.analysis.fields.n",
+  "no": "common.states.no",
+  "notes": "editors.chart.labels.notes",
+  "nps": "catalog.analysis.fields.nps",
+  "order": "common.layout.order",
+  "performance": "catalog.cards.fields.performance",
+  "play": "common.actions.play",
+  "playAll": "media.audio.playAll",
+  "profile": "catalog.characters.fields.profile",
+  "rank": "catalog.cards.fields.rank",
+  "rankUpItem": "catalog.cards.fields.rankUpItem",
+  "rarity": "catalog.cards.fields.rarity",
+  "release": "catalog.fields.release",
+  "remove": "common.actions.remove",
+  "required": "common.fields.required",
+  "reset": "common.actions.reset",
+  "retry": "common.actions.retry",
+  "rewards": "catalog.fields.rewards",
+  "school": "catalog.characters.fields.school",
+  "schoolClass": "catalog.characters.fields.schoolClass",
+  "score": "catalog.analysis.fields.score",
+  "search": "common.actions.search",
+  "section": "navigation.section",
+  "settingsGlobal": "settings.labels.settingsGlobal",
+  "settingsJapan": "settings.labels.settingsJapan",
+  "shop": "navigation.shop",
+  "simple": "common.layout.simple",
+  "size": "common.layout.size",
+  "skills": "catalog.cards.fields.skills",
+  "songs": "navigation.songs",
+  "sort": "common.actions.sort",
+  "source": "common.fields.source",
+  "spine": "navigation.spine",
+  "sr": "catalog.analysis.fields.sr",
+  "stage": "media.models.labels.stage",
+  "stamp": "story.labels.stamp",
+  "stamps": "navigation.stamps",
+  "stories": "navigation.stories",
+  "story": "navigation.story",
+  "subtitle": "common.fields.subtitle",
+  "support": "navigation.support",
+  "supportSkill": "catalog.cards.fields.supportSkill",
+  "table": "common.layout.table",
+  "technique": "catalog.cards.fields.technique",
+  "time": "common.fields.time",
+  "title": "common.fields.title",
+  "total": "common.fields.total",
+  "training": "catalog.cards.fields.training",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable",
+  "unlockConditions": "catalog.cards.fields.unlockConditions",
+  "video": "story.labels.video",
+  "view": "common.actions.view",
+  "visual": "catalog.cards.fields.visual",
+  "voices": "navigation.voices",
+  "watch": "common.actions.watch",
+  "yes": "common.states.yes"
+};
+
 
 const EXTRA_FILTERS = [
   "difficulty",
@@ -1009,7 +1160,7 @@ export class CatalogScreen extends LitElement {
     const server = detail.activeServer === "intl-test"
       ? this.label("catalogTestServer", "Test environment")
       : this.label(detail.activeServer === "jp" ? "settingsJapan" : "settingsGlobal", detail.activeServer);
-    return html`<p class="detail-copy">${clientText(this.settings.locale, "catalogViewingServerData", "Viewing {server} data.", { server })}</p>`;
+    return html`<p class="detail-copy">${clientText(this.settings.locale, "catalog.availability.catalogViewingServerData", "Viewing {server} data.", { server })}</p>`;
   }
   private async ensureUnionDetail(payload: EntityPayload): Promise<void> {
     if (!this.unionResource() || this.unionDetail || !this.isConnected || !payload.server || !payload.releaseId) return;
@@ -1782,8 +1933,8 @@ export class CatalogScreen extends LitElement {
     return this.entityLink(id, difficulty, variant?.identity.server || this.dataServer());
   }
   private label(key: string, fallback: string) {
-    const alias = this.settings.labelAliases?.[key] || key;
-    return clientText(this.settings.locale, alias, fallback);
+    const alias = this.settings.labelAliases?.[key] || catalogLabelPath(key) || key;
+    return clientText(this.settings.locale, (uiLabelPaths[alias] ?? alias), fallback);
   }
   private normalizeSort(value: string) {
     if (value === "type" && ["member", "support"].includes(this.profile.presentation)) return this.profile.defaultSort;
@@ -1801,7 +1952,7 @@ export class CatalogScreen extends LitElement {
     return aliases[value] || value;
   }
   private localized(value: unknown): string {
-    if (typeof value === "boolean") return uiText(this.settings.locale, value ? "yes" : "no");
+    if (typeof value === "boolean") return uiText(this.settings.locale, value ? "common.states.yes" : "common.states.no");
     return cleanMarkup(localizedText(value, this.settings.locale));
   }
   private formatList(values: unknown[], type: Intl.ListFormatOptions["type"] = "conjunction") {
@@ -2936,14 +3087,14 @@ export class CatalogScreen extends LitElement {
       for (const key of keys) {
         const counts = tally((item) => this.facetValues(item, key));
         const labels: Record<string, string> = {
-          ongoing: uiText(this.settings.locale, "system.ongoing"),
-          upcoming: uiText(this.settings.locale, "system.upcoming"),
-          ended: uiText(this.settings.locale, "system.ended"),
-          stars: uiText(this.settings.locale, "gachaType.stars"),
-          ticket: uiText(this.settings.locale, "gachaType.ticket"),
-          ad: uiText(this.settings.locale, "gachaType.ad"),
-          pass: uiText(this.settings.locale, "gachaType.pass"),
-          bonus: uiText(this.settings.locale, "gachaType.bonus"),
+          ongoing: uiText(this.settings.locale, "catalog.systems.common.ongoing"),
+          upcoming: uiText(this.settings.locale, "catalog.systems.common.upcoming"),
+          ended: uiText(this.settings.locale, "catalog.systems.common.ended"),
+          stars: uiText(this.settings.locale, "catalog.recruitments.types.stars"),
+          ticket: uiText(this.settings.locale, "catalog.recruitments.types.ticket"),
+          ad: uiText(this.settings.locale, "catalog.recruitments.types.ad"),
+          pass: uiText(this.settings.locale, "catalog.recruitments.types.pass"),
+          bonus: uiText(this.settings.locale, "catalog.recruitments.types.bonus"),
         };
         groups.push({
           key,
@@ -2975,14 +3126,14 @@ export class CatalogScreen extends LitElement {
         key,
         label:
           key === "audio"
-            ? uiText(this.settings.locale, "availableAudio")
+            ? uiText(this.settings.locale, "media.availability.availableAudio")
             : key === "artwork"
-              ? uiText(this.settings.locale, "availableImage")
+              ? uiText(this.settings.locale, "media.availability.availableImage")
               : this.detailLabel(key),
         options: members.map((value) => ({
           value,
           id: ids.get(value),
-          label: ["yes", "no"].includes(value) ? uiText(this.settings.locale, value) : this.label(value, value),
+          label: ["yes", "no"].includes(value) ? uiText(this.settings.locale, (uiLabelPaths[value] ?? value)) : this.label(value, value),
           count: counts.get(value),
         })),
       });
@@ -3797,7 +3948,7 @@ export class CatalogScreen extends LitElement {
       const field = key.startsWith("release") ? "release" : key.replace(/^(min|max)/, "").toLowerCase();
       const bound = key.startsWith("min") || key.endsWith("From") ? "minimum" : "maximum";
       chips.push(
-        inputChip(`${this.detailLabel(field)} · ${uiText(this.settings.locale, bound)}: ${value}`, remove, () => {
+        inputChip(`${this.detailLabel(field)} · ${uiText(this.settings.locale, (uiLabelPaths[bound] ?? bound))}: ${value}`, remove, () => {
           this.facets = { ...this.facets, [key]: [] };
           this.syncUrl();
         }),
@@ -3849,7 +4000,7 @@ export class CatalogScreen extends LitElement {
                 ${["min", "max"].map(
                   (bound) => html`
                     <label>
-                      ${uiText(this.settings.locale, bound === "min" ? "minimum" : "maximum")}
+                      ${uiText(this.settings.locale, bound === "min" ? "common.fields.minimum" : "common.fields.maximum")}
                       <input
                         type="number"
                         min="0"
@@ -3875,7 +4026,7 @@ export class CatalogScreen extends LitElement {
             ${["releaseFrom", "releaseTo"].map(
               (key, index) => html`
                 <label>
-                  ${uiText(this.settings.locale, index ? "maximum" : "minimum")}
+                  ${uiText(this.settings.locale, index ? "common.fields.maximum" : "common.fields.minimum")}
                   <input
                     type="date"
                     .value=${this.facets[key]?.[0] || ""}
@@ -4293,7 +4444,7 @@ export class CatalogScreen extends LitElement {
       return portraits.map((portrait, index) => ({
         ...portrait,
         id: `visual${index + 1}`,
-        label: `${uiText(this.settings.locale, "portrait")} ${String(index + 1).padStart(2, "0")}`,
+        label: `${uiText(this.settings.locale, "media.images.fields.portrait")} ${String(index + 1).padStart(2, "0")}`,
       }));
     const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
     const candidates: Array<{
@@ -4681,7 +4832,7 @@ export class CatalogScreen extends LitElement {
                 <a
                   class="icon-button"
                   href=${this.rankingPageHref(item)}
-                  aria-label=${this.label("songRanking.title", "Song ranking")}
+                  aria-label=${this.label("catalog.rankings.songs.title", "Song ranking")}
                 >
                   <svg class="material-icon" width="24" height="24"><use href="/icons.svg#bar_chart"></use></svg>
                 </a>
@@ -5210,7 +5361,7 @@ export class CatalogScreen extends LitElement {
           this.commentsRequested = true;
           void import("./entity-comments").then(() => { if (this.commentsTargetCurrent(key, generation)) this.requestUpdate(); }).catch(() => { if (!this.commentsTargetCurrent(key, generation)) return; this.commentsModuleError = true; this.commentsRequested = false; this.requestUpdate(); });
         }
-        content = renderCommentsState({ phase: "loading", label: clientText(this.settings.locale, "loading", "Loading") });
+        content = renderCommentsState({ phase: "loading", label: clientText(this.settings.locale, "common.states.loading", "Loading") });
       }
     } else content = html`<entity-comments class="detail-comments" entity-type=${target.type} entity-id=${target.id} locale=${this.settings.locale} server=${this.itemSourceServer(item)} target-title=${this.itemTitle(item)} comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}></entity-comments>`;
     return html`<div ${ref((element) => { if (element instanceof HTMLElement) queueMicrotask(() => this.observeCommentsPlaceholder(element, key, generation)); })}>${content}</div>`;

@@ -206,8 +206,8 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                 <a
                   class="icon-button"
                   href=${returnTo}
-                  aria-label=${clientText(this.locale, "back", "Back")}
-                  title=${clientText(this.locale, "back", "Back")}
+                  aria-label=${clientText(this.locale, "common.actions.back", "Back")}
+                  title=${clientText(this.locale, "common.actions.back", "Back")}
                 >
                   ${icon("arrow_back", 24)}
                 </a>
@@ -220,7 +220,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             class="icon-button"
             id=${`${this.owner}-server`}
             aria-haspopup="menu"
-            aria-label=${`${clientText(this.locale, "server", "Server")} · ${this.label(GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.key, this.region)}`}
+            aria-label=${`${clientText(this.locale, "settings.labels.server", "Server")} · ${this.label(GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.key, this.region)}`}
             @click=${(event: Event) => (event.currentTarget as HTMLElement).parentElement?.querySelector("md-menu")?.show()}
           >
             <img
@@ -241,7 +241,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             )}
           </md-menu>
         </div>
-        ${iconButton({ label: clientText(this.locale, "refresh", "Refresh"), icon: "refresh", disabled: !this.selectedProfileId || this.profilePhase === "loading", onClick: () => void this.loadProfile(this.selectedProfileId) })}
+        ${iconButton({ label: clientText(this.locale, "common.actions.refresh", "Refresh"), icon: "refresh", disabled: !this.selectedProfileId || this.profilePhase === "loading", onClick: () => void this.loadProfile(this.selectedProfileId) })}
       `,
       this,
     );
@@ -269,7 +269,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
           .querySelector<HTMLButtonElement>(`[data-app-bar-search-owner="${this.owner}"] .top-app-bar__search-toggle`)
           ?.click();
     }
-    updateEntityHeading(this, clientText(this.locale, "playerProfile.title", "Player lookup"));
+    updateEntityHeading(this, clientText(this.locale, "tools.playerProfile.title", "Player lookup"));
   }
   updated(_changed: PropertyValues) {
     if (this.isConnected) this.syncChrome();
@@ -277,20 +277,20 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   render() {
     const loading = this.profilePhase === "loading";
     return html`
-      <section class="song-ranking-page" aria-label=${clientText(this.locale, "playerProfile.title", "Player lookup")}>
+      <section class="song-ranking-page" aria-label=${clientText(this.locale, "tools.playerProfile.title", "Player lookup")}>
         <div class="song-ranking__progress" aria-hidden=${loading ? nothing : "true"}>
           ${
             loading
               ? html`
                   <md-linear-progress
                     indeterminate
-                    aria-label=${clientText(this.locale, "loading", "Loading")}
+                    aria-label=${clientText(this.locale, "common.states.loading", "Loading")}
                   ></md-linear-progress>
                 `
               : nothing
           }
         </div>
-        ${this.queryInvalid ? emptyState({ title: clientText(this.locale, "playerProfile.invalidId", "Check the player ID"), icon: "error" }) : this.profilePhase === "idle" ? emptyState({ title: clientText(this.locale, "playerProfile.queryIdle", "Enter a player ID"), icon: "person_search" }) : this.renderProfile()}
+        ${this.queryInvalid ? emptyState({ title: clientText(this.locale, "tools.playerProfile.invalidId", "Check the player ID"), icon: "error" }) : this.profilePhase === "idle" ? emptyState({ title: clientText(this.locale, "tools.playerProfile.queryIdle", "Enter a player ID"), icon: "person_search" }) : this.renderProfile()}
       </section>
     `;
   }
@@ -453,7 +453,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                         images.length
                           ? iconButton({
                               icon: "download",
-                              label: clientText(this.locale, "download", "Download"),
+                              label: clientText(this.locale, "common.actions.download", "Download"),
                               disabled:
                                 this.profileImageDownloading ||
                                 !this.profilePages().find((page) => String(page.page) === this.profileImageId)
@@ -468,7 +468,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                         ? html`
                             <md-linear-progress
                               indeterminate
-                              aria-label=${clientText(this.locale, "loading", "Loading")}
+                              aria-label=${clientText(this.locale, "common.states.loading", "Loading")}
                             ></md-linear-progress>
                           `
                         : nothing
@@ -476,7 +476,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                     ${
                       this.profileImageError
                         ? html`
-                            <p role="alert">${clientText(this.locale, "unavailable", "Unavailable")}</p>
+                            <p role="alert">${clientText(this.locale, "common.states.unavailable", "Unavailable")}</p>
                           `
                         : nothing
                     }
@@ -509,7 +509,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                       profile.rankExp != null || favorites != null
                         ? html`
                             <dl class="spec-list song-ranking__profile-facts">
-                              ${this.profileFact(clientText(this.locale, "exp", "EXP"), profile.rankExp?.toLocaleString(this.locale))}
+                              ${this.profileFact(clientText(this.locale, "catalog.cards.fields.exp", "EXP"), profile.rankExp?.toLocaleString(this.locale))}
                               ${this.profileFact(this.label("favorites", "Likes received"), favorites)}
                             </dl>
                           `
@@ -533,13 +533,13 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                                   : nothing
                               }
                               <dl class="spec-list song-ranking__profile-facts">
-                                ${!artwork ? this.profileFact(clientText(this.locale, "cards", "Cards"), favoriteId) : nothing}
-                                ${this.profileFact(clientText(this.locale, "level", "Level"), favoriteLevelDisplay)}
-                                ${this.profileFact(clientText(this.locale, "exp", "EXP"), favorite?.exp?.toLocaleString(this.locale))}
-                                ${this.profileFact(clientText(this.locale, "training", "Training"), favorite?.awakeCount)}
-                                ${this.profileFact(clientText(this.locale, "awakening", "Awakening"), favorite?.cardRank)}
-                                ${this.profileFact(clientText(this.locale, "liveSkill", "LIVE Skill"), favorite?.liveSkillLevel)}
-                                ${this.profileFact(clientText(this.locale, "gekisouSkill", "Gekisou Skill"), favorite?.performanceSkillLevel)}
+                                ${!artwork ? this.profileFact(clientText(this.locale, "navigation.cards", "Cards"), favoriteId) : nothing}
+                                ${this.profileFact(clientText(this.locale, "common.fields.level", "Level"), favoriteLevelDisplay)}
+                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.exp", "EXP"), favorite?.exp?.toLocaleString(this.locale))}
+                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.training", "Training"), favorite?.awakeCount)}
+                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.awakening", "Awakening"), favorite?.cardRank)}
+                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.liveSkill", "LIVE Skill"), favorite?.liveSkillLevel)}
+                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.gekisouSkill", "Gekisou Skill"), favorite?.performanceSkillLevel)}
                               </dl>
                             </section>
                           `

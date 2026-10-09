@@ -29,6 +29,43 @@ import type { CubismTextureVariant } from "@haneoka/vega-plugin-cubism";
 import { loadingIndicator } from "./ui/loading-indicator";
 import { StageFullscreen, StageGestures } from "./ui/stage-fullscreen";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "band": "catalog.fields.band",
+  "bands": "catalog.fields.bands",
+  "blink": "media.models.labels.blink",
+  "breath": "media.models.labels.breath",
+  "capture": "common.actions.capture",
+  "character": "catalog.fields.character",
+  "characters": "navigation.characters",
+  "costumeId": "story.labels.costumeId",
+  "error": "common.states.error",
+  "grid": "common.layout.grid",
+  "id": "common.fields.id",
+  "live": "catalog.songs.fields.live",
+  "live2d": "navigation.live2d",
+  "loading": "common.states.loading",
+  "loop": "common.actions.loop",
+  "model": "media.models.labels.model",
+  "no": "common.states.no",
+  "none": "common.states.none",
+  "order": "common.layout.order",
+  "pose": "media.models.labels.pose",
+  "preview": "common.actions.preview",
+  "quality": "media.models.labels.quality",
+  "sort": "common.actions.sort",
+  "subCharacter": "story.labels.subCharacter",
+  "sway": "media.models.labels.sway",
+  "table": "common.layout.table",
+  "title": "common.fields.title",
+  "type": "catalog.fields.type",
+  "view": "common.actions.view",
+  "yes": "common.states.yes",
+  "invalidModelPackage": "media.models.labels.invalidModelPackage",
+  "emptyModelResource": "media.models.labels.emptyModelResource"
+};
+
+
 type Value = Record<string, unknown>;
 type Parameter = { id: string; value: number; minimum: number; maximum: number; defaultValue: number };
 type Part = { id: string; opacity: number };
@@ -569,7 +606,7 @@ export class Live2DWorkspace extends LitElement {
     if (!canvas) throw new Error("Live2D viewer canvas is unavailable");
     const source = detail.runtime && typeof detail.runtime === "object" ? (detail.runtime as Value) : detail;
     const modelUrl = String(source.model || "");
-    if (!modelUrl) throw new Error(uiText(this.locale, "modelDescriptorMissing"));
+    if (!modelUrl) throw new Error(uiText(this.locale, "media.models.labels.modelDescriptorMissing"));
     const motions = Array.isArray(detail.motions) ? (detail.motions as Value[]) : [];
     const defaultMotion = this.defaultMotionName(detail, motions);
     const defaultExpression = String(
@@ -859,7 +896,7 @@ export class Live2DWorkspace extends LitElement {
       }
     } catch {
       if (!controller || !this.isActiveSelection(generation, controller, key)) return;
-      this.modelError = uiText(this.locale, "invalidParameterPose");
+      this.modelError = uiText(this.locale, "media.models.labels.invalidParameterPose");
     }
   }
   private exportParameters() {
@@ -983,7 +1020,7 @@ export class Live2DWorkspace extends LitElement {
   private savePose() {
     const id = String(Date.now());
     const pose = this.currentPoseData();
-    pose.name = `${uiText(this.locale, "pose")} ${Object.keys(this.poses).length + 1}`;
+    pose.name = `${uiText(this.locale, "media.models.labels.pose")} ${Object.keys(this.poses).length + 1}`;
     this.poses = { ...this.poses, [id]: pose };
     this.poseId = id;
     this.renamingPose = false;
@@ -1077,8 +1114,8 @@ export class Live2DWorkspace extends LitElement {
   }
   private modelType(model: Value) {
     const value = String(model.modelType || "");
-    if (value === "adv") return uiText(this.locale, "story");
-    if (value === "live") return uiText(this.locale, "live");
+    if (value === "adv") return uiText(this.locale, "navigation.story");
+    if (value === "live") return uiText(this.locale, "catalog.songs.fields.live");
     return value || "—";
   }
   private sync() {
@@ -1111,11 +1148,11 @@ export class Live2DWorkspace extends LitElement {
       }
       if (counts.size < 2) return nothing;
       return facet(
-        uiText(this.locale, key),
+        uiText(this.locale, (uiLabelPaths[key] ?? key)),
         this.locale,
         [...counts].map(([value, count]) => ({
           value,
-          label: ["yes", "no"].includes(value) ? uiText(this.locale, value) : value,
+          label: ["yes", "no"].includes(value) ? uiText(this.locale, (uiLabelPaths[value] ?? value)) : value,
           count,
         })),
         this.metaFilters[key] ? [this.metaFilters[key]] : [],
@@ -1256,7 +1293,7 @@ export class Live2DWorkspace extends LitElement {
       await downloadBlob(blob, `${selected || "viewer"}.png`);
     } catch {
       if (generation === this.generation && this.isConnected) {
-        this.captureMessage = uiText(this.locale, "captureFailed");
+        this.captureMessage = uiText(this.locale, "common.states.captureFailed");
       }
     } finally {
       this.capturing = false;
@@ -1269,7 +1306,7 @@ export class Live2DWorkspace extends LitElement {
     const source = detail.runtime && typeof detail.runtime === "object" ? (detail.runtime as Value) : detail;
     const modelPath = String(source.model || "");
     if (!modelPath) {
-      this.packagingError = uiText(this.locale, "modelDescriptorMissing");
+      this.packagingError = uiText(this.locale, "media.models.labels.modelDescriptorMissing");
       return;
     }
     const controller = new AbortController();
@@ -1306,7 +1343,7 @@ export class Live2DWorkspace extends LitElement {
       if (this.packagingAbortController === controller) {
         this.packagingError =
           exporter && error instanceof exporter.Live2DExportError
-            ? uiText(this.locale, error.messageKey)
+            ? uiText(this.locale, (uiLabelPaths[error.messageKey] ?? error.messageKey))
             : error instanceof Error
               ? error.message
               : String(error);
@@ -1332,16 +1369,16 @@ export class Live2DWorkspace extends LitElement {
   }
   private packagingStatus(): string {
     const progress = this.packagingProgress;
-    if (!progress) return uiText(this.locale, "loading");
+    if (!progress) return uiText(this.locale, "common.states.loading");
     const stage =
       progress.stage === "manifest"
-        ? uiText(this.locale, "details")
+        ? uiText(this.locale, "common.actions.details")
         : progress.stage === "resources"
-          ? uiText(this.locale, "visualAssets")
-          : uiText(this.locale, "downloadModel");
+          ? uiText(this.locale, "media.models.labels.visualAssets")
+          : uiText(this.locale, "media.models.labels.downloadModel");
     const count = progress.total == null ? String(progress.completed) : `${progress.completed}/${progress.total}`;
     const bytes = progress.loadedBytes > 0 ? ` · ${this.formatBytes(progress.loadedBytes)}` : "";
-    return `${uiText(this.locale, "progress")}: ${stage} ${count}${bytes}`;
+    return `${uiText(this.locale, "common.fields.progress")}: ${stage} ${count}${bytes}`;
   }
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
@@ -1361,12 +1398,12 @@ export class Live2DWorkspace extends LitElement {
         results:
           this.phase === "loading"
             ? this.view === "grid"
-              ? html`${collectionSkeleton("model")}${loadingState(uiText(this.locale, "loading"))}`
-              : loadingState(uiText(this.locale, "loading"))
+              ? html`${collectionSkeleton("model")}${loadingState(uiText(this.locale, "common.states.loading"))}`
+              : loadingState(uiText(this.locale, "common.states.loading"))
             : this.phase === "error"
               ? errorState(
-                  uiText(this.locale, "unavailable"),
-                  uiText(this.locale, "retry"),
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
                   () => void this.loadCatalog(),
                   this.error,
                 )
@@ -1376,7 +1413,7 @@ export class Live2DWorkspace extends LitElement {
                   ? this.renderModelList(models)
                   : this.renderSimpleList(models),
         filters: {
-          label: uiText(this.locale, "filter"),
+          label: uiText(this.locale, "common.actions.filter"),
           open: this.filtersOpen,
           count:
             Number(Boolean(this.query)) +
@@ -1384,8 +1421,8 @@ export class Live2DWorkspace extends LitElement {
             Number(Boolean(this.characterFilter)) +
             Number(Boolean(this.typeFilter)) +
             Object.values(this.metaFilters).filter(Boolean).length,
-          closeLabel: uiText(this.locale, "close"),
-          resetLabel: uiText(this.locale, "reset"),
+          closeLabel: uiText(this.locale, "common.actions.close"),
+          resetLabel: uiText(this.locale, "common.actions.reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => {
@@ -1401,7 +1438,7 @@ export class Live2DWorkspace extends LitElement {
               <md-outlined-text-field
                 class="is-search"
                 type="search"
-                label=${uiText(this.locale, "search")}
+                label=${uiText(this.locale, "common.actions.search")}
                 .value=${this.query}
                 @input=${(event: Event) => {
                   this.query = String((event.target as HTMLElement & { value?: string }).value || "");
@@ -1414,7 +1451,7 @@ export class Live2DWorkspace extends LitElement {
               </md-outlined-text-field>
             </div>
             ${this.renderModelFacets(
-              uiText(this.locale, "band"),
+              uiText(this.locale, "catalog.fields.band"),
               this.bands,
               this.bandFilter,
               (item) => Number(item.bandId),
@@ -1423,7 +1460,7 @@ export class Live2DWorkspace extends LitElement {
               (value) => (this.bandFilter = Number(value)),
             )}
             ${facet(
-              uiText(this.locale, "character"),
+              uiText(this.locale, "catalog.fields.character"),
               this.locale,
               this.characterFacetItems(),
               this.characterFilter ? [this.characterFilter] : [],
@@ -1433,7 +1470,7 @@ export class Live2DWorkspace extends LitElement {
               },
             )}
             ${facet(
-              uiText(this.locale, "type"),
+              uiText(this.locale, "catalog.fields.type"),
               this.locale,
               types.map((value) => ({
                 value,
@@ -1448,11 +1485,11 @@ export class Live2DWorkspace extends LitElement {
             )}
             ${this.renderMetadataFilters()}
             ${filterGroup(
-              uiText(this.locale, "sort"),
+              uiText(this.locale, "common.actions.sort"),
               html`
                 <div class="field-stack">
                   <md-outlined-select
-                    label=${uiText(this.locale, "sort")}
+                    label=${uiText(this.locale, "common.actions.sort")}
                     value=${this.sort}
                     @change=${(event: Event) => {
                       this.sort = String(
@@ -1463,11 +1500,11 @@ export class Live2DWorkspace extends LitElement {
                   >
                     ${(
                       [
-                        ["id", uiText(this.locale, "order")],
-                        ["title", uiText(this.locale, "title")],
-                        ["type", uiText(this.locale, "type")],
-                        ["character", uiText(this.locale, "character")],
-                        ["band", uiText(this.locale, "band")],
+                        ["id", uiText(this.locale, "common.layout.order")],
+                        ["title", uiText(this.locale, "common.fields.title")],
+                        ["type", uiText(this.locale, "catalog.fields.type")],
+                        ["character", uiText(this.locale, "catalog.fields.character")],
+                        ["band", uiText(this.locale, "catalog.fields.band")],
                       ] as const
                     ).map(
                       ([value, label]) => html`
@@ -1494,7 +1531,7 @@ export class Live2DWorkspace extends LitElement {
     image: (item: Value) => string,
     update: (value: number) => void,
   ) {
-    const key = label === uiText(this.locale, "band") ? "bandId" : "characterId";
+    const key = label === uiText(this.locale, "catalog.fields.band") ? "bandId" : "characterId";
     return facet(
       label,
       this.locale,
@@ -1532,12 +1569,12 @@ export class Live2DWorkspace extends LitElement {
   }
   private renderModelList(models: Value[]) {
     return collectionTable(
-      uiText(this.locale, "table"),
+      uiText(this.locale, "common.layout.table"),
       [
-        uiText(this.locale, "model"),
-        uiText(this.locale, "type"),
-        uiText(this.locale, "character"),
-        uiText(this.locale, "band"),
+        uiText(this.locale, "media.models.labels.model"),
+        uiText(this.locale, "catalog.fields.type"),
+        uiText(this.locale, "catalog.fields.character"),
+        uiText(this.locale, "catalog.fields.band"),
       ],
       models.map((model) => [
         html`
@@ -1578,7 +1615,7 @@ export class Live2DWorkspace extends LitElement {
         class=${page ? "viewer-detail viewer-detail--page" : "viewer-detail pane-layer"}
         role=${page ? nothing : "dialog"}
         aria-modal=${page ? nothing : "true"}
-        aria-label=${page ? nothing : uiText(this.locale, "model")}
+        aria-label=${page ? nothing : uiText(this.locale, "media.models.labels.model")}
         tabindex=${page ? nothing : "-1"}
         data-overlay-pane=${page ? nothing : "true"}
       >
@@ -1587,7 +1624,7 @@ export class Live2DWorkspace extends LitElement {
             ? nothing
             : html`
                 <header>
-                  <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "close")}>
+                  <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "common.actions.close")}>
                     <svg class="material-icon" width="24" height="24"><use href="/icons.svg#arrow_back"></use></svg>
                   </button>
                   ${
@@ -1601,23 +1638,23 @@ export class Live2DWorkspace extends LitElement {
                     <strong>${detail ? this.modelTitle(detail) : this.selected}</strong>
                     <small>${detail ? this.characterName(detail) : ""}</small>
                   </span>
-                  <nav class="viewer-detail__navigation" aria-label=${uiText(this.locale, "live2d")}>
+                  <nav class="viewer-detail__navigation" aria-label=${uiText(this.locale, "navigation.live2d")}>
                     <button
                       class="icon-button"
                       ?disabled=${modelIndex <= 0}
                       @click=${() => this.adjacentModel(-1)}
-                      aria-label=${uiText(this.locale, "previous")}
+                      aria-label=${uiText(this.locale, "common.actions.previous")}
                     >
                       <svg class="material-icon" width="20" height="20"><use href="/icons.svg#chevron_left"></use></svg>
                     </button>
-                    <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "grid")}>
+                    <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "common.layout.grid")}>
                       <svg class="material-icon" width="20" height="20"><use href="/icons.svg#grid_view"></use></svg>
                     </button>
                     <button
                       class="icon-button"
                       ?disabled=${modelIndex < 0 || modelIndex >= models.length - 1}
                       @click=${() => this.adjacentModel(1)}
-                      aria-label=${uiText(this.locale, "next")}
+                      aria-label=${uiText(this.locale, "common.actions.next")}
                     >
                       <svg class="material-icon" width="20" height="20">
                         <use href="/icons.svg#chevron_right"></use>
@@ -1631,7 +1668,7 @@ export class Live2DWorkspace extends LitElement {
           <div
             class="viewer-stage viewer-detail__runtime"
             aria-busy=${this.modelPhase === "loading"}
-            aria-label=${detail ? this.modelTitle(detail) : uiText(this.locale, "live2d")}
+            aria-label=${detail ? this.modelTitle(detail) : uiText(this.locale, "navigation.live2d")}
             style=${previewRatio ? `--viewer-stage-ratio: ${previewRatio};` : nothing}
           >
             ${
@@ -1647,7 +1684,7 @@ export class Live2DWorkspace extends LitElement {
               this.generation,
               html`
                 <canvas
-                  aria-label=${uiText(this.locale, "live2d")}
+                  aria-label=${uiText(this.locale, "navigation.live2d")}
                   style=${modelReady ? `touch-action: none; cursor: ${this.dragging ? "grabbing" : "grab"}` : ""}
                   @pointerdown=${this.gestures.down}
                   @pointermove=${(event: PointerEvent) => {
@@ -1671,7 +1708,7 @@ export class Live2DWorkspace extends LitElement {
                 ? html`
                     <div class="viewer-state" role="status" aria-live="polite">
                       ${loadingIndicator()}
-                      <span>${uiText(this.locale, "loading")}</span>
+                      <span>${uiText(this.locale, "common.states.loading")}</span>
                     </div>
                   `
                 : nothing
@@ -1681,7 +1718,7 @@ export class Live2DWorkspace extends LitElement {
                     <div class="viewer-state" role="alert">
                       <span>${this.modelError || this.error}</span>
                       <button class="button button--tonal" type="button" @click=${this.retryModel}>
-                        ${uiText(this.locale, "retry")}
+                        ${uiText(this.locale, "common.actions.retry")}
                       </button>
                     </div>
                   `
@@ -1723,7 +1760,7 @@ export class Live2DWorkspace extends LitElement {
                       <button
                         class="icon-button runtime-button"
                         @click=${() => this.toggle("paused")}
-                        aria-label=${uiText(this.locale, this.paused ? "play" : "pause")}
+                        aria-label=${uiText(this.locale, this.paused ? "common.actions.play" : "common.actions.pause")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href=${this.paused ? "/icons.svg#play_arrow" : "/icons.svg#pause"}></use>
@@ -1736,8 +1773,8 @@ export class Live2DWorkspace extends LitElement {
                           void this.fullscreen.toggle(
                             (event.currentTarget as HTMLElement).closest<HTMLElement>(".viewer-stage"),
                           )}
-                        aria-label=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
-                        title=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
+                        aria-label=${uiText(this.locale, this.stageFullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
+                        title=${uiText(this.locale, this.stageFullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href=${this.stageFullscreen ? "/icons.svg#fullscreen_exit" : "/icons.svg#fullscreen"}></use>
@@ -1747,7 +1784,7 @@ export class Live2DWorkspace extends LitElement {
                         class="icon-button runtime-button"
                         ?disabled=${this.capturing || this.packaging}
                         @click=${this.captureStage}
-                        aria-label=${uiText(this.locale, "screenshot")}
+                        aria-label=${uiText(this.locale, "media.models.labels.screenshot")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href="/icons.svg#photo_camera"></use>
@@ -1757,8 +1794,8 @@ export class Live2DWorkspace extends LitElement {
                         class="icon-button runtime-button"
                         ?disabled=${this.packaging}
                         @click=${this.downloadModelPackage}
-                        aria-label=${uiText(this.locale, "downloadModel")}
-                        title=${uiText(this.locale, "downloadModel")}
+                        aria-label=${uiText(this.locale, "media.models.labels.downloadModel")}
+                        title=${uiText(this.locale, "media.models.labels.downloadModel")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href="/icons.svg#download"></use>
@@ -1774,16 +1811,16 @@ export class Live2DWorkspace extends LitElement {
               this.phase === "error" && modelReady
                 ? html`
                     <div class="viewer-metadata-status" role="alert">
-                      <span>${uiText(this.locale, "metadataUnavailable")}</span>
+                      <span>${uiText(this.locale, "common.states.metadataUnavailable")}</span>
                       <button class="button button--text" @click=${() => void this.loadCatalog()}>
-                        ${uiText(this.locale, "retry")}
+                        ${uiText(this.locale, "common.actions.retry")}
                       </button>
                     </div>
                   `
                 : nothing
             }
             <section class="viewer-behavior-controls">
-              <h3>${uiText(this.locale, "settings")}</h3>
+              <h3>${uiText(this.locale, "navigation.settings")}</h3>
               ${(
                 [
                   ["sway", this.sway],
@@ -1794,24 +1831,24 @@ export class Live2DWorkspace extends LitElement {
               ).map(
                 ([key, selected]) => html`
                   <label>
-                    <span>${uiText(this.locale, key)}</span>
+                    <span>${uiText(this.locale, (uiLabelPaths[key] ?? key))}</span>
                     <md-switch
                       .selected=${selected}
                       ?disabled=${key === "loop" && !this.selectedMotion}
                       @change=${() => this.toggle(key)}
-                      aria-label=${uiText(this.locale, key)}
+                      aria-label=${uiText(this.locale, (uiLabelPaths[key] ?? key))}
                     ></md-switch>
                   </label>
                 `,
               )}
               <label class="viewer-background-color">
-                <span>${uiText(this.locale, "backgroundColor")}</span>
+                <span>${uiText(this.locale, "media.models.labels.backgroundColor")}</span>
                 <span class="viewer-background-color__controls">
                   <input
                     type="color"
                     .value=${this.backgroundColor}
                     ?disabled=${this.backgroundTransparent}
-                    aria-label=${uiText(this.locale, "backgroundColor")}
+                    aria-label=${uiText(this.locale, "media.models.labels.backgroundColor")}
                     @input=${(event: Event) => {
                       this.backgroundColor = String((event.target as HTMLInputElement).value || "#ecf0f1");
                       this.applyBackground();
@@ -1820,20 +1857,20 @@ export class Live2DWorkspace extends LitElement {
                   <md-switch
                     .selected=${!this.backgroundTransparent}
                     @change=${() => this.toggle("transparent")}
-                    aria-label=${uiText(this.locale, "backgroundColor")}
+                    aria-label=${uiText(this.locale, "media.models.labels.backgroundColor")}
                   ></md-switch>
                 </span>
               </label>
             </section>
             <section class="viewer-transform-controls">
-              <h3>${uiText(this.locale, "transform")}</h3>
+              <h3>${uiText(this.locale, "media.models.labels.transform")}</h3>
               <button class="button button--text" @click=${this.resetTransform}>
-                ${uiText(this.locale, "resetTransform")}
+                ${uiText(this.locale, "media.models.labels.resetTransform")}
               </button>
               <label>
-                <span>${uiText(this.locale, "scale")}</span>
+                <span>${uiText(this.locale, "media.models.labels.scale")}</span>
                 <md-slider
-                  aria-label=${uiText(this.locale, "scale")}
+                  aria-label=${uiText(this.locale, "media.models.labels.scale")}
                   min="0.25"
                   max="4"
                   step="0.01"
@@ -1845,9 +1882,9 @@ export class Live2DWorkspace extends LitElement {
                 ></md-slider>
               </label>
               <label>
-                <span>${uiText(this.locale, "viewerModelPositionX")}</span>
+                <span>${uiText(this.locale, "media.models.labels.viewerModelPositionX")}</span>
                 <md-slider
-                  aria-label=${uiText(this.locale, "viewerModelPositionX")}
+                  aria-label=${uiText(this.locale, "media.models.labels.viewerModelPositionX")}
                   min=${Math.min(-2, this.offsetX)}
                   max=${Math.max(2, this.offsetX)}
                   step="0.01"
@@ -1859,9 +1896,9 @@ export class Live2DWorkspace extends LitElement {
                 ></md-slider>
               </label>
               <label>
-                <span>${uiText(this.locale, "viewerModelPositionY")}</span>
+                <span>${uiText(this.locale, "media.models.labels.viewerModelPositionY")}</span>
                 <md-slider
-                  aria-label=${uiText(this.locale, "viewerModelPositionY")}
+                  aria-label=${uiText(this.locale, "media.models.labels.viewerModelPositionY")}
                   min=${Math.min(-2, this.offsetY)}
                   max=${Math.max(2, this.offsetY)}
                   step="0.01"
@@ -1877,11 +1914,11 @@ export class Live2DWorkspace extends LitElement {
               motions.length
                 ? html`
                     <section>
-                      <h3>${uiText(this.locale, "motion")}</h3>
+                      <h3>${uiText(this.locale, "media.models.labels.motion")}</h3>
                       <div class="viewer-motion-row">
                         <md-outlined-select
                           class="viewer-inspector-select"
-                          label=${uiText(this.locale, "motion")}
+                          label=${uiText(this.locale, "media.models.labels.motion")}
                           .value=${this.selectedMotion}
                           @change=${(event: Event) =>
                             this.playMotion(String((event.target as HTMLElement & { value?: string }).value || ""))}
@@ -1895,7 +1932,7 @@ export class Live2DWorkspace extends LitElement {
                           )}
                         </md-outlined-select>
                         <button class="button button--tonal viewer-panel-button" @click=${this.stopMotion}>
-                          ${uiText(this.locale, "stop")}
+                          ${uiText(this.locale, "common.actions.stop")}
                         </button>
                       </div>
                     </section>
@@ -1905,10 +1942,10 @@ export class Live2DWorkspace extends LitElement {
               expressions.length
                 ? html`
                     <section>
-                      <h3>${uiText(this.locale, "expression")}</h3>
+                      <h3>${uiText(this.locale, "media.models.labels.expression")}</h3>
                       <md-outlined-select
                         class="viewer-inspector-select"
-                        label=${uiText(this.locale, "expression")}
+                        label=${uiText(this.locale, "media.models.labels.expression")}
                         @change=${(event: Event) =>
                           this.viewer?.playExpression(
                             String((event.target as HTMLElement & { value?: string }).value || ""),
@@ -1931,7 +1968,7 @@ export class Live2DWorkspace extends LitElement {
                 ? accordion({
                     id: `${this.editorId}-parameters`,
                     className: "viewer-parameter-editor",
-                    label: uiText(this.locale, "parameters"),
+                    label: uiText(this.locale, "media.models.labels.parameters"),
                     metadata: this.parameters.length,
                     headingLevel: 3,
                     expanded: this.parametersExpanded,
@@ -1939,18 +1976,18 @@ export class Live2DWorkspace extends LitElement {
                     content: html`
                       <div class="viewer-parameter-content">
                         <div class="viewer-parameter-toolbar">
-                          <span>${uiText(this.locale, "parameterMode")}</span>
+                          <span>${uiText(this.locale, "media.models.labels.parameterMode")}</span>
                           <span class="viewer-parameter-actions">
                             <button
                               class="button button--tonal"
                               style="flex: 1 1 max-content"
                               @click=${() => this.querySelector<HTMLInputElement>("[data-pose-import]")?.click()}
                             >
-                              ${uiText(this.locale, "importPose")}
+                              ${uiText(this.locale, "media.models.labels.importPose")}
                             </button>
                             <input
                               data-pose-import
-                              aria-label=${uiText(this.locale, "importPose")}
+                              aria-label=${uiText(this.locale, "media.models.labels.importPose")}
                               type="file"
                               accept="application/json,.json"
                               @change=${this.importParameters}
@@ -1960,28 +1997,28 @@ export class Live2DWorkspace extends LitElement {
                               style="flex: 1 1 max-content"
                               @click=${this.exportParameters}
                             >
-                              ${uiText(this.locale, "exportPose")}
+                              ${uiText(this.locale, "media.models.labels.exportPose")}
                             </button>
                             <button
                               class="button button--text"
                               style="flex: 1 1 max-content"
                               @click=${this.resetParameters}
                             >
-                              ${uiText(this.locale, "reset")}
+                              ${uiText(this.locale, "common.actions.reset")}
                             </button>
                           </span>
                           ${segmented({
-                            label: uiText(this.locale, "parameterMode"),
+                            label: uiText(this.locale, "media.models.labels.parameterMode"),
                             value: this.parameterMode,
                             options: (["none", "capture", "pose"] as const).map((value) => ({
                               value,
-                              label: uiText(this.locale, value),
+                              label: uiText(this.locale, (uiLabelPaths[value] ?? value)),
                             })),
                             onSelect: (mode) => this.setParameterMode(mode),
                           })}
                         </div>
                         <div class="viewer-pose-toolbar">
-                          <span>${uiText(this.locale, "customPoses")}</span>
+                          <span>${uiText(this.locale, "media.models.labels.customPoses")}</span>
                           <div class="viewer-pose-toolbar__row">
                             ${
                               this.renamingPose
@@ -2006,13 +2043,13 @@ export class Live2DWorkspace extends LitElement {
                                       class="button button--tonal viewer-panel-button"
                                       @click=${this.commitPoseName}
                                     >
-                                      ${uiText(this.locale, "confirm")}
+                                      ${uiText(this.locale, "common.actions.confirm")}
                                     </button>
                                   `
                                 : html`
                                     <md-outlined-select
                                       class="viewer-inspector-select"
-                                      label=${uiText(this.locale, "customPoses")}
+                                      label=${uiText(this.locale, "media.models.labels.customPoses")}
                                       .value=${this.poseId}
                                       @change=${(event: Event) =>
                                         this.applyPose(
@@ -2020,7 +2057,7 @@ export class Live2DWorkspace extends LitElement {
                                         )}
                                     >
                                       <md-select-option value="">
-                                        <div slot="headline">${uiText(this.locale, "defaultPose")}</div>
+                                        <div slot="headline">${uiText(this.locale, "media.models.labels.defaultPose")}</div>
                                       </md-select-option>
                                       ${Object.entries(this.poses).map(
                                         ([id, pose]) => html`
@@ -2031,7 +2068,7 @@ export class Live2DWorkspace extends LitElement {
                                       )}
                                     </md-outlined-select>
                                     <button class="button button--tonal viewer-panel-button" @click=${this.savePose}>
-                                      ${uiText(this.locale, "savePose")}
+                                      ${uiText(this.locale, "common.actions.savePose")}
                                     </button>
                                     ${
                                       this.poseId
@@ -2043,13 +2080,13 @@ export class Live2DWorkspace extends LitElement {
                                                 this.poseNameDraft = this.poses[this.poseId]?.name || "";
                                               }}
                                             >
-                                              ${uiText(this.locale, "rename")}
+                                              ${uiText(this.locale, "common.actions.rename")}
                                             </button>
                                             <button
                                               class="button button--tonal viewer-panel-button"
                                               @click=${this.deletePose}
                                             >
-                                              ${uiText(this.locale, "remove")}
+                                              ${uiText(this.locale, "common.actions.remove")}
                                             </button>
                                           `
                                         : nothing
@@ -2079,7 +2116,7 @@ export class Live2DWorkspace extends LitElement {
                               <button
                                 class="icon-button"
                                 @click=${() => this.resetParameter(parameter)}
-                                aria-label=${`${uiText(this.locale, "reset")} ${parameter.id}`}
+                                aria-label=${`${uiText(this.locale, "common.actions.reset")} ${parameter.id}`}
                               >
                                 <svg class="material-icon" width="18" height="18">
                                   <use href="/icons.svg#restart_alt"></use>
@@ -2098,7 +2135,7 @@ export class Live2DWorkspace extends LitElement {
                 ? accordion({
                     id: `${this.editorId}-parts`,
                     className: "viewer-parameter-editor viewer-part-editor",
-                    label: uiText(this.locale, "partsVisibility"),
+                    label: uiText(this.locale, "media.models.labels.partsVisibility"),
                     metadata: this.parts.length,
                     headingLevel: 3,
                     expanded: this.partsExpanded,
@@ -2107,7 +2144,7 @@ export class Live2DWorkspace extends LitElement {
                       <div class="viewer-parameter-content">
                         <div class="viewer-part-toolbar">
                           <button class="button button--text" @click=${this.resetParts}>
-                            ${uiText(this.locale, "reset")}
+                            ${uiText(this.locale, "common.actions.reset")}
                           </button>
                         </div>
                         ${this.parts.map(

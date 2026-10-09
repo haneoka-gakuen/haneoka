@@ -90,7 +90,7 @@ export class AnnouncementDetail extends LitElement {
       else alternate.href = alternate.href.replace("/announcements/detail/", `/announcements/${this.route.id}/`);
     }
     const displayTitle = this.entry?.title || announcementText(this.locale, "title", "Announcements");
-    const siteTitle = clientText(this.locale, "seo.siteTitle", "BanG Dream! Our Notes Archive");
+    const siteTitle = clientText(this.locale, "common.seo.siteTitle", "BanG Dream! Our Notes Archive");
     const title = `${displayTitle} · haneoka - ${siteTitle}`;
     document.title = title;
     for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])

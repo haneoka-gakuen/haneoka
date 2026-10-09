@@ -127,7 +127,7 @@ function renderSearch(node: HTMLElement, options: AppBarSearchOptions, forceExpa
         <button
           class="icon-button top-app-bar__search-close"
           type="button"
-          aria-label=${options.closeLabel ?? clientText(document.documentElement.dataset.locale || "en", "close", "Close")}
+          aria-label=${options.closeLabel ?? clientText(document.documentElement.dataset.locale || "en", "common.actions.close", "Close")}
           @click=${close}
         >
           ${icon("close", 24)}

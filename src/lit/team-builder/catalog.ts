@@ -69,7 +69,7 @@ export class Catalog {
   }
   attributeName(attribute: number) {
     const key = ["", "red", "blue", "green", "yellow", "purple"][attribute];
-    return key ? clientText(this.host.locale, `liveMusicTypes.${key}`, key) : "";
+    return key ? clientText(this.host.locale, `catalog.songs.liveTypes.${key}`, key) : "";
   }
   attributeIcon(attribute: number) {
     const color = COLORS[attribute];

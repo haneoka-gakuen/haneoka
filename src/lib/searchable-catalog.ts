@@ -1,6 +1,7 @@
 import { resolveSongPerformer } from "./song-performer";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
+import { LABEL_ENTRIES } from "../config/catalog-labels";
 import { resolveLocalizedText } from "./localized-text";
 import { disambiguateTitles } from "./title-disambiguation";
 import { formatMoney, shopPaymentPrices, moneyName, shopPriceEntries } from "./shop-currency";
@@ -353,20 +354,26 @@ function isStaticEntityId(definition: CollectionDefinition, id: string, server: 
 
 const RARITY_LABELS: Record<number, string> = { 2: "R", 3: "SR", 4: "SSR", 10: "EX", 20: "BD" };
 const KIND_LABEL_KEYS: Record<string, string> = {
-  gameEvent: "game-event",
-  realLive: "real-live",
-  regularMission: "regular-mission",
-  limitedMission: "limited-mission",
-  seasonPass: "season-pass",
-  monthlyPass: "monthly-pass",
+  gameEvent: "catalog.events.kind.gameEvent",
+  realLive: "catalog.events.kind.realLive",
+  regularMission: "catalog.missions.regularMission",
+  limitedMission: "catalog.missions.limitedMission",
+  seasonPass: "catalog.passes.seasonPass",
+  monthlyPass: "catalog.passes.monthlyPass",
 };
+const FACT_MESSAGE_PATHS = new Map<string, string>([
+  ...LABEL_ENTRIES,
+  ["system.limit", "catalog.shop.limit"],
+  ["system.starts", "catalog.systems.common.starts"],
+  ["system.ends", "catalog.systems.common.ends"],
+]);
 
 /** Localises a system entity's kind/category slug the way the screen does. */
 function systemLabel(value: string, locale: Locale): string {
   if (!value) return "";
   const kindKey = KIND_LABEL_KEYS[value];
-  if (kindKey) return t(locale, `system.${kindKey}`, value);
-  const type = t(locale, `gachaType.${value}`, "");
+  if (kindKey) return t(locale, kindKey, value);
+  const type = t(locale, `catalog.recruitments.types.${value}`, "");
   return type || value.replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
@@ -508,7 +515,7 @@ function factsFor(
   if (starts) facts.push({ key: "system.starts", value: starts });
   const ends = formatDate(value.endAt, locale);
   if (ends) facts.push({ key: "system.ends", value: ends });
-  else facts.push({ key: "system.ends", value: t(locale, "noEndDate", "Open-ended") });
+  else facts.push({ key: "system.ends", value: t(locale, "home.events.noEndDate", "Open-ended") });
   return facts;
 }
 
@@ -619,7 +626,10 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
         LOCALES.map((locale) => {
           const uniqueFacts = facts[locale]
             .filter(({ value: fact }) => fact && fact !== titles[locale] && fact !== subtitles[locale])
-            .map((fact) => `${t(locale, fact.key, fact.key)}: ${fact.value}`);
+            .map((fact) => {
+              const messagePath = FACT_MESSAGE_PATHS.get(fact.key);
+              return `${messagePath ? t(locale, messagePath, fact.key) : fact.key}: ${fact.value}`;
+            });
           const description =
             bodies[locale] || [titles[locale], subtitles[locale], ...uniqueFacts].filter(Boolean).join(" · ");
           return [locale, description];

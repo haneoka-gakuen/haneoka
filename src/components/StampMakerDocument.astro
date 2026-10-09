@@ -8,12 +8,12 @@ import "../styles/stamp-maker.css";
 import "../styles/settings.css";
 
 const { locale, server, textlessSrc } = Astro.props as { locale: Locale; server?: ReleaseServer; textlessSrc?: string };
-const title = t(locale, "stampMaker.title", "Stamp maker");
+const title = t(locale, "tools.stampMaker.title", "Stamp maker");
 const route = "/stamp-maker";
 ---
 
-<Base locale={locale} route={route} title={title} titleKey="stampMaker.title">
-  <AppShell locale={locale} route={route} title={title} titleKey="stampMaker.title" server={server}>
+<Base locale={locale} route={route} title={title} titleKey="tools.stampMaker.title">
+  <AppShell locale={locale} route={route} title={title} titleKey="tools.stampMaker.title" server={server}>
     <stamp-maker locale={locale} server={server} textless-src={textlessSrc}></stamp-maker>
   </AppShell>
 </Base>

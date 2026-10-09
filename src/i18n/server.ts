@@ -8,15 +8,17 @@ import {
   type MessageCatalogs,
   type MessageParams,
   type UiLocale,
+  type TranslationShape,
 } from "@haneoka/i18n";
 import ja from "../../public/i18n/ja.json";
 import en from "../../public/i18n/en.json";
 import ko from "../../public/i18n/ko.json";
 import zhCN from "../../public/i18n/zh-CN.json";
 import zhTW from "../../public/i18n/zh-TW.json";
-import { CATALOG_I18N_NAMESPACE, COMMON_I18N_NAMESPACE, catalogLookupKeys, isI18nNamespace } from "./keys";
+import { CATALOG_I18N_NAMESPACE, COMMON_I18N_NAMESPACE, isI18nNamespace } from "./keys";
 import {
   extractNamespace,
+  namespaceDependencyClosure,
   featureNamespaceForRoute,
   missingFallbackNamespace,
   requiredNamespacesForRoute,
@@ -24,13 +26,9 @@ import {
   type MainI18nNamespace,
 } from "./namespaces";
 
-const serverCatalogs: MessageCatalogs = Object.freeze({
-  ja: ja as MessageCatalog,
-  en: en as MessageCatalog,
-  ko: ko as MessageCatalog,
-  "zh-CN": zhCN as MessageCatalog,
-  "zh-TW": zhTW as MessageCatalog,
-});
+const canonicalCatalogs = { ja, en, ko, "zh-CN": zhCN, "zh-TW": zhTW } satisfies Record<UiLocale, TranslationShape<typeof ja>>;
+
+const serverCatalogs: MessageCatalogs = Object.freeze(canonicalCatalogs);
 
 /** Version the delivered namespace content, including its dependency closure. */
 export const I18N_CONTENT_VERSION = `content-${createHash("sha256")
@@ -75,8 +73,7 @@ const normalizeNamespaces = (value: readonly string[]): readonly MainI18nNamespa
     );
   }
   const unique = uniqueStrings as MainI18nNamespace[];
-  if (!unique.includes(COMMON_I18N_NAMESPACE)) unique.unshift(COMMON_I18N_NAMESPACE);
-  return unique;
+  return namespaceDependencyClosure(unique);
 };
 
 export interface ServerI18nContextOptions {
@@ -206,24 +203,14 @@ const getFullCatalog = (locale: UiLocale): Catalog => {
 
 /** Standalone server lookup over the authoritative source, with no per-key tree merge. */
 export const serverMessage = (locale: UiLocale, key: string, params?: MessageParams, fallback = key) => {
-  const catalog = getFullCatalog(locale);
-  for (const candidate of catalogLookupKeys(key)) {
-    const message = catalog.resolve(candidate, params);
-    if (message.fallbackReason !== "missing") return { ...message, key };
-  }
-  return { ...catalog.resolve(key, params), text: fallback };
+  const message = getFullCatalog(locale).resolve(key, params);
+  return message.fallbackReason === "missing" ? { ...message, text: fallback } : message;
 };
 
 export const serverText = (locale: UiLocale, key: string, params?: MessageParams, fallback = key): string =>
   serverMessage(locale, key, params, fallback).text;
 
-export const serverGroup = <T = MessageCatalog>(locale: UiLocale, key: string): T => {
-  const catalog = getFullCatalog(locale);
-  for (const candidate of catalogLookupKeys(key)) {
-    const value = catalog.group<T>(candidate);
-    if (value !== undefined) return value;
-  }
-  return {} as T;
-};
+export const serverGroup = <T = MessageCatalog>(locale: UiLocale, key: string): T =>
+  getFullCatalog(locale).group<T>(key) ?? {} as T;
 
 export { CATALOG_I18N_NAMESPACE, COMMON_I18N_NAMESPACE, featureNamespaceForRoute, requiredNamespacesForRoute };

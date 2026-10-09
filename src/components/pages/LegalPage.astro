@@ -1,5 +1,6 @@
 ---
 import { group } from "../../i18n/messages";
+import { legalPageMessageRoot } from "../../config/routes";
 import type { Locale } from "../../i18n/locales";
 import I18nText from "../I18nText.astro";
 import Icon from "../Icon.astro";
@@ -17,7 +18,8 @@ interface TextPageCopy {
 }
 
 const { locale, page } = Astro.props as { locale: Locale; page: string };
-const copy = group<TextPageCopy>(locale, page);
+const messageRoot = legalPageMessageRoot(page);
+const copy = group<TextPageCopy>(locale, messageRoot);
 const sections = copy.sections ?? [];
 const summaryKey = copy.summary ? "summary" : "description";
 ---
@@ -27,18 +29,18 @@ const summaryKey = copy.summary ? "summary" : "description";
     <div class="about-hero__copy">
       <p class="about-eyebrow">haneoka</p>
       <h2 id="text-page-heading">
-        <I18nText keyName={`${page}.title`} fallback={copy.title} locale={locale} />
+        <I18nText keyName={`${messageRoot}.title`} fallback={copy.title} locale={locale} />
       </h2>
       <p class="about-lede">
         <I18nText
-          keyName={`${page}.${summaryKey}`}
+          keyName={`${messageRoot}.${summaryKey}`}
           fallback={copy.summary ?? copy.description ?? ""}
           locale={locale}
         />
       </p>
       {copy.updated && (
         <p class="text-page__updated">
-          <I18nText keyName={`${page}.updated`} fallback={copy.updated} locale={locale} />
+          <I18nText keyName={`${messageRoot}.updated`} fallback={copy.updated} locale={locale} />
         </p>
       )}
     </div>
@@ -53,7 +55,7 @@ const summaryKey = copy.summary ? "summary" : "description";
           </span>
           <h2 id={`text-section-${index}`}>
             <I18nText
-              keyName={`${page}.sections.${index}.title`}
+              keyName={`${messageRoot}.sections.${index}.title`}
               fallback={section.title}
               locale={locale}
             />
@@ -62,7 +64,7 @@ const summaryKey = copy.summary ? "summary" : "description";
         <div class="text-page__body">
           <I18nText
             as="p"
-            keyName={`${page}.sections.${index}.body`}
+            keyName={`${messageRoot}.sections.${index}.body`}
             fallback={section.body}
             locale={locale}
           />
@@ -80,7 +82,7 @@ const summaryKey = copy.summary ? "summary" : "description";
           target="_blank"
           rel="noreferrer"
         >
-          <I18nText keyName={`${page}.sourceLink`} fallback={copy.sourceLink} locale={locale} />
+          <I18nText keyName={`${messageRoot}.sourceLink`} fallback={copy.sourceLink} locale={locale} />
           <Icon name="open_in_new" size={18} />
         </a>
       )}
@@ -91,7 +93,7 @@ const summaryKey = copy.summary ? "summary" : "description";
           target="_blank"
           rel="noreferrer"
         >
-          <I18nText keyName={`${page}.noticesLink`} fallback={copy.noticesLink} locale={locale} />
+          <I18nText keyName={`${messageRoot}.noticesLink`} fallback={copy.noticesLink} locale={locale} />
           <Icon name="open_in_new" size={18} />
         </a>
       )}
@@ -102,7 +104,7 @@ const summaryKey = copy.summary ? "summary" : "description";
         target="_blank"
         rel="noreferrer"
       >
-        <I18nText keyName={`${page}.contactLabel`} fallback={copy.contactLabel} locale={locale} />
+        <I18nText keyName={`${messageRoot}.contactLabel`} fallback={copy.contactLabel} locale={locale} />
         <Icon name="open_in_new" size={18} />
       </a>
       )}

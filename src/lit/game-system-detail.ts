@@ -1,3 +1,4 @@
+import { EVENT_LABEL_PATHS, SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 /**
  * Detail sections for the rotating game systems (events, real lives, gacha,
@@ -883,7 +884,7 @@ function eventText(c: Controller, key: string, fallback: string, values: Record<
           ? value.toLocaleString(c.settings.locale)
           : String(value);
     });
-  const result = format(c.label(key, fallback));
+  const result = format(c.label(EVENT_LABEL_PATHS[key] ?? SYSTEM_LABEL_PATHS[key] ?? key, fallback));
   return /\{[^{}]+\}/u.test(result) ? format(fallback) : result;
 }
 

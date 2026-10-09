@@ -61,8 +61,8 @@ export class FilterFacet extends LitElement {
                   class="filter-facet__search"
                   type="search"
                   .value=${this.query}
-                  aria-label=${`${uiText(this.locale, "search")} · ${this.label}`}
-                  placeholder=${uiText(this.locale, "search")}
+                  aria-label=${`${uiText(this.locale, "common.actions.search")} · ${this.label}`}
+                  placeholder=${uiText(this.locale, "common.actions.search")}
                   @input=${(event: Event) => {
                     this.query = (event.target as HTMLInputElement).value;
                     this.limit = 40;
@@ -128,7 +128,7 @@ export class FilterFacet extends LitElement {
                     this.limit += 80;
                   }}
                 >
-                  ${uiText(this.locale, "loadMore")}
+                  ${uiText(this.locale, "common.actions.loadMore")}
                 </button>
               `
             : nothing

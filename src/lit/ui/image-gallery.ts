@@ -201,7 +201,7 @@ export class ImageGallery extends LitElement {
     const identity = this.movieIdentity;
     this.stopMovie();
     this.movieIdentity = identity;
-    this.error = uiText(this.locale, "unavailable");
+    this.error = uiText(this.locale, "common.states.unavailable");
   }
   private releaseNextMovie() {
     const next = this.nextMovie;
@@ -500,7 +500,7 @@ export class ImageGallery extends LitElement {
         return { src: source, width: image.naturalWidth, height: image.naturalHeight, alt: entry.label };
       } catch {}
     }
-    throw new Error(uiText(this.locale, "unavailable"));
+    throw new Error(uiText(this.locale, "common.states.unavailable"));
   }
   private async open(index: number, event: MouseEvent) {
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
@@ -516,7 +516,7 @@ export class ImageGallery extends LitElement {
         Promise.all(this.images.map((entry) => this.imageData(entry).catch(() => null))),
       ]);
       if (!this.isConnected || generation !== this.generation) return;
-      if (!slides[index]) throw new Error(uiText(this.locale, "unavailable"));
+      if (!slides[index]) throw new Error(uiText(this.locale, "common.states.unavailable"));
       const indices = slides.flatMap((slide, i) => (slide ? [i] : []));
       const viewer = new Viewer({
         dataSource: slides.filter((slide): slide is NonNullable<typeof slide> => slide !== null),
@@ -528,11 +528,11 @@ export class ImageGallery extends LitElement {
         wheelToZoom: true,
         imageClickAction: "zoom",
         padding: { top: 64, bottom: 24, left: 12, right: 12 },
-        closeTitle: uiText(this.locale, "close"),
-        zoomTitle: uiText(this.locale, "zoom"),
-        arrowPrevTitle: uiText(this.locale, "previousImage"),
-        arrowNextTitle: uiText(this.locale, "nextImage"),
-        errorMsg: uiText(this.locale, "unavailable"),
+        closeTitle: uiText(this.locale, "common.actions.close"),
+        zoomTitle: uiText(this.locale, "media.models.labels.zoom"),
+        arrowPrevTitle: uiText(this.locale, "media.images.actions.previousImage"),
+        arrowNextTitle: uiText(this.locale, "media.images.actions.nextImage"),
+        errorMsg: uiText(this.locale, "common.states.unavailable"),
       });
       this.viewer = viewer;
       viewer.on("afterInit", () => {
@@ -572,7 +572,7 @@ export class ImageGallery extends LitElement {
             width=${entry.width}
             height=${entry.height}
             @error=${() => {
-              this.error = uiText(this.locale, "unavailable");
+              this.error = uiText(this.locale, "common.states.unavailable");
             }}
           ></image>
         </svg>
@@ -661,7 +661,7 @@ export class ImageGallery extends LitElement {
               ${
                 this.movieBusy
                   ? html`
-                      ${loadingIndicator({ className: "image-gallery__cinema-loading", label: uiText(this.locale, "loading") })}
+                      ${loadingIndicator({ className: "image-gallery__cinema-loading", label: uiText(this.locale, "common.states.loading") })}
                     `
                   : nothing
               }
@@ -672,8 +672,8 @@ export class ImageGallery extends LitElement {
                     <button
                       class="image-gallery__replay icon-button"
                       type="button"
-                      aria-label=${uiText(this.locale, "cardMovieReplay")}
-                      title=${uiText(this.locale, "cardMovieReplay")}
+                      aria-label=${uiText(this.locale, "catalog.cards.animations.replay")}
+                      title=${uiText(this.locale, "catalog.cards.animations.replay")}
                       @click=${() => this.replaySequence()}
                     >
                       ${icon("refresh", 22)}
@@ -687,8 +687,8 @@ export class ImageGallery extends LitElement {
                     <button
                       class="image-gallery__animate icon-button"
                       type="button"
-                      aria-label=${uiText(this.locale, "cardMovieAnimated")}
-                      title=${uiText(this.locale, "cardMovieAnimated")}
+                      aria-label=${uiText(this.locale, "catalog.cards.animations.animated")}
+                      title=${uiText(this.locale, "catalog.cards.animations.animated")}
                       @click=${() => {
                         this.animated = false;
                         this.error = "";
@@ -701,7 +701,7 @@ export class ImageGallery extends LitElement {
             }
           </div>
           <div class="image-gallery__toolbar">
-            ${this.images.length > 1 ? iconButton({ icon: "chevron_left", label: uiText(this.locale, "previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) }) : nothing}
+            ${this.images.length > 1 ? iconButton({ icon: "chevron_left", label: uiText(this.locale, "media.images.actions.previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) }) : nothing}
             <span class="image-gallery__caption">
               <strong>${active.label}</strong>
               ${
@@ -712,14 +712,14 @@ export class ImageGallery extends LitElement {
                   : nothing
               }
             </span>
-            ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
+            ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "media.images.actions.nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
             <a
               class="icon-button"
               href=${active.videoSequence?.clips[0]?.url || candidates[0]}
               target="_blank"
               rel="noopener"
-              aria-label=${uiText(this.locale, "originalImage")}
-              title=${uiText(this.locale, "originalImage")}
+              aria-label=${uiText(this.locale, "media.images.actions.originalImage")}
+              title=${uiText(this.locale, "media.images.actions.originalImage")}
             >
               ${icon("open_in_new", 20)}
             </a>
@@ -744,7 +744,7 @@ export class ImageGallery extends LitElement {
             href=${candidates[0]}
             target="_blank"
             rel="noopener"
-            aria-label=${`${uiText(this.locale, "zoom")} · ${active.label}`}
+            aria-label=${`${uiText(this.locale, "media.models.labels.zoom")} · ${active.label}`}
             @click=${(event: MouseEvent) => this.open(index, event)}
           >
             ${this.picture(active)}
@@ -756,8 +756,8 @@ export class ImageGallery extends LitElement {
                   <button
                     class="image-gallery__animate icon-button"
                     type="button"
-                    aria-label=${uiText(this.locale, "cardMovieAnimated")}
-                    title=${uiText(this.locale, "cardMovieAnimated")}
+                    aria-label=${uiText(this.locale, "catalog.cards.animations.animated")}
+                    title=${uiText(this.locale, "catalog.cards.animations.animated")}
                     @click=${() => {
                       this.animated = true;
                     }}
@@ -769,7 +769,7 @@ export class ImageGallery extends LitElement {
           }
         </div>
         <div class="image-gallery__toolbar">
-          ${this.images.length > 1 ? iconButton({ icon: "chevron_left", label: uiText(this.locale, "previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) }) : nothing}
+          ${this.images.length > 1 ? iconButton({ icon: "chevron_left", label: uiText(this.locale, "media.images.actions.previousImage"), disabled: index === 0, onClick: () => this.select(index - 1) }) : nothing}
           <span class="image-gallery__caption">
             <strong>${active.label}</strong>
             ${
@@ -780,14 +780,14 @@ export class ImageGallery extends LitElement {
                 : nothing
             }
           </span>
-          ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
+          ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "media.images.actions.nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
           <a
             class="icon-button"
             href=${this.dimensions.get(active.source)?.src || candidates[0]}
             target="_blank"
             rel="noopener"
-            aria-label=${uiText(this.locale, "originalImage")}
-            title=${uiText(this.locale, "originalImage")}
+            aria-label=${uiText(this.locale, "media.images.actions.originalImage")}
+            title=${uiText(this.locale, "media.images.actions.originalImage")}
           >
             ${icon("open_in_new", 20)}
           </a>
@@ -796,7 +796,7 @@ export class ImageGallery extends LitElement {
         ${
           this.busy
             ? html`
-                <p class="image-gallery__status" role="status">${uiText(this.locale, "loading")}</p>
+                <p class="image-gallery__status" role="status">${uiText(this.locale, "common.states.loading")}</p>
               `
             : nothing
         }

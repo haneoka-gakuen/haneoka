@@ -12,17 +12,17 @@ const isAccount = route.startsWith("/account");
 const isCommunity = route.startsWith("/community");
 const icon = isAccount ? "account_circle" : isCommunity ? "forum" : "construction";
 const messageKey = isAccount
-  ? "accountPage.signInDescription"
+  ? "account.page.signInDescription"
   : isCommunity
-    ? "communityPage.description"
-    : "construction";
+    ? "community.page.description"
+    : "navigation.construction";
 const translated = (key: string, fallback = key) =>
   JSON.stringify(Object.fromEntries(LOCALES.map((lang) => [lang, t(lang, key, fallback)])));
 const message = isAccount
-  ? t(locale, "accountPage.signInDescription", "Sign in to access your account.")
+  ? t(locale, "account.page.signInDescription", "Sign in to access your account.")
   : isCommunity
-    ? t(locale, "communityPage.description", "Community data is loaded on demand.")
-    : t(locale, "construction", "This catalog is ready for its next data release.");
+    ? t(locale, "community.page.description", "Community data is loaded on demand.")
+    : t(locale, "navigation.construction", "This catalog is ready for its next data release.");
 ---
 
 <section class="page page--compact">
@@ -40,15 +40,15 @@ const message = isAccount
     <span class="notice__icon">
       <Icon name={icon} size={36} />
     </span>
-    <h2 data-i18n-values={translated(titleKey || "constructionPage.title", title)}>{title}</h2>
+    <h2 data-i18n-values={translated(titleKey || "catalog.construction.title", title)}>{title}</h2>
     <p data-i18n-values={translated(messageKey, message)}>{message}</p>
     {isAccount && (
       <a
         class="button"
         href="/api/auth/sign-in/social?provider=discord"
-        data-i18n-values={translated("signIn", "Sign in")}
+        data-i18n-values={translated("account.page.signIn", "Sign in")}
       >
-        {t(locale, "signIn", "Sign in")}
+        {t(locale, "account.page.signIn", "Sign in")}
       </a>
     )}
   </div>

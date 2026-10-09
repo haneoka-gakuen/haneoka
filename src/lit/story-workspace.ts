@@ -2,11 +2,11 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
 import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
-import { relationships as jaRelationships } from "../../public/i18n/ja.json";
-import { relationships as enRelationships } from "../../public/i18n/en.json";
-import { relationships as zhTWRelationships } from "../../public/i18n/zh-TW.json";
-import { relationships as zhCNRelationships } from "../../public/i18n/zh-CN.json";
-import { relationships as koRelationships } from "../../public/i18n/ko.json";
+import { story as jaRelationships } from "../../public/i18n/ja.json";
+import { story as enRelationships } from "../../public/i18n/en.json";
+import { story as zhTWRelationships } from "../../public/i18n/zh-TW.json";
+import { story as zhCNRelationships } from "../../public/i18n/zh-CN.json";
+import { story as koRelationships } from "../../public/i18n/ko.json";
 import { storySourceUrl } from "../lib/story-assets";
 import { episodeArtwork, spotArtwork } from "../lib/story-artwork";
 import "../styles/bestdori-detail.css";
@@ -73,6 +73,60 @@ import { readPageData } from "../lib/page-data";
 import type { StoryPayload } from "../lib/entity-graph";
 import { loadingIndicator } from "./ui/loading-indicator";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "afterlive": "navigation.afterlive",
+  "anotherStory": "story.labels.anotherStory",
+  "attribute": "catalog.fields.attribute",
+  "background": "story.labels.background",
+  "band": "catalog.fields.band",
+  "bandStory": "story.labels.bandStory",
+  "bands": "catalog.fields.bands",
+  "birthday": "catalog.characters.fields.birthday",
+  "cards": "navigation.cards",
+  "chapter": "story.labels.chapter",
+  "character": "catalog.fields.character",
+  "characterRank": "catalog.characters.fields.characterRank",
+  "characters": "navigation.characters",
+  "close": "common.actions.close",
+  "conversation": "story.labels.conversation",
+  "cover": "media.images.fields.cover",
+  "duration": "common.fields.duration",
+  "episode": "story.labels.episode",
+  "error": "common.states.error",
+  "eventStory": "story.labels.eventStory",
+  "extraStory": "story.labels.extraStory",
+  "grid": "common.layout.grid",
+  "home": "navigation.home",
+  "id": "common.fields.id",
+  "illustration": "story.labels.illustration",
+  "info": "catalog.fields.info",
+  "language": "settings.labels.language",
+  "level": "common.fields.level",
+  "list": "common.layout.list",
+  "loading": "common.states.loading",
+  "order": "common.layout.order",
+  "pause": "common.actions.pause",
+  "perspectiveStory": "story.labels.perspectiveStory",
+  "play": "common.actions.play",
+  "playback": "media.audio.playback",
+  "rarity": "catalog.cards.fields.rarity",
+  "release": "catalog.fields.release",
+  "sort": "common.actions.sort",
+  "stamp": "story.labels.stamp",
+  "stories": "navigation.stories",
+  "story": "navigation.story",
+  "storyText": "navigation.storyText",
+  "subtitle": "common.fields.subtitle",
+  "table": "common.layout.table",
+  "title": "common.fields.title",
+  "tutorial": "navigation.tutorial",
+  "video": "story.labels.video",
+  "view": "common.actions.view",
+  "voice": "navigation.voice"
+};
+
+
 /** Sections of the archive's own story catalogue. */
 type ReleaseMode = "event" | "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial";
 /** Sections the Bestdori worker serves. */
@@ -82,11 +136,11 @@ type Origin = "release" | "bestdori";
 type ViewMode = CollectionView;
 
 const nativeSpeakerNameJoiner = Object.freeze({
-  ja: jaRelationships.speakerNameSeparator,
-  en: enRelationships.speakerNameSeparator,
-  "zh-TW": zhTWRelationships.speakerNameSeparator,
-  "zh-CN": zhCNRelationships.speakerNameSeparator,
-  ko: koRelationships.speakerNameSeparator,
+  ja: jaRelationships.relationships.speakerNameSeparator,
+  en: enRelationships.relationships.speakerNameSeparator,
+  "zh-TW": zhTWRelationships.relationships.speakerNameSeparator,
+  "zh-CN": zhCNRelationships.relationships.speakerNameSeparator,
+  ko: koRelationships.relationships.speakerNameSeparator,
 });
 
 let storyWorkspaceOwnerId = 0;
@@ -405,11 +459,11 @@ export class StoryWorkspace extends LitElement {
                 ></entity-comments>
               `
             : this.storyCommentsFailed
-              ? errorState(uiText(this.locale, "unavailable"), uiText(this.locale, "retry"), () => {
+              ? errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => {
                   this.storyCommentsFailed = false;
                   void this.ensureStoryComments();
                 })
-              : loadingState(uiText(this.locale, "loading"))
+              : loadingState(uiText(this.locale, "common.states.loading"))
         }
       </div>
     `;
@@ -849,7 +903,7 @@ export class StoryWorkspace extends LitElement {
       const resolved = resolveLocalizedText(value, this.locale, sourceLocale);
       if (resolved.text.trim()) return resolved;
     }
-    return { text: this.episodeId(episode) || uiText(this.locale, "story"), locale: this.locale };
+    return { text: this.episodeId(episode) || uiText(this.locale, "navigation.story"), locale: this.locale };
   }
   private episodeTitle(episode: JsonRecord) {
     return this.episodeTitleValue(episode).text;
@@ -964,7 +1018,7 @@ export class StoryWorkspace extends LitElement {
     if (usedBands.length > 1)
       groups.push({
         key: "band",
-        label: uiText(this.locale, "bands"),
+        label: uiText(this.locale, "catalog.fields.bands"),
         options: usedBands.map((id) => ({
           value: String(id),
           label: this.bandName(id) || String(id),
@@ -976,7 +1030,7 @@ export class StoryWorkspace extends LitElement {
     if (usedCharacters.length > 1)
       groups.push({
         key: "character",
-        label: uiText(this.locale, "characters"),
+        label: uiText(this.locale, "navigation.characters"),
         options: usedCharacters.map((id) => ({
           value: String(id),
           label: this.characterName(this.character(id) || {}),
@@ -987,7 +1041,7 @@ export class StoryWorkspace extends LitElement {
     for (const [key, label, values] of [
       [
         "kind",
-        uiText(this.locale, "type"),
+        uiText(this.locale, "catalog.fields.type"),
         this.origin === "release" && (this.mode === "band" || this.mode === "event")
           ? ["bandStory", "extraStory", "perspectiveStory"].filter((kind) =>
               episodes.some((episode) => this.episodeGroup(episode) === kind),
@@ -996,21 +1050,21 @@ export class StoryWorkspace extends LitElement {
       ],
       [
         "perspective",
-        uiText(this.locale, "perspectiveCharacter"),
+        uiText(this.locale, "story.labels.perspectiveCharacter"),
         this.origin === "release" && this.mode === "band"
           ? [...new Set(episodes.map((episode) => Number(episode.perspectiveCharacterId)).filter(Boolean))].map(String)
           : [],
       ],
       [
         "rarity",
-        uiText(this.locale, "rarity"),
+        uiText(this.locale, "catalog.cards.fields.rarity"),
         this.isCardSection()
           ? [...new Set(episodes.map((episode) => String(episode.rarity || "")).filter(Boolean))]
           : [],
       ],
       [
         "attribute",
-        uiText(this.locale, "attribute"),
+        uiText(this.locale, "catalog.fields.attribute"),
         this.isCardSection()
           ? [...new Set(episodes.map((episode) => String(episode.attribute || "")).filter(Boolean))]
           : [],
@@ -1032,7 +1086,7 @@ export class StoryWorkspace extends LitElement {
     if (usedLevels.length > 1)
       groups.push({
         key: "level",
-        label: uiText(this.locale, "friendship"),
+        label: uiText(this.locale, "catalog.characters.fields.friendship"),
         options: usedLevels.map((level) => ({ value: String(level), label: `Lv.${level}` })),
       });
     return groups;
@@ -1096,7 +1150,7 @@ export class StoryWorkspace extends LitElement {
         label: (event ? this.text(name) : "") || this.chapterName(chapter) || String(chapter.chapterId || ""),
         language: resolveLocalizedText(event ? name : chapter.chapterName, this.locale).locale,
         image: String(chapter.banner || chapter.image || chapter.icon || ""),
-        meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "episodes")}`,
+        meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "story.labels.episodes")}`,
       };
     });
   }
@@ -1104,9 +1158,9 @@ export class StoryWorkspace extends LitElement {
     return (this.facets[this.railAxis()] || [])[0] || "";
   }
   private railLabel() {
-    if (this.origin === "release" && this.mode === "home") return uiText(this.locale, "scenes");
-    if (this.mode === "link") return uiText(this.locale, "characters");
-    return uiText(this.locale, "chapters");
+    if (this.origin === "release" && this.mode === "home") return uiText(this.locale, "story.labels.scenes");
+    if (this.mode === "link") return uiText(this.locale, "navigation.characters");
+    return uiText(this.locale, "story.labels.chapters");
   }
   /**
    * A rail is a set of destinations, so one of them is always current: a
@@ -1436,11 +1490,11 @@ export class StoryWorkspace extends LitElement {
 
   render() {
     if (this.entityId) {
-      if (this.detailLoading) return loadingState(uiText(this.locale, "loading"));
+      if (this.detailLoading) return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.detailError)
         return errorState(
-          uiText(this.locale, "unavailable"),
-          uiText(this.locale, "retry"),
+          uiText(this.locale, "common.states.unavailable"),
+          uiText(this.locale, "common.actions.retry"),
           () => void this.openScenario(this.entityId),
           this.detailError,
         );
@@ -1448,12 +1502,12 @@ export class StoryWorkspace extends LitElement {
         ? this.renderDetailLayer()
         : this.phase === "error"
           ? errorState(
-              uiText(this.locale, "unavailable"),
-              uiText(this.locale, "retry"),
+              uiText(this.locale, "common.states.unavailable"),
+              uiText(this.locale, "common.actions.retry"),
               () => void this.load(),
               this.error,
             )
-          : loadingState(uiText(this.locale, "loading"));
+          : loadingState(uiText(this.locale, "common.states.loading"));
     }
     const episodes = this.phase === "ready" ? this.visibleEpisodes() : [];
     const total = this.phase === "ready" ? this.allEpisodes().length : 0;
@@ -1485,11 +1539,11 @@ export class StoryWorkspace extends LitElement {
         applied: this.appliedCount() || this.query ? this.renderApplied() : undefined,
         results: this.renderResults(episodes),
         filters: {
-          label: uiText(this.locale, "filter"),
+          label: uiText(this.locale, "common.actions.filter"),
           open: this.filtersOpen,
           count: this.appliedCount() + Number(Boolean(this.query)),
-          closeLabel: uiText(this.locale, "close"),
-          resetLabel: uiText(this.locale, "reset"),
+          closeLabel: uiText(this.locale, "common.actions.close"),
+          resetLabel: uiText(this.locale, "common.actions.reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => this.reset(),
@@ -1500,7 +1554,7 @@ export class StoryWorkspace extends LitElement {
     `;
   }
   private renderApplied() {
-    const remove = uiText(this.locale, "remove");
+    const remove = uiText(this.locale, "common.actions.remove");
     const chips = this.facetDefinitions().flatMap((group) =>
       (this.facets[group.key] || []).flatMap((value) => {
         const option = group.options.find((entry) => entry.value === value);
@@ -1518,7 +1572,7 @@ export class StoryWorkspace extends LitElement {
       if (value)
         chips.push(
           inputChip(
-            `${uiText(this.locale, "release")} · ${uiText(this.locale, key.endsWith("From") ? "minimum" : "maximum")}: ${value}`,
+            `${uiText(this.locale, "catalog.fields.release")} · ${uiText(this.locale, key.endsWith("From") ? "common.fields.minimum" : "common.fields.maximum")}: ${value}`,
             remove,
             () => {
               this.facets = { ...this.facets, [key]: [] };
@@ -1530,7 +1584,7 @@ export class StoryWorkspace extends LitElement {
     return html`
       ${
         this.query
-          ? inputChip(`${uiText(this.locale, "search")}: ${this.query}`, remove, () => {
+          ? inputChip(`${uiText(this.locale, "common.actions.search")}: ${this.query}`, remove, () => {
               this.query = "";
               this.sync();
             })
@@ -1538,19 +1592,19 @@ export class StoryWorkspace extends LitElement {
       }
       ${chips}
       <button class="button button--text" type="button" @click=${() => this.reset()}>
-        ${uiText(this.locale, "reset")}
+        ${uiText(this.locale, "common.actions.reset")}
       </button>
     `;
   }
   private renderResults(episodes: JsonRecord[]) {
     if (this.phase === "loading")
       return this.view === "grid"
-        ? html`${collectionSkeleton("story")}${loadingState(uiText(this.locale, "loading"))}`
-        : loadingState(uiText(this.locale, "loading"));
+        ? html`${collectionSkeleton("story")}${loadingState(uiText(this.locale, "common.states.loading"))}`
+        : loadingState(uiText(this.locale, "common.states.loading"));
     if (this.phase === "error")
       return errorState(
-        uiText(this.locale, "unavailable"),
-        uiText(this.locale, "retry"),
+        uiText(this.locale, "common.states.unavailable"),
+        uiText(this.locale, "common.actions.retry"),
         () => void this.load(),
         this.error,
       );
@@ -1559,13 +1613,13 @@ export class StoryWorkspace extends LitElement {
       return html`
         ${stage}
         ${emptyState({
-          title: uiText(this.locale, "empty"),
+          title: uiText(this.locale, "common.states.empty"),
           icon: "search_off",
           action:
             this.appliedCount() || this.query
               ? html`
                   <button class="button button--tonal" type="button" @click=${() => this.reset()}>
-                    ${uiText(this.locale, "reset")}
+                    ${uiText(this.locale, "common.actions.reset")}
                   </button>
                 `
               : undefined,
@@ -1582,7 +1636,7 @@ export class StoryWorkspace extends LitElement {
                 ? html`
                     <section class="story-episode-group">
                       <h3>
-                        ${uiText(this.locale, this.mode === "event" && kind === "bandStory" ? "eventStory" : kind)}
+                        ${uiText(this.locale, this.mode === "event" && kind === "bandStory" ? "story.labels.eventStory" : kind)}
                         <small>${episodes.filter((episode) => this.episodeGroup(episode) === kind).length}</small>
                       </h3>
                       ${this.renderEpisodeCollection(group)}
@@ -1597,7 +1651,7 @@ export class StoryWorkspace extends LitElement {
           ? html`
               <div class="load-more">
                 <button class="button button--tonal" type="button" @click=${() => (this.limit += 120)}>
-                  ${uiText(this.locale, "loadMore")}
+                  ${uiText(this.locale, "common.actions.loadMore")}
                 </button>
               </div>
             `
@@ -1660,7 +1714,7 @@ export class StoryWorkspace extends LitElement {
   private tileSubtitle(episode: JsonRecord) {
     if (this.mode === "afterlive") {
       const level = episode.unlockCharacterFriendshipLevel ?? episode.friendshipLevel;
-      return `${uiText(this.locale, "friendship")} ${level == null ? "—" : `Lv.${Number(level)}`}`;
+      return `${uiText(this.locale, "catalog.characters.fields.friendship")} ${level == null ? "—" : `Lv.${Number(level)}`}`;
     }
     if (this.origin === "release") {
       // The level that unlocks it — the one thing that orders a pair's
@@ -1668,7 +1722,7 @@ export class StoryWorkspace extends LitElement {
       // heading, so repeating them here says nothing.
       if (this.mode === "link") {
         const level = Number(episode.unlockCharacterFriendshipLevel || 0);
-        return level ? `${uiText(this.locale, "friendship")} Lv.${level}` : "";
+        return level ? `${uiText(this.locale, "catalog.characters.fields.friendship")} Lv.${level}` : "";
       }
       // Home talks are the same scene over and over; who is in it is the
       // only thing that differs.
@@ -1714,19 +1768,19 @@ export class StoryWorkspace extends LitElement {
   private renderTable(episodes: JsonRecord[]) {
     const columns: Array<{ label: string; numeric?: boolean; sticky?: boolean }> = [
       { label: "#", numeric: true },
-      { label: uiText(this.locale, "title"), sticky: true },
-      { label: uiText(this.locale, "chapter") },
-      { label: uiText(this.locale, "characters") },
-      { label: uiText(this.locale, "duration"), numeric: true },
-      { label: uiText(this.locale, "friendship"), numeric: true },
-      { label: uiText(this.locale, "release"), numeric: true },
+      { label: uiText(this.locale, "common.fields.title"), sticky: true },
+      { label: uiText(this.locale, "story.labels.chapter") },
+      { label: uiText(this.locale, "navigation.characters") },
+      { label: uiText(this.locale, "common.fields.duration"), numeric: true },
+      { label: uiText(this.locale, "catalog.characters.fields.friendship"), numeric: true },
+      { label: uiText(this.locale, "catalog.fields.release"), numeric: true },
     ];
     return html`
       <div
         class="table-scroll"
         role="region"
         tabindex="0"
-        aria-label=${uiText(this.locale, "table")}
+        aria-label=${uiText(this.locale, "common.layout.table")}
         data-scroll-region
       >
         <table class="data-table">
@@ -1810,7 +1864,7 @@ export class StoryWorkspace extends LitElement {
         <md-outlined-text-field
           class="is-search"
           type="search"
-          label=${uiText(this.locale, "searchStories")}
+          label=${uiText(this.locale, "story.labels.searchStories")}
           .value=${this.query}
           @input=${(event: Event) => {
             this.query = String((event.target as HTMLElement & { value?: string }).value || "");
@@ -1847,13 +1901,13 @@ export class StoryWorkspace extends LitElement {
         ),
       )}
       ${filterGroup(
-        uiText(this.locale, "release"),
+        uiText(this.locale, "catalog.fields.release"),
         html`
           <div class="filter-range">
             ${["releaseFrom", "releaseTo"].map(
               (key, index) => html`
                 <label>
-                  ${uiText(this.locale, index ? "maximum" : "minimum")}
+                  ${uiText(this.locale, index ? "common.fields.maximum" : "common.fields.minimum")}
                   <input
                     type="date"
                     .value=${this.facets[key]?.[0] || ""}
@@ -1870,17 +1924,17 @@ export class StoryWorkspace extends LitElement {
         `,
       )}
       ${filterGroup(
-        uiText(this.locale, "sort"),
+        uiText(this.locale, "common.actions.sort"),
         html`
           ${segmented({
-            label: uiText(this.locale, "sort"),
+            label: uiText(this.locale, "common.actions.sort"),
             value: this.sort,
             grow: true,
             options: [
-              { value: "id", label: uiText(this.locale, "order") },
-              { value: "title", label: uiText(this.locale, "title") },
-              { value: "release", label: uiText(this.locale, "release") },
-              { value: "duration", label: uiText(this.locale, "duration") },
+              { value: "id", label: uiText(this.locale, "common.layout.order") },
+              { value: "title", label: uiText(this.locale, "common.fields.title") },
+              { value: "release", label: uiText(this.locale, "catalog.fields.release") },
+              { value: "duration", label: uiText(this.locale, "common.fields.duration") },
             ],
             onSelect: (sort) => {
               this.sort = sort;
@@ -1888,12 +1942,12 @@ export class StoryWorkspace extends LitElement {
             },
           })}
           ${segmented({
-            label: uiText(this.locale, "order"),
+            label: uiText(this.locale, "common.layout.order"),
             value: this.order,
             iconOnly: true,
             options: [
-              { value: "asc" as const, label: uiText(this.locale, "ascending"), icon: "arrow_upward" },
-              { value: "desc" as const, label: uiText(this.locale, "descending"), icon: "arrow_downward" },
+              { value: "asc" as const, label: uiText(this.locale, "common.layout.ascending"), icon: "arrow_upward" },
+              { value: "desc" as const, label: uiText(this.locale, "common.layout.descending"), icon: "arrow_downward" },
             ],
             onSelect: (order) => {
               this.order = order;
@@ -1969,7 +2023,7 @@ export class StoryWorkspace extends LitElement {
           class="icon-button story-scene__replay"
           type="button"
           @click=${() => this.homeStage?.replay()}
-          aria-label=${uiText(this.locale, "replay")}
+          aria-label=${uiText(this.locale, "common.actions.replay")}
         >
           <svg class="material-icon" width="20" height="20"><use href="/icons.svg#replay"></use></svg>
         </button>
@@ -2038,7 +2092,7 @@ export class StoryWorkspace extends LitElement {
             // uiText returns the key itself when it has no entry, which would
             // print "close" as a button label; the caller's fallback wins.
             label: (key, fallback) => {
-              const value = uiText(this.locale, key);
+              const value = uiText(this.locale, (uiLabelPaths[key] ?? key));
               return value === key ? fallback : value;
             },
           },
@@ -2055,12 +2109,12 @@ export class StoryWorkspace extends LitElement {
   }
   private renderDetailModes() {
     return segmented({
-      label: uiText(this.locale, "playback"),
+      label: uiText(this.locale, "media.audio.playback"),
       value: this.detailMode,
       iconOnly: true,
       options: [
-        { value: "text" as const, label: uiText(this.locale, "storyText"), icon: "article" },
-        { value: "play" as const, label: uiText(this.locale, "player"), icon: "play_circle" },
+        { value: "text" as const, label: uiText(this.locale, "navigation.storyText"), icon: "article" },
+        { value: "play" as const, label: uiText(this.locale, "navigation.player"), icon: "play_circle" },
       ],
       onSelect: (mode) => {
         if (mode === "play") void this.openVegaPlayer();
@@ -2094,8 +2148,8 @@ export class StoryWorkspace extends LitElement {
       const number = Number(condition.episodeNumber || 0);
       const label =
         kind === "episode"
-          ? `${uiText(this.locale, "required")} · ${uiText(this.locale, "episode")}`
-          : `${uiText(this.locale, kind === "playerRank" ? "player" : kind === "bandRank" ? "band" : "character")} · ${uiText(this.locale, "rank")}`;
+          ? `${uiText(this.locale, "common.fields.required")} · ${uiText(this.locale, "story.labels.episode")}`
+          : `${uiText(this.locale, kind === "playerRank" ? "navigation.player" : kind === "bandRank" ? "catalog.fields.band" : "catalog.fields.character")} · ${uiText(this.locale, "catalog.cards.fields.rank")}`;
       if (kind !== "episode" && (!["playerRank", "bandRank", "characterRank"].includes(kind) || rank <= 0)) return [];
       if (kind === "episode" && number <= 0) return [];
       const band = condition.band as JsonRecord | undefined;
@@ -2105,7 +2159,7 @@ export class StoryWorkspace extends LitElement {
         ((kind === "characterRank" && reference.resource === "characters") ||
           (kind === "episode" && condition.status === "resolved" && reference.resource === "stories"));
       const identity = html`
-        ${name ? localizedContent(name, this.locale) : nothing}${name ? " · " : ""}${kind === "episode" ? `${uiText(this.locale, "episode")} ${number}` : `${uiText(this.locale, "rank")} ${rank}`}
+        ${name ? localizedContent(name, this.locale) : nothing}${name ? " · " : ""}${kind === "episode" ? `${uiText(this.locale, "story.labels.episode")} ${number}` : `${uiText(this.locale, "catalog.cards.fields.rank")} ${rank}`}
       `;
       const returnTo = this.entityId
         ? entityHref({
@@ -2149,7 +2203,7 @@ export class StoryWorkspace extends LitElement {
         data-view=${this.detailMode}
         role=${this.entityId ? nothing : "dialog"}
         aria-modal=${this.entityId ? nothing : "true"}
-        aria-label=${uiText(this.locale, "story")}
+        aria-label=${uiText(this.locale, "navigation.story")}
         tabindex="-1"
         data-overlay-pane=${this.entityId ? nothing : ""}
       >
@@ -2160,7 +2214,7 @@ export class StoryWorkspace extends LitElement {
                   <button
                     class="icon-button"
                     type="button"
-                    aria-label=${uiText(this.locale, "close")}
+                    aria-label=${uiText(this.locale, "common.actions.close")}
                     @click=${() => this.closeDetail()}
                   >
                     <svg class="material-icon" width="22" height="22"><use href="/icons.svg#arrow_back"></use></svg>
@@ -2197,7 +2251,7 @@ export class StoryWorkspace extends LitElement {
                           @haneoka-story-interrupt=${() => this.closeDetail()}
                         ></vega-story-stage>
                       `
-                    : loadingState(uiText(this.locale, "loading"))
+                    : loadingState(uiText(this.locale, "common.states.loading"))
                 }
               `
             : html`
@@ -2218,26 +2272,26 @@ export class StoryWorkspace extends LitElement {
                   <details class="story-reading-info">
                     <summary class="state-layer">
                       ${icon("info", 20)}
-                      <strong>${uiText(this.locale, "details")}</strong>
+                      <strong>${uiText(this.locale, "common.actions.details")}</strong>
                       <span>${this.duration(episode)}</span>
                       ${icon("expand_more", 24)}
                     </summary>
                     ${specList([
                       {
-                        label: uiText(this.locale, "chapter"),
+                        label: uiText(this.locale, "story.labels.chapter"),
                         value: localizedContent(this.chapterOf(episode)?.chapterName, this.locale),
                       },
-                      { label: uiText(this.locale, "duration"), value: this.duration(episode) },
-                      { label: uiText(this.locale, "release"), value: this.releaseDate(episode) },
+                      { label: uiText(this.locale, "common.fields.duration"), value: this.duration(episode) },
+                      { label: uiText(this.locale, "catalog.fields.release"), value: this.releaseDate(episode) },
                       episode.unlockCharacterFriendshipLevel
                         ? {
-                            label: uiText(this.locale, "friendship"),
+                            label: uiText(this.locale, "catalog.characters.fields.friendship"),
                             value: `Lv.${episode.unlockCharacterFriendshipLevel}`,
                           }
                         : null,
                       ids.length
                         ? {
-                            label: uiText(this.locale, "characters"),
+                            label: uiText(this.locale, "navigation.characters"),
                             value: this.castContent(episode),
                             wide: true,
                           }
@@ -2245,12 +2299,12 @@ export class StoryWorkspace extends LitElement {
                       ...this.storyUnlockRows(episode),
                     ])}
                   </details>
-                  ${this.detailError ? errorState(uiText(this.locale, "unavailable"), uiText(this.locale, "retry"), () => void this.openScenario(this.episodeId(episode), episode), this.detailError) : nothing}
+                  ${this.detailError ? errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => void this.openScenario(this.episodeId(episode), episode), this.detailError) : nothing}
                   ${
                     commands.length
                       ? html`
                           <section class="story-detail__transcript">
-                            ${renderDetailSectionHeading(uiText(this.locale, "storyText"), "storyText", {
+                            ${renderDetailSectionHeading(uiText(this.locale, "navigation.storyText"), "storyText", {
                               count: dialogueCount(visibleCommands),
                               level: 2,
                             })}
@@ -2258,7 +2312,7 @@ export class StoryWorkspace extends LitElement {
                               <md-outlined-text-field
                                 class="is-search"
                                 type="search"
-                                label=${`${uiText(this.locale, "search")} · ${uiText(this.locale, "storyText")}`}
+                                label=${`${uiText(this.locale, "common.actions.search")} · ${uiText(this.locale, "navigation.storyText")}`}
                                 supporting-text=${`${dialogueCount(visibleCommands)} / ${dialogueCount(commands)}`}
                                 .value=${this.transcriptQuery}
                                 @input=${(event: Event) => {
@@ -2274,7 +2328,7 @@ export class StoryWorkspace extends LitElement {
                                         slot="trailing-icon"
                                         class="icon-button"
                                         type="button"
-                                        aria-label=${uiText(this.locale, "reset")}
+                                        aria-label=${uiText(this.locale, "common.actions.reset")}
                                         @click=${(event: Event) => {
                                           this.transcriptQuery = "";
                                           (event.currentTarget as HTMLElement).closest<HTMLElement>("md-outlined-text-field")?.focus();
@@ -2286,7 +2340,7 @@ export class StoryWorkspace extends LitElement {
                             </div>
                             ${visibleCommands.length
                               ? html`<div class="story-transcript">${this.renderTranscript(visibleCommands)}</div>`
-                              : emptyState({ title: uiText(this.locale, "empty"), icon: "search_off" })}
+                              : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })}
                           </section>
                         `
                       : this.detailLoading
@@ -2362,7 +2416,7 @@ export class StoryWorkspace extends LitElement {
         >
           <summary>
             ${mediaIcon}
-            <span>${uiText(this.locale, kind)}${media.length > 1 ? ` · ${media.length}` : ""}</span>
+            <span>${uiText(this.locale, (uiLabelPaths[kind] ?? kind))}${media.length > 1 ? ` · ${media.length}` : ""}</span>
             ${icon("expand_more", 20)}
           </summary>
           <div class="story-transcript__media-body">${media.map((item) => this.renderTranscriptEntry(item))}</div>
@@ -2460,13 +2514,13 @@ export class StoryWorkspace extends LitElement {
     const speaker = this.transcriptSpeaker(command);
     const names = speaker.text;
     const resolved = resolveLocalizedText(command.text, this.locale);
-    const text = resolved.text || (entry.kind === "voice" ? uiText(this.locale, "voice") : "");
+    const text = resolved.text || (entry.kind === "voice" ? uiText(this.locale, "navigation.voice") : "");
     if (entry.kind === "image")
       return html`
         <figure class="story-transcript__scene" data-command-index=${entry.commandIndex}>
           <img
             src=${this.imageForLocale(entry.source!)}
-            alt=${uiText(this.locale, entry.mediaKind === "background" ? "background" : "illustration")}
+            alt=${uiText(this.locale, entry.mediaKind === "background" ? "story.labels.background" : "story.labels.illustration")}
             loading="lazy"
             decoding="async"
           />
@@ -2494,7 +2548,7 @@ export class StoryWorkspace extends LitElement {
       return html`
         <div class="story-transcript__chapter" data-command-index=${entry.commandIndex}>
           ${icon(entry.kind === "conversation" ? "chat" : "location_on", 20)}
-          <h3 lang=${resolved.locale}>${advText(text || names || uiText(this.locale, "conversation"))}</h3>
+          <h3 lang=${resolved.locale}>${advText(text || names || uiText(this.locale, "story.labels.conversation"))}</h3>
         </div>
       `;
     if (entry.kind === "choices")
@@ -2530,7 +2584,7 @@ export class StoryWorkspace extends LitElement {
                         type="button"
                         @click=${() => this.playStoryAudio(url)}
                         aria-pressed=${String(playing)}
-                        aria-label=${`${uiText(this.locale, playing ? "pause" : "playVoice")}${names ? ` · ${names}` : ""}${entry.voices.length > 1 ? ` · ${index + 1}` : ""}`}
+                        aria-label=${`${uiText(this.locale, playing ? "common.actions.pause" : "story.labels.playVoice")}${names ? ` · ${names}` : ""}${entry.voices.length > 1 ? ` · ${index + 1}` : ""}`}
                       >
                         ${icon(playing ? "pause" : "play_arrow", 24)}
                       </button>
@@ -2567,13 +2621,13 @@ export class StoryWorkspace extends LitElement {
                   ? html`
                       <img
                         src=${this.imageForLocale(entry.source)}
-                        alt=${uiText(this.locale, "stamp")}
+                        alt=${uiText(this.locale, "story.labels.stamp")}
                         loading="lazy"
                       />
                     `
                   : html`
                       ${icon("sentiment_satisfied", 24)}
-                      <span>${uiText(this.locale, "stamp")}</span>
+                      <span>${uiText(this.locale, "story.labels.stamp")}</span>
                     `
               }
             </div>

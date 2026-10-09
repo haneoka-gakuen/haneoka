@@ -81,7 +81,7 @@ class CharacterPairBoard extends LitElement {
         .map((id) => ({ id, label: String(id), image: "" }));
     const root = `/assets/${currentReleaseServer()}/Assets/AddressableResources`;
     return html`
-      <section class="character-pair" aria-label=${uiText(o.locale, "characters")}>
+      <section class="character-pair" aria-label=${uiText(o.locale, "navigation.characters")}>
         ${
           o.onFirst
             ? html`
@@ -95,7 +95,7 @@ class CharacterPairBoard extends LitElement {
                             `
                           : icon("person", 24)
                       }
-                      <span>${first?.label || uiText(o.locale, "firstCharacter")}</span>
+                      <span>${first?.label || uiText(o.locale, "story.labels.firstCharacter")}</span>
                       ${icon("expand_more", 20)}
                     </summary>
                     <div class="character-pair__choices">
@@ -128,14 +128,14 @@ class CharacterPairBoard extends LitElement {
                     aria-pressed=${!o.second}
                     @click=${() => o.onSecond("")}
                   >
-                    ${uiText(o.locale, "all")}
+                    ${uiText(o.locale, "common.states.all")}
                   </button>
-                  ${o.onSwap ? iconButton({ icon: "swap_horiz", label: uiText(o.locale, "swap"), disabled: !o.second, onClick: o.onSwap }) : nothing}
+                  ${o.onSwap ? iconButton({ icon: "swap_horiz", label: uiText(o.locale, "common.actions.swap"), disabled: !o.second, onClick: o.onSwap }) : nothing}
                 </div>
               `
             : nothing
         }
-        <div class="character-pair__bands" role="group" aria-label=${uiText(o.locale, "bands")}>
+        <div class="character-pair__bands" role="group" aria-label=${uiText(o.locale, "catalog.fields.bands")}>
           ${bands.map(
             (band) => html`
               <button
@@ -209,7 +209,7 @@ class CharacterPairBoard extends LitElement {
                       alt=${first?.label || ""}
                       @error=${this.imageFallback}
                     />
-                    <div class="story-board__partners" role="group" aria-label=${uiText(o.locale, "secondCharacter")}>
+                    <div class="story-board__partners" role="group" aria-label=${uiText(o.locale, "story.labels.secondCharacter")}>
                       ${partners.map((character, index) => {
                         const slot = slots[index] || FRIENDSHIP_OTHER_SLOTS[0];
                         return html`

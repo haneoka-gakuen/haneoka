@@ -90,7 +90,7 @@ class CatalogUpgradeCost extends LitElement {
     const options = this.options;
     if (!options) return nothing;
     const text = (key: string, fallback: string) =>
-      clientText(options.locale ?? "en", `catalogCompat.costSummary.${key}`, fallback);
+      clientText(options.locale ?? "en", `catalog.cards.costs.${key}`, fallback);
     const initial = options.initial ?? 1;
     const from = this.mode === "step" ? options.from : this.mode === "cumulative" ? initial : this.current;
     const summary = summarizeCatalogCosts(options.steps ?? [], from, options.to);

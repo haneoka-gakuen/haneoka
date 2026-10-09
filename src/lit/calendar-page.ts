@@ -32,6 +32,23 @@ import {
   type CalendarOccurrence,
 } from "../lib/calendar-model";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "character": "catalog.fields.character",
+  "close": "common.actions.close",
+  "empty": "common.states.empty",
+  "filter": "common.actions.filter",
+  "gacha": "navigation.gacha",
+  "live": "catalog.songs.fields.live",
+  "next": "common.actions.next",
+  "previous": "common.actions.previous",
+  "reset": "common.actions.reset",
+  "source": "common.fields.source",
+  "unavailable": "common.states.unavailable",
+  "view": "common.actions.view"
+};
+
+
 const copy: Record<string, string> = {
   title: "Calendar",
   today: "Today",
@@ -184,8 +201,8 @@ export class CalendarPage extends LitElement {
     return (
       this.labels[key] ||
       (["filter", "close", "reset"].includes(key)
-        ? clientText(this.locale, key, key === "filter" ? "Filter" : key === "close" ? "Close" : "Reset")
-        : clientText(this.locale, `calendar.${key}`, copy[key] || key))
+        ? clientText(this.locale, (uiLabelPaths[key] ?? key), key === "filter" ? "Filter" : key === "close" ? "Close" : "Reset")
+        : clientText(this.locale, `tools.calendar.${key}`, copy[key] || key))
     );
   }
   private itemTitle(item: CalendarOccurrence) {
@@ -577,7 +594,7 @@ export class CalendarPage extends LitElement {
         ${
           !this.data
             ? html`
-                <div class="calendar-loading">${loadingState(clientText(this.locale, "loading", "Loading"))}</div>
+                <div class="calendar-loading">${loadingState(clientText(this.locale, "common.states.loading", "Loading"))}</div>
               `
             : nothing
         }

@@ -177,7 +177,7 @@ export class CommunityForumNavigation extends LitElement {
   }
   private groups() {
     return projectForumNavigation(this.snapshot,this.locale,
-      clientText(this.locale,'communityPage.forums','Boards'),this.availableIcons);
+      clientText(this.locale,"community.page.forums",'Boards'),this.availableIcons);
   }
   render() {
     const groups=this.groups();

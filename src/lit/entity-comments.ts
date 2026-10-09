@@ -3,7 +3,6 @@ import "./views/entity-comments-view";
 import { LitElement, nothing } from "lit";
 import { fetchJson, JsonResponseError, preferredLocale, localizedText } from "./shared/catalog";
 import { clientText, initializeI18nClient } from "../i18n/client";
-import { catalogLookupKeys } from "../i18n/keys";
 import { normalizeLocale, type Catalog, type MessageParams } from "@haneoka/i18n";
 import { loadingState, errorState } from "./ui/state";
 import { communityCommentName, communityCommentLocation } from "../lib/community-comment-metadata";
@@ -20,6 +19,15 @@ import type {
 } from "../lib/community-view-contract";
 import { PaneFocus } from "./ui/pane";
 import { formatCommunityTime } from "../lib/community-time";
+
+/** Shared control identifiers used by entity-comment surfaces. */
+const commentControlPaths: Readonly<Record<string, string>> = {
+  "community": "navigation.community",
+  "error": "common.states.error",
+  "loading": "common.states.loading",
+  "server": "settings.labels.server",
+  "unavailable": "common.states.unavailable"
+};
 
 type Draft = { body: string; replyTo: string; sort: "hot" | "latest"; at: number };
 const drafts = new Map<string, Draft>();
@@ -215,7 +223,7 @@ export class EntityComments extends LitElement {
   private label = (key: string, fallback: string, params?: MessageParams) => {
     const catalog = this.messagesCatalog;
     if (!catalog || !this.messagesReady || catalog.locale !== this.uiLocale()) return "";
-    for (const candidate of [...catalogLookupKeys("communityPage." + key), ...catalogLookupKeys(key)])
+    for (const candidate of ["community.page." + key, ...(commentControlPaths[key] ? [commentControlPaths[key]!] : [key])])
       if (catalog.has(candidate)) return catalog.text(candidate, params, fallback);
     return fallback;
   };
@@ -779,8 +787,8 @@ export class EntityComments extends LitElement {
     const view = entityCommentsPresentation();
     if (!view || !this.entityType || !this.entityId) return nothing;
     if (!this.messagesReady) return this.messagesError
-      ? errorState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "sourceUnavailable", "") : "", initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "retry", "") : "", () => { void this.prepareMessages(true).then(() => this.load(false)).catch(() => {}); })
-      : loadingState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "loading", "") : "", { local: true });
+      ? errorState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "community.page.sourceUnavailable", "") : "", initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "common.actions.retry", "") : "", () => { void this.prepareMessages(true).then(() => this.load(false)).catch(() => {}); })
+      : loadingState(initializeI18nClient().committed === this.uiLocale() ? clientText(this.uiLocale(), "common.states.loading", "") : "", { local: true });
     const props: EntityCommentsViewProps = {
       locale: this.uiLocale(),
       phase: this.phase,

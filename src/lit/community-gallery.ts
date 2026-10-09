@@ -7,6 +7,19 @@ import type PhotoSwipe from "photoswipe";
 import "photoswipe/style.css";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 import { loadingIndicator } from "./ui/loading-indicator";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "close": "common.actions.close",
+  "error": "common.states.error",
+  "loading": "common.states.loading",
+  "nextImage": "media.images.actions.nextImage",
+  "previousImage": "media.images.actions.previousImage",
+  "unavailable": "common.states.unavailable",
+  "video": "story.labels.video",
+  "zoom": "media.models.labels.zoom"
+};
+
 export { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 export class CommunityGallery extends LitElement {
   static properties = {
@@ -57,7 +70,7 @@ export class CommunityGallery extends LitElement {
     super.disconnectedCallback();
   }
   private text(key: string) {
-    return clientText(this.locale, key, key);
+    return clientText(this.locale, (uiLabelPaths[key] ?? key), key);
   }
   private select(index: number) {
     const track = this.querySelector<HTMLElement>(".community-gallery__track");

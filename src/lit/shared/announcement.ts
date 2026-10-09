@@ -14,7 +14,7 @@ import { emptyState, errorState, loadingState } from "../ui/state";
 import { icon } from "../ui/icon";
 
 export const announcementText = (locale: string, key: string, fallback: string) =>
-  clientText(locale, `announcements.${key}`, fallback);
+  clientText(locale, `home.announcements.${key}`, fallback);
 export function announcementCategory(entry: Announcement, locale: string): string {
   return announcementText(locale, `categories.${entry.category}`, announcementText(locale, "title", "Announcements"));
 }

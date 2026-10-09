@@ -40,7 +40,7 @@ interface AboutCopy {
 }
 
 const { locale } = Astro.props as { locale: Locale };
-const copy = group<AboutCopy>(locale, "aboutPage");
+const copy = group<AboutCopy>(locale, "legal.about");
 const server = "intl";
 const href = (route: string, fallback: string) => resourceCollectionHref(route, server, locale) ?? fallback;
 
@@ -104,19 +104,19 @@ const repositoryItem = (index: number, icon: string, href: string, detail?: ["ec
   icon,
   href,
   external: true,
-  titleKey: `aboutPage.repositories.${index}.title`,
+  titleKey: `legal.about.repositories.${index}.title`,
   title: copy.repositories[index]?.title ?? "",
-  bodyKey: `aboutPage.repositories.${index}.body`,
+  bodyKey: `legal.about.repositories.${index}.body`,
   body: copy.repositories[index]?.body,
-  ...(detail ? { detailKey: `aboutPage.${detail[0]}.${detail[1]}.body`, detail: copy[detail[0]][detail[1]]?.body } : {}),
+  ...(detail ? { detailKey: `legal.about.${detail[0]}.${detail[1]}.body`, detail: copy[detail[0]][detail[1]]?.body } : {}),
 });
 const textItem = (list: "ecosystem" | "toolchain", index: number, icon: string, href: string, external: boolean): SuiteItem => ({
   icon,
   href,
   external,
-  titleKey: `aboutPage.${list}.${index}.title`,
+  titleKey: `legal.about.${list}.${index}.title`,
   title: copy[list][index]?.title ?? "",
-  detailKey: `aboutPage.${list}.${index}.body`,
+  detailKey: `legal.about.${list}.${index}.body`,
   detail: copy[list][index]?.body,
 });
 // Two product suites share the site: Vega · Altair · Deneb tell stories; Cassiopeia · Schedar play and chart them.
@@ -154,14 +154,14 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
 <article class="about" aria-labelledby="about-heading">
   <header class="about-hero">
     <div class="about-hero__copy">
-      <p class="about-eyebrow"><I18nText keyName="aboutPage.eyebrow" fallback={copy.eyebrow} locale={locale} /></p>
+      <p class="about-eyebrow"><I18nText keyName="legal.about.eyebrow" fallback={copy.eyebrow} locale={locale} /></p>
       <h2 id="about-heading" class="about-display">
-        <I18nText keyName="aboutPage.heroTitle" fallback={copy.heroTitle} locale={locale} />
+        <I18nText keyName="legal.about.heroTitle" fallback={copy.heroTitle} locale={locale} />
       </h2>
-      <p class="about-lede"><I18nText keyName="aboutPage.description" fallback={copy.description} locale={locale} /></p>
+      <p class="about-lede"><I18nText keyName="legal.about.description" fallback={copy.description} locale={locale} /></p>
       <div class="about-actions">
         <a class="button about-cta" href={features[0].href}>
-          <I18nText keyName="aboutPage.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
+          <I18nText keyName="legal.about.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
           <Icon name="arrow_forward" size={20} />
         </a>
       </div>
@@ -192,7 +192,7 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
         {stats.map(([key, value]) => (
           <li>
             <strong>{number.format(value)}</strong>
-            <span><I18nText keyName={`aboutPage.stats.${key}`} fallback={copy.stats[key]} locale={locale} /></span>
+            <span><I18nText keyName={`legal.about.stats.${key}`} fallback={copy.stats[key]} locale={locale} /></span>
           </li>
         ))}
       </ul>
@@ -221,16 +221,16 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
           </div>
           <div class="about-feature__copy">
             <p class="about-eyebrow">
-              <I18nText keyName={`aboutPage.features.${index}.eyebrow`} fallback={feature.eyebrow} locale={locale} />
+              <I18nText keyName={`legal.about.features.${index}.eyebrow`} fallback={feature.eyebrow} locale={locale} />
             </p>
             <h2 id={`about-feature-${index}`} class="about-headline">
-              <I18nText keyName={`aboutPage.features.${index}.title`} fallback={feature.title} locale={locale} />
+              <I18nText keyName={`legal.about.features.${index}.title`} fallback={feature.title} locale={locale} />
             </h2>
             <p class="about-body">
-              <I18nText keyName={`aboutPage.features.${index}.body`} fallback={feature.body} locale={locale} />
+              <I18nText keyName={`legal.about.features.${index}.body`} fallback={feature.body} locale={locale} />
             </p>
             <a class="button button--text about-link" href={visual.href}>
-              <I18nText keyName={`aboutPage.features.${index}.cta`} fallback={feature.cta} locale={locale} />
+              <I18nText keyName={`legal.about.features.${index}.cta`} fallback={feature.cta} locale={locale} />
               <Icon name="arrow_forward" size={20} />
             </a>
           </div>
@@ -242,16 +242,16 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
   <section class="about-open" aria-labelledby="about-open-heading">
     <header class="about-open__header">
       <h2 id="about-open-heading" class="about-headline">
-        <I18nText keyName="aboutPage.openTitle" fallback={copy.openTitle} locale={locale} />
+        <I18nText keyName="legal.about.openTitle" fallback={copy.openTitle} locale={locale} />
       </h2>
-      <p class="about-body"><I18nText keyName="aboutPage.openBody" fallback={copy.openBody} locale={locale} /></p>
+      <p class="about-body"><I18nText keyName="legal.about.openBody" fallback={copy.openBody} locale={locale} /></p>
     </header>
 
     {
       suites.map((suite) => (
         <section class="about-suite" aria-labelledby={`about-suite-${suite.key}`}>
           <h3 id={`about-suite-${suite.key}`} class="about-open__title">
-            <I18nText keyName={`aboutPage.suites.${suite.key}`} fallback={copy.suites[suite.key]} locale={locale} />
+            <I18nText keyName={`legal.about.suites.${suite.key}`} fallback={copy.suites[suite.key]} locale={locale} />
           </h3>
           <ul class="about-repositories">
             {suite.items.map((item) => (
@@ -279,11 +279,11 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
 
   <section class="about-closing" aria-labelledby="about-closing-heading">
     <h2 id="about-closing-heading" class="about-display about-display--small">
-      <I18nText keyName="aboutPage.closingTitle" fallback={copy.closingTitle} locale={locale} />
+      <I18nText keyName="legal.about.closingTitle" fallback={copy.closingTitle} locale={locale} />
     </h2>
     <div class="about-actions">
       <a class="button about-cta" href={features[0].href}>
-        <I18nText keyName="aboutPage.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
+        <I18nText keyName="legal.about.ctaPrimary" fallback={copy.ctaPrimary} locale={locale} />
         <Icon name="arrow_forward" size={20} />
       </a>
     </div>
@@ -294,19 +294,19 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
       <a href={SONOLUS_SERVER_LINK} target="_blank" rel="noreferrer"><Icon name="sports_esports" size={18} />Sonolus</a>
       <a href="https://bdon.moe" target="_blank" rel="noreferrer"><Icon name="favorite" size={18} />MoeNotes</a>
       <a href={docsHref} target="_blank" rel="noreferrer">
-        <Icon name="code" size={18} /><I18nText keyName="aboutPage.apiLink" fallback={copy.apiLink} locale={locale} />
+        <Icon name="code" size={18} /><I18nText keyName="legal.about.apiLink" fallback={copy.apiLink} locale={locale} />
       </a>
       <a href={sourceHref} target="_blank" rel="noreferrer">
-        <I18nText keyName="aboutPage.sourceLink" fallback={copy.sourceLink} locale={locale} />
+        <I18nText keyName="legal.about.sourceLink" fallback={copy.sourceLink} locale={locale} />
       </a>
       <a href={licenseHref} target="_blank" rel="noreferrer">
-        <I18nText keyName="aboutPage.licenseLink" fallback={copy.licenseLink} locale={locale} />
+        <I18nText keyName="legal.about.licenseLink" fallback={copy.licenseLink} locale={locale} />
       </a>
       <a href={noticesHref} target="_blank" rel="noreferrer">
-        <I18nText keyName="aboutPage.noticesLink" fallback={copy.noticesLink} locale={locale} />
+        <I18nText keyName="legal.about.noticesLink" fallback={copy.noticesLink} locale={locale} />
       </a>
       <a href={contactHref} target="_blank" rel="noreferrer">
-        <I18nText keyName="aboutPage.contactLink" fallback={copy.contactLink} locale={locale} />
+        <I18nText keyName="legal.about.contactLink" fallback={copy.contactLink} locale={locale} />
       </a>
     </nav>
   </footer>

@@ -51,7 +51,7 @@ function songList(host: TeamBuilder, songs: SongRef[], change: (songs: SongRef[]
               <strong class="list-item__headline clamp-1">${catalog.songTitle(song.songId)}</strong>
               <span class="list-item__supporting">${catalog.difficultyLabel(song.songId, song.difficulty)}</span>
             </span>
-            <span class="list-item__trailing">${iconButton({ icon: "close", label: host.common("remove", "Remove"), onClick: () => change(songs.filter((_, at) => at !== index)) })}</span>
+            <span class="list-item__trailing">${iconButton({ icon: "close", label: host.common("common.actions.remove", "Remove"), onClick: () => change(songs.filter((_, at) => at !== index)) })}</span>
           </div>
         `,
       )}
@@ -165,13 +165,13 @@ function candidates(host: TeamBuilder): TemplateResult {
               { value: "min", label: host.t("unknownMin", "Count as minimum") },
             ], onSelect: (unknownPolicy) => set({ unknownPolicy }) })}</div>`
         : nothing}
-      <div class="tb-field"><span class="tb-field__label">${host.common("attribute", "Attribute")}</span>
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.attribute", "Attribute")}</span>
         <div class="cluster">${[1, 2, 3, 4, 5].map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: s.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(s.attributes, id) }) }))}</div></div>
-      <div class="tb-field"><span class="tb-field__label">${host.common("band", "Band")}</span>
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.band", "Band")}</span>
         <div class="cluster">${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: s.bands.includes(id), onToggle: () => set({ bands: toggleIn(s.bands, id) }) }))}</div></div>
       <div class="tb-field"><span class="tb-field__label">${host.t("minRarity", "Minimum rarity")}</span>
         ${segmented({ label: host.t("minRarity", "Minimum rarity"), value: String(s.minRarity), grow: false, options: [
-          { value: "0", label: host.common("all", "All") },
+          { value: "0", label: host.common("common.states.all", "All") },
           ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
         ], onSelect: (value) => set({ minRarity: Number(value) }) })}</div>
       <md-outlined-select label=${host.t("leader", "Leader")} .value=${s.leader === null ? "" : String(s.leader)}
@@ -322,7 +322,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
         ${candidates(host)}
         <div class="tb-run">
           ${host.running
-            ? html`<button class="button button--tonal button--full" type="button" @click=${() => host.cancel()}>${icon("stop", 18)}${host.common("cancel", "Cancel")}</button>
+            ? html`<button class="button button--tonal button--full" type="button" @click=${() => host.cancel()}>${icon("stop", 18)}${host.common("common.actions.cancel", "Cancel")}</button>
                 <md-linear-progress .value=${progress && progress.total ? progress.done / progress.total : 0} ?indeterminate=${!progress || progress.total <= 1} aria-label=${host.t("searching", "Searching teams")}></md-linear-progress>`
             : html`<button class="button button--full tb-run__button" type="button" ?disabled=${!!missing} @click=${() => void host.run()}>${icon("search", 20)}${host.t("findTeams", "Find teams")}</button>`}
           ${missing ? html`<p class="field-note">${missing}</p>` : nothing}

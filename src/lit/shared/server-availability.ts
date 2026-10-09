@@ -26,11 +26,11 @@ export function serverAvailabilityImage(server: FormalCatalogServer): string {
 export function serverAvailabilityLabel(availability: readonly FormalCatalogServer[], locale: string): string {
   const server = exclusiveServer(availability);
   return server === "jp"
-    ? clientText(locale, "catalogJapanOnly", "Japan only")
+    ? clientText(locale, "catalog.availability.catalogJapanOnly", "Japan only")
     : server === "intl"
-      ? clientText(locale, "catalogInternationalOnly", "International only")
+      ? clientText(locale, "catalog.availability.catalogInternationalOnly", "International only")
       : server === "intl-test"
-        ? clientText(locale, "catalogTestOnly", "Test only")
+        ? clientText(locale, "catalog.availability.catalogTestOnly", "Test only")
         : "";
 }
 

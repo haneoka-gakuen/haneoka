@@ -7,10 +7,10 @@ import "../lit/account-workspace";
 import "../styles/account-settings.css";
 
 const { locale } = Astro.props as { locale: Locale };
-const title = t(locale, "account", "Account");
+const title = t(locale, "navigation.account", "Account");
 
 ---
-<Base locale={locale} route="/account" title={title} titleKey="account">
+<Base locale={locale} route="/account" title={title} titleKey="navigation.account">
   <script slot="head-early" is:inline>
     // Start the account page's reads while stylesheets and modules download;
     // <account-workspace> adopts each only for the identical URL
@@ -37,7 +37,7 @@ const title = t(locale, "account", "Account");
       } catch {}
     })();
   </script>
-  <AppShell locale={locale} route="/account" title={title} titleKey="account">
+  <AppShell locale={locale} route="/account" title={title} titleKey="navigation.account">
     <account-workspace></account-workspace>
   </AppShell>
 </Base>

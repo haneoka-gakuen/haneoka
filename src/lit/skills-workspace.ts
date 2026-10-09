@@ -12,6 +12,28 @@ import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import "../styles/card-detail.css";
 
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "all": "common.states.all",
+  "awakening": "catalog.cards.fields.awakening",
+  "cards": "navigation.cards",
+  "effects": "catalog.fields.effects",
+  "gekisouSkill": "catalog.cards.fields.gekisouSkill",
+  "gekisouSupportSkill": "catalog.cards.fields.gekisouSupportSkill",
+  "items": "navigation.items",
+  "leaderSkill": "catalog.cards.fields.leaderSkill",
+  "level": "common.fields.level",
+  "liveSkill": "catalog.cards.fields.liveSkill",
+  "rank": "catalog.cards.fields.rank",
+  "required": "common.fields.required",
+  "search": "common.actions.search",
+  "skills": "catalog.cards.fields.skills",
+  "supportSkill": "catalog.cards.fields.supportSkill",
+  "type": "catalog.fields.type",
+  "unavailable": "common.states.unavailable"
+};
+
+
 const familyLabels: Record<SkillFamily, string> = {
   leader: "leaderSkill",
   live: "liveSkill",
@@ -65,7 +87,7 @@ export class SkillsWorkspace extends LitElement {
     this.selected = new URL(location.href).searchParams.get("skill") ?? "";
   };
   private text(key: string, fallback: string) {
-    return clientText(this.locale, key, fallback);
+    return clientText(this.locale, (uiLabelPaths[key] ?? key), fallback);
   }
   protected render() {
     if (!this.data) return nothing;
@@ -144,7 +166,7 @@ export class SkillsWorkspace extends LitElement {
           </md-outlined-select>
         </div>
         ${filterChip({
-          label: this.text("catalogCompat.skillCatalogIncludeUnlinked", "Include skills without associated cards"),
+          label: this.text("catalog.skills.includeUnlinked", "Include skills without associated cards"),
           selected: this.includeUnlinked,
           onToggle: () => {
             this.includeUnlinked = !this.includeUnlinked;
@@ -278,7 +300,7 @@ export class SkillsWorkspace extends LitElement {
                   })}
                   <h3>${this.text("cards", "Cards")}</h3>
                   <p class="detail-copy">
-                    ${this.text("catalogCompat.skillCatalogCostsHint", "Open a related card to view its upgrade costs.")}
+                    ${this.text("catalog.skills.costsHint", "Open a related card to view its upgrade costs.")}
                   </p>
                   <div class="card-relation-list">
                     ${chosen.cards.map(

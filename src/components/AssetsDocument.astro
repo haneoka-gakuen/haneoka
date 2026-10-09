@@ -8,11 +8,11 @@ import "../lit/asset-explorer";
 import "../styles/catalog.css";
 import "../styles/tools.css";
 const { locale, server } = Astro.props as { locale: Locale; server?: ReleaseServer };
-const title = t(locale, "assets", "Assets");
+const title = t(locale, "navigation.assets", "Assets");
 const canonicalRoute = server ? `/${server}/${locale}/assets/` : undefined;
 ---
-<Base noindex locale={locale} route="/catalog/assets" canonicalRoute={canonicalRoute} title={title} titleKey="assets">
-  <AppShell locale={locale} route="/catalog/assets" title={title} titleKey="assets" server={server}>
+<Base noindex locale={locale} route="/catalog/assets" canonicalRoute={canonicalRoute} title={title} titleKey="navigation.assets">
+  <AppShell locale={locale} route="/catalog/assets" title={title} titleKey="navigation.assets" server={server}>
     <asset-explorer></asset-explorer>
   </AppShell>
 </Base>

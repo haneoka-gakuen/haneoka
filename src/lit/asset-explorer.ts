@@ -253,7 +253,7 @@ export class AssetExplorer extends LitElement {
         const response = await fetch(this.url(file));
         this.textPreview = (await response.text()).slice(0, 200000);
       } catch {
-        this.textPreview = uiText(preferredLocale(), "unavailable");
+        this.textPreview = uiText(preferredLocale(), "common.states.unavailable");
       }
     }
     if (this.kind(file) === "model") await import("./runtime/model-preview");
@@ -271,19 +271,19 @@ export class AssetExplorer extends LitElement {
         ${
           this.phase === "loading"
             ? html`
-                ${loadingState(uiText(preferredLocale(), "loading"))}
+                ${loadingState(uiText(preferredLocale(), "common.states.loading"))}
               `
             : this.phase === "error"
               ? errorState(
-                  uiText(preferredLocale(), "unavailable"),
-                  uiText(preferredLocale(), "retry"),
+                  uiText(preferredLocale(), "common.states.unavailable"),
+                  uiText(preferredLocale(), "common.actions.retry"),
                   () => void this.loadTree(),
                   this.error,
                 )
               : html`
                   <header class="asset-toolbar">
                     <nav>
-                      <button @click=${() => this.choose([])}>${uiText(preferredLocale(), "assets")}</button>
+                      <button @click=${() => this.choose([])}>${uiText(preferredLocale(), "navigation.assets")}</button>
                       ${this.path.map(
                         (part, index) => html`
                           <span>/</span>
@@ -302,7 +302,7 @@ export class AssetExplorer extends LitElement {
                       (column, index) => html`
                         <section class="asset-column">
                           <header>
-                            ${AssetExplorer.plainName(column.parts.at(-1) || uiText(preferredLocale(), "assets"))}
+                            ${AssetExplorer.plainName(column.parts.at(-1) || uiText(preferredLocale(), "navigation.assets"))}
                           </header>
                           ${column.entries.map(
                             ({ name, label, value }) => html`
@@ -329,7 +329,7 @@ export class AssetExplorer extends LitElement {
                       typeof this.node() === "number"
                         ? html`
                             <section class="asset-column">
-                              <header>${uiText(preferredLocale(), "files")}</header>
+                              <header>${uiText(preferredLocale(), "catalog.fields.files")}</header>
                               ${this.files.map(
                                 (file) => html`
                                   <button
@@ -362,7 +362,7 @@ export class AssetExplorer extends LitElement {
       <section class="asset-preview">
         <header>
           <strong>${AssetExplorer.plainName(this.selected.split("/").at(-1) || "")}</strong>
-          <a class="button button--text" href=${url} download>${uiText(preferredLocale(), "download")}</a>
+          <a class="button button--text" href=${url} download>${uiText(preferredLocale(), "common.actions.download")}</a>
         </header>
         <div>
           ${
@@ -389,7 +389,7 @@ export class AssetExplorer extends LitElement {
                       : html`
                           <div class="notice">
                             <svg class="material-icon" width="40" height="40"><use href="/icons.svg#draft"></use></svg>
-                            <p>${uiText(preferredLocale(), "assetOther")}</p>
+                            <p>${uiText(preferredLocale(), "navigation.assetOther")}</p>
                           </div>
                         `
           }

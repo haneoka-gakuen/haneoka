@@ -7,17 +7,17 @@ import {
   type NavItem,
 } from "../config/navigation";
 import { LABEL_ENTRIES } from "../config/catalog-labels";
-import { catalogLookupKeys } from "./message-paths";
 import { localeFromPath } from "./locales";
 import { releaseServerFromPath } from "../lib/resource-route";
 
-/** Logical views over the one flat, authoritative public/i18n catalog. */
+/** Logical views over the semantic, authoritative public/i18n catalog. */
 export const COMMON_I18N_NAMESPACE = "common" as const;
 export const CATALOG_I18N_NAMESPACE = "catalog" as const;
 export const HOME_I18N_NAMESPACE = "home" as const;
 export const CALENDAR_I18N_NAMESPACE = "calendar" as const;
 export const STORY_I18N_NAMESPACE = "story" as const;
 export const VOICE_I18N_NAMESPACE = "voice" as const;
+export const MEDIA_I18N_NAMESPACE = "media" as const;
 export const ACCOUNT_I18N_NAMESPACE = "account" as const;
 export const COMMUNITY_I18N_NAMESPACE = "community" as const;
 export const EDITOR_I18N_NAMESPACE = "editor" as const;
@@ -38,6 +38,7 @@ export const I18N_NAMESPACES = [
   CALENDAR_I18N_NAMESPACE,
   STORY_I18N_NAMESPACE,
   VOICE_I18N_NAMESPACE,
+  MEDIA_I18N_NAMESPACE,
   ACCOUNT_I18N_NAMESPACE,
   COMMUNITY_I18N_NAMESPACE,
   EDITOR_I18N_NAMESPACE,
@@ -54,233 +55,28 @@ export const I18N_NAMESPACES = [
 
 export type MainI18nNamespace = (typeof I18N_NAMESPACES)[number];
 
-const COMMON_FLAT_KEYS = [
-  "importPose",
-  "exportPose",
-  "resetTransform",
-  "invalidModelPackage",
-  "emptyModelResource",
-  "seo.siteTitle",
-  "calendar.title",
-  "songSlidePuzzle.title",
-  "refresh",
-  "settings",
-  "search",
-  "filter",
-  "sort",
-  "ascending",
-  "descending",
-  "all",
-  "clear",
-  "remove",
-  "reset",
-  "open",
-  "close",
-  "back",
-  "cancel",
-  "menu",
-  "download",
-  "import",
-  "export",
-  "play",
-  "pause",
-  "previous",
-  "next",
-  "replay",
-  "skip",
-  "loading",
-  "empty",
-  "unavailable",
-  "error",
-  "retry",
-  "requestTimedOut",
-  "errorPage",
-  "primaryNavigation",
-  "breadcrumb",
-  "section",
-  "playback",
-  "musicPlayer",
-  "playbackPosition",
-  "mute",
-  "unmute",
-  "repeatQueue",
-  "repeatTrack",
-  "playInOrder",
-  "expandPlayer",
-  "clearQueue",
-  "closePlayerAndClearQueue",
-  "volume",
-  "queue",
-  "shuffle",
-  "reorder",
-  "collapse",
-  "morePlaybackControls",
-  "tracks",
-  "content",
-  "current",
-  "target",
-  "required",
-  "source",
-  "relationships.speakerNameSeparator",
-  "conditions",
-  "effects",
-  "themeLight",
-  "themeSystem",
-  "themeDark",
-  // Settings page group labels and current-value summaries (common-only route).
-  "appearance",
-  "themeColor",
-  "tuneDefault",
-  "density",
-  "comfortable",
-  "compact",
-  "language",
-  "server",
-  "releaseServer",
-  "catalogJapanOnly",
-  "catalogInternationalOnly",
-  "catalogViewingServerData",
-  "songTitles",
-  "metaNativeScore",
-  "metaScoreFactor",
-  "forceJapaneseTitles",
-  "showDifficultyEstimates",
-  "showSpoilerContent",
-  "grid",
-  "list",
-  "table",
-  "portrait",
-  "previousImage",
-  "nextImage",
-  "originalImage",
-] as const;
-
-const CATALOG_ROOT_KEYS = [
-  "announcements",
-  "searchPage",
-  "playerProfile",
-  "catalog",
-  "catalogCompat",
-  "chartPlayer",
-  "itemsPage",
-  "bandItemsPage",
-  "liveMusicTypes",
-  "songTypes",
-  "songRanking",
-  "eventTracker",
-] as const;
-
-const HOME_ROOT_KEYS = [
-  "announcements",
-  "homePage",
-  "catalogCompat.banners",
-  "catalogCompat.noBanner",
-  "catalogCompat.noEndDate",
-  "catalogCompat.noEvent",
-  "catalogCompat.spanDays",
-  "catalogCompat.spanHours",
-  "catalogCompat.spanMinutes",
-  "catalogCompat.startsIn",
-  "catalogCompat.endsIn",
-  "catalogCompat.endedAgo",
-  "catalogCompat.releasedToday",
-  "catalogCompat.releasedAgo",
-  "catalogCompat.releasesIn",
-  "catalogCompat.voicesRole",
-] as const;
-const STORY_ROOT_KEYS = [
-  "story",
-  "stories",
-  "bandStories",
-  "afterlive",
-  "storyNavigation",
-  "homeStories",
-  "linkStories",
-  "tutorial",
-  "storyViewer",
-  "storyText",
-  "voice",
-  "catalogCompat.story",
-] as const;
-const VOICE_ROOT_KEYS = ["voice", "voiceActor", "voices", "catalogCompat.voice"] as const;
-const ACCOUNT_ROOT_KEYS = ["account", "accountPage", "publicProfilePage"] as const;
-// GBP story readers share community routes and use the central text-view label.
-const COMMUNITY_ROOT_KEYS = ["community", "communityPage", "storyText"] as const;
-const EDITOR_ROOT_KEYS = ["chartEditor", "chartEditorPage", "storyEditor", "storyEditorPage", "chartPlayer", "liveMusicTypes", "songTypes"] as const;
-const LEGAL_ROOT_KEYS = ["about", "aboutPage", "joinPage", "privacyPage", "termsPage", "licensePage"] as const;
-const ADMIN_ROOT_KEYS = ["adminPage"] as const;
-const ANON_ROOT_KEYS = ["anonTokyo", "anonTokyoPage"] as const;
-const SPINE_ROOT_KEYS = ["spine", "spinePage"] as const;
-const LIVE2D_ROOT_KEYS = [
-  "live2d",
-  "story",
-  "assetImages",
-  "assetAudio",
-  "assetVideo",
-  "assetModels",
-  "assetData",
-  "assetOther",
-] as const;
-const HELP_ROOT_KEYS = ["help", "helpPage"] as const;
-const STAMP_MAKER_ROOT_KEYS = ["stampMaker"] as const;
-
+/** Explicit semantic domains; feature payloads never inject unrelated scalar leaves. */
 const namespaceRootKeys: Readonly<Record<MainI18nNamespace, readonly string[]>> = {
-  common: COMMON_FLAT_KEYS,
-  catalog: CATALOG_ROOT_KEYS,
-  home: HOME_ROOT_KEYS,
-  calendar: ["calendar"],
-  story: STORY_ROOT_KEYS,
-  voice: VOICE_ROOT_KEYS,
-  account: ACCOUNT_ROOT_KEYS,
-  community: COMMUNITY_ROOT_KEYS,
-  editor: EDITOR_ROOT_KEYS,
-  legal: LEGAL_ROOT_KEYS,
-  admin: ADMIN_ROOT_KEYS,
-  anon: ANON_ROOT_KEYS,
-  spine: SPINE_ROOT_KEYS,
-  live2d: LIVE2D_ROOT_KEYS,
-  help: HELP_ROOT_KEYS,
-  songSlidePuzzle: ["songSlidePuzzle"],
-  stampMaker: STAMP_MAKER_ROOT_KEYS,
-  teamBuilder: ["teamBuilder", "liveMusicTypes", "songTypes", "character", "characters", "genre"],
+  common: ["common", "navigation", "settings", "media.audio", "media.images.actions", "media.capture", "catalog.bands.names"],
+  catalog: ["catalog", "editors.chart.labels.notes", "editors.chart.labels.combo"],
+  home: ["home"],
+  calendar: ["tools.calendar"],
+  story: ["story"],
+  voice: ["media.voice", "media.audio"],
+  media: ["media"],
+  account: ["account", "community.page.appeal", "community.page.appealStatement", "community.page.submitAppeal", "community.page.appealSubmitted", "community.page.appealFailed", "home.dashboard.privacy", "home.dashboard.terms"],
+  community: ["community"],
+  editor: ["editors"],
+  legal: ["legal"],
+  admin: ["admin"],
+  anon: ["catalog.anonTokyo"],
+  spine: ["media.spine"],
+  live2d: ["media.models"],
+  help: ["common.help"],
+  songSlidePuzzle: ["tools.songPuzzle"],
+  stampMaker: ["tools.stampMaker"],
+  teamBuilder: ["tools.teamBuilder"],
 };
-
-const FEATURE_SCALAR_EXCLUSIONS = new Set<string>([
-  ...COMMON_FLAT_KEYS,
-  "home",
-  "catalog",
-  "tools",
-  "chartEditor",
-  "anonTokyo",
-  "spine",
-  "storyEditor",
-  "about",
-  "account",
-  "community",
-  "story",
-  "stories",
-  "bandStories",
-  "afterlive",
-  "homeStories",
-  "linkStories",
-  "tutorial",
-  "storyViewer",
-  "storyText",
-  "voice",
-  "voiceActor",
-  "voices",
-  "live2d",
-  "assets",
-  "assetImages",
-  "assetAudio",
-  "assetVideo",
-  "assetModels",
-  "assetData",
-  "assetOther",
-  "privacy",
-  "terms",
-  "license",
-]);
 
 const pathValue = (source: MessageCatalog, path: string): MessageNode | undefined => {
   let value: MessageNode | undefined = source;
@@ -324,25 +120,22 @@ export const navigationMessagePaths = (): readonly string[] => {
   return [...paths];
 };
 
-const commonPaths = (): readonly string[] =>
-  [...COMMON_FLAT_KEYS, ...navigationMessagePaths()].flatMap(catalogLookupKeys);
-
 /**
  * The page feature represented by a route. The route is intentionally a
  * pathname only; release-server and authored-content fallback stay separate.
  */
 export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
-  const pathname = route.split(/[?#]/u, 1)[0] || "/";
-  if (pathname === "/" || pathname === "") return HOME_I18N_NAMESPACE;
-  const calendarLocale = localeFromPath(pathname);
-  const calendarPath = calendarLocale
-    ? `/${pathname
+  const rawPathname = route.split(/[?#]/u, 1)[0] || "/";
+  const pathLocale = localeFromPath(rawPathname);
+  const pathname = pathLocale
+    ? `/${rawPathname
         .split("/")
         .filter(Boolean)
-        .slice(releaseServerFromPath(pathname) ? 2 : 1)
+        .slice(releaseServerFromPath(rawPathname) ? 2 : 1)
         .join("/")}`
-    : pathname;
-  if (calendarPath === "/calendar" || calendarPath.startsWith("/calendar/")) return CALENDAR_I18N_NAMESPACE;
+    : rawPathname;
+  if (pathname === "/" || pathname === "") return HOME_I18N_NAMESPACE;
+  if (pathname === "/calendar" || pathname.startsWith("/calendar/")) return CALENDAR_I18N_NAMESPACE;
   if (pathname === "/about" || pathname === "/join" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {
     return LEGAL_I18N_NAMESPACE;
   }
@@ -355,7 +148,7 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
     pathname === "/tools/stamp-maker" || pathname.startsWith("/tools/stamp-maker/")
   )
     return STAMP_MAKER_I18N_NAMESPACE;
-  if (pathname === "/tools/song-puzzle" || pathname.startsWith("/tools/song-puzzle/")) return SONG_PUZZLE_I18N_NAMESPACE;
+  if (pathname === "/song-puzzle" || pathname.startsWith("/song-puzzle/")) return SONG_PUZZLE_I18N_NAMESPACE;
   if (pathname === "/team-builder" || pathname.startsWith("/team-builder/")) return TEAM_BUILDER_I18N_NAMESPACE;
   if (pathname.includes("anon-tokyo")) return ANON_I18N_NAMESPACE;
   if (pathname.includes("chart-editor") || pathname.includes("story-editor")) return EDITOR_I18N_NAMESPACE;
@@ -367,44 +160,38 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
   return CATALOG_I18N_NAMESPACE;
 };
 
-/** Common shell plus the feature namespace needed by the current route. */
-export const requiredNamespacesForRoute = (route = "/"): readonly MainI18nNamespace[] => {
-  const feature = featureNamespaceForRoute(route);
-  return feature === COMMON_I18N_NAMESPACE ? [COMMON_I18N_NAMESPACE] : [COMMON_I18N_NAMESPACE, feature];
+/** Transitive feature dependencies are explicit and shared by SSR and client loading. */
+const namespaceDependencies: Partial<Record<MainI18nNamespace, readonly MainI18nNamespace[]>> = {
+  catalog: ["media"],
+  home: ["catalog", "media"], calendar: ["catalog"], story: ["catalog", "media"],
+  voice: ["catalog", "media"], editor: ["catalog", "media", "story"],
+  anon: ["catalog", "media"], spine: ["catalog", "media"], live2d: ["catalog", "media"],
+  songSlidePuzzle: ["catalog"], stampMaker: ["catalog", "media"], teamBuilder: ["catalog", "media"],
+  community: ["catalog", "media", "story"], admin: ["catalog", "community"],
 };
-
-export const namespacePaths = (namespace: MainI18nNamespace): readonly string[] => {
-  const paths = namespace === COMMON_I18N_NAMESPACE ? commonPaths() : namespaceRootKeys[namespace];
-  if (namespace === CATALOG_I18N_NAMESPACE) return [...paths, ...LABEL_ENTRIES.map(([, key]) => key)];
-  // Account forms use a small number of community labels; keep those leaves
-  // local to the account seed without pulling the community body in.
-  if (namespace === ACCOUNT_I18N_NAMESPACE) {
-    return [
-      ...paths,
-      "communityPage.appeal",
-      "communityPage.appealStatement",
-      "communityPage.submitAppeal",
-      "communityPage.appealSubmitted",
-      "communityPage.appealFailed",
-      "homePage.privacy",
-      "homePage.terms",
-    ];
-  }
-  return paths;
+export const namespaceDependencyClosure = (requested: readonly MainI18nNamespace[]): readonly MainI18nNamespace[] => {
+  const paths = new Set<MainI18nNamespace>([COMMON_I18N_NAMESPACE]);
+  const include = (namespace: MainI18nNamespace) => {
+    if (paths.has(namespace)) return;
+    paths.add(namespace);
+    for (const dependency of namespaceDependencies[namespace] ?? []) include(dependency);
+  };
+  for (const namespace of requested) include(namespace);
+  return [...paths];
 };
+export const requiredNamespacesForRoute = (route = "/"): readonly MainI18nNamespace[] =>
+  namespaceDependencyClosure([featureNamespaceForRoute(route)]);
+export const namespacePaths = (namespace: MainI18nNamespace): readonly string[] =>
+  namespace === COMMON_I18N_NAMESPACE
+    ? [...namespaceRootKeys.common, ...navigationMessagePaths()]
+    : namespace === CATALOG_I18N_NAMESPACE
+      ? [...namespaceRootKeys.catalog, ...LABEL_ENTRIES.map(([, key]) => key)]
+      : namespaceRootKeys[namespace];
 
-/** Project one logical namespace from the authoritative flat catalog. */
+/** Project only the registered semantic paths. */
 export const extractNamespace = (source: MessageCatalog, namespace: MainI18nNamespace): MessageCatalog => {
   const result: Record<string, MessageNode> = {};
   const paths = new Set(namespacePaths(namespace));
-  // Most catalogue/workspace labels are intentionally flat in the source.
-  // Include those scalar leaves in the active feature, but never pull a
-  // separate page body (aboutPage/communityPage/adminPage/etc.) into it.
-  if (namespace !== COMMON_I18N_NAMESPACE && namespace !== LEGAL_I18N_NAMESPACE && namespace !== ADMIN_I18N_NAMESPACE) {
-    for (const [key, value] of Object.entries(source)) {
-      if (typeof value === "string" && !FEATURE_SCALAR_EXCLUSIONS.has(key)) paths.add(key);
-    }
-  }
   for (const path of paths) {
     const segments = path.split(".");
     if (segments.some((_, index) => index > 0 && paths.has(segments.slice(0, index).join(".")))) continue;

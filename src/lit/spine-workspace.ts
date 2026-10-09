@@ -25,6 +25,31 @@ import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigatio
 import type { Locale } from "@haneoka/i18n";
 import { loadingIndicator } from "./ui/loading-indicator";
 import { StageFullscreen, StageGestures } from "./ui/stage-fullscreen";
+
+/** Message paths for this view's finite control/metadata identifiers. */
+const uiLabelPaths: Readonly<Record<string, string>> = {
+  "costumeId": "story.labels.costumeId",
+  "error": "common.states.error",
+  "family": "media.models.labels.family",
+  "grid": "common.layout.grid",
+  "id": "common.fields.id",
+  "loading": "common.states.loading",
+  "model": "media.models.labels.model",
+  "no": "common.states.no",
+  "order": "common.layout.order",
+  "preview": "common.actions.preview",
+  "quality": "media.models.labels.quality",
+  "sort": "common.actions.sort",
+  "source": "common.fields.source",
+  "spine": "navigation.spine",
+  "stage": "media.models.labels.stage",
+  "subCharacter": "story.labels.subCharacter",
+  "table": "common.layout.table",
+  "version": "media.models.labels.version",
+  "view": "common.actions.view",
+  "yes": "common.states.yes"
+};
+
 type Value = Record<string, unknown>;
 
 export class SpineWorkspace extends LitElement {
@@ -270,7 +295,7 @@ export class SpineWorkspace extends LitElement {
   }
   private modelTitle(model: Value) {
     return (
-      String(model.sourcePathKey || model.id || uiText(this.locale, "spine"))
+      String(model.sourcePathKey || model.id || uiText(this.locale, "navigation.spine"))
         .split("/")
         .at(-1)
         ?.replace(/_SkeletonData(?:\.asset)?$/i, "") || String(model.id)
@@ -278,7 +303,7 @@ export class SpineWorkspace extends LitElement {
   }
   private familyName(value: unknown) {
     const family = String(value || "");
-    if (family === "home-spot") return uiText(this.locale, "spinePage.families.homeSpot");
+    if (family === "home-spot") return uiText(this.locale, "media.spine.families.homeSpot");
     return family || "—";
   }
   private async select(id: string, updateUrl = true, prepared?: Value) {
@@ -350,8 +375,8 @@ export class SpineWorkspace extends LitElement {
         this.modelPhase = "error";
         this.modelError =
           error instanceof Error && error.name === "TimeoutError"
-            ? uiText(this.locale, "requestTimedOut")
-            : uiText(this.locale, "unavailable");
+            ? uiText(this.locale, "common.states.requestTimedOut")
+            : uiText(this.locale, "common.states.unavailable");
       }
     }
   }
@@ -447,11 +472,11 @@ export class SpineWorkspace extends LitElement {
       }
       if (counts.size < 2) return nothing;
       return facet(
-        uiText(this.locale, key),
+        uiText(this.locale, (uiLabelPaths[key] ?? key)),
         this.locale,
         [...counts].map(([value, count]) => ({
           value,
-          label: ["yes", "no"].includes(value) ? uiText(this.locale, value) : value,
+          label: ["yes", "no"].includes(value) ? uiText(this.locale, (uiLabelPaths[value] ?? value)) : value,
           count,
         })),
         this.metaFilters[key] ? [this.metaFilters[key]] : [],
@@ -564,7 +589,7 @@ export class SpineWorkspace extends LitElement {
       if (generation !== this.generation || !this.isConnected) return;
       await downloadBlob(blob, `${selected || "stage"}.png`);
     } catch {
-      if (generation === this.generation) this.captureMessage = uiText(this.locale, "captureFailed");
+      if (generation === this.generation) this.captureMessage = uiText(this.locale, "common.states.captureFailed");
     } finally {
       this.capturing = false;
     }
@@ -588,12 +613,12 @@ export class SpineWorkspace extends LitElement {
         results:
           this.phase === "loading"
             ? this.view === "grid"
-              ? html`${collectionSkeleton("model")}${loadingState(uiText(this.locale, "loading"))}`
-              : loadingState(uiText(this.locale, "loading"))
+              ? html`${collectionSkeleton("model")}${loadingState(uiText(this.locale, "common.states.loading"))}`
+              : loadingState(uiText(this.locale, "common.states.loading"))
             : this.phase === "error"
               ? errorState(
-                  uiText(this.locale, "unavailable"),
-                  uiText(this.locale, "retry"),
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
                   () => void this.loadCatalog(),
                   this.error,
                 )
@@ -607,15 +632,15 @@ export class SpineWorkspace extends LitElement {
                   ? this.renderModelList(models)
                   : this.renderSimpleList(models),
         filters: {
-          label: uiText(this.locale, "filter"),
+          label: uiText(this.locale, "common.actions.filter"),
           open: this.filtersOpen,
           count:
             Number(Boolean(this.query)) +
             Number(Boolean(this.familyFilter)) +
             Number(Boolean(this.versionFilter)) +
             Object.values(this.metaFilters).filter(Boolean).length,
-          closeLabel: uiText(this.locale, "close"),
-          resetLabel: uiText(this.locale, "reset"),
+          closeLabel: uiText(this.locale, "common.actions.close"),
+          resetLabel: uiText(this.locale, "common.actions.reset"),
           onOpen: () => (this.filtersOpen = true),
           onClose: () => (this.filtersOpen = false),
           onReset: () => {
@@ -630,7 +655,7 @@ export class SpineWorkspace extends LitElement {
               <md-outlined-text-field
                 class="is-search"
                 type="search"
-                label=${uiText(this.locale, "search")}
+                label=${uiText(this.locale, "common.actions.search")}
                 .value=${this.query}
                 @input=${(event: Event) => {
                   this.query = String((event.target as HTMLElement & { value?: string }).value || "");
@@ -642,15 +667,15 @@ export class SpineWorkspace extends LitElement {
                 </svg>
               </md-outlined-text-field>
             </div>
-            ${this.renderFacet(uiText(this.locale, "family"), families, this.familyFilter, (value) => (this.familyFilter = value))}
-            ${this.renderFacet(uiText(this.locale, "version"), versions, this.versionFilter, (value) => (this.versionFilter = value))}
+            ${this.renderFacet(uiText(this.locale, "media.models.labels.family"), families, this.familyFilter, (value) => (this.familyFilter = value))}
+            ${this.renderFacet(uiText(this.locale, "media.models.labels.version"), versions, this.versionFilter, (value) => (this.versionFilter = value))}
             ${this.renderMetadataFilters()}
             ${filterGroup(
-              uiText(this.locale, "sort"),
+              uiText(this.locale, "common.actions.sort"),
               html`
                 <div class="field-stack">
                   <md-outlined-select
-                    label=${uiText(this.locale, "sort")}
+                    label=${uiText(this.locale, "common.actions.sort")}
                     value=${this.sort}
                     @change=${(event: Event) => {
                       this.sort = String(
@@ -661,10 +686,10 @@ export class SpineWorkspace extends LitElement {
                   >
                     ${(
                       [
-                        ["id", uiText(this.locale, "order")],
-                        ["source", uiText(this.locale, "model")],
-                        ["family", uiText(this.locale, "family")],
-                        ["version", uiText(this.locale, "version")],
+                        ["id", uiText(this.locale, "common.layout.order")],
+                        ["source", uiText(this.locale, "media.models.labels.model")],
+                        ["family", uiText(this.locale, "media.models.labels.family")],
+                        ["version", uiText(this.locale, "media.models.labels.version")],
                       ] as const
                     ).map(
                       ([value, label]) => html`
@@ -675,11 +700,11 @@ export class SpineWorkspace extends LitElement {
                     )}
                   </md-outlined-select>
                   ${segmented({
-                    label: uiText(this.locale, "order"),
+                    label: uiText(this.locale, "common.layout.order"),
                     value: this.order,
                     options: [
-                      { value: "asc" as const, label: uiText(this.locale, "ascending"), icon: "arrow_upward" },
-                      { value: "desc" as const, label: uiText(this.locale, "descending"), icon: "arrow_downward" },
+                      { value: "asc" as const, label: uiText(this.locale, "common.layout.ascending"), icon: "arrow_upward" },
+                      { value: "desc" as const, label: uiText(this.locale, "common.layout.descending"), icon: "arrow_downward" },
                     ],
                     onSelect: (order) => {
                       this.order = order;
@@ -696,7 +721,7 @@ export class SpineWorkspace extends LitElement {
     `;
   }
   private renderFacet(label: string, values: string[], selected: string, update: (value: string) => void) {
-    const key = label === uiText(this.locale, "family") ? "family" : "spineVersion";
+    const key = label === uiText(this.locale, "media.models.labels.family") ? "family" : "spineVersion";
     return facet(
       label,
       this.locale,
@@ -771,12 +796,12 @@ export class SpineWorkspace extends LitElement {
   }
   private renderModelList(models: Value[]) {
     return collectionTable(
-      uiText(this.locale, "table"),
+      uiText(this.locale, "common.layout.table"),
       [
-        uiText(this.locale, "model"),
-        uiText(this.locale, "family"),
-        uiText(this.locale, "version"),
-        uiText(this.locale, "animations"),
+        uiText(this.locale, "media.models.labels.model"),
+        uiText(this.locale, "media.models.labels.family"),
+        uiText(this.locale, "media.models.labels.version"),
+        uiText(this.locale, "media.models.labels.animations"),
       ],
       models.map((model) => [
         html`
@@ -816,7 +841,7 @@ export class SpineWorkspace extends LitElement {
         class=${page ? "viewer-detail viewer-detail--page" : "viewer-detail pane-layer"}
         role=${page ? nothing : "dialog"}
         aria-modal=${page ? nothing : "true"}
-        aria-label=${page ? nothing : uiText(this.locale, "model")}
+        aria-label=${page ? nothing : uiText(this.locale, "media.models.labels.model")}
         tabindex=${page ? nothing : "-1"}
         data-overlay-pane=${page ? nothing : "true"}
       >
@@ -825,32 +850,32 @@ export class SpineWorkspace extends LitElement {
             ? nothing
             : html`
                 <header>
-                  <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "close")}>
+                  <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "common.actions.close")}>
                     <svg class="material-icon" width="24" height="24"><use href="/icons.svg#arrow_back"></use></svg>
                   </button>
                   <span>
                     <strong>${detail ? this.modelTitle(detail) : this.selected}</strong>
                     <small>
-                      ${this.familyName(detail?.family || detail?.spineVersion || uiText(this.locale, "spine"))}
+                      ${this.familyName(detail?.family || detail?.spineVersion || uiText(this.locale, "navigation.spine"))}
                     </small>
                   </span>
-                  <nav class="viewer-detail__navigation" aria-label=${uiText(this.locale, "spine")}>
+                  <nav class="viewer-detail__navigation" aria-label=${uiText(this.locale, "navigation.spine")}>
                     <button
                       class="icon-button"
                       ?disabled=${modelIndex <= 0}
                       @click=${() => this.adjacentModel(-1)}
-                      aria-label=${uiText(this.locale, "previous")}
+                      aria-label=${uiText(this.locale, "common.actions.previous")}
                     >
                       <svg class="material-icon" width="20" height="20"><use href="/icons.svg#chevron_left"></use></svg>
                     </button>
-                    <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "grid")}>
+                    <button class="icon-button" @click=${this.closeDetail} aria-label=${uiText(this.locale, "common.layout.grid")}>
                       <svg class="material-icon" width="20" height="20"><use href="/icons.svg#grid_view"></use></svg>
                     </button>
                     <button
                       class="icon-button"
                       ?disabled=${modelIndex < 0 || modelIndex >= models.length - 1}
                       @click=${() => this.adjacentModel(1)}
-                      aria-label=${uiText(this.locale, "next")}
+                      aria-label=${uiText(this.locale, "common.actions.next")}
                     >
                       <svg class="material-icon" width="20" height="20">
                         <use href="/icons.svg#chevron_right"></use>
@@ -864,7 +889,7 @@ export class SpineWorkspace extends LitElement {
           <div
             class="viewer-stage viewer-detail__runtime"
             aria-busy=${this.modelPhase === "loading"}
-            aria-label=${detail ? this.modelTitle(detail) : uiText(this.locale, "spine")}
+            aria-label=${detail ? this.modelTitle(detail) : uiText(this.locale, "navigation.spine")}
             style=${previewRatio ? `--viewer-stage-ratio: ${previewRatio};` : nothing}
           >
             ${
@@ -892,7 +917,7 @@ export class SpineWorkspace extends LitElement {
                 ? html`
                     <div class="viewer-state" role="status" aria-live="polite">
                       ${loadingIndicator()}
-                      <span>${uiText(this.locale, "loading")}</span>
+                      <span>${uiText(this.locale, "common.states.loading")}</span>
                     </div>
                   `
                 : nothing
@@ -902,7 +927,7 @@ export class SpineWorkspace extends LitElement {
                     <div class="viewer-state" role="alert">
                       <span>${this.modelError}</span>
                       <button class="button button--tonal" type="button" @click=${this.retryModel}>
-                        ${uiText(this.locale, "retry")}
+                        ${uiText(this.locale, "common.actions.retry")}
                       </button>
                     </div>
                   `
@@ -921,7 +946,7 @@ export class SpineWorkspace extends LitElement {
                       <button
                         class="icon-button runtime-button"
                         @click=${this.togglePaused}
-                        aria-label=${uiText(this.locale, this.paused ? "play" : "pause")}
+                        aria-label=${uiText(this.locale, this.paused ? "common.actions.play" : "common.actions.pause")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href=${this.paused ? "/icons.svg#play_arrow" : "/icons.svg#pause"}></use>
@@ -930,7 +955,7 @@ export class SpineWorkspace extends LitElement {
                       <button
                         class="icon-button runtime-button"
                         @click=${this.replay}
-                        aria-label=${uiText(this.locale, "replay")}
+                        aria-label=${uiText(this.locale, "common.actions.replay")}
                       >
                         <svg class="material-icon" width="22" height="22"><use href="/icons.svg#replay"></use></svg>
                       </button>
@@ -938,7 +963,7 @@ export class SpineWorkspace extends LitElement {
                         class="icon-button runtime-button"
                         ?disabled=${this.capturing}
                         @click=${this.captureStage}
-                        aria-label=${uiText(this.locale, "screenshot")}
+                        aria-label=${uiText(this.locale, "media.models.labels.screenshot")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href="/icons.svg#photo_camera"></use>
@@ -951,8 +976,8 @@ export class SpineWorkspace extends LitElement {
                           void this.fullscreen.toggle(
                             (event.currentTarget as HTMLElement).closest<HTMLElement>(".viewer-stage"),
                           )}
-                        aria-label=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
-                        title=${uiText(this.locale, this.stageFullscreen ? "fullscreenExit" : "fullscreen")}
+                        aria-label=${uiText(this.locale, this.stageFullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
+                        title=${uiText(this.locale, this.stageFullscreen ? "story.labels.fullscreenExit" : "common.actions.fullscreen")}
                       >
                         <svg class="material-icon" width="22" height="22">
                           <use href=${this.stageFullscreen ? "/icons.svg#fullscreen_exit" : "/icons.svg#fullscreen"}></use>
@@ -968,32 +993,32 @@ export class SpineWorkspace extends LitElement {
               this.phase === "error" && this.modelPhase === "ready"
                 ? html`
                     <div class="viewer-metadata-status" role="alert">
-                      <span>${uiText(this.locale, "metadataUnavailable")}</span>
+                      <span>${uiText(this.locale, "common.states.metadataUnavailable")}</span>
                       <button class="button button--text" @click=${() => void this.loadCatalog()}>
-                        ${uiText(this.locale, "retry")}
+                        ${uiText(this.locale, "common.actions.retry")}
                       </button>
                     </div>
                   `
                 : nothing
             }
             <section class="viewer-behavior-controls">
-              <h3>${uiText(this.locale, "settings")}</h3>
+              <h3>${uiText(this.locale, "navigation.settings")}</h3>
               <label>
-                <span>${uiText(this.locale, "loop")}</span>
+                <span>${uiText(this.locale, "common.actions.loop")}</span>
                 <md-switch
                   .selected=${this.loop}
                   @change=${this.toggleLoop}
-                  aria-label=${uiText(this.locale, "loop")}
+                  aria-label=${uiText(this.locale, "common.actions.loop")}
                 ></md-switch>
               </label>
               <label class="viewer-background-color">
-                <span>${uiText(this.locale, "backgroundColor")}</span>
+                <span>${uiText(this.locale, "media.models.labels.backgroundColor")}</span>
                 <span class="viewer-background-color__controls">
                   <input
                     type="color"
                     .value=${this.backgroundColor}
                     ?disabled=${this.backgroundTransparent}
-                    aria-label=${uiText(this.locale, "backgroundColor")}
+                    aria-label=${uiText(this.locale, "media.models.labels.backgroundColor")}
                     @input=${(event: Event) => {
                       this.backgroundColor = String((event.target as HTMLInputElement).value || "#ecf0f1");
                       this.applyBackground();
@@ -1002,14 +1027,14 @@ export class SpineWorkspace extends LitElement {
                   <md-switch
                     .selected=${!this.backgroundTransparent}
                     @change=${this.toggleBackground}
-                    aria-label=${uiText(this.locale, "backgroundColor")}
+                    aria-label=${uiText(this.locale, "media.models.labels.backgroundColor")}
                   ></md-switch>
                 </span>
               </label>
               <label>
-                <span>${uiText(this.locale, "speed")}</span>
+                <span>${uiText(this.locale, "media.playback.fields.speed")}</span>
                 <md-slider
-                  aria-label=${uiText(this.locale, "speed")}
+                  aria-label=${uiText(this.locale, "media.playback.fields.speed")}
                   min="0.25"
                   max="2"
                   step="0.05"
@@ -1020,11 +1045,11 @@ export class SpineWorkspace extends LitElement {
               </label>
             </section>
             <section ?hidden=${!this.skins.length}>
-              <h3>${uiText(this.locale, "spinePage.skins")}</h3>
+              <h3>${uiText(this.locale, "media.spine.skins")}</h3>
               <md-outlined-select
                 data-spine-skin
                 class="viewer-inspector-select"
-                label=${uiText(this.locale, "spinePage.skins")}
+                label=${uiText(this.locale, "media.spine.skins")}
                 .value=${this.skin}
                 @change=${(event: Event) =>
                   this.setSkin(String((event.target as HTMLElement & { value?: string }).value || ""))}
@@ -1039,11 +1064,11 @@ export class SpineWorkspace extends LitElement {
               </md-outlined-select>
             </section>
             <section class="viewer-transform-controls">
-              <h3>${uiText(this.locale, "transform")}</h3>
+              <h3>${uiText(this.locale, "media.models.labels.transform")}</h3>
               <label>
-                <span>${uiText(this.locale, "zoom")}</span>
+                <span>${uiText(this.locale, "media.models.labels.zoom")}</span>
                 <md-slider
-                  aria-label=${uiText(this.locale, "zoom")}
+                  aria-label=${uiText(this.locale, "media.models.labels.zoom")}
                   min="0.25"
                   max="4"
                   step="0.01"
@@ -1058,17 +1083,17 @@ export class SpineWorkspace extends LitElement {
                 ></md-slider>
               </label>
               <button class="button button--text viewer-panel-button" type="button" @click=${this.resetPlacement}>
-                ${uiText(this.locale, "reset")}
+                ${uiText(this.locale, "common.actions.reset")}
               </button>
             </section>
             ${
               animations.length
                 ? html`
                     <section>
-                      <h3>${uiText(this.locale, "animations")}</h3>
+                      <h3>${uiText(this.locale, "media.models.labels.animations")}</h3>
                       <md-outlined-select
                         class="viewer-inspector-select"
-                        label=${uiText(this.locale, "animations")}
+                        label=${uiText(this.locale, "media.models.labels.animations")}
                         .value=${this.stage?.animationName() || ""}
                         @change=${(event: Event) =>
                           this.playAnimation(

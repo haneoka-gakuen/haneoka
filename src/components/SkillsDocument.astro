@@ -8,13 +8,13 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { skillCatalogPayload } from "../server/skill-catalog";
 import "../styles/catalog.css";
 const { locale, server } = Astro.props as { locale: Locale; server: ReleaseServer };
-const title = t(locale, "skills", "Skills");
+const title = t(locale, "catalog.cards.fields.skills", "Skills");
 const payload = await skillCatalogPayload(server);
 const seed = JSON.stringify(payload).replaceAll("<", "\\u003c");
 const name = (value: unknown) => resolveLocalizedText(value, locale).text;
 ---
-<Base locale={locale} route="/catalog/skills" canonicalRoute={`/${server}/${locale}/skills/`} title={title} titleKey="skills">
-  <AppShell locale={locale} route="/catalog/skills" title={title} titleKey="skills" server={server}>
+<Base locale={locale} route="/catalog/skills" canonicalRoute={`/${server}/${locale}/skills/`} title={title} titleKey="catalog.cards.fields.skills">
+  <AppShell locale={locale} route="/catalog/skills" title={title} titleKey="catalog.cards.fields.skills" server={server}>
     <skills-workspace locale={locale}>
       <script is:inline type="application/json" data-skill-catalog set:html={seed}></script>
       <div class="page"><ul>{payload.entries.map((entry) => <li><a href={`?skill=${encodeURIComponent(entry.key)}`}>{name(entry.name) || entry.key}</a></li>)}</ul></div>

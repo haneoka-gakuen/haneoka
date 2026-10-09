@@ -25,7 +25,7 @@ export function gameRecordsRegionPicker(
   onSelect: (region: GameRecordsRegion) => void,
   name = "ranking-region",
 ) {
-  const label = (key: string, fallback: string) => clientText(locale, `songRanking.${key}`, fallback);
+  const label = (key: string, fallback: string) => clientText(locale, `catalog.rankings.songs.${key}`, fallback);
   return html`
     <div
       class="settings-options song-ranking__regions"
