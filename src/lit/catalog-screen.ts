@@ -1,4 +1,5 @@
 import { catalogLabelPath } from "../config/catalog-labels";
+import { relativeTimeWindow, relativeTimestamp, TIME_REGIONS, type TimeRegion } from "../lib/relative-time";
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillFacetValues, skillTypeKey, skillTypeTitle, songMissions } from "../lib/catalog-filters";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -1503,6 +1504,17 @@ export class CatalogScreen extends LitElement {
     const detail = (event as CustomEvent<{ id?: string; playing?: boolean }>).detail;
     this.playingSong = detail?.playing ? detail.id || "" : "";
   };
+  private relativeTimeClock = 0;
+  private relativeTimeDeadline = 0;
+  private relativeTimeInputs: unknown[] = [];
+  private relativeTimeBoundaries: number[] = [];
+  private relativeTimeVisible = false;
+  private onTimeVisibility = () => {
+    if (document.visibilityState === "visible" && this.profile.presentation === "system") {
+      this.resultCache = undefined;
+      this.requestUpdate();
+    }
+  };
 
   constructor() {
     super();
@@ -1555,6 +1567,7 @@ export class CatalogScreen extends LitElement {
   };
   connectedCallback() {
     super.connectedCallback();
+    document.addEventListener("visibilitychange", this.onTimeVisibility);
     window.addEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
     window.addEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);
     this.disposeDifficultyDisplay = observeDifficultyDisplay(() => {
@@ -1648,6 +1661,10 @@ export class CatalogScreen extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    window.clearTimeout(this.relativeTimeClock);
+    this.relativeTimeClock = 0;
+    this.relativeTimeDeadline = 0;
+    document.removeEventListener("visibilitychange", this.onTimeVisibility);
     window.removeEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
     window.removeEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);
     this.resetCommentsActivation();
@@ -1824,6 +1841,7 @@ export class CatalogScreen extends LitElement {
     super.update(changed);
   }
   updated() {
+    this.scheduleRelativeTimeRefresh();
     // Focus containment follows whichever overlay is on top: the detail pane
     // wins over the filter panel, and a docked filter panel is not an overlay
     // at all, so it is never trapped.
@@ -2537,7 +2555,85 @@ export class CatalogScreen extends LitElement {
         : `${amount} ${this.localized(payment.currency)}`;
     }
     if (payment.storePurchase) return this.label("inAppPurchase", "In-app purchase");
-    return this.systemStatusLabel(item);
+    return this.systemRelativeSubtitle(item);
+  }
+  /** Only the existing window subtitle; table status and absolute fields stay unchanged. */
+  systemRelativeSubtitle(item: Item) {
+    const region = this.windowRegion(item);
+    const start = relativeTimestamp(item.startAt, region);
+    const end = relativeTimestamp(item.endAt, region);
+    if (start !== undefined && end !== undefined && end < start) return this.label("unavailable", "Unavailable");
+    if (start === undefined && end === undefined) {
+      const state = this.entryState(item);
+      return this.label(state, state === "upcoming" ? "Upcoming" : state === "ended" ? "Ended" : "Ongoing");
+    }
+    return relativeTimeWindow(this.settings.locale, start, end, {
+      ongoing: this.label("ongoing", "Ongoing"),
+    });
+  }
+  private windowRegion(item: Item): TimeRegion | undefined {
+    if (this.settings.origin !== "bestdori") return;
+    return TIME_REGIONS.find((region) => region === item.sourceServer) || this.bestdoriRegion() as TimeRegion;
+  }
+  private scheduleRelativeTimeRefresh() {
+    const grid = this.profile.presentation === "system" && this.view === "grid" && !this.selected;
+    const recruitments = this.settings.resource === "events" && Array.isArray(this.selected?.recruitments)
+      ? this.selected.recruitments as Item[] : [];
+    const clear = () => {
+      window.clearTimeout(this.relativeTimeClock);
+      this.relativeTimeClock = 0;
+      this.relativeTimeDeadline = 0;
+      this.relativeTimeInputs = [];
+      this.relativeTimeBoundaries = [];
+      this.relativeTimeVisible = false;
+    };
+    if (!this.isConnected || (!grid && !recruitments.length)) { clear(); return; }
+    const inputs = [this.items, this.selected, this.selected?.recruitments, this.query, this.facets, this.sort,
+      this.order, this.settings, this.view, this.resultCache];
+    if (inputs.some((value, index) => value !== this.relativeTimeInputs[index])) {
+      const displayed = grid ? this.filtered() : [];
+      this.relativeTimeVisible = displayed.length > 0 || recruitments.length > 0;
+      // An empty time-state filter still needs the next real source boundary
+      // to reveal a newly matching row. It does not need minute-only repaints.
+      const rows = [...(grid && this.facets.status?.length ? this.items : displayed), ...recruitments];
+      this.relativeTimeBoundaries = rows.filter((row) => {
+        if (recruitments.includes(row)) return true;
+        if (this.settings.resource === "challenge") return false;
+        if (this.settings.resource !== "shop") return true;
+        const payment = (row.payment || {}) as Item;
+        return !payment.advertisement && !payment.storePurchase && !Number(payment.price || 0) &&
+          !shopPriceLine(this.settings.locale, shopPaymentPrices(payment, this.itemSourceServer(row)));
+      }).flatMap((row) => [relativeTimestamp(row.startAt, this.windowRegion(row)), relativeTimestamp(row.endAt, this.windowRegion(row))])
+        .filter((at): at is number => at !== undefined);
+      this.relativeTimeInputs = [...inputs.slice(0, -1), this.resultCache];
+    }
+    if (!this.relativeTimeBoundaries.length) {
+      window.clearTimeout(this.relativeTimeClock);
+      this.relativeTimeClock = 0;
+      this.relativeTimeDeadline = 0;
+      return;
+    }
+    const now = Date.now();
+    const deadline = this.relativeTimeBoundaries.reduce((next, at) => at > now ? Math.min(next, at) : next,
+      this.relativeTimeVisible ? now + 60_000 : Infinity);
+    if (!Number.isFinite(deadline)) {
+      window.clearTimeout(this.relativeTimeClock);
+      this.relativeTimeClock = 0;
+      this.relativeTimeDeadline = 0;
+      return;
+    }
+    // Other renders may shorten a pending boundary, but never postpone it.
+    if (this.relativeTimeClock && this.relativeTimeDeadline <= deadline) return;
+    window.clearTimeout(this.relativeTimeClock);
+    this.relativeTimeDeadline = deadline;
+    this.relativeTimeClock = window.setTimeout(() => {
+      this.relativeTimeClock = 0;
+      this.relativeTimeDeadline = 0;
+      if (this.isConnected && document.visibilityState === "visible") {
+        this.resultCache = undefined;
+        this.requestUpdate();
+      }
+    }, Math.max(1, Math.min(2_147_483_647, deadline - now)));
   }
   systemStatusLabel(item: Item) {
     const state = this.entryState(item);
@@ -3311,7 +3407,7 @@ export class CatalogScreen extends LitElement {
     if (kind === "system") {
       if (this.settings.resource === "challenge") return this.localized(item.band);
       if (this.settings.resource === "shop") return this.shopPriceLabel(item);
-      return this.systemStatusLabel(item);
+      return this.systemRelativeSubtitle(item);
     }
     return "";
   }

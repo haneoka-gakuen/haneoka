@@ -1073,6 +1073,11 @@
       "preparing": "準備播放",
       "sceneIndex": "場景索引",
       "preparationTasks": "項準備工作"
+    },
+    "reading": {
+      "speakers": "說話人",
+      "anonymous": "匿名說話人（???）",
+      "unnamed": "無名文字"
     }
   },
   "media": {
@@ -2287,7 +2292,6 @@
       "mode": "模式",
       "play": "遊玩",
       "edit": "編輯",
-      "selected": "第{row}行，第{column}列",
       "shuffle": "打亂",
       "reset": "重設為目標",
       "resetConfirm": "放棄目前棋盤？",
@@ -2310,7 +2314,6 @@
       "blank": "空格",
       "tile": "碎片{tile}",
       "moves": "遊玩步數",
-      "elapsed": "遊玩時間",
       "solutionLength": "解法步數",
       "ready": "就緒",
       "completed": "已完成目標",

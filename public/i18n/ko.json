@@ -1073,6 +1073,11 @@
       "preparing": "재생 준비 중",
       "sceneIndex": "장면 인덱스",
       "preparationTasks": "개 준비 작업"
+    },
+    "reading": {
+      "speakers": "화자",
+      "anonymous": "익명 화자 (???)",
+      "unnamed": "이름 없는 텍스트"
     }
   },
   "media": {
@@ -2287,7 +2292,6 @@
       "mode": "모드",
       "play": "플레이",
       "edit": "편집",
-      "selected": "{row}행, {column}열",
       "shuffle": "섞기",
       "reset": "목표로 초기화",
       "resetConfirm": "보드를 버릴까요?",
@@ -2310,7 +2314,6 @@
       "blank": "빈칸",
       "tile": "조각 {tile}",
       "moves": "플레이어 이동 수",
-      "elapsed": "플레이 시간",
       "solutionLength": "해답 이동 수",
       "ready": "준비됨",
       "completed": "목표 달성",

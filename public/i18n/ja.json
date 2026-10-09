@@ -1073,6 +1073,11 @@
       "preparing": "再生を準備中",
       "sceneIndex": "シーン索引",
       "preparationTasks": "件の準備"
+    },
+    "reading": {
+      "speakers": "話者",
+      "anonymous": "名前不明の話者（???）",
+      "unnamed": "名前のないテキスト"
     }
   },
   "media": {
@@ -2287,7 +2292,6 @@
       "mode": "モード",
       "play": "プレイ",
       "edit": "編集",
-      "selected": "{row}行、{column}列",
       "shuffle": "シャッフル",
       "reset": "完成図へリセット",
       "resetConfirm": "盤面を破棄しますか？",
@@ -2310,7 +2314,6 @@
       "blank": "空きマス",
       "tile": "タイル{tile}",
       "moves": "プレイヤー移動回数",
-      "elapsed": "プレイ時間",
       "solutionLength": "解の手数",
       "ready": "準備完了",
       "completed": "完成",

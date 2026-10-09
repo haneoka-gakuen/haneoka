@@ -41,7 +41,7 @@ import { advText } from "./ui/adv-text";
 import { parseAdvRichText, type AdvRichTextNode } from "@haneoka/vega-plugin-richtext";
 import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
 import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
-import { inputChip, segmented } from "./ui/controls";
+import { filterChip, inputChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
@@ -203,6 +203,7 @@ export class StoryWorkspace extends LitElement {
     detailError: { state: true },
     detailMode: { state: true },
     transcriptQuery: { state: true },
+    transcriptSpeakers: { state: true },
     storyCommentsReady: { state: true },
     storyCommentsFailed: { state: true },
     limit: { state: true },
@@ -232,6 +233,7 @@ export class StoryWorkspace extends LitElement {
   declare detailError: string;
   declare detailMode: "text" | "play";
   declare private transcriptQuery: string;
+  declare private transcriptSpeakers: string[];
   declare private storyCommentsReady: boolean;
   declare private storyCommentsFailed: boolean;
   private storyCommentsImport?: Promise<void>;
@@ -326,6 +328,7 @@ export class StoryWorkspace extends LitElement {
     this.detailLoading = false;
     this.detailMode = "text";
     this.transcriptQuery = "";
+    this.transcriptSpeakers = [];
     this.storyCommentsReady = false;
     this.storyCommentsFailed = false;
     this.detailError = "";
@@ -338,7 +341,10 @@ export class StoryWorkspace extends LitElement {
     return !this.hasAttribute("data-prerendered") || Boolean(this.detailEpisode) || this.phase === "error";
   }
   protected update(changed: Map<string, unknown>): void {
-    if (changed.has("locale")) this.transcriptQuery = "";
+    if (changed.has("locale")) {
+      this.transcriptQuery = "";
+      this.transcriptSpeakers = [];
+    }
     if (this.hasAttribute("data-prerendered")) {
       this.removeAttribute("data-prerendered");
       this.replaceChildren();
@@ -346,6 +352,8 @@ export class StoryWorkspace extends LitElement {
     super.update(changed);
   }
   public prepareEntity(payload: StoryPayload, locale: string): void {
+    this.transcriptQuery = "";
+    this.transcriptSpeakers = [];
     this.locale = locale;
     this.entityId = payload.id;
     this.mode = payload.mode as ReleaseMode;
@@ -1324,7 +1332,10 @@ export class StoryWorkspace extends LitElement {
     if (!this.isBestdori() && id !== this.entityId) {
       openDetailLocation(
         entityHref({
-          server: this.unionStories?.entries.get(source || this.episodes[id] || {})?.displayServer || this.unionStories?.byId.get(id)?.displayServer || readReleaseServer(),
+          server:
+            this.unionStories?.entries.get(source || this.episodes[id] || {})?.displayServer ||
+            this.unionStories?.byId.get(id)?.displayServer ||
+            readReleaseServer(),
           locale: preferredLocale(this.locale) as Locale,
           kind: "stories",
           id,
@@ -1342,7 +1353,10 @@ export class StoryWorkspace extends LitElement {
       openDetailLocation(`${location.pathname}?${params}`);
     }
     const signal = this.detailRequests.begin();
-    if (!this.detailEpisode || this.episodeId(this.detailEpisode) !== id) this.transcriptQuery = "";
+    if (!this.detailEpisode || this.episodeId(this.detailEpisode) !== id) {
+      this.transcriptQuery = "";
+      this.transcriptSpeakers = [];
+    }
     this.dataset.entityReady = "false";
     this.detailError = "";
     const cardEpisode = (
@@ -2316,38 +2330,86 @@ export class StoryWorkspace extends LitElement {
                                 supporting-text=${`${dialogueCount(visibleCommands)} / ${dialogueCount(commands)}`}
                                 .value=${this.transcriptQuery}
                                 @input=${(event: Event) => {
-                                  this.transcriptQuery = String((event.target as HTMLElement & { value?: string }).value || "");
+                                  this.transcriptQuery = String(
+                                    (event.target as HTMLElement & { value?: string }).value || "",
+                                  );
                                 }}
                               >
-                                <svg slot="leading-icon" class="material-icon" width="20" height="20" aria-hidden="true">
+                                <svg
+                                  slot="leading-icon"
+                                  class="material-icon"
+                                  width="20"
+                                  height="20"
+                                  aria-hidden="true"
+                                >
                                   <use href="/icons.svg#search"></use>
                                 </svg>
-                                ${this.transcriptQuery
-                                  ? html`
-                                      <button
-                                        slot="trailing-icon"
-                                        class="icon-button"
-                                        type="button"
-                                        aria-label=${uiText(this.locale, "common.actions.reset")}
-                                        @click=${(event: Event) => {
+                                ${
+                                  this.transcriptQuery
+                                    ? html`
+                                        <button
+                                          slot="trailing-icon"
+                                          class="icon-button"
+                                          type="button"
+                                          aria-label=${uiText(this.locale, "common.actions.reset")}
+                                          @click=${(event: Event) => {
                                           this.transcriptQuery = "";
-                                          (event.currentTarget as HTMLElement).closest<HTMLElement>("md-outlined-text-field")?.focus();
+                                          (event.currentTarget as HTMLElement)
+                                            .closest<HTMLElement>("md-outlined-text-field")
+                                            ?.focus();
                                         }}
-                                      >${icon("close", 20)}</button>
-                                    `
-                                  : nothing}
+                                        >
+                                          ${icon("close", 20)}
+                                        </button>
+                                      `
+                                    : nothing
+                                }
                               </md-outlined-text-field>
                             </div>
-                            ${visibleCommands.length
-                              ? html`<div class="story-transcript">${this.renderTranscript(visibleCommands)}</div>`
-                              : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })}
+                            ${filterGroup(
+                              uiText(this.locale, "story.reading.speakers"),
+                              html`
+                                <div class="cluster">
+                                  ${this.transcriptSpeakerOptions(commands).map((option) =>
+                                    filterChip({
+                                      label: option.label,
+                                      selected: this.transcriptSpeakers.includes(option.value),
+                                      onToggle: () => {
+                                        this.transcriptSpeakers = this.transcriptSpeakers.includes(option.value)
+                                          ? this.transcriptSpeakers.filter((value) => value !== option.value)
+                                          : [...this.transcriptSpeakers, option.value];
+                                      },
+                                    }),
+                                  )}
+                                </div>
+                              `,
+                              this.transcriptSpeakers.length || this.transcriptQuery
+                                ? html`
+                                    <button
+                                      class="button button--text"
+                                      type="button"
+                                      @click=${() => {
+                                        this.transcriptQuery = "";
+                                        this.transcriptSpeakers = [];
+                                      }}
+                                    >
+                                      ${uiText(this.locale, "common.actions.clear")}
+                                    </button>
+                                  `
+                                : nothing,
+                            )}
+                            ${
+                              visibleCommands.length
+                                ? html`
+                                    <div class="story-transcript">${this.renderTranscript(visibleCommands)}</div>
+                                  `
+                                : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })
+                            }
                           </section>
                         `
                       : this.detailLoading
                         ? html`
-                            <div class="state state--inline">
-                              ${loadingIndicator()}
-                            </div>
+                            <div class="state state--inline">${loadingIndicator()}</div>
                           `
                         : nothing
                   }
@@ -2366,23 +2428,35 @@ export class StoryWorkspace extends LitElement {
     }
     return entries;
   }
+  private transcriptVisibleText(value: string): string {
+    const visibleText = (nodes: readonly AdvRichTextNode[]): string =>
+      nodes
+        .map((node): string => {
+          if (node.type === "text") return node.value;
+          if (node.type === "ruby") return node.base;
+          if (node.type === "break" || node.type === "space") return " ";
+          return visibleText(node.children);
+        })
+        .join("");
+    return visibleText(parseAdvRichText(value));
+  }
   private searchTranscript(entries: readonly HaneokaTranscriptEntry[]): readonly HaneokaTranscriptEntry[] {
     const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
     const query = normalize(this.transcriptQuery);
-    if (!query) return entries;
-    const visibleText = (nodes: readonly AdvRichTextNode[]): string =>
-      nodes.map((node): string => {
-        if (node.type === "text") return node.value;
-        if (node.type === "ruby") return node.base;
-        if (node.type === "break" || node.type === "space") return " ";
-        return visibleText(node.children);
-      }).join("");
-    return entries.filter((entry) =>
-      ["dialogue", "message", "subtitle"].includes(entry.kind) &&
-      normalize([
-        visibleText(parseAdvRichText(this.transcriptSpeaker(entry.command).text)),
-        visibleText(parseAdvRichText(resolveLocalizedText(entry.command.text, this.locale).text)),
-      ].join(" ")).includes(query));
+    if (!query && !this.transcriptSpeakers.length) return entries;
+    return entries.filter(
+      (entry) =>
+        ["dialogue", "message", "subtitle"].includes(entry.kind) &&
+        (!this.transcriptSpeakers.length ||
+          this.transcriptSpeakerKeys(entry.command).some((key) => this.transcriptSpeakers.includes(key.value))) &&
+        (!query ||
+          normalize(
+            [
+              this.transcriptVisibleText(this.transcriptSpeaker(entry.command).text),
+              this.transcriptVisibleText(resolveLocalizedText(entry.command.text, this.locale).text),
+            ].join(" "),
+          ).includes(query)),
+    );
   }
   private renderTranscript(entries: readonly HaneokaTranscriptEntry[]) {
     const textKinds = new Set(["dialogue", "message", "location", "conversation", "subtitle", "choices"]);
@@ -2458,7 +2532,7 @@ export class StoryWorkspace extends LitElement {
       </span>
     `;
   }
-  private transcriptSpeaker(command: JsonRecord) {
+  private transcriptSpeakerNames(command: JsonRecord) {
     const body = resolveLocalizedText(command.text, this.locale);
     const locale = !this.isBestdori() && body.text ? body.locale : this.locale;
     const resolve = (value: unknown) => resolveLocalizedText(value, locale);
@@ -2473,6 +2547,31 @@ export class StoryWorkspace extends LitElement {
       : targetNames.some((value) => resolve(value).text)
         ? targetNames
         : [command.targetName];
+    return { names, locale };
+  }
+  private transcriptSpeakerKeys(command: JsonRecord): { value: string; label: string }[] {
+    const status = Number(command.targetStatus);
+    if (status === 1) return [{ value: "anonymous", label: uiText(this.locale, "story.reading.anonymous") }];
+    const { names, locale } = this.transcriptSpeakerNames(command);
+    const labels =
+      status === 2
+        ? []
+        : names.map((name) => this.transcriptVisibleText(resolveLocalizedText(name, locale).text)).filter(Boolean);
+    if (!labels.length) return [{ value: "unnamed", label: uiText(this.locale, "story.reading.unnamed") }];
+    return labels.map((label) => ({ value: JSON.stringify(["name", label]), label }));
+  }
+  private transcriptSpeakerOptions(entries: readonly HaneokaTranscriptEntry[]) {
+    const options = new Map<string, { value: string; label: string }>();
+    for (const entry of entries) {
+      if (!["dialogue", "message", "subtitle"].includes(entry.kind)) continue;
+      for (const option of this.transcriptSpeakerKeys(entry.command)) options.set(option.value, option);
+    }
+    return [...options.values()];
+  }
+  private transcriptSpeaker(command: JsonRecord) {
+    const { names, locale } = this.transcriptSpeakerNames(command);
+    const resolve = (value: unknown) => resolveLocalizedText(value, locale);
+    const targets = (Array.isArray(command.targets) ? command.targets : []) as JsonRecord[];
     const runtime = this.detailEpisode?.runtime as JsonRecord | undefined;
     const speaker = resolveRelationshipText(names, locale, {
       separator: this.isBestdori() ? undefined : (runtime?.displayNameJoiner ?? nativeSpeakerNameJoiner),

@@ -1073,6 +1073,11 @@
       "preparing": "Preparing playback",
       "sceneIndex": "Scene index",
       "preparationTasks": "preparation tasks"
+    },
+    "reading": {
+      "speakers": "Speakers",
+      "anonymous": "Anonymous speaker (???)",
+      "unnamed": "Unnamed text"
     }
   },
   "media": {
@@ -2287,7 +2292,6 @@
       "mode": "Mode",
       "play": "Play",
       "edit": "Edit",
-      "selected": "Row {row}, column {column}",
       "shuffle": "Shuffle",
       "reset": "Reset to goal",
       "resetConfirm": "Discard board?",
@@ -2310,7 +2314,6 @@
       "blank": "Blank",
       "tile": "Tile {tile}",
       "moves": "Player moves",
-      "elapsed": "Play time",
       "solutionLength": "Solution steps",
       "ready": "Ready",
       "completed": "Goal reached",

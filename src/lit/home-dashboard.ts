@@ -20,6 +20,7 @@ import { fetchAnnouncements, type Announcement } from "../lib/announcements";
 import "../styles/announcements.css";
 import type { Locale } from "../i18n/locales";
 import { clientText } from "../i18n/client";
+import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { variants as githubVariants } from "@thesvg/icons/github";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
@@ -70,6 +71,21 @@ import {
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
+  "spanDays": "common.time.spanDays",
+  "spanHours": "common.time.spanHours",
+  "spanMinutes": "common.time.spanMinutes",
+  "startsIn": "common.time.startsIn",
+  "endsIn": "common.time.endsIn",
+  "endedAgo": "common.time.endedAgo",
+  "releasedToday": "common.time.releasedToday",
+  "releasedAgo": "common.time.releasedAgo",
+  "releasesIn": "common.time.releasesIn",
+  "banners": "home.events.banners",
+  "noBanner": "home.events.noBanner",
+  "noEndDate": "home.events.noEndDate",
+  "noEvent": "home.events.noEvent",
+  "voicesRole": "media.voice.role",
+  "ongoing": "catalog.systems.common.ongoing",
   "attribute": "catalog.fields.attribute",
   "band": "catalog.fields.band",
   "bands": "catalog.fields.bands",
@@ -269,6 +285,7 @@ export class HomeDashboard extends LitElement {
     const locale = String((event as CustomEvent).detail || preferredLocale());
     const changed = locale !== this.locale;
     this.locale = locale;
+    this.requestUpdate();
     this.syncAction();
     if (changed) void this.loadLivePanels();
   };
@@ -380,12 +397,15 @@ export class HomeDashboard extends LitElement {
     if (this.clockTimer) window.clearTimeout(this.clockTimer);
     if (!this.isConnected) return;
     const now = Date.now();
+    const boundaries = [...this.events.flatMap((event) => [event.startAt, event.endAt]), ...this.banners.map((banner) => banner.endAt)]
+      .map((at) => relativeTimestamp(at)).filter((at): at is number => at !== undefined && at > now);
+    const refreshAt = boundaries.reduce((next, at) => Math.min(next, at), birthdayRefreshAt(now, this.birthdayRecruitments()));
     this.clockTimer = window.setTimeout(
       () => {
         this.clockTimer = undefined;
         this.visibilityListener();
       },
-      Math.max(1, birthdayRefreshAt(now, this.birthdayRecruitments()) - now),
+      Math.max(1, refreshAt - now),
     );
   }
   private queueFit() {
@@ -898,45 +918,20 @@ export class HomeDashboard extends LitElement {
   }
   /** "2天13小时"-style spans, from milliseconds. */
   private spanText(ms: number) {
-    const minutes = Math.max(1, Math.round(ms / 60000));
-    const days = Math.floor(minutes / 1440);
-    const hours = Math.floor((minutes % 1440) / 60);
-    const day = (value: number) => this.text("spanDays", "{count}d").replace("{count}", this.count(value));
-    const hour = (value: number) => this.text("spanHours", "{count}h").replace("{count}", this.count(value));
-    if (days >= 1) return hours ? `${day(days)} ${hour(hours)}` : day(days);
-    if (hours >= 1) return hour(hours);
-    return this.text("spanMinutes", "{count}m").replace("{count}", this.count(minutes));
+    return relativeSpan(this.locale, ms);
   }
   /** The event card names its moment relatively — "ends in …", "starts in
    *  …", "ended … ago" — never as a full date range. */
   private eventPhrase(startAt: number, endAt: number) {
-    const now = Date.now();
-    if (startAt > now) return this.countdown(startAt, false);
-    if (endAt && endAt >= now) return this.countdown(endAt, true);
-    if (endAt) return this.text("endedAgo", "Ended {time} ago").replace("{time}", this.spanText(now - endAt));
-    return this.countdown(startAt, false);
+    return relativeTimeWindow(this.locale, startAt, endAt, { ongoing: this.text("ongoing", "Ongoing") });
   }
   private countdown(at: number, ending: boolean) {
-    const span = this.spanText(at - Date.now());
-    return (ending ? this.text("endsIn", "Ends in {time}") : this.text("startsIn", "Starts in {time}")).replace(
-      "{time}",
-      span,
-    );
+    return relativeTimeWindow(this.locale, ending ? undefined : at, ending ? at : undefined);
   }
   /** Days since/until a release, e.g. "3 天前上线"; a release inside the
    *  next day counts down in hours and minutes. */
   private releaseLabel(at: number) {
-    if (!at) return "";
-    const remaining = at - Date.now();
-    const days = Math.round(remaining / 86400000);
-    if (days === 0) {
-      if (remaining > 0) return this.text("releasesIn", "Added in {time}").replace("{time}", this.spanText(remaining));
-      return this.text("releasedToday", "Added today");
-    }
-    const span = this.text("spanDays", "{count}d").replace("{count}", this.count(Math.abs(days)));
-    return (
-      days < 0 ? this.text("releasedAgo", "Added {time} ago") : this.text("releasesIn", "Added in {time}")
-    ).replace("{time}", span);
+    return relativeRelease(this.locale, at);
   }
   /** Prefer an ongoing event, then the next event, then the latest ended event. */
   private featuredEvent(): { entry: Spotlight; resource: string; ending: boolean } | null {

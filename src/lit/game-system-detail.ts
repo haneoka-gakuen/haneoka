@@ -1157,7 +1157,7 @@ function renderEventRecruitments(c: Controller, item: Item) {
             kind: "system",
             title,
             titleLanguage: c.localizedLanguage(gacha.title),
-            subtitle: [c.release(gacha.startAt), c.release(gacha.endAt)].filter(Boolean).join(" – "),
+            subtitle: c.systemRelativeSubtitle(gacha),
             label: title,
             image: String(gacha.image || ""),
             aspectRatio: "16 / 9",

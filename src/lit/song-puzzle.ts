@@ -67,7 +67,6 @@ export class SongPuzzle extends LitElement {
   private scrambleDraft = "20";
   private budgetSeconds = 15;
   private budgetDraft = "15";
-  private elapsedSeconds = 0;
   private moves = 0;
   private history: Array<{ tiles: number[]; moves: number }> = [];
   private revision = 0;
@@ -85,7 +84,6 @@ export class SongPuzzle extends LitElement {
   private coverReady = false;
   private coverFailed = false;
   private catalogController?: AbortController;
-  private clock?: ReturnType<typeof setInterval>;
   constructor() {
     super();
     this.locale = "en";
@@ -105,19 +103,7 @@ export class SongPuzzle extends LitElement {
     window.addEventListener("haneoka:locale-ready", this.localeReady);
     this.server = readReleaseServer();
     void this.loadSongs();
-    this.clock = setInterval(() => {
-      if (
-        this.loaded &&
-        this.coverReady &&
-        this.mode === "play" &&
-        !this.pendingChange &&
-        !this.pickerOpen &&
-        !this.replayTimer &&
-        !solved(this.tiles, this.position().goal)
-      )
-        this.elapsedSeconds++;
-      this.requestUpdate();
-    }, 1000);
+
   }
   disconnectedCallback() {
     window.removeEventListener("haneoka:locale-ready", this.localeReady);
@@ -125,7 +111,6 @@ export class SongPuzzle extends LitElement {
     this.clearDrag();
     this.cancel();
     this.pauseReplay();
-    clearInterval(this.clock);
     super.disconnectedCallback();
   }
   private nameSongs() {
@@ -367,7 +352,6 @@ export class SongPuzzle extends LitElement {
     }
     this.moves = 0;
     this.history = [];
-    this.elapsedSeconds = 0;
     this.requestUpdate();
   }
   private activate(index: number) {
@@ -549,7 +533,6 @@ export class SongPuzzle extends LitElement {
     this.tiles = [...this.solution.start];
     this.history = [];
     this.moves = 0;
-    this.elapsedSeconds = 0;
     this.replayIndex = 0;
     this.hint = -1;
     this.requestUpdate();
@@ -749,15 +732,7 @@ export class SongPuzzle extends LitElement {
           })}
             </div>
 
-            ${
-          this.selected >= 0
-            ? html`
-                <p>
-                  ${this.text("selected", { row: Math.floor(this.selected / this.size) + 1, column: (this.selected % this.size) + 1 })}
-                </p>
-              `
-            : nothing
-        }
+
             ${
               !this.loaded
                 ? html`
@@ -850,10 +825,7 @@ export class SongPuzzle extends LitElement {
                 <dt>${this.text("moves")}</dt>
                 <dd>${this.moves}</dd>
               </div>
-              <div>
-                <dt>${this.text("elapsed")}</dt>
-                <dd>${this.elapsedSeconds}s</dd>
-              </div>
+
             </dl>
             <figure class="puzzle-reference" ?hidden=${!this.reference || !this.loaded || !this.coverReady}>
               ${
