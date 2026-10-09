@@ -292,6 +292,9 @@ export function resourceCollectionHref(route: string, server: ReleaseServer, loc
   if (collection === "events" && parts[2] === "tracker" && parts.length === 3)
     return `/${server}/${locale}/events/tracker/${source.search}`;
   if (parts.length > 2 && !(collection === "stories" || collection === "anon-tokyo")) return undefined;
+  if (collection === "skills") {
+    return parts.length === 2 ? `/${server}/${locale}/skills/${source.search}` : undefined;
+  }
   if (collection === "song-meta") {
     if (parts.length !== 2) return undefined;
     const target = new URL(`/${server}/${locale}/song-meta/`, source);
@@ -356,6 +359,7 @@ export function legacyCollectionRedirectTarget(pathname: string, search = ""): s
     return `${prefix}/assets/${path ? `${path}/` : ""}${suffix()}`;
   }
   if (parts.length > 4) return undefined;
+  if (collection === "skills") return parts.length === 3 ? `${prefix}/skills/${suffix()}` : undefined;
   if (collection === "song-meta") return parts.length === 3 ? `${prefix}/song-meta/${suffix()}` : undefined;
   if (collection === "anon-tokyo") {
     return parts.length === 4 && isAnonTokyoMode(parts[3]) ? `${prefix}/anon-tokyo/${parts[3]}/${suffix()}` : undefined;

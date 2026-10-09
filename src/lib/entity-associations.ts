@@ -81,14 +81,21 @@ export function upgradeSteps(
   for (const row of rows) {
     const source = raw(row);
     const to = Number(row[levelKey] ?? source[`_${levelKey}`]);
-    const count = Number(row.count ?? source._count ?? source._requiredRankUpItemCount);
-    // Stage 1 is the authored initial state; an empty initial row has no upgrade cost.
-    if (!Number.isFinite(to) || to <= 1 || !Number.isFinite(count) || count <= 0) continue;
+    const value = row.count ?? source._count ?? source._requiredRankUpItemCount;
+    const parsed = typeof value === "number" || typeof value === "string" && value.trim()
+      ? Number(value) : Number.NaN;
+    const count = Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN;
+    // Band-item level 1 is purchased from level 0. Card and skill domains start at 1.
+    const initial = kind === "level" ? 0 : 1;
+    if (!Number.isSafeInteger(to) || to <= initial) continue;
     const step: UpgradeStep = grouped.get(to) || { kind, from: to - 1, to, costs: [] };
     const itemId = Number(row.itemId ?? source._itemId ?? source._itemID);
     const target = rankResource || (itemId > 0 ? { resource: "items", id: String(itemId) } : undefined);
     const reference = target ? resolve(target.resource, target.id) : undefined;
-    step.costs.push({ count, ...(itemId > 0 ? { itemId } : {}), ...(reference ? { reference } : {}) });
+    // Only an explicit zero is free. Retain unknown quantities in the stage:
+    // NaN serializes to null, which the cost consumers also treat as unknown.
+    if (count !== 0)
+      step.costs.push({ count, ...(itemId > 0 ? { itemId } : {}), ...(reference ? { reference } : {}) });
     grouped.set(to, step);
   }
   return [...grouped.values()].sort((a, b) => a.to - b.to);

@@ -1,0 +1,11 @@
+---
+import SkillsDocument from "../../../../components/SkillsDocument.astro";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import type { ReleaseServer } from "../../../../lib/resource-route";
+export async function getStaticPaths() {
+  return (await staticCatalogPageServers()).flatMap((server) => LOCALES.map((locale) => ({ params: { server, locale } })));
+}
+const { server, locale } = Astro.params as { server: ReleaseServer; locale: Locale };
+---
+<SkillsDocument server={server} locale={locale} />

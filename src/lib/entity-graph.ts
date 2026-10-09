@@ -1,4 +1,5 @@
 import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
+import { itemRelations } from "../server/item-relations";
 import {gekisouMissionIcons} from "./gekisou";
 import {
   associatedReward,
@@ -697,6 +698,7 @@ export async function buildEntityPayloads(
     } else if (resource === "items") {
       gameItemIds.add(Number(item.itemId || id));
       document = {
+        itemRelations: await itemRelations(server, Number(item.itemId || id), graph.release.releaseId),
         rewards: Object.fromEntries(
           Object.entries(graph.itemRewards).map(([source, value]) => [
             source,

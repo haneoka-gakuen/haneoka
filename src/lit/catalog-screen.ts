@@ -84,6 +84,8 @@ import { eventArtwork } from "./ui/event-artwork";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { detailLayout } from "./ui/detail-layout";
 import { upgradeCost } from "./ui/upgrade-cost";
+import { renderItemRelations, type ItemRelationsController } from "./shared/item-relations";
+import type { ItemRelations } from "../server/item-relations";
 import "./ui/image-gallery";
 import "../styles/card-detail.css";
 import "../styles/character-detail.css";
@@ -3211,6 +3213,15 @@ export class CatalogScreen extends LitElement {
     if (!this.isConnected) return;
     const signal = this.detailRequests.begin();
     const id = this.itemId(summary);
+    const growth = this.settings.origin !== "bestdori" && ["member", "support", "band-item"].includes(this.profile.presentation);
+    const growthPin = growth && this.nativeCatalogPin?.server === this.dataServer() ? this.nativeCatalogPin : undefined;
+    const growthSourceUrl = (resource: string, entity = "") => {
+      const source = this.sourceUrl(resource, entity);
+      if (!growthPin?.releaseId) return source;
+      const url = new URL(source, location.origin);
+      url.searchParams.set("release", growthPin.releaseId);
+      return url.pathname + url.search;
+    };
     let loadedActualDetail = false;
     if (this.profile.presentation === "song") {
       const rewards = this.songDetailRewards
@@ -3245,7 +3256,7 @@ export class CatalogScreen extends LitElement {
         // Meta rows identify as `<musicId>-<difficulty>` but fetch the song
         // they belong to, so the detail keeps the full difficulty picker.
         const value = await cachedDetail(
-          this.sourceUrl(
+          growthSourceUrl(
             this.profile.collection || this.settings.resource,
             this.profile.perDifficulty ? String(summary.musicId || id) : id,
           ),
@@ -3298,7 +3309,7 @@ export class CatalogScreen extends LitElement {
         await Promise.all([
           Promise.all(
             views.map(async (view) => {
-              const response = await fetch(this.sourceUrl(`progression/views/${view}`), { signal });
+              const response = await fetch(growthSourceUrl(`progression/views/${view}`), { signal });
               return [view, response.ok ? await response.json() : []] as const;
             }),
           ),
@@ -3326,12 +3337,12 @@ export class CatalogScreen extends LitElement {
               )
             : [],
           card && !payload
-            ? fetch(this.sourceUrl("progression"), { signal }).then(async (response) =>
+            ? fetch(growthSourceUrl("progression"), { signal }).then(async (response) =>
                 response.ok ? await response.json() : {},
               )
             : {},
           card && !payload
-            ? fetch(this.sourceUrl("skill-reference"), { signal }).then(async (response) =>
+            ? fetch(growthSourceUrl("skill-reference"), { signal }).then(async (response) =>
                 response.ok ? await response.json() : {},
               )
             : {},
@@ -3350,6 +3361,7 @@ export class CatalogScreen extends LitElement {
               ...Object.fromEntries([...viewResults, ...relationResults]),
               progression,
               "skill-reference": skillReference,
+              ...(growthPin ? { growthIdentity: { ...growthPin } } : {}),
             };
         const levelView = this.profile.presentation === "support" ? "support-card-levels" : "member-card-levels";
         const levelGroup = Number(
@@ -4821,78 +4833,112 @@ export class CatalogScreen extends LitElement {
   private renderAssociatedCost(kind: string, label: string, to: number) {
     const associations = this.detailAux.associations as Item | undefined;
     if (!Array.isArray(associations?.upgrades)) return undefined;
-    const step = (associations.upgrades as Item[]).find((row) => row.kind === kind && Number(row.to) === to);
-    if (!step) return nothing;
+    const steps = (associations.upgrades as Item[]).filter((row) => row.kind === kind);
+    if (!steps.length) return undefined;
+    const step = steps.find((row) => Number(row.to) === to);
+    const costItem = (cost: Item) => {
+      const reference = cost.reference as Item | undefined;
+      const item = this.gameItems.find((row) => Number(row.itemId) === Number(cost.itemId));
+      const resource = resourceKindForCollection(String(reference?.resource || ""));
+      return {
+        identity: reference?.resource && reference.id !== undefined
+          ? `${reference.resource}:${reference.id}` : cost.itemId !== undefined ? `items:${cost.itemId}` : "",
+        name: this.localized(reference?.name || item?.name) || this.label("required", "Required"),
+        image: String(reference?.image || item?.image || ""),
+        count: typeof cost.count === "number" || typeof cost.count === "string" && cost.count.trim()
+          ? Number(cost.count) : Number.NaN,
+        ...(resource && reference?.id !== undefined
+          ? { href: this.relatedEntityHref(resource, String(reference.id)) } : {}),
+      };
+    };
     return fold(
       this,
       `cost-${kind}`,
       label,
       upgradeCost({
         label,
-        from: Number(step.from),
-        to: Number(step.to),
+        from: Number(step?.from ?? Math.max(kind === "level" ? 0 : 1, to - 1)),
+        to,
         locale: this.settings.locale,
-        items: asItems(step.costs).map((cost) => {
-          const reference = cost.reference as Item | undefined;
-          const item = this.gameItems.find((row) => Number(row.itemId) === Number(cost.itemId));
-          const resource = resourceKindForCollection(String(reference?.resource || ""));
-          return {
-            name: this.localized(reference?.name || item?.name) || this.label("required", "Required"),
-            image: String(reference?.image || item?.image || ""),
-            count: Number(cost.count || 0),
-            ...(resource && reference?.id ? { href: this.relatedEntityHref(resource, String(reference.id)) } : {}),
-          };
-        }),
+        scope: `${this.dataServer()}:${this.payload?.releaseId ?? this.nativeCatalogPin?.releaseId ?? ""}:${this.payload?.sourceId ?? this.nativeCatalogPin?.sourceId ?? ""}:${this.settings.resource}:${this.selectedId}:${kind}`,
+        initial: kind === "level" ? 0 : 1,
+        items: asItems(step?.costs).map(costItem),
+        steps: steps.map((row) => ({
+          from: Number(row.from), to: Number(row.to), items: asItems(row.costs).map(costItem),
+        })),
       }),
     );
   }
   renderCardCosts(item: Item, data: ReturnType<CatalogScreen["cardControlData"]>) {
-    if (Array.isArray((this.detailAux.associations as Item | undefined)?.upgrades)) {
-      return data.support
-        ? this.renderAssociatedCost("rank", this.label("rank", "Rank"), this.detailRank)
-        : html`
-            <div class="card-costs">
-              ${this.renderAssociatedCost("training", this.label("training", "Training"), this.detailTraining)}
-              ${this.renderAssociatedCost("awakening", this.label("awakening", "Awakening"), this.detailAwakening)}
-            </div>
-          `;
-    }
     const piece = this.gameItems.find((entry) => Number(entry.itemId) === Number(item.rankUpItemId));
     if (data.support) {
-      const rows = data.supportRankRows.filter(
-        (row: Item) => Number(row._rank) === this.detailRank && Number(row._requiredRankUpItemCount) > 0,
-      );
-      return piece
-        ? this.renderCostList(
-            "cost-rank",
-            this.label("rank", "Rank"),
-            rows.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece })),
-          )
-        : nothing;
+      const images = item.images as Item | undefined;
+      const duplicate = { name: item.prefix || item.cardName, image: images?.thumbnail };
+      return this.renderAssociatedCost("rank", this.label("rank", "Rank"), this.detailRank)
+        ?? this.renderCostList(
+          "cost-rank", this.label("rank", "Rank"),
+          data.supportRankRows.map((row: Item) => ({
+            level: row._rank, count: row._requiredRankUpItemCount, item: duplicate,
+            resource: "support-cards", resourceId: item.supportCardId,
+          })),
+          { initial: 1, to: this.detailRank },
+        );
     }
     const trainingRows = asItems(this.detailAux["member-card-awake-resources"]).filter(
-      (row) =>
-        Number(row.group) === Number(item.memberCardAwakeResourceGroup) &&
-        Number(row.awakeCount) === this.detailTraining,
-    );
-    const ranks = data.rankRows.filter(
-      (row: Item) => Number(row._rank) > 1 && Number(row._rank) === this.detailAwakening,
+      (row) => Number(row.group) === Number(item.memberCardAwakeResourceGroup),
     );
     return html`
       <div class="card-costs">
-        ${this.renderCostList(
-          "cost-training",
-          this.label("training", "Training"),
-          trainingRows.map((row) => ({ level: row.awakeCount, count: row.count, item: row.item })),
-        )}${this.renderCostList(
-          "cost-awakening",
-          this.label("awakening", "Awakening"),
-          ranks.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece })),
-        )}
+        ${this.renderAssociatedCost("training", this.label("training", "Training"), this.detailTraining)
+          ?? this.renderCostList(
+            "cost-training", this.label("training", "Training"),
+            trainingRows.map((row) => ({ level: row.awakeCount, count: row.count, item: row.item, resourceId: row.itemId })),
+            { initial: 1, to: this.detailTraining },
+          )}
+        ${this.renderAssociatedCost("awakening", this.label("awakening", "Awakening"), this.detailAwakening)
+          ?? this.renderCostList(
+            "cost-awakening", this.label("awakening", "Awakening"),
+            data.rankRows.map((row: Item) => ({ level: row._rank, count: row._requiredRankUpItemCount, item: piece, resourceId: item.rankUpItemId })),
+            { initial: 1, to: this.detailAwakening },
+          )}
       </div>
     `;
   }
-  private renderCostList(key: string, label: string, rows: Item[]) {
+  private renderCostList(key: string, label: string, rows: Item[], growth?: { initial: number; to: number }) {
+    const identity = this.payload && String(this.payload.id) === this.selectedId
+      ? nativeMetaIdentity(this.payload)
+      : this.detailAux.growthIdentity as Item | undefined;
+    if (growth && !(identity?.server === this.dataServer() && identity?.releaseId && identity?.sourceId)) {
+      const target = growth.to;
+      rows = rows.filter((row) => Number(row.level) === target);
+      growth = undefined;
+    }
+    if (growth) {
+      const steps = new Map<number, { from: number; to: number; items: Array<{ identity: string; name: string; count: number; image: string; href?: string }> }>();
+      for (const row of rows) {
+        const level = Number(row.level);
+        if (!Number.isSafeInteger(level) || level <= growth.initial) continue;
+        const step = steps.get(level) || { from: level - 1, to: level, items: [] };
+        const item = row.item as Item | undefined;
+        const resource = resourceKindForCollection(String(row.resource || "items"));
+        const id = row.resourceId ?? item?.itemId;
+        const count = typeof row.count === "number" || typeof row.count === "string" && row.count.trim()
+          ? Number(row.count) : Number.NaN;
+        if (count !== 0) step.items.push({
+          identity: resource && id !== undefined ? `${resource}:${id}` : "",
+          name: this.localized(item?.name) || this.label("required", "Required"),
+          image: String(item?.image || ""), count,
+          ...(resource && id !== undefined ? { href: this.relatedEntityHref(resource, String(id)) } : {}),
+        });
+        steps.set(level, step);
+      }
+      return fold(this, key, label, upgradeCost({
+        label, from: Math.max(growth.initial, growth.to - 1), to: growth.to,
+        initial: growth.initial, locale: this.settings.locale,
+        scope: `${identity!.server}:${identity!.releaseId}:${identity!.sourceId}:${this.settings.resource}:${this.selectedId}:${key}`,
+        items: [], steps: [...steps.values()],
+      }));
+    }
     if (!rows.length) return nothing;
     const level = Number(rows[0].level || 1);
     return fold(
@@ -4917,6 +4963,7 @@ export class CatalogScreen extends LitElement {
       }),
     );
   }
+
   private skillDescription(skill: Item, requestedLevel?: number, group?: string, slot = 0) {
     const skills = asItems((this.detailAux.associations as Item | undefined)?.skills);
     const display = skills.find((entry) => entry.group === group && Number(entry.slot) === slot);
@@ -4975,9 +5022,9 @@ export class CatalogScreen extends LitElement {
     if (!resourceGroup) return nothing;
     const level = this.skillLevel(group, item);
     const rows = asItems(this.detailAux["skill-level-resources"])
-      .filter((row) => Number(row.group) === resourceGroup && Number(row.level) === level)
-      .map((row) => ({ level: row.level, count: row.count, item: row.item }));
-    return this.renderCostList(`cost-${group}`, this.label("required", "Required"), rows);
+      .filter((row) => Number(row.group) === resourceGroup)
+      .map((row) => ({ level: row.level, count: row.count, item: row.item, resourceId: row.itemId }));
+    return this.renderCostList(`cost-${group}`, this.label("required", "Required"), rows, { initial: 1, to: level });
   }
   private setCharacterSection(section: string) {
     this.characterSection = section;
@@ -5350,11 +5397,12 @@ export class CatalogScreen extends LitElement {
                         <p>
                           ${this.plainGameText(item.description).replace(/\{0(?::[^}]*)?\}/gu, String(Number(bandEffects.find((row) => Number(row.level) === this.detailLevel)?.effectValue || 0) / 100))}
                         </p>
-                        ${this.renderCostList(
-                          "cost-band-item",
-                          this.label("required", "Required"),
-                          bandResourceRows.filter((row) => Number(row.level) === this.detailLevel),
-                        )}
+                        ${this.renderAssociatedCost("level", this.label("required", "Required"), this.detailLevel)
+                          ?? this.renderCostList(
+                            "cost-band-item", this.label("required", "Required"),
+                            bandResourceRows,
+                            { initial: 0, to: this.detailLevel },
+                          )}
                       </div>
                     </section>
                   `
@@ -5611,6 +5659,8 @@ export class CatalogScreen extends LitElement {
       `;
     }
     if (this.profile.presentation === "item") {
+      if (this.catalogDocument.itemRelations)
+        return renderItemRelations(this as unknown as ItemRelationsController, this.catalogDocument.itemRelations as ItemRelations);
       const rewards = Object.entries((this.catalogDocument.rewards as Item | undefined) || {}).flatMap(
         ([source, value]) =>
           (Array.isArray(value) ? (value as Item[]) : [])

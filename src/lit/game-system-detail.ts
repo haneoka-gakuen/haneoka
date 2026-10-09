@@ -12,6 +12,8 @@ import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
  */
 
 import { html, nothing } from "lit";
+import { finiteExchangeCost } from "../lib/exchange-cost-summary";
+import { filterChip } from "./ui/controls";
 import { accordion } from "./ui/accordion";
 import {
   availableShopCurrencies,
@@ -655,20 +657,43 @@ function renderExchangeGoods(c: Controller, item: Item) {
   const products = Array.isArray(item.products) ? (item.products as Item[]) : [];
   if (!products.length) return nothing;
   const currency = (item.currency || {}) as Item;
+  const scope = `${c.itemSourceServer(item)}:${c.payload?.releaseId ?? c.nativeCatalogPin?.releaseId ?? ""}:${item.id}`;
+  if (c.detailExchangeScope !== scope) {
+    c.detailExchangeScope = scope;
+    c.detailExchangeOnlyFinite = false;
+  }
+  const totals = finiteExchangeCost(products);
+  const shown = c.detailExchangeOnlyFinite
+    ? products.filter((product) => typeof product.limit === "number" && Number.isSafeInteger(product.limit) && product.limit > 0)
+    : products;
   return html`
     <section class="detail-section">
-      ${renderDetailSectionHeading(c.label("exchangeGoods", "Exchange goods"), "content", { count: products.length })}
+      ${renderDetailSectionHeading(c.label("exchangeGoods", "Exchange goods"), "content", { count: shown.length })}
+      <dl class="spec-list">
+        <div>
+          <dt>${c.label("exchangeFiniteTotal", "Full finite stock cost")}</dt>
+          <dd>${totals.total === undefined
+            ? c.label("exchangeUnknownCost", "Some product costs or limits are unavailable")
+            : costLine(`${totals.total.toLocaleString(c.settings.locale)} ${c.localized(currency.name)}`, currency.image)}</dd>
+        </div>
+      </dl>
+      <p class="detail-copy">${c.label("exchangeFullStockHint", "All listed finite stock; prior purchases are not deducted. Unlimited goods are excluded.")}</p>
+      ${filterChip({
+        label: c.label("exchangeFiniteOnly", "Finite stock only"), selected: Boolean(c.detailExchangeOnlyFinite),
+        count: totals.finite,
+        onToggle: () => { c.detailExchangeOnlyFinite = !c.detailExchangeOnlyFinite; c.requestUpdate(); },
+      })}
       <ul class="detail-object-list" role="list">
-        ${products.map((product) => {
-          const cost = Number(product.cost || 0);
+        ${shown.map((product) => {
+          const cost = typeof product.cost === "number" && Number.isSafeInteger(product.cost) && product.cost >= 0
+            ? product.cost.toLocaleString(c.settings.locale) : c.label("unknown", "Unknown");
+          const limit = typeof product.limit === "number" && Number.isSafeInteger(product.limit)
+            ? product.limit > 0 ? String(product.limit) : c.label("unlimited", "Unlimited")
+            : c.label("unknown", "Unknown");
           return rewardRow(
-            c,
-            (product.reward || {}) as Item,
-            html`
-              <strong>
-                ${costLine(`${cost.toLocaleString(c.settings.locale)} ${c.localized(currency.name)}`, currency.image)}
-              </strong>
-            `,
+            c, (product.reward || {}) as Item,
+            html`<span><strong>${costLine(`${cost} ${c.localized(currency.name)}`, currency.image)}</strong>
+              <small class="detail-copy">${c.label("exchangePurchaseLimit", "Purchase limit")}: ${limit}</small></span>`,
           );
         })}
       </ul>
