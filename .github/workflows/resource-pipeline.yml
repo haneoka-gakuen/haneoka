@@ -127,7 +127,7 @@ jobs:
 
   pipeline_intl_test:
     name: Build and publish Intl test resources
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && (inputs.server == 'intl-test' || inputs.server == 'all')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (!inputs.tgw_mode || inputs.tgw_mode == 'normal') && (inputs.server == 'intl-test' || inputs.server == 'all') }}
     permissions:
       contents: read
     uses: ./.github/workflows/resource-pipeline-run.yml

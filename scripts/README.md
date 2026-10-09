@@ -24,7 +24,7 @@ complete split-APK set.
 
 ## Production package discovery
 
-The scheduled GitHub Actions run checks jp, intl, and intl-test at
+The scheduled GitHub Actions run checks jp and intl at
 04:05, 12:05, and 20:05 Asia/Tokyo (03:05, 11:05, and 19:05 Asia/Taipei). When the publisher fingerprint
 (versionCode/versionName from the mirror page) still matches the published
 source's package, the run reuses the stored R2 package instead of
@@ -46,7 +46,7 @@ export RESOURCE_PIPELINE_CONFIG_FILE=/absolute/path/to/private/server.json
 PYTHONPATH=scripts python -m core.config --server intl-test
 ```
 
-`RESOURCE_PIPELINE_CONFIG` and `RESOURCE_PIPELINE_CONFIG_FILE` are mutually exclusive; missing, mismatched, or malformed settings fail before acquisition. CI masks private fields and diagnostics redact configured values. The `intl-test` server is included in scheduled and manual resource builds and cross-server content browsing; it is absent from the default Settings server choices. Formal JP/Intl availability takes precedence over its test-only badge.
+`RESOURCE_PIPELINE_CONFIG` and `RESOURCE_PIPELINE_CONFIG_FILE` are mutually exclusive; missing, mismatched, or malformed settings fail before acquisition. CI masks private fields and diagnostics redact configured values. The `intl-test` server is built only through manual resource builds and remains available in cross-server content browsing; it is absent from the default Settings server choices. Formal JP/Intl availability takes precedence over its test-only badge.
 
 Keep readable local copies under the ignored `.secrets/resource-pipeline/` directory. Validate and synchronize them with:
 
