@@ -8,8 +8,8 @@
        so a dense grid never reflows under the pointer;
      · selection: selected toggles and segments trade a round corner for a
        square one, chips and tabs slide their indicator on a spatial spring;
-     · arrival: surfaces, tiles and rows rise 16dp and fade in, staggered
-       through the first screenful only;
+     · arrival: standalone page surfaces rise and fade in; collection items
+       appear immediately without per-item entrance motion;
      · overlays: menus unfold from their anchor, dialogs grow from 90%.
 
    Reduced motion drops every distance to zero (tokens.css) and shell.css
@@ -147,9 +147,8 @@
 }
 
 /* ---------- Arrival ----------
-   The first screenful of a collection, list or page section rises into
-   place. Items beyond it arrive with no delay, so a long result set never
-   waits on its own animation. */
+   Keep standalone page and transient-surface motion. Collection containers
+   and their cards/rows do not receive entrance animations or stagger. */
 @keyframes motion-rise {
   from {
     opacity: 0;
@@ -161,27 +160,13 @@
     opacity: 0;
   }
 }
-:where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(-n + 24),
-:where(.page-stage) :where(.surface, .card):not(.collection *, .list *) {
+:where(.page-stage) :where(.surface, .card):not(
+  :is(.collection, .collection-list, .list, .hub-grid, .card-grid),
+  :is(.collection, .collection-list, .list, .hub-grid, .card-grid) *
+) {
   animation:
     motion-rise var(--motion-spring-spatial-default-duration) var(--motion-spring-spatial-default) backwards,
     motion-fade var(--motion-spring-effects-slow-duration) var(--motion-spring-effects-slow) backwards;
-  animation-delay: calc(var(--motion-index, 0) * var(--motion-stagger));
-}
-@supports (width: calc(sibling-index() * 1px)) {
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(-n + 24) {
-    --motion-index: calc(sibling-index() - 1);
-  }
-}
-@supports not (width: calc(sibling-index() * 1px)) {
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(2) { --motion-index: 1; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(3) { --motion-index: 2; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(4) { --motion-index: 3; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(5) { --motion-index: 4; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(6) { --motion-index: 5; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(7) { --motion-index: 6; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(8) { --motion-index: 7; }
-  :where(.collection, .collection-list, .list, .hub-grid, .card-grid) > :nth-child(n + 9) { --motion-index: 8; }
 }
 /* Content swapped into a region after a request (results, filtered sets). */
 [aria-busy="false"] > :where(.results, .async-region__content) {
