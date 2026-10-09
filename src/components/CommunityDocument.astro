@@ -88,5 +88,13 @@ const title = t(locale, titleKey, mode === "feeds" ? "Community" : mode);
     } catch {}
   })();
 </script>
-<AppShell locale={locale} route={route} title={title} titleKey={titleKey}><community-workspace locale={locale} mode={mode}></community-workspace></AppShell></Base>
+<AppShell locale={locale} route={route} title={title} titleKey={titleKey}>{mode === "playlists" ? <playlist-hub locale={locale}></playlist-hub> : <community-workspace locale={locale} mode={mode}></community-workspace>}</AppShell></Base>
 <script>import "../lit/community-workspace";</script>
+<script>
+  // Playlists are their own element; its module loads only where it is used.
+  const loadPlaylists = () => {
+    if (document.querySelector("playlist-hub")) void import("../lit/playlist-hub");
+  };
+  loadPlaylists();
+  document.addEventListener("astro:page-load", loadPlaylists);
+</script>

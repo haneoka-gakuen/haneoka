@@ -23,6 +23,7 @@ import { rasterizeChartSvg } from "./chart-image-rasterizer";
 import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
+import { handleCommunityPlaylistRequest } from "./community-playlists";
 import { handleCommunityForumsRequest } from "./community-forums";
 import { handleCommunityEntityRequest } from "./community-entities";
 import { createCommunityEntityResolver } from "./community-entity-catalog";
@@ -3482,6 +3483,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     if (appeal) return appeal;
     const upload = await handleUploadRequest(request, env);
     if (upload) return upload;
+    const communityPlaylists = await handleCommunityPlaylistRequest(request, env);
+    if (communityPlaylists) return communityPlaylists;
     const communityActivity = await handleCommunityActivityRequest(request, env);
     if (communityActivity) return communityActivity;
     const community = await handleCommunityRequest(request, env);

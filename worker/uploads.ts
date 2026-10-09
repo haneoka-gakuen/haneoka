@@ -63,6 +63,7 @@ interface AttachmentCandidateRow {
 }
 
 interface DownloadAccessRow extends AttachmentRow {
+  publicPlaylistCover: number;
   attachmentOwnerStatus: "active" | "deleted" | "suspended" | null;
   postArchivedAt: number | null;
   postAuthorId: string | null;
@@ -1792,7 +1793,14 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
        post.status AS postStatus, post.moderation_status AS postModerationStatus,
        post.archived_at AS postArchivedAt, post.deleted_at AS postDeletedAt,
        post_author_profile.status AS postAuthorStatus,
-       attachment_owner_profile.status AS attachmentOwnerStatus
+       attachment_owner_profile.status AS attachmentOwnerStatus,
+       EXISTS (
+         SELECT 1 FROM community_playlist AS cover_playlist
+         WHERE cover_playlist.cover_attachment_id = community_attachment.id
+           AND cover_playlist.cover_kind = 'upload'
+           AND cover_playlist.visibility = 'public'
+           AND cover_playlist.deleted_at IS NULL
+       ) AS publicPlaylistCover
      FROM community_attachment
      LEFT JOIN community_post_attachment AS link ON link.attachment_id = community_attachment.id
      LEFT JOIN community_post AS post ON post.id = link.post_id
@@ -1838,6 +1846,7 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
     row.postAuthorStatus !== "deleted";
   const readable =
     owner ||
+    (Boolean(row.publicPlaylistCover) && row.attachmentOwnerStatus === "active") ||
     (publishedPost && (row.postVisibility === "public" || (row.postVisibility === "protected" && userId !== null)));
   if (!readable) return error(request, userId ? 403 : 401, "attachment_not_readable", "Attachment is not readable");
 
@@ -2120,6 +2129,7 @@ export const cleanupCommunityUploads = async (env: Env): Promise<void> => {
          AND NOT EXISTS (
            SELECT 1 FROM community_profile_avatar AS avatar WHERE avatar.attachment_id = attachment.id
          )
+         AND NOT EXISTS (SELECT 1 FROM community_playlist AS cover_playlist WHERE cover_playlist.cover_attachment_id = attachment.id)
          AND NOT EXISTS (
            SELECT 1
            FROM community_moderation_case AS moderation_case
