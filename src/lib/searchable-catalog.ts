@@ -2,7 +2,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resolveLocalizedText } from "./localized-text";
 import { disambiguateTitles } from "./title-disambiguation";
-import { formatMoney, moneyName, shopPriceEntries } from "./shop-currency";
+import { formatMoney, jpShopReferencePrice, moneyName, shopPriceEntries } from "./shop-currency";
 import { resourcePath } from "./resource-route";
 import {
   asRecord,
@@ -375,6 +375,7 @@ function factsFor(
   locale: Locale,
   characters: Map<number, RecordValue>,
   bands: Map<number, RecordValue>,
+  server: ReleaseServer,
 ): SearchableCatalogFact[] {
   const facts: SearchableCatalogFact[] = [];
   const push = (key: string, raw: unknown) => {
@@ -494,6 +495,8 @@ function factsFor(
   // Cash shop entries read one spec row per storefront currency, named by
   // the currency itself the way the screen's detail pane does.
   if (definition.collection === "shop") {
+    const reference = jpShopReferencePrice(value.payment, server);
+    if (reference !== undefined) facts.push({ key: "jpShopMasterPrice", value: formatMoney(reference, "jpy", locale) });
     for (const { code, amount } of shopPriceEntries(asRecord(value.payment)?.prices))
       facts.push({ key: moneyName(code, locale), value: formatMoney(amount, code, locale) });
   }
@@ -607,7 +610,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
         }),
       ) as Record<Locale, string>;
       const facts = Object.fromEntries(
-        LOCALES.map((locale) => [locale, factsFor(definition, value, locale, characters, bands)]),
+        LOCALES.map((locale) => [locale, factsFor(definition, value, locale, characters, bands, server)]),
       ) as Record<Locale, SearchableCatalogFact[]>;
       const descriptions = Object.fromEntries(
         LOCALES.map((locale) => {

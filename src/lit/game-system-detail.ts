@@ -18,6 +18,7 @@ import {
   convertShopPrice,
   fetchShopFxRates,
   formatMoney,
+  jpShopReferencePrice,
   localeShopCurrency,
   moneyName,
   shopPriceEntries,
@@ -678,6 +679,9 @@ function renderExchangeGoods(c: Controller, item: Item) {
 function renderShopFacts(c: Controller, item: Item) {
   const payment = (item.payment || {}) as Item;
   const rows: Array<{ label: string; value: unknown }> = [];
+  const reference = jpShopReferencePrice(payment, c.itemSourceServer(item));
+  if (reference !== undefined)
+    rows.push({ label: c.label("jpShopMasterPrice", "JPY reference price"), value: formatMoney(reference, "jpy", c.settings.locale) });
   if (payment.advertisement) {
     rows.push({ label: c.detailLabel("price"), value: c.label("watchAd", "Watch an ad") });
   } else {

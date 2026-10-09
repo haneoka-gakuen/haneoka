@@ -66,6 +66,26 @@ export function shopPriceEntries(prices: unknown): Array<{ code: string; amount:
   return availableShopCurrencies(prices).map((code) => ({ code, amount: table[code] }));
 }
 
+/** JP MasterShop lists whole-yen reference amounts, distinct from SDK quotes. */
+export function jpShopReferencePrice(payment: unknown, server: string): number | undefined {
+  if (server !== "jp" || !payment || typeof payment !== "object") return;
+  const source = payment as Record<string, unknown>;
+  if (source.storePurchase !== true || source.paymentType !== 16 || source.advertisement === true ||
+      source.price != null || availableShopCurrencies(source.prices).length) return;
+  const master = source.masterPrice as Record<string, unknown> | undefined;
+  if (!master || master.sourceTable !== "MasterShop" || master.sourceField !== "_price" ||
+      (master.currency != null && String(master.currency).toLowerCase() !== "jpy") ||
+      typeof master.value !== "number" || !Number.isSafeInteger(master.value) || master.value <= 0) return;
+  const storefront = source.storefront && typeof source.storefront === "object"
+    ? Object.values(source.storefront as Record<string, unknown>).filter((value): value is Record<string, unknown> =>
+      !!value && typeof value === "object") : [];
+  if (storefront.some((value) => value.priceStatus !== "unqueried" || value.formattedPrice)) return;
+  if (!storefront.some((value) => value.sourceTable === "MasterShop" &&
+      ["_appStorePurchaseId", "_googlePlayPurchaseId"].includes(String(value.sourceField)) &&
+      typeof value.productId === "string" && value.productId.startsWith("com.bushiroad.sirius."))) return;
+  return master.value;
+}
+
 /**
  * Fixed cross-region symbols rather than per-locale CLDR ones: CLDR writes
  * TWD as a bare "$" in zh-TW (and USD as "$" in ja/en), which inside one
