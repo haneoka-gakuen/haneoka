@@ -1274,25 +1274,7 @@
       "noteFlick": "Flick",
       "noteSlide": "Slide",
       "loading": "Loading…",
-      "runtimeError": "Unable to load the Our Notes chart runtime.",
-      "rangePlayback": "A/B loop",
-      "setA": "Set A",
-      "setB": "Set B",
-      "rangeA": "A (seconds)",
-      "rangeB": "B (seconds)",
-      "rangeLoop": "Loop A–B",
-      "clearRange": "Clear range",
-      "invalidRange": "Choose A before B.",
-      "shareTime": "Share time",
-      "linkCopied": "Link copied",
-      "copyFailed": "Could not copy link",
-      "shareSourceChanged": "Shared chart changed",
-      "shareUnavailable": "Sharing unavailable",
-      "playbackUnavailable": "Playback unavailable",
-      "rangeNotes": "Notes [A,B)",
-      "rangeDensity": "Notes/s",
-      "rangeBpm": "BPM",
-      "overviewSelectRange": "Select range"
+      "runtimeError": "Unable to load the Our Notes chart runtime."
     }
   },
   "tools": {

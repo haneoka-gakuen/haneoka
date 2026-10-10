@@ -1274,25 +1274,7 @@
       "noteFlick": "上滑",
       "noteSlide": "滑键",
       "loading": "加载中…",
-      "runtimeError": "无法加载 Our Notes 谱面运行环境。",
-      "rangePlayback": "A/B循环",
-      "setA": "设为A",
-      "setB": "设为B",
-      "rangeA": "A（秒）",
-      "rangeB": "B（秒）",
-      "rangeLoop": "循环A–B",
-      "clearRange": "清除区间",
-      "invalidRange": "请将A设在B之前。",
-      "shareTime": "分享播放位置",
-      "linkCopied": "链接已复制",
-      "copyFailed": "无法复制链接",
-      "shareSourceChanged": "分享的谱面已变更",
-      "shareUnavailable": "暂无法分享",
-      "playbackUnavailable": "暂无法播放",
-      "rangeNotes": "音符数[A,B)",
-      "rangeDensity": "音符/秒",
-      "rangeBpm": "BPM",
-      "overviewSelectRange": "选取区间"
+      "runtimeError": "无法加载 Our Notes 谱面运行环境。"
     }
   },
   "tools": {

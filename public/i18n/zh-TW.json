@@ -1274,25 +1274,7 @@
       "noteFlick": "上滑",
       "noteSlide": "滑鍵",
       "loading": "載入中…",
-      "runtimeError": "無法載入 Our Notes 譜面執行環境。",
-      "rangePlayback": "A/B循環",
-      "setA": "設為A",
-      "setB": "設為B",
-      "rangeA": "A（秒）",
-      "rangeB": "B（秒）",
-      "rangeLoop": "循環A–B",
-      "clearRange": "清除區間",
-      "invalidRange": "請將A設在B之前。",
-      "shareTime": "分享播放位置",
-      "linkCopied": "連結已複製",
-      "copyFailed": "無法複製連結",
-      "shareSourceChanged": "分享的譜面已變更",
-      "shareUnavailable": "暫無法分享",
-      "playbackUnavailable": "暫無法播放",
-      "rangeNotes": "音符數[A,B)",
-      "rangeDensity": "音符/秒",
-      "rangeBpm": "BPM",
-      "overviewSelectRange": "選取區間"
+      "runtimeError": "無法載入 Our Notes 譜面執行環境。"
     }
   },
   "tools": {

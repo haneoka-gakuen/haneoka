@@ -21,7 +21,6 @@ import {
   type ChartCanvasSkin,
 } from "@haneoka/cassiopeia-ui-vue/overview";
 import { chartCanvasOverviewPresentation } from "@haneoka/cassiopeia-ui-vue/overview";
-import { createChartOverviewGeometry, type ChartOverviewGeometry } from "../../lib/chart-overview-geometry";
 
 export const loadDetailedOverviewSkin = (assets: OurNotesAssetManifest) => loadChartCanvasSkin(assets);
 
@@ -84,23 +83,13 @@ export function drawDetailedChartOverview(
   chart: ChartDocument,
   skin: ChartCanvasSkin,
   viewportHeight: number,
-): ChartOverviewGeometry | undefined {
+): void {
   const presentation = chartCanvasOverviewPresentation();
   const height = Math.max(360, viewportHeight);
   const panelDuration = (height / presentation.heightPerSecond) * 1000;
   const panelWidth = presentation.laneWidth * 13;
   const panelCount = Math.max(1, Math.ceil(chart.durationMs / panelDuration));
   const width = panelCount * panelWidth;
-  if (
-    ![height, panelDuration, panelWidth, width, chart.durationMs].every(Number.isFinite) ||
-    height <= 0 ||
-    panelDuration <= 0 ||
-    panelWidth <= 0 ||
-    width <= 0 ||
-    chart.durationMs < 0
-  )
-    return;
-  const geometry = createChartOverviewGeometry(chart.durationMs, height, panelWidth, presentation.heightPerSecond);
   const dpr = Math.max(1, Math.min(1.5, devicePixelRatio || 1));
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
@@ -147,8 +136,8 @@ export function drawDetailedChartOverview(
     height - ((timeMs - panel * panelDuration) / 1000) * presentation.heightPerSecond;
 
   for (let panel = 0; panel < panelCount; panel += 1) {
-    const panelStart = geometry?.columns[panel]?.startMs ?? panel * panelDuration;
-    const panelEnd = geometry?.columns[panel]?.paintEndMs ?? (panel + 1) * panelDuration;
+    const panelStart = panel * panelDuration;
+    const panelEnd = (panel + 1) * panelDuration;
     context.save();
     context.translate(panel * panelWidth, 0);
     context.fillStyle = "#000";
@@ -283,5 +272,4 @@ export function drawDetailedChartOverview(
     });
     context.restore();
   }
-  return geometry;
 }
