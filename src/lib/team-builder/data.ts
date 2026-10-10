@@ -226,7 +226,7 @@ export function adaptTeamBuilderData(
     Object.entries(map(objectRow(documents["band-items"]).items)).map(([id, row]) => [
       id,
       {
-        ...pick(row, ["bandItemId", "bandId", "name", "resourceGroupId"]),
+        ...pick(row, ["bandItemId", "bandId", "name", "displayOrder", "resourceGroupId"]),
         levels: dataRows(row.levels).map(nativeRow),
         effects: dataRows(row.effects).map(nativeRow),
       },
@@ -262,7 +262,7 @@ export function adaptTeamBuilderData(
     characters: Object.fromEntries(
       Object.entries(characters).map(([id, row]) => [
         id,
-        pick(row, ["characterId", "characterName", "bandId", "faceImage", "thumbnailImage", "colorCode"]),
+        pick(row, ["characterId", "characterName", "bandId", "displayOrder", "faceImage", "thumbnailImage", "colorCode"]),
       ]),
     ),
     bands: map(documents.bands),

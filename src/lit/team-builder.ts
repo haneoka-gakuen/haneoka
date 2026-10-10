@@ -186,7 +186,9 @@ export class TeamBuilder extends LitElement {
     this.catalogMetadataError = false;
     this.requestUpdate();
     try {
-      const visuals = await fetchCatalogVisuals(catalog.data.identity, controller.signal, true);
+      // Older immutable team DTOs omitted item display order; recover it under the same release pin.
+      const needsItemOrder = Object.values(catalog.data.bandItems).some((item) => item.displayOrder === undefined);
+      const visuals = await fetchCatalogVisuals(catalog.data.identity, controller.signal, true, needsItemOrder);
       if (controller.signal.aborted || this.catalog !== catalog) return;
       catalog.setVisuals(visuals);
     } catch {

@@ -7,6 +7,9 @@ import { icon } from "../ui/icon";
 import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 
+const displayOrder = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+
 function stepper(host: TeamBuilder, key: string, label: string, value: number | null, min: number, max: number, change: (value: number | null) => void, unit = "") {
   const clamp = (next: number) => Math.max(min, Math.min(max, next));
   return ptField(host, key, html`
@@ -29,19 +32,27 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
   const view = host.view!;
   const memorySongs = [...new Set([...host.settings.songs, ...host.settings.planChallengeSongs].map((s) => s.songId))];
   const player = view.player;
-  const characters = [...master.characters.values()].filter((character) => catalog.characterName(character.id));
+  const characterOrder = (id: number) => displayOrder(
+    catalog.visuals?.characters[String(id)]?.displayOrder ?? catalog.data.characters[String(id)]?.displayOrder,
+  );
+  const characters = [...master.characters.values()]
+    .filter((character) => catalog.characterName(character.id))
+    .sort((a, b) => a.bandId - b.bandId || characterOrder(a.id) - characterOrder(b.id) || a.id - b.id);
   const maxRank = master.maxCharacterRank;
   const completeRanks = [...master.characters.keys()].every((id) => Number.isSafeInteger(player.characterRanks[String(id)]) && player.characterRanks[String(id)]! >= 1);
   const total = player.characterTotalRank ?? (completeRanks ? [...master.characters.keys()].reduce((sum, id) => sum + player.characterRanks[String(id)]!, 0) : null);
   const bands = [...new Set(characters.map((character) => character.bandId))].filter(Boolean);
   const vipRanks = [...master.vipBonus.keys()].sort((a, b) => a - b);
   const maxVip = Math.max(1, ...vipRanks, 1);
-  const items = Object.values(catalog.data.bandItems).map((item) => ({
-    id: Number(item.bandItemId),
-    bandId: Number(item.bandId),
-    name: catalog.text(item.name),
-    max: Math.max(0, ...((item.levels as { level?: number }[] | undefined) ?? []).map((row) => Number(row.level) || 0)),
-  }));
+  const items = Object.values(catalog.data.bandItems)
+    .map((item) => ({
+      id: Number(item.bandItemId),
+      bandId: Number(item.bandId),
+      displayOrder: displayOrder(catalog.visuals?.bandItems[String(item.bandItemId)]?.displayOrder ?? item.displayOrder),
+      name: catalog.text(item.name),
+      max: Math.max(0, ...((item.levels as { level?: number }[] | undefined) ?? []).map((row) => Number(row.level) || 0)),
+    }))
+    .sort((a, b) => a.bandId - b.bandId || a.displayOrder - b.displayOrder || a.id - b.id);
   const setAllRanks = (value: number) => host.write(characters.map((character) => ({ key: `cr.${character.id}`, value })));
   return html`
     <div class="tb-account stack stack--loose">
