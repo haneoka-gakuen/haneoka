@@ -9,6 +9,7 @@ import { iconButton, rovingKeydown } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import type { TeamBuilder } from "../team-builder";
+import { resultSettings, SCORE_GOALS, scoreProof, scoreText } from "./score-goal";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
 export const timelines = new Map<string, Timeline | "loading" | "error">();
@@ -18,23 +19,24 @@ const format = (host: TeamBuilder, value: number, digits = 0) =>
 const hitKey = (hit: EngineHit) => `${hit.song ? `${hit.song.songId}:${hit.song.difficulty}` : "-"}|${hit.members.join(",")}|${hit.snaps.join(",")}`;
 
 function primary(host: TeamBuilder, hit: EngineHit): { label: string; value: string; unit?: string } {
-  const s = host.settings;
+  const s = resultSettings(host);
   if (s.goal === "power") return { label: host.t("power", "Power"), value: format(host, hit.power) };
   if (s.goal === "potential" && hit.potential) return { label: host.t("potential", "Potential"), value: format(host, hit.potential.value) };
   if ((s.goal === "event" || s.goal === "plan") && hit.event) {
     const label = s.measure === "items" && s.goal === "event" ? host.t("itemsPerPlay", "Items per play") : s.measure === "challenge-points" && s.goal === "event" ? host.t("cpPerPlay", "Challenge points per play") : host.t("pointsPerPlay", "Event points per play");
     return { label, value: format(host, s.measure === "challenge-points" && s.goal === "event" ? hit.event.challengePoints : hit.event.mean, 1) };
   }
-  if (hit.score) return s.criterion === "min" ? { label: host.t("worstScore", "Worst-order score"), value: format(host, hit.score.min) } : { label: host.t("expectedScore", "Expected score"), value: format(host, hit.score.mean) };
+  if (hit.score) return { label: scoreText(host, SCORE_GOALS[s.criterion].metric), value: format(host, hit.score[s.criterion]) };
   return { label: host.t("power", "Power"), value: format(host, hit.power) };
 }
 
 function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
+  const s = resultSettings(host);
   const out: TemplateResult[] = [];
   const chip = (label: string, value: string, leading?: TemplateResult) => html`<span class="tb-chip">${leading ?? nothing}<span class="tb-chip__label">${label}</span><strong class="tabular">${value}</strong></span>`;
-  if (host.settings.goal !== "power") out.push(chip(host.t("power", "Power"), format(host, hit.power), icon("bolt", 16)));
+  if (s.goal !== "power") out.push(chip(host.t("power", "Power"), format(host, hit.power), icon("bolt", 16)));
   if (hit.score) {
-    if ((host.settings.goal !== "score" && host.settings.goal !== "gekiso") || host.settings.criterion !== "mean") out.push(chip(host.t("expectedScore", "Expected score"), format(host, hit.score.mean)));
+    if ((s.goal !== "score" && s.goal !== "gekiso") || s.criterion !== "mean") out.push(chip(host.t("expectedScore", "Average score"), format(host, hit.score.mean)));
     out.push(chip(host.t("scoreRange", "Range"), `${format(host, hit.score.min)} – ${format(host, hit.score.max)}`));
     const ranks = Object.entries(hit.score.ranks).sort((a, b) => Number(b[0]) - Number(a[0]));
     const top = ranks[0];
@@ -42,7 +44,7 @@ function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
   }
   if (hit.event) {
     out.push(chip(host.t("eventBonus", "Event bonus"), `+${format(host, hit.event.bonusPercent, 0)}%`, icon("trending_up", 16)));
-    if (hit.event.challengePoints && host.settings.measure !== "challenge-points") out.push(chip(host.t("cpPerPlay", "Challenge points per play"), format(host, hit.event.challengePoints, 1)));
+    if (hit.event.challengePoints && s.measure !== "challenge-points") out.push(chip(host.t("cpPerPlay", "Challenge points per play"), format(host, hit.event.challengePoints, 1)));
   }
   if (hit.skipScore !== null) out.push(chip(host.t("skipScore", "Skip score"), format(host, hit.skipScore), icon("fast_forward", 16)));
   if (hit.potential) out.push(chip(host.t("skillCoverage", "Skill coverage"), `${format(host, hit.potential.area * 100, 0)}%·s`));
@@ -75,7 +77,7 @@ export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
               @click=${() => { if (snap !== null) { host.editing = { kind: "snaps", cardId: snap }; host.requestUpdate(); } }}>
               ${snapOptions ? tileMedia(snapOptions) : html`<span class="tb-slot__empty">${icon("hide_image", 20)}</span>`}
             </button>
-            ${owned ? nothing : host.settings.scope === "theoretical" ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : nothing}
+            ${owned ? nothing : resultSettings(host).scope === "theoretical" ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : nothing}
           </li>
         `;
       })}
@@ -247,7 +249,7 @@ function renderHit(host: TeamBuilder, hit: EngineHit, index: number): TemplateRe
       <header class="tb-hit__header">
         <span class="tb-hit__rank">${index + 1}</span>
         <div class="tb-hit__main">
-          <span class="tb-hit__label">${main.label}${hit.song && host.settings.songs.length > 1 ? html` · <span class="clamp-1">${catalog.songTitle(hit.song.songId)} ${catalog.difficultyLabel(hit.song.songId, hit.song.difficulty)}</span>` : nothing}</span>
+          <span class="tb-hit__label">${main.label}${hit.song && resultSettings(host).songs.length > 1 ? html` · <span class="clamp-1">${catalog.songTitle(hit.song.songId)} ${catalog.difficultyLabel(hit.song.songId, hit.song.difficulty)}</span>` : nothing}</span>
           <strong class="tb-hit__value tabular">${main.value}</strong>
         </div>
         <div class="tb-hit__actions">
@@ -333,15 +335,16 @@ export function renderResults(host: TeamBuilder): TemplateResult {
     `;
   }
   const catalog = host.catalog!;
-  const multi = results.results.length > 1 && host.settings.goal !== "plan";
+  const multi = results.results.length > 1 && resultSettings(host).goal !== "plan";
   const tab = multi ? host.resultTab : "all";
   const shown = tab === "overall" || !multi ? (multi ? results.overall : results.results[0]?.hits ?? []) : (results.results.find((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab)?.hits ?? []);
-  const proven = results.results.every((result) => result.proven);
+  const groups = multi && tab !== "overall" ? results.results.filter((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab) : results.results;
+  const proven = groups.length > 0 && groups.every((result) => result.proven);
   const stats = results.results.reduce((total, result) => total + result.stats.exact, 0);
   return html`
     <section class="tb-results stack" aria-live="polite">
       <div class="row row--wrap row--between tb-results__summary">
-        <span class=${`tb-proof${proven ? " is-proven" : ""}`}>${icon(proven ? "verified" : "hourglass_bottom", 18)}${proven ? host.t("proven", "Proven optimal") : host.t("unproven", "Time limit reached: best found so far")}</span>
+        <span class=${`tb-proof${proven ? " is-proven" : ""}`}>${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven)}</span>
         <span class="tb-results__meta tabular">${host.t("resultMeta", "{ms} ms · {exact} teams simulated exactly", { ms: format(host, results.elapsedMs), exact: stats })}</span>
       </div>
       ${host.stale ? html`<div class="banner"><span>${host.t("staleResults", "Conditions changed since this search.")}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => void host.run()}>${host.t("rerun", "Search again")}</button></div></div>` : nothing}
