@@ -173,22 +173,6 @@ export class PlaylistHub extends LitElement {
     return localizedText(title, this.locale) || String(title || "—");
   }
 
-  /** Official lists explain where their songs come from. */
-  private describe(playlist: Playlist): string {
-    if (playlist.id === "official:new")
-      return this.t("newReleasesDescription", "The latest songs from Our Notes and GBP.");
-    if (playlist.id === "official:all")
-      return this.t(
-        "allSongsDescription",
-        "Every song from Our Notes and GBP in release order. Songs in both games appear once, from Our Notes.",
-      );
-    if (playlist.group === "band")
-      return this.t("bandDescription", "{band} songs from Our Notes and GBP in release order.", {
-        band: this.titleOf(playlist),
-      });
-    return "";
-  }
-
   private songName(song: LibrarySong) {
     return songTitle(song.row, this.locale).text;
   }
@@ -874,14 +858,14 @@ export class PlaylistHub extends LitElement {
     return html`
       <span class="playlist-owner">
         ${
-        owner?.image
-          ? html`
-              <img class="playlist-owner__avatar" src=${owner.image} alt="" loading="lazy" decoding="async" />
-            `
-          : html`
-              <span class="playlist-owner__avatar">${icon("person", 14)}</span>
-            `
-      }
+          owner?.image
+            ? html`
+                <img class="playlist-owner__avatar" src=${owner.image} alt="" loading="lazy" decoding="async" />
+              `
+            : html`
+                <span class="playlist-owner__avatar">${icon("person", 14)}</span>
+              `
+        }
         <span class="playlist-owner__name">${owner?.name || this.t("member", "Member")}</span>
       </span>
     `;
@@ -928,20 +912,20 @@ export class PlaylistHub extends LitElement {
             aria-label=${`${this.t("playAll", "Play all")} · ${this.titleOf(playlist)}`}
             ?disabled=${!playlist.trackCount}
             @click=${async () => {
-            let target = playlist;
-            if (!playlist.complete && playlist.kind === "community") {
-              try {
-                target = communityPlaylist(
-                  (await playlistApi<{ playlist: RecordValue }>(`/${playlist.id}`)).playlist,
-                  true,
-                );
-              } catch (error) {
-                this.notify(error instanceof Error ? error.message : String(error));
-                return;
+              let target = playlist;
+              if (!playlist.complete && playlist.kind === "community") {
+                try {
+                  target = communityPlaylist(
+                    (await playlistApi<{ playlist: RecordValue }>(`/${playlist.id}`)).playlist,
+                    true,
+                  );
+                } catch (error) {
+                  this.notify(error instanceof Error ? error.message : String(error));
+                  return;
+                }
               }
-            }
-            void this.play(target);
-          }}
+              void this.play(target);
+            }}
           >
             ${iconFilled("play_arrow", 24)}
           </button>
@@ -1054,9 +1038,6 @@ export class PlaylistHub extends LitElement {
                   <span class="playlist-invite__mark shape-cookie-9">${icon("library_music", 28)}</span>
                   <div>
                     <h2>${this.t("inviteTitle", "Make your own playlists")}</h2>
-                    <p>
-                      ${this.t("inviteBody", "Sign in to collect songs from both games, pick a cover and share your playlist with the community.")}
-                    </p>
                   </div>
                   <a class="button button--tonal" href=${`/${this.locale}/account/`}>${this.t("signIn", "Sign in")}</a>
                 </section>
@@ -1097,10 +1078,10 @@ export class PlaylistHub extends LitElement {
             ? html`
                 <ul class="playlist-wall" role="list">
                   ${repeat(
-                community,
-                (playlist) => playlist.id,
-                (playlist) => this.card(playlist),
-              )}
+                    community,
+                    (playlist) => playlist.id,
+                    (playlist) => this.card(playlist),
+                  )}
                 </ul>
               `
             : this.communityLoading
@@ -1185,7 +1166,7 @@ export class PlaylistHub extends LitElement {
     const images = coverImages(playlist, this.library);
     const backdrop = playlist.cover.url || images.single || images.mosaic[0] || "";
     const playable = rows.filter(({ song }) => song?.audio).length;
-    const description = playlist.description?.trim() || this.describe(playlist);
+    const description = playlist.description?.trim();
     const fromNotes = rows.filter(({ song }) => song?.ref.provider === "our-notes").length;
     const fromGbp = rows.filter(({ song }) => song?.ref.provider === "bestdori").length;
     return html`
@@ -1234,9 +1215,9 @@ export class PlaylistHub extends LitElement {
                         type="button"
                         aria-expanded=${String(this.descriptionOpen)}
                         @click=${() => {
-                      this.descriptionOpen = !this.descriptionOpen;
-                      this.requestUpdate();
-                    }}
+                          this.descriptionOpen = !this.descriptionOpen;
+                          this.requestUpdate();
+                        }}
                       >
                         ${description}
                       </button>
@@ -1361,10 +1342,10 @@ export class PlaylistHub extends LitElement {
                 : html`
                     <ol class="playlist-songs" role="list">
                       ${repeat(
-                    rows,
-                    ({ ref }) => refKey(ref),
-                    ({ song }, index) => this.trackRow(playlist, song, index),
-                  )}
+                        rows,
+                        ({ ref }) => refKey(ref),
+                        ({ song }, index) => this.trackRow(playlist, song, index),
+                      )}
                     </ol>
                   `
           }
@@ -1408,14 +1389,14 @@ export class PlaylistHub extends LitElement {
         </button>
         <span class="playlist-song__actions">
           ${iconButton({
-          icon: "add",
-          label: this.t("addToPlaylist", "Add to playlist"),
-          onClick: () => {
-            if (!this.requireSignIn()) return;
-            this.addTarget = song;
-            this.requestUpdate();
-          },
-        })}
+            icon: "add",
+            label: this.t("addToPlaylist", "Add to playlist"),
+            onClick: () => {
+              if (!this.requireSignIn()) return;
+              this.addTarget = song;
+              this.requestUpdate();
+            },
+          })}
           <a
             class="icon-button"
             href=${songDetailPath(song, this.locale)}
@@ -1458,9 +1439,9 @@ export class PlaylistHub extends LitElement {
       <form
         class="playlist-editor"
         @submit=${(event: Event) => {
-        event.preventDefault();
-        void this.save();
-      }}
+          event.preventDefault();
+          void this.save();
+        }}
       >
         ${
           this.editorError
@@ -1555,30 +1536,30 @@ export class PlaylistHub extends LitElement {
                       aria-label=${this.t("coverSong", "Song jacket")}
                     >
                       ${songs.map(({ ref, song }) =>
-                    song
-                      ? html`
-                          <li>
-                            <button
-                              type="button"
-                              role="option"
-                              aria-selected=${String(sameRef(draft.coverSong, ref))}
-                              aria-label=${this.songName(song)}
-                              title=${this.songName(song)}
-                              @click=${() => this.patchDraft({ coverSong: ref })}
-                            >
-                              <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
-                              ${
-                              sameRef(draft.coverSong, ref)
-                                ? html`
-                                    <span class="playlist-editor__check">${icon("check", 18)}</span>
-                                  `
-                                : nothing
-                            }
-                            </button>
-                          </li>
-                        `
-                      : nothing,
-                  )}
+                        song
+                          ? html`
+                              <li>
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected=${String(sameRef(draft.coverSong, ref))}
+                                  aria-label=${this.songName(song)}
+                                  title=${this.songName(song)}
+                                  @click=${() => this.patchDraft({ coverSong: ref })}
+                                >
+                                  <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
+                                  ${
+                                sameRef(draft.coverSong, ref)
+                                  ? html`
+                                      <span class="playlist-editor__check">${icon("check", 18)}</span>
+                                    `
+                                  : nothing
+                              }
+                                </button>
+                              </li>
+                            `
+                          : nothing,
+                      )}
                     </ul>
                   `
                 : html`
@@ -1616,9 +1597,9 @@ export class PlaylistHub extends LitElement {
               class="button button--tonal"
               type="button"
               @click=${() => {
-              this.pickerOpen = true;
-              this.requestUpdate();
-            }}
+                this.pickerOpen = true;
+                this.requestUpdate();
+              }}
             >
               ${icon("add", 18)}${this.t("addSongs", "Add songs")}
             </button>
@@ -1628,10 +1609,10 @@ export class PlaylistHub extends LitElement {
               ? html`
                   <ol class="playlist-songs playlist-songs--edit" role="list">
                     ${repeat(
-                  songs,
-                  ({ ref }) => refKey(ref),
-                  ({ ref, song }, index) => this.editRow(ref, song, index, songs.length),
-                )}
+                      songs,
+                      ({ ref }) => refKey(ref),
+                      ({ ref, song }, index) => this.editRow(ref, song, index, songs.length),
+                    )}
                   </ol>
                 `
               : emptyState({
@@ -1649,9 +1630,9 @@ export class PlaylistHub extends LitElement {
                     class="button button--danger"
                     type="button"
                     @click=${() => {
-                this.deleteOpen = true;
-                this.requestUpdate();
-              }}
+                      this.deleteOpen = true;
+                      this.requestUpdate();
+                    }}
                   >
                     ${icon("delete", 18)}${this.t("delete", "Delete playlist")}
                   </button>
@@ -1681,9 +1662,9 @@ export class PlaylistHub extends LitElement {
                       class="button button--text"
                       type="button"
                       @click=${() => {
-                  this.deleteOpen = false;
-                  this.requestUpdate();
-                }}
+                        this.deleteOpen = false;
+                        this.requestUpdate();
+                      }}
                     >
                       ${this.t("cancel", "Cancel")}
                     </button>
@@ -1704,13 +1685,13 @@ export class PlaylistHub extends LitElement {
       <li
         class=${`playlist-song playlist-song--edit${this.dragIndex === index ? " is-dragging" : ""}`}
         @dragover=${(event: DragEvent) => {
-        if (this.dragIndex < 0) return;
-        event.preventDefault();
-        if (this.dragIndex !== index) {
-          this.moveTrack(this.dragIndex, index);
-          this.dragIndex = index;
-        }
-      }}
+          if (this.dragIndex < 0) return;
+          event.preventDefault();
+          if (this.dragIndex !== index) {
+            this.moveTrack(this.dragIndex, index);
+            this.dragIndex = index;
+          }
+        }}
         @drop=${(event: DragEvent) => event.preventDefault()}
       >
         <span
@@ -1718,58 +1699,58 @@ export class PlaylistHub extends LitElement {
           draggable="true"
           aria-hidden="true"
           @dragstart=${(event: DragEvent) => {
-          this.dragIndex = index;
-          event.dataTransfer?.setData("text/plain", refKey(ref));
-          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-          this.requestUpdate();
-        }}
+            this.dragIndex = index;
+            event.dataTransfer?.setData("text/plain", refKey(ref));
+            if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+            this.requestUpdate();
+          }}
           @dragend=${() => {
-          this.dragIndex = -1;
-          this.requestUpdate();
-        }}
+            this.dragIndex = -1;
+            this.requestUpdate();
+          }}
         >
           ${icon("drag_indicator", 20)}
         </span>
         <span class="playlist-song__art">
           ${
-        song
-          ? html`
-              <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
-            `
-          : icon("music_off", 20)
-      }
+            song
+              ? html`
+                  <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
+                `
+              : icon("music_off", 20)
+          }
         </span>
         <span class="playlist-song__text">
           <span class="playlist-song__title">
             ${song ? this.songName(song) : this.t("songUnavailable", "Song unavailable")}
           </span>
           ${
-          song
-            ? html`
-                <span class="playlist-song__artist">
-                  <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
-                    ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
+            song
+              ? html`
+                  <span class="playlist-song__artist">
+                    <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
+                      ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
+                    </span>
+                    ${this.artistOf(song)}
                   </span>
-                  ${this.artistOf(song)}
-                </span>
-              `
-            : nothing
-        }
+                `
+              : nothing
+          }
         </span>
         <span class="playlist-song__actions">
           ${iconButton({ icon: "arrow_upward", label: this.t("moveUp", "Move up"), disabled: index === 0, onClick: () => this.moveTrack(index, index - 1) })}
           ${iconButton({ icon: "arrow_downward", label: this.t("moveDown", "Move down"), disabled: index === total - 1, onClick: () => this.moveTrack(index, index + 1) })}
           ${iconButton({
-          icon: "close",
-          label: this.t("removeSong", "Remove"),
-          onClick: () => {
-            const draft = this.draft!;
-            this.patchDraft({
-              tracks: draft.tracks.filter((_, position) => position !== index),
-              ...(sameRef(draft.coverSong, ref) ? { coverKind: "auto" as const, coverSong: null } : {}),
-            });
-          },
-        })}
+            icon: "close",
+            label: this.t("removeSong", "Remove"),
+            onClick: () => {
+              const draft = this.draft!;
+              this.patchDraft({
+                tracks: draft.tracks.filter((_, position) => position !== index),
+                ...(sameRef(draft.coverSong, ref) ? { coverKind: "auto" as const, coverSong: null } : {}),
+              });
+            },
+          })}
         </span>
       </li>
     `;
@@ -1812,74 +1793,76 @@ export class PlaylistHub extends LitElement {
                 placeholder=${this.t("searchSongs", "Search songs or artists")}
                 aria-label=${this.t("searchSongs", "Search songs or artists")}
                 @input=${(event: Event) => {
-                this.pickerQuery = (event.target as HTMLInputElement).value;
-                this.requestUpdate();
-              }}
+                  this.pickerQuery = (event.target as HTMLInputElement).value;
+                  this.requestUpdate();
+                }}
               />
             </label>
             <div class="playlist-picker__bands" role="group" aria-label=${this.t("bands", "Band")}>
               ${filterChip({
-              label: this.t("allBands", "All"),
-              selected: !this.pickerBand,
-              onToggle: () => {
-                this.pickerBand = "";
-                this.requestUpdate();
-              },
-            })}
-              ${(library?.bands ?? []).map((entry) =>
-              filterChip({
-                label: localizedText(entry.name, this.locale),
-                selected: this.pickerBand === entry.key,
+                label: this.t("allBands", "All"),
+                selected: !this.pickerBand,
                 onToggle: () => {
-                  this.pickerBand = this.pickerBand === entry.key ? "" : entry.key;
+                  this.pickerBand = "";
                   this.requestUpdate();
                 },
-              }),
-            )}
+              })}
+              ${(library?.bands ?? []).map((entry) =>
+                filterChip({
+                  label: localizedText(entry.name, this.locale),
+                  selected: this.pickerBand === entry.key,
+                  onToggle: () => {
+                    this.pickerBand = this.pickerBand === entry.key ? "" : entry.key;
+                    this.requestUpdate();
+                  },
+                }),
+              )}
             </div>
           </header>
           <div class="dialog__body playlist-picker__body">
             ${
-            !library
-              ? loadingState(this.t("loading", "Loading playlists"), { local: true })
-              : results.length
-                ? html`
-                    <ul class="playlist-songs" role="list">
-                      ${repeat(
-                    results,
-                    (song) => song.key,
-                    (song) => {
-                      const selected = chosen.has(song.key) || song.aliases.some((alias) => chosen.has(alias));
-                      return html`
-                        <li class=${`playlist-song playlist-song--pick${selected ? " is-selected" : ""}`}>
-                          <button
-                            class="playlist-song__main"
-                            type="button"
-                            aria-pressed=${String(selected)}
-                            @click=${() => this.toggleTrack(song)}
-                          >
-                            <span class="playlist-song__art">
-                              <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
-                            </span>
-                            <span class="playlist-song__text">
-                              <span class="playlist-song__title">${this.songName(song)}</span>
-                              <span class="playlist-song__artist">
-                                <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
-                                  ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
+              !library
+                ? loadingState(this.t("loading", "Loading playlists"), { local: true })
+                : results.length
+                  ? html`
+                      <ul class="playlist-songs" role="list">
+                        ${repeat(
+                        results,
+                        (song) => song.key,
+                        (song) => {
+                          const selected = chosen.has(song.key) || song.aliases.some((alias) => chosen.has(alias));
+                          return html`
+                            <li class=${`playlist-song playlist-song--pick${selected ? " is-selected" : ""}`}>
+                              <button
+                                class="playlist-song__main"
+                                type="button"
+                                aria-pressed=${String(selected)}
+                                @click=${() => this.toggleTrack(song)}
+                              >
+                                <span class="playlist-song__art">
+                                  <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
                                 </span>
-                                ${this.artistOf(song)}
-                              </span>
-                            </span>
-                            <span class="playlist-song__toggle">${selected ? icon("check", 20) : icon("add", 20)}</span>
-                          </button>
-                        </li>
-                      `;
-                    },
-                  )}
-                    </ul>
-                  `
-                : emptyState({ title: this.t("noSongs", "No matching songs") })
-          }
+                                <span class="playlist-song__text">
+                                  <span class="playlist-song__title">${this.songName(song)}</span>
+                                  <span class="playlist-song__artist">
+                                    <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
+                                      ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
+                                    </span>
+                                    ${this.artistOf(song)}
+                                  </span>
+                                </span>
+                                <span class="playlist-song__toggle">
+                                  ${selected ? icon("check", 20) : icon("add", 20)}
+                                </span>
+                              </button>
+                            </li>
+                          `;
+                        },
+                      )}
+                      </ul>
+                    `
+                  : emptyState({ title: this.t("noSongs", "No matching songs") })
+            }
           </div>
           <footer class="dialog__actions">
             <span class="playlist-picker__selected">
@@ -1912,31 +1895,31 @@ export class PlaylistHub extends LitElement {
                   type="button"
                   class="playlist-add__item"
                   @click=${() => {
-                close();
-                this.createNew([song.ref]);
-              }}
+                    close();
+                    this.createNew([song.ref]);
+                  }}
                 >
                   <span class="playlist-cover playlist-cover--tile playlist-cover--create">${icon("add", 24)}</span>
                   <span>${this.t("create", "New playlist")}</span>
                 </button>
               </li>
               ${this.mine.map(
-              (playlist) => html`
-                <li>
-                  <button
-                    type="button"
-                    class="playlist-add__item"
-                    @click=${() => void this.addToPlaylist(playlist, song)}
-                  >
-                    ${this.cover(playlist, "tile")}
-                    <span>
-                      <strong>${this.titleOf(playlist)}</strong>
-                      <small>${this.t("songCount", "{count} songs", { count: playlist.trackCount })}</small>
-                    </span>
-                  </button>
-                </li>
-              `,
-            )}
+                (playlist) => html`
+                  <li>
+                    <button
+                      type="button"
+                      class="playlist-add__item"
+                      @click=${() => void this.addToPlaylist(playlist, song)}
+                    >
+                      ${this.cover(playlist, "tile")}
+                      <span>
+                        <strong>${this.titleOf(playlist)}</strong>
+                        <small>${this.t("songCount", "{count} songs", { count: playlist.trackCount })}</small>
+                      </span>
+                    </button>
+                  </li>
+                `,
+              )}
             </ul>
           </div>
           <footer class="dialog__actions">

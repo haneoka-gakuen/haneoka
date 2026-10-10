@@ -3987,7 +3987,7 @@ export class CommunityWorkspace extends LitElement {
                 ${
                   post.state === "archived"
                     ? html`
-                        <p class="inline-message">${this.label("archivedHint", "Archived")}</p>
+                        <p class="inline-message">${this.label("stateArchived", "Archived")}</p>
                       `
                     : nothing
                 }
@@ -5954,9 +5954,6 @@ export class CommunityWorkspace extends LitElement {
                         void this.load(false);
                       },
                     })}
-                    <p class="community-filters__hint">
-                      ${this.label("archivedHint", "Archived posts are hidden from everyone. Open one and choose Restore to publish it again.")}
-                    </p>
                   </section>
                 `
               : nothing
