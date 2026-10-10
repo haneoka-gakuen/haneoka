@@ -14,7 +14,7 @@ from core.config import ServerConfig
 from core.private_config import github_masks
 from ingest.apks import _request
 from ingest.master import discover_master_version
-from ingest.version_api import _public_https, proxy_from_env
+from ingest.version_api import _public_https, is_versioned_catalog_version, proxy_from_env
 
 
 def resolve_resource_endpoints(config: ServerConfig, settings: dict) -> tuple[dict, dict]:
@@ -49,7 +49,7 @@ def resolve_resource_endpoints(config: ServerConfig, settings: dict) -> tuple[di
     _master_version, resource_version = discover_master_version(
         master_endpoint, skip_resolution_check=config.skip_public_resolution_check, proxy=proxy,
     )
-    if not re.fullmatch(r"\d+(?:\.\d+){3}", resource_version):
+    if not is_versioned_catalog_version(resource_version):
         raise ValueError("server discovery returned an unsupported resource version")
     # Check a tiny real catalog hash before choosing a node. curl bounds the
     # complete connection across all DNS addresses, unlike urllib's socket timeout.

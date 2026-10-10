@@ -90,6 +90,18 @@ def _public_https(url: str, skip_resolution_check: bool = False) -> None:
         raise ValueError(f"version endpoint does not resolve publicly: {hostname}")
 
 
+def is_versioned_catalog_version(value: str) -> bool:
+    """Accept a numeric catalog generation and its optional live content hash."""
+    return re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}(?:\.[a-fA-F0-9]{8})?", value) is not None
+
+
+def resource_version_key(value: str) -> tuple[int, ...]:
+    """Compare generations while retaining the full hash-qualified catalog identity."""
+    if is_versioned_catalog_version(value):
+        return tuple(int(part) for part in value.split(".")[:4])
+    return version_key(value)
+
+
 def version_key(value: object) -> tuple[int, ...]:
     text = str(value or "")
     if not VERSION_PARTS.fullmatch(text):

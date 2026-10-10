@@ -37,9 +37,10 @@ from ingest.version_api import (
     AssetVersionInfo,
     cdn_authorization,
     discover_asset_version,
+    is_versioned_catalog_version,
     proxy_from_env,
     resolve_version_endpoint,
-    version_key,
+    resource_version_key,
 )
 
 
@@ -610,7 +611,9 @@ def _resolve_catalog_version(
 
     Non four-part-numeric schemes are returned unchanged.
     """
-    if re.fullmatch(r"\d+(?:\.\d+){3}", master_resource_version):
+    if master_resource_version:
+        if not is_versioned_catalog_version(master_resource_version):
+            raise ValueError("invalid live Master resource catalog version")
         sys.stderr.write(f"catalog: using live Master resource version {master_resource_version}\n")
         return master_resource_version
 
@@ -875,7 +878,7 @@ def _resolve_catalogs(
         }
     elif config.catalog_version:
         if (
-            re.fullmatch(r"\d+(?:\.\d+){3}", config.catalog_version)
+            is_versioned_catalog_version(config.catalog_version)
             and config.master_remote_root
             and config.master_version_endpoint
             and not config.offline
@@ -1038,7 +1041,7 @@ def _resolve_master(
         len(version) > 128
         or not re.fullmatch(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", version)
         or any(part in {".", ".."} for part in version.split("/"))
-        or not re.fullmatch(r"\d+(?:\.\d+)*", resource_version)
+        or resource_version_key(resource_version) == (-1,)
     ):
         raise ValueError("invalid live Master version")
     root = f"{config.master_remote_root}/{version}"
@@ -1099,7 +1102,7 @@ def _assert_master_not_ahead(master: MasterResolution | None, server_version: di
     """
     if not master or not server_version:
         return
-    if version_key(master.resource_version) > version_key(server_version["version"]):
+    if resource_version_key(master.resource_version) > resource_version_key(server_version["version"]):
         raise ValueError(
             f"live Master ({master.resource_version}) is newer than the resolved "
             f"resource catalog ({server_version['version']}); retry ingestion"
