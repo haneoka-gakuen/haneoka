@@ -1,11 +1,15 @@
 /** Search results: ranked team cards, per-song rankings, plan summary, comparison. */
-import { html, nothing, svg, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type { EngineHit, SongRef, Timeline } from "../../lib/team-builder/engine/api";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 import { downloadBlob } from "../../lib/canvas-capture";
 import { renderTeamResultImage, type ResultImageCard } from "../shared/team-result-image";
 import { cardRarityName } from "../shared/rarity-icon";
-import { iconButton, rovingKeydown } from "../ui/controls";
+import { iconButton } from "../ui/controls";
+import { accordion } from "../ui/accordion";
+import { collectionList } from "../ui/collection-view";
+import { skillTimeline } from "../shared/skill-timeline";
+import { ORDERS } from "../../lib/team-builder/engine/order-equivalence";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import type { TeamBuilder } from "../team-builder";
@@ -111,51 +115,174 @@ function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null):
   `;
 }
 
-function timelineView(host: TeamBuilder, hit: EngineHit, order: "best" | "worst"): TemplateResult {
-  const song = hit.song;
-  if (!song || !hit.score) return html``;
-  const eventOrder = order === "best" ? hit.score.bestOrder : hit.score.worstOrder;
-  const key = `${hitKey(hit)}|${order}`;
+const ORDER_INDEX = new Map(ORDERS.map((order, index) => [order.join(","), index]));
+/** The order chosen in each result's skill-order editor, and the position picked for a swap. */
+const orderChoice = new Map<string, number>();
+const swapPick = new Map<string, number>();
+/** Chart skill events in firing order, learned from the first timeline of each result. */
+const firingOrder = new Map<string, number[]>();
+/** The timeline on screen, kept while the next order's timeline loads. */
+const shownTimeline = new Map<string, Timeline>();
+
+function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
+  const key = `${hitKey(hit)}|${index}`;
   const value = timelines.get(key);
-  if (!value) {
-    timelines.set(key, "loading");
-    const request = host.request();
-    if (request && host.engine)
-      void host.engine
-        .explain({ members: request.members, snaps: request.snaps, unknownPolicy: request.unknownPolicy, team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! }, song, eventOrder, play: { great: 0, good: 0, bad: 0, miss: 0 } })
-        .then((timeline) => timelines.set(key, timeline))
-        .catch(() => timelines.set(key, "error"))
-        .finally(() => host.requestUpdate());
-  }
-  if (!value || value === "loading") return html`<md-linear-progress indeterminate aria-label=${host.t("loadingTimeline", "Loading skill timeline")}></md-linear-progress>`;
-  if (value === "error") return html`<p class="inline-message">${host.t("timelineFailed", "The timeline could not be drawn.")}</p>`;
+  if (value) return value;
+  timelines.set(key, "loading");
+  const request = host.request();
+  if (request && host.engine && hit.song)
+    void host.engine
+      .explain({ members: request.members, snaps: request.snaps, unknownPolicy: request.unknownPolicy, team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! }, song: hit.song, eventOrder: ORDERS[index]!.map((slot) => hit.members[slot]!), play: { great: 0, good: 0, bad: 0, miss: 0 } })
+      .then((timeline) => timelines.set(key, timeline))
+      .catch(() => timelines.set(key, "error"))
+      .finally(() => host.requestUpdate());
+  return "loading" as const;
+}
+
+function memberFace(host: TeamBuilder, hit: EngineHit, slot: number) {
   const catalog = host.catalog!;
-  const width = 1000;
-  const rowHeight = 14;
-  const densityHeight = 48;
-  const height = densityHeight + 8 + value.windows.length * (rowHeight + 4);
-  const x = (ms: number) => (ms / value.durationMs) * width;
-  const peak = Math.max(1, ...value.density);
-  const area = value.density.map((count, index) => `${((index * 500) / value.durationMs) * width},${densityHeight - (count / peak) * densityHeight}`).join(" ");
+  const card = catalog.member(cardIdOf(hit.members[slot]!));
+  const character = card?.characterId ?? 0;
+  return { character, name: catalog.characterName(character), face: catalog.characterFace(character), card: card?.image ?? "", color: catalog.characterColor(character) };
+}
+
+function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: readonly number[]) {
+  return html`<span class="tb-order-faces">${firing.map((event) => {
+    const member = memberFace(host, hit, ORDERS[index]![event]!);
+    return html`<img src=${member.face} alt=${member.name} title=${member.name} width="28" height="28" loading="lazy" decoding="async" style=${`--member-color:${member.color}`} />`;
+  })}</span>`;
+}
+
+function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
+  const score = hit.score;
+  if (!hit.song || !score?.orders?.length) return html``;
+  const key = hitKey(hit);
+  const ranked = score.orders.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value || a.index - b.index);
+  const best = ranked[0]!;
+  const current = orderChoice.get(key) ?? best.index;
+  const requested = orderTimeline(host, hit, current);
+  if (typeof requested === "object") shownTimeline.set(key, requested);
+  const timeline = typeof requested === "object" ? requested : (shownTimeline.get(key) ?? requested);
+  if (typeof timeline === "object" && !firingOrder.has(key))
+    firingOrder.set(key, [...timeline.windows].sort((a, b) => a.startMs - b.startMs || a.event - b.event).map((window) => window.event));
+  const firing = firingOrder.get(key) ?? [0, 1, 2, 3, 4];
+  const value = score.orders[current]!;
+  const rank = score.orders.filter((other) => other > value).length + 1;
+  const gap = (other: number) => (other === best.value ? "±0" : `−${format(host, best.value - other)}`);
+  const choose = (index: number) => {
+    orderChoice.set(key, index);
+    swapPick.delete(key);
+    host.requestUpdate();
+  };
+  const picked = swapPick.get(key);
+  const pick = (position: number) => {
+    if (picked === undefined) swapPick.set(key, position);
+    else if (picked === position) swapPick.delete(key);
+    else {
+      const order = [...ORDERS[current]!];
+      const a = firing[picked]!, b = firing[position]!;
+      [order[a], order[b]] = [order[b]!, order[a]!];
+      choose(ORDER_INDEX.get(order.join(","))!);
+      return;
+    }
+    host.requestUpdate();
+  };
+  const first = firing[0]!;
+  const byFirst = [0, 1, 2, 3, 4]
+    .filter((slot) => slot < hit.members.length)
+    .map((slot) => ranked.find((entry) => ORDERS[entry.index]![first] === slot)!)
+    .sort((a, b) => b.value - a.value);
+  const topOpen = host.expanded.has(`${key}|orders`);
+  const rankOf = (other: number) => score.orders.filter((entry) => entry > other).length + 1;
   return html`
-    <figure class="tb-timeline">
-      <svg viewBox=${`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label=${host.t("timeline", "Skill timeline")}>
-        ${value.fever.map(([start, end]) => svg`<rect class="tb-timeline__fever" x=${x(start)} y="0" width=${Math.max(1, x(end) - x(start))} height=${height}></rect>`)}
-        <polyline class="tb-timeline__density" points=${`0,${densityHeight} ${area} ${width},${densityHeight}`}></polyline>
-        ${value.windows.map((window, row) => {
-          const character = catalog.member(cardIdOf(window.member))?.characterId ?? 0;
-          const y = densityHeight + 8 + row * (rowHeight + 4);
-          return svg`<rect class="tb-timeline__window" x=${x(window.startMs)} y=${y} width=${Math.max(2, x(window.endMs) - x(window.startMs))} height=${rowHeight} rx="4" style=${`fill:${catalog.characterColor(character)}`}><title>${catalog.characterName(character)} · ${(window.startMs / 1000).toFixed(1)}–${(window.endMs / 1000).toFixed(1)} s · +${format(host, window.percent + window.perfectPercent, 0)}%</title></rect>`;
+    <section class="tb-order stack">
+      <div class="row row--wrap row--between">
+        <strong class="tb-subtitle">${host.t("skillOrder", "Skill order")}</strong>
+        <div class="cluster">
+          <button class="button button--text button--small" type="button" ?disabled=${current === best.index} @click=${() => choose(best.index)}>${host.t("bestOrder", "Best order")}</button>
+          <button class="button button--text button--small" type="button" ?disabled=${current === ranked.at(-1)!.index} @click=${() => choose(ranked.at(-1)!.index)}>${host.t("worstOrder", "Worst order")}</button>
+        </div>
+      </div>
+      <ol class="tb-order-editor" role="list" aria-label=${host.t("skillOrder", "Skill order")}>
+        ${firing.map((event, position) => {
+          const member = memberFace(host, hit, ORDERS[current]![event]!);
+          return html`<li>
+            <button type="button" class="tb-order-slot" aria-pressed=${String(picked === position)} ?data-swap=${picked !== undefined && picked !== position}
+              aria-label=${`${position + 1} · ${member.name}`} title=${member.name} style=${`--member-color:${member.color}`}
+              @click=${() => pick(position)}>
+              <span class="tb-order-slot__index">${position + 1}</span>
+              <img src=${member.card} alt="" width="48" height="64" decoding="async" />
+              <span class="tb-order-slot__swap">${icon("swap_horiz", 18)}</span>
+            </button>
+          </li>`;
         })}
-      </svg>
-      <figcaption class="cluster tb-timeline__legend">
-        ${value.windows.map((window) => {
-          const character = catalog.member(cardIdOf(window.member))?.characterId ?? 0;
-          return html`<span class="tb-chip"><span class="tb-dot" style=${`background:${catalog.characterColor(character)}`}></span>${catalog.characterName(character)}
-            <strong class="tabular">${(window.startMs / 1000).toFixed(1)}s · +${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` · +${(window.extensionMs / 1000).toFixed(2)}s` : ""}</strong></span>`;
-        })}
-      </figcaption>
-    </figure>
+      </ol>
+      <dl class="spec-list spec-list--split spec-list--numeric">
+        <div><dt>${host.t("score", "Score")}</dt><dd>${format(host, value)}</dd></div>
+        <div><dt>${host.t("orderRank", "Rank")}</dt><dd>${rank} / ${score.orders.length}</dd></div>
+        <div><dt>${host.t("orderGap", "From best")}</dt><dd>${gap(value)}</dd></div>
+      </dl>
+      <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
+      ${typeof timeline === "object"
+        ? skillTimeline({
+            label: host.t("timeline", "Skill timeline"),
+            durationMs: timeline.durationMs,
+            density: timeline.density,
+            fever: timeline.fever,
+            feverLabel: (index) => `${host.t("gekiso", "Gekisou")} ${index + 1}`,
+            windows: timeline.windows.map((window) => {
+              const member = memberFace(host, hit, hit.members.indexOf(window.member));
+              return {
+                startMs: window.startMs,
+                endMs: window.endMs,
+                color: member.color,
+                image: member.face,
+                label: member.name,
+                value: `+${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` · +${(window.extensionMs / 1000).toFixed(1)}s` : ""}`,
+              };
+            }),
+          })
+        : timeline === "error"
+          ? html`<p class="inline-message">${host.t("timelineFailed", "The timeline could not be drawn.")}</p>`
+          : html`<div class="skill-timeline__plot" aria-label=${host.t("loadingTimeline", "Loading skill timeline")}></div>`}
+      </div>
+      <div class="stack stack--tight">
+        <strong class="tb-subtitle">${host.t("firstSkill", "Best order by first skill")}</strong>
+        ${collectionList(
+          byFirst.map((entry) => {
+            const member = memberFace(host, hit, ORDERS[entry.index]![first]!);
+            return {
+              id: String(entry.index),
+              title: member.name,
+              subtitle: html`<span class="tabular" title=${format(host, entry.value)}>${gap(entry.value)}</span>`,
+              media: html`<img src=${member.card} alt="" width="42" height="56" decoding="async" />`,
+              trailing: orderFaces(host, hit, entry.index, firing),
+              onOpen: () => choose(entry.index),
+            };
+          }),
+        )}
+      </div>
+      ${accordion({
+        id: `tb-orders-${key.replace(/[^a-z0-9]/giu, "-")}`,
+        label: host.t("topOrders", "Top orders"),
+        metadata: "10",
+        expanded: topOpen,
+        onExpandedChange: (open) => {
+          if (open) host.expanded.add(`${key}|orders`);
+          else host.expanded.delete(`${key}|orders`);
+          host.requestUpdate();
+        },
+        content: collectionList(
+          ranked.slice(0, 10).map((entry) => ({
+            id: String(entry.index),
+            title: orderFaces(host, hit, entry.index, firing),
+            subtitle: html`<span class="tabular">${format(host, entry.value)} · ${gap(entry.value)}</span>`,
+            media: html`<span class="tb-order-rank tabular">${rankOf(entry.value)}</span>`,
+            onOpen: () => choose(entry.index),
+          })),
+        ),
+      })}
+    </section>
   `;
 }
 
@@ -242,7 +369,6 @@ function renderHit(host: TeamBuilder, hit: EngineHit, index: number): TemplateRe
   const expanded = host.expanded.has(key);
   const compared = host.compare.includes(key);
   const main = primary(host, hit);
-  const order = host.expanded.has(`${key}|worst`) ? "worst" : "best";
   const catalog = host.catalog!;
   return html`
     <article class=${`card card--outlined tb-hit${index === 0 ? " is-best" : ""}`} aria-label=${`#${index + 1} · ${main.label} ${main.value}`}>
@@ -272,18 +398,7 @@ function renderHit(host: TeamBuilder, hit: EngineHit, index: number): TemplateRe
       ${expanded
         ? html`<div class="tb-hit__detail stack">
             ${distribution(host, hit, hit.song)}
-            ${hit.score
-              ? html`<div class="row row--wrap row--between">
-                    <strong class="tb-subtitle">${host.t("timeline", "Skill timeline")}</strong>
-                    <div class="segmented segmented--compact" role="radiogroup" aria-label=${host.t("timelineOrder", "Order")}
-                      @keydown=${rovingKeydown(["best", "worst"], order, (next) => { if (next === "worst") host.expanded.add(`${key}|worst`); else host.expanded.delete(`${key}|worst`); host.requestUpdate(); })}>
-                      ${(["best", "worst"] as const).map((value) => html`<button type="button" role="radio" aria-checked=${String(order === value)} tabindex=${order === value ? "0" : "-1"}
-                        @click=${() => { if (value === "worst") host.expanded.add(`${key}|worst`); else host.expanded.delete(`${key}|worst`); host.requestUpdate(); }}>
-                        <span>${value === "best" ? host.t("bestOrder", "Best order") : host.t("worstOrder", "Worst order")}</span></button>`)}
-                    </div>
-                  </div>
-                  ${timelineView(host, hit, order)}`
-              : nothing}
+            ${skillOrderView(host, hit)}
           </div>`
         : nothing}
     </article>
@@ -345,11 +460,11 @@ export function renderResults(host: TeamBuilder): TemplateResult {
     <section class="tb-results stack" aria-live="polite">
       <div class="row row--wrap row--between tb-results__summary">
         <span class=${`tb-proof${proven ? " is-proven" : ""}`}>${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven)}</span>
-        <span class="tb-results__meta tabular">${host.t("resultMeta", "{ms} ms · {exact} teams simulated exactly", { ms: format(host, results.elapsedMs), exact: stats })}</span>
+        ${host.stale
+          ? html`<button class="button button--tonal button--small" type="button" title=${host.t("staleResults", "Conditions changed since this search.")} @click=${() => void host.run()}>${icon("refresh", 18)}${host.t("rerun", "Search again")}</button>`
+          : html`<span class="tb-results__meta tabular">${host.t("resultMeta", "{ms} ms · {exact} teams simulated exactly", { ms: format(host, results.elapsedMs), exact: stats })}</span>`}
       </div>
-      ${host.stale ? html`<div class="banner"><span>${host.t("staleResults", "Conditions changed since this search.")}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => void host.run()}>${host.t("rerun", "Search again")}</button></div></div>` : nothing}
       ${results.unknownCards.length ? html`<p class="inline-message">${host.t("unknownCards", "{count} saved cards are not in this data release and were skipped.", { count: results.unknownCards.length })}</p>` : nothing}
-      ${host.error ? html`<div class="banner banner--error" role="alert"><span>${host.error}</span></div>` : nothing}
       ${results.plan
         ? html`<section class="surface surface--tonal stack tb-plan">
             <strong class="tb-subtitle">${host.t("planTotal", "Total event points")}</strong>

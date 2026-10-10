@@ -425,7 +425,8 @@
         "gekisouMissionJustCount": "JUST",
         "gekisouMissionAll": "전부",
         "gekisouMissionNone": "없음"
-      }
+      },
+      "skillPoints": "스킬 발동 위치"
     },
     "anonTokyo": {
       "characters": "캐릭터",
@@ -2048,7 +2049,6 @@
       "saveImage": "이미지 저장",
       "lessDetail": "접기",
       "moreDetail": "자세히",
-      "timelineOrder": "순서",
       "bestOrder": "최적 순서",
       "worstOrder": "최악 순서",
       "bestScore": "최고 점수",
@@ -2175,7 +2175,12 @@
       "provenMin": "선택한 카드와 조건에서 최저 점수 최적성 확인",
       "unprovenMean": "평균 점수: 현재까지 찾은 최선의 결과",
       "unprovenMax": "최고 점수: 현재까지 찾은 최선의 결과",
-      "unprovenMin": "최저 점수: 현재까지 찾은 최선의 결과"
+      "unprovenMin": "최저 점수: 현재까지 찾은 최선의 결과",
+      "skillOrder": "스킬 순서",
+      "firstSkill": "첫 스킬별 최적 순서",
+      "topOrders": "상위 순서",
+      "orderRank": "순위",
+      "orderGap": "최적과 차이"
     },
     "calendar": {
       "title": "달력",

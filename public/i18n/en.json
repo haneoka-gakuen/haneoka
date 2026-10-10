@@ -425,7 +425,8 @@
         "gekisouMissionJustCount": "JUST",
         "gekisouMissionAll": "All",
         "gekisouMissionNone": "None"
-      }
+      },
+      "skillPoints": "Skill points"
     },
     "anonTokyo": {
       "characters": "Characters",
@@ -2048,7 +2049,6 @@
       "saveImage": "Save image",
       "lessDetail": "Less",
       "moreDetail": "Details",
-      "timelineOrder": "Order",
       "bestOrder": "Best order",
       "worstOrder": "Worst order",
       "bestScore": "Best-order score",
@@ -2175,7 +2175,12 @@
       "provenMin": "Minimum score proven optimal for these cards and conditions",
       "unprovenMean": "Average score: best found so far",
       "unprovenMax": "Single-run maximum: best found so far",
-      "unprovenMin": "Minimum score: best found so far"
+      "unprovenMin": "Minimum score: best found so far",
+      "skillOrder": "Skill order",
+      "firstSkill": "Best order by first skill",
+      "topOrders": "Top orders",
+      "orderRank": "Rank",
+      "orderGap": "From best"
     },
     "calendar": {
       "title": "Calendar",

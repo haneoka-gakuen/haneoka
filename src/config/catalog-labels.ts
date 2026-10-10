@@ -92,6 +92,7 @@ export const LABEL_ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ["metaTierTheorySub", "catalog.analysis.fields.metaTierTheorySub"],
   ["metaTierCurrentSub", "catalog.analysis.fields.metaTierCurrentSub"],
   ["gekisouSegment", "catalog.analysis.fields.gekisouSegment"],
+  ["gekisouStages", "navigation.gekisouStages"],
   ["gekisouJustable", "catalog.analysis.fields.gekisouJustable"],
   ["gekisouMissionCombo", "catalog.songs.gekisou.gekisouMissionCombo"],
   ["gekisouMissionLuck", "catalog.songs.gekisou.gekisouMissionLuck"],

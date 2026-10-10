@@ -1,0 +1,114 @@
+/* Skill windows over a live's note density and fever sections. */
+.skill-timeline {
+  display: grid;
+  min-width: 0;
+  gap: var(--md-sys-spacing-1);
+  margin: 0;
+}
+.skill-timeline__plot {
+  position: relative;
+  height: calc(56px + var(--skill-lanes, 1) * 26px + 4px);
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low);
+}
+.skill-timeline__fever {
+  position: absolute;
+  inset-block: 0;
+  overflow: hidden;
+  padding: 2px 4px;
+  color: var(--md-sys-color-tertiary);
+  background: color-mix(in srgb, var(--md-sys-color-tertiary) 14%, transparent);
+  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / 1 var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-timeline__density {
+  position: absolute;
+  inset: 12px 0 auto;
+  width: 100%;
+  height: 40px;
+}
+.skill-timeline__density polygon {
+  fill: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 26%, transparent);
+}
+.skill-timeline__lanes {
+  position: absolute;
+  inset: 56px 0 4px;
+}
+.skill-timeline__window {
+  position: absolute;
+  top: calc(var(--lane, 0) * 26px);
+  display: grid;
+  height: 22px;
+  min-width: 14px;
+  place-items: center start;
+  padding-inline: 4px;
+  overflow: hidden;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  color: #fff;
+  background: var(--window-color, var(--md-sys-color-primary));
+  box-shadow: 0 0 0 1px var(--md-sys-color-surface-container-low);
+  font: 700 12px / 1 var(--app-font);
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+}
+.skill-timeline__axis {
+  position: relative;
+  height: 16px;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / 16px var(--app-font);
+}
+.skill-timeline__axis > span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.skill-timeline__axis > span:first-child {
+  transform: none;
+}
+.skill-timeline__events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--md-sys-spacing-1) var(--md-sys-spacing-3);
+  margin: var(--md-sys-spacing-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.skill-timeline__events > li {
+  display: grid;
+  min-width: 0;
+  min-height: 36px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--md-sys-spacing-2);
+  font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+    var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+}
+.skill-timeline__events > li:not(:has(> img)) {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+.skill-timeline__events img {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--md-sys-shape-corner-full);
+  object-fit: cover;
+}
+.skill-timeline__index {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  color: #fff;
+  background: var(--window-color, var(--md-sys-color-primary));
+  font: 700 12px / 1 var(--app-font);
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+}
+.skill-timeline__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-timeline__time {
+  color: var(--md-sys-color-on-surface-variant);
+}

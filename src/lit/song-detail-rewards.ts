@@ -6,6 +6,7 @@ import "../styles/song-gekisou.css";
 import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
+import "./song-skill-points";
 
 type Item = Record<string, unknown>;
 
@@ -197,6 +198,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
         )}
       </dl>
     </section>
+    <song-skill-points source=${String(difficulty[selectedDifficulty]?.file || "")} locale=${locale}></song-skill-points>
     ${
       gekisouCells.length
         ? html`

@@ -126,6 +126,8 @@ export interface HitScore {
   /** Member keys at each chart skill event, for the worst and best orders. */
   worstOrder: string[];
   bestOrder: string[];
+  /** Score of every skill order, indexed like ORDERS (event → formation slot). */
+  orders: number[];
   ranks: Record<string, number>;
 }
 export interface EngineHit {
@@ -327,6 +329,7 @@ function scoreSummary(detail: Pick<LiveDetail, "scores">, chart: CompiledChart, 
     median: median(scores.scores),
     worstOrder: keysOf(ORDERS[scores.minOrder]!),
     bestOrder: keysOf(ORDERS[scores.maxOrder]!),
+    orders: Array.from(scores.scores, Math.round),
     ranks,
   };
 }

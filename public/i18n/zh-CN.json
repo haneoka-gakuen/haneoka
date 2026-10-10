@@ -425,7 +425,8 @@
         "gekisouMissionJustCount": "JUST",
         "gekisouMissionAll": "全部",
         "gekisouMissionNone": "无"
-      }
+      },
+      "skillPoints": "技能点位"
     },
     "anonTokyo": {
       "characters": "角色",
@@ -2048,7 +2049,6 @@
       "saveImage": "保存图片",
       "lessDetail": "收起",
       "moreDetail": "详情",
-      "timelineOrder": "顺序",
       "bestOrder": "最佳顺序",
       "worstOrder": "最差顺序",
       "bestScore": "单次最高分",
@@ -2175,7 +2175,12 @@
       "provenMin": "当前卡池及条件下，最低分已证明最优",
       "unprovenMean": "平均分：目前找到的最佳结果",
       "unprovenMax": "单次最高分：目前找到的最佳结果",
-      "unprovenMin": "最低分：目前找到的最佳结果"
+      "unprovenMin": "最低分：目前找到的最佳结果",
+      "skillOrder": "技能顺序",
+      "firstSkill": "按首个技能的最优顺序",
+      "topOrders": "前几种顺序",
+      "orderRank": "排名",
+      "orderGap": "与最优差"
     },
     "calendar": {
       "title": "日历",
