@@ -44,6 +44,23 @@
   .team-builder__screenshot-review .collection--member {
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   }
+  :is(.team-builder__box-review, .team-builder__screenshot-review) .selection-pane__body {
+    grid-auto-rows: max-content;
+  }
+  :is(.team-builder__box-review, .team-builder__screenshot-review) .selection-pane__body > .segmented {
+    flex: 0 0 auto;
+  }
+  @media (max-width: 480px) {
+    :is(.team-builder__box-review, .team-builder__screenshot-review) .selection-pane__body > .segmented {
+      display: grid;
+      min-height: max-content;
+    }
+    :is(.team-builder__box-review, .team-builder__screenshot-review) .selection-pane__body > .segmented > button {
+      flex: 0 0 auto;
+      min-height: 48px;
+      border-radius: var(--md-sys-shape-corner-small);
+    }
+  }
   .team-builder__actions {
     display: flex;
     min-width: 0;

@@ -101,7 +101,7 @@ export function createRecognitionClient(initialContext: RecognitionClientContext
     },
     async cancel(id: string) {
       if (!UUID.test(id)) throw new TypeError("recognition-job-id");
-      await transport.delete(id, options());
+      await transport.delete(id, options(AbortSignal.timeout(10_000)));
     },
   };
 }

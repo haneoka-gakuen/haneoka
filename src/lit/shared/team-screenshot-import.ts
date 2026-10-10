@@ -8,19 +8,24 @@ import { tile, tileMedia, type TileOptions } from "../ui/tile";
 import { iconButton, segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
 import { renderLevelSwitch } from "../ui/level-switch";
+import type { ScreenshotCrop } from "../../lib/team-builder/screenshot-image";
 
 export interface ScreenshotImportDialogState {
-  phase: "select" | "uploading" | "queued" | "processing" | "review" | "failed";
+  phase: "select" | "preparing" | "preview" | "uploading" | "queued" | "processing" | "review" | "failed";
+  localImages?: { url: string; crop: ScreenshotCrop }[];
   preview?: ScreenshotImportPreview;
   results?: readonly ScreenshotRecognitionResult[];
   confirmations: readonly ScreenshotCardConfirmation[];
-  existingValues?: "keep" | "overwrite";
+  existingValues?: "keep" | "overwrite" | "updates";
+  bindingConfirmed?: boolean;
   /** Local Blob-derived crop URLs, never a public screenshot resource URL. */
   crops: Readonly<Record<string, string>>;
   error: string | null;
   canConfirm: boolean;
 }
 export interface ScreenshotImportDialogActions {
+  upload?: () => void;
+  crop?: (image: number, side: keyof ScreenshotCrop, value: number) => void;
   text: (key: string, fallback: string) => string;
   card: (kind: "members" | "snapshots", cardId: number) => TileOptions | null;
   levels?: (kind: "members" | "snapshots", cardId: number) => readonly number[];
@@ -30,8 +35,9 @@ export interface ScreenshotImportDialogActions {
   correct: (image: number, observation: number) => void;
   candidate: (image: number, observation: number, cardId: number) => void;
   include: (key: string, value: boolean) => void;
+  bind: (value: boolean) => void;
   level: (key: string, value: number | "keep" | undefined, source: "observed" | "manual") => void;
-  existingValues: (value: "keep" | "overwrite") => void;
+  existingValues: (value: "keep" | "overwrite" | "updates") => void;
   confirm: () => void;
   expandedSource?: (key: string) => boolean;
   expandSource?: (key: string, expanded: boolean) => void;
@@ -71,23 +77,30 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
         ${iconButton({ icon: "close", label: t("close", "Close"), onClick: actions.close })}
       </header>
       <div class="selection-pane__body">
+        <p>${t("privacy", "Recognition requires a website account and uploads the confirmed images to the private recognition service. Preview and crop out names, account IDs and notifications before uploading. Only visible cards and levels are observed; other training stays unknown. Files/text and manual entry remain available without uploading images.")}</p>
+        ${state.phase === "preparing" ? html`<p role="status">${t("preparing", "Preparing local previews")}</p>` : nothing}
+        ${state.localImages?.map((image, index) => html`<div class="stack"><img src=${image.url} alt=${t("localPreview", "Local image preview")} style=${`max-width:100%;max-height:50vh;object-fit:contain;clip-path:inset(${image.crop.top}% ${image.crop.right}% ${image.crop.bottom}% ${image.crop.left}%)`} />
+          <div class="cluster">${(["top", "right", "bottom", "left"] as const).map(side => html`<label>${t(side, side)} (%)<input type="number" min="0" max="95" .value=${String(image.crop[side])}
+            @change=${(event: Event) => actions.crop?.(index, side, Number((event.target as HTMLInputElement).value))} /></label>`)}</div></div>`)}
         ${state.phase === "select" || state.phase === "failed" ||
           (state.phase === "review" && state.results?.length && state.results.every(result => result.status === "no-reliable-grid")) ? html`
           <div>
             <button type="button" class="button button--outlined"
               @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}>${t("chooseImages", "Choose screenshots")}</button>
-            <input hidden type="file" accept="image/png,image/jpeg,image/webp" multiple
+            <input hidden type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" multiple
               @change=${(event: Event) => { const input = event.target as HTMLInputElement;
                 actions.files([...input.files ?? []]); input.value = ""; }} />
           </div>` : nothing}
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
-        ${state.error ? html`<p class="team-builder__error" role="alert">${t("failedMessage", "Screenshot recognition failed")}</p>` : nothing}
+        ${state.error ? html`<p class="team-builder__error" role="alert">${t(state.error.startsWith("image-") ? state.error : "failedMessage", "Screenshot recognition failed")}</p>` : nothing}
         ${state.preview ? html`
-          <p class="team-builder__hint" id="team-screenshot-existing-hint">${t("existingHint", "Applies to existing entries in this import. New entries are added normally. Overwrite uses supplied values; conflicting values need a choice. Each entry can still be adjusted.")}</p>
-          ${segmented<"keep" | "overwrite">({
-            label: t("existingHint", "Applies to existing entries in this import."),
+          <label class="team-builder__check"><md-checkbox .checked=${state.bindingConfirmed ?? false}
+            @change=${(event: Event) => actions.bind((event.target as HTMLInputElement).checked)}></md-checkbox><span>${t("bind", "These screenshots belong to the same game account as this inventory.")}</span></label>
+          ${segmented<"keep" | "overwrite" | "updates">({
+            label: t("existingPolicy", "Existing cards"),
             value: state.existingValues ?? "keep",
             options: [
+              { value: "updates", label: t("updates", "Apply increases; review decreases") },
               { value: "keep", label: t("existingKeep", "Keep all existing values") },
               { value: "overwrite", label: t("existingOverwrite", "Overwrite all existing values") },
             ],
@@ -102,7 +115,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
               const conflict = defaultChoice.source === "conflict";
               const defaultLevel = defaultChoice.value;
               const defaultLabel = defaultChoice.source === "saved" ? t("keepLevel", "Keep saved level") : conflict ? t("chooseLevel", "Choose level") :
-                defaultChoice.source === "observed" ? t("observedLevel", "Screenshot level") : t("defaultLevel", "Default level");
+                defaultChoice.source === "observed" ? t("observedLevel", "Screenshot level") : t("levelUnknown", "Level not recognized");
               const defaultText = defaultLevel === null ? defaultLabel : `${defaultLabel}: ${defaultLevel}`;
               return html`<div role="group" aria-label=${options?.label ?? t("reviewCard", "Review card")}>
                 ${options ? tile({ ...options, href: undefined, onOpen: () => {
@@ -116,6 +129,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                 </label>
                 <div class="team-builder__practice-control">
                   <p class="team-builder__hint">${defaultText}</p>
+                  ${proposal.existingLevel !== null && proposal.observedLevels.some(level => level < proposal.existingLevel!) ? html`<p>${t("decrease", "A lower observed level needs explicit selection.")}</p>` : nothing}
                   ${(() => {
                     const levels = [...new Set(actions.levels?.(proposal.kind, proposal.cardId) ?? [])].filter(Number.isSafeInteger).sort((a,b)=>a-b);
                     const selectedLevel = choice?.level === "keep" ? proposal.existingLevel : choice?.level === undefined ? defaultLevel : choice.level;
@@ -149,6 +163,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
           </div>`)}
       </div>
       <footer class="selection-pane__footer team-builder__actions">
+        ${state.phase === "preview" ? html`<button class="button" @click=${actions.upload}>${t("upload", "Upload these cropped images for recognition")}</button>` : nothing}
         ${busy ? html`<button class="button button--outlined" @click=${actions.cancel}>${t("cancel", "Cancel")}</button>` : nothing}
         ${state.phase === "review" ? html`<button class="button" ?disabled=${!state.canConfirm} @click=${actions.confirm}>${t("confirm", "Confirm import")}</button>` : nothing}
       </footer>

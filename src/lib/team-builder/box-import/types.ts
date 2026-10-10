@@ -16,6 +16,8 @@ export interface BoxSnapshot {
   rank: number | null;
 }
 export interface BoxCandidate {
+  /** Only the supported Haneoka export schema carries these verified paths. */
+  playerModifiers?: import("../data/player-modifiers").PlayerModifiers;
   id: string;
   format: "player-json" | "onpkg1" | "encrypted-player" | "reference-profile" | "inventory-json";
   members: BoxMember[];

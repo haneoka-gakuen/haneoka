@@ -36,6 +36,8 @@ export interface BuildSettings {
   planChallengeSongs: SongRef[];
   k: number;
   unknownPolicy: "max" | "min";
+  inputIntent: "actual" | "simulation";
+  knownOnly: boolean;
   scope: "box" | "theoretical";
   leader: number | null;
   /** member card → snap card (null keeps it empty). */
@@ -78,6 +80,8 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   planChallengeSongs: [],
   k: 5,
   unknownPolicy: "max",
+  inputIntent: "actual",
+  knownOnly: false,
   scope: "box",
   leader: null,
   bindings: [],

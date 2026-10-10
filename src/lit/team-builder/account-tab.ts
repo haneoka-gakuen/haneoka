@@ -38,8 +38,7 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
     .filter((character) => catalog.characterName(character.id))
     .sort((a, b) => a.bandId - b.bandId || characterOrder(a.id) - characterOrder(b.id) || a.id - b.id);
   const maxRank = master.maxCharacterRank;
-  // Every character counts, unranked ones at 1, exactly as the engine sums them.
-  const total = [...master.characters.keys()].reduce((sum, id) => sum + (player.characterRanks[String(id)] ?? 1), 0);
+  const total = player.characterTotalRank;
   const bands = [...new Set(characters.map((character) => character.bandId))].filter(Boolean);
   const vipRanks = [...master.vipBonus.keys()].sort((a, b) => a - b);
   const maxVip = Math.max(1, ...vipRanks, 1);
@@ -58,8 +57,9 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
       <section class="surface stack">
         ${sectionHeading({ icon: "trending_up", label: host.t("accountTitle", "Account bonuses") })}
         <div class="tb-account__summary">
-          <div class="tb-metric"><span class="tb-metric__label">${host.t("totalRank", "Total character rank")}</span><strong class="tb-metric__value tabular">${total}</strong>
-            <span class="tb-metric__detail">${host.t("totalRankAuto", "Sum of the ranks below")}</span></div>
+          <div class="tb-field"><span class="tb-field__label">${host.t("totalRank", "Total character rank")}</span>
+            ${stepper(host, "p.total", host.t("totalRank", "Total character rank"), total, 0, 0x7fffffff, value => host.write([{ key: "p.total", value }]))}
+            <span class="tb-field__note">${host.t("importFlow.observedTotal", "Enter the total shown in the game. A partial character list cannot determine it.")}</span></div>
           <div class="tb-field">
             <span class="tb-field__label">${host.t("vipRank", "T.G.W card rank")}</span>
             ${stepper(host, "p.vip", host.t("vipRank", "T.G.W card rank"), player.vipRank, 1, maxVip, (value) => host.write([{ key: "p.vip", value }]))}

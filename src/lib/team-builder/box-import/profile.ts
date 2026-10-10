@@ -1,4 +1,5 @@
 import { BOX_LIMITS, BoxImportError, object, integer, type BoxCandidate } from "./types";
+import { createUnknownPlayerModifiers } from "../data/player-modifiers";
 const id = (v: unknown) => {
   const n = integer(v);
   return n !== null && n > 0 && n <= 0x7fffffff ? n : null;
@@ -76,6 +77,21 @@ export function projectInventoryDocument(root: Record<string, unknown>): BoxCand
     });
   }
   if (canonical) {
+    const rawModifiers = object(root.playerModifiers);
+    if (rawModifiers) {
+      const modifiers = createUnknownPlayerModifiers();
+      modifiers.characterTotalRank = supplied(rawModifiers.characterTotalRank);
+      modifiers.vipRank = supplied(rawModifiers.vipRank);
+      for (const field of ["musicMemoryPoints", "characterMemoryPoints"] as const) {
+        const map = object(rawModifiers[field]);
+        if (!map || Object.keys(map).length > 2048) throw new BoxImportError("box_invalid_json");
+        for (const [rawId, value] of Object.entries(map)) {
+          if (!id(rawId)) throw new BoxImportError("box_invalid_json");
+          modifiers[field][rawId] = supplied(value);
+        }
+      }
+      candidate.playerModifiers = modifiers;
+    }
     for (const key of ["bandItems", "characterRanks"] as const) {
       const map = object(root[key]);
       if (!map || Object.keys(map).length > BOX_LIMITS.rowsPerList) throw new BoxImportError("box_invalid_json");

@@ -140,10 +140,10 @@ export class Catalog {
     };
   }
   /** Short growth caption: Lv · training · awakening · skill. */
-  growthCaption(kind: "members" | "snaps", owned: OwnedMember | OwnedSnap | undefined, policy: "max" | "min") {
+  growthCaption(kind: "members" | "snaps", owned: OwnedMember | OwnedSnap | undefined, _policy: "max" | "min") {
     if (!owned) return "";
     const t = this.host.t.bind(this.host);
-    const unknown = (value: number | null) => (value === null ? (policy === "max" ? "★" : "?") : String(value));
+    const unknown = (value: number | null) => (value === null ? "?" : String(value));
     if (kind === "members") {
       const row = owned as OwnedMember;
       return [`Lv${unknown(row.level)}`, `${t("trainingShort", "T")}${unknown(row.awake)}`, `${t("rankShort", "A")}${unknown(row.rank)}`, `${t("skillShort", "SL")}${unknown(row.skill)}`].join(" ");

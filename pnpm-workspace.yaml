@@ -66,6 +66,8 @@ catalog:
   pagefind: ^1.5.2
   "@lit-labs/ssr-client": ^1.1.8
   echarts: 6.1.0
+  '@yume-chan/adb': 2.6.4
+  '@yume-chan/adb-daemon-webusb': 2.3.2
 catalogMode: prefer
 cleanupUnusedCatalogs: true
 allowBuilds:

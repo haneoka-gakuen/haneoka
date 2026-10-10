@@ -276,70 +276,32 @@ function candidates(host: TeamBuilder): TemplateResult {
         ],
         onSelect: (scope) => set({ scope }),
       })}
-      ${
-        s.scope === "box"
-          ? html`
-              <div class="tb-field">
-                <span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
-                ${segmented({
-              label: host.t("unknownPolicy", "Growth not entered"),
-              value: s.unknownPolicy,
-              grow: false,
-              options: [
-                { value: "max", label: host.t("unknownMax", "Count as max") },
-                { value: "min", label: host.t("unknownMin", "Count as minimum") },
-              ],
-              onSelect: (unknownPolicy) => set({ unknownPolicy }),
-            })}
-              </div>
-            `
-          : nothing
-      }
-      <div class="tb-field">
-        <span class="tb-field__label">${host.common("catalog.fields.attribute", "Attribute")}</span>
-        <div class="cluster">
-          ${[1, 2, 3, 4, 5].map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: s.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(s.attributes, id) }) }))}
-        </div>
-      </div>
-      <div class="tb-field">
-        <span class="tb-field__label">${host.common("catalog.fields.band", "Band")}</span>
-        <div class="cluster">
-          ${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: s.bands.includes(id), onToggle: () => set({ bands: toggleIn(s.bands, id) }) }))}
-        </div>
-      </div>
-      <div class="tb-field">
-        <span class="tb-field__label">${host.t("minRarity", "Minimum rarity")}</span>
-        ${segmented({
-          label: host.t("minRarity", "Minimum rarity"),
-          value: String(s.minRarity),
-          grow: false,
-          options: [
-            { value: "0", label: host.common("common.states.all", "All") },
-            ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
-          ],
-          onSelect: (value) => set({ minRarity: Number(value) }),
-        })}
-      </div>
-      <md-outlined-select
-        label=${host.t("leader", "Leader")}
-        .value=${s.leader === null ? "" : String(s.leader)}
-        @change=${(e: Event) => {
-          const value = (e.target as HTMLInputElement).value;
-          set({ leader: value ? Number(value) : null });
-        }}
-      >
-        <md-select-option value="">
-          <div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div>
-        </md-select-option>
-        ${ownedMembers.map(
-          (id) => html`
-            <md-select-option value=${String(id)}>
-              <div slot="headline">
-                ${catalog.cardName("members", id)} · ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
-              </div>
-            </md-select-option>
-          `,
-        )}
+      ${s.scope === "box" ? html`${segmented({ label: host.t("importFlow.intent", "Calculation input"), value: s.inputIntent,
+        options: [{ value: "actual", label: host.t("importFlow.actual", "Real inventory") }, { value: "simulation", label: host.t("importFlow.simulation", "Simulation") }],
+        onSelect: inputIntent => set({ inputIntent }) })}
+        ${s.inputIntent === "actual" ? html`<label class="tb-check"><md-checkbox .checked=${s.knownOnly} @change=${(event: Event) => set({ knownOnly: (event.target as HTMLInputElement).checked })}></md-checkbox><span>${host.t("importFlow.knownOnly", "Use only complete cards for this calculation")}</span></label>
+          <button class="button button--text" @click=${() => host.completeInputs()}>${host.t("importFlow.complete", "Complete required information")}</button>` : nothing}` : nothing}
+      ${s.scope === "theoretical" || s.inputIntent === "simulation" ? html`<p class="tb-hint">${host.t("importFlow.assumptions", "Simulation uses the selected growth preset for unknown fields. Unentered account bonuses use the engine defaults; assumptions are not saved as real inventory.")}</p>` : nothing}
+      ${s.scope === "box" && s.inputIntent === "simulation"
+        ? html`<div class="tb-field"><span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
+            ${segmented({ label: host.t("unknownPolicy", "Growth not entered"), value: s.unknownPolicy, grow: false, options: [
+              { value: "max", label: host.t("unknownMax", "Count as max") },
+              { value: "min", label: host.t("unknownMin", "Count as minimum") },
+            ], onSelect: (unknownPolicy) => set({ unknownPolicy }) })}</div>`
+        : nothing}
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.attribute", "Attribute")}</span>
+        <div class="cluster">${[1, 2, 3, 4, 5].map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: s.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(s.attributes, id) }) }))}</div></div>
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.band", "Band")}</span>
+        <div class="cluster">${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: s.bands.includes(id), onToggle: () => set({ bands: toggleIn(s.bands, id) }) }))}</div></div>
+      <div class="tb-field"><span class="tb-field__label">${host.t("minRarity", "Minimum rarity")}</span>
+        ${segmented({ label: host.t("minRarity", "Minimum rarity"), value: String(s.minRarity), grow: false, options: [
+          { value: "0", label: host.common("common.states.all", "All") },
+          ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
+        ], onSelect: (value) => set({ minRarity: Number(value) }) })}</div>
+      <md-outlined-select label=${host.t("leader", "Leader")} .value=${s.leader === null ? "" : String(s.leader)}
+        @change=${(e: Event) => { const value = (e.target as HTMLInputElement).value; set({ leader: value ? Number(value) : null }); }}>
+        <md-select-option value=""><div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div></md-select-option>
+        ${ownedMembers.map((id) => html`<md-select-option value=${String(id)}><div slot="headline">${catalog.cardName("members", id)} · ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}</div></md-select-option>`)}
       </md-outlined-select>
       <label class="tb-check">
         <md-checkbox
