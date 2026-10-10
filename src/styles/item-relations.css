@@ -1,0 +1,126 @@
+/* Item acquisition and use: reward rows, shared upgrade-cost tables. */
+@layer pages {
+  .item-relations .detail-fold + .detail-fold {
+    margin-top: 4px;
+  }
+  .item-relations .detail-object > img {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+  .item-relation__icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    color: var(--md-sys-color-on-secondary-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .item-relation__alternatives {
+    display: grid;
+    gap: 2px;
+    margin-top: 4px;
+  }
+  .item-relation__alternative {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .item-relation__alternative > strong {
+    color: var(--md-sys-color-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One upgrade-cost table, shown once for every entity that shares it. */
+  .item-cost-table {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface);
+  }
+  .item-cost-table + .item-cost-table {
+    margin-top: 8px;
+  }
+  .item-cost-table__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .item-cost-table__steps > li {
+    display: grid;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+  }
+  .item-cost-table__steps span {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .item-cost-table__steps strong,
+  .item-cost-table__total strong {
+    font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .item-cost-table__total {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .item-cost-table__users {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .item-cost-table__users :is(a, span) {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-high);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    text-decoration: none;
+    transition:
+      background-color var(--motion-effects),
+      color var(--motion-effects);
+  }
+  .item-cost-table__users a:hover {
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .item-cost-table__users img {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+  .item-rule-table .is-numeric {
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+}

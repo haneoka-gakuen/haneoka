@@ -758,7 +758,10 @@
       "ruleInvite": "招待報酬",
       "conditionStart": "開始",
       "conditionEnd": "終了",
-      "conditionRewardGroup": "報酬グループ"
+      "conditionRewardGroup": "報酬グループ",
+      "rankRange": "{0}～{1} 位",
+      "premium": "プレミアム",
+      "limit": "上限 {0} 回"
     },
     "construction": {
       "title": "開発中",
@@ -774,7 +777,9 @@
     },
     "skills": {
       "costsHint": "関連カードを開くと、そのカードの強化素材を確認できます。",
-      "includeUnlinked": "関連カードのないスキルも表示"
+      "includeUnlinked": "関連カードのないスキルも表示",
+      "cardCount": "カード {count} 枚",
+      "upgradeCosts": "強化素材"
     },
     "rankings": {
       "songs": {

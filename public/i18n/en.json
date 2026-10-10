@@ -758,7 +758,10 @@
       "ruleInvite": "Invitation rewards",
       "conditionStart": "Starts",
       "conditionEnd": "Ends",
-      "conditionRewardGroup": "Reward group"
+      "conditionRewardGroup": "Reward group",
+      "rankRange": "Rank {0}–{1}",
+      "premium": "Premium",
+      "limit": "Limit {0}"
     },
     "construction": {
       "title": "In development",
@@ -774,7 +777,9 @@
     },
     "skills": {
       "costsHint": "Open a related card to view its upgrade costs.",
-      "includeUnlinked": "Include skills without associated cards"
+      "includeUnlinked": "Include skills without associated cards",
+      "cardCount": "{count} cards",
+      "upgradeCosts": "Upgrade materials"
     },
     "rankings": {
       "songs": {

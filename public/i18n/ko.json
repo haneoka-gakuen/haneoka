@@ -758,7 +758,10 @@
       "ruleInvite": "초대 보상",
       "conditionStart": "시작",
       "conditionEnd": "종료",
-      "conditionRewardGroup": "보상 그룹"
+      "conditionRewardGroup": "보상 그룹",
+      "rankRange": "{0}~{1}위",
+      "premium": "프리미엄",
+      "limit": "{0}회 한정"
     },
     "construction": {
       "title": "개발 중",
@@ -774,7 +777,9 @@
     },
     "skills": {
       "costsHint": "관련 카드를 열어 해당 카드의 강화 재료를 확인하세요.",
-      "includeUnlinked": "관련 카드가 없는 스킬 포함"
+      "includeUnlinked": "관련 카드가 없는 스킬 포함",
+      "cardCount": "카드 {count}장",
+      "upgradeCosts": "강화 재료"
     },
     "rankings": {
       "songs": {

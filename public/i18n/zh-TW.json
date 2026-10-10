@@ -758,7 +758,10 @@
       "ruleInvite": "邀請獎勵",
       "conditionStart": "開始",
       "conditionEnd": "結束",
-      "conditionRewardGroup": "獎勵組"
+      "conditionRewardGroup": "獎勵組",
+      "rankRange": "第 {0}–{1} 名",
+      "premium": "高級獎勵",
+      "limit": "限 {0} 次"
     },
     "construction": {
       "title": "開發中",
@@ -774,7 +777,9 @@
     },
     "skills": {
       "costsHint": "開啟關聯卡牌可查看該卡的升級材料。",
-      "includeUnlinked": "包含未關聯卡牌的技能"
+      "includeUnlinked": "包含未關聯卡牌的技能",
+      "cardCount": "{count} 張卡牌",
+      "upgradeCosts": "升級材料"
     },
     "rankings": {
       "songs": {

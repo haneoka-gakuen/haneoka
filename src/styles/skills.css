@@ -1,0 +1,64 @@
+/* Skills collection: table titles, the detail's icon, levels and costs. */
+@layer pages {
+  .skills-table-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    color: var(--md-sys-color-primary);
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .skills-table-title img {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    object-fit: contain;
+  }
+  .skills-count {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .skills-filter-option {
+    display: flex;
+    padding-block: 4px;
+  }
+  .sheet--detail-skill .image-gallery__stage {
+    height: var(--detail-media-size, 220px);
+    min-height: 0;
+  }
+  .skills-levels > div {
+    grid-template-columns: 56px minmax(0, 1fr);
+    align-items: baseline;
+  }
+  .skills-levels dt {
+    font-variant-numeric: tabular-nums;
+  }
+  .skills-levels dd {
+    white-space: pre-line;
+    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+      var(--md-sys-typescale-body-large-line-height) var(--app-font);
+  }
+  .skills-cost {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+  }
+  .skills-cost + .skills-cost {
+    padding-top: 16px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+}
+@layer pages {
+  .skills-cost .card-relation-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+}
