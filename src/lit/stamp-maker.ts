@@ -71,6 +71,7 @@ import { stampCharacterColors } from "../lib/stamp-maker/colors";
 import { STAMP_LANGUAGES } from "../lib/stamp-maker/languages";
 
 import { registerImportedFont, removeImportedFont, type StampFont } from "../lib/stamp-maker/fonts";
+import { snackbar } from "../lib/snackbar";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -466,7 +467,30 @@ export class StampMaker extends LitElement {
     super.disconnectedCallback();
   }
 
+  private announced = { status: "", manifest: false, font: false, character: false };
+  private announce() {
+    const seen = this.announced;
+    const status = [
+      this.communityState ? this.t(this.communityState === "saving" ? "saving" : "communityPrepareFailed") : this.exportState ? this.t(this.exportState) : "",
+      this.draftNotice ? this.t(this.draftNotice) : "",
+      this.draftSourceMissing ? this.t("draftSourceMissing") : "",
+      this.layers.some((layer) => layer.localFontLabel) ? this.t("draftFontsMissing") : "",
+    ].filter(Boolean).join(" · ");
+    if (status !== seen.status) {
+      seen.status = status;
+      if (status) snackbar(status);
+    }
+    const failure = (key: "manifest" | "font" | "character", on: boolean, text: string, retry: () => void) => {
+      if (on === seen[key]) return;
+      seen[key] = on;
+      if (on) snackbar(text, { error: true, durationMs: 0, action: { label: this.t("retry"), run: retry } });
+    };
+    failure("manifest", !!this.manifestError, this.t("textlessFailed"), () => void this.loadManifest());
+    failure("font", !!this.fontError, this.t("fontFailed"), () => void this.refreshFont());
+    failure("character", !!this.characterError, clientText(this.locale, "common.states.error"), () => void this.loadCharacters());
+  }
   protected updated(changed: Map<string, unknown>) {
+    this.announce();
     if (changed.has("fontError") && this.fontError && !this.expandedSections.font)
       this.expandedSections = { ...this.expandedSections, font: true };
     if (changed.has("locale") && !this.manualImageLanguage) this.imageLanguage = this.defaultImageLanguage;
@@ -1405,18 +1429,6 @@ export class StampMaker extends LitElement {
               </md-menu>
             </div>
           </div>
-          ${
-            this.manifestError
-              ? html`
-                  <p class="field-note" role="alert">
-                    ${this.t("textlessFailed")}
-                    <button type="button" class="button button--text" @click=${this.loadManifest}>
-                      ${this.t("retry")}
-                    </button>
-                  </p>
-                `
-              : nothing
-          }
         </div>
 
     `;
@@ -1546,16 +1558,11 @@ export class StampMaker extends LitElement {
                     rows="2"
                     maxlength="500"
                     label=${this.t("text")}
+                    ?error=${!!(this.settings.frame && this.textOverflow)}
+                    title=${this.settings.frame && this.textOverflow ? this.t("frameOverflow") : nothing}
                     .value=${live(this.settings.text)}
                     @input=${(event: Event) => this.change({ text: String((event.target as ValueControl).value).slice(0, 500) })}
                   ></md-outlined-text-field>
-                  ${
-                    this.settings.frame && this.textOverflow
-                      ? html`
-                          <p class="field-note" role="status">${this.t("frameOverflow")}</p>
-                        `
-                      : nothing
-                  }
                   ${accordion({
                     id: `${this.sectionId}-font`,
                     label: this.t("font"),
@@ -1604,18 +1611,6 @@ export class StampMaker extends LitElement {
                       @change=${this.importFont}
                     />
                   </div>
-                  ${
-                    this.fontError
-                      ? html`
-                          <p class="field-note" role="alert">
-                            ${this.t("fontFailed")}
-                            <button class="button button--text" type="button" @click=${this.refreshFont}>
-                              ${this.t("retry")}
-                            </button>
-                          </p>
-                        `
-                      : nothing
-                  }
                   ${
                     stampFont(this.settings.font)?.weightRange
                       ? html`
@@ -1691,18 +1686,6 @@ export class StampMaker extends LitElement {
                               }}
                             />
                           </label>
-                        `
-                      : nothing
-                  }
-                  ${
-                    this.characterError
-                      ? html`
-                          <p class="field-note" role="alert">
-                            ${clientText(this.locale, "common.states.error")}
-                            <button class="button button--text" type="button" @click=${this.loadCharacters}>
-                              ${this.t("retry")}
-                            </button>
-                          </p>
                         `
                       : nothing
                   }
@@ -1874,13 +1857,6 @@ export class StampMaker extends LitElement {
               <span>${this.t("export")}</span>
             </button>
           </div>
-          <p class="field-note" role="status" aria-live="polite">
-            ${this.communityState ? this.t(this.communityState === "saving" ? "saving" : "communityPrepareFailed") : this.exportState ? this.t(this.exportState) : nothing}
-            ${(this.exportState || this.communityState) && this.draftNotice ? " · " : nothing}
-            ${this.draftNotice ? this.t(this.draftNotice) : nothing}
-            ${this.draftSourceMissing ? this.t("draftSourceMissing") : nothing}
-            ${this.layers.some((layer) => layer.localFontLabel) ? this.t("draftFontsMissing") : nothing}
-          </p>
 
     `;
   }

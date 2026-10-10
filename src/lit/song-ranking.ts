@@ -436,21 +436,12 @@ export class SongRanking extends GameRecordsCardsElement {
           : this.label("error", "Ranking unavailable");
     return html`
       <div class="song-ranking__content">
-        ${
-          this.stale
-            ? html`
-                <p class="song-ranking__notice song-ranking__notice--stale" role="status">
-                  ${this.label("stale", "Showing cached results")}
-                </p>
-              `
-            : nothing
-        }
         <div class="song-ranking__meta">
           ${
             cached && cached.reportedAt > 0
               ? html`
                   <p class="song-ranking__fetched" role="status">
-                    ${this.label("updated", "Updated")}${this.formatTime(this.region) ? ` · ${this.formatTime(this.region)}` : ""}
+                    ${this.stale ? this.label("stale", "Showing cached results") : this.label("updated", "Updated")}${this.formatTime(this.region) ? ` · ${this.formatTime(this.region)}` : ""}
                   </p>
                 `
               : this.phase === "loading" && !this.rows.length

@@ -21,7 +21,8 @@ import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import { DEFAULT_SETTINGS, type BoxFilters, type BuildSettings, type Tab } from "./team-builder/types";
 import { renderBuildTab } from "./team-builder/build-tab";
-import { renderBoxTab, renderCardEditor } from "./team-builder/box-tab";
+import { snackbar } from "../lib/snackbar";
+import { renderBoxTab, renderCardEditor, renderUndoAction } from "./team-builder/box-tab";
 import { renderAccountTab } from "./team-builder/account-tab";
 import { renderTeamsTab } from "./team-builder/teams-tab";
 import { renderSongPicker, type SongPickerState } from "./team-builder/song-picker";
@@ -124,7 +125,38 @@ export class TeamBuilder extends LitElement {
   }
 
   /** Choosers and review dialogs from shared renderers open as modals once rendered. */
+  private noticeTimer?: ReturnType<typeof setTimeout>;
+  private noticeShown = "";
+  private errorShown = "";
+  /** One snackbar for transient notices and the two standing states that offer an action. */
+  private renderSnackbar() {
+    const close = html`<button class="icon-button" type="button" aria-label=${this.common("common.actions.close", "Close")}
+      @click=${() => { this.notice = ""; this.requestUpdate(); }}>${icon("close", 20)}</button>`;
+    if (this.notice) return html`<div class="snackbar" role="status"><span>${this.notice}</span>${renderUndoAction(this)}${close}</div>`;
+    if (this.pt.correcting && this.tab !== "pt")
+      return html`<div class="snackbar" role="status"><span>${this.t("pt.correctionHelp", "Editing an input for event rewards")}</span>
+        <button class="button button--text" type="button" @click=${() => { this.setTab("pt"); void this.updateComplete.then(() => this.querySelector<HTMLElement>("#pt-issues")?.focus()); }}>${this.t("pt.back", "Back")}</button></div>`;
+    if (this.catalogMetadataError)
+      return html`<div class="snackbar" role="status"><span>${this.common("catalog.availability.catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span>
+        <button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("common.actions.retry", "Retry")}</button></div>`;
+    return nothing;
+  }
   protected updated() {
+    if (this.error !== this.errorShown) {
+      this.errorShown = this.error;
+      if (this.error) snackbar(this.error, { error: true, durationMs: 8000 });
+    }
+    if (this.notice !== this.noticeShown) {
+      this.noticeShown = this.notice;
+      clearTimeout(this.noticeTimer);
+      const shown = this.notice;
+      if (shown)
+        this.noticeTimer = setTimeout(() => {
+          if (this.notice !== shown) return;
+          this.notice = "";
+          this.requestUpdate();
+        }, 6000);
+    }
     this.pt.markFields();
     this.images.observe(this);
     for (const dialog of this.querySelectorAll<HTMLDialogElement>("dialog.selection-pane"))
@@ -436,13 +468,11 @@ export class TeamBuilder extends LitElement {
           ${this.renderTabs()}
           ${this.renderSync()}
         </header>
-        ${this.notice ? html`<div class="banner" role="status"><span>${this.notice}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => { this.notice = ""; this.requestUpdate(); }}>${this.common("common.actions.close", "Close")}</button></div></div>` : nothing}
-        ${this.catalogMetadataError ? html`<div class="banner" role="status"><span>${this.common("catalog.availability.catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span><button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("common.actions.retry", "Retry")}</button></div>` : nothing}
-        ${this.pt.correcting && this.tab !== "pt" ? html`<div class="banner" role="status"><span>${this.t("pt.correctionHelp", "Editing an input for event rewards")}</span><button class="button button--text" type="button" @click=${() => { this.setTab("pt"); void this.updateComplete.then(() => this.querySelector<HTMLElement>("#pt-issues")?.focus()); }}>${this.t("pt.back", "Back")}</button></div>` : nothing}
         <section id="tb-panel" class="tb-tabpanel" role="tabpanel" tabindex="-1">${panel}</section>
         ${renderCardEditor(this)}
         ${this.songPicker ? renderSongPicker(this) : nothing}
         ${this.imports.render()}
+        ${this.renderSnackbar()}
       </div>
     `;
   }

@@ -33,6 +33,7 @@ import { songTitle } from "../lib/song-display";
 import { SongRanking } from "./song-ranking";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
+import { snackbar } from "../lib/snackbar";
 
 type Region = GameRecordsRegion;
 type TrackerPageData = Partial<Record<"jp" | "intl", RankingCardCatalog>> & {
@@ -273,7 +274,12 @@ export class EventTracker extends LitElement {
       duration,
     );
   }
+  private cachedShown = false;
   updated() {
+    if ((this.phase === "error") !== this.cachedShown) {
+      this.cachedShown = this.phase === "error";
+      if (this.cachedShown) snackbar(this.label("cached", "Showing the last available event information."));
+    }
     this.lazyImages.observe(this);
     setAppBarActions(
       this.owner,
@@ -333,13 +339,6 @@ export class EventTracker extends LitElement {
                 ${gameDateTimeRange(this.locale, event.startAtMs || 0, event.endAtMs || 0)}
               </p>
               <p class="tabular" role="timer" aria-live="off">${this.countdown()}</p>
-              ${
-                this.phase === "error"
-                  ? html`
-                      <p role="status">${this.label("cached", "Showing the last available event information.")}</p>
-                    `
-                  : nothing
-              }
             </div>
           </header>
           ${moenotesBrand(`https://bdon.moe/events/tracker?server=${this.region}`)}

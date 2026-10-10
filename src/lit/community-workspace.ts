@@ -77,6 +77,7 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, inputChip, segmented } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
+import { snackbar } from "../lib/snackbar";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -626,7 +627,39 @@ export class CommunityWorkspace extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private announced = { error: "", message: "", toast: null as unknown, facets: "", retry: false };
+  /** Status changes surface as one snackbar; nothing is inserted into the page. */
+  private announce() {
+    const seen = this.announced;
+    if (this.error !== seen.error) {
+      seen.error = this.error;
+      if (this.error && this.phase !== "error") snackbar(this.error, { error: true });
+    }
+    if (this.message !== seen.message) {
+      seen.message = this.message;
+      if (this.message) snackbar(this.message);
+    }
+    if (this.toast !== seen.toast) {
+      seen.toast = this.toast;
+      const toast = this.toast;
+      if (toast) {
+        const undo = toast.undo;
+        snackbar(toast.text, undo ? { action: { label: this.label("undo", "Undo"), run: undo } } : {});
+      }
+    }
+    if (this.facetsError !== seen.facets) {
+      seen.facets = this.facetsError;
+      if (this.facetsError)
+        snackbar(this.facetsError, { error: true, action: { label: this.label("retry", "Retry"), run: () => void this.loadTagFacets() } });
+    }
+    if (this.stampDraftRetry !== seen.retry) {
+      seen.retry = this.stampDraftRetry;
+      if (this.stampDraftRetry)
+        snackbar(this.label("draftNotSaved", "Draft not saved"), { error: true, durationMs: 0, action: { label: this.label("retry", "Retry"), run: () => this.retryStampDraft() } });
+    }
+  }
   updated() {
+    this.announce();
     this.lazyImages?.observe(this);
     this.observeLoadMore();
     // The open overlay is modal: focus stays inside it and Escape closes it.
@@ -2035,13 +2068,6 @@ export class CommunityWorkspace extends LitElement {
               ?disabled=${this.busy}
               @input=${(event: Event) => (this.moveReason = String((event.target as HTMLElement & { value?: string }).value || ""))}
             ></md-outlined-text-field>
-            ${
-              this.error
-                ? html`
-                    <p class="inline-message error" role="alert">${this.error}</p>
-                  `
-                : nothing
-            }
             <footer>
               <button class="button button--text" type="button" @click=${() => (this.dialog = null)}>
                 ${this.label("cancel", "Cancel")}
@@ -3684,24 +3710,6 @@ export class CommunityWorkspace extends LitElement {
                   `
                 : nothing
             }
-            ${
-              this.error
-                ? html`
-                    <div class="inline-message error" role="alert">${this.error}</div>
-                  `
-                : nothing
-            }
-            ${
-              this.stampDraftRetry
-                ? html`
-                    <div class="inline-message" role="status">
-                      <button class="button button--text" type="button" @click=${this.retryStampDraft}>
-                        ${this.label("retry", "Retry")}
-                      </button>
-                    </div>
-                  `
-                : nothing
-            }
             <footer class="composer-actions">
               <span class="community-draft-status">
                 ${
@@ -3915,27 +3923,6 @@ export class CommunityWorkspace extends LitElement {
     return html`
       <section class="page community-post-page">
         ${this.renderMutationProgress()}
-        ${
-          this.error
-            ? html`
-                <div class="inline-message error" role="alert">${this.error}</div>
-              `
-            : nothing
-        }
-        ${
-          this.message
-            ? html`
-                <div class="inline-message" role="status">${this.message}</div>
-              `
-            : nothing
-        }
-        ${
-          this.toast
-            ? html`
-                <div class="community-undo" role="status">${this.toast.text}</div>
-              `
-            : nothing
-        }
         <article class=${`community-post-layout ${images.length ? "has-media" : ""}`}>
           ${
             images.length
@@ -4479,13 +4466,6 @@ export class CommunityWorkspace extends LitElement {
                     ></md-outlined-text-field>
                   `
             }
-            ${
-              this.error
-                ? html`
-                    <div class="inline-message error">${this.error}</div>
-                  `
-                : nothing
-            }
             <footer>
               <button class="button button--text" type="button" @click=${() => (this.dialog = null)}>
                 ${this.label("cancel", "Cancel")}
@@ -4551,15 +4531,6 @@ export class CommunityWorkspace extends LitElement {
     return html`
       <section class="page page--compact community-user-page">
         ${this.renderMutationProgress()}
-        ${
-          this.error
-            ? html`
-                <div class="inline-message error" role="alert">
-                  ${this.error}
-                </div>
-              `
-            : nothing
-        }
         <header class="surface surface--tonal community-user-hero">
           <div class="community-avatar">
             ${
@@ -5537,45 +5508,6 @@ export class CommunityWorkspace extends LitElement {
     return html`
       <section class="community-page page">
         ${this.renderMutationProgress()}
-        ${
-          this.toast
-            ? html`
-                <div class="community-undo" role="status">
-                  <span>${this.toast.text}</span>
-                  ${
-                    this.toast.undo
-                      ? html`
-                          <button
-                            class="button button--text"
-                            type="button"
-                            @click=${this.toast.undo}
-                          >
-                            ${this.label("undo", "Undo")}
-                          </button>
-                        `
-                      : nothing
-                  }
-                  <button
-                    class="icon-button icon-button--small"
-                    type="button"
-                    aria-label=${this.label("close", "Close")}
-                    @click=${() => (this.toast = null)}
-                  >
-                    ${icon("close", 18)}
-                  </button>
-                </div>
-              `
-            : nothing
-        }
-        ${
-          this.error && this.phase !== "error" && !["feeds", "mine", "bookmarks", "forums", "notifications", "activity", "tags"].includes(this.mode)
-            ? html`
-                <div class="inline-message error" role="alert">
-                  ${this.error}
-                </div>
-              `
-            : nothing
-        }
         ${this.mode === "feeds" && this.phase === "ready" ? this.renderForumNav() : nothing}
         ${this.currentForum || this.forumSlug || this.addressesForumPage() ? this.renderForumHeader() : nothing}
         ${this.renderFilterSummary()} ${this.renderPhase()}
@@ -6291,7 +6223,6 @@ export class CommunityWorkspace extends LitElement {
             void this.load(false);
           },
         })}
-        ${this.facetsError ? html`<div class="inline-message error" role="alert"><span>${this.facetsError}</span><button class="button button--text" type="button" @click=${() => this.loadTagFacets()}>${this.label("retry", "Retry")}</button></div>` : nothing}
         ${this.facetsLoading && !this.tagFacets.length ? loadingState(this.label("loading", "Loading"), { local: true }) : nothing}
         ${groups.map((group) => {
           const tags = this.tagFacets.filter((tag) => (tag.groupId || "") === group.id);

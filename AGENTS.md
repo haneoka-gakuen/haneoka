@@ -82,7 +82,8 @@ Every browsable set of things is a collection with canonical entity pages.
 - Nothing appears or disappears in a way that moves content the reader is
   looking at. Selection counts, applied filters, save state and similar
   status go in the app bar, a breadcrumb, a chip already in place, or a
-  snackbar.
+  snackbar (`snackbar()` in `src/lib/snackbar.ts`). No banner, inline
+  message or field note that appears and pushes content down.
 - Confirmations are dialogs (`<dialog class="dialog">` with `modal()`),
   not blocks inserted above the content.
 - Validation: mark the field with an outline once the reader tries to

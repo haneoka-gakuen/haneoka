@@ -44,10 +44,22 @@ function bulk(host: TeamBuilder, label: string, changes: { key: string; value: B
   const previous = changes.map(({ key }) => ({ key, value: (host.snapshot!.entries[key]?.v ?? null) as BoxValue }));
   host.write(changes);
   host.notice = label;
-  undoStack = previous;
+  undo = { notice: label, changes: previous };
   host.requestUpdate();
 }
-let undoStack: { key: string; value: BoxValue }[] | null = null;
+/** The last bulk edit's previous values, offered while its snackbar shows. */
+let undo: { notice: string; changes: { key: string; value: BoxValue }[] } | null = null;
+
+export function renderUndoAction(host: TeamBuilder) {
+  if (!undo || undo.notice !== host.notice) return nothing;
+  const changes = undo.changes;
+  return html`<button class="button button--text" type="button" @click=${() => {
+    host.write(changes);
+    undo = null;
+    host.notice = "";
+    host.requestUpdate();
+  }}>${host.t("undo", "Undo")}</button>`;
+}
 
 function maxChanges(host: TeamBuilder, row: Row): { key: string; value: BoxValue }[] {
   const catalog = host.catalog!;
@@ -177,10 +189,6 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openScreenshots()}>${icon("photo_camera", 18)}${host.t("importScreens", "Screenshots")}</button>
           <button class="button button--text button--small" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
         </div>
-        ${host.notice && undoStack
-          ? html`<div class="banner tb-undo" role="status"><span>${host.notice}</span><div class="banner__actions">
-              <button class="button button--text" type="button" @click=${() => { host.write(undoStack ?? []); undoStack = null; host.notice = ""; host.requestUpdate(); }}>${host.t("undo", "Undo")}</button></div></div>`
-          : nothing}
       </div>
       ${rows.length
         ? html`<div class=${`collection collection--${f.kind === "members" ? "member" : "support"} tb-grid`}>${rows.map((row) => renderCard(host, row))}</div>`

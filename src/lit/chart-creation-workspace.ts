@@ -1,3 +1,4 @@
+import { snackbar } from "../lib/snackbar";
 import { LitElement, html, nothing } from "lit";
 import {
   DEFAULT_RENDER_SETTINGS,
@@ -465,7 +466,12 @@ export class ChartCreationWorkspace extends LitElement {
     void this.store.close().catch(() => {});
     super.disconnectedCallback();
   }
+  private statusShown = "";
   protected updated() {
+    if (this.status !== this.statusShown) {
+      this.statusShown = this.status;
+      if (this.status) snackbar(this.status);
+    }
     this.paint();
     setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
     const panel = this.narrow ? this.querySelector<HTMLElement>(".chart-studio__panel:not([hidden])") : null;
@@ -3259,13 +3265,7 @@ export class ChartCreationWorkspace extends LitElement {
               `
             : nothing
         }
-          ${
-        this.status
-          ? html`
-              <p role="status">${this.status}</p>
-            `
-          : nothing
-      }
+
         </div>
         <div class="chart-studio__body">
           ${

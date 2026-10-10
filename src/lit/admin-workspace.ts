@@ -24,6 +24,7 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { segmented } from "./ui/controls";
 import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsOptions } from "./admin-analytics";
 import "./community-sticker";
+import { snackbar } from "../lib/snackbar";
 
 type Value = Record<string, unknown>;
 const sections = ["overview", "users", "posts", "forums", "reports", "appeals", "operations"] as const;
@@ -245,7 +246,12 @@ export class AdminWorkspace extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private announced = { error: "" };
   updated() {
+    if (this.error !== this.announced.error) {
+      this.announced.error = this.error;
+      if (this.error) snackbar(this.error, { error: true, action: { label: this.label("retry", "Retry"), run: () => void this.refresh() } });
+    }
     if (this.selectedUserId && this.section !== "users") this.closeUserDetails();
     // The dialog is modal: focus stays inside it and Escape closes it.
     this.syncAnalytics();
@@ -2203,18 +2209,6 @@ export class AdminWorkspace extends LitElement {
               ${icon("close", 24)}
             </button>
           </header>
-          ${
-            this.error
-              ? html`
-                  <div class="inline-message error" role="alert">
-                    ${this.error}
-                    <button class="button button--text" @click=${() => this.refresh()}>
-                      ${this.label("retry", "Retry")}
-                    </button>
-                  </div>
-                `
-              : nothing
-          }
           ${this.userLoading ? loadingState(this.label("loading", "Loading")) : nothing}
           ${
             this.userDetailError
@@ -3074,13 +3068,6 @@ export class AdminWorkspace extends LitElement {
                     </div>
                   </header>
                   ${
-                  this.error
-                    ? html`
-                        <p class="inline-message error" role="alert">${this.error}</p>
-                      `
-                    : nothing
-                }
-                  ${
                   this.forumConflict
                     ? html`
                         <button
@@ -3269,13 +3256,6 @@ export class AdminWorkspace extends LitElement {
           </h2>
         </header>
         ${
-          this.error
-            ? html`
-                <p class="inline-message error" role="alert">${this.error}</p>
-              `
-            : nothing
-        }
-        ${
           this.groupConflict
             ? html`
                 <button
@@ -3423,13 +3403,6 @@ export class AdminWorkspace extends LitElement {
             ?disabled=${!!this.busy}
             @input=${(event: Event) => (this.moveReason = String((event.target as HTMLElement & { value?: string }).value || ""))}
           ></md-outlined-text-field>
-          ${
-            this.error
-              ? html`
-                  <p class="inline-message error" role="alert">${this.error}</p>
-                `
-              : nothing
-          }
           </div>
           <footer class="admin-forum-actions">
             <button class="button button--text" type="button" @click=${() => this.closeMovePost()}>
@@ -3501,13 +3474,6 @@ export class AdminWorkspace extends LitElement {
                       ${this.label("retry", "Retry")}
                     </button>
                   </div>
-                `
-              : nothing
-          }
-          ${
-            this.error
-              ? html`
-                  <div class="inline-message error" role="alert">${this.error}</div>
                 `
               : nothing
           }
@@ -4100,13 +4066,6 @@ export class AdminWorkspace extends LitElement {
                                         ${this.renderUserFilters()}${this.renderGeoFilterSummary()}
                                       `
                                     : nothing
-                              }
-                              ${
-                                this.error
-                                  ? html`
-                                      <div class="inline-message error" role="alert">${this.error}</div>
-                                    `
-                                  : nothing
                               }
                               ${
                                 this.section === "posts"

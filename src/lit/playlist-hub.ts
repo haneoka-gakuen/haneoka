@@ -43,6 +43,7 @@ import {
   type TrackRef,
 } from "../lib/playlists/library";
 import "../styles/playlists.css";
+import { snackbar } from "../lib/snackbar";
 
 type RecordValue = Record<string, unknown>;
 type View = "hub" | "detail" | "edit";
@@ -103,8 +104,6 @@ export class PlaylistHub extends LitElement {
   private pickerBand = "";
   private addTarget: LibrarySong | null = null;
   private deleteOpen = false;
-  private toast = "";
-  private toastTimer = 0;
   private nowPlaying = "";
   private dragIndex = -1;
   private sequence = 0;
@@ -143,7 +142,6 @@ export class PlaylistHub extends LitElement {
     clearAppBarActions(OWNER);
     clearAppBarSearch(OWNER);
     this.restoreShell();
-    window.clearTimeout(this.toastTimer);
   }
 
   private onAudioState = (event: Event) => {
@@ -393,6 +391,8 @@ export class PlaylistHub extends LitElement {
       const [library, lists] = await Promise.all([loadSongLibrary(currentReleaseServer()), game]);
       this.library = library;
       this.official = officialPlaylists(library, lists);
+      if (library.partial.length) snackbar(this.t("partial", "Some songs could not be loaded; the lists show what is available."));
+      else if (this.gameError && !lists.length) snackbar(`${this.t("gameUnavailable", "In-game playlists are unavailable")} · ${this.gameError}`);
     } catch (error) {
       this.loadError = error instanceof Error ? error.message : String(error);
     }
@@ -526,13 +526,7 @@ export class PlaylistHub extends LitElement {
   /* ---------- Community actions ---------- */
 
   private notify(message: string) {
-    this.toast = message;
-    window.clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => {
-      this.toast = "";
-      this.requestUpdate();
-    }, 3200);
-    this.requestUpdate();
+    snackbar(message);
   }
 
   private async share(playlist: Playlist) {
@@ -1003,15 +997,6 @@ export class PlaylistHub extends LitElement {
       </li>
     `;
     return html`
-      ${
-        this.library.partial.length
-          ? html`
-              <p class="playlist-banner" role="status">
-                ${icon("info", 18)}${this.t("partial", "Some songs could not be loaded; the lists show what is available.")}
-              </p>
-            `
-          : nothing
-      }
       ${this.shelf(this.t("featured", "haneoka picks"), featured, { variant: "feature", id: "featured" })}
       ${
         this.signedIn
@@ -1045,16 +1030,6 @@ export class PlaylistHub extends LitElement {
             : nothing
       }
       ${this.shelf(this.t("stageChallenges", "Stage Challenge"), stage, { id: "stage" })}
-      ${
-        this.gameError && !stage.length
-          ? html`
-              <p class="playlist-banner" role="status">
-                ${icon("cloud_off", 18)}${this.t("gameUnavailable", "In-game playlists are unavailable")} ·
-                ${this.gameError}
-              </p>
-            `
-          : nothing
-      }
       ${this.shelf(this.t("inGame", "In-game"), other, { id: "other" })}
       <section class="playlist-community" aria-labelledby="playlist-community-heading">
         <header class="playlist-section__head">
@@ -1304,13 +1279,6 @@ export class PlaylistHub extends LitElement {
             </button>
           </div>
         </header>
-        ${
-          this.detailError
-            ? html`
-                <p class="playlist-banner" role="alert">${icon("error", 18)}${this.detailError}</p>
-              `
-            : nothing
-        }
         <section class="playlist-songlist" aria-label=${this.t("tracks", "Songs")}>
           <header class="playlist-songlist__bar">
             <button
@@ -1443,13 +1411,6 @@ export class PlaylistHub extends LitElement {
           void this.save();
         }}
       >
-        ${
-          this.editorError
-            ? html`
-                <p class="playlist-banner" role="alert">${icon("error", 18)}${this.editorError}</p>
-              `
-            : nothing
-        }
         <section class="playlist-editor__head">
           <div class="playlist-editor__cover">
             ${this.cover(preview, "hero")}
@@ -1936,17 +1897,16 @@ export class PlaylistHub extends LitElement {
     return html`
       <section class=${`page playlist-page playlist-page--${this.view}`}>${body}</section>
       ${this.addTarget ? this.renderAddDialog() : nothing}
-      ${
-        this.toast
-          ? html`
-              <div class="snackbar" role="status">${this.toast}</div>
-            `
-          : nothing
-      }
     `;
   }
 
+  private shownErrors = ["", ""];
   updated() {
+    [this.detailError, this.editorError].forEach((error, index) => {
+      if (error === this.shownErrors[index]) return;
+      this.shownErrors[index] = error;
+      if (error) snackbar(error, { error: true });
+    });
     if (this.view === "detail") this.observeHero();
     else this.heroObserver?.disconnect();
     if (this.view !== "hub") this.renderBarActions();

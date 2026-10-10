@@ -9,6 +9,7 @@ import { fetchJson, JsonResponseError, preferredLocale } from "./shared/catalog"
 import { RequestScope } from "../lib/request-scope";
 import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
+import { snackbar } from "../lib/snackbar";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
   appeal: "community.page.appeal",
@@ -140,7 +141,16 @@ export class AccountWorkspace extends LitElement {
     super.disconnectedCallback();
   }
 
+  private announced = { error: "", message: "" };
   protected updated() {
+    if (this.error !== this.announced.error) {
+      this.announced.error = this.error;
+      if (this.error) snackbar(this.error, { error: true });
+    }
+    if (this.message !== this.announced.message) {
+      this.announced.message = this.message;
+      if (this.message) snackbar(this.message);
+    }
     void this.mountTurnstile();
   }
 
@@ -729,29 +739,7 @@ export class AccountWorkspace extends LitElement {
       `;
     return html`
       <section class="page page--compact account-page">
-        ${
-          this.error
-            ? html`
-                <div class="inline-message error" role="alert">
-                  ${this.error}
-                  <button class="icon-button" aria-label=${this.label("close", "Close")} @click=${this.clearMessages}>
-                    ${icon("close", 18)}
-                  </button>
-                </div>
-              `
-            : nothing
-        }${
-          this.message
-            ? html`
-                <div class="inline-message" role="status">
-                  ${this.message}
-                  <button class="icon-button" aria-label=${this.label("close", "Close")} @click=${this.clearMessages}>
-                    ${icon("close", 18)}
-                  </button>
-                </div>
-              `
-            : nothing
-        }${
+${
           this.phase === "error"
             ? html`
                 <section class="account-state surface surface--outlined">

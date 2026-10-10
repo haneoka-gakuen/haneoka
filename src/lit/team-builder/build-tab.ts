@@ -641,16 +641,9 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
                     ?disabled=${!!missing}
                     @click=${() => void host.run()}
                   >
-                    ${icon("search", 20)}${host.t("findTeams", "Find teams")}
+                    ${missing ? html`<span class="tb-run__reason">${missing}</span>` : html`${icon("search", 20)}${host.t("findTeams", "Find teams")}`}
                   </button>
                 `
-          }
-          ${
-            missing
-              ? html`
-                  <p class="field-note">${missing}</p>
-                `
-              : nothing
           }
         </div>
       </div>

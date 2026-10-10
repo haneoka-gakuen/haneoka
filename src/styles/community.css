@@ -1112,20 +1112,6 @@
     color: var(--md-sys-color-on-surface-variant);
     font-size: var(--md-sys-typescale-body-small-size);
   }
-  .community-undo {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    width: fit-content;
-    max-width: 100%;
-    padding: 8px 16px;
-    border-radius: var(--md-sys-shape-corner-small);
-    color: var(--md-sys-color-inverse-on-surface);
-    background: var(--md-sys-color-inverse-surface);
-  }
-  .community-undo .button {
-    color: var(--md-sys-color-inverse-primary);
-  }
   @media (min-width: 700px) {
     .community-masonry,
     .community-masonry--profile {
