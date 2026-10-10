@@ -38,6 +38,7 @@ from build.story_birthdays import enrich_story_birthdays
 from build.runtime_texture_projection import RuntimeTextureProjection
 from build.game_systems import build_game_systems
 from build.jp_shop import bind_jp_shop_metadata
+from build.studio import build_studio
 from build.tgw_card import build_tgw_card
 from build.live2d_preview import PREVIEW_SCHEMA as LIVE2D_PREVIEW_SCHEMA
 from build.spine_catalog import build_spine_catalog
@@ -7719,6 +7720,7 @@ def _resource_count(name: str, document: Any) -> int:
         "stickers": "entries",
         "backgrounds": "entries",
         "tgw-card": "entries",
+        "studio": "units",
     }.get(name)
     if collection_key and isinstance(document, dict):
         value = document.get(collection_key, {})
@@ -7843,6 +7845,7 @@ def build_api(
     documents["stickers"] = project("stickers", build_stickers, data, _timestamp)
     documents["backgrounds"] = project("backgrounds", build_backgrounds, data)
     documents["tgw-card"] = project("tgw-card", build_tgw_card, data, documents, RESOURCE_TYPES)
+    documents["studio"] = project("studio", build_studio, data, documents, RESOURCE_TYPES)
     if is_test_server(data.server):
         documents = {name: documents.get(name, {}) for name in CATALOG_RESOURCES}
     if tuple(documents) != CATALOG_RESOURCES:

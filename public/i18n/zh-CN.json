@@ -926,6 +926,26 @@
       "noBenefits": "本等级无特典",
       "noRewards": "本等级无奖励"
     },
+    "studio": {
+      "title": "录音室练习",
+      "level": "练习Lv",
+      "maxLevel": "最大练习Lv",
+      "requiredExp": "所需练习EXP",
+      "bandRank": "乐队等级",
+      "practiceTime": "练习时间",
+      "timeLimit": "练习时间上限",
+      "coin": "金币",
+      "memberExp": "成员EXP",
+      "supportExp": "留影EXP",
+      "practiceExp": "练习EXP",
+      "lotSlots": "道具抽选栏",
+      "hourlyRewards": "每小时的奖励",
+      "item": "道具",
+      "rate": "概率",
+      "expFactor": "EXP倍率",
+      "nextLevel": "距下一级",
+      "allLevels": "全部练习Lv"
+    },
     "systems": {
       "common": {
         "ongoing": "正在进行",

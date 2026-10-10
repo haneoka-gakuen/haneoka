@@ -926,6 +926,26 @@
       "noBenefits": "No benefits at this rank",
       "noRewards": "No rewards at this rank"
     },
+    "studio": {
+      "title": "Studio Practice",
+      "level": "Practice Lv.",
+      "maxLevel": "Max Practice Lv.",
+      "requiredExp": "Required Practice EXP",
+      "bandRank": "Band Rank",
+      "practiceTime": "Practice Time",
+      "timeLimit": "Practice Time Limit",
+      "coin": "Coin",
+      "memberExp": "Member EXP",
+      "supportExp": "Snapshot EXP",
+      "practiceExp": "Practice EXP",
+      "lotSlots": "Item Lottery Slot",
+      "hourlyRewards": "Hourly Rewards",
+      "item": "Item",
+      "rate": "Rate",
+      "expFactor": "EXP Multiplier",
+      "nextLevel": "To next Lv.",
+      "allLevels": "All Practice Lv."
+    },
     "systems": {
       "common": {
         "ongoing": "Ongoing",

@@ -926,6 +926,26 @@
       "noBenefits": "このランクの特典はありません",
       "noRewards": "このランクの報酬はありません"
     },
+    "studio": {
+      "title": "スタジオ練習",
+      "level": "練習Lv",
+      "maxLevel": "最大練習Lv",
+      "requiredExp": "必要練習EXP",
+      "bandRank": "バンドランク",
+      "practiceTime": "練習時間",
+      "timeLimit": "練習時間上限",
+      "coin": "コイン",
+      "memberExp": "メンバーEXP",
+      "supportExp": "スナップEXP",
+      "practiceExp": "練習EXP",
+      "lotSlots": "アイテム抽選枠",
+      "hourlyRewards": "1時間あたりの報酬",
+      "item": "アイテム",
+      "rate": "確率",
+      "expFactor": "EXP倍率",
+      "nextLevel": "次のLvまで",
+      "allLevels": "全練習Lv"
+    },
     "systems": {
       "common": {
         "ongoing": "開催中",

@@ -74,6 +74,7 @@ CATALOG_RESOURCES = (
     "stickers",
     "backgrounds",
     "tgw-card",
+    "studio",
 )
 
 # Storage manifests created before additive feature read models shipped do not
@@ -82,7 +83,7 @@ CATALOG_RESOURCES = (
 CATALOG_OPTIONAL_RESOURCES = (
     "story-assets", "anon-tokyo", "spine", "events", "real-lives", "home-banners", "gacha",
     "login-campaigns", "shop", "exchange", "circle", "challenge",
-    "missions", "passes", "stickers", "backgrounds", "tgw-card",
+    "missions", "passes", "stickers", "backgrounds", "tgw-card", "studio",
 )
 CATALOG_REQUIRED_RESOURCES = tuple(
     resource for resource in CATALOG_RESOURCES if resource not in CATALOG_OPTIONAL_RESOURCES

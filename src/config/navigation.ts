@@ -117,6 +117,7 @@ const sections: NavSection[] = [
       { route: "/catalog/missions", icon: "fact_check", label: "navigation.systemNavMissions" },
       { route: "/catalog/passes", icon: "workspace_premium", label: "navigation.systemNavPasses" },
       { route: "/catalog/tgw-card", icon: "credit_card", label: "catalog.tgwCard.card" },
+      { route: "/catalog/studio", icon: "piano", label: "catalog.studio.title" },
       { route: "/catalog/shop", icon: "storefront", label: "navigation.shop" },
       { route: "/catalog/exchange", icon: "swap_horiz", label: "navigation.exchange" },
       { route: "/catalog/stamps", icon: "emoji_emotions", label: "navigation.stamps" },

@@ -1,0 +1,23 @@
+---
+import RouteDocument from "../../../../components/RouteDocument.astro";
+import { findRoute, titleOf } from "../../../../config/routes";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-server";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
+
+export async function getStaticPaths() {
+  return (await staticCatalogPageServers()).flatMap((server) => LOCALES.map((locale) => ({ params: { server, locale } })));
+}
+
+const { server, locale } = Astro.params as { server: ReleaseServer; locale: Locale };
+const entry = findRoute("/catalog/studio");
+if (!entry) throw new Error("Missing route definition for /catalog/studio");
+---
+
+<RouteDocument
+  locale={locale}
+  entry={entry}
+  title={titleOf(entry, locale)}
+  server={server}
+  canonicalRoute={`/${server}/${locale}/studio/`}
+/>

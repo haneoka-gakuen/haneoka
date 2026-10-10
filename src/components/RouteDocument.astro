@@ -17,6 +17,7 @@ import { resourceCollectionHref } from "../lib/resource-route";
 import type { ReleaseServer } from "../lib/release-server";
 import "../lit/catalog-screen";
 import "../lit/tgw-card-workspace";
+import "../lit/studio-workspace";
 import "../lit/mission-workspace";
 import "../styles/catalog.css";
 import "../styles/about.css";
@@ -77,6 +78,7 @@ const canonicalRoute = explicitCanonicalRoute ?? (server ? resourceCollectionHre
       <catalog-screen config={screenConfig}></catalog-screen>
     )}
     {entry.kind === "tgw-card" && <tgw-card-workspace locale={locale}></tgw-card-workspace>}
+    {entry.kind === "studio" && <studio-workspace locale={locale}></studio-workspace>}
     {entry.kind === "missions" && <mission-workspace locale={locale}></mission-workspace>}
     {entry.kind === "event-tracker" && <EventTrackerPage locale={locale} server={server} />}
   </AppShell>
@@ -84,5 +86,6 @@ const canonicalRoute = explicitCanonicalRoute ?? (server ? resourceCollectionHre
 <script>
   import "../lit/catalog-screen";
   import "../lit/tgw-card-workspace";
+  import "../lit/studio-workspace";
   import "../lit/mission-workspace";
 </script>

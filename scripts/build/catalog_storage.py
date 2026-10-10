@@ -660,6 +660,7 @@ RESOURCE_SPECS: dict[str, ResourceSpec] = {
         projection=ProjectionSpec(include=("id", "title", "rank", "pointsRequired", "image")),
         dependencies=("cards", "items", "stamps", "support-cards"),
     ),
+    "studio": ResourceSpec(dependencies=("bands", "items")),
 }
 
 

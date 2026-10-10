@@ -1,0 +1,94 @@
+/* Studio practice: settings beside the hourly rewards and lottery pool. */
+@layer pages {
+  .studio {
+    display: grid;
+    width: min(100%, var(--content-max));
+    margin-inline: auto;
+    align-content: start;
+    padding: 8px var(--md-comp-page-inline-space) 24px;
+  }
+  .studio-layout {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    grid-template-areas: "results settings";
+    align-items: start;
+    gap: var(--md-sys-spacing-5);
+  }
+  .studio-settings {
+    position: sticky;
+    top: 8px;
+    grid-area: settings;
+    padding: var(--md-sys-spacing-4);
+  }
+  .studio-results {
+    grid-area: results;
+    min-width: 0;
+  }
+  .studio-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+    gap: var(--md-sys-spacing-2);
+  }
+  .studio-metric {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-areas:
+      "media label"
+      "value value"
+      "session session";
+    align-items: center;
+    column-gap: var(--md-sys-spacing-2);
+    padding: 12px 16px 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+  }
+  .studio-metric__media {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    grid-area: media;
+    place-items: center;
+    color: var(--md-sys-color-primary);
+  }
+  .studio-metric__media > img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .studio-metric__label {
+    grid-area: label;
+    min-width: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .studio-metric__value {
+    grid-area: value;
+    margin-top: var(--md-sys-spacing-2);
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-emphasized-display-weight, 600) var(--md-sys-typescale-headline-medium-size) /
+      var(--md-sys-typescale-headline-medium-line-height) var(--app-font);
+  }
+  .studio-metric__session {
+    grid-area: session;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .studio-drops > .collection-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+    column-gap: var(--md-sys-spacing-2);
+  }
+  @media (max-width: 839px) {
+    .studio-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "settings" "results";
+    }
+    .studio-settings {
+      position: static;
+    }
+  }
+}

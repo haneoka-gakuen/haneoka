@@ -926,6 +926,26 @@
       "noBenefits": "이 랭크의 혜택이 없습니다",
       "noRewards": "이 랭크의 보상이 없습니다"
     },
+    "studio": {
+      "title": "스튜디오 연습",
+      "level": "연습Lv",
+      "maxLevel": "최대 연습Lv",
+      "requiredExp": "필요 연습 EXP",
+      "bandRank": "밴드 랭크",
+      "practiceTime": "연습 시간",
+      "timeLimit": "연습 시간 상한",
+      "coin": "코인",
+      "memberExp": "멤버 EXP",
+      "supportExp": "스냅 EXP",
+      "practiceExp": "연습 EXP",
+      "lotSlots": "아이템 추첨 슬롯",
+      "hourlyRewards": "1시간당 보상",
+      "item": "아이템",
+      "rate": "확률",
+      "expFactor": "EXP 배율",
+      "nextLevel": "다음 Lv까지",
+      "allLevels": "전체 연습Lv"
+    },
     "systems": {
       "common": {
         "ongoing": "진행 중",

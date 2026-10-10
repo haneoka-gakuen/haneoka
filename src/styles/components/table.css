@@ -73,6 +73,16 @@
   width: 1%;
   white-space: nowrap;
 }
+/* Number grids (level tables, rates): one line per row, a narrow key column. */
+.data-table--numeric tbody :where(th, td) {
+  height: 48px;
+  padding-block: 8px;
+}
+.data-table.data-table--numeric :where(th, td).is-sticky {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .data-table th > .table-sort {
   display: flex;
   min-height: 32px;

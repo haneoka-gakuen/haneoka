@@ -82,15 +82,21 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
     </ul>
   `;
 }
-export function collectionTable(label: string, headers: readonly unknown[], rows: readonly (readonly unknown[])[]) {
+export function collectionTable(
+  label: string,
+  headers: readonly unknown[],
+  rows: readonly (readonly unknown[])[],
+  options: { numeric?: boolean } = {},
+) {
+  const numeric = options.numeric ? "is-numeric" : "";
   return html`
     <div class="table-scroll" role="region" aria-label=${label} tabindex="0" data-scroll-region>
-      <table class="data-table">
+      <table class=${options.numeric ? "data-table data-table--numeric" : "data-table"}>
         <thead>
           <tr>
             ${headers.map(
               (header, index) => html`
-                <th scope="col" class=${index === 0 ? "is-sticky" : ""}>${header}</th>
+                <th scope="col" class=${index === 0 ? "is-sticky" : numeric}>${header}</th>
               `,
             )}
           </tr>
@@ -105,7 +111,7 @@ export function collectionTable(label: string, headers: readonly unknown[], rows
                         <th scope="row" class="is-sticky">${cell}</th>
                       `
                     : html`
-                        <td>${cell}</td>
+                        <td class=${numeric}>${cell}</td>
                       `,
                 )}
               </tr>

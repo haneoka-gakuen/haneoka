@@ -926,6 +926,26 @@
       "noBenefits": "本等級無特典",
       "noRewards": "本等級無獎勵"
     },
+    "studio": {
+      "title": "錄音室練習",
+      "level": "練習Lv",
+      "maxLevel": "最大練習Lv",
+      "requiredExp": "所需練習EXP",
+      "bandRank": "樂團等級",
+      "practiceTime": "練習時間",
+      "timeLimit": "練習時間上限",
+      "coin": "硬幣",
+      "memberExp": "團員EXP",
+      "supportExp": "快照EXP",
+      "practiceExp": "練習EXP",
+      "lotSlots": "道具抽選欄",
+      "hourlyRewards": "每小時平均報酬",
+      "item": "道具",
+      "rate": "機率",
+      "expFactor": "EXP倍率",
+      "nextLevel": "距下一級",
+      "allLevels": "全部練習Lv"
+    },
     "systems": {
       "common": {
         "ongoing": "進行中",

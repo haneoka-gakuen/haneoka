@@ -2,7 +2,7 @@ import type { Locale } from "../i18n/locales";
 import { group, t } from "../i18n/messages";
 
 export type PageKind =
-  "home" | "index" | "catalog" | "tgw-card" | "missions" | "event-tracker" | "song-puzzle" | "stamp-maker" | "legal" | "notice";
+  "home" | "index" | "catalog" | "tgw-card" | "studio" | "missions" | "event-tracker" | "song-puzzle" | "stamp-maker" | "legal" | "notice";
 export interface RouteDefinition {
   route: string;
   kind: PageKind;
@@ -91,6 +91,7 @@ export const ROUTES: RouteDefinition[] = [
     }),
   ),
   { route: "/catalog/tgw-card", kind: "tgw-card", key: "tgw-card", titleKey: "catalog.tgwCard.card", resource: "tgw-card" },
+  { route: "/catalog/studio", kind: "studio", key: "studio", titleKey: "catalog.studio.title", resource: "studio" },
   {
     route: "/catalog/missions",
     kind: "missions",
