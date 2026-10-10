@@ -12,7 +12,8 @@ import {
   type BoxParseResult,
 } from "./types";
 function list(value: unknown): unknown[] {
-  if (!Array.isArray(value)) return [];
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new BoxImportError("box_invalid_json");
   if (value.length > BOX_LIMITS.rowsPerList) throw new BoxImportError("box_row_budget");
   return value;
 }
@@ -20,6 +21,12 @@ const cardId = (value: unknown) => {
   const id = integer(value);
   return id !== null && id > 0 && id <= 0x7fffffff ? id : null;
 };
+function supplied<T>(value: unknown, parse: (value: unknown) => T | null): T | null {
+  if (value === undefined || value === null) return null;
+  const result = parse(value);
+  if (result === null) throw new BoxImportError("box_invalid_json");
+  return result;
+}
 function project(value: unknown, format: BoxCandidate["format"]): BoxCandidate | null {
   const root = object(value);
   if (!root) return null;
@@ -44,38 +51,41 @@ function project(value: unknown, format: BoxCandidate["format"]): BoxCandidate |
             _performanceSkillLevel: value[5],
           }
         : object(value);
-    if (!row) continue;
+    if (!row) throw new BoxImportError("box_invalid_json");
     const id = cardId(row._masterId);
-    if (id === null) continue;
+    if (id === null) throw new BoxImportError("box_invalid_json");
     members.push({
       cardId: id,
-      exp: decimal(row._exp),
-      awakeCount: integer(row._awakeCount),
-      rank: integer(row._rank),
-      liveSkillLevel: integer(row._liveSkillLevel),
-      performanceSkillLevel: integer(row._performanceSkillLevel),
+      exp: supplied(row._exp, decimal),
+      awakeCount: supplied(row._awakeCount, integer),
+      rank: supplied(row._rank, integer),
+      liveSkillLevel: supplied(row._liveSkillLevel, integer),
+      performanceSkillLevel: supplied(row._performanceSkillLevel, integer),
     });
   }
   for (const value of list(compact ? player.s : player._supportCards)) {
     const row: Record<string, unknown> | null =
       compact && Array.isArray(value) ? { _masterId: value[0], _exp: value[1], _rank: value[2] } : object(value);
-    if (!row) continue;
+    if (!row) throw new BoxImportError("box_invalid_json");
     const id = cardId(row._masterId);
-    if (id !== null) snapshots.push({ cardId: id, exp: decimal(row._exp), rank: integer(row._rank) });
+    if (id === null) throw new BoxImportError("box_invalid_json");
+    snapshots.push({ cardId: id, exp: supplied(row._exp, decimal), rank: supplied(row._rank, integer) });
   }
   for (const value of list(compact ? player.c : player._characters)) {
     const row: Record<string, unknown> | null =
       compact && Array.isArray(value) ? { _masterId: value[0], _exp: value[1] } : object(value);
-    if (!row) continue;
+    if (!row) throw new BoxImportError("box_invalid_json");
     const id = cardId(row._masterId);
-    if (id !== null) characters.push({ id, exp: decimal(row._exp) });
+    if (id === null) throw new BoxImportError("box_invalid_json");
+    characters.push({ id, exp: supplied(row._exp, decimal) });
   }
   for (const value of list(compact ? player.b : player._bandItems)) {
     const row: Record<string, unknown> | null =
       compact && Array.isArray(value) ? { _masterId: value[0], _level: value[1] } : object(value);
-    if (!row) continue;
+    if (!row) throw new BoxImportError("box_invalid_json");
     const id = cardId(row._masterId ?? row._id);
-    if (id !== null) bandItems.push({ id, level: integer(row._level) });
+    if (id === null) throw new BoxImportError("box_invalid_json");
+    bandItems.push({ id, level: supplied(row._level, integer) });
   }
   // No _name/_accountid/password/token/player id/duplicate counts survive this boundary.
   return { id: crypto.randomUUID(), format: compact ? "onpkg1" : format, members, snapshots, characters, bandItems };

@@ -11,14 +11,13 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { sectionHeading } from "./catalog";
 import { renderResults } from "./results";
+import { activityDetails } from "./activity-details";
 import type { BuildSettings, GoalKind } from "./types";
 import type { TeamBuilder } from "../team-builder";
 
 const GOALS = [
   { id: "score", icon: "music_note" },
   { id: "gekiso", icon: "local_fire_department" },
-  { id: "event", icon: "emoji_events" },
-  { id: "plan", icon: "cycle" },
   { id: "power", icon: "bolt" },
   { id: "potential", icon: "auto_awesome" },
 ] as const;
@@ -277,70 +276,32 @@ function candidates(host: TeamBuilder): TemplateResult {
         ],
         onSelect: (scope) => set({ scope }),
       })}
-      ${
-        s.scope === "box"
-          ? html`
-              <div class="tb-field">
-                <span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
-                ${segmented({
-              label: host.t("unknownPolicy", "Growth not entered"),
-              value: s.unknownPolicy,
-              grow: false,
-              options: [
-                { value: "max", label: host.t("unknownMax", "Count as max") },
-                { value: "min", label: host.t("unknownMin", "Count as minimum") },
-              ],
-              onSelect: (unknownPolicy) => set({ unknownPolicy }),
-            })}
-              </div>
-            `
-          : nothing
-      }
-      <div class="tb-field">
-        <span class="tb-field__label">${host.common("catalog.fields.attribute", "Attribute")}</span>
-        <div class="cluster">
-          ${[1, 2, 3, 4, 5].map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: s.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(s.attributes, id) }) }))}
-        </div>
-      </div>
-      <div class="tb-field">
-        <span class="tb-field__label">${host.common("catalog.fields.band", "Band")}</span>
-        <div class="cluster">
-          ${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: s.bands.includes(id), onToggle: () => set({ bands: toggleIn(s.bands, id) }) }))}
-        </div>
-      </div>
-      <div class="tb-field">
-        <span class="tb-field__label">${host.t("minRarity", "Minimum rarity")}</span>
-        ${segmented({
-          label: host.t("minRarity", "Minimum rarity"),
-          value: String(s.minRarity),
-          grow: false,
-          options: [
-            { value: "0", label: host.common("common.states.all", "All") },
-            ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
-          ],
-          onSelect: (value) => set({ minRarity: Number(value) }),
-        })}
-      </div>
-      <md-outlined-select
-        label=${host.t("leader", "Leader")}
-        .value=${s.leader === null ? "" : String(s.leader)}
-        @change=${(e: Event) => {
-          const value = (e.target as HTMLInputElement).value;
-          set({ leader: value ? Number(value) : null });
-        }}
-      >
-        <md-select-option value="">
-          <div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div>
-        </md-select-option>
-        ${ownedMembers.map(
-          (id) => html`
-            <md-select-option value=${String(id)}>
-              <div slot="headline">
-                ${catalog.cardName("members", id)} · ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
-              </div>
-            </md-select-option>
-          `,
-        )}
+      ${s.scope === "box" ? html`${segmented({ label: host.t("importFlow.intent", "Calculation input"), value: s.inputIntent,
+        options: [{ value: "actual", label: host.t("importFlow.actual", "Real inventory") }, { value: "simulation", label: host.t("importFlow.simulation", "Simulation") }],
+        onSelect: inputIntent => set({ inputIntent }) })}
+        ${s.inputIntent === "actual" ? html`<label class="tb-check"><md-checkbox .checked=${s.knownOnly} @change=${(event: Event) => set({ knownOnly: (event.target as HTMLInputElement).checked })}></md-checkbox><span>${host.t("importFlow.knownOnly", "Use only complete cards for this calculation")}</span></label>
+          <button class="button button--text" @click=${() => host.completeInputs()}>${host.t("importFlow.complete", "Complete required information")}</button>` : nothing}` : nothing}
+      ${s.scope === "theoretical" || s.inputIntent === "simulation" ? html`<p class="tb-hint">${host.t("importFlow.assumptions", "Simulation uses the selected growth preset for unknown fields. Unentered account bonuses use the engine defaults; assumptions are not saved as real inventory.")}</p>` : nothing}
+      ${s.scope === "box" && s.inputIntent === "simulation"
+        ? html`<div class="tb-field"><span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
+            ${segmented({ label: host.t("unknownPolicy", "Growth not entered"), value: s.unknownPolicy, grow: false, options: [
+              { value: "max", label: host.t("unknownMax", "Count as max") },
+              { value: "min", label: host.t("unknownMin", "Count as minimum") },
+            ], onSelect: (unknownPolicy) => set({ unknownPolicy }) })}</div>`
+        : nothing}
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.attribute", "Attribute")}</span>
+        <div class="cluster">${[1, 2, 3, 4, 5].map((id) => filterChip({ label: catalog.attributeName(id), image: catalog.attributeIcon(id) || undefined, selected: s.attributes.includes(id), onToggle: () => set({ attributes: toggleIn(s.attributes, id) }) }))}</div></div>
+      <div class="tb-field"><span class="tb-field__label">${host.common("catalog.fields.band", "Band")}</span>
+        <div class="cluster">${bands.map((id) => filterChip({ label: catalog.bandName(id), image: catalog.bandIcon(id) || undefined, selected: s.bands.includes(id), onToggle: () => set({ bands: toggleIn(s.bands, id) }) }))}</div></div>
+      <div class="tb-field"><span class="tb-field__label">${host.t("minRarity", "Minimum rarity")}</span>
+        ${segmented({ label: host.t("minRarity", "Minimum rarity"), value: String(s.minRarity), grow: false, options: [
+          { value: "0", label: host.common("common.states.all", "All") },
+          ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
+        ], onSelect: (value) => set({ minRarity: Number(value) }) })}</div>
+      <md-outlined-select label=${host.t("leader", "Leader")} .value=${s.leader === null ? "" : String(s.leader)}
+        @change=${(e: Event) => { const value = (e.target as HTMLInputElement).value; set({ leader: value ? Number(value) : null }); }}>
+        <md-select-option value=""><div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div></md-select-option>
+        ${ownedMembers.map((id) => html`<md-select-option value=${String(id)}><div slot="headline">${catalog.cardName("members", id)} · ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}</div></md-select-option>`)}
       </md-outlined-select>
       <label class="tb-check">
         <md-checkbox
@@ -414,7 +375,7 @@ function candidates(host: TeamBuilder): TemplateResult {
   });
 }
 
-export function renderBuildTab(host: TeamBuilder): TemplateResult {
+export function renderBuildTab(host: TeamBuilder, showGoals = true): TemplateResult {
   const s = host.settings;
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
   const cards = host.engineCards();
@@ -436,6 +397,8 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
   return html`
     <div class="tb-build">
       <div class="tb-config stack">
+        ${s.goal === "event" || s.goal === "plan" ? activityDetails(host, s.goal) : nothing}
+        ${showGoals ? html`
         <section class="surface stack">
           ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
           <div
@@ -529,6 +492,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               : nothing
           }
         </section>
+        ` : nothing}
         ${
           s.goal === "event"
             ? html`
@@ -560,12 +524,12 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               })}
                   ${
                 s.route === "challenge"
-                  ? segmented({
+                  ? html`<span class="tb-field__label">${host.t("pt.challengeCost", "CP per challenge")}</span>${segmented({
                       label: host.t("cpPerLive", "Challenge points per live"),
                       value: String(s.challengePoints),
                       options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })),
                       onSelect: (value) => set({ challengePoints: Number(value) }),
-                    })
+                    })}`
                   : boostControl(host, s.boosts, (boosts) => set({ boosts }))
               }
                 </section>
@@ -576,13 +540,13 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
           s.goal === "plan"
             ? html`
                 <section class="surface stack">
-                  ${sectionHeading({ icon: "cycle", label: host.t("planSetup", "Resource plan") })}
+                  ${sectionHeading({ icon: "cycle", label: host.t("activity.budget", "Budget estimate") })}
                   ${eventSection(host)}
                   <div class="tb-number-grid">
                     <md-outlined-text-field
                       type="number"
                       min="0"
-                      label=${host.t("planBudget", "Boosts to spend")}
+                      label=${s.planBoostsPerLive === 0 ? host.t("activity.unboostedPlays", "Normal plays at 0 boosts") : host.t("planBudget", "Boosts to spend")}
                       .value=${live(String(s.planBudget))}
                       @change=${(e: Event) => set({ planBudget: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                     ></md-outlined-text-field>
@@ -595,6 +559,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
                       @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                     ></md-outlined-text-field>
                   </div>
+                  <span class="tb-field__label">${host.t("pt.challengeCost", "CP per challenge")}</span>
                   ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
                   <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                   ${songList(host, s.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }))}
@@ -642,7 +607,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
                     ?disabled=${!!missing}
                     @click=${() => void host.run()}
                   >
-                    ${icon("search", 20)}${host.t("findTeams", "Find teams")}
+                    ${icon("search", 20)}${s.goal === "plan" ? host.t("activity.estimate", "Estimate rewards") : s.goal === "event" ? host.t("activity.calculateSingle", "Find a team for one play") : host.t("findTeams", "Find teams")}
                   </button>
                 `
           }

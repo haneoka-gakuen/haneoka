@@ -119,6 +119,8 @@
     "@tiptap/extension-text-align": "catalog:",
     "@tiptap/pm": "catalog:",
     "@tiptap/starter-kit": "catalog:",
+    "@yume-chan/adb": "catalog:",
+    "@yume-chan/adb-daemon-webusb": "catalog:",
     "astro": "^5.12.0",
     "better-auth": "catalog:",
     "circle-flags": "2.8.3",

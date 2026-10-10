@@ -5,6 +5,7 @@ import type { PlayModel } from "./live";
 import type { PlayerInput } from "./api";
 
 export type EvaluateRequest = {
+  inputIntent?: import("./input-eligibility").InputIntent;
   members: MemberInput[];
   snaps: SnapInput[];
   player: PlayerInput;
@@ -16,6 +17,7 @@ export type EvaluateRequest = {
   event: { eventId: number; route: "live" | "challenge"; consumption: number } | null;
 };
 export type ExplainRequest = {
+  inputIntent?: import("./input-eligibility").InputIntent;
   members: MemberInput[];
   snaps: SnapInput[];
   unknownPolicy: UnknownPolicy;

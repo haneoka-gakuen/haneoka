@@ -1,10 +1,10 @@
-import { addInventoryEntries, updateInventoryEntries, validateInventory, type InventoryV1 } from "../inventory";
-import { initializeNewCardPractice } from "../manual-card-defaults";
+import { addInventoryEntries, updateInventoryEntries, validateInventory, upgradeInventory, type InventoryV1 } from "../inventory";
 import type { TeamBuilderData } from "../data";
 import { BoxImportError } from "./types";
-import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext } from "./preview";
+import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext, type ModifierField } from "./preview";
 export interface BoxConfirmation {
-  existingValues?: "keep" | "overwrite";
+  modifiers?: { field: ModifierField; include: boolean }[];
+  existingValues?: "keep" | "overwrite" | "updates";
   cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number | "keep">> }[];
   maps: { key: string; include: boolean; value?: number | "keep" }[];
 }
@@ -44,9 +44,9 @@ export function applyConfirmedBoxImport(
       } else if (selected !== undefined) {
         if (!values.includes(selected)) throw new BoxImportError("box_unconfirmed_value");
         fields[field] = selected;
-      } else if (!owned || confirmation.existingValues === "overwrite") {
+      } else if (!owned || confirmation.existingValues === "overwrite" || confirmation.existingValues === "updates") {
         if (values.length > 1) throw new BoxImportError("box_conflict_required");
-        if (values.length === 1) fields[field] = values[0]!;
+        if (values.length === 1 && (confirmation.existingValues !== "updates" || !owned || proposal.existing[field] == null || values[0]! >= proposal.existing[field]!)) fields[field] = values[0]!;
       }
     }
     if (Object.keys(choice.fields || {}).some((field) => !Object.hasOwn(proposal.values, field)))
@@ -65,14 +65,28 @@ export function applyConfirmedBoxImport(
       if (!existing) throw new BoxImportError("box_unconfirmed_value");
       continue;
     }
-    if (choice.value === undefined && existing && confirmation.existingValues !== "overwrite") continue;
+    if (choice.value === undefined && existing && confirmation.existingValues !== "overwrite" && confirmation.existingValues !== "updates") continue;
     const selected = choice.value ?? (proposal.values.length === 1 ? proposal.values[0] : undefined);
     if (selected === undefined || !proposal.values.includes(selected))
       throw new BoxImportError("box_conflict_required");
+    if (choice.value === undefined && confirmation.existingValues === "updates" && proposal.existing !== null && selected < proposal.existing) continue;
     next = { ...next, [proposal.map]: { ...next[proposal.map], [String(proposal.id)]: selected } };
   }
-  // Only newly included cards receive maximum presets for absent fields; Box concrete values win.
-  next = initializeNewCardPractice(current, next, data);
+  // Real imports preserve unknown fields. Manual additions keep their separate presets.
+  seen.clear();
+  for (const choice of confirmation.modifiers ?? []) {
+    const proposal = preview.modifiers?.find(row => row.field === choice.field);
+    if (!proposal || seen.has(choice.field)) throw new BoxImportError("box_unknown_confirmation");
+    seen.add(choice.field);
+    if (!choice.include) continue;
+    const upgraded = upgradeInventory(next);
+    if (choice.field === "vipRank" || choice.field === "characterTotalRank") upgraded.playerModifiers[choice.field] = proposal.value;
+    else {
+      const [field, id] = choice.field.split(".") as ["musicMemoryPoints" | "characterMemoryPoints", string];
+      upgraded.playerModifiers[field][id] = proposal.value;
+    }
+    next = upgraded;
+  }
   if (!validateInventory(next, data).valid) throw new BoxImportError("box_invalid_confirmed_inventory");
   return next;
 }

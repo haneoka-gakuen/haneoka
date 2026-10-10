@@ -31,6 +31,7 @@ import { gekisoRewardObjective } from "./gekiso-reward-objective";
 import { GekisoScoreCache } from "./gekiso-score-cache";
 import { GekisoContextCache } from "./gekiso-context-cache";
 import { isLiveBoostCost } from "./boosts";
+import { requireEngineInput, cardInputIssues, type InputIntent } from "./input-eligibility";
 
 export interface SongRef {
   songId: number;
@@ -101,6 +102,8 @@ export type Goal =
       challengePointsPerPlay?: number;
     };
 export interface EngineRequest {
+  inputIntent?: InputIntent;
+  knownOnly?: boolean;
   members: MemberInput[];
   snaps: SnapInput[];
   player: PlayerInput;
@@ -235,22 +238,22 @@ export class ChartCache {
   }
 }
 
-export function playerState(master: EngineMaster, input: PlayerInput): PlayerState {
+export function playerState(master: EngineMaster, input: PlayerInput, intent: InputIntent = "actual"): PlayerState {
+  if (intent !== "simulation" && ((master.totalRankBonus.length && input.characterTotalRank == null) || (master.vipBonus.size && input.vipRank == null)))
+    throw new RangeError("actual-input-incomplete");
   const ranks = new Map<number, number>();
   for (const [id, rank] of Object.entries(input.characterRanks)) if (rank) ranks.set(Number(id), rank);
   const characters = [...master.characters.keys()];
-  const total = input.characterTotalRank ?? characters.reduce((sum, id) => sum + (ranks.get(id) ?? 1), 0);
+  const total = input.characterTotalRank ?? (intent === "simulation" ? characters.reduce((sum, id) => sum + (ranks.get(id) ?? 1), 0) : 0);
   const items = new Map<number, number>();
   for (const [id, level] of Object.entries(input.bandItems)) if (level) items.set(Number(id), level);
-  const points = (record: Record<string, number | null>) =>
-    new Map(Object.entries(record).flatMap(([id, value]) => (value ? [[Number(id), value] as const] : [])));
   return {
     characterRanks: ranks,
     totalRank: total,
     bandItems: items,
-    vipRank: input.vipRank ?? 1,
-    characterMemory: points(input.characterMemory),
-    musicMemory: points(input.musicMemory),
+    vipRank: input.vipRank ?? (intent === "simulation" ? 1 : 0),
+    characterMemory: new Map(),
+    musicMemory: new Map(),
   };
 }
 
@@ -335,9 +338,10 @@ function scoreSummary(detail: Pick<LiveDetail, "scores">, chart: CompiledChart, 
 const eventPrep = new Map<string, { seeds: Team[]; aspiration: number | undefined }>();
 const scoreCaps = new Map<string, number>();
 const prepFingerprint = (request: EngineRequest) =>
-  JSON.stringify([request.goal, request.members, request.snaps, request.player, request.unknownPolicy, request.constraints, request.k]);
+  JSON.stringify([request.goal, request.members, request.snaps, request.player, request.unknownPolicy, request.inputIntent, request.knownOnly, request.constraints, request.k]);
 
 export async function runEngine(master: EngineMaster, charts: ChartCache, request: EngineRequest, onProgress?: (done: number, total: number) => void): Promise<EngineResponse> {
+  request = requireEngineInput(master, request);
   const started = performance.now();
   const ptTrial = request.goal.kind === "event" && request.goal.ranking === "pt-only";
   if (request.rewardCutoff !== undefined && (!ptTrial || request.k !== 1 || !Number.isFinite(request.rewardCutoff)))
@@ -348,7 +352,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   }
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const { members, snaps } = box;
-  const player = playerState(master, request.player);
+  const player = playerState(master, request.player, request.inputIntent);
   const constraints = constraintsOf(request.constraints, members, snaps);
   const shared = { master, members, snaps };
   const goal = request.goal;
@@ -643,10 +647,19 @@ export interface TeamEvaluation {
 export async function evaluateTeam(
   master: EngineMaster,
   charts: ChartCache,
-  request: { members: MemberInput[]; snaps: SnapInput[]; player: PlayerInput; unknownPolicy: UnknownPolicy; team: TeamSpec; songs: SongRef[]; play: PlayModel; challengeEventId: number | null; event: { eventId: number; route: "live" | "challenge"; consumption: number } | null },
+  request: { inputIntent?: InputIntent; members: MemberInput[]; snaps: SnapInput[]; player: PlayerInput; unknownPolicy: UnknownPolicy; team: TeamSpec; songs: SongRef[]; play: PlayModel; challengeEventId: number | null; event: { eventId: number; route: "live" | "challenge"; consumption: number } | null },
 ): Promise<TeamEvaluation[]> {
+  const qualified = requireEngineInput(master, {
+    ...request, members: request.members.filter(row => request.team.members.includes(row.key)),
+    snaps: request.snaps.filter(row => request.team.snaps.includes(row.key)),
+    goal: { kind: "score", songs: request.songs, criterion: "mean", play: request.play, challengeEventId: request.challengeEventId },
+    constraints: { requiredMembers: request.team.members, requiredSnaps: request.team.snaps.filter((key): key is string => key !== null),
+      excludedMembers: [], excludedSnaps: [], leader: request.team.leader, bindings: [], noSnaps: false, minBonusPercent: null },
+    k: 1, timeLimitMs: null,
+  });
+  request = { ...request, members: qualified.members, snaps: qualified.snaps, unknownPolicy: qualified.unknownPolicy };
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
-  const player = playerState(master, request.player);
+  const player = playerState(master, request.player, request.inputIntent);
   const order = [request.team.leader, ...request.team.members.filter((key) => key !== request.team.leader)];
   const memberStates = order.map((key) => box.members.find((member) => member.key === key)!);
   const snapByMember = new Map(request.team.members.map((key, index) => [key, request.team.snaps[index] ?? null]));
@@ -710,8 +723,12 @@ export interface Timeline {
 export async function explainTeam(
   master: EngineMaster,
   charts: ChartCache,
-  request: { members: MemberInput[]; snaps: SnapInput[]; unknownPolicy: UnknownPolicy; team: TeamSpec; song: SongRef; eventOrder: string[]; play: PlayModel },
+  request: { inputIntent?: InputIntent; members: MemberInput[]; snaps: SnapInput[]; unknownPolicy: UnknownPolicy; team: TeamSpec; song: SongRef; eventOrder: string[]; play: PlayModel },
 ): Promise<Timeline> {
+  if (request.inputIntent !== "simulation" && cardInputIssues(master,
+    request.members.filter(row => request.team.members.includes(row.key)), request.snaps.filter(row => request.team.snaps.includes(row.key)),
+    { kind: "score", songs: [request.song], criterion: "mean", play: request.play, challengeEventId: null }).length)
+    throw new RangeError("actual-input-incomplete");
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const chart = await charts.chart(request.song);
   const density = new Array<number>(Math.ceil((chart.lastNoteMs + 1000) / 500)).fill(0);
@@ -774,7 +791,7 @@ async function runPlan(
   const pointsPerChallenge = goal.challengePointsPerPlay ?? bestChallenge?.event?.mean ?? 0;
   const weight = goal.challengePointsPerLive > 0 ? pointsPerChallenge / goal.challengePointsPerLive : 0;
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
-  const player = playerState(master, request.player);
+  const player = playerState(master, request.player, request.inputIntent);
   const constraints = constraintsOf(request.constraints, box.members, box.snaps);
   const shared = { master, members: box.members, snaps: box.snaps };
   const route = eventRoute(master, goal.eventId, "live", goal.boostsPerLive);

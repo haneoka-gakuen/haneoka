@@ -73,7 +73,7 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
   }));
   const refreshCanConfirm = () => {
     state.canConfirm = false;
-    if (!state.preview || !state.confirmations.some(choice => choice.include)) return;
+    if (!state.bindingConfirmed || !state.preview || !state.confirmations.some(choice => choice.include)) return;
     try {
       applyConfirmedScreenshotImport(state.preview, inventory, data, context, state.confirmations, state.existingValues);
       state.canConfirm = true;
@@ -100,6 +100,8 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       if (!files.length || files.length > 8 || files.some(file => !file.size || file.size > 8 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp"].includes(file.type)))
         throw new RangeError("recognition-image-format-or-size");
       const run = new AbortController(); controller = run;
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; run.abort(); }, 180_000);
       cleanupCrops(); results = []; selections = [];
       state = { phase: "uploading", confirmations: [], crops: {}, error: null, canConfirm: false }; emit();
       try {
@@ -134,8 +136,9 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       } catch (error) {
         cleanupCrops(); results = []; selections = [];
         const code = error instanceof Error ? (error as Error & { code?: string }).code : undefined;
-        if (!closed) { state = { phase: run.signal.aborted ? "select" : "failed", confirmations: [], crops: {}, error: run.signal.aborted ? null : code ?? String(error instanceof Error ? error.message : error), canConfirm: false }; emit(); }
+        if (!closed) { state = { phase: run.signal.aborted && !timedOut ? "select" : "failed", confirmations: [], crops: {}, error: timedOut ? "image-timeout" : run.signal.aborted ? null : code ?? "recognition-failed", canConfirm: false }; emit(); }
       } finally {
+        clearTimeout(timer);
         await cleanupJobs(true); if (controller === run) controller = null;
       }
     },
@@ -151,7 +154,14 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, include } : choice) };
       refreshCanConfirm(); emit();
     },
-    existingValues(existingValues: "keep" | "overwrite") {
+    bind(bindingConfirmed: boolean) {
+      if (closed || state.phase !== "review" || !state.preview) throw new RangeError("recognition-review-selection");
+      state = { ...state, bindingConfirmed, ...(bindingConfirmed && !state.bindingConfirmed ? {
+        existingValues: "updates" as const, confirmations: state.confirmations.map(choice => ({ ...choice, include: true })),
+      } : {}) };
+      refreshCanConfirm(); emit();
+    },
+    existingValues(existingValues: "keep" | "overwrite" | "updates") {
       if (closed || state.phase !== "review" || !state.preview) throw new RangeError("recognition-review-selection");
       const existing = new Set(state.preview.cards.filter(card => card.existingInstanceId !== null).map(card => card.key));
       state = { ...state, existingValues, confirmations: state.confirmations.map(choice => existing.has(choice.key)

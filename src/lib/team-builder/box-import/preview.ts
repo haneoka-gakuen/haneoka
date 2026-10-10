@@ -6,8 +6,15 @@ import {
   type InventoryV1,
   type InventoryKind,
 } from "../inventory";
-import { maximumNewCardPractice } from "../manual-card-defaults";
 import { BoxImportError, decimal, integer, type BoxCandidate } from "./types";
+import { validatePlayerModifiers } from "../data/player-modifiers";
+export type ModifierField = "vipRank" | "characterTotalRank" | `musicMemoryPoints.${number}` | `characterMemoryPoints.${number}`;
+export function modifierValue(inventory: InventoryV1, field: ModifierField): number | null {
+  if (inventory.schema !== "haneoka-team-inventory-v2") return null;
+  if (field === "vipRank" || field === "characterTotalRank") return inventory.playerModifiers[field];
+  const [map, id] = field.split(".") as ["musicMemoryPoints" | "characterMemoryPoints", string];
+  return inventory.playerModifiers[map][id] ?? null;
+}
 export interface BoxReviewContext {
   ownerId: string;
   revision: number;
@@ -33,6 +40,7 @@ export interface BoxMapProposal {
   existing: number | null;
 }
 export interface BoxPreview {
+  modifiers?: { field: ModifierField; value: number; existing: number | null }[];
   schema: "haneoka-box-preview-v1";
   context: BoxReviewContext;
   candidateId: string;
@@ -148,15 +156,6 @@ export function previewBoxImport(
         proposal.values[field] = values.sort((a, b) => a - b);
       }
     }
-  for (const proposal of cards.values())
-    if (!proposal.existingInstanceId) {
-      const supplied = Object.fromEntries(
-        Object.entries(proposal.values)
-          .filter(([, v]) => v?.length === 1)
-          .map(([k, v]) => [k, v![0]]),
-      );
-      proposal.defaultPractice = maximumNewCardPractice(data, proposal.kind, proposal.cardId, supplied);
-    }
   for (const [map, rows] of [
     ["bandItems", candidate.bandItems],
     ["characterRanks", candidate.characters],
@@ -205,5 +204,17 @@ export function previewBoxImport(
     cards: [...cards.values()],
     maps: [...maps.values()],
     issues,
+    modifiers: candidate.playerModifiers ? (() => {
+      const invalid = validatePlayerModifiers(candidate.playerModifiers, data);
+      const rows = Object.entries(candidate.playerModifiers).flatMap(([field, value]) => typeof value === "object" && value !== null
+        ? Object.entries(value).map(([id, n]) => [`${field}.${id}`, n] as const) : [[field, value] as const]);
+      return rows.flatMap(([field, value]) => {
+        if (value === null) return [];
+        if (typeof value !== "number" || invalid.some(issue => issue.path === `playerModifiers.${field}`)) {
+          issues.push({ kind: "playerModifiers", id: 0, field, code: "out_of_current_range" }); return [];
+        }
+        return [{ field: field as ModifierField, value, existing: modifierValue(current, field as ModifierField) }];
+      });
+    })() : [],
   };
 }
