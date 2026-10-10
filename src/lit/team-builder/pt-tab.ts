@@ -299,9 +299,9 @@ function inputLabel(host: TeamBuilder, target: string): string {
     "gekiso-input": host.t("pt.gekiso", "Gekisou"),
     minBonus: host.t("minBonus", "Minimum event bonus (%)"),
     member: host.t("members", "Members"),
-    snap: host.t("snapshots", "Photos"),
+    snap: host.t("snapshots", "Snapshots"),
     "required-members": host.t("pt.requiredMembers", "Required members share a character"),
-    "photo-bindings": host.t("pt.photoBindings", "A photo is bound twice"),
+    "photo-bindings": host.t("pt.photoBindings", "A snapshot is bound twice"),
   };
   if (titles[target]) return titles[target];
   const fields: Record<string, string> = {
@@ -408,7 +408,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
         .checked=${live(s.noSnaps)}
         @change=${(e: Event) => host.updateSettings({ noSnaps: (e.target as HTMLInputElement).checked })}
       ></md-checkbox>
-      <span>${host.t("noSnaps", "No photos")}</span>
+      <span>${host.t("noSnaps", "No snapshots")}</span>
     </label>
     ${
       s.bindings.length
@@ -557,7 +557,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
       id: "pt-constraints",
       className: "surface tb-accordion",
       leading: icon("tune", 20),
-      label: t("constraints", "Leader and photos"),
+      label: t("constraints", "Leader and snapshots"),
       supportingText: host.t("candidateSummary", "{members} members · {snaps} snaps", {
         members: request.members.length,
         snaps: request.snaps.length,
