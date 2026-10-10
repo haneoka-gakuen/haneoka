@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       apply_d1_migrations:
-        description: Apply production D1 migrations with explicit authorization
+        description: Apply pending production D1 migrations on this manual run
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: cloudflare-production
@@ -91,8 +91,11 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
 
+      # Committed migrations ship with the code that needs them: every push
+      # applies whatever is still pending (a no-op when nothing is), after
+      # the build succeeds and before the new Worker goes live.
       - name: Apply production D1 migrations
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_d1_migrations == true }}
+        if: ${{ github.event_name == 'push' || inputs.apply_d1_migrations == true }}
         run: pnpm exec wrangler d1 migrations apply haneoka-community --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
