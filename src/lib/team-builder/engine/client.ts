@@ -88,9 +88,9 @@ export class EngineClient {
   constructor(data: TeamBuilderData) {
     this.pool = Array.from({ length: poolSize() }, (_, index) => new EngineWorker(data, `team-engine-${index + 1}`));
   }
-  /** Compiles the release in every Worker in the background so the first search starts at full width. */
+  /** Warm one Worker; the others compile lazily only if a search actually fans out. */
   warm() {
-    for (const worker of this.pool) worker.warm();
+    this.pool[0]?.warm();
   }
   async run(request: EngineRequest, progress?: Pending["progress"]): Promise<EngineResponse> {
     const parallel = this.pool.length > 1 && request.members.length >= PARALLEL_MIN_MEMBERS;
@@ -106,7 +106,7 @@ export class EngineClient {
         id: 0,
         request: { ...request, timeLimitMs: Math.min(request.timeLimitMs ?? Infinity, QUICK_MS) },
       });
-      if (quick.results.every((result) => result.proven)) return quick;
+      if (quick.results.every((result) => result.proven || result.excludedBelow !== undefined)) return quick;
       if (request.goal.kind !== "plan")
         for (const result of quick.results)
           if (result.song && result.hits.length >= request.k) initial[`${result.song.songId}:${result.song.difficulty}`] = result.hits[request.k - 1]!.key;

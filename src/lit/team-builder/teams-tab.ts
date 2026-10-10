@@ -41,7 +41,7 @@ function inputs(host: TeamBuilder) {
   return { members, snaps, player: request.player, unknownPolicy: request.unknownPolicy };
 }
 async function evaluate(host: TeamBuilder) {
-  if (!manualReady(host) || !host.engine || !host.settings.songs.length) return;
+  if (!manualReady(host) || !host.engine || !host.settings.songs.length || host.running) return;
   host.manualBusy = true;
   host.requestUpdate();
   const s = host.settings;
@@ -64,7 +64,7 @@ async function evaluate(host: TeamBuilder) {
 /** Best cards for one slot with the other four fixed (exact constrained search). */
 async function suggest(host: TeamBuilder, slot: number) {
   const base = host.request();
-  if (!base || !host.engine || !manualReady(host)) return;
+  if (!base || !host.engine || !manualReady(host) || host.running) return;
   suggesting = slot;
   host.requestUpdate();
   const { members, snaps, leader } = host.manual;
@@ -232,7 +232,7 @@ export function renderTeamsTab(host: TeamBuilder): TemplateResult {
             </div>`
           : nothing}
         <div class="row row--wrap">
-          <button class="button" type="button" ?disabled=${!manualReady(host) || duplicate || !host.settings.songs.length || host.manualBusy} @click=${() => void evaluate(host)}>
+          <button class="button" type="button" ?disabled=${!manualReady(host) || duplicate || !host.settings.songs.length || host.manualBusy || host.running} @click=${() => void evaluate(host)}>
             ${icon("calculate", 18)}${host.t("evaluateTeam", "Evaluate on the chosen songs")}</button>
           <span class="field-note">${host.settings.songs.length ? host.t("evaluateSongs", "{count} songs from Build", { count: host.settings.songs.length }) : host.t("needSongs", "Choose at least one song.")}</span>
         </div>

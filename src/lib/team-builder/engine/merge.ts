@@ -22,15 +22,19 @@ export function mergeShardResponses(responses: readonly EngineResponse[], k: num
     const parts = responses.map((response) => response.results[index]!);
     const bounds = parts.map((part) => part.bound).filter((bound): bound is number => bound !== null);
     const floors = parts.map((part) => part.floor).filter((floor): floor is number => floor !== undefined);
+    const hits = topDistinct(parts.flatMap((part) => part.hits), k);
+    const exclusions = parts.flatMap((part) => part.excludedBelow === undefined ? [] : [part.excludedBelow]);
+    const allExhausted = parts.every((part) => part.proven || part.excludedBelow !== undefined);
+    const excludedBelow = allExhausted && !hits.length && exclusions.length ? Math.max(...exclusions) : undefined;
+    const proven = allExhausted && excludedBelow === undefined &&
+      parts.every((part) => part.excludedBelow === undefined || (hits.length >= k && hits[k - 1]!.key >= part.excludedBelow));
     return {
       ...(floors.length ? { floor: Math.max(...floors) } : {}),
+      ...(excludedBelow === undefined ? {} : { excludedBelow }),
       song: result.song,
-      hits: topDistinct(
-        parts.flatMap((part) => part.hits),
-        k,
-      ),
-      proven: parts.every((part) => part.proven),
-      bound: bounds.length ? Math.max(...bounds) : null,
+      hits,
+      proven,
+      bound: proven ? null : bounds.length ? Math.max(...bounds) : null,
       stats: parts.reduce(
         (total, part) => ({
           leaders: total.leaders + part.stats.leaders,
@@ -38,9 +42,12 @@ export function mergeShardResponses(responses: readonly EngineResponse[], k: num
           snapNodes: total.snapNodes + part.stats.snapNodes,
           candidates: total.candidates + part.stats.candidates,
           exact: total.exact + part.stats.exact,
+          sampleComputations: total.sampleComputations + (part.stats.sampleComputations ?? 0),
+          sampleCacheHits: total.sampleCacheHits + (part.stats.sampleCacheHits ?? 0),
+          sampleEarlyStops: total.sampleEarlyStops + (part.stats.sampleEarlyStops ?? 0),
           elapsedMs: Math.max(total.elapsedMs, part.stats.elapsedMs),
         }),
-        { leaders: 0, memberNodes: 0, snapNodes: 0, candidates: 0, exact: 0, elapsedMs: 0 },
+        { leaders: 0, memberNodes: 0, snapNodes: 0, candidates: 0, exact: 0, elapsedMs: 0, sampleComputations: 0, sampleCacheHits: 0, sampleEarlyStops: 0 },
       ),
     };
   });
@@ -53,7 +60,7 @@ export function mergeShardResponses(responses: readonly EngineResponse[], k: num
 
 /** Whether every song of a merged aspiration search kept k hits at or above its floor (otherwise it must rerun). */
 export function aspirationHeld(response: EngineResponse, k: number): boolean {
-  return response.results.every((result) => result.floor === undefined || result.hits.filter((hit) => hit.key >= result.floor!).length >= k);
+  return response.results.every((result) => result.excludedBelow !== undefined || result.floor === undefined || result.hits.filter((hit) => hit.key >= result.floor!).length >= k);
 }
 
 /** The cycle a plan settles into: normal lives spend the boosts and earn challenge points, challenge lives spend those. */

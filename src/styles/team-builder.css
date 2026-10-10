@@ -966,4 +966,91 @@
   .tb-picker-footer {
     gap: var(--md-sys-spacing-2);
   }
+  .pt-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--md-sys-spacing-4);
+  }
+  .pt-form-grid > *,
+  .pt-field {
+    min-width: 0;
+  }
+  .pt-field {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    scroll-margin-block: var(--md-sys-spacing-8);
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+  .pt-field > :is(md-outlined-select, md-outlined-text-field) {
+    width: 100%;
+  }
+  .pt-field--invalid {
+    outline: 2px solid var(--md-sys-color-error);
+    outline-offset: 4px;
+  }
+  .pt-field .tb-stepper {
+    justify-self: start;
+  }
+  .tb-editor .pt-field {
+    align-content: start;
+  }
+  .pt-song-choice {
+    min-height: 56px;
+    justify-content: start;
+  }
+  .pt-song-choice > span:first-of-type {
+    flex: 1;
+    text-align: start;
+  }
+  .pt-bindings,
+  .pt-issue-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .pt-bindings > li,
+  .pt-issue-list > li {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+  }
+  .pt-bindings > li > span,
+  .pt-issue-list > li > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .pt-issue-list > li + li {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .pt-issues .detail-section-title__icon {
+    color: var(--md-sys-color-on-error-container);
+    background: var(--md-sys-color-error-container);
+  }
+  .pt-results-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+  }
+  .pt-progress {
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .pt-breakdown {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .pt-recommendation .tb-hit__header > strong {
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
+  @media (max-width: 599px) {
+    .pt-form-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 }

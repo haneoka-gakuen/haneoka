@@ -1,5 +1,6 @@
 import { CARD_SKILL_FACETS } from "../../lib/catalog-filters";
 import { matchesCardFilters, renderCardFilters } from "./card-filters";
+import { ptField } from "./pt-fields";
 /** My cards: ownership, participation and growth, with filters and bulk edits. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -107,7 +108,8 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
   const ownedCount = f.kind === "members" ? view.members.size : view.snaps.size;
   const usedCount = [...(f.kind === "members" ? view.members : view.snaps).values()].filter((row) => row.use).length;
   return html`
-    <div class="tb-box">
+    <div class=${`tb-box${host.pt.showIssues && host.pt.issues.some((issue) => issue.code === "inventory") ? " pt-field--invalid" : ""}`} data-pt-field="inventory" tabindex="-1">
+      
       <div class="surface tb-toolbar">
         <div class="row row--wrap tb-toolbar__row">
           ${segmented({
@@ -204,7 +206,8 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
   const owned = kind === "members" ? host.view.members.get(cardId) : host.view.snaps.get(cardId);
   const write = (field: string, value: BoxValue) =>
     host.write([...(owned ? [] : [{ key: `${p}.${cardId}.own`, value: true }, { key: `${p}.${cardId}.use`, value: true }]), { key: `${p}.${cardId}.${field}`, value }]);
-  const steps = (label: string, field: string, value: number | null, max: number) => html`
+  const fieldKey = (field: string) => `${kind === "members" ? "m" : "s"}${cardId}.${({ awk: "awake", lvl: "level", rnk: "rank", sk: "liveSkillLevel", gsk: "gekisoSkillLevel" } as Record<string,string>)[field] ?? field}`;
+  const steps = (label: string, field: string, value: number | null, max: number) => ptField(host, fieldKey(field), html`
     <div class="tb-field">
       <span class="tb-field__label">${label}</span>
       ${segmented({
@@ -215,14 +218,14 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         onSelect: (next) => write(field, Number(next)),
       })}
     </div>
-  `;
-  const levelField = (value: number | null, cap: number) => html`
+  `);
+  const levelField = (value: number | null, cap: number) => ptField(host, fieldKey("lvl"), html`
     <div class="tb-field">
       <span class="tb-field__label">${host.t("level", "Level")}<output>${value ?? "—"} / ${cap}</output></span>
       <md-slider class="md3-slider" labeled min="1" max=${cap} .value=${Math.min(value ?? cap, cap)} aria-label=${host.t("level", "Level")}
         @change=${(event: Event) => write("lvl", Number((event.target as HTMLInputElement).value))}></md-slider>
     </div>
-  `;
+  `);
   let fields: TemplateResult;
   if (kind === "members") {
     const row = owned as OwnedMember | undefined;
@@ -232,7 +235,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
       ${levelField(row?.level ?? null, limits.levelCap)}
       ${steps(host.t("awakening", "Awakening"), "rnk", row?.rank ?? null, limits.rank)}
       ${steps(host.t("liveSkill", "Live skill"), "sk", row?.skill ?? null, limits.liveSkillLevel)}
-      ${limits.gekisoSkillLevel > 1 ? steps(host.t("gekisoSkill", "Gekiso skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel) : nothing}
+      ${host.master!.members.get(cardId)?.gekisoSkillId ? steps(host.t("gekisoSkill", "Gekiso skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel) : nothing}
     `;
   } else {
     const row = owned as OwnedSnap | undefined;
@@ -255,10 +258,10 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
           ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
         </header>
         <div class="tb-editor__fields">${fields}</div>
-        <div class="cluster">
+        ${ptField(host, fieldKey("use"), html`<div class="cluster">
           ${flag(host.t("useInSearch", "Use in team search"), "use", owned?.use ?? false)}
           ${flag(host.t("required", "Always include"), "lock", owned?.lock ?? false)}
-        </div>
+        </div>`)}
         <footer class="row row--wrap tb-editor__actions">
           <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
           ${owned

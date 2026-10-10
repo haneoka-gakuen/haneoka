@@ -584,7 +584,7 @@ function dtoEvents(data: TeamBuilderData): GameEvent[] {
       id,
       startAt: time(event.startAt),
       endAt: time(event.endAt),
-      itemId: num(objectRow(event.eventItem).id ?? event.eventItemId),
+      itemId: num(objectRow(event.eventItem).resourceId ?? objectRow(event.eventItem).id ?? event.eventItemId),
       musicId: num(event.musicId),
       effects: effects.map(eventEffect),
       livePoints: points("MasterLiveEventPoint", "liveEventPointGroup"),

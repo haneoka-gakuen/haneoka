@@ -49,7 +49,7 @@ function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
   return out;
 }
 
-function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
+export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const catalog = host.catalog!;
   // The leader stands in the centre, as in the game's formation screen.
   const order = [1, 2, 0, 3, 4].filter((index) => index < hit.members.length);

@@ -27,6 +27,7 @@ import { renderTeamsTab } from "./team-builder/teams-tab";
 import { renderSongPicker, type SongPickerState } from "./team-builder/song-picker";
 import { ImportController } from "./team-builder/importers";
 import { Catalog } from "./team-builder/catalog";
+import { PtController, renderPtTab } from "./team-builder/pt-tab";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -63,6 +64,7 @@ export class TeamBuilder extends LitElement {
   store: BoxStore | null = null;
   engine: EngineClient | null = null;
   imports: ImportController = new ImportController(this);
+  pt = new PtController(this);
 
   tab: Tab = "build";
   settings: BuildSettings = { ...DEFAULT_SETTINGS };
@@ -88,7 +90,6 @@ export class TeamBuilder extends LitElement {
   slotFiltersOpen = false;
   notice = "";
   private readonly images = new LazyImages();
-  private settingsTimer?: ReturnType<typeof setTimeout>;
   private unsubscribe?: () => void;
   private loadedServer = "";
   private dataController?: AbortController;
@@ -113,6 +114,7 @@ export class TeamBuilder extends LitElement {
     this.visualsController?.abort();
     this.images.disconnect();
     this.unsubscribe?.();
+    this.pt.dispose();
     this.store?.dispose();
     this.engine?.dispose();
     this.store = null;
@@ -122,6 +124,7 @@ export class TeamBuilder extends LitElement {
 
   /** Choosers and review dialogs from shared renderers open as modals once rendered. */
   protected updated() {
+    this.pt.markFields();
     this.images.observe(this);
     for (const dialog of this.querySelectorAll<HTMLDialogElement>("dialog.selection-pane"))
       if (!dialog.open && dialog.isConnected) dialog.showModal();
@@ -140,6 +143,7 @@ export class TeamBuilder extends LitElement {
     const loadController = this.dataController = new AbortController();
     this.visualsController?.abort();
     this.catalogMetadataError = false;
+    this.pt.dispose();
     this.loadedServer = server;
     this.loadError = "";
     this.requestUpdate();
@@ -150,6 +154,7 @@ export class TeamBuilder extends LitElement {
       this.data = data;
       this.master = compileFromTeamData(data);
       this.catalog = new Catalog(this, data, this.master);
+      this.pt = new PtController(this);
       this.engine?.dispose();
       this.engine = new EngineClient(data);
       // Compile the release in every Worker while the reader sets up the search.
@@ -191,14 +196,17 @@ export class TeamBuilder extends LitElement {
     if (!controller.signal.aborted && this.catalog === catalog) this.requestUpdate();
   }
   private adopt(snapshot: BoxSnapshot) {
+    const ownerChanged = this.snapshot?.owner !== snapshot.owner;
+    if (ownerChanged) this.pt.dispose();
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
     if (versionChanged) {
       this.view = readBox(snapshot.entries);
       const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
-      if (stored && typeof stored === "object" && !this.settingsTimer) this.settings = { ...DEFAULT_SETTINGS, ...(stored as Partial<BuildSettings>) };
+      if (stored && typeof stored === "object") this.settings = { ...DEFAULT_SETTINGS, ...(stored as Partial<BuildSettings>) };
     }
     this.requestUpdate();
+    void this.pt.restore();
   }
 
   /** Box writes: applied locally at once, synced in the background. */
@@ -213,11 +221,7 @@ export class TeamBuilder extends LitElement {
   }
   updateSettings(patch: Partial<BuildSettings>) {
     this.settings = { ...this.settings, ...patch };
-    clearTimeout(this.settingsTimer);
-    this.settingsTimer = setTimeout(() => {
-      this.settingsTimer = undefined;
-      this.write([{ key: SETTINGS_KEY, value: this.settings as unknown as BoxValue }]);
-    }, 800);
+    this.write([{ key: SETTINGS_KEY, value: this.settings as unknown as BoxValue }]);
     this.requestUpdate();
   }
   setTab(tab: Tab) {
@@ -360,7 +364,8 @@ export class TeamBuilder extends LitElement {
     }
   }
   cancel() {
-    this.engine?.cancel();
+    if (this.pt.running) this.pt.stop();
+    else this.engine?.cancel();
   }
   get stale() {
     return !!this.results && this.resultsFor !== JSON.stringify(this.request());
@@ -369,6 +374,7 @@ export class TeamBuilder extends LitElement {
   private renderTabs(): TemplateResult {
     const tabs = [
       { id: "build", icon: "groups", label: this.t("tabBuild", "Build"), count: null },
+      { id: "pt", icon: "emoji_events", label: this.t("pt.tab", "Event rewards"), count: null },
       { id: "box", icon: "style", label: this.t("tabBox", "My cards"), count: this.view ? this.view.members.size + this.view.snaps.size : null },
       { id: "account", icon: "trending_up", label: this.t("tabAccount", "Account bonuses"), count: null },
       { id: "teams", icon: "bookmark", label: this.t("tabTeams", "Teams"), count: this.view?.teams.length || null },
@@ -418,8 +424,9 @@ export class TeamBuilder extends LitElement {
         </div>
       `;
     }
+    if (this.pt.correcting && this.tab !== "pt") this.pt.sync();
     const panel =
-      this.tab === "build" ? renderBuildTab(this) : this.tab === "box" ? renderBoxTab(this) : this.tab === "account" ? renderAccountTab(this) : renderTeamsTab(this);
+      this.tab === "pt" ? renderPtTab(this) : this.tab === "build" ? renderBuildTab(this) : this.tab === "box" ? renderBoxTab(this) : this.tab === "account" ? renderAccountTab(this) : renderTeamsTab(this);
     return html`
       <div class="team-builder tb">
         <header class="tb-header">
@@ -428,6 +435,7 @@ export class TeamBuilder extends LitElement {
         </header>
         ${this.notice ? html`<div class="banner" role="status"><span>${this.notice}</span><div class="banner__actions"><button class="button button--text" type="button" @click=${() => { this.notice = ""; this.requestUpdate(); }}>${this.common("common.actions.close", "Close")}</button></div></div>` : nothing}
         ${this.catalogMetadataError ? html`<div class="banner" role="status"><span>${this.common("catalog.availability.catalogFiltersUnavailable", "Additional card filters could not be loaded. Your cards are still available.")}</span><button class="button button--text" type="button" @click=${() => void this.loadCatalogMetadata()}>${this.common("common.actions.retry", "Retry")}</button></div>` : nothing}
+        ${this.pt.correcting && this.tab !== "pt" ? html`<div class="banner" role="status"><span>${this.t("pt.correctionHelp", "Editing an input for event rewards")}</span><button class="button button--text" type="button" @click=${() => { this.setTab("pt"); void this.updateComplete.then(() => this.querySelector<HTMLElement>("#pt-issues")?.focus()); }}>${this.t("pt.back", "Back")}</button></div>` : nothing}
         <section id="tb-panel" class="tb-tabpanel" role="tabpanel" tabindex="-1">${panel}</section>
         ${renderCardEditor(this)}
         ${this.songPicker ? renderSongPicker(this) : nothing}

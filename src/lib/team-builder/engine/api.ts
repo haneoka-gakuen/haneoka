@@ -1,5 +1,5 @@
 /** Serializable engine requests and their evaluation. Pure: charts come from an injected loader. */
-import { compileChart, scoreRank, type ChartSource, type CompiledChart } from "./chart";
+import { battleRank, compileChart, scoreRank, type ChartSource, type CompiledChart } from "./chart";
 import { AP, ORDERS, isAllPerfect, playJudgements, prepareLive, skipScore, type PlayModel, type PreparedLive } from "./live";
 import type { EngineMaster, EventEffectRow } from "./master";
 import {
@@ -22,7 +22,15 @@ import { resolveSlotSkill, windowMs } from "./skills";
 import { gekisoChart, type GekisoChart } from "./gekiso";
 import { gekisoSearch } from "./gekiso-objective";
 import { planSummary } from "./merge";
+import { validatePtChart, validatePtRequest } from "./pt-eligibility";
 import type { Accuracy } from "./full/play";
+import type { CpExchange } from "./pt-value";
+import type { GekisoRewardOptions } from "./gekiso-rewards";
+import type { GekisoJustSummary } from "./gekiso-just";
+import { gekisoRewardObjective } from "./gekiso-reward-objective";
+import { GekisoScoreCache } from "./gekiso-score-cache";
+import { GekisoContextCache } from "./gekiso-context-cache";
+import { isLiveBoostCost } from "./boosts";
 
 export interface SongRef {
   songId: number;
@@ -59,6 +67,12 @@ export type Goal =
       /** Boosts per normal live (0–10) or challenge points per challenge live. */
       consumption: number;
       play: PlayModel;
+      /** Local recommendation trial: strict inputs, AP solo/challenge lives, reward-only ordering. */
+      ranking?: "pt-only";
+      /** Best challenge payout per CP for this objective. Only the solo trial uses this value. */
+      cpExchange?: CpExchange;
+      /** Non-challenge Gekisou rewards, using per-outcome settlement. Absent means solo. */
+      gekiso?: GekisoRewardOptions;
     }
   | {
       kind: "gekiso";
@@ -101,6 +115,8 @@ export interface EngineRequest {
   noFloor?: boolean;
   /** Known lower bounds on each song's k-th key (`songId:difficulty`), from teams other shards already found. */
   floors?: Record<string, number>;
+  /** Other songs' Top-K key. Only a pt-only k=1 request may prove this song strictly below the cutoff. */
+  rewardCutoff?: number;
 }
 export interface HitScore {
   mean: number;
@@ -113,6 +129,7 @@ export interface HitScore {
   ranks: Record<string, number>;
 }
 export interface EngineHit {
+  gekiso?: { just: GekisoJustSummary; luckSamples: number; sampled: boolean; rank: 1 };
   song: SongRef | null;
   /** Leader first. */
   members: string[];
@@ -122,7 +139,11 @@ export interface EngineHit {
   key: number;
   score: HitScore | null;
   skipScore: number | null;
-  event: { mean: number; bonusPercent: number; challengePoints: number; perPlayMin: number; perPlayMax: number } | null;
+  event: {
+    mean: number; bonusPercent: number; challengePoints: number; perPlayMin: number; perPlayMax: number;
+    /** Exact order sums used by the solo trial; mean includes CP conversion when requested. */
+    rewardSum?: number; comparisonSum?: number; orders?: number; directMean?: number; convertedMean?: number;
+  } | null;
   potential: { value: number; area: number } | null;
 }
 export interface SongResult {
@@ -133,6 +154,8 @@ export interface SongResult {
   stats: SearchOutput<unknown>["stats"];
   /** Aspiration floor of a sharded search: the merged result is exact only if it holds k hits at or above it. */
   floor?: number;
+  /** Exhaustive proof that no team in this scope reaches this key. Not a completed single-song optimum. */
+  excludedBelow?: number;
 }
 export interface PlanSummary {
   normal: EngineHit | null;
@@ -156,6 +179,8 @@ export interface EngineResponse {
 
 export type ChartLoader = (master: EngineMaster, song: SongRef) => Promise<ChartSource>;
 export class ChartCache {
+  readonly gekisoScores = new GekisoScoreCache();
+  readonly gekisoContexts = new GekisoContextCache();
   private readonly sources = new Map<string, Promise<ChartSource>>();
   private readonly charts = new Map<string, Promise<CompiledChart>>();
   private readonly prepared = new WeakMap<CompiledChart, PreparedLive>();
@@ -164,46 +189,44 @@ export class ChartCache {
     private readonly master: EngineMaster,
     private readonly load: ChartLoader,
   ) {}
+  /** A long recommendation visits the entire song catalog. Retain only a few reusable charts, not the run's history. */
+  private cached<T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {
+    let value = cache.get(key);
+    if (value) cache.delete(key);
+    else {
+      value = load();
+      const pending = value;
+      void value.catch(() => {
+        // A failed evicted load must not delete a newer request for the same chart.
+        if (cache.get(key) === pending) cache.delete(key);
+      });
+    }
+    cache.set(key, value);
+    if (cache.size > 4) cache.delete(cache.keys().next().value!);
+    return value;
+  }
   source(ref: SongRef): Promise<ChartSource> {
     const key = `${ref.songId}:${ref.difficulty}`;
-    let value = this.sources.get(key);
-    if (!value) {
-      value = this.load(this.master, ref);
-      value.catch(() => this.sources.delete(key));
-      this.sources.set(key, value);
-    }
-    return value;
+    return this.cached(this.sources, key, () => this.load(this.master, ref));
   }
   chart(ref: SongRef): Promise<CompiledChart> {
     const key = `${ref.songId}:${ref.difficulty}`;
-    let value = this.charts.get(key);
-    if (!value) {
-      value = (async () => {
-        const song = this.master.songs.get(ref.songId);
-        const difficulty = song?.difficulties.find((item) => item.difficulty === ref.difficulty);
-        if (!song || !difficulty) throw new RangeError(`unknown-chart:${key}`);
-        return compileChart(this.master, song, difficulty, await this.source(ref));
-      })();
-      value.catch(() => this.charts.delete(key));
-      this.charts.set(key, value);
-    }
-    return value;
+    return this.cached(this.charts, key, async () => {
+      const song = this.master.songs.get(ref.songId);
+      const difficulty = song?.difficulties.find((item) => item.difficulty === ref.difficulty);
+      if (!song || !difficulty) throw new RangeError(`unknown-chart:${key}`);
+      return compileChart(this.master, song, difficulty, await this.source(ref));
+    });
   }
   /** The Gekisou chart of a song at a stated accuracy and assumed range rank. */
   gekiso(ref: SongRef, accuracy: Accuracy, rank: number): Promise<GekisoChart> {
     const key = `${ref.songId}:${ref.difficulty}:${accuracy.great}:${accuracy.just}:${accuracy.missEvery ?? 0}:${rank}`;
-    let value = this.gekisoCharts.get(key);
-    if (!value) {
-      value = (async () => {
-        const song = this.master.songs.get(ref.songId);
-        const difficulty = song?.difficulties.find((item) => item.difficulty === ref.difficulty);
-        if (!song || !difficulty) throw new RangeError(`unknown-chart:${ref.songId}:${ref.difficulty}`);
-        return gekisoChart(this.master, await this.source(ref), difficulty.playLevel, song.gekisoMissions, accuracy, rank);
-      })();
-      value.catch(() => this.gekisoCharts.delete(key));
-      this.gekisoCharts.set(key, value);
-    }
-    return value;
+    return this.cached(this.gekisoCharts, key, async () => {
+      const song = this.master.songs.get(ref.songId);
+      const difficulty = song?.difficulties.find((item) => item.difficulty === ref.difficulty);
+      if (!song || !difficulty) throw new RangeError(`unknown-chart:${ref.songId}:${ref.difficulty}`);
+      return gekisoChart(this.master, await this.source(ref), difficulty.playLevel, song.gekisoMissions, accuracy, rank);
+    });
   }
   live(chart: CompiledChart): PreparedLive {
     let value = this.prepared.get(chart);
@@ -245,6 +268,7 @@ export function eventRoute(master: EngineMaster, eventId: number, route: "live" 
   const event = master.events.get(eventId);
   if (!event) throw new RangeError(`unknown-event:${eventId}`);
   const challenge = route === "challenge" || (route === "skip" && consumption > 10);
+  if (!challenge && !isLiveBoostCost(consumption)) throw new Error("unsupported-live-boost-cost");
   const table = challenge ? master.challengeBoosts : master.boosts;
   const row = table.find((item) => item.consumed === consumption);
   const rate = challenge ? (consumption <= 200 ? row?.eventPointRate ?? 1 : row?.eventPointRate ?? 1) : consumption < 1 ? 1 : row?.eventPointRate ?? 1;
@@ -307,14 +331,6 @@ function scoreSummary(detail: Pick<LiveDetail, "scores">, chart: CompiledChart, 
   };
 }
 
-/** Gekisou lives rank by the battle thresholds. */
-function battleRank(chart: CompiledChart, score: number): number {
-  let rank = 2;
-  for (const row of chart.ranks) if (row.battleRequired > 0 && row.battleRequired <= score && row.rank > rank) rank = row.rank;
-  return rank;
-}
-
-
 /** Per-Worker memo of the shard-independent preparation of the latest request. */
 const eventPrep = new Map<string, { seeds: Team[]; aspiration: number | undefined }>();
 const scoreCaps = new Map<string, number>();
@@ -323,6 +339,13 @@ const prepFingerprint = (request: EngineRequest) =>
 
 export async function runEngine(master: EngineMaster, charts: ChartCache, request: EngineRequest, onProgress?: (done: number, total: number) => void): Promise<EngineResponse> {
   const started = performance.now();
+  const ptTrial = request.goal.kind === "event" && request.goal.ranking === "pt-only";
+  if (request.rewardCutoff !== undefined && (!ptTrial || request.k !== 1 || !Number.isFinite(request.rewardCutoff)))
+    throw new Error("invalid-reward-cutoff");
+  if (ptTrial) {
+    const issues = validatePtRequest(master, request);
+    if (issues.length) throw new Error(`pt-input:${JSON.stringify(issues)}`);
+  }
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const { members, snaps } = box;
   const player = playerState(master, request.player);
@@ -347,6 +370,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
       floor,
       shard: shard ?? undefined,
       seeds,
+      disableSnapDominance: ptTrial,
+      streaming: ptTrial,
       master,
       player,
       members,
@@ -375,6 +400,12 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   let songsLeft = songs.length;
   const songBudget = () => (budgetEnd === Infinity ? Infinity : Math.max(250, (budgetEnd - performance.now()) / Math.max(1, songsLeft)));
   for (const [index, song] of songs.entries()) {
+    if (ptTrial && song) {
+      const source = await charts.source(song);
+      validatePtChart(master, song, source);
+      if (goal.kind === "event" && goal.gekiso && (!source.enumeration?.length || source.feverMs.length !== 3))
+        throw new Error(`gekiso-chart-unsupported:${song.songId}:${song.difficulty}`);
+    }
     songsLeft = songs.length - index;
     onProgress?.(index, songs.length);
     const challengeId = goal.kind === "power" || goal.kind === "score" ? goal.challengeEventId : goal.kind === "event" && goal.route === "challenge" ? goal.eventId : null;
@@ -434,6 +465,32 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
         stats: out.stats,
         hits: out.hits.map((hit) => ({ ...toHit(song, hit.team, hit.power, hit.slotPowers, hit.key), score: scoreSummary(hit.detail, chart!, hit.team, members, true) })),
       });
+    } else if (goal.kind === "event" && goal.gekiso) {
+      if (!ptTrial || goal.route !== "live" || !song || !chart) throw new Error("gekiso-reward-mode");
+      const route = eventRoute(master, goal.eventId, "live", goal.consumption);
+      const gekiso = await charts.gekiso(song, { great: 0, just: goal.gekiso.just }, 1);
+      const measure = goal.measure === "items" ? "items" : "points";
+      const adapter = gekisoRewardObjective({ ...shared, chart, gekiso, route, measure, options: goal.gekiso, exchange: goal.cpExchange, scoreCache: charts.gekisoScores, contextCache: charts.gekisoContexts });
+      // Bonus-oriented seeds only improve traversal order. The main search is uncapped and uses safe reward bounds.
+      const seeds = run(eventBonusSurrogate(shared, route.effects, measure), music, [], request.k, undefined, null, 100).hits.map(hit => hit.team);
+      const known = request.floors?.[`${song.songId}:${song.difficulty}`];
+      const searchFloor = Math.max(known ?? -Infinity, request.rewardCutoff ?? -Infinity);
+      const out = run(adapter, music, [], request.k, seeds, undefined, undefined, Number.isFinite(searchFloor) ? searchFloor : undefined);
+      results.push({ song, proven: out.proven, bound: out.bound, stats: out.stats, hits: out.hits.map(hit => {
+        const d = hit.detail;
+        return {
+          ...toHit(song, hit.team, hit.power, hit.slotPowers, hit.key),
+          score: scoreSummary(d, chart, hit.team, members, true),
+          gekiso: { just: d.just, luckSamples: d.luckSamples, sampled: d.sampled, rank: 1 },
+          event: {
+            mean: d.mean / (goal.cpExchange?.denominator ?? 1), bonusPercent: d.bonus / 100,
+            challengePoints: d.cpSum / d.observations, perPlayMin: d.directMin, perPlayMax: d.directMax,
+            rewardSum: d.rewardSum, comparisonSum: d.comparisonSum, orders: d.observations,
+            directMean: d.rewardSum / d.observations,
+            convertedMean: goal.cpExchange ? d.cpSum / d.observations * goal.cpExchange.numerator / goal.cpExchange.denominator : 0,
+          },
+        };
+      }) });
     } else if (goal.kind === "event") {
       const route = eventRoute(master, goal.eventId, goal.route, goal.consumption);
       const measure = goal.measure === "items" ? "items" : "points";
@@ -451,7 +508,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
           scoreCaps.set(capKey, scoreCap);
         }
       }
-      const objective = eventObjective(chart && goal.route !== "skip" ? { ...shared, live: live!, play: goal.play, chart } : { ...shared, chart: null }, route, measure, master.params.skipRank, 0, scoreCap);
+      const objective = eventObjective(chart && goal.route !== "skip" ? { ...shared, live: live!, play: goal.play, chart } : { ...shared, chart: null }, route, measure, master.params.skipRank, 0, scoreCap, goal.ranking ?? "legacy", goal.cpExchange);
       let adapter: ObjectiveAdapter<unknown> = objective as ObjectiveAdapter<unknown>;
       if (goal.measure === "challenge-points" && chart) adapter = challengePointObjective(liveScoreObjective({ ...shared, live: live!, play: goal.play }, "mean"), chart, route);
       let out: SearchOutput<unknown>;
@@ -475,10 +532,10 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
         }
         const seeds = prep.seeds;
         floor = !request.noFloor ? prep.aspiration : undefined;
-        const searchFloor = Math.max(floor ?? -Infinity, known ?? -Infinity);
+        const searchFloor = Math.max(floor ?? -Infinity, known ?? -Infinity, request.rewardCutoff ?? -Infinity);
         out = run(adapter, music, powerEffects, request.k, seeds, undefined, undefined, Number.isFinite(searchFloor) ? searchFloor : undefined);
         const enough = out.hits.filter((hit) => floor === undefined || hit.key >= floor).length >= request.k;
-        if (!enough && !(request.shard && request.shard.count > 1)) {
+        if (!enough && request.rewardCutoff === undefined && !(request.shard && request.shard.count > 1)) {
           out = run(adapter, music, powerEffects, request.k, seeds);
           floor = undefined;
         }
@@ -498,11 +555,18 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
           }
           const perOrder = detail.perOrder;
           base.event = {
-            mean: detail.mean ?? 0,
+            mean: (detail.mean ?? 0) / (goal.cpExchange?.denominator ?? 1),
             bonusPercent: (detail.bonus ?? 0) / 100,
             challengePoints: detail.challengePoints ?? 0,
-            perPlayMin: perOrder ? Math.min(...perOrder) : (detail.mean ?? 0),
-            perPlayMax: perOrder ? Math.max(...perOrder) : (detail.mean ?? 0),
+            perPlayMin: detail.directMin ?? (perOrder ? Math.min(...perOrder) : (detail.mean ?? 0)),
+            perPlayMax: detail.directMax ?? (perOrder ? Math.max(...perOrder) : (detail.mean ?? 0)),
+            ...(ptTrial ? {
+              rewardSum: detail.rewardSum,
+              comparisonSum: detail.comparisonSum,
+              orders: ORDERS.length,
+              directMean: detail.rewardSum === undefined ? undefined : detail.rewardSum / ORDERS.length,
+              convertedMean: goal.cpExchange ? (detail.challengePoints ?? 0) * goal.cpExchange.numerator / goal.cpExchange.denominator : 0,
+            } : {}),
           };
           return base;
         }),
@@ -516,6 +580,17 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
         stats: out.stats,
         hits: out.hits.map((hit) => ({ ...toHit(null, hit.team, hit.power, hit.slotPowers, hit.key), potential: { value: hit.detail.potential, area: hit.detail.area } })),
       });
+    }
+    if (request.rewardCutoff !== undefined) {
+      const result = results[results.length - 1]!;
+      result.hits = result.hits.filter((hit) => hit.key >= request.rewardCutoff!);
+      if (result.proven && !result.hits.length) {
+        const known = song ? request.floors?.[`${song.songId}:${song.difficulty}`] : undefined;
+        result.excludedBelow = Math.max(request.rewardCutoff, known ?? -Infinity, result.floor ?? -Infinity);
+        result.proven = false;
+        result.bound = result.excludedBelow;
+        delete result.floor;
+      }
     }
   }
   const overall = results

@@ -5,6 +5,7 @@
  * bounds. Survivors are ranked by an interval around the key and only those that
  * can still enter the Top-K are evaluated exactly. */
 import type { EngineMaster } from "./master";
+import type { RewardCutoff } from "./gekiso-rewards";
 import {
   leaderPercentBound,
   leaderPercents,
@@ -58,6 +59,10 @@ export interface ObjectiveAdapter<Detail> {
   /** Interval containing the exact key of a complete team with exact power. */
   interval(team: Team, totals: Totals): [number, number];
   exact(team: Team, power: number, slotPowers: readonly number[]): { key: number; detail: Detail };
+  /** Optional exact evaluator that may stop only after proving it cannot enter the retained Top-K. */
+  evaluate?(team: Team, power: number, slotPowers: readonly number[], cutoff: RewardCutoff):
+    { key: number; detail: Detail } | { pruned: true; upperBound: number };
+  work?: { sampleComputations: number; sampleCacheHits: number; sampleEarlyStops: number };
 }
 export interface Constraints {
   requiredMembers: readonly number[];
@@ -107,6 +112,10 @@ export interface SearchInput<Detail> {
    * floor; otherwise the caller searches again with a lower floor. */
   floor?: number;
   progress?: (done: number, total: number) => void;
+  /** Keep every legal photo option when scalar dominance has not been established for the objective. */
+  disableSnapDominance?: boolean;
+  /** Evaluate competitive candidates as they arrive; retain only the exact Top-K, never a candidate-count cutoff. */
+  streaming?: boolean;
 }
 export interface SearchHit<Detail> {
   team: Team;
@@ -121,7 +130,8 @@ export interface SearchOutput<Detail> {
   proven: boolean;
   /** Upper bound of any unexplored team when not proven. */
   bound: number | null;
-  stats: { leaders: number; memberNodes: number; snapNodes: number; candidates: number; exact: number; elapsedMs: number };
+  stats: { leaders: number; memberNodes: number; snapNodes: number; candidates: number; exact: number; elapsedMs: number;
+    sampleComputations?: number; sampleCacheHits?: number; sampleEarlyStops?: number };
 }
 
 interface Candidate {
@@ -267,12 +277,19 @@ class Frontier {
   offer(setKey: string, value: number) {
     const previous = this.best.get(setKey);
     if (previous !== undefined && previous >= value) return;
+    if (previous === undefined && this.sorted.length >= this.k && value <= this.threshold) return;
     this.best.set(setKey, value);
     if (previous !== undefined) this.sorted.splice(this.sorted.indexOf(previous), 1);
     let index = this.sorted.length;
     while (index > 0 && this.sorted[index - 1]! < value) index--;
     this.sorted.splice(index, 0, value);
-    if (this.sorted.length > this.k * 4) this.sorted.length = this.k * 4;
+    if (this.sorted.length > this.k) {
+      const removed = this.sorted.pop()!;
+      for (const [key, lower] of this.best) if (lower === removed) {
+        this.best.delete(key);
+        break;
+      }
+    }
   }
   get threshold() {
     return this.sorted.length >= this.k ? this.sorted[this.k - 1]! : -Infinity;
@@ -354,7 +371,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       return [snapPower[i * width + column]!, skill[i * width + column]!, skillLow[i * width + column]!, j < 0 ? 0 : snapBonus[j]!];
     };
     const values = list.map(value);
-    const kept = list.filter((j, a) => {
+    const kept = input.disableSnapDominance ? list : list.filter((j, a) => {
       if (j < 0 || requiredSnaps.has(j)) return true;
       let dominated = 0;
       for (let b = 0; b < list.length && dominated < 5; b++) {
@@ -403,6 +420,42 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
   let stamp = 0;
   const frontier = new Frontier(k);
   const candidates: Candidate[] = [];
+  const hits: SearchHit<Detail>[] = [];
+  // Equality is prunable only after k distinct legal teams have been evaluated exactly.
+  // Until then lower bounds (including seeds and other shards' floors) retain their strict comparison.
+  const cannotImprove = (upper: number) => !!input.streaming && hits.length >= k && upper <= hits[k - 1]!.key;
+  const retain = (candidate: Candidate, evaluated?: { key: number; detail: Detail }) => {
+    if (!input.streaming) {
+      candidates.push(candidate);
+      return;
+    }
+    if (!evaluated && hits.length >= k && performance.now() > deadline) {
+      timedOut = true;
+      unexploredBound = Math.max(unexploredBound, candidate.high);
+      return;
+    }
+    if (cannotImprove(candidate.high)) return;
+    const existing = hits.findIndex((hit) => setKeyOf(hit.team) === candidate.setKey);
+    if (existing >= 0 && hits[existing]!.key >= candidate.high) return;
+    const local = Math.max(hits.length >= k ? hits[k - 1]!.key : -Infinity, existing >= 0 ? hits[existing]!.key : -Infinity);
+    const cutoff = { key: Math.max(local, floor), pruneEqual: local >= floor && Number.isFinite(local) };
+    const exact = evaluated ?? (objective.evaluate
+      ? objective.evaluate(candidate.team, candidate.power, candidate.slotPowers, cutoff)
+      : objective.exact(candidate.team, candidate.power, candidate.slotPowers));
+    if ("pruned" in exact) {
+      if (!(exact.upperBound < cutoff.key || (cutoff.pruneEqual && exact.upperBound === cutoff.key)))
+        throw new Error("unsafe-objective-cutoff");
+      return;
+    }
+    if (!evaluated) stats.exact++;
+    if (existing >= 0 && hits[existing]!.key >= exact.key) return;
+    if (existing >= 0) hits.splice(existing, 1);
+    const hit = { team: candidate.team, power: candidate.power, slotPowers: candidate.slotPowers, totals: candidate.totals, ...exact };
+    let index = hits.length;
+    while (index > 0 && hits[index - 1]!.key < hit.key) index--;
+    hits.splice(index, 0, hit);
+    if (hits.length > k) hits.length = k;
+  };
   /** Compact when the pool doubles past what survived the last compaction, keeping the work amortized linear. */
   let compactAt = 4096;
   const leaders = [...Array(n).keys()].filter(
@@ -422,6 +475,8 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
   let timedOut = false;
   let unexploredBound = -Infinity;
   const deadline = input.timeLimitMs ? started + input.timeLimitMs : Infinity;
+  // More leader shards than eligible leaders is normal. An empty shard has no reason to re-evaluate global seeds.
+  if (!leaders.length) return { hits: [], proven: true, bound: null, stats: { ...stats, elapsedMs: performance.now() - started } };
 
   const seedValid = (seed: Team) => {
     const team = seed.members;
@@ -468,11 +523,12 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
     });
     if (constraints.minBonus !== null && bonus < constraints.minBonus) return;
     if (constraints.maxBonus != null && bonus > constraints.maxBonus) return;
-    const { key } = objective.exact(seed, power, slotPowers);
+    const evaluated = objective.exact(seed, power, slotPowers);
+    const { key } = evaluated;
     stats.exact++;
     frontier.offer(setKey, key);
     seedKeys.push({ seed, key });
-    candidates.push({ setKey, team: { members: [...team], snaps: [...seed.snaps] }, power, slotPowers, totals: { power, skill: weight, skillLow: weightLow, bonus }, low: key, high: key });
+    retain({ setKey, team: { members: [...team], snaps: [...seed.snaps] }, power, slotPowers, totals: { power, skill: weight, skillLow: weightLow, bonus }, low: key, high: key }, evaluated);
   };
   for (const seed of input.seeds ?? []) if (seedValid(seed)) evaluateSeed(seed);
   for (const [leaderIndex, leader] of leaders.entries()) {
@@ -556,7 +612,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
       skillLow: 0,
       bonus: Math.min(leaderTotals.bonus + topSum(charBonus, 0, 4), memberOnlyBound(memberBonus[leader]!, 0, 4)),
     });
-    if (leaderBound < Math.max(frontier.threshold, floor)) continue;
+    if (leaderBound < Math.max(frontier.threshold, floor) || cannotImprove(leaderBound)) continue;
     if (timedOut) {
       // Unexplored: its optimistic bound limits every team it leads.
       unexploredBound = Math.max(unexploredBound, leaderBound);
@@ -595,7 +651,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         skillLow: 0,
         bonus: Math.min(bonus + topSum(charBonus, index, left), memberOnlyBound(memberPart, index, left)),
       });
-      if (bound < Math.max(frontier.threshold, floor)) return;
+      if (bound < Math.max(frontier.threshold, floor) || cannotImprove(bound)) return;
       if (constraints.minBonus !== null && bonus + topSum(charBonus, index, left) < constraints.minBonus) return;
       if (constraints.maxBonus != null && bonus - memberOptimisticSnapBonus(chosen) > constraints.maxBonus) return;
       if (performance.now() > deadline) {
@@ -804,11 +860,11 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         const fits = (constraints.minBonus === null || bonus >= constraints.minBonus) && (constraints.maxBonus == null || bonus <= constraints.maxBonus);
         if (fits) {
           const [low, high] = objective.interval({ members: team, snaps: picks }, totals);
-          if (high >= limit()) {
+          if (high >= limit() && !cannotImprove(high)) {
             frontier.offer(setKey, low);
             setLow = Math.max(setLow, low);
             stats.candidates++;
-            candidates.push({
+            retain({
               setKey,
               team: { members: [...team], snaps: [...picks] },
               power,
@@ -849,12 +905,12 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         if (objective.bound(totals) < limit()) return;
         if (objective.leafBound && objective.leafBound({ members: team, snaps: assignment }, totals) < limit()) return;
         const [low, high] = objective.interval({ members: team, snaps: assignment }, totals);
-        if (high < limit()) return;
+        if (high < limit() || cannotImprove(high)) return;
         frontier.offer(setKey, low);
         setLow = Math.max(setLow, low);
         stats.candidates++;
         if (candidates.length > compactAt) compact();
-        candidates.push({
+        retain({
           setKey,
           team: { members: [...team], snaps: [...assignment] },
           power,
@@ -871,7 +927,7 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
         skillLow: 0,
         bonus: bonus + Math.min(suffix(maxBonus, slot), unusedBonusTop(5 - slot)),
       });
-      if (optimistic < limit()) return;
+      if (optimistic < limit() || cannotImprove(optimistic)) return;
       if (slot > 0 && slot < 4 && remainingBound(slot, power, weight, bonus) < limit()) return;
       // One slot left: each option's own bound (its power, skill and bonus together), and only options that can still
       // reach the limit are walked.
@@ -928,7 +984,10 @@ export function searchTeams<Detail>(input: SearchInput<Detail>): SearchOutput<De
   // Exact phase: highest optimistic first, until nothing left can enter the Top-K.
   const threshold = Math.max(frontier.threshold, floor);
   const pool = candidates.filter((candidate) => candidate.high >= threshold).sort((a, b) => b.high - a.high);
-  const hits: SearchHit<Detail>[] = [];
+  if (input.streaming) {
+    stats.elapsedMs = performance.now() - started;
+    return { hits, proven: !timedOut, bound: timedOut ? unexploredBound : null, stats: { ...stats, ...objective.work } };
+  }
   const exactBySet = new Map<string, number>();
   const kth = () => {
     if (hits.length < k) return -Infinity;

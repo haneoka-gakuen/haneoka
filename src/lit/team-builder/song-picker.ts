@@ -16,6 +16,8 @@ export interface SongPickerState {
   attributes: number[];
   gekisouTypes: string[];
   difficulty: number;
+  allowedSongIds?: number[];
+  title?: string;
   change: (songs: SongRef[]) => void;
 }
 const DIFFICULTIES = [
@@ -41,6 +43,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const ids = Object.keys(catalog.data.songs)
     .map(Number)
     .filter((id) => {
+      if (state.allowedSongIds && !state.allowedSongIds.includes(id)) return false;
       const song = catalog.data.songs[String(id)]!;
       if (!catalog.difficultyRows(id).some((row) => Number(row.difficulty) === state.difficulty)) return false;
       if (state.bands.length && !catalog.songBands(id).some((band) => state.bands.includes(band))) return false;
@@ -57,7 +60,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       ? [{ songId: id, difficulty: state.difficulty }]
       : exists
         ? state.songs.filter((song) => !(song.songId === id && song.difficulty === state.difficulty))
-        : [...state.songs.filter((song) => song.songId !== id), { songId: id, difficulty: state.difficulty }];
+        : [...state.songs, { songId: id, difficulty: state.difficulty }];
     update({ songs });
     if (state.single) {
       state.change(songs);
@@ -67,7 +70,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const all = { value: "", label: host.common("common.states.all", "All") };
   return selectionPane({
     id: "tb-song-picker",
-    title: state.single ? host.t("chooseSong", "Choose a song") : host.t("chooseSongs", "Choose songs"),
+    title: state.title ?? (state.single ? host.t("chooseSong", "Choose a song") : host.t("chooseSongs", "Choose songs")),
     closeLabel: host.common("common.actions.close", "Close"),
     close,
     searchLabel: host.common("common.actions.search", "Search"),
@@ -109,7 +112,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
           : html`<div class="row row--wrap">
               <span class="tb-results__meta">${host.t("selectedSongs", "{count} selected", { count: state.songs.length })}</span>
               <span class="row__spacer"></span>
-              <button class="button button--text" type="button" @click=${() => update({ songs: [...state.songs.filter((song) => song.difficulty !== state.difficulty || !ids.includes(song.songId)), ...ids.map((songId) => ({ songId, difficulty: state.difficulty }))] })}>${host.t("selectMatching", "Select all shown")}</button>
+              <button class="button button--text" type="button" @click=${() => update({ songs: [...state.songs.filter((song) => song.difficulty !== state.difficulty || !ids.includes(song.songId)), ...ids.map((songId) => ({ songId, difficulty: state.difficulty }))] })}>${host.t("selectMatchingSongs", "Select all shown songs")}</button>
               <button class="button button--text" type="button" @click=${() => update({ songs: [] })}>${host.common("common.actions.clear", "Clear")}</button>
               <button class="button" type="button" @click=${() => { state.change(state.songs); close(); }}>${host.t("useSongs", "Use these songs")}</button>
             </div>`}
