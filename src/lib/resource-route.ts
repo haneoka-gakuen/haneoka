@@ -36,6 +36,7 @@ export const RESOURCE_KINDS = [
   "live2d",
   "spine",
   "help",
+  "skills",
 ] as const;
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 
@@ -200,6 +201,7 @@ const SELECTION_PARAMS: Readonly<Partial<Record<ResourceKind, string>>> = {
   live2d: "model",
   spine: "model",
   help: "topic",
+  skills: "skill",
 };
 
 export function selectionParamForKind(kind: ResourceKind): string | undefined {

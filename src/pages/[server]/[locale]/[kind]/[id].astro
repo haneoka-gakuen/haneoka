@@ -4,6 +4,7 @@ import HelpEntityPage from "../../../../components/entities/HelpEntityPage.astro
 import Live2DEntityPage from "../../../../components/entities/Live2DEntityPage.astro";
 import SpineEntityPage from "../../../../components/entities/SpineEntityPage.astro";
 import StoryEntityPage from "../../../../components/entities/StoryEntityPage.astro";
+import SkillEntityPage from "../../../../components/entities/SkillEntityPage.astro";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import { isPublicReleaseServer, type ReleaseServer } from "../../../../lib/release-server";
 import {
@@ -17,12 +18,15 @@ import { searchableCatalogPages, type SearchableCatalogPage } from "../../../../
 import { searchableHelpPages, type SearchableHelpTopic } from "../../../../lib/searchable-help";
 import { searchableModelPages, type SearchableModelPage } from "../../../../lib/searchable-models";
 import { searchableStoryPages, type SearchableStoryPage } from "../../../../lib/searchable-stories";
+import { skillCatalogPayload, skillPageId, type SkillCatalogPayload, type SkillCatalogEntry } from "../../../../server/skill-catalog";
+import { resolveLocalizedText } from "../../../../lib/localized-text";
 
+type SkillPage = { catalog: Omit<SkillCatalogPayload, "entries">; entry: SkillCatalogEntry };
 type RouteProps = {
   server: ReleaseServer;
   locale: Locale;
   kind: ResourceKind;
-  page: SearchableCatalogPage | SearchableModelPage | SearchableStoryPage | SearchableHelpTopic;
+  page: SearchableCatalogPage | SearchableModelPage | SearchableStoryPage | SearchableHelpTopic | SkillPage;
   previous?: EntityLink;
   next?: EntityLink;
 };
@@ -30,11 +34,12 @@ type RouteProps = {
 export async function getStaticPaths() {
   const output: Array<{ params: Record<string, string>; props: RouteProps }> = [];
   for (const server of await staticCatalogPageServers(true)) {
-    const [catalog, models, stories, help] = await Promise.all([
+    const [catalog, models, stories, help, skills] = await Promise.all([
       searchableCatalogPages(server),
       searchableModelPages(server),
       searchableStoryPages(server),
       searchableHelpPages(server),
+      skillCatalogPayload(server),
     ]);
     const entries: Array<{
       kind: ResourceKind;
@@ -68,21 +73,15 @@ export async function getStaticPaths() {
       });
     for (const page of help)
       entries.push({ kind: "help", id: page.id, title: page.titles, page, group: "help" });
-
-    if (server === "intl-test") {
-      const [formalCatalog, formalModels, formalStories, formalHelp] = await Promise.all([
-        searchableCatalogPages("intl"), searchableModelPages("intl"),
-        searchableStoryPages("intl"), searchableHelpPages("intl"),
-      ]);
-      const formalIds = new Set([
-        ...formalCatalog.map((page) => `${resourceKindForCollection(page.collection)}:${page.id}`),
-        ...formalModels.map((page) => `${page.kind}:${page.id}`),
-        ...formalStories.map((page) => `stories:${page.storyId}`),
-        ...formalHelp.map((page) => `help:${page.id}`),
-      ]);
-      for (let index = entries.length - 1; index >= 0; index--)
-        if (formalIds.has(`${entries[index]!.kind}:${entries[index]!.id}`)) entries.splice(index, 1);
-    }
+    const { entries: skillEntries, ...skillCatalog } = skills;
+    for (const entry of skillEntries)
+      entries.push({
+        kind: "skills",
+        id: skillPageId(entry),
+        title: Object.fromEntries(LOCALES.map((target) => [target, resolveLocalizedText(entry.name, target).text || entry.key])) as Record<Locale, string>,
+        page: { catalog: skillCatalog, entry },
+        group: `skills:${entry.cards.length ? "linked" : "unlinked"}`,
+      });
 
     const groups = new Map<string, typeof entries>();
     for (const entry of entries) {
@@ -136,6 +135,7 @@ const catalogPage = page as SearchableCatalogPage;
 const modelPage = page as SearchableModelPage;
 const storyPage = page as SearchableStoryPage;
 const helpPage = page as SearchableHelpTopic;
+const skillPage = page as SkillPage;
 ---
 
 {kind === "live2d" && modelPage.kind === "live2d" && (
@@ -150,6 +150,9 @@ const helpPage = page as SearchableHelpTopic;
 {kind === "stories" && (
   <StoryEntityPage page={storyPage} locale={locale} server={server} canonical returnTo={returnTo} previous={previous} next={next} />
 )}
-{kind !== "live2d" && kind !== "spine" && kind !== "help" && kind !== "stories" && (
+{kind === "skills" && (
+  <SkillEntityPage page={skillPage} locale={locale} canonical returnTo={returnTo} previous={previous} next={next} />
+)}
+{kind !== "live2d" && kind !== "spine" && kind !== "help" && kind !== "stories" && kind !== "skills" && (
   <CatalogEntityPage page={catalogPage} locale={locale} server={server} canonical returnTo={returnTo} previous={previous} next={next} />
 )}

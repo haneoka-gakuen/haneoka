@@ -12,6 +12,7 @@ import {
   asRecord,
 } from "../lib/static-catalog-source";
 import type { ReleaseServer } from "../lib/resource-route";
+export { skillPageId } from "../lib/skill-page";
 
 const families = {
   leader: "leader-skills",
@@ -53,8 +54,20 @@ export interface SkillCatalogPayload {
   entries: SkillCatalogEntry[];
 }
 
+const payloads = new Map<ReleaseServer, Promise<SkillCatalogPayload>>();
+
 /** One immutable server revision owns both skill definitions and card references. */
-export async function skillCatalogPayload(server: ReleaseServer): Promise<SkillCatalogPayload> {
+export function skillCatalogPayload(server: ReleaseServer): Promise<SkillCatalogPayload> {
+  let pending = payloads.get(server);
+  if (!pending) {
+    pending = buildSkillCatalog(server);
+    payloads.set(server, pending);
+    pending.catch(() => payloads.delete(server));
+  }
+  return pending;
+}
+
+async function buildSkillCatalog(server: ReleaseServer): Promise<SkillCatalogPayload> {
   const pin = await staticCatalogRelease(server);
   const names = Object.keys(families) as SkillFamily[];
   const [documents, reference, members, supports, resources, progression, items] = await Promise.all([

@@ -41,6 +41,7 @@
   color: var(--md-sys-color-on-surface);
   border-radius: var(--md-sys-shape-corner-medium);
   text-align: start;
+  text-decoration: none;
 }
 .list-item > * {
   min-width: 0;

@@ -1,0 +1,62 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../../components/AppShell.astro";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import { serializePageData } from "../../lib/page-data";
+import { resolveLocalizedText } from "../../lib/localized-text";
+import { resourcePath, type EntityLink } from "../../lib/resource-route";
+import { skillPageId, type SkillCatalogEntry, type SkillCatalogPayload } from "../../server/skill-catalog";
+import "../../lit/skills-workspace";
+import "../../styles/catalog.css";
+
+interface Props {
+  page: { catalog: Omit<SkillCatalogPayload, "entries">; entry: SkillCatalogEntry };
+  locale: Locale;
+  canonical?: boolean;
+  returnTo?: string;
+  previous?: EntityLink;
+  next?: EntityLink;
+}
+const { page, locale, returnTo, previous, next } = Astro.props;
+const { catalog, entry } = page;
+const server = catalog.server;
+const id = skillPageId(entry);
+const sectionTitle = t(locale, "catalog.cards.fields.skills", "Skills");
+const titles = Object.fromEntries(
+  LOCALES.map((target) => [target, resolveLocalizedText(entry.name, target).text || entry.key]),
+) as Record<Locale, string>;
+const descriptions = Object.fromEntries(
+  LOCALES.map((target) => [target, resolveLocalizedText(entry.levels.at(-1)?.description, target).text]),
+) as Record<Locale, string>;
+const canonicalHref = resourcePath({ server, locale, kind: "skills", id });
+const pageDataId = `skill-page-${id}`;
+const payload = { ...catalog, entries: [entry] };
+---
+
+<Base
+  locale={locale}
+  route={canonicalHref}
+  canonicalRoute={canonicalHref}
+  title={sectionTitle}
+  titleKey="catalog.cards.fields.skills"
+  description={descriptions[locale]}
+  seoTitleValues={Object.fromEntries(LOCALES.map((target) => [target, `${titles[target]} · ${t(target, "catalog.cards.fields.skills", "Skills")}`])) as Record<Locale, string>}
+  seoDescriptionValues={descriptions}
+  searchImage={entry.image}
+  searchTitle={titles[locale]}
+>
+  <AppShell
+    locale={locale}
+    route="/catalog/skills"
+    server={server}
+    title={titles[locale]}
+    entity={{ title: titles[locale], backHref: returnTo || resourcePath({ server, locale, kind: "skills" }), previous, next }}
+  >
+    <script type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
+    <skills-workspace locale={locale} data-page-data={pageDataId} entity-id={id}></skills-workspace>
+  </AppShell>
+</Base>
+<script>
+  import "../../lit/skills-workspace";
+</script>

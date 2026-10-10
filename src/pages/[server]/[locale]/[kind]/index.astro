@@ -37,7 +37,7 @@ const CATALOG_ROUTES: Readonly<Partial<Record<ResourceKind, string>>> = {
 export async function getStaticPaths() {
   return (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
-      RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge")
+      RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge" && kind !== "skills")
         .map((kind) => ({ params: { server, locale, kind } })),
     ),
   );

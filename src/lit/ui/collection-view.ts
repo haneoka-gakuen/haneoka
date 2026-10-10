@@ -27,34 +27,58 @@ export interface CollectionListEntry {
   image?: string;
   media?: unknown;
   trailing?: unknown;
-  onOpen(): void;
+  /** A row that opens a page is a link to it. */
+  href?: string;
+  onOpen?(): void;
 }
 export function collectionList(entries: readonly CollectionListEntry[]) {
   return html`
     <ul class="list collection-list">
-      ${entries.map(
-        (entry) => html`
+      ${entries.map((entry) => {
+        const body = html`
+          <span class="list-item__leading">
+            ${
+              entry.media ??
+              (entry.image
+                ? html`
+                    <img data-src=${entry.image} alt="" decoding="async" @error=${nextImageCandidate} />
+                  `
+                : icon("image", 24))
+            }
+          </span>
+          <span class="list-item__body">
+            <strong class="list-item__headline" lang=${entry.titleLanguage || nothing}>${entry.title}</strong>
+            <span class="list-item__supporting">${entry.subtitle || "—"}</span>
+          </span>
+          <span class="list-item__trailing">${entry.trailing ?? nothing}${icon("chevron_right", 20)}</span>
+        `;
+        return html`
           <li>
-            <button class="list-item list-item--two-line list-item--interactive" type="button" data-open-item=${entry.id} @click=${entry.onOpen}>
-              <span class="list-item__leading">
-                ${
-                  entry.media ??
-                  (entry.image
-                    ? html`
-                        <img data-src=${entry.image} alt="" decoding="async" @error=${nextImageCandidate} />
-                      `
-                    : icon("image", 24))
-                }
-              </span>
-              <span class="list-item__body">
-                <strong class="list-item__headline" lang=${entry.titleLanguage || nothing}>${entry.title}</strong>
-                <span class="list-item__supporting">${entry.subtitle || "—"}</span>
-              </span>
-              <span class="list-item__trailing">${entry.trailing ?? nothing}${icon("chevron_right", 20)}</span>
-            </button>
+            ${
+              entry.href
+                ? html`
+                    <a
+                      class="list-item list-item--two-line list-item--interactive"
+                      href=${entry.href}
+                      data-open-item=${entry.id}
+                    >
+                      ${body}
+                    </a>
+                  `
+                : html`
+                    <button
+                      class="list-item list-item--two-line list-item--interactive"
+                      type="button"
+                      data-open-item=${entry.id}
+                      @click=${entry.onOpen}
+                    >
+                      ${body}
+                    </button>
+                  `
+            }
           </li>
-        `,
-      )}
+        `;
+      })}
     </ul>
   `;
 }
