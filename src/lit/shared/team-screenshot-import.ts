@@ -14,7 +14,7 @@ export interface ScreenshotImportDialogState {
   preview?: ScreenshotImportPreview;
   results?: readonly ScreenshotRecognitionResult[];
   confirmations: readonly ScreenshotCardConfirmation[];
-  existingValues?: "keep" | "overwrite";
+  existingValues?: "keep" | "overwrite" | "updates";
   /** Local Blob-derived crop URLs, never a public screenshot resource URL. */
   crops: Readonly<Record<string, string>>;
   error: string | null;
@@ -31,7 +31,7 @@ export interface ScreenshotImportDialogActions {
   candidate: (image: number, observation: number, cardId: number) => void;
   include: (key: string, value: boolean) => void;
   level: (key: string, value: number | "keep" | undefined, source: "observed" | "manual") => void;
-  existingValues: (value: "keep" | "overwrite") => void;
+  existingValues: (value: "keep" | "overwrite" | "updates") => void;
   confirm: () => void;
   expandedSource?: (key: string) => boolean;
   expandSource?: (key: string, expanded: boolean) => void;
@@ -83,12 +83,12 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
         ${state.error ? html`<p class="team-builder__error" role="alert">${t("failedMessage", "Screenshot recognition failed")}</p>` : nothing}
         ${state.preview ? html`
-          <p class="team-builder__hint" id="team-screenshot-existing-hint">${t("existingHint", "Applies to existing entries in this import. New entries are added normally. Overwrite uses supplied values; conflicting values need a choice. Each entry can still be adjusted.")}</p>
-          ${segmented<"keep" | "overwrite">({
-            label: t("existingHint", "Applies to existing entries in this import."),
+          ${segmented<"keep" | "overwrite" | "updates">({
+            label: t("existingPolicy", "Existing cards"),
             value: state.existingValues ?? "keep",
             options: [
               { value: "keep", label: t("existingKeep", "Keep all existing values") },
+              { value: "updates", label: t("existingUpdates", "Only increases") },
               { value: "overwrite", label: t("existingOverwrite", "Overwrite all existing values") },
             ],
             onSelect: actions.existingValues,
@@ -102,7 +102,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
               const conflict = defaultChoice.source === "conflict";
               const defaultLevel = defaultChoice.value;
               const defaultLabel = defaultChoice.source === "saved" ? t("keepLevel", "Keep saved level") : conflict ? t("chooseLevel", "Choose level") :
-                defaultChoice.source === "observed" ? t("observedLevel", "Screenshot level") : t("defaultLevel", "Default level");
+                defaultChoice.source === "observed" ? t("observedLevel", "Screenshot level") : t("unknown", "Unknown");
               const defaultText = defaultLevel === null ? defaultLabel : `${defaultLabel}: ${defaultLevel}`;
               return html`<div role="group" aria-label=${options?.label ?? t("reviewCard", "Review card")}>
                 ${options ? tile({ ...options, href: undefined, onOpen: () => {

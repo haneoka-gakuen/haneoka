@@ -1598,7 +1598,9 @@
       "previousResult": "이전 결과",
       "importExisting": {
         "keep": "기존 값 모두 유지",
-        "overwrite": "기존 값 모두 덮어쓰기"
+        "overwrite": "기존 값 모두 덮어쓰기",
+        "updates": "오른 값만",
+        "policy": "보유 카드"
       },
       "screenshotImport": {
         "title": "스크린샷 가져오기",

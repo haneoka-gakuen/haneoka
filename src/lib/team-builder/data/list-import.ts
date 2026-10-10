@@ -1,6 +1,5 @@
 import { type TeamBuilderData } from "../data";
 import { practiceRanges, validateInventory, type InventoryKind, type InventoryV1 } from "../inventory";
-import { maximumNewCardPractice } from "../manual-card-defaults";
 import {
   sameBoxContext,
   type BoxCardProposal,
@@ -172,7 +171,7 @@ export function previewInventoryList(
           throw new TypeError("inventory-list-practice-value");
         supplied[field] = Number(raw);
       }
-      const state = { ...(owned ?? maximumNewCardPractice(data, kind, cardId, supplied)), ...supplied };
+      const state = { ...owned, ...supplied };
       const ranges = practiceRanges(data, kind, cardId, state);
       for (const [field, value] of Object.entries(supplied))
         if (!ranges[field]?.includes(value)) throw new TypeError("inventory-list-practice-range");
@@ -193,7 +192,6 @@ export function previewInventoryList(
               )
             : {},
           values: {},
-          defaultPractice: null,
         };
         cards.set(key, proposal);
       }
@@ -206,15 +204,6 @@ export function previewInventoryList(
       issues.push({ kind: cardId === undefined ? "input" : (kind ?? "input"), id: cardId ?? line, field: "row", code });
     }
   }
-  for (const proposal of cards.values())
-    if (!proposal.existingInstanceId) {
-      const supplied = Object.fromEntries(
-        Object.entries(proposal.values)
-          .filter(([, values]) => values?.length === 1)
-          .map(([field, values]) => [field, values![0]]),
-      );
-      proposal.defaultPractice = maximumNewCardPractice(data, proposal.kind, proposal.cardId, supplied);
-    }
   return {
     rows,
     preview: {

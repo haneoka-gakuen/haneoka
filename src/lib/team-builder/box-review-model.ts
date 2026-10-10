@@ -5,7 +5,7 @@ export interface BoxReviewField {
   field: BoxPracticeField;
   values: readonly number[];
   value: number | null;
-  source: "box" | "saved" | "preset" | "conflict" | "unknown";
+  source: "box" | "saved" | "conflict" | "unknown";
   /** Value/source after clearing an explicit field choice. */
   defaultValue: number | null;
   defaultSource: BoxReviewField["source"];
@@ -21,14 +21,16 @@ export function buildBoxImportReview(preview: BoxPreview, confirmation: BoxConfi
     const choice = confirmation.cards.find(value => value.key === proposal.key) ?? { key: proposal.key, include: false };
     const blocked = preview.issues.some(issue => issue.kind === proposal.kind && issue.id === proposal.cardId);
     const existing = proposal.existingInstanceId !== null;
-    const keep = existing && confirmation.existingValues !== "overwrite";
+    const policy = confirmation.existingValues ?? "keep";
+    const keep = existing && policy === "keep";
     const fields = (proposal.kind === "members" ? ["level", "training", "awakening", "liveSkillLevel", "gekisoSkillLevel"] : ["level", "awakening"]) as BoxPracticeField[];
     const rows: BoxReviewField[] = fields.map(field => {
       const values = proposal.values[field] ?? [], selected = choice.fields?.[field];
-      const preset = proposal.defaultPractice?.[field];
-      const saved = keep || (existing && values.length === 0);
-      const defaultValue = saved ? proposal.existing[field] ?? null : values.length > 1 ? null : values.length === 1 ? values[0]! : preset ?? null;
-      const defaultSource: BoxReviewField["source"] = saved ? "saved" : values.length > 1 ? "conflict" : values.length === 1 ? "box" : preset === undefined ? "unknown" : "preset";
+      const before = proposal.existing[field];
+      const saved = keep || (existing && values.length === 0) ||
+        (policy === "updates" && values.length === 1 && before != null && values[0]! <= before);
+      const defaultValue = saved ? before ?? null : values.length === 1 ? values[0]! : null;
+      const defaultSource: BoxReviewField["source"] = saved ? "saved" : values.length > 1 ? "conflict" : values.length === 1 ? "box" : "unknown";
       return { field, values, defaultValue, defaultSource, value: selected === "keep" ? proposal.existing[field] ?? null : selected ?? defaultValue,
         source: selected === "keep" ? "saved" : selected === undefined ? defaultSource : "box",
         requiresChoice: selected === "keep" ? !existing : selected === undefined ? defaultSource === "conflict" : !values.includes(selected) };
@@ -41,7 +43,9 @@ export function buildBoxImportReview(preview: BoxPreview, confirmation: BoxConfi
     const choice = confirmation.maps.find(value => value.key === proposal.key) ?? { key: proposal.key, include: false };
     const blocked = preview.issues.some(issue => issue.kind === proposal.map && issue.id === proposal.id);
     const existing = Object.hasOwn(preview.original[proposal.map], String(proposal.id));
-    const keep = existing && confirmation.existingValues !== "overwrite";
+    const policy = confirmation.existingValues ?? "keep";
+    const keep = existing && (policy === "keep" ||
+      (policy === "updates" && proposal.values.length === 1 && proposal.existing !== null && proposal.values[0]! <= proposal.existing));
     const defaultValue = keep ? proposal.existing : proposal.values.length === 1 ? proposal.values[0]! : null;
     const value = choice.value === "keep" ? proposal.existing : choice.value ?? defaultValue;
     const requiresChoice = choice.value === "keep" ? !existing : choice.value === undefined && keep ? false :
@@ -77,7 +81,7 @@ export function selectAvailableBoxItems(preview: BoxPreview, confirmation: BoxCo
 }
 
 /** Apply a default to reviewed existing entries without changing inclusion or new-card choices. */
-export function setBoxExistingValues(preview: BoxPreview, confirmation: BoxConfirmation, existingValues: "keep" | "overwrite"): BoxConfirmation {
+export function setBoxExistingValues(preview: BoxPreview, confirmation: BoxConfirmation, existingValues: "keep" | "overwrite" | "updates"): BoxConfirmation {
   return {
     ...confirmation,
     existingValues,

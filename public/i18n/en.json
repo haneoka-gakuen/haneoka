@@ -1598,7 +1598,9 @@
       "previousResult": "Previous result",
       "importExisting": {
         "keep": "Keep all existing values",
-        "overwrite": "Overwrite all existing values"
+        "overwrite": "Overwrite all existing values",
+        "updates": "Only increases",
+        "policy": "Existing cards"
       },
       "screenshotImport": {
         "title": "Import screenshots",

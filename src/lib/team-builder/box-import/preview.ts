@@ -6,7 +6,6 @@ import {
   type InventoryV1,
   type InventoryKind,
 } from "../inventory";
-import { maximumNewCardPractice } from "../manual-card-defaults";
 import { BoxImportError, decimal, integer, type BoxCandidate } from "./types";
 export interface BoxReviewContext {
   ownerId: string;
@@ -23,7 +22,6 @@ export interface BoxCardProposal {
   existingInstanceId: string | null;
   values: Partial<Record<BoxPracticeField, number[]>>;
   existing: Partial<Record<BoxPracticeField, number | null>>;
-  defaultPractice: Record<string, number> | null;
 }
 export interface BoxMapProposal {
   key: string;
@@ -128,7 +126,6 @@ export function previewBoxImport(
                 ]),
               )
             : {},
-          defaultPractice: null,
         };
         cards.set(key, proposal);
       }
@@ -147,15 +144,6 @@ export function previewBoxImport(
         if (!values.includes(value)) values.push(value);
         proposal.values[field] = values.sort((a, b) => a - b);
       }
-    }
-  for (const proposal of cards.values())
-    if (!proposal.existingInstanceId) {
-      const supplied = Object.fromEntries(
-        Object.entries(proposal.values)
-          .filter(([, v]) => v?.length === 1)
-          .map(([k, v]) => [k, v![0]]),
-      );
-      proposal.defaultPractice = maximumNewCardPractice(data, proposal.kind, proposal.cardId, supplied);
     }
   for (const [map, rows] of [
     ["bandItems", candidate.bandItems],

@@ -151,7 +151,7 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       state = { ...state, confirmations: state.confirmations.map(choice => choice.key === key ? { ...choice, include } : choice) };
       refreshCanConfirm(); emit();
     },
-    existingValues(existingValues: "keep" | "overwrite") {
+    existingValues(existingValues: "keep" | "overwrite" | "updates") {
       if (closed || state.phase !== "review" || !state.preview) throw new RangeError("recognition-review-selection");
       const existing = new Set(state.preview.cards.filter(card => card.existingInstanceId !== null).map(card => card.key));
       state = { ...state, existingValues, confirmations: state.confirmations.map(choice => existing.has(choice.key)

@@ -1598,7 +1598,9 @@
       "previousResult": "前回の結果",
       "importExisting": {
         "keep": "既存の値をすべて保持",
-        "overwrite": "既存の値をすべて上書き"
+        "overwrite": "既存の値をすべて上書き",
+        "updates": "上がった値のみ",
+        "policy": "所持済みのカード"
       },
       "screenshotImport": {
         "title": "スクリーンショットを取り込む",

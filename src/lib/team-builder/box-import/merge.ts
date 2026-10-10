@@ -1,10 +1,10 @@
 import { addInventoryEntries, updateInventoryEntries, validateInventory, type InventoryV1 } from "../inventory";
-import { initializeNewCardPractice } from "../manual-card-defaults";
 import type { TeamBuilderData } from "../data";
 import { BoxImportError } from "./types";
 import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext } from "./preview";
 export interface BoxConfirmation {
-  existingValues?: "keep" | "overwrite";
+  /** updates: an existing value only changes when the import raises it. */
+  existingValues?: "keep" | "overwrite" | "updates";
   cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number | "keep">> }[];
   maps: { key: string; include: boolean; value?: number | "keep" }[];
 }
@@ -44,9 +44,11 @@ export function applyConfirmedBoxImport(
       } else if (selected !== undefined) {
         if (!values.includes(selected)) throw new BoxImportError("box_unconfirmed_value");
         fields[field] = selected;
-      } else if (!owned || confirmation.existingValues === "overwrite") {
+      } else if (!owned || confirmation.existingValues === "overwrite" || confirmation.existingValues === "updates") {
         if (values.length > 1) throw new BoxImportError("box_conflict_required");
-        if (values.length === 1) fields[field] = values[0]!;
+        const before = proposal.existing[field];
+        if (values.length === 1 && (confirmation.existingValues !== "updates" || !owned || before == null || values[0]! > before))
+          fields[field] = values[0]!;
       }
     }
     if (Object.keys(choice.fields || {}).some((field) => !Object.hasOwn(proposal.values, field)))
@@ -65,14 +67,14 @@ export function applyConfirmedBoxImport(
       if (!existing) throw new BoxImportError("box_unconfirmed_value");
       continue;
     }
-    if (choice.value === undefined && existing && confirmation.existingValues !== "overwrite") continue;
+    const policy = confirmation.existingValues ?? "keep";
+    if (choice.value === undefined && existing && policy === "keep") continue;
     const selected = choice.value ?? (proposal.values.length === 1 ? proposal.values[0] : undefined);
     if (selected === undefined || !proposal.values.includes(selected))
       throw new BoxImportError("box_conflict_required");
+    if (choice.value === undefined && existing && policy === "updates" && proposal.existing !== null && selected <= proposal.existing) continue;
     next = { ...next, [proposal.map]: { ...next[proposal.map], [String(proposal.id)]: selected } };
   }
-  // Only newly included cards receive maximum presets for absent fields; Box concrete values win.
-  next = initializeNewCardPractice(current, next, data);
   if (!validateInventory(next, data).valid) throw new BoxImportError("box_invalid_confirmed_inventory");
   return next;
 }

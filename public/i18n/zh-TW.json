@@ -1598,7 +1598,9 @@
       "previousResult": "上次結果",
       "importExisting": {
         "keep": "全部保留現有值",
-        "overwrite": "全部覆蓋現有值"
+        "overwrite": "全部覆蓋現有值",
+        "updates": "僅更新提升項",
+        "policy": "已有卡牌"
       },
       "screenshotImport": {
         "title": "匯入截圖",

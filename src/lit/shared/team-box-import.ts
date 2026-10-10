@@ -46,7 +46,7 @@ export interface BoxImportDialogActions {
  */
 export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxImportDialogActions) {
   const t = actions.text, model = state.preview ? buildBoxImportReview(state.preview, state.confirmation) : null;
-  const sourceLabel = (source: BoxReviewField["source"]) => source === "box" ? t("boxValue", "Box value") : source === "preset" ? t("preset", "Maximum preset") : source === "saved" ? t("keep", "Keep saved value") : source === "conflict" ? t("chooseValue", "Choose a value") : t("unknown", "Unknown");
+  const sourceLabel = (source: BoxReviewField["source"]) => source === "box" ? t("boxValue", "Box value") : source === "saved" ? t("keep", "Keep saved value") : source === "conflict" ? t("chooseValue", "Choose a value") : t("unknown", "Unknown");
   const field = (key: string, row: BoxReviewField) => {
     const selected = state.confirmation.cards.find(choice => choice.key === key)?.fields?.[row.field];
     const caption = `${sourceLabel(row.defaultSource)}${row.defaultValue === null ? "" : `: ${row.defaultValue}`}`;
@@ -81,12 +81,12 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
       ${model && state.preview ? html`
         <label class="team-builder__check"><md-checkbox .checked=${state.bindingConfirmed} aria-label=${t("bind", "Use the current {server} card data", { server: state.serverLabel })}
           @change=${(event: Event) => actions.bind((event.target as HTMLInputElement).checked)}></md-checkbox><span>${t("bind", "Use the current {server} card data", { server: state.serverLabel })}</span></label>
-        <p class="team-builder__hint" id="team-box-existing-hint">${t("existingHint", "Applies to existing entries in this import. New entries are added normally. Overwrite uses supplied values; conflicting values need a choice. Each entry can still be adjusted.")}</p>
-        ${segmented<"keep" | "overwrite">({
-          label: t("existingHint", "Applies to existing entries in this import."),
+        ${segmented<"keep" | "overwrite" | "updates">({
+          label: t("existingPolicy", "Existing cards"),
           value: state.confirmation.existingValues ?? "keep",
           options: [
             { value: "keep", label: t("existingKeep", "Keep all existing values") },
+            { value: "updates", label: t("existingUpdates", "Only increases") },
             { value: "overwrite", label: t("existingOverwrite", "Overwrite all existing values") },
           ],
           onSelect: value => actions.confirmation(setBoxExistingValues(state.preview!, state.confirmation, value)),
