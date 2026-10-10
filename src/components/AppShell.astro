@@ -105,8 +105,9 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       <ul class="nav__destinations" role="list">
         {navigation.map((destination) => {
           const current = isDestinationActive(destination, route);
+          const tree = destination.sections.length > 0;
           return (
-            <li class="nav__destination" data-current={current ? "true" : undefined} data-destination={destination.id}>
+            <li class="nav__destination" data-current={current ? "true" : undefined} data-destination={destination.id} data-open={tree && current ? "" : undefined}>
               <a
                 class="rail-item"
                 href={navigationHref(destination.route)}
@@ -120,8 +121,20 @@ const inInformation = route === "/about" || informationPages.some((item) => item
                   <I18nText keyName={destination.label} fallback={destination.id} locale={locale} />
                 </span>
               </a>
-              {current && destination.sections.length > 0 && (
-                <div class="nav__tree" data-nav-tree={destination.id}>
+              {tree && (
+                <button
+                  class="icon-button nav__tree-toggle"
+                  type="button"
+                  data-nav-tree-toggle={destination.id}
+                  aria-controls={`nav-tree-${destination.id}`}
+                  aria-expanded={current ? "true" : "false"}
+                >
+                  <Icon name="expand_more" size={20} />
+                  <span class="sr-only"><I18nText keyName={destination.label} fallback={destination.id} locale={locale} /></span>
+                </button>
+              )}
+              {tree && (
+                <div class="nav__tree" id={`nav-tree-${destination.id}`} data-nav-tree={destination.id}>
                   <div class="nav__tree-inner">
                     {destination.sections.map((section) => (
                       <section class="nav__section" aria-labelledby={destination.sections.length > 1 ? `nav-section-${section.id}` : undefined}>
@@ -419,7 +432,30 @@ const inInformation = route === "/about" || informationPages.some((item) => item
     );
     // A destination's tree unfolds when the reader arrives from another
     // destination; moving within one destination leaves it still.
-    const tree = host.querySelector<HTMLElement>(".nav__destinations [data-nav-tree]");
+    const tree = host.querySelector<HTMLElement>(".nav__destinations [data-current] [data-nav-tree]");
+    // Each destination's tree opens and closes on its own; the reader's choice outlives the page.
+    const OPEN_KEY = "haneoka.navigation.open.v1";
+    let opened: Record<string, boolean> = {};
+    try {
+      opened = JSON.parse(localStorage.getItem(OPEN_KEY) || "{}") || {};
+    } catch {}
+    const setOpen = (item: HTMLElement, open: boolean) => {
+      item.toggleAttribute("data-open", open);
+      item.querySelector("[data-nav-tree-toggle]")?.setAttribute("aria-expanded", String(open));
+    };
+    host.querySelectorAll<HTMLElement>(".nav__destinations [data-nav-tree-toggle]").forEach((toggle) => {
+      const item = toggle.closest<HTMLElement>(".nav__destination")!;
+      const id = toggle.dataset.navTreeToggle!;
+      if (id in opened) setOpen(item, opened[id] === true);
+      toggle.addEventListener("click", () => {
+        const open = !item.hasAttribute("data-open");
+        setOpen(item, open);
+        opened[id] = open;
+        try {
+          localStorage.setItem(OPEN_KEY, JSON.stringify(opened));
+        } catch {}
+      });
+    });
     let previousTree: string | null = null;
     try {
       previousTree = sessionStorage.getItem(TREE_KEY);

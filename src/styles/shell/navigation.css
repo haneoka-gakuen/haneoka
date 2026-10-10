@@ -242,7 +242,31 @@
   outline-offset: 2px;
 }
 
-/* ---------- The current destination's tree ----------
+/* Beside a destination with a tree, while the rail is wide. */
+.nav__destination {
+  position: relative;
+}
+.nav__tree-toggle {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  color: var(--md-sys-color-on-surface-variant);
+  visibility: hidden;
+}
+.nav__destination:has(> .nav__tree-toggle) .rail-item__label {
+  max-width: calc((1 - var(--nav-wide)) * 88px + var(--nav-wide) * (100% - 136px));
+}
+.nav__tree-toggle > .material-icon {
+  transition: transform var(--motion-spatial-fast);
+}
+.nav__tree-toggle[aria-expanded="true"] > .material-icon {
+  transform: rotate(180deg);
+}
+
+/* ---------- A destination's tree ----------
    Rows are 44dp pills (48dp on touch); each level indents 16dp so the
    hierarchy reads at a glance. The tree only exists while the rail is
    expanded: it folds away with the rail on the same spring. */
@@ -358,7 +382,7 @@
 
 /* Where the rail is expanded, the wide-only parts become visible. */
 @media (max-width: 599px) {
-  .nav .nav__tree {
+  .nav .nav__destination[data-open] > .nav__tree {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
@@ -367,12 +391,13 @@
       opacity var(--motion-effects),
       visibility 0s;
   }
-  .nav .nav__brand {
+  .nav .nav__brand,
+  .nav .nav__tree-toggle {
     visibility: visible;
   }
 }
 @media (min-width: 1200px) {
-  :root[data-nav="expanded"] .nav__tree {
+  :root[data-nav="expanded"] .nav__destination[data-open] > .nav__tree {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
@@ -381,11 +406,12 @@
       opacity var(--motion-effects),
       visibility 0s;
   }
-  :root[data-nav="expanded"] .nav__brand {
+  :root[data-nav="expanded"] .nav__brand,
+  :root[data-nav="expanded"] .nav__tree-toggle {
     visibility: visible;
   }
 }
-.nav-modal-open .nav__tree {
+.nav-modal-open .nav__destination[data-open] > .nav__tree {
   grid-template-rows: 1fr;
   opacity: 1;
   visibility: visible;
@@ -394,7 +420,8 @@
     opacity var(--motion-effects),
     visibility 0s;
 }
-.nav-modal-open .nav__brand {
+.nav-modal-open .nav__brand,
+.nav-modal-open .nav__tree-toggle {
   visibility: visible;
 }
 
