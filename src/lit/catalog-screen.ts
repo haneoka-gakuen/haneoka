@@ -1420,11 +1420,11 @@ export class CatalogScreen extends LitElement {
   private restoreFacets(params: URLSearchParams) {
     const bandRail = this.hasBandRail();
     const card = ["member", "support"].includes(this.profile.presentation);
-    if (this.profile.presentation === "character") {
+    if (bandRail) {
       const requested = params.get("band");
-      this.ensureCharacterBandSelection(requested === null ? this.activeBand
+      this.ensureBandSelection(requested === null ? this.activeBand
         : /^[1-9]\d*$/u.test(requested) ? Number(requested) : NaN);
-    } else this.activeBand = bandRail ? Number(params.get("band") || 0) : 0;
+    } else this.activeBand = 0;
     const typeParam = ["member", "support"].includes(this.profile.presentation)
       ? "cardType"
       : this.profile.presentation === "song"
@@ -2402,7 +2402,7 @@ export class CatalogScreen extends LitElement {
    */
   private resultCache?: { key: string; items: Item[]; source: number };
   private results() {
-    this.ensureCharacterBandSelection();
+    this.ensureBandSelection();
     const key = [
       this.items.length,
       this.query,
@@ -2460,11 +2460,9 @@ export class CatalogScreen extends LitElement {
     const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
     // A roster shows one band at a time, so that band is the population the
     // result count is measured against — not the whole catalogue.
-    const source = this.profile.presentation === "character"
+    const source = this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
-      : this.hasBandRail() && this.activeBand
-        ? this.items.filter((item) => Number(item.bandId) === this.activeBand)
-        : this.expandedItems();
+      : this.expandedItems();
     const faceted = source.filter((item) => this.matchesFacets(item));
     const items = needle
       ? faceted.filter((item) =>
@@ -3802,7 +3800,7 @@ export class CatalogScreen extends LitElement {
               pending: this.phase === "loading",
               label: this.label("band", "Band"),
               value: String(this.activeBand),
-              single: kind === "character" && this.railBands().length === 1,
+              single: this.railBands().length === 1,
               items: this.railBands().map((band) => {
                 const id = Number(band.bandId || 0);
                 return {
@@ -3812,8 +3810,7 @@ export class CatalogScreen extends LitElement {
                 };
               }),
               onSelect: (value) => {
-                if (kind === "character") this.ensureCharacterBandSelection(Number(value));
-                else this.activeBand = Number(value);
+                this.ensureBandSelection(Number(value));
                 this.syncUrl();
               },
             }
@@ -3822,7 +3819,7 @@ export class CatalogScreen extends LitElement {
           this.hasBandRail() && this.phase === "loading"
             ? { pending: true, title: "", image: "pending" }
             : this.hasBandRail() && this.activeBand &&
-          (kind !== "character" || this.railBands().some((band) => Number(band.bandId) === this.activeBand))
+          this.railBands().some((band) => Number(band.bandId) === this.activeBand)
             ? {
                 title: this.bandName(this.activeBand),
                 titleLanguage: this.localizedLanguage(this.band(this.activeBand)?.bandName),
@@ -3868,8 +3865,9 @@ export class CatalogScreen extends LitElement {
     const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
     return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
   }
-  private ensureCharacterBandSelection(preferred = this.activeBand) {
-    if (this.profile.presentation !== "character") return;
+  /** A band rail always has one band selected. */
+  private ensureBandSelection(preferred = this.activeBand) {
+    if (!this.hasBandRail()) return;
     const bands = this.railBands();
     if (!bands.length) {
       if (this.phase !== "ready" && Number.isSafeInteger(preferred) && preferred > 0) this.activeBand = preferred;
