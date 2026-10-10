@@ -27,7 +27,7 @@ jobs:
         with:
           ref: ${{ inputs.reader_pin }}
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Install the existing R2 client import closure
