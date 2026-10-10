@@ -47,6 +47,7 @@ and results for the affected desktop and mobile environments.
 
 ## Project conventions
 
+- Follow [AGENTS.md](AGENTS.md) for interface, copy and layout rules.
 - Use package public exports instead of internal paths.
 - Keep source-specific behavior in its source plugin rather than generic
   engine or renderer packages.
