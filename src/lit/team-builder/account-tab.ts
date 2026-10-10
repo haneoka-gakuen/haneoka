@@ -30,7 +30,6 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
   const catalog = host.catalog!;
   const master = catalog.master;
   const view = host.view!;
-  const memorySongs = [...new Set([...host.settings.songs, ...host.settings.planChallengeSongs].map((s) => s.songId))];
   const player = view.player;
   const characterOrder = (id: number) => displayOrder(
     catalog.visuals?.characters[String(id)]?.displayOrder ?? catalog.data.characters[String(id)]?.displayOrder,
@@ -122,18 +121,6 @@ export function renderAccountTab(host: TeamBuilder): TemplateResult {
             </div>
           `,
         )}
-      </section>
-      <section class="surface stack">
-        ${sectionHeading({ icon: "favorite", label: host.t("pt.characterMemory", "Character memory points") })}
-        <p>${host.t("pt.memoryHelp", "Enter the direct power points used by the model. Unknown is not zero; set zero only when you have confirmed there is no bonus.")}</p>
-        <button class="button button--text button--small" type="button" @click=${() => host.write(characters.filter((c) => player.characterMemory[String(c.id)] == null).map((c) => ({ key: `cm.${c.id}`, value: 0 })))}>${host.t("pt.confirmZero", "Set unfilled memory bonuses to confirmed zero")}</button>
-        <div class="tb-rank-grid">${characters.map((c) => html`<div class="tb-rank"><span class="tb-rank__name">${catalog.characterName(c.id)}</span>${stepper(host, `cm.${c.id}`, `${catalog.characterName(c.id)} · ${host.t("pt.characterMemory", "Character memory points")}`, player.characterMemory[String(c.id)] ?? null, 0, 2_147_483_647, (value) => host.write([{ key: `cm.${c.id}`, value }]))}</div>`)}</div>
-      </section>
-      <section class="surface stack">
-        ${sectionHeading({ icon: "music_note", label: host.t("pt.musicMemory", "Song memory points") })}
-        <p>${host.t("pt.musicMemoryHelp", "Memory bonuses for the selected songs. Zero must be entered explicitly.")}</p>
-        <button class="button button--text button--small" type="button" @click=${() => host.write(memorySongs.filter((id) => player.musicMemory[String(id)] == null).map((id) => ({ key: `mm.${id}`, value: 0 })))}>${host.t("pt.confirmZero", "Set unfilled memory bonuses to confirmed zero")}</button>
-        <div class="tb-item-grid">${memorySongs.map((id) => html`<div class="tb-item"><span class="tb-item__name">${catalog.songTitle(id)}</span>${stepper(host, `mm.${id}`, `${catalog.songTitle(id)} · ${host.t("pt.musicMemory", "Song memory points")}`, player.musicMemory[String(id)] ?? null, 0, 2_147_483_647, (value) => host.write([{ key: `mm.${id}`, value }]))}</div>`)}</div>
       </section>
     </div>
   `;

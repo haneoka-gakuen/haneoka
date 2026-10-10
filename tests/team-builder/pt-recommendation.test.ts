@@ -25,6 +25,7 @@ import { resolveSlotSkill } from "../../src/lib/team-builder/engine/skills";
 import { eventObjective } from "../../src/lib/team-builder/engine/objectives";
 import type { Team } from "../../src/lib/team-builder/engine/search";
 import { validatePtChart, validatePtRequest } from "../../src/lib/team-builder/engine/pt-eligibility";
+import { hasEmptyMemoryTables, RUNTIME_MASTER_TABLES, type RuntimeRules } from "../../src/lib/team-builder/data/runtime-rules";
 import { mergeShardResponses } from "../../src/lib/team-builder/engine/merge";
 import {
   canonical,
@@ -379,6 +380,38 @@ export function enumerate(master: EngineMaster, request: EngineRequest, source: 
 
 export async function verify() {
   const passed: string[] = [];
+  const emptyTable = (sourceTable: string) => ({ sourceTable, status: "empty" as const, rows: [] });
+  const memoryRules: RuntimeRules = {
+    schema: "haneoka-team-runtime-rules-v1",
+    status: "ready",
+    tables: {
+      parameters: emptyTable(RUNTIME_MASTER_TABLES.parameters),
+      vipRanks: emptyTable(RUNTIME_MASTER_TABLES.vipRanks),
+      vipRankBonuses: emptyTable(RUNTIME_MASTER_TABLES.vipRankBonuses),
+      memoryMemberLevels: emptyTable(RUNTIME_MASTER_TABLES.memoryMemberLevels),
+      memorySupportLevels: emptyTable(RUNTIME_MASTER_TABLES.memorySupportLevels),
+      memoryMusic: emptyTable(RUNTIME_MASTER_TABLES.memoryMusic),
+      memoryMusicBonuses: emptyTable(RUNTIME_MASTER_TABLES.memoryMusicBonuses),
+      memoryMusicGroups: emptyTable(RUNTIME_MASTER_TABLES.memoryMusicGroups),
+    },
+  };
+  assert(hasEmptyMemoryTables(memoryRules));
+  assert(!hasEmptyMemoryTables(undefined));
+  assert(!hasEmptyMemoryTables({ ...memoryRules, status: "source-unverified" }));
+  for (const key of ["memoryMemberLevels", "memorySupportLevels", "memoryMusic", "memoryMusicBonuses", "memoryMusicGroups"] as const) {
+    const changed = structuredClone(memoryRules);
+    changed.tables[key].status = "missing";
+    assert(!hasEmptyMemoryTables(changed));
+    changed.tables[key].status = "ready";
+    changed.tables[key].rows = [{ level: 1, bonus: 10 }];
+    assert(!hasEmptyMemoryTables(changed));
+    changed.tables[key].status = "empty";
+    assert(!hasEmptyMemoryTables(changed));
+    changed.tables[key].rows = [];
+    changed.tables[key].sourceTable = "unverified";
+    assert(!hasEmptyMemoryTables(changed));
+  }
+  passed.push("memory suppression requires all five verified empty native tables");
   const { master, request, charts } = fixture();
   const cache = new ChartCache(master, async (_master, ref) => charts(ref));
   assert.deepEqual(validatePtRequest(master, request), []);

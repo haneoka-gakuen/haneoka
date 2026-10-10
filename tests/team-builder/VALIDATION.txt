@@ -97,3 +97,25 @@ docs/assets/team-builder-trial/setup-mobile-dark.png
 docs/assets/team-builder-trial/input-corrections.png
 These are intentional interface-review screenshots of Haneoka with synthetic
 inventory and public catalog labels; no account identifiers or private inventory.
+
+Memory-input removal follow-up, 2026-10-10
+- Removed both memory input sections, their zero-confirmation actions, and their
+  rows in the trial input review. Removed five unused trial labels in all five
+  locales and added the same translated unsupported-rules message in each.
+- For verified empty native memory tables, the trial creates explicit zero maps
+  for the engine. Legacy stored memory values are retained for compatibility but
+  do not affect the trial calculation. Missing, unverified, or nonempty memory
+  rules block calculation rather than turning unknown bonuses into zero.
+- All 11 regression suites passed, now covering 73 case groups. The added case
+  checks each of the five native memory tables and unverified/missing sources.
+- Targeted ESLint and five-locale key consistency passed. Scoped TypeScript
+  comparison with PR head afeb9af found 192 existing diagnostics before and after,
+  with no new diagnostics. This is not a clean full-project typecheck or build.
+- Anonymous Edge verification passed: no memory inputs or review labels; other
+  account inputs remain; synthetic inventory is eligible without manually
+  entering memory; legacy values 999/777 become effective zeros; missing or
+  active memory rules block; all four live/challenge PT/medal Worker tasks finish;
+  reload restores the completed job without marking it stale; no page errors.
+- Desktop and 390px mobile account screenshots:
+  docs/assets/team-builder-trial/account-no-memory-desktop.png
+  docs/assets/team-builder-trial/account-no-memory-mobile.png

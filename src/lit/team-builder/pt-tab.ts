@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import type { TeamBuilder } from "../team-builder";
 import { engineInputs } from "../../lib/team-builder/sync/box-view";
+import { hasEmptyMemoryTables } from "../../lib/team-builder/data/runtime-rules";
 import type { EngineHit, EngineRequest } from "../../lib/team-builder/engine/api";
 import { validatePtRequest, type PtIssue } from "../../lib/team-builder/engine/pt-eligibility";
 import {
@@ -47,7 +48,7 @@ export class PtController {
     if (card) {
       host.tab = "pt";
       host.editing = { kind: card[1] === "m" ? "members" : "snaps", cardId: Number(card[2]) };
-    } else host.tab = /^(cr|cm|mm|bi|p)\./u.test(field) ? "account" : field === "inventory" ? "box" : "pt";
+    } else host.tab = /^(cr|bi|p)\./u.test(field) ? "account" : field === "inventory" ? "box" : "pt";
     host.requestUpdate();
     await host.updateComplete;
     const target = host.querySelector<HTMLElement>(`[data-pt-field="${CSS.escape(field)}"]`);
@@ -106,7 +107,13 @@ export class PtController {
     return {
       members: cards.members,
       snaps: s.noSnaps ? [] : cards.snaps,
-      player: structuredClone(view.player),
+      player: {
+        ...structuredClone(view.player),
+        // Memory inputs are not exposed while the native system has no growth tables.
+        // Old local values must not continue to affect the trial behind hidden controls.
+        characterMemory: Object.fromEntries([...(this.host.master?.characters.keys() ?? [])].map((id) => [id, 0])),
+        musicMemory: Object.fromEntries([...(this.host.master?.songs.keys() ?? [])].map((id) => [id, 0])),
+      },
       unknownPolicy: "min",
       goal: {
         kind: "event",
@@ -154,6 +161,8 @@ export class PtController {
       this.accepted = false;
       this.issues = [];
       if (request?.goal.kind === "event" && this.host.master) {
+        if (!hasEmptyMemoryTables(this.host.data?.runtimeRules))
+          this.issues.push({ code: "rules", target: "memory-rules" });
         for (const route of ["live", "challenge"] as const)
           for (const measure of ["points", "items"] as const) {
             const goal = { ...request.goal, route, measure };
@@ -322,8 +331,6 @@ function inputLabel(host: TeamBuilder, target: string): string {
     liveSkillLevel: host.t("liveSkill", "Live skill"),
     gekisoSkillLevel: host.t("gekisoSkill", "Gekisou skill"),
     cr: host.t("characterRanks", "Character ranks"),
-    cm: host.t("pt.characterMemory", "Character memory points"),
-    mm: host.t("pt.musicMemory", "Song memory points"),
     bi: host.t("bandItems", "Band items"),
   };
   const card = /^([ms])(\d+)(?:[.:/]|$)/u.exec(target);
@@ -332,8 +339,8 @@ function inputLabel(host: TeamBuilder, target: string): string {
   const song = /^(?:challenge:|gekiso:)?(\d+):(\d+)$/u.exec(target);
   if (song)
     return `${catalog.songTitle(Number(song[1]))} · ${catalog.difficultyLabel(Number(song[1]), Number(song[2]))}`;
-  if (key === "cr" || key === "cm") return `${catalog.characterName(Number(field))} · ${fields[key]}`;
-  if (key === "mm") return `${catalog.songTitle(Number(field))} · ${fields[key]}`;
+  if (target === "memory-rules") return host.t("pt.unsupportedMemory", "Memory bonus rules are not supported by the current data.");
+  if (key === "cr") return `${catalog.characterName(Number(field))} · ${fields[key]}`;
   if (key === "bi") return `${catalog.text(host.data!.bandItems[field]?.name) || `#${field}`} · ${fields[key]}`;
   return target;
 }
@@ -766,8 +773,6 @@ export function renderPtTab(host: TeamBuilder): TemplateResult {
                   [
                     ["cr", request.player.characterRanks],
                     ["bi", request.player.bandItems],
-                    ["cm", request.player.characterMemory],
-                    ["mm", request.player.musicMemory],
                   ] as const
                 ).flatMap(([prefix, values]) =>
                   Object.entries(values).map(

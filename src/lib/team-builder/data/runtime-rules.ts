@@ -39,6 +39,14 @@ export interface RuntimeRules {
   status: "ready" | "unavailable" | "source-unverified";
   tables: Record<keyof typeof RUNTIME_MASTER_TABLES, RuntimeRuleTable>;
 }
+/** Zero memory bonuses are supported only when all five native tables are observed empty. */
+export function hasEmptyMemoryTables(rules: RuntimeRules | undefined): boolean {
+  const keys = ["memoryMemberLevels", "memorySupportLevels", "memoryMusic", "memoryMusicBonuses", "memoryMusicGroups"] as const;
+  return rules?.status === "ready" && keys.every((key) => {
+    const table = rules.tables[key];
+    return table?.sourceTable === RUNTIME_MASTER_TABLES[key] && table.status === "empty" && table.rows.length === 0;
+  });
+}
 export type RuntimeRulesIdentity = TeamBuilderData["identity"] & { sourceId: string };
 export type RuntimeMasterReader = (identity: RuntimeRulesIdentity, sourceTable: string) => Promise<unknown | null>;
 
