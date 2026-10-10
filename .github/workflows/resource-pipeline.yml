@@ -215,7 +215,7 @@ jobs:
           TGW_INPUT_JSON: ${{ inputs.tgw_input_json }}
           TGW_APPROVAL_JSON: ${{ inputs.tgw_approval_json }}
         run: python scripts/publish/tgw_current.py --output "$RUNNER_TEMP/tgw-output"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: tgw-current-${{ inputs.server }}-${{ github.run_id }}

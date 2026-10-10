@@ -45,7 +45,7 @@ jobs:
         run: python scripts/verify/selected_native.py --output "$RUNNER_TEMP/selected-native-output"
       - name: Keep selected bytes and small receipts
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: selected-native-e578-${{ github.run_id }}
           path: ${{ runner.temp }}/selected-native-output
