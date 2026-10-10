@@ -12,7 +12,10 @@ import { styleMap } from "lit/directives/style-map.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { catalogUrl, localizedText } from "./shared/catalog";
 import { readReleaseServer, RELEASE_SERVERS } from "../lib/release-server";
-import { segmented } from "./ui/controls";
+import { iconButton, segmented } from "./ui/controls";
+import { icon as iconFor } from "./ui/icon";
+import { modal } from "./ui/modal";
+import { errorState, loadingState } from "./ui/state";
 import { selectionPane } from "./ui/selection-pane";
 import { chooserFacet } from "./ui/chooser-filters";
 import { accordion } from "./ui/accordion";
@@ -103,7 +106,6 @@ export class SongPuzzle extends LitElement {
     window.addEventListener("haneoka:locale-ready", this.localeReady);
     this.server = readReleaseServer();
     void this.loadSongs();
-
   }
   disconnectedCallback() {
     window.removeEventListener("haneoka:locale-ready", this.localeReady);
@@ -621,7 +623,7 @@ export class SongPuzzle extends LitElement {
     const button = (key: string, action: () => void, disabled = false) => html`
       <button
         type="button"
-        class=${key === "shuffle" || key === "solve" ? "button" : "button button--tonal"}
+        class=${key === "solve" || key === "confirm" ? "button" : key === "keepBoard" ? "button button--text" : "button button--tonal"}
         ?disabled=${disabled}
         @click=${action}
       >
@@ -642,256 +644,184 @@ export class SongPuzzle extends LitElement {
             : finished && this.coverReady
               ? this.text("completed")
               : this.text("ready");
+    const heading = (iconName: string, label: string, trailing: unknown = nothing) => html`
+      <h2 class="detail-section-title detail-section-title--h2">
+        <span class="detail-section-title__icon" aria-hidden="true">${iconFor(iconName)}</span>
+        <span class="detail-section-title__label">${label}</span>
+        ${trailing}
+      </h2>
+    `;
+    const ready = this.loaded && this.coverReady;
+    const stage = !this.loaded
+      ? this.message
+        ? errorState(this.text(this.message), this.text("retry"), () => void this.loadSongs())
+        : loadingState(this.text("loading"), { local: true })
+      : this.coverFailed
+        ? errorState(this.text("coverError"), this.text("retry"), () => this.checkCover())
+        : !this.coverReady
+          ? loadingState(this.text("loading"), { local: true })
+          : this.renderBoard(goal, song);
+    const toggle = (key: "numbers" | "reference", value: boolean, change: () => void) => html`
+      <label class="control-row">
+        <md-switch .selected=${value} @change=${change}></md-switch>
+        <span>${this.text(key)}</span>
+      </label>
+    `;
     return html`
       <section
         class="page song-slide-puzzle"
         data-mode=${this.mode}
         data-drag=${this.dragEnabled ? "enabled" : "disabled"}
       >
-        <header class="puzzle-toolbar">
-          <button
-            type="button"
-            class="button button--tonal puzzle-song"
-            ?disabled=${!this.loaded}
-            aria-label=${`${this.text("song")}${song ? ` · ${song.name}` : ""}`}
-            @click=${(event: Event) => {
-              this.pickerTrigger = event.currentTarget as HTMLElement;
-              this.pickerOpen = true;
-              this.requestUpdate();
-            }}
-          >
-            ${
-              song
-                ? html`
-                    <img class="puzzle-song__cover" src=${song.cover} alt="" />
-                  `
-                : nothing
-            }
-            <span class="puzzle-song__name">${song?.name || this.text("song")}</span>
-          </button>
-          <div class="puzzle-spec">
-            <md-outlined-select
-              label=${this.text("size")}
-              .value=${live(String(this.size))}
-              @change=${(e: Event) => {
-                const value = Number((e.target as HTMLSelectElement).value);
-                this.change(() => {
-                  this.size = value;
-                  this.defaultCellSize();
-                  this.goalBlank = value * value - 1;
-                  this.resetBoard(false);
-                });
-              }}
-            >
-              ${[3, 4, 5, 6, 7, 8].map(
-                (size) => html`
-                  <md-select-option value=${String(size)}>
-                    <span slot="headline">${size} × ${size}</span>
-                  </md-select-option>
+        <div class="puzzle-layout">
+          <div class="puzzle-stage">
+            ${stage}
+            <div class="puzzle-stage__bar">
+              <span class="puzzle-moves">
+                <span>${this.text("moves")}</span>
+                <strong class="tabular">${this.moves}</strong>
+              </span>
+              ${
+                this.history.length
+                  ? iconButton({ icon: "undo", label: this.text("undo"), onClick: () => this.undo() })
+                  : nothing
+              }
+              <button
+                class="button button--tonal"
+                type="button"
+                ?disabled=${!ready}
+                @click=${() => this.change(() => this.resetBoard(false))}
+              >
+                ${iconFor("restart_alt")}${this.text("reset")}
+              </button>
+              <button
+                class="button"
+                type="button"
+                ?disabled=${!ready}
+                @click=${() => this.change(() => this.resetBoard(true))}
+              >
+                ${iconFor("shuffle")}${this.text("shuffle")}
+              </button>
+            </div>
+          </div>
+          <div class="puzzle-panel stack">
+            <section class="surface stack">
+              ${heading("library_music", this.text("song"))}
+              <button
+                type="button"
+                class="list-item list-item--two-line list-item--interactive puzzle-song"
+                ?disabled=${!this.loaded}
+                @click=${(event: Event) => {
+                  this.pickerTrigger = event.currentTarget as HTMLElement;
+                  this.pickerOpen = true;
+                  this.requestUpdate();
+                }}
+              >
+                <span class="list-item__leading">
+                  ${
+                    song
+                      ? html`
+                          <img src=${song.cover} alt="" />
+                        `
+                      : iconFor("music_note")
+                  }
+                </span>
+                <span class="list-item__body">
+                  <strong class="list-item__headline">${song?.name || this.text("song")}</strong>
+                  <span class="list-item__supporting">
+                    ${song ? localizedText(song.band, this.locale) || localizedText(song.artist, this.locale) : ""}
+                  </span>
+                </span>
+                <span class="list-item__trailing">${iconFor("chevron_right")}</span>
+              </button>
+              <md-outlined-select
+                label=${this.text("size")}
+                .value=${live(String(this.size))}
+                @change=${(e: Event) => {
+                  const size = Number((e.target as HTMLSelectElement).value);
+                  this.change(() => {
+                    this.size = size;
+                    this.defaultCellSize();
+                    this.goalBlank = size * size - 1;
+                    this.resetBoard(false);
+                  });
+                }}
+              >
+                ${[3, 4, 5, 6, 7, 8].map(
+                  (size) =>
+                    html`<md-select-option value=${String(size)}><span slot="headline">${size} × ${size}</span></md-select-option>`,
+                )}
+              </md-outlined-select>
+              ${segmented({
+                label: this.text("mode"),
+                value: this.mode,
+                options: [
+                  { value: "play", label: this.text("play"), icon: "sports_esports" },
+                  { value: "edit", label: this.text("edit"), icon: "edit" },
+                ],
+                onSelect: (value) => {
+                  this.invalidate();
+                  this.mode = value;
+                  this.dragEnabled = false;
+                  this.requestUpdate();
+                },
+              })}
+              ${
+                this.reference && ready && song
+                  ? html`
+                      <img class="puzzle-reference" src=${song.cover} alt=${song.name} />
+                    `
+                  : nothing
+              }
+            </section>
+            <section class="surface stack">
+              ${heading(
+                "lightbulb",
+                this.text("solution"),
+                html`
+                  <span class="chip chip--static" role="status"><span class="chip__label">${status}</span></span>
                 `,
               )}
-            </md-outlined-select>
-          </div>
-        </header>
-        ${
-          this.pendingChange
-            ? html`
-                <section class="surface puzzle-confirm" role="alert">
-                  <p>${this.text("resetConfirm")}</p>
-                  <div class="puzzle-actions">
-                    ${button("confirm", () => {
-                      const change = this.pendingChange;
-                      this.pendingChange = undefined;
-                      change?.();
-                      this.requestUpdate();
-                    })}${button("keepBoard", () => {
-                      this.pendingChange = undefined;
-                      this.requestUpdate();
-                    })}
-                  </div>
-                </section>
-              `
-            : nothing
-        }
-        <div class="puzzle-session">
-          <section class="puzzle-play">
-            <div class="puzzle-mode">
-              ${segmented({
-            label: this.text("mode"),
-            value: this.mode,
-            options: [
-              { value: "play", label: this.text("play") },
-              { value: "edit", label: this.text("edit") },
-            ],
-            onSelect: (value) => {
-              this.invalidate();
-              this.mode = value;
-              this.dragEnabled = false;
-              this.requestUpdate();
-            },
-          })}
-            </div>
-
-
-            ${
-              !this.loaded
-                ? html`
-                    <p role=${this.message ? "alert" : "status"}>
-                      ${this.message ? this.text(this.message) : this.text("loading")}
-                    </p>
-                    ${button("retry", () => {
-                      void this.loadSongs();
-                    })}
-                  `
-                : this.coverFailed
-                  ? html`
-                      <p role="alert">${this.text("coverError")}</p>
-                      ${button("retry", () => this.checkCover())}
-                    `
-                  : !this.coverReady
-                    ? html`
-                        <p>${this.text("loading")}</p>
-                      `
-                    : html`
-                        <div class="puzzle-board-viewport" role="region" aria-label=${this.text("board")} tabindex="0">
-                          <div
-                            class="puzzle-board"
-                            role="group"
-                            aria-label=${this.text("board")}
-                            style=${styleMap({ "--puzzle-columns": String(this.size), "--puzzle-rows": String(this.size), "--puzzle-cell-size": `${this.cellSize}px`, "--puzzle-cover": `url(${JSON.stringify(song?.cover || "")})` })}
-                          >
-                            ${this.tiles.map((tile, index) => {
-                              const source = goal.indexOf(tile),
-                                legal = tile !== 0 && neighbors(this.tiles.indexOf(0), this.size).includes(index);
-                              return html`
-                                <button
-                                  type="button"
-                                  class="puzzle-cell"
-                                  data-index=${index}
-                                  data-empty=${String(tile === 0)}
-                                  data-hint=${String(index === this.hint)}
-                                  data-dragging=${String(index === this.dragStart?.index)}
-                                  aria-pressed=${this.mode === "edit" ? String(this.selected === index) : nothing}
-                                  aria-disabled=${String(this.mode === "play" && !legal)}
-                                  aria-label=${`${tile === 0 ? this.text("blank") : this.text("tile", { tile })}, ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}`}
-                                  style=${styleMap({ "--puzzle-fragment-x": `${((source % this.size) / (this.size - 1)) * 100}%`, "--puzzle-fragment-y": `${(Math.floor(source / this.size) / (this.size - 1)) * 100}%` })}
-                                  @click=${(event: MouseEvent) => {
-                                    if (this.suppressClick && event.detail > 0) {
-                                      this.suppressClick = false;
-                                      return;
-                                    }
-                                    this.suppressClick = false;
-                                    this.activate(index);
-                                  }}
-                                  @keydown=${(e: KeyboardEvent) => this.key(e, index)}
-                                  @pointerdown=${(e: PointerEvent) => this.pointerDown(e, index)}
-                                  @pointerup=${(e: PointerEvent) => this.pointerUp(e)}
-                                  @pointercancel=${() => {
-                                    this.clearDrag();
-                                    this.requestUpdate();
-                                  }}
-                                >
-                                  ${
-                                    tile === 0
-                                      ? html`
-                                          <span class="puzzle-cell__blank-label">${this.text("blank")}</span>
-                                        `
-                                      : html`
-                                          <span class="puzzle-cell__number" ?hidden=${!this.numbers}>${tile}</span>
-                                        `
-                                  }${
-                                    index === this.hint
-                                      ? html`
-                                          <span class="puzzle-cell__hint">
-                                            ${this.text(tileDirection(this.tiles, tile, this.size))}
-                                          </span>
-                                        `
-                                      : nothing
-                                  }
-                                </button>
-                              `;
-                            })}
-                          </div>
-                        </div>
-                      `
-            }
-            <div class="puzzle-actions">
-              ${button("shuffle", () => this.change(() => this.resetBoard(true)), !this.loaded || !this.coverReady)}
-              ${button("reset", () => this.change(() => this.resetBoard(false)), !this.loaded || !this.coverReady)}
-              ${this.history.length ? button("undo", () => this.undo()) : nothing}
-            </div>
-            <dl class="puzzle-metrics">
-              <div>
-                <dt>${this.text("moves")}</dt>
-                <dd>${this.moves}</dd>
-              </div>
-
-            </dl>
-            <figure class="puzzle-reference" ?hidden=${!this.reference || !this.loaded || !this.coverReady}>
-              ${
-                song
-                  ? html`
-                      <img src=${song.cover} alt=${song.name} />
-                      <figcaption>${song.name}</figcaption>
-                    `
-                  : nothing
-              }
-            </figure>
-          </section>
-          <section
-            class="surface puzzle-result"
-            data-state=${this.busy ? "searching" : valid ? "ready" : "invalid"}
-            data-certainty=${this.solution ? "proven" : "pending"}
-          >
-            <header class="puzzle-result__header">
-              <h2 class="md-title-large">${this.text("solution")}</h2>
-              <span class="puzzle-result__status" role="status">${status}</span>
-            </header>
-            ${
-              this.busy
-                ? html`
-                    <div class="puzzle-result__progress">${operationProgress(this.text("searching"))}</div>
-                  `
-                : this.solution?.path.length
-                  ? html`
-                      <div class="puzzle-result__progress">
-                        ${operationProgress(this.text("replay"), this.replayIndex / this.solution.path.length)}
-                        <output class="puzzle-result__position">
-                          ${this.replayIndex} / ${this.solution.path.length}
-                        </output>
-                      </div>
-                    `
-                  : nothing
-            }
-            <div class="puzzle-actions">
               ${
                 this.busy
-                  ? button("cancel", () => {
-                      this.cancel();
-                      this.message = "cancelled";
-                      this.requestUpdate();
-                    })
-                  : !finished && !this.solution
-                    ? button("solve", () => this.solve(), !valid || !this.loaded || !this.coverReady)
+                  ? operationProgress(this.text("searching"))
+                  : this.solution?.path.length
+                    ? operationProgress(
+                        `${this.replayIndex} / ${this.solution.path.length}`,
+                        this.replayIndex / this.solution.path.length,
+                      )
                     : nothing
               }
-              ${!this.busy && !finished && !this.solution ? button("hint", () => this.showHint(), !valid || !this.loaded || !this.coverReady) : nothing}
+              <div class="cluster">
+                ${
+                  this.busy
+                    ? button("cancel", () => {
+                        this.cancel();
+                        this.message = "cancelled";
+                        this.requestUpdate();
+                      })
+                    : !finished && !this.solution
+                      ? html`
+                          ${button("solve", () => this.solve(), !valid || !ready)}${button("hint", () => this.showHint(), !valid || !ready)}
+                        `
+                      : nothing
+                }
+                ${
+                  this.solution
+                    ? html`
+                        ${button("step", () => this.step(), this.replayIndex >= this.solution.path.length)}
+                        ${button(this.replayTimer ? "pause" : "replay", () => this.replay(), !this.solution.path.length)}
+                        ${button("stopReplay", () => this.rewind(), !this.solution.path.length)}
+                      `
+                    : nothing
+                }
+              </div>
               ${
                 this.solution
-                  ? html`
-                      ${button("step", () => this.step(), this.replayIndex >= this.solution.path.length)}
-                      ${button(this.replayTimer ? "pause" : "replay", () => this.replay(), !this.solution.path.length)}
-                      ${button("stopReplay", () => this.rewind(), !this.solution.path.length)}
-                    `
-                  : nothing
-              }
-            </div>
-            ${
-              this.solution
-                ? html`
-                    ${accordion({
+                  ? accordion({
                       id: "puzzle-steps",
                       label: this.text("steps"),
+                      metadata: String(this.solution.path.length),
                       expanded: this.stepsOpen,
                       onExpandedChange: (expanded) => {
                         this.stepsOpen = expanded;
@@ -899,92 +829,64 @@ export class SongPuzzle extends LitElement {
                       },
                       content: html`
                         <ol class="puzzle-steps">
-                          ${this.solution.path.map((tile, index) => {
-                        return html`
-                          <li>
-                            <button
-                              type="button"
-                              class="button button--text puzzle-step"
-                              aria-current=${index === this.replayIndex ? "step" : "false"}
-                              ?disabled=${index !== this.replayIndex}
-                              @click=${() => this.step()}
-                            >
-                              ${index + 1}. ${this.text("tile", { tile })}
-                              ${this.text(this.solution!.directions[index]!)}
-                            </button>
-                          </li>
-                        `;
-                      })}
+                          ${this.solution.path.map(
+                            (tile, index) => html`
+                              <li aria-current=${index === this.replayIndex ? "step" : "false"}>
+                                ${this.text("tile", { tile })} ${this.text(this.solution!.directions[index]!)}
+                              </li>
+                            `,
+                          )}
                         </ol>
                       `,
-                    })}
-                  `
-                : nothing
-            }
-          </section>
-        </div>
-        ${accordion({
-          id: "puzzle-advanced",
-          label: this.text("advanced"),
-          expanded: this.advancedOpen,
-          onExpandedChange: (expanded) => {
-            this.advancedOpen = expanded;
-            this.requestUpdate();
-          },
-          className: "puzzle-settings",
-          content: html`
-            <div class="puzzle-options">
-              <label class="control-row">
-                <md-switch
-                  aria-label=${this.text("numbers")}
-                  .selected=${this.numbers}
-                  @change=${() => {
-                    this.numbers = !this.numbers;
-                    this.requestUpdate();
-                  }}
-                ></md-switch>
-                ${this.text("numbers")}
-              </label>
-              <label class="control-row">
-                <md-switch
-                  aria-label=${this.text("reference")}
-                  .selected=${this.reference}
-                  @change=${() => {
-                    this.reference = !this.reference;
-                    this.requestUpdate();
-                  }}
-                ></md-switch>
-                ${this.text("reference")}
-              </label>
-              ${
-                this.mode === "edit"
-                  ? html`
-                      <label class="control-row">
-                        <md-switch
-                          aria-label=${this.text("drag")}
-                          .selected=${this.dragEnabled}
-                          @change=${() => {
-                            this.dragEnabled = !this.dragEnabled;
-                            if (!this.dragEnabled) {
-                              this.clearDrag();
-                              this.selected = -1;
-                              this.suppressClick = true;
-                            }
-                            this.requestUpdate();
-                          }}
-                        ></md-switch>
-                        ${this.text("drag")}
-                      </label>
-                    `
+                    })
                   : nothing
               }
-            </div>
-            <div class="puzzle-fields">
-              <div class="puzzle-field">
-                <md-outlined-select
-                  label=${this.text("server")}
-                  .value=${live(this.server)}
-                  @change=${(e: Event) => {
+            </section>
+            ${accordion({
+              id: "puzzle-advanced",
+              className: "surface",
+              leading: iconFor("tune"),
+              label: this.text("advanced"),
+              expanded: this.advancedOpen,
+              onExpandedChange: (expanded) => {
+                this.advancedOpen = expanded;
+                this.requestUpdate();
+              },
+              content: html`
+                <div class="stack">
+                  ${toggle("numbers", this.numbers, () => {
+                    this.numbers = !this.numbers;
+                    this.requestUpdate();
+                  })}
+                  ${toggle("reference", this.reference, () => {
+                    this.reference = !this.reference;
+                    this.requestUpdate();
+                  })}
+                  ${
+                    this.mode === "edit"
+                      ? html`
+                          <label class="control-row">
+                            <md-switch
+                              .selected=${this.dragEnabled}
+                              @change=${() => {
+                                this.dragEnabled = !this.dragEnabled;
+                                if (!this.dragEnabled) {
+                                  this.clearDrag();
+                                  this.selected = -1;
+                                  this.suppressClick = true;
+                                }
+                                this.requestUpdate();
+                              }}
+                            ></md-switch>
+                            <span>${this.text("drag")}</span>
+                          </label>
+                        `
+                      : nothing
+                  }
+                  <md-outlined-select
+                    label=${this.text("server")}
+                    .value=${live(this.server)}
+                    @change=${(e: Event) => {
                       const value = (e.target as HTMLSelectElement).value;
                       this.change(() => {
                         this.invalidate();
@@ -992,29 +894,27 @@ export class SongPuzzle extends LitElement {
                         void this.loadSongs();
                       });
                     }}
-                >
-                  ${RELEASE_SERVERS.map(
+                  >
+                    ${RELEASE_SERVERS.map(
                       (server) => html`
                         <md-select-option value=${server}>
                           <span slot="headline">${this.text(server === "jp" ? "jp" : "intl")}</span>
                         </md-select-option>
                       `,
                     )}
-                </md-outlined-select>
-              </div>
-              <div class="puzzle-field">
-                <md-outlined-select
-                  label=${this.text("goalBlank")}
-                  .value=${live(String(this.goalBlank))}
-                  @change=${(e: Event) => {
+                  </md-outlined-select>
+                  <md-outlined-select
+                    label=${this.text("goalBlank")}
+                    .value=${live(String(this.goalBlank))}
+                    @change=${(e: Event) => {
                       const value = Number((e.target as HTMLSelectElement).value);
                       this.change(() => {
                         this.goalBlank = value;
                         this.resetBoard(false);
                       });
                     }}
-                >
-                  ${goal.map(
+                  >
+                    ${goal.map(
                       (_, index) => html`
                         <md-select-option value=${String(index)}>
                           <span slot="headline">
@@ -1023,66 +923,156 @@ export class SongPuzzle extends LitElement {
                         </md-select-option>
                       `,
                     )}
-                </md-outlined-select>
-              </div>
-              <div class="puzzle-field">
-                <md-outlined-text-field
-                  label=${this.text("shuffleSteps")}
-                  type="number"
-                  min="1"
-                  max="1000"
-                  .value=${live(this.scrambleDraft)}
-                  @input=${(e: Event) => {
+                  </md-outlined-select>
+                  <md-outlined-text-field
+                    label=${this.text("shuffleSteps")}
+                    type="number"
+                    min="1"
+                    max="1000"
+                    .value=${live(this.scrambleDraft)}
+                    @input=${(e: Event) => {
                       this.scrambleDraft = (e.target as HTMLInputElement).value;
                     }}
-                  @change=${(e: Event) => {
+                    @change=${(e: Event) => {
                       this.scrambleDraft = (e.target as HTMLInputElement).value;
                       this.scrambleSteps = Math.max(1, Math.min(1000, Math.floor(Number(this.scrambleDraft) || 20)));
                       this.scrambleDraft = String(this.scrambleSteps);
                       this.requestUpdate();
                     }}
-                ></md-outlined-text-field>
-              </div>
-              <div class="puzzle-field">
-                <md-outlined-text-field
-                  label=${this.text("searchBudget")}
-                  type="number"
-                  min="1"
-                  max="120"
-                  .value=${live(this.budgetDraft)}
-                  ?disabled=${this.busy}
-                  @input=${(e: Event) => {
+                  ></md-outlined-text-field>
+                  <md-outlined-text-field
+                    label=${this.text("searchBudget")}
+                    type="number"
+                    min="1"
+                    max="120"
+                    .value=${live(this.budgetDraft)}
+                    ?disabled=${this.busy}
+                    @input=${(e: Event) => {
                       if (!this.busy) this.budgetDraft = (e.target as HTMLInputElement).value;
                     }}
-                  @change=${(e: Event) => {
+                    @change=${(e: Event) => {
                       if (this.busy) return;
                       this.budgetDraft = (e.target as HTMLInputElement).value;
                       this.normalizeBudget();
                       this.requestUpdate();
                     }}
-                ></md-outlined-text-field>
-              </div>
-            </div>
-            <label class="puzzle-zoom">
-              ${this.text("zoom")}
-              <md-slider
-                class="md3-slider"
-                aria-label=${this.text("zoom")}
-                min="48"
-                max="128"
-                step="8"
-                .value=${this.cellSize}
-                @input=${(e: Event) => {
-                    this.cellSizeChosen = true;
-                    this.cellSize = Number((e.target as HTMLInputElement).value);
+                  ></md-outlined-text-field>
+                  <label class="control-row puzzle-zoom">
+                    <span>${this.text("zoom")}</span>
+                    <md-slider
+                      class="md3-slider"
+                      labeled
+                      aria-label=${this.text("zoom")}
+                      min="48"
+                      max="128"
+                      step="8"
+                      .value=${this.cellSize}
+                      @input=${(e: Event) => {
+                        this.cellSizeChosen = true;
+                        this.cellSize = Number((e.target as HTMLInputElement).value);
+                        this.requestUpdate();
+                      }}
+                    ></md-slider>
+                  </label>
+                </div>
+              `,
+            })}
+          </div>
+        </div>
+        ${
+          this.pendingChange
+            ? html`
+                <dialog
+                  class="dialog"
+                  ${modal(() => {
+                    this.pendingChange = undefined;
                     this.requestUpdate();
-                  }}
-              ></md-slider>
-            </label>
-          `,
-        })}
+                  })}
+                >
+                  <div class="dialog__surface">
+                    <header class="dialog__header"><h2>${this.text("resetConfirm")}</h2></header>
+                    <footer class="dialog__actions">
+                      ${button("keepBoard", () => {
+                        this.pendingChange = undefined;
+                        this.requestUpdate();
+                      })}
+                      ${button("confirm", () => {
+                        const change = this.pendingChange;
+                        this.pendingChange = undefined;
+                        change?.();
+                        this.requestUpdate();
+                      })}
+                    </footer>
+                  </div>
+                </dialog>
+              `
+            : nothing
+        }
         ${this.pickerOpen ? this.renderSongPicker() : nothing}
       </section>
+    `;
+  }
+  private renderBoard(goal: number[], song: Song | undefined) {
+    return html`
+      <div class="puzzle-board-viewport" role="region" aria-label=${this.text("board")} tabindex="0">
+        <div
+          class="puzzle-board"
+          role="group"
+          aria-label=${this.text("board")}
+          style=${styleMap({ "--puzzle-columns": String(this.size), "--puzzle-rows": String(this.size), "--puzzle-cell-size": `${this.cellSize}px`, "--puzzle-cover": `url(${JSON.stringify(song?.cover || "")})` })}
+        >
+          ${this.tiles.map((tile, index) => {
+            const source = goal.indexOf(tile),
+              legal = tile !== 0 && neighbors(this.tiles.indexOf(0), this.size).includes(index);
+            return html`
+              <button
+                type="button"
+                class="puzzle-cell"
+                data-index=${index}
+                data-empty=${String(tile === 0)}
+                data-hint=${String(index === this.hint)}
+                data-dragging=${String(index === this.dragStart?.index)}
+                aria-pressed=${this.mode === "edit" ? String(this.selected === index) : nothing}
+                aria-disabled=${String(this.mode === "play" && !legal)}
+                aria-label=${`${tile === 0 ? this.text("blank") : this.text("tile", { tile })}, ${this.text("position", { row: Math.floor(index / this.size) + 1, column: (index % this.size) + 1 })}`}
+                style=${styleMap({ "--puzzle-fragment-x": `${((source % this.size) / (this.size - 1)) * 100}%`, "--puzzle-fragment-y": `${(Math.floor(source / this.size) / (this.size - 1)) * 100}%` })}
+                @click=${(event: MouseEvent) => {
+                  if (this.suppressClick && event.detail > 0) {
+                    this.suppressClick = false;
+                    return;
+                  }
+                  this.suppressClick = false;
+                  this.activate(index);
+                }}
+                @keydown=${(e: KeyboardEvent) => this.key(e, index)}
+                @pointerdown=${(e: PointerEvent) => this.pointerDown(e, index)}
+                @pointerup=${(e: PointerEvent) => this.pointerUp(e)}
+                @pointercancel=${() => {
+                  this.clearDrag();
+                  this.requestUpdate();
+                }}
+              >
+                ${
+                  tile === 0
+                    ? html`
+                        <span class="puzzle-cell__blank-label">${this.text("blank")}</span>
+                      `
+                    : html`
+                        <span class="puzzle-cell__number" ?hidden=${!this.numbers}>${tile}</span>
+                      `
+                }
+                ${
+                  index === this.hint
+                    ? html`
+                        <span class="puzzle-cell__hint">${this.text(tileDirection(this.tiles, tile, this.size))}</span>
+                      `
+                    : nothing
+                }
+              </button>
+            `;
+          })}
+        </div>
+      </div>
     `;
   }
 }
