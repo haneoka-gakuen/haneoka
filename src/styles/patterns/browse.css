@@ -199,16 +199,28 @@
    Every active facet value appears as a removable input chip. Before this,
    the only way to see what was filtering a 6000-row collection was to open
    the panel and read the controls; the count was computed but never shown. */
-.browse__applied {
+/* ---------- Applied filters ----------
+   A breadcrumb after the app bar title: removable chips that scroll inside
+   the bar instead of inserting a row above the results. */
+.top-app-bar__identity:has(.browse__crumbs),
+.top-app-bar__identity-group:has(.browse__crumbs) {
+  flex: 0 1 auto;
+  min-width: min(40%, 160px);
+}
+.browse__crumbs {
   display: flex;
   min-width: 0;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 0 var(--pane-gutter) 8px;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  color: var(--md-sys-color-on-surface-variant);
 }
-.browse__applied:empty {
+.browse__crumbs::-webkit-scrollbar {
   display: none;
+}
+.browse__crumbs > .chip {
+  flex: none;
 }
 
 /* ---------- Results ---------- */
@@ -217,8 +229,7 @@
   padding: 16px var(--pane-gutter) calc(24px + var(--shell-bottom-inset));
 }
 /* A heading already opens the pane, so the results follow it closely. */
-.browse__heading + .browse__results,
-.browse__applied + .browse__results {
+.browse__heading + .browse__results {
   padding-top: 8px;
 }
 .browse__results--flush {
@@ -336,7 +347,6 @@ fieldset.browse__filter-group {
   .browse__count > span {
     display: none;
   }
-  .browse__applied,
   .browse__results {
     padding-inline: 12px;
   }

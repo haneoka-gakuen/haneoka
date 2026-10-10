@@ -257,7 +257,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
       <!-- An entity's identity marks (band logo, attribute, rarity) follow its
            title: they arrive after hydration, and after the title they can
            appear without moving it. -->
-      {entity && <div class="top-app-bar__identity" data-top-app-bar-identity></div>}
+      <div class="top-app-bar__identity" data-top-app-bar-identity></div>
       <slot name="search" />
       <!-- The trailing row fills the rest of the bar and packs its controls
            to the end, so controls that arrive after hydration never move the
@@ -463,7 +463,7 @@ const inInformation = route === "/about" || informationPages.some((item) => item
         const title = bar.querySelector<HTMLElement>("h1");
         // (A short title is not a squeezed one: only a truncated title under
         // 96px gives up the marks.)
-        if (identity && title && title.scrollWidth > title.clientWidth + 1 && title.getBoundingClientRect().width < 96)
+        if (identity && !identity.querySelector(".browse__crumbs") && title && title.scrollWidth > title.clientWidth + 1 && title.getBoundingClientRect().width < 96)
           identity.hidden = true;
         actions.dataset.appBarOverflow = "false";
       } finally {
