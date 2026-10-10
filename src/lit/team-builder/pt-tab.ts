@@ -24,6 +24,7 @@ import { PtCheckpoint } from "../../lib/team-builder/pt-checkpoint";
 import { formation } from "./results";
 import { sectionHeading } from "./catalog";
 import { boostControl } from "./boost-control";
+import { activityDetails } from "./activity-details";
 import type { SongPickerState } from "./song-picker";
 import { iconButton, segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
@@ -628,7 +629,7 @@ function renderRun(host: TeamBuilder): TemplateResult {
                 ?disabled=${blocked}
                 @click=${() => void pt.start(false)}
               >
-                ${icon("search", 20)}${t("start", "Calculate")}
+                ${icon("search", 20)}${host.t("activity.findFarming", "Find teams and songs")}
               </button>
             `
       }
@@ -732,7 +733,10 @@ function renderRanking(host: TeamBuilder): TemplateResult {
                       ${t("challengeBest", "Challenge team")}
                     </span>
                   </div>
-                  <strong class="tabular">${number(challenge.event!.mean)}</strong>
+                  <div class="stack">
+                    <span>${job.cycle ? host.t("activity.challengeReward", "Per challenge · {cp} CP", { cp: job.cycle.consumption }) : host.t("activity.challengeOnly", "Per challenge")}</span>
+                    <strong class="tabular">${number(challenge.event!.mean)} ${currency}</strong>
+                  </div>
                 </header>
                 ${formation(host, challenge)}
               </article>
@@ -752,11 +756,15 @@ function renderRanking(host: TeamBuilder): TemplateResult {
                   ${host.t("eventBonus", "Event bonus")} +${number(hit.event!.bonusPercent)}%
                 </span>
               </div>
-              <strong class="tabular">${number(hit.event!.mean)} ${currency}</strong>
+              <div class="stack">
+                <span>${host.t("activity.convertedReward", "Per normal live, including CP value")}</span>
+                <strong class="tabular">${number(hit.event!.mean)} ${currency}</strong>
+              </div>
             </header>
             <p class="pt-breakdown tabular">
               ${t("breakdown", "Live {direct} + CP {converted}", { direct: number(hit.event!.directMean!), converted: number(hit.event!.convertedMean!) })}
             </p>
+            ${job.request.goal.kind === "event" ? html`<span>${host.t("activity.normalCost", "Per normal live · {boosts} boosts", { boosts: job.request.goal.consumption })}</span>` : nothing}
             ${formation(host, hit)}
           </article>
         `;
@@ -800,6 +808,7 @@ export function renderPtTab(host: TeamBuilder): TemplateResult {
   return html`
     <div class="tb-build pt-recommendation">
       <div class="tb-config stack">
+        ${activityDetails(host, "recommend")}
         ${renderSetup(host)} ${host.pt.showIssues && host.pt.issues.length ? renderIssues(host) : nothing}
         ${renderRun(host)}
       </div>

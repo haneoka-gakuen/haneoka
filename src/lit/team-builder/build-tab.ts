@@ -11,14 +11,13 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { sectionHeading } from "./catalog";
 import { renderResults } from "./results";
+import { activityDetails } from "./activity-details";
 import type { BuildSettings, GoalKind } from "./types";
 import type { TeamBuilder } from "../team-builder";
 
 const GOALS = [
   { id: "score", icon: "music_note" },
   { id: "gekiso", icon: "local_fire_department" },
-  { id: "event", icon: "emoji_events" },
-  { id: "plan", icon: "cycle" },
   { id: "power", icon: "bolt" },
   { id: "potential", icon: "auto_awesome" },
 ] as const;
@@ -414,7 +413,7 @@ function candidates(host: TeamBuilder): TemplateResult {
   });
 }
 
-export function renderBuildTab(host: TeamBuilder): TemplateResult {
+export function renderBuildTab(host: TeamBuilder, showGoals = true): TemplateResult {
   const s = host.settings;
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
   const cards = host.engineCards();
@@ -436,6 +435,8 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
   return html`
     <div class="tb-build">
       <div class="tb-config stack">
+        ${s.goal === "event" || s.goal === "plan" ? activityDetails(host, s.goal) : nothing}
+        ${showGoals ? html`
         <section class="surface stack">
           ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
           <div
@@ -529,6 +530,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               : nothing
           }
         </section>
+        ` : nothing}
         ${
           s.goal === "event"
             ? html`
@@ -560,12 +562,12 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
               })}
                   ${
                 s.route === "challenge"
-                  ? segmented({
+                  ? html`<span class="tb-field__label">${host.t("pt.challengeCost", "CP per challenge")}</span>${segmented({
                       label: host.t("cpPerLive", "Challenge points per live"),
                       value: String(s.challengePoints),
                       options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })),
                       onSelect: (value) => set({ challengePoints: Number(value) }),
-                    })
+                    })}`
                   : boostControl(host, s.boosts, (boosts) => set({ boosts }))
               }
                 </section>
@@ -576,13 +578,13 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
           s.goal === "plan"
             ? html`
                 <section class="surface stack">
-                  ${sectionHeading({ icon: "cycle", label: host.t("planSetup", "Resource plan") })}
+                  ${sectionHeading({ icon: "cycle", label: host.t("activity.budget", "Budget estimate") })}
                   ${eventSection(host)}
                   <div class="tb-number-grid">
                     <md-outlined-text-field
                       type="number"
                       min="0"
-                      label=${host.t("planBudget", "Boosts to spend")}
+                      label=${s.planBoostsPerLive === 0 ? host.t("activity.unboostedPlays", "Normal plays at 0 boosts") : host.t("planBudget", "Boosts to spend")}
                       .value=${live(String(s.planBudget))}
                       @change=${(e: Event) => set({ planBudget: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                     ></md-outlined-text-field>
@@ -595,6 +597,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
                       @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                     ></md-outlined-text-field>
                   </div>
+                  <span class="tb-field__label">${host.t("pt.challengeCost", "CP per challenge")}</span>
                   ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
                   <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                   ${songList(host, s.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }))}
@@ -642,7 +645,7 @@ export function renderBuildTab(host: TeamBuilder): TemplateResult {
                     ?disabled=${!!missing}
                     @click=${() => void host.run()}
                   >
-                    ${icon("search", 20)}${host.t("findTeams", "Find teams")}
+                    ${icon("search", 20)}${s.goal === "plan" ? host.t("activity.estimate", "Estimate rewards") : s.goal === "event" ? host.t("activity.calculateSingle", "Find a team for one play") : host.t("findTeams", "Find teams")}
                   </button>
                 `
           }

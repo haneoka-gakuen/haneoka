@@ -114,6 +114,15 @@
     overflow-x: auto;
     scrollbar-width: none;
   }
+  .tb-activity-modes {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .tb-activity-modes .segmented > button {
+    min-height: var(--md-comp-control-height-touch);
+  }
   .tb-sync {
     display: inline-flex;
     min-height: 32px;

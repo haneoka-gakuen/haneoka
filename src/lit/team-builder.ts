@@ -21,13 +21,15 @@ import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import { DEFAULT_SETTINGS, type BoxFilters, type BuildSettings, type Tab } from "./team-builder/types";
 import { renderBuildTab } from "./team-builder/build-tab";
+import { renderActivityTab } from "./team-builder/activity-tab";
+import { goalForTab, isActivityGoal, mergeBuildSettings, restoreBuildSettings } from "./team-builder/navigation";
 import { renderBoxTab, renderCardEditor } from "./team-builder/box-tab";
 import { renderAccountTab } from "./team-builder/account-tab";
 import { renderTeamsTab } from "./team-builder/teams-tab";
 import { renderSongPicker, type SongPickerState } from "./team-builder/song-picker";
 import { ImportController } from "./team-builder/importers";
 import { Catalog } from "./team-builder/catalog";
-import { PtController, renderPtTab } from "./team-builder/pt-tab";
+import { PtController } from "./team-builder/pt-tab";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -203,7 +205,9 @@ export class TeamBuilder extends LitElement {
     if (versionChanged) {
       this.view = readBox(snapshot.entries);
       const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
-      if (stored && typeof stored === "object") this.settings = { ...DEFAULT_SETTINGS, ...(stored as Partial<BuildSettings>) };
+      if (stored && typeof stored === "object") this.settings = restoreBuildSettings(stored as Partial<BuildSettings>);
+      if (this.tab === "build" && isActivityGoal(this.settings.goal)) this.tab = "pt";
+      this.settings = { ...this.settings, goal: goalForTab(this.settings, this.tab) };
     }
     this.requestUpdate();
     void this.pt.restore();
@@ -220,12 +224,14 @@ export class TeamBuilder extends LitElement {
     }
   }
   updateSettings(patch: Partial<BuildSettings>) {
-    this.settings = { ...this.settings, ...patch };
+    this.settings = mergeBuildSettings(this.settings, patch);
     this.write([{ key: SETTINGS_KEY, value: this.settings as unknown as BoxValue }]);
     this.requestUpdate();
   }
   setTab(tab: Tab) {
     this.tab = tab;
+    const goal = goalForTab(this.settings, tab);
+    if (goal !== this.settings.goal) this.updateSettings({ goal });
     this.requestUpdate();
     void this.updateComplete.then(() => this.querySelector<HTMLElement>(".tb-tabpanel")?.focus({ preventScroll: true }));
   }
@@ -426,7 +432,7 @@ export class TeamBuilder extends LitElement {
     }
     if (this.pt.correcting && this.tab !== "pt") this.pt.sync();
     const panel =
-      this.tab === "pt" ? renderPtTab(this) : this.tab === "build" ? renderBuildTab(this) : this.tab === "box" ? renderBoxTab(this) : this.tab === "account" ? renderAccountTab(this) : renderTeamsTab(this);
+      this.tab === "pt" ? renderActivityTab(this) : this.tab === "build" ? renderBuildTab(this) : this.tab === "box" ? renderBoxTab(this) : this.tab === "account" ? renderAccountTab(this) : renderTeamsTab(this);
     return html`
       <div class="team-builder tb">
         <header class="tb-header">
