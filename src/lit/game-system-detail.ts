@@ -14,7 +14,7 @@ import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 
 import { html, nothing } from "lit";
 import { finiteExchangeCost } from "../lib/exchange-cost-summary";
-import { filterChip } from "./ui/controls";
+import { filterChip, segmented } from "./ui/controls";
 import { accordion } from "./ui/accordion";
 import {
   availableShopCurrencies,
@@ -27,6 +27,7 @@ import {
   shopPriceEntries,
 } from "../lib/shop-currency";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { collectionTable } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { tile, tileMedia, type TileMark } from "./ui/tile";
 import { nextImageCandidate } from "./ui/lazy-images";
@@ -34,6 +35,19 @@ import { episodeArtwork } from "../lib/story-artwork";
 import { storyTile } from "./shared/story-tile";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
+import { clientText } from "../i18n/client";
+import {
+  canSimulate,
+  drawCountOf,
+  gachaGuarantee,
+  kindRarityCounts,
+  simulateGacha,
+  tallyGacha,
+  useLimitOf,
+  type GachaPrize,
+  type GachaRun,
+} from "../lib/gacha-simulation";
+import "../styles/gacha-simulator.css";
 
 type Item = Record<string, unknown>;
 type Controller = Record<string, any>;
@@ -45,15 +59,6 @@ function canonicalHref(c: Controller, href: string): string {
   return typeof c.resourceHref === "function" ? String(c.resourceHref(href) || href) : href;
 }
 
-export interface GachaSimState {
-  draws: number;
-  points: number;
-  uses: Record<string, number>;
-  costs: Record<string, { currency: unknown; image: string; spent: number }>;
-  tally: Record<string, number>;
-  lastDraws: number;
-  results: Array<{ prize: Item; rarity: number }>;
-}
 
 /** Real-time rate session for the open shop detail; owned by the screen like sim. */
 export interface ShopFxState {
@@ -331,112 +336,237 @@ function renderRates(c: Controller, item: Item) {
 
 const gachaOptions = (item: Item): Item[] => (Array.isArray(item.drawOptions) ? (item.drawOptions as Item[]) : []);
 const gachaOptionKey = (item: Item, option: Item): string => String(option.id ?? gachaOptions(item).indexOf(option));
-const gachaRates = (item: Item): Item[] =>
-  (Array.isArray(item.rates) ? (item.rates as Item[]) : []).filter(
-    (row) =>
-      Number(row.rate) > 0 && Array.isArray(row.prizes) && row.prizes.some((prize: Item) => Number(prize.rate) > 0),
-  );
-const prizeRarity = (group: Item, prize: Item) => Number(prize.rarity ?? group.rarity) || 0;
-const guaranteedRates = (rates: Item[], rarity: number): Item[] =>
-  rates.flatMap((group) => {
-    const available = (group.prizes as Item[]).filter((prize) => Number(prize.rate) > 0);
-    const prizes = available.filter((prize) => prizeRarity(group, prize) >= rarity);
-    const weight = (rows: Item[]) => rows.reduce((sum, prize) => sum + Number(prize.rate), 0);
-    return prizes.length ? [{ ...group, prizes, rate: (Number(group.rate) * weight(prizes)) / weight(available) }] : [];
-  });
-const optionDrawCount = (option: Item) => Math.max(1, Math.floor(Number(option.drawCount) || 1));
+const MAX_SIMULATED_DRAWS = 3000;
 
-function nextGachaPrice(sim: GachaSimState | null, key: string, option: Item): number {
-  return Number(option.firstPrice) > 0 && !sim?.uses[key]
-    ? Number(option.firstPrice)
-    : Math.max(0, Number(option.price) || 0);
+export interface GachaSimState {
+  /** Recruitments to run with the selected option. */
+  uses: number;
+  view: "pulls" | "stats";
+  runs: GachaRun[];
+  exporting?: boolean;
 }
 
-/** Simulate one product use, including its guarantee, discount and usage limit. */
-export function drawGacha(c: Controller, item: Item, option: Item) {
-  const rates = gachaRates(item);
+const simText = (c: Controller, key: string, fallback: string, values?: Record<string, unknown>) =>
+  clientText(c.settings.locale, `catalog.recruitments.${key}`, fallback, values as never);
+
+const simState = (c: Controller): GachaSimState => (c.sim as GachaSimState | null) || { uses: 10, view: "pulls", runs: [] };
+
+function usedOf(item: Item, runs: readonly GachaRun[], option: Item) {
   const key = gachaOptionKey(item, option);
-  const previous: GachaSimState = c.sim || {
-    draws: 0,
-    points: 0,
-    uses: {},
-    costs: {},
-    tally: {},
-    lastDraws: 0,
-    results: [],
+  return runs.filter((run) => gachaOptionKey(item, run.option) === key).reduce((sum, run) => sum + run.pulls.length, 0);
+}
+
+/** Recruitments still possible with this option: its use limit and the session's draw ceiling. */
+function maxUses(item: Item, runs: readonly GachaRun[], option: Item) {
+  const drawn = runs.reduce((sum, run) => sum + run.draws, 0);
+  const byDraws = Math.floor((MAX_SIMULATED_DRAWS - drawn) / drawCountOf(option));
+  const limit = useLimitOf(option);
+  return Math.max(0, limit ? Math.min(byDraws, limit - usedOf(item, runs, option)) : byDraws);
+}
+
+/** Attribute and rarity emblems for a drawn card, from its catalogue tile. */
+function prizeMarks(c: Controller, prize: GachaPrize) {
+  if (prize.kind === "item" || typeof c.cardTileOptions !== "function") return { attribute: "", rarityMark: "" };
+  const marks = (rewardCardOptions(c, prize.source, prize.kind).marks || []) as Array<TileMark | null>;
+  return {
+    attribute: String(marks.find((mark) => mark?.at === "start")?.image || ""),
+    rarityMark: String(marks.find((mark) => mark?.at === "end")?.image || ""),
   };
-  const limit = Math.max(0, Number(option.limitCount) || 0);
-  if (!rates.length || (limit && (previous.uses[key] || 0) >= limit)) return;
-  const ensured = Math.max(0, Number(option.guaranteedRarity) || 0);
-  const ensuredPool = guaranteedRates(rates, ensured);
-  if (ensured && !ensuredPool.length) return;
-  const pickWeighted = (rows: Item[]) => {
-    const available = rows.filter((row) => Number(row.rate) > 0);
-    let roll = Math.random() * available.reduce((sum, row) => sum + Number(row.rate), 0);
-    for (const row of available) {
-      roll -= Number(row.rate);
-      if (roll < 0) return row;
-    }
-    return available[available.length - 1];
-  };
-  const drawOnce = (pool: Item[] = rates) => {
-    const group = pickWeighted(pool);
-    const prize = pickWeighted(group.prizes as Item[]);
-    const rarity = prizeRarity(group, prize);
-    return { prize: { ...prize, rarity: prize.rarity ?? rarity }, rarity };
-  };
-  const draws = optionDrawCount(option);
-  const results = Array.from({ length: draws }, () => drawOnce());
-  const guaranteed = ensured ? Math.min(draws, Math.max(1, Number(option.guaranteedCount) || 1)) : 0;
-  let missing = guaranteed - results.filter((result) => result.rarity >= ensured).length;
-  for (let index = results.length - 1; missing > 0 && index >= 0; index -= 1) {
-    if (results[index].rarity >= ensured) continue;
-    results[index] = drawOnce(ensuredPool);
-    missing -= 1;
+}
+
+function prizeCard(c: Controller, prize: GachaPrize, marks: ReturnType<typeof prizeMarks>, count = 0) {
+  const name = c.localized(prize.source.name) || c.label("reward", "Reward");
+  const href = canonicalHref(c, String(prize.source.href || ""));
+  const body = html`
+    <img class="gacha-card__art" src=${String(prize.source.image || "")} alt="" loading="lazy" decoding="async" />
+    ${marks.attribute ? html`<img class="gacha-card__attribute" src=${marks.attribute} alt="" />` : nothing}
+    ${marks.rarityMark ? html`<img class="gacha-card__rarity" src=${marks.rarityMark} alt="" />` : nothing}
+    ${prize.pickup ? html`<span class="gacha-card__pickup">UP</span>` : nothing}
+    ${count ? html`<span class="gacha-card__count tabular">×${count}</span>` : nothing}
+  `;
+  const label = `${cardRarityName(prize.rarity)} ${name}${count > 1 ? ` ×${count}` : ""}`;
+  return href
+    ? html`<a class="gacha-card" data-kind=${prize.kind} data-rarity=${prize.rarity} href=${href} title=${label} aria-label=${label}>${body}</a>`
+    : html`<span class="gacha-card" data-kind=${prize.kind} data-rarity=${prize.rarity} title=${label} role="img" aria-label=${label}>${body}</span>`;
+}
+
+/** One row per recruitment of five or more draws; single draws packed ten to a row. */
+function runRows(run: GachaRun, offset: number): Array<{ start: number; prizes: GachaPrize[] }> {
+  const size = drawCountOf(run.option);
+  if (size >= 5) return run.pulls.map((prizes, index) => ({ start: offset + index * size + 1, prizes }));
+  const flat = run.pulls.flat();
+  return Array.from({ length: Math.ceil(flat.length / 10) }, (_, index) => ({
+    start: offset + index * 10 + 1,
+    prizes: flat.slice(index * 10, index * 10 + 10),
+  }));
+}
+
+function optionLabel(c: Controller, option: Item) {
+  return `${eventText(c, "draw", "{count} draws", { count: drawCountOf(option) })} · ${c.localized(option.currency) || c.label("free", "Free")}`;
+}
+
+const kindLabel = (c: Controller, kind: string) =>
+  c.label(kind === "member" ? "memberCards" : kind === "support" ? "supportCards" : "items", kind);
+
+function batchLabel(c: Controller, run: GachaRun) {
+  return `${optionLabel(c, run.option)} × ${run.pulls.length.toLocaleString(c.settings.locale)}`;
+}
+
+function sessionCosts(runs: readonly GachaRun[]) {
+  const costs = new Map<string, { currency: unknown; image: string; spent: number }>();
+  for (const run of runs) {
+    const key = JSON.stringify([run.option.currencyImage || "", run.option.currency || []]);
+    const cost = costs.get(key) || { currency: run.option.currency, image: String(run.option.currencyImage || ""), spent: 0 };
+    cost.spent += run.cost;
+    costs.set(key, cost);
   }
-  const costKey = JSON.stringify([option.currencyImage || "", option.currency || []]);
-  const cost = previous.costs[costKey] || {
-    currency: option.currency,
-    image: String(option.currencyImage || ""),
-    spent: 0,
-  };
-  const tally = { ...previous.tally };
-  for (const result of results) tally[String(result.rarity)] = (tally[String(result.rarity)] || 0) + 1;
-  c.sim = {
-    draws: previous.draws + draws,
-    points: previous.points + (Number(option.gachaPoint) || 0),
-    uses: { ...previous.uses, [key]: (previous.uses[key] || 0) + 1 },
-    costs: { ...previous.costs, [costKey]: { ...cost, spent: cost.spent + nextGachaPrice(previous, key, option) } },
-    tally,
-    lastDraws: draws,
-    results,
-  } satisfies GachaSimState;
+  return [...costs.values()];
+}
+
+async function exportGachaImage(c: Controller, item: Item, state: GachaSimState) {
+  if (!state.runs.length || state.exporting) return;
+  c.sim = { ...state, exporting: true };
   c.requestUpdate();
+  try {
+    const { renderGachaImage } = await import("../lib/gacha-simulation-image");
+    const marks = new Map<string, ReturnType<typeof prizeMarks>>();
+    const card = (prize: GachaPrize, count = 0) => {
+      if (!marks.has(prize.key)) marks.set(prize.key, prizeMarks(c, prize));
+      return { kind: prize.kind, rarity: prize.rarity, pickup: prize.pickup, image: String(prize.source.image || ""), count, ...marks.get(prize.key)! };
+    };
+    const tally = tallyGacha(state.runs);
+    const draws = state.runs.reduce((sum, run) => sum + run.draws, 0);
+    const points = state.runs.reduce((sum, run) => sum + run.points, 0);
+    let offset = 0;
+    const blob = await renderGachaImage({
+      mode: state.view,
+      title: c.localized(item.title) || "",
+      subtitle: `${c.label("drawCount", "Draws")} ${draws.toLocaleString(c.settings.locale)}`,
+      summary: [
+        {
+          label: c.label("spent", "Cost"),
+          entries: [
+            ...sessionCosts(state.runs).map((cost) => ({
+              image: cost.image,
+              label: c.localized(cost.currency) || c.label("free", "Free"),
+              count: cost.spent,
+            })),
+            ...(points ? [{ label: c.label("gachaPoint", "Gacha points"), count: points }] : []),
+          ],
+        },
+        ...kindRarityCounts(state.runs).map(({ kind, counts }) => ({
+          label: kindLabel(c, kind),
+          entries: counts.map(([rarity, count]) => ({ image: c.rarityMark(rarity) as string, label: cardRarityName(rarity), count })),
+        })),
+        { label: "", entries: [{ label: "UP", count: state.runs.flatMap((run) => run.pulls.flat()).filter((prize) => prize.pickup).length }] },
+      ],
+      batches: state.runs.map((run) => {
+        const rows = runRows(run, offset).map((row) => ({ label: `#${row.start}`, cards: row.prizes.map((prize) => card(prize)) }));
+        offset += run.draws;
+        return { label: batchLabel(c, run), rows };
+      }),
+      groups: (["member", "support", "item"] as const)
+        .filter((kind) => tally[kind].length)
+        .map((kind) => ({ kind, label: kindLabel(c, kind), cards: tally[kind].map((entry) => card(entry.prize, entry.count)) })),
+      brand: { name: "haneoka", url: "haneoka.org", logo: "/android-chrome-192x192.png" },
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `gacha-${String(item.id || "")}-${state.view}.png`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } finally {
+    c.sim = { ...(c.sim as GachaSimState), exporting: false };
+    c.requestUpdate();
+  }
+}
+
+function renderSimulationSummary(c: Controller, runs: readonly GachaRun[]) {
+  const locale = c.settings.locale;
+  const draws = runs.reduce((sum, run) => sum + run.draws, 0);
+  const points = runs.reduce((sum, run) => sum + run.points, 0);
+  const groups = kindRarityCounts(runs);
+  const rarities = [...new Set(groups.flatMap((group) => group.counts.map(([rarity]) => rarity)))].sort((a, b) => b - a);
+  const cell = (count: number) =>
+    count
+      ? html`${count.toLocaleString(locale)} <small>${((count / draws) * 100).toLocaleString(locale, { maximumFractionDigits: 2 })}%</small>`
+      : "—";
+  const totals = rarities.map((rarity) => groups.reduce((sum, group) => sum + (group.counts.find(([value]) => value === rarity)?.[1] || 0), 0));
+  return html`
+    <dl class="spec-list spec-list--split spec-list--numeric">
+      <div><dt>${c.label("drawCount", "Draws")}</dt><dd>${draws.toLocaleString(locale)}</dd></div>
+      ${sessionCosts(runs).map(
+        (cost) => html`
+          <div>
+            <dt>${c.label("spent", "Cost")} · ${c.localized(cost.currency) || c.label("free", "Free")}</dt>
+            <dd>${cost.spent ? costLine(cost.spent.toLocaleString(locale), cost.image) : c.label("free", "Free")}</dd>
+          </div>
+        `,
+      )}
+      ${points ? html`<div><dt>${c.label("gachaPoint", "Gacha points")}</dt><dd>${points.toLocaleString(locale)}</dd></div>` : nothing}
+      <div>
+        <dt><span class="gacha-card__pickup gacha-card__pickup--inline">UP</span></dt>
+        <dd>${runs.flatMap((run) => run.pulls.flat()).filter((prize) => prize.pickup).length.toLocaleString(locale)}</dd>
+      </div>
+    </dl>
+    ${collectionTable(
+      c.label("drawCount", "Draws"),
+      ["", ...rarities.map((rarity) => rarityMark(c, rarity))],
+      [
+        ...groups.map((group) => [
+          kindLabel(c, group.kind),
+          ...rarities.map((rarity) => cell(group.counts.find(([value]) => value === rarity)?.[1] || 0)),
+        ]),
+        ...(groups.length > 1 ? [[simText(c, "total", "Total"), ...totals.map(cell)]] : []),
+      ],
+      { numeric: true },
+    )}
+  `;
 }
 
 function renderSimulator(c: Controller, item: Item) {
   const options = gachaOptions(item);
   if (!options.length) return nothing;
-  const sim = c.sim as GachaSimState | null;
-  const selected = options.find((option) => gachaOptionKey(item, option) === c.gachaOption) || options[0];
+  const selected = options.find((option) => gachaOptionKey(item, option) === c.gachaOption) || options[0]!;
   const key = gachaOptionKey(item, selected);
-  const draws = optionDrawCount(selected);
-  const price = nextGachaPrice(sim, key, selected);
-  const currency = c.localized(selected.currency);
-  const limit = Math.max(0, Number(selected.limitCount) || 0);
-  const remaining = limit ? Math.max(0, limit - (sim?.uses[key] || 0)) : null;
-  const rates = gachaRates(item);
-  const ensured = Number(selected.guaranteedRarity) || 0;
-  const canSimulate = rates.length > 0 && (!ensured || guaranteedRates(rates, ensured).length > 0);
-  const action = eventText(c, "simulateDraw", "Simulate {count} draws", { count: draws });
+  const state = simState(c);
+  const runs = state.runs;
+  const size = drawCountOf(selected);
+  const available = maxUses(item, runs, selected);
+  const uses = Math.min(Math.max(1, Math.floor(state.uses) || 1), Math.max(1, available));
+  const ready = canSimulate(item, selected) && available > 0;
+  const guarantee = gachaGuarantee(selected);
+  const locale = c.settings.locale;
+  const price = Math.max(0, Number(selected.price) || 0);
+  const update = (next: Partial<GachaSimState>) => {
+    c.sim = { ...simState(c), ...next };
+    c.requestUpdate();
+  };
+  const simulate = () => {
+    const run = simulateGacha(item, selected, uses, usedOf(item, runs, selected));
+    update({ runs: [...runs, run], uses });
+  };
+  const marks = new Map<string, ReturnType<typeof prizeMarks>>();
+  const cardFor = (prize: GachaPrize, count = 0) => {
+    if (!marks.has(prize.key)) marks.set(prize.key, prizeMarks(c, prize));
+    return prizeCard(c, prize, marks.get(prize.key)!, count);
+  };
+  const tally = runs.length ? tallyGacha(runs) : null;
+  let offset = 0;
   return html`
-    <section class="detail-section" data-gacha-simulator>
+    <section class="detail-section gacha-sim" data-gacha-simulator>
       ${renderDetailSectionHeading(c.label("simulator", "Simulator"), "difficulty")}
-      <div class="field-stack">
+      <form
+        class="gacha-sim__controls"
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          if (ready) simulate();
+        }}
+      >
         <md-outlined-select
           label=${c.label("drawOptions", "Draw options")}
           .value=${key}
-          .displayText=${`${eventText(c, "draw", "{count} draws", { count: draws })} · ${currency || c.label("free", "Free")}`}
+          .displayText=${optionLabel(c, selected)}
           @change=${(event: Event) => {
             c.gachaOption = (event.target as HTMLSelectElement).value;
             c.requestUpdate();
@@ -445,180 +575,115 @@ function renderSimulator(c: Controller, item: Item) {
           ${options.map(
             (option) => html`
               <md-select-option value=${gachaOptionKey(item, option)} ?selected=${gachaOptionKey(item, option) === key}>
-                <div slot="headline">
-                  ${eventText(c, "draw", "{count} draws", { count: optionDrawCount(option) })} ·
-                  ${c.localized(option.currency) || c.label("free", "Free")}
-                </div>
+                <div slot="headline">${optionLabel(c, option)}</div>
               </md-select-option>
             `,
           )}
         </md-outlined-select>
-      </div>
-      <dl class="spec-list spec-list--split spec-list--numeric">
-        <div>
-          <dt>${c.label("nextDrawCost", "Next draw cost")}</dt>
-          <dd>
-            ${price ? costLine(`${price.toLocaleString(c.settings.locale)} ${currency}`, selected.currencyImage) : c.label("free", "Free")}
-            ${
-              Number(selected.firstPrice) > 0 &&
-              !sim?.uses[key] &&
-              Number(selected.firstPrice) !== Number(selected.price)
-                ? html`
-                    <span class="chip chip--static">
-                      <span class="chip__label">${c.label("firstTime", "First time")}</span>
-                    </span>
-                  `
-                : nothing
-            }
-          </dd>
-        </div>
-        ${
-          ensured
-            ? html`
-                <div>
-                  <dt>${c.label("guaranteed", "Guaranteed")}</dt>
-                  <dd>
-                    ${eventText(c, "guaranteedDraws", "At least {count} {rarity} or higher", {
-                      count: Math.max(1, Number(selected.guaranteedCount) || 1),
-                      rarity: "\uFFFC",
-                    })
-                      .split("\uFFFC")
-                      .map(
-                        (part, index) => html`
-                          ${index ? rarityMark(c, ensured) : nothing}${part}
-                        `,
-                      )}
-                  </dd>
-                </div>
-              `
-            : nothing
-        }
-        ${
-          Number(selected.gachaPoint) > 0
-            ? html`
-                <div>
-                  <dt>${c.label("gachaPoint", "Gacha points")}</dt>
-                  <dd>+${Number(selected.gachaPoint).toLocaleString(c.settings.locale)}</dd>
-                </div>
-              `
-            : nothing
-        }
-        ${
-          remaining !== null
-            ? html`
-                <div>
-                  <dt>${c.label("remainingDrawUses", "Uses remaining in this simulation")}</dt>
-                  <dd>${remaining.toLocaleString(c.settings.locale)}</dd>
-                </div>
-              `
-            : nothing
-        }
-      </dl>
-      <div class="cluster">
-        <button
-          class="button"
-          type="button"
-          data-gacha-draw
-          ?disabled=${!canSimulate || remaining === 0}
-          @click=${() => drawGacha(c, item, selected)}
-        >
-          ${icon("casino", 18)}${action}
-        </button>
-        ${
-          sim
-            ? html`
-                <button
-                  class="button button--text"
-                  type="button"
-                  @click=${() => {
-                    c.sim = null;
-                    c.requestUpdate();
-                    void c.updateComplete.then(() => c.querySelector("[data-gacha-draw]")?.focus());
-                  }}
-                >
-                  ${c.label("resetSimulator", "Reset simulation")}
+        <md-outlined-text-field
+          type="number"
+          label=${simText(c, "useCount", "Recruitments")}
+          suffix-text=${`= ${(uses * size).toLocaleString(locale)}`}
+          .value=${String(uses)}
+          min="1"
+          max=${Math.max(1, available)}
+          step="1"
+          ?disabled=${!available}
+          @change=${(event: Event) => update({ uses: Number((event.target as HTMLInputElement).value) || 1 })}
+        ></md-outlined-text-field>
+        <button class="button" type="submit" ?disabled=${!ready}>${icon("casino", 18)}${simText(c, "simulate", "Simulate")}</button>
+      </form>
+      <ul class="chip-set" role="list">
+        <li class="chip chip--static">
+          ${price
+            ? costLine(price.toLocaleString(locale), selected.currencyImage)
+            : html`<span class="chip__label">${c.label("free", "Free")}</span>`}
+          <span class="chip__label">/ ${eventText(c, "draw", "{count} draws", { count: size })}</span>
+        </li>
+        ${Number(selected.firstPrice) > 0
+          ? html`<li class="chip chip--static">
+              <span class="chip__label">${c.label("firstTime", "First time")}</span>
+              ${costLine(Number(selected.firstPrice).toLocaleString(locale), selected.currencyImage)}
+            </li>`
+          : nothing}
+        ${guarantee
+          ? html`<li class="chip chip--static">
+              ${eventText(c, "guaranteedDraws", "At least {count} {rarity} or higher", { count: guarantee.count, rarity: "￼" })
+                .split("￼")
+                .map((part, index) => html`${index ? rarityMark(c, guarantee.rarity) : nothing}<span class="chip__label">${part}</span>`)}
+            </li>`
+          : nothing}
+        ${useLimitOf(selected)
+          ? html`<li class="chip chip--static">
+              <span class="chip__label">${c.label("limit", "Limit")} ${usedOf(item, runs, selected)} / ${useLimitOf(selected)}</span>
+            </li>`
+          : nothing}
+      </ul>
+      ${!canSimulate(item, selected)
+        ? html`<p class="detail-copy" role="status">${c.label("simulationUnavailable", "Complete rates are required to simulate this recruitment.")}</p>`
+        : nothing}
+      ${runs.length && tally
+        ? html`
+            ${renderSimulationSummary(c, runs)}
+            <div class="gacha-sim__toolbar">
+              ${segmented({
+                label: c.label("simulator", "Simulator"),
+                grow: false,
+                value: state.view,
+                options: [
+                  { value: "pulls", label: simText(c, "viewPulls", "Each draw"), icon: "view_list" },
+                  { value: "stats", label: simText(c, "viewStats", "Summary"), icon: "leaderboard" },
+                ],
+                onSelect: (view) => update({ view }),
+              })}
+              <div class="cluster">
+                <button class="button button--text" type="button" @click=${() => update({ runs: [] })}>
+                  ${icon("restart_alt", 18)}${simText(c, "reset", "Reset")}
                 </button>
-              `
-            : nothing
-        }
-      </div>
-      ${
-        !canSimulate
-          ? html`
-              <p class="detail-copy" role="status">
-                ${c.label("simulationUnavailable", "Complete rates are required to simulate this recruitment.")}
-              </p>
-            `
-          : remaining === 0
-            ? html`
-                <p class="detail-copy" role="status">
-                  ${c.label("simulationLimitReached", "This option has reached its limit for this simulation.")}
-                </p>
-              `
-            : nothing
-      }
-      ${
-        sim
-          ? html`
-              <p class="md-body-medium" role="status" aria-live="polite" aria-atomic="true">
-                ${eventText(c, "simulationComplete", "Simulated {count} draws; {total} draws in total.", { count: sim.lastDraws, total: sim.draws })}
-              </p>
-              <dl class="spec-list spec-list--split spec-list--numeric">
-                <div>
-                  <dt>${c.label("drawCount", "Draws")}</dt>
-                  <dd>${sim.draws.toLocaleString(c.settings.locale)}</dd>
-                </div>
-                ${Object.values(sim.costs).map(
-                  (cost) => html`
-                    <div>
-                      <dt>
-                        ${c.label("spent", "Simulated cost")} · ${c.localized(cost.currency) || c.label("free", "Free")}
-                      </dt>
-                      <dd>${costLine(cost.spent.toLocaleString(c.settings.locale), cost.image)}</dd>
-                    </div>
-                  `,
-                )}
-                ${
-                  sim.points
-                    ? html`
-                        <div>
-                          <dt>${c.label("gachaPoint", "Gacha points")}</dt>
-                          <dd>${sim.points.toLocaleString(c.settings.locale)}</dd>
-                        </div>
-                      `
-                    : nothing
-                }
-                ${Object.entries(sim.tally)
-                  .sort(([left], [right]) => Number(right) - Number(left))
-                  .map(
-                    ([rarity, count]) => html`
-                      <div>
-                        <dt>${cardRarityName(rarity) ? rarityMark(c, rarity) : c.label("reward", "Reward")}</dt>
-                        <dd>${count.toLocaleString(c.settings.locale)}</dd>
-                      </div>
-                    `,
-                  )}
-              </dl>
-              <div class="stack stack--tight">
-                <h4 class="md-title-small">${c.label("latestDrawResults", "Latest draw results")}</h4>
-                ${renderRewardGrid(
-                  c,
-                  sim.results.map(({ prize }) => prize),
-                  (prize) =>
-                    prize.pickup
-                      ? [
-                          {
-                            at: "bottom-start",
-                            text: c.label("pickup", "Pickup"),
-                            accent: "var(--md-sys-color-primary)",
-                          },
-                        ]
-                      : [],
-                )}
+                <button class="button button--tonal" type="button" ?disabled=${state.exporting} @click=${() => void exportGachaImage(c, item, state)}>
+                  ${icon("download", 18)}${simText(c, "exportImage", "Save image")}
+                </button>
               </div>
-            `
-          : nothing
-      }
+            </div>
+            ${state.view === "pulls"
+              ? runs.map((run, index) => {
+                  const rows = runRows(run, offset);
+                  offset += run.draws;
+                  return html`
+                    <section class="gacha-batch">
+                      <h4 class="gacha-batch__title">
+                        <span class="tabular">${index + 1}</span>
+                        <span>${batchLabel(c, run)}</span>
+                        <span class="gacha-batch__meta tabular">${run.cost ? costLine(run.cost.toLocaleString(locale), run.option.currencyImage) : nothing}</span>
+                      </h4>
+                      <ol class="gacha-pulls" role="list">
+                        ${rows.map(
+                          (row) => html`
+                            <li class="gacha-pulls__row">
+                              <span class="gacha-pulls__index tabular">#${row.start}</span>
+                              <div class="gacha-pulls__cards">${row.prizes.map((prize) => cardFor(prize))}</div>
+                            </li>
+                          `,
+                        )}
+                      </ol>
+                    </section>
+                  `;
+                })
+              : (["member", "support", "item"] as const).map((kind) =>
+                  tally[kind].length
+                    ? html`
+                        <section class="stack stack--tight">
+                          <h4 class="md-title-small">
+                            ${kindLabel(c, kind)}
+                            <span class="tabular">${tally[kind].length} · ${tally[kind].reduce((sum, entry) => sum + entry.count, 0)}</span>
+                          </h4>
+                          <div class="gacha-stats" data-kind=${kind}>${tally[kind].map((entry) => cardFor(entry.prize, entry.count))}</div>
+                        </section>
+                      `
+                    : nothing,
+                )}
+          `
+        : nothing}
     </section>
   `;
 }
@@ -1616,7 +1681,7 @@ export function initializeGameSystemDetail(c: Controller, item: Item) {
   const preferred = [...options].sort(
     (left, right) =>
       Number(Number(left.limitCount) > 0) - Number(Number(right.limitCount) > 0) ||
-      optionDrawCount(right) - optionDrawCount(left),
+      drawCountOf(right) - drawCountOf(left),
   )[0];
   c.gachaOption = preferred ? gachaOptionKey(item, preferred) : "";
   c.fx = null;

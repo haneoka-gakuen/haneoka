@@ -1000,6 +1000,7 @@ def _gacha(
                     "currency": currency.get("name") if currency else [],
                     "currencyImage": currency.get("image") if currency else "",
                     "guaranteedRarity": _number(product, "_ensuredRarity"),
+                    "guaranteedType": _number(product, "_ensuredType"),
                     "guaranteedCount": _number(product, "_ensuredCount"),
                     "guaranteedNew": bool(product.get("_isEnsuredNew")),
                     "gachaPoint": _number(product, "_gachaPoint"),
@@ -1052,6 +1053,12 @@ def _gacha(
             if ticket
             else None,
             pickUpSelectCount=_number(row, "_pickUpSelectCount"),
+            # The rule the gacha's own notice states: the last pull of a
+            # guaranteed product is drawn from the guaranteed pool, or only
+            # redrawn there when no eligible card came out.
+            guaranteeRule="redraw"
+            if row.get("_warningTextId") == "gacha_warning_ensured_rarity"
+            else "slot",
             beginnerHours=_number(row, "_beginnerHours"),
             comebackHours=_number(row, "_comebackHours"),
             isNewMember=bool(row.get("_isNewMember")),

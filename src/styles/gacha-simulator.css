@@ -1,0 +1,167 @@
+/* Recruitment simulator: draw controls, per-draw rows and the merged summary. */
+@layer pages {
+  .gacha-sim__controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 160px) auto;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+  }
+  .gacha-sim__controls md-outlined-select,
+  .gacha-sim__controls md-outlined-text-field {
+    min-width: 0;
+    width: 100%;
+  }
+  .gacha-sim__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-sys-spacing-3);
+  }
+  .gacha-sim {
+    container: gacha-sim / inline-size;
+  }
+  .gacha-batch {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+  }
+  .gacha-batch__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-sys-spacing-2);
+    margin: 0;
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .gacha-batch__title > :first-child {
+    display: grid;
+    min-width: 24px;
+    height: 24px;
+    place-items: center;
+    padding-inline: 6px;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .gacha-batch__meta {
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .gacha-pulls {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .gacha-pulls__row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--md-sys-spacing-2);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 80px;
+  }
+  .gacha-pulls__index {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .gacha-pulls__cards {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .gacha-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: var(--md-sys-spacing-2);
+  }
+  .gacha-stats[data-kind="support"] {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  }
+  .gacha-card {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    aspect-ratio: 1;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+    color: inherit;
+  }
+  .gacha-card[data-rarity="4"],
+  .gacha-card[data-rarity="20"] {
+    background: var(--md-sys-color-tertiary-container);
+  }
+  .gacha-stats .gacha-card[data-kind="member"] {
+    aspect-ratio: 3 / 4;
+  }
+  .gacha-stats .gacha-card[data-kind="support"] {
+    aspect-ratio: 16 / 9;
+  }
+  a.gacha-card:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+  }
+  .gacha-card__art {
+    width: 100%;
+    height: 100%;
+    padding: 2px;
+    object-fit: contain;
+  }
+  .gacha-card__attribute,
+  .gacha-card__rarity {
+    position: absolute;
+    top: 3px;
+    width: 24%;
+    max-width: 22px;
+    aspect-ratio: 1;
+    object-fit: contain;
+  }
+  .gacha-card__attribute {
+    left: 3px;
+  }
+  .gacha-card__rarity {
+    right: 3px;
+  }
+  .gacha-card__pickup,
+  .gacha-card__count {
+    position: absolute;
+    bottom: 3px;
+    padding: 0 5px;
+    border-radius: var(--md-sys-shape-corner-full);
+    font: 700 11px / 16px var(--app-font);
+  }
+  .gacha-card__pickup {
+    left: 3px;
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+  .gacha-card__pickup--inline {
+    position: static;
+    display: inline-block;
+  }
+  .gacha-card__count {
+    right: 3px;
+    color: #fff;
+    background: rgb(0 0 0 / 0.72);
+  }
+  @media (max-width: 599px) {
+    .gacha-sim__controls {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .gacha-sim__controls md-outlined-select {
+      grid-column: 1 / -1;
+    }
+  }
+  @container gacha-sim (max-width: 720px) {
+    .gacha-pulls__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .gacha-pulls__cards {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+}
