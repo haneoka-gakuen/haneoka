@@ -15,7 +15,7 @@ import { performer } from "./full/deck";
 import type { Performer } from "./full/conditions";
 import { M_ALL, M_COMBO } from "./full/gekisou";
 import { gekisoContext, gekisoPerformer, scoreOrdersGekiso, type GekisoChart, type GekisoContext } from "./gekiso";
-import type { Criterion } from "./objectives";
+import { bestOrder5, type Criterion } from "./objectives";
 
 export interface GekisoDetail {
   scores: OrderScores;
@@ -310,7 +310,7 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
     }
     return lo;
   };
-  const liveWeight = (skill: SlotSkill, w: Weights, pick: "mean" | "best" | "worst") => {
+  const eventWeights = (skill: SlotSkill, w: Weights) => {
     const perEvent = new Float64Array(5);
     for (let event = 0; event < Math.min(5, eventTimes.length); event++)
       for (const effect of skill.effects) {
@@ -323,6 +323,10 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
           for (const j of effect.judgements)
             if (j >= 4 && j <= 6) perEvent[event]! += factor * (w.byJudgement[j - 4]![end]! - w.byJudgement[j - 4]![start]!);
       }
+    return perEvent;
+  };
+  const liveWeight = (skill: SlotSkill, w: Weights, pick: "mean" | "best" | "worst") => {
+    const perEvent = eventWeights(skill, w);
     if (pick === "best") return Math.max(...perEvent);
     if (pick === "worst") return Math.min(...perEvent);
     return perEvent.reduce((a, b) => a + b, 0) / 5;
@@ -477,6 +481,16 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
   const objectiveFor = (level: number, surrogate: boolean): ObjectiveAdapter<GekisoDetail | null> => {
     const data = levelOf(level);
     const ranges = new Map<string, [number, number]>();
+    const orders = new Map<string, { perEvent: Float64Array; best: number }>();
+    const orderOf = (member: number, snap: number) => {
+      const key = `${member}:${snap}`;
+      let value = orders.get(key);
+      if (!value) {
+        const perEvent = eventWeights(slotSkill(member, snap), data.weights);
+        orders.set(key, (value = { perEvent, best: Math.max(...perEvent) }));
+      }
+      return value;
+    };
     const high = (totals: Totals) => ((totals.power * (data.weights.base + totals.skill)) / count) * (1 + relative) + absolute;
     return {
       skill(member, snap) {
@@ -491,6 +505,16 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
       memberBonus: (member) => bonusOf[member]!,
       snapBonus: () => 0,
       bound: high,
+      // Best order: the five live skills take distinct events, so each slot's own best event overstates the team.
+      ...(criterion === "max" && !surrogate
+        ? {
+            leafBound: (team: Team, totals: Totals) => {
+              const rows = team.members.map((member, slot) => orderOf(member, team.snaps[slot]!));
+              const separate = rows.reduce((sum, row) => sum + row.best, 0);
+              return high({ ...totals, skill: totals.skill - separate + bestOrder5(rows.map((row) => row.perEvent)) });
+            },
+          }
+        : {}),
       productBase: data.weights.base,
       interval: (team, totals) => {
         if (surrogate) return [high(totals), high(totals)];

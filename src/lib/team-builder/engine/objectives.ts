@@ -266,7 +266,7 @@ export function scoreCapObjective(context: LiveContext): ObjectiveAdapter<null> 
 
 /** Best total of five rows assigned to five distinct columns (a skill order): bitmask DP, no allocation. */
 const order5 = new Float64Array(32);
-function bestOrder5(rows: readonly Float64Array[]): number {
+export function bestOrder5(rows: readonly Float64Array[]): number {
   order5.fill(-Infinity);
   order5[0] = 0;
   for (let mask = 0; mask < 31; mask++) {
