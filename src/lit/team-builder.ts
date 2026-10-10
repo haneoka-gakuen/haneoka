@@ -74,6 +74,7 @@ export class TeamBuilder extends LitElement {
   editing: { kind: "members" | "snaps"; cardId: number } | null = null;
   songPicker: SongPickerState | null = null;
   results: EngineResponse | null = null;
+  resultSettings: BuildSettings | null = null;
   resultTab = "overall";
   resultsFor = "";
   running = false;
@@ -340,6 +341,7 @@ export class TeamBuilder extends LitElement {
   async run() {
     const request = this.request();
     if (!request || !this.engine || this.running) return;
+    const settings = { ...this.settings };
     this.running = true;
     this.error = "";
     this.progress = { done: 0, total: 1, started: performance.now() };
@@ -353,6 +355,7 @@ export class TeamBuilder extends LitElement {
         this.requestUpdate();
       });
       this.resultsFor = JSON.stringify(request);
+      this.resultSettings = settings;
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) this.error = this.t("searchFailed", "The search failed: {reason}", { reason: error instanceof Error ? error.message : String(error) });
     } finally {

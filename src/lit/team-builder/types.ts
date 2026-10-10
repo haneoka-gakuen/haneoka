@@ -1,4 +1,5 @@
 import type { SongRef } from "../../lib/team-builder/engine/api";
+import type { Criterion } from "../../lib/team-builder/engine/objectives";
 
 export type Tab = "build" | "box" | "account" | "teams" | "pt";
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
@@ -8,7 +9,7 @@ export interface BuildSettings {
   ptLuckSamples: number;
   goal: GoalKind;
   songs: SongRef[];
-  criterion: "mean" | "min";
+  criterion: Criterion;
   playMode: "ap" | "custom";
   /** Percent of notes, 0–100. */
   great: number;
