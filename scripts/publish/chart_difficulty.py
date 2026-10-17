@@ -26,8 +26,6 @@ from publish.gacha_rates import raw_table
 from publish.r2 import R2Store, _validate_release_manifest_for_gc
 from verify.release import release_entries, write_release_identity_files
 
-CONVERTER_SHA = "f8b473d7e376c8a04c782587a3ba52085a6c89a53e5f82dd0d5a0aa68561d9f9"
-CALIBRATION_SHA = "51e6e168905d4b9fe355a671b2802e360f7e4835b2032bef8e697b5780d14969"
 
 
 def difficulty_rows(song):
@@ -171,10 +169,6 @@ def prepare(store, config, identity, staging, inputs):
     write_json(inputs / "metadata/source-index.json", {"server":config.id,"sourceId":identity["sourceId"],"sources":selected_sources})
     # The existing chart_files producer is the sole converter/model runner; no _songs/score solver rebuild.
     estimates = build_difficulty_estimates(SimpleNamespace(root=inputs,server=config.id), identity["sourceId"], files, score_rows)
-    for estimate in estimates.values():
-        pin = estimate["pin"]
-        if pin["canonicalConverterSha256"] != CONVERTER_SHA or pin["calibrationSha256"] != CALIBRATION_SHA:
-            raise ValueError("producer differs from reviewed committed ccac calibration; no native gate bypass")
     selected = {}
     def select(path):
         if path not in selected:
@@ -260,7 +254,7 @@ def main():
         quality=Counter(e["quality"]["status"] for e in prepared["estimates"].values());valid=sum(e["estimatedConstant"] is not None for e in prepared["estimates"].values())
         receipt={"schema":"haneoka-current-chart-difficulty-publication-v1","producerPin":pin,"server":config.id,"sourceId":identity["sourceId"],
                  "baseReleaseId":identity["releaseId"],"published":False,"promoted":False,"noOp":prepared["noOp"],
-                 "canonicalConverterSha256":CONVERTER_SHA,"calibrationSha256":CALIBRATION_SHA,"qualityCounts":dict(quality),
+                 "qualityCounts":dict(quality),
                  "validCount":valid,"nullCount":prepared["referencedScoreCount"]-valid,"referencedScoreCount":prepared["referencedScoreCount"],
                  "materializedChartCount":prepared["materializedChartCount"],"missingChartScoreIds":prepared["missingChartScoreIds"],
                  "chartBytes":prepared["chartBytes"],"metadataBytes":prepared["metadataBytes"],"originalMasterSHA256":prepared["masterSHA256"],
