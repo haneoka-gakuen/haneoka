@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import RouteDocument from "../../../../components/RouteDocument.astro";
 import { findRoute, titleOf } from "../../../../config/routes";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
@@ -6,7 +7,7 @@ import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-ser
 import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 
 export async function getStaticPaths() {
-  return (await staticCatalogPageServers()).flatMap((server) => LOCALES.map((locale) => ({ params: { server, locale } })));
+  return staticBuildPaths("src/pages/[server]/[locale]/studio/index.astro", (await staticCatalogPageServers()).flatMap((server) => LOCALES.map((locale) => ({ params: { server, locale } }))));
 }
 
 const { server, locale } = Astro.params as { server: ReleaseServer; locale: Locale };

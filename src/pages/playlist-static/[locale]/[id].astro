@@ -1,8 +1,11 @@
 ---
+import { staticBuildPaths } from "../../../server/static-build";
 import CommunityDocument from "../../../components/CommunityDocument.astro";
 import { playlistStaticPaths } from "../../../server/playlist-page-data";
 import { playlistStaticLocation } from "../../../lib/playlists/static-routing";
-export const getStaticPaths = playlistStaticPaths;
+export async function getStaticPaths() {
+  return staticBuildPaths("src/pages/playlist-static/[locale]/[id].astro", await playlistStaticPaths());
+}
 const selected = playlistStaticLocation(Astro.params.locale, Astro.params.id?.replace(/\.html$/u, "") || "");
 if (!selected) throw new Error("Invalid public playlist document");
 const { server } = Astro.props as { server: string };

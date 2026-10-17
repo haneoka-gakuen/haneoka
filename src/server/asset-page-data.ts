@@ -12,6 +12,7 @@ import { PUBLIC_RELEASE_SERVERS } from "../lib/temporary-public-routing";
 import { registerStaticDocumentCoverage } from "./static-documents";
 import { serializePageData } from "../lib/page-data";
 import { staticPageGroupEnabled } from "./static-build";
+import { staticBuildJson } from "./static-input-store";
 const pages = new Map<ReleaseServer, Promise<AssetPageData>>();
 const serializedPages = new WeakMap<AssetPageData, string>();
 type AssetOutput = { path: string; sha256?: string; bytes?: number };
@@ -90,40 +91,46 @@ async function assetTextPreview(page: AssetPageData, output: AssetOutput): Promi
     previews.set(key, cached);
     return cached;
   }
-  const local = path.join(process.cwd(), "data", "servers", page.server, "releases", page.releaseId, output.path);
-  let body: Buffer;
-  if (fs.existsSync(local)) body = fs.readFileSync(local);
-  else {
-    const [tree, ...parts] = output.path.split("/");
-    if (!["assets", "runtime", "objects"].includes(tree)) throw new Error(`Invalid asset output: ${output.path}`);
-    const url = new URL(
-      `/${tree}/${page.server}/${parts.map(encodeURIComponent).join("/")}`,
-      staticCatalogUrl("release", page.server),
-    );
-    url.searchParams.set("release", page.releaseId);
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(30_000),
-      headers: {
-        ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
-      },
-    });
-    try {
-      if (
-        !response.ok ||
-        response.headers.get("x-haneoka-release-id") !== page.releaseId ||
-        response.headers.get("x-haneoka-source-id") !== page.sourceId
-      )
-        throw new Error(`Asset preview release mismatch: ${output.path}`);
-      body = Buffer.from(await response.arrayBuffer());
-    } finally {
-      const stream = response.body as { destroy?: () => void; cancel?: () => Promise<void> } | null;
-      if (typeof stream?.destroy === "function") stream.destroy();
-      else if (!response.bodyUsed) await stream?.cancel?.();
-    }
-  }
-  if (body.length !== output.bytes || createHash("sha256").update(body).digest("hex") !== key)
-    throw new Error(`Asset output hash mismatch: ${output.path}`);
-  const text = new TextDecoder().decode(body).slice(0, 200000);
+  const text = await staticBuildJson(
+    `asset-preview:${page.server}:${page.releaseId}:${key}`,
+    "public-data",
+    async () => {
+      const local = path.join(process.cwd(), "data", "servers", page.server, "releases", page.releaseId, output.path);
+      let body: Buffer;
+      if (fs.existsSync(local)) body = fs.readFileSync(local);
+      else {
+        const [tree, ...parts] = output.path.split("/");
+        if (!["assets", "runtime", "objects"].includes(tree)) throw new Error(`Invalid asset output: ${output.path}`);
+        const url = new URL(
+          `/${tree}/${page.server}/${parts.map(encodeURIComponent).join("/")}`,
+          staticCatalogUrl("release", page.server),
+        );
+        url.searchParams.set("release", page.releaseId);
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(30_000),
+          headers: {
+            ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
+          },
+        });
+        try {
+          if (
+            !response.ok ||
+            response.headers.get("x-haneoka-release-id") !== page.releaseId ||
+            response.headers.get("x-haneoka-source-id") !== page.sourceId
+          )
+            throw new Error(`Asset preview release mismatch: ${output.path}`);
+          body = Buffer.from(await response.arrayBuffer());
+        } finally {
+          const stream = response.body as { destroy?: () => void; cancel?: () => Promise<void> } | null;
+          if (typeof stream?.destroy === "function") stream.destroy();
+          else if (!response.bodyUsed) await stream?.cancel?.();
+        }
+      }
+      if (body.length !== output.bytes || createHash("sha256").update(body).digest("hex") !== key)
+        throw new Error(`Asset output hash mismatch: ${output.path}`);
+      return new TextDecoder().decode(body).slice(0, 200000);
+    },
+  );
   previews.set(key, text);
   previewBytes += Buffer.byteLength(text);
   while (previewBytes > 32 * 1024 * 1024 && previews.size > 1) {

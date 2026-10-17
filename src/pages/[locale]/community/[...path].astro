@@ -1,14 +1,15 @@
 ---
+import { staticBuildPaths } from "../../../server/static-build";
 import CommunityDocument from "../../../components/CommunityDocument.astro";
 import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
-  return LOCALES.flatMap((locale) =>
+  return staticBuildPaths("src/pages/[locale]/community/[...path].astro", LOCALES.flatMap((locale) =>
     [undefined, "feeds", "latest", "following", "mine", "bookmarks", "notifications", "activity", "tags", "playlists", "forums"].map((path) => ({
       params: { locale, path },
       props: { locale, path },
     })),
-  );
+  ));
 }
 const { locale, path } = Astro.props as { locale: Locale; path?: string };
 ---

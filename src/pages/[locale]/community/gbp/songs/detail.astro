@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../../server/static-build";
 import Base from "../../../../../layouts/Base.astro";
 import AppShell from "../../../../../components/AppShell.astro";
 import { catalogConfig } from "../../../../../config/catalog-labels";
@@ -8,7 +9,7 @@ import "../../../../../lit/catalog-screen";
 import "../../../../../styles/catalog.css";
 
 export function getStaticPaths() {
-  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+  return staticBuildPaths("src/pages/[locale]/community/gbp/songs/detail.astro", LOCALES.map((locale) => ({ params: { locale }, props: { locale } })));
 }
 const { locale } = Astro.props as { locale: Locale };
 const route = "/community/gbp/songs";

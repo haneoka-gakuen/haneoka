@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import AnnouncementsDocument from "../../../../components/AnnouncementsDocument.astro";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import type { ReleaseServer } from "../../../../lib/release-server";
@@ -7,10 +8,10 @@ import { announcementPageData } from "../../../../server/announcement-page-data"
 
 export async function getStaticPaths() {
   const servers = await staticCatalogPageServers();
-  return (await Promise.all(servers.flatMap(server => LOCALES.map(async locale => {
+  return staticBuildPaths("src/pages/[server]/[locale]/announcements/[id].astro", (await Promise.all(servers.flatMap(server => LOCALES.map(async locale => {
     const snapshot = await announcementPageData(server, locale);
     return snapshot.entries.map(entry => ({ params: { server, locale, id: String(entry.id) }, props: { server, locale, id: entry.id } }));
-  })))).flat();
+  })))).flat());
 }
 const { server, locale, id } = Astro.props as { server: ReleaseServer; locale: Locale; id: number };
 ---

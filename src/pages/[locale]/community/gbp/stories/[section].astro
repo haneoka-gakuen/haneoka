@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../../server/static-build";
 import { providerCollectionData } from "../../../../../server/provider-page-data";
 import { renderProviderStories } from "../../../../../server/render-provider";
 import { serializePageData } from "../../../../../lib/page-data";
@@ -14,9 +15,9 @@ import "../../../../../styles/story.css";
 export const BESTDORI_STORY_SECTIONS = ["event", "band", "main", "afterlive", "card"] as const;
 
 export function getStaticPaths() {
-  return LOCALES.flatMap((locale) =>
+  return staticBuildPaths("src/pages/[locale]/community/gbp/stories/[section].astro", LOCALES.flatMap((locale) =>
     BESTDORI_STORY_SECTIONS.map((section) => ({ params: { locale, section }, props: { locale, section } })),
-  );
+  ));
 }
 const { locale, section } = Astro.props as { locale: Locale; section: string };
 const route = `/community/gbp/stories/${section}`;

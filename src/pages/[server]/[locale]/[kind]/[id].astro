@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import CatalogEntityPage from "../../../../components/entities/CatalogEntityPage.astro";
 import CatalogSystemEntityPage from "../../../../components/entities/CatalogSystemEntityPage.astro";
 import HelpEntityPage from "../../../../components/entities/HelpEntityPage.astro";
@@ -126,7 +127,7 @@ export async function getStaticPaths() {
       }
     }
   }
-  return output;
+  return staticBuildPaths("src/pages/[server]/[locale]/[kind]/[id].astro", output);
 }
 
 const { server, locale, kind, page, previous, next } = Astro.props as RouteProps;

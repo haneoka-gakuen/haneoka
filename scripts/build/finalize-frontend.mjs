@@ -8,6 +8,7 @@ import { parseFragment } from "parse5";
 import { copyCalendarStaticAssets } from "./calendar-static-assets.mjs";
 import { addModulePreloads } from "./module-preload.mjs";
 import { finalizeStaticDocuments, packCoreStaticDocuments } from "../../src/server/static-documents.ts";
+import { restrictShardCoverage } from "./static-build-shards.mjs";
 
 const output = path.resolve(".output/public");
 const calendarImages = await copyCalendarStaticAssets({ outputRoot: output });
@@ -91,6 +92,12 @@ try {
   }
 }
 console.log(`packed ${await packCoreStaticDocuments(output, files)} complete Astro pages`);
+if (process.env.STATIC_BUILD_LOCALE) {
+  if (process.env.STATIC_BUILD_INPUT_MODE !== "frozen") throw new Error("Locale finalization requires frozen inputs");
+  restrictShardCoverage(process.cwd(), process.env.STATIC_BUILD_LOCALE);
+}
 const staticDocuments = finalizeStaticDocuments(output);
 if (staticDocuments.documents)
-  console.log(`finalized ${staticDocuments.documents} complete static documents and ${staticDocuments.data} shared data objects`);
+  console.log(
+    `finalized ${staticDocuments.documents} complete static documents and ${staticDocuments.data} shared data objects`,
+  );

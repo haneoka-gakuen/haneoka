@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../server/static-build";
 import RouteDocument from "../../components/RouteDocument.astro";
 import SongSlidePuzzleDocument from "../../components/SongSlidePuzzleDocument.astro";
 import StampMakerDocument from "../../components/StampMakerDocument.astro";
@@ -7,13 +8,14 @@ import { LOCALES, type Locale } from "../../i18n/locales";
 import { resourceCollectionHref } from "../../lib/resource-route";
 
 export function getStaticPaths() {
-  return LOCALES.flatMap((locale) =>
+  return staticBuildPaths("src/pages/[locale]/[...slug].astro", LOCALES.flatMap((locale) =>
     ROUTES.filter(
       (entry) =>
         ![
           "/",
           "/account",
           "/account/reset-password",
+          "/account/app",
           "/settings",
         ].includes(entry.route) &&
         !entry.route.startsWith("/community") &&
@@ -23,7 +25,7 @@ export function getStaticPaths() {
       const title = titleOf(entry, locale);
       return { params: { locale, slug }, props: { locale, entry, title } };
     }),
-  );
+  ));
 }
 const { locale, entry, title } = Astro.props as { locale: Locale; entry: RouteDefinition; title: string };
 if (entry.staticRedirect) return Astro.redirect(`/${locale}${entry.staticRedirect}/`, 308);

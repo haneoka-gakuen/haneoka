@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import CatalogEntityPage from "../../../../components/entities/CatalogEntityPage.astro";
 import HelpDocument from "../../../../components/HelpDocument.astro";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
@@ -30,7 +31,7 @@ export async function getStaticPaths() {
       }
     }
   }
-  return paths;
+  return staticBuildPaths("src/pages/static-views/[server]/[locale]/[...view].astro", paths);
 }
 const { server, locale, page, section, helpView, previous, next } = Astro.props as Props;
 ---

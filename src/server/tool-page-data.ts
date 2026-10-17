@@ -19,6 +19,7 @@ import { stampChoices, mergeTextlessStampManifests, type TextlessStampManifest }
 import type { HaneokaReleaseIdentity } from "../../packages/api-client/src/haneoka";
 import { rankingCardCatalog } from "../lib/ranking-card-catalog";
 import { PUBLIC_RELEASE_SERVERS, isPublicReleaseServer } from "../lib/temporary-public-routing.ts";
+import { staticBuildJson } from "./static-input-store";
 let rankingCards:
   | Promise<{
       intl: Awaited<ReturnType<typeof rankingCardCatalog>>;
@@ -41,20 +42,21 @@ let sonolusHubPage: Promise<SonolusHubPageData> | undefined;
 export function sonolusHubPageData(): Promise<SonolusHubPageData> {
   return (sonolusHubPage ??= (async () => {
     const origin = process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org";
-    const read = async (resource: string) => {
-      const response = await fetch(new URL(`/sonolus/${resource}`, origin), {
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          accept: "application/json",
-          ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
-        },
+    const read = (resource: string) =>
+      staticBuildJson(`sonolus:${resource}`, "public-data", async () => {
+        const response = await fetch(new URL(`/sonolus/${resource}`, origin), {
+          signal: AbortSignal.timeout(30_000),
+          headers: {
+            accept: "application/json",
+            ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
+          },
+        });
+        if (!response.ok) throw new Error(`Sonolus public directory ${resource} returned ${response.status}`);
+        const value: unknown = await response.json();
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          throw new Error(`Invalid Sonolus public directory ${resource}`);
+        return value as Record<string, unknown>;
       });
-      if (!response.ok) throw new Error(`Sonolus public directory ${resource} returned ${response.status}`);
-      const value: unknown = await response.json();
-      if (!value || typeof value !== "object" || Array.isArray(value))
-        throw new Error(`Invalid Sonolus public directory ${resource}`);
-      return value as Record<string, unknown>;
-    };
     const [info, levels, playlists] = await Promise.all([read("info"), read("levels/info"), read("playlists/info")]);
     return { schema: "haneoka-sonolus-hub-page-v1", info, levels, playlists };
   })());
@@ -167,9 +169,16 @@ function teamSource(server: string): Promise<TeamBuilderData> {
     pending = (async () => {
       const identity = await staticCatalogRelease(server);
       if (!hasLocalStaticCatalog(server)) {
-        const data = await fetchStaticApplicationJson(`/api/v1/team-builder/${encodeURIComponent(server)}`, identity) as TeamBuilderData;
-        if (data.schema !== "haneoka-team-builder-data-v1" || data.identity.server !== identity.server ||
-          data.identity.releaseId !== identity.releaseId || data.identity.sourceId !== identity.sourceId)
+        const data = (await fetchStaticApplicationJson(
+          `/api/v1/team-builder/${encodeURIComponent(server)}`,
+          identity,
+        )) as TeamBuilderData;
+        if (
+          data.schema !== "haneoka-team-builder-data-v1" ||
+          data.identity.server !== identity.server ||
+          data.identity.releaseId !== identity.releaseId ||
+          data.identity.sourceId !== identity.sourceId
+        )
           throw new Error("Static team data projection identity mismatch");
         return data;
       }
@@ -179,7 +188,7 @@ function teamSource(server: string): Promise<TeamBuilderData> {
       );
       documents["runtime-rules"] = await readRuntimeRulesDocument(identity, async (pin, table) => {
         const relative = `objects/master/${table}.json`;
-        return await fetchStaticReleaseEntry(relative, server, pin)
+        return (await fetchStaticReleaseEntry(relative, server, pin))
           ? fetchStaticReleaseJson(relative, server, pin)
           : null;
       });

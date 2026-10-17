@@ -1,14 +1,15 @@
+import { staticBuildPaths } from "../../../../server/static-build";
 import type { APIRoute, GetStaticPaths } from "astro";
 import { I18N_NAMESPACES, isI18nNamespace } from "../../../../i18n/keys";
 import { createI18nNamespaceBundle, I18N_CONTENT_VERSION } from "../../../../i18n/server";
 import { LOCALES, isLocale } from "../../../../i18n/locales";
 
 export const getStaticPaths: GetStaticPaths = () =>
-  LOCALES.flatMap((locale) =>
+  staticBuildPaths("src/pages/i18n/[version]/[locale]/[namespace].json.ts", LOCALES.flatMap((locale) =>
     I18N_NAMESPACES.map((namespace) => ({
       params: { version: I18N_CONTENT_VERSION, locale, namespace },
     })),
-  );
+  ));
 
 export const GET: APIRoute = ({ params }) => {
   const { version, locale, namespace } = params;

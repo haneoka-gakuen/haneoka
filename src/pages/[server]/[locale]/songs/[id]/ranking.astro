@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../../server/static-build";
 import SongRankingPage from "../../../../../components/entities/SongRankingPage.astro";
 import { LOCALES, type Locale } from "../../../../../i18n/locales";
 import { staticResourceServers } from "../../../../../lib/entity-graph";
@@ -25,7 +26,7 @@ export async function getStaticPaths() {
       }
     }
   }
-  return output;
+  return staticBuildPaths("src/pages/[server]/[locale]/songs/[id]/ranking.astro", output);
 }
 
 const { server, locale, page } = Astro.props as RouteProps;

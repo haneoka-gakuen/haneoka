@@ -1,9 +1,10 @@
 ---
+import { staticBuildPaths } from "../../../server/static-build";
 import AdminDocument from "../../../components/AdminDocument.astro";
 import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
-  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+  return staticBuildPaths("src/pages/[locale]/admin/index.astro", LOCALES.map((locale) => ({ params: { locale }, props: { locale } })));
 }
 const { locale } = Astro.props as { locale: Locale };
 ---

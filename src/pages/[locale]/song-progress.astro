@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../server/static-build";
 import Base from "../../layouts/Base.astro";
 import AppShell from "../../components/AppShell.astro";
 import SongProgressPage from "../../components/pages/SongProgressPage.astro";
@@ -8,7 +9,7 @@ import { publicSongsPageData } from "../../server/tool-page-data";
 import { renderSongProgressPage } from "../../server/render-tools";
 
 export function getStaticPaths() {
-  return LOCALES.map((locale) => ({ params: { locale }, props: { locale } }));
+  return staticBuildPaths("src/pages/[locale]/song-progress.astro", LOCALES.map((locale) => ({ params: { locale }, props: { locale } })));
 }
 const { locale } = Astro.props as { locale: Locale };
 const route = "/song-progress";

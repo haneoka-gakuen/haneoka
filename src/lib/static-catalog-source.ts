@@ -3,6 +3,7 @@ import fs from "node:fs";
 import nodePath from "node:path";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
+import { staticBuildJson } from "../server/static-input-store";
 import { openReleaseCatalog, ReleaseCatalogError, type ReleaseCatalog } from "../server/release-catalog";
 
 /**
@@ -53,7 +54,9 @@ class StaticCatalogHttpError extends Error {
     server: string,
     readonly diagnostics: StaticCatalogHttpDiagnostics,
   ) {
-    super(`Static catalog request failed for ${server}/${path.split("?")[0]} (${status}) ${JSON.stringify(diagnostics)}`);
+    super(
+      `Static catalog request failed for ${server}/${path.split("?")[0]} (${status}) ${JSON.stringify(diagnostics)}`,
+    );
   }
 }
 
@@ -283,11 +286,16 @@ function requestKey(path: string, server: string, release?: StaticCatalogRelease
   return `${server}\u0000${release?.releaseId || "current"}\u0000${release?.sourceId || ""}\u0000${path}`;
 }
 
-async function fetchJson(path: string, server: string, release?: StaticCatalogRelease, absoluteUrl?: string): Promise<unknown> {
+async function fetchJson(
+  path: string,
+  server: string,
+  release?: StaticCatalogRelease,
+  absoluteUrl?: string,
+): Promise<unknown> {
   const key = requestKey(path, server, release);
   let pending = requestPromises.get(key);
   if (!pending) {
-    pending = (async () => {
+    pending = staticBuildJson(`native-json:${key}`, "native-catalog", async () => {
       const cacheFile = release ? cachedResponseFile(path, release) : undefined;
       if (cacheFile && fs.existsSync(cacheFile)) {
         try {
@@ -331,7 +339,7 @@ async function fetchJson(path: string, server: string, release?: StaticCatalogRe
         await releaseResponseBody(response);
         throw error;
       }
-    })();
+    });
     requestPromises.set(key, pending);
   }
   try {
@@ -361,7 +369,7 @@ function cachedResponseFile(route: string, release: StaticCatalogRelease): strin
 export async function staticCatalogRelease(server = "intl"): Promise<StaticCatalogRelease> {
   const existing = releasePromises.get(server);
   if (existing) return existing;
-  const promise = (async () => {
+  const promise = staticBuildJson(`native-pin:${server}`, "native-pin", async () => {
     const local = localCatalog(server);
     if (local) return Object.freeze({ ...local.identity });
     const response = await fetchResponse("release?projection=identity", server, undefined, "HEAD");
@@ -375,7 +383,7 @@ export async function staticCatalogRelease(server = "intl"): Promise<StaticCatal
     } finally {
       await releaseResponseBody(response);
     }
-  })();
+  }).then((pin) => Object.freeze(pin));
   releasePromises.set(server, promise);
   try {
     return await promise;
@@ -405,7 +413,9 @@ export async function fetchStaticCatalog(
       );
     }
     try {
-      return readLocalPath(local, path);
+      return await staticBuildJson(`native-local:${requestKey(path, server, pinned)}`, "native-catalog", async () =>
+        readLocalPath(local, path),
+      );
     } catch (error) {
       if (!(error instanceof ReleaseCatalogError) || !error.fallbackToHttp) throw error;
     }
@@ -421,15 +431,19 @@ export async function fetchStaticApplicationJson(route: string, release: StaticC
 }
 
 /** Public JSON bytes verified against the same immutable release manifest. */
-export async function fetchStaticReleaseJson(relative: string, server = "intl", release?: StaticCatalogRelease): Promise<unknown> {
+export async function fetchStaticReleaseJson(
+  relative: string,
+  server = "intl",
+  release?: StaticCatalogRelease,
+): Promise<unknown> {
   if (!/^(assets|runtime|objects)\/(?!.*(?:^|\/)\.\.?\/)[^\\?#]+\.json$/u.test(relative))
     throw new StaticCatalogConsistencyError("Invalid public release JSON path");
-  const pinned = release || await staticCatalogRelease(server);
+  const pinned = release || (await staticCatalogRelease(server));
   if (pinned.server !== server) throw new StaticCatalogConsistencyError("Release JSON server mismatch");
   const key = requestKey(`release-file:${relative}`, server, pinned);
   let pending = requestPromises.get(key);
   if (!pending) {
-    pending = (async () => {
+    pending = staticBuildJson(`native-file:${key}`, "native-file", async () => {
       const local = localCatalog(server);
       if (local) {
         if (local.identity.releaseId !== pinned.releaseId || local.identity.sourceId !== pinned.sourceId)
@@ -437,10 +451,19 @@ export async function fetchStaticReleaseJson(relative: string, server = "intl", 
         return local.readReleaseJson(relative);
       }
       const manifest = asRecord(await fetchJson("release", server, pinned));
-      if (manifest?.server !== server || manifest.releaseId !== pinned.releaseId || manifest.sourceId !== pinned.sourceId)
+      if (
+        manifest?.server !== server ||
+        manifest.releaseId !== pinned.releaseId ||
+        manifest.sourceId !== pinned.sourceId
+      )
         throw new StaticCatalogConsistencyError("Release JSON manifest identity mismatch");
       const entry = releaseManifestEntry(manifest, relative);
-      if (!entry || typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(entry.sha256) || !Number.isSafeInteger(entry.bytes))
+      if (
+        !entry ||
+        typeof entry.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
+        !Number.isSafeInteger(entry.bytes)
+      )
         throw new StaticCatalogConsistencyError(`Release JSON not declared: ${relative}`);
       const [tree, ...parts] = relative.split("/");
       const url = new URL(`/${tree}/${encodeURIComponent(server)}/${parts.map(encodeURIComponent).join("/")}`, ORIGIN);
@@ -452,17 +475,33 @@ export async function fetchStaticReleaseJson(relative: string, server = "intl", 
         if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
           throw new StaticCatalogConsistencyError(`Release JSON hash mismatch: ${relative}`);
         return JSON.parse(body.toString("utf8"));
-      } finally { await releaseResponseBody(response); }
-    })();
+      } finally {
+        await releaseResponseBody(response);
+      }
+    });
     requestPromises.set(key, pending);
   }
-  try { return await pending; }
-  catch (error) { requestPromises.delete(key); throw error; }
+  try {
+    return await pending;
+  } catch (error) {
+    requestPromises.delete(key);
+    throw error;
+  }
 }
 
-export async function fetchStaticReleaseEntry(relative: string, server = "intl", release?: StaticCatalogRelease): Promise<{ path: string; bytes: number; sha256: string } | undefined> {
-  const pinned = release || await staticCatalogRelease(server);
-  if (pinned.server !== server || !relative || relative.startsWith("/") || relative.split("/").some((part) => !part || part === "." || part === "..") || /[\\?#]/u.test(relative))
+export async function fetchStaticReleaseEntry(
+  relative: string,
+  server = "intl",
+  release?: StaticCatalogRelease,
+): Promise<{ path: string; bytes: number; sha256: string } | undefined> {
+  const pinned = release || (await staticCatalogRelease(server));
+  if (
+    pinned.server !== server ||
+    !relative ||
+    relative.startsWith("/") ||
+    relative.split("/").some((part) => !part || part === "." || part === "..") ||
+    /[\\?#]/u.test(relative)
+  )
     throw new StaticCatalogConsistencyError("Invalid release entry identity");
   const local = localCatalog(server);
   if (local) {
@@ -475,7 +514,13 @@ export async function fetchStaticReleaseEntry(relative: string, server = "intl",
     throw new StaticCatalogConsistencyError("Release entry manifest identity mismatch");
   const entry = releaseManifestEntry(manifest, relative);
   if (!entry) return undefined;
-  if (typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(entry.sha256) || typeof entry.bytes !== "number" || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0)
+  if (
+    typeof entry.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
+    typeof entry.bytes !== "number" ||
+    !Number.isSafeInteger(entry.bytes) ||
+    entry.bytes < 0
+  )
     throw new StaticCatalogConsistencyError("Invalid release entry digest");
   return { path: relative, sha256: entry.sha256, bytes: entry.bytes };
 }
@@ -486,15 +531,26 @@ export async function fetchOptionalStaticCatalog(
   server = "intl",
   release?: StaticCatalogRelease,
 ): Promise<OptionalStaticCatalogResult> {
-  try {
-    return { value: await fetchStaticCatalog(path, server, release) };
-  } catch (error) {
+  const absent = (error: unknown): OptionalStaticCatalogResult => {
     if (!(error instanceof StaticCatalogHttpError || error instanceof ReleaseCatalogError) || error.status !== 404)
       throw error;
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`Static catalog: optional ${server}/${path.split("?")[0]} absent (${reason})`);
     return { value: null, reason };
+  };
+  let pinned: StaticCatalogRelease;
+  try {
+    pinned = release || (await staticCatalogRelease(server));
+  } catch (error) {
+    return absent(error);
   }
+  return staticBuildJson(`native-optional:${requestKey(path, server, pinned)}`, "native-optional", async () => {
+    try {
+      return { value: await fetchStaticCatalog(path, server, pinned) };
+    } catch (error) {
+      return absent(error);
+    }
+  });
 }
 
 /**
@@ -512,11 +568,27 @@ export async function fetchStaticCatalogBatch(
   const pinned = release || (await staticCatalogRelease(server));
   const size = 80;
   for (let start = 0; start < ids.length; start += size) {
-    const query = ids
-      .slice(start, start + size)
-      .map((id) => `id=${encodeURIComponent(id)}`)
-      .join("&");
-    const document = asRecord(await fetchStaticCatalog(`${resource}?${query}`, server, pinned));
+    const selected = ids.slice(start, start + size);
+    const query = selected.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+    const document =
+      process.env.STATIC_BUILD_INPUT_MODE === "frozen"
+        ? {
+            items: Object.fromEntries(
+              await Promise.all(
+                [...new Set(selected)].sort().map(async (id) => [
+                  id,
+                  await staticBuildJson(
+                    `native-entity:${requestKey(`${resource}/${encodeURIComponent(id)}`, server, pinned)}`,
+                    "native-catalog",
+                    async () => {
+                      throw new Error("Frozen entity is missing");
+                    },
+                  ),
+                ]),
+              ),
+            ),
+          }
+        : asRecord(await fetchStaticCatalog(`${resource}?${query}`, server, pinned));
     if (!document || !asRecord(document.items)) {
       throw new Error(`Static catalog returned an invalid ${resource} batch response`);
     }
@@ -532,6 +604,10 @@ export async function fetchStaticCatalogBatch(
   // Seed only complete batches; keep the batch caller's objects independent.
   for (const id of new Set(ids)) {
     const key = requestKey(`${resource}/${encodeURIComponent(id)}`, server, pinned);
+    if (process.env.STATIC_BUILD_INPUT_MODE === "capture") {
+      for (const prefix of ["native-entity", "native-json", ...(localCatalog(server) ? ["native-local"] : [])])
+        await staticBuildJson(`${prefix}:${key}`, "native-catalog", async () => items.get(id)!);
+    }
     if (!requestPromises.has(key)) requestPromises.set(key, Promise.resolve(structuredClone(items.get(id)!)));
   }
   return items;
@@ -543,7 +619,9 @@ export async function primeStaticCatalogBatch(
   server: string,
   release: StaticCatalogRelease,
 ): Promise<void> {
-  const missing = ids.filter((id) => !requestPromises.has(requestKey(`${resource}/${encodeURIComponent(id)}`, server, release)));
+  const missing = ids.filter(
+    (id) => !requestPromises.has(requestKey(`${resource}/${encodeURIComponent(id)}`, server, release)),
+  );
   if (missing.length) await fetchStaticCatalogBatch(resource, missing, server, release);
 }
 

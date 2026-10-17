@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function prepareCalendarStaticAssets(dataRoot = process.env.CALENDAR_DATA_ROOT || "data/calendar") {
+  if (process.env.STATIC_BUILD_INPUT_MODE === "frozen") return;
   const directory = path.resolve(dataRoot, "asset-manifests");
   await mkdir(directory, { recursive: true });
   for (const name of await readdir(directory)) {
@@ -21,18 +22,32 @@ export async function copyCalendarStaticAssets({
   const declaredSourceRoot = path.resolve(generatedPublicRoot);
   const output = path.resolve(outputRoot);
   let names;
-  try { names = await readdir(directory); } catch (error) { if (error.code === "ENOENT") return 0; throw error; }
+  try {
+    names = await readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return 0;
+    throw error;
+  }
   const assets = new Map();
   for (const name of names.filter((name) => /^[a-z0-9-]+-r-[a-f0-9]{20}\.json$/u.test(name))) {
     const bytes = await readFile(path.join(directory, name));
     if (bytes.length > 64 * 1024) throw new Error("Calendar mirror manifest exceeds bounds");
     const document = JSON.parse(bytes);
-    if (document.schema !== "haneoka-calendar-static-assets-v1" || !Array.isArray(document.assets) || document.assets.length > 12)
+    if (
+      document.schema !== "haneoka-calendar-static-assets-v1" ||
+      !Array.isArray(document.assets) ||
+      document.assets.length > 12
+    )
       throw new Error("Invalid calendar mirror manifest");
     for (const asset of document.assets) {
-      if (!/^images\/calendar-lives\/[a-f0-9]{64}\.png$/u.test(asset.path) ||
-          !/^[a-f0-9]{64}$/u.test(asset.sha256) || path.basename(asset.path) !== `${asset.sha256}.png` ||
-          !Number.isSafeInteger(asset.bytes) || asset.bytes < 1 || asset.bytes > 2 * 1024 * 1024)
+      if (
+        !/^images\/calendar-lives\/[a-f0-9]{64}\.png$/u.test(asset.path) ||
+        !/^[a-f0-9]{64}$/u.test(asset.sha256) ||
+        path.basename(asset.path) !== `${asset.sha256}.png` ||
+        !Number.isSafeInteger(asset.bytes) ||
+        asset.bytes < 1 ||
+        asset.bytes > 2 * 1024 * 1024
+      )
         throw new Error("Invalid calendar mirrored image declaration");
       const previous = assets.get(asset.path);
       if (previous && (previous.sha256 !== asset.sha256 || previous.bytes !== asset.bytes))
@@ -55,5 +70,9 @@ export async function copyCalendarStaticAssets({
   return assets.size;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv[2] === "--prepare")
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+  process.argv[2] === "--prepare"
+)
   await prepareCalendarStaticAssets();

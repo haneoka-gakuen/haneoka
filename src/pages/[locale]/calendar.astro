@@ -1,9 +1,10 @@
 ---
+import { staticBuildPaths } from "../../server/static-build";
 import CalendarDocument from "../../components/CalendarDocument.astro";
 import { LOCALES, type Locale } from "../../i18n/locales";
 
 export function getStaticPaths() {
-  return LOCALES.map((locale) => ({ params: { locale } }));
+  return staticBuildPaths("src/pages/[locale]/calendar.astro", LOCALES.map((locale) => ({ params: { locale } })));
 }
 const locale = Astro.params.locale as Locale;
 ---

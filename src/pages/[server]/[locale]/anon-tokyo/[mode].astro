@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import AnonTokyoDocument from "../../../../components/AnonTokyoDocument.astro";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-server";
@@ -6,11 +7,11 @@ import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 import { ANON_TOKYO_MODES, type AnonTokyoMode } from "../../../../lib/resource-route";
 
 export async function getStaticPaths() {
-  return (await staticCatalogPageServers()).flatMap((server) =>
+  return staticBuildPaths("src/pages/[server]/[locale]/anon-tokyo/[mode].astro", (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
       ANON_TOKYO_MODES.map((mode) => ({ params: { server, locale, mode }, props: { server, locale, mode } })),
     ),
-  );
+  ));
 }
 
 const { server, locale, mode } = Astro.props as {

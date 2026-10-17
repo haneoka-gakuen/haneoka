@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../server/static-build";
 import Base from "../../layouts/Base.astro";
 import AppShell from "../../components/AppShell.astro";
 import Icon from "../../components/Icon.astro";
@@ -6,7 +7,7 @@ import { LOCALES, type Locale } from "../../i18n/locales";
 import { t } from "../../i18n/messages";
 import "../../styles/search.css";
 import { renderGlobalSearchPage } from "../../server/render-tools";
-export const getStaticPaths = () => LOCALES.map(locale => ({params:{locale},props:{locale}}));
+export const getStaticPaths = () => staticBuildPaths("src/pages/[locale]/search.astro", LOCALES.map(locale => ({params:{locale},props:{locale}})));
 const { locale } = Astro.props as {locale:Locale};
 const title = t(locale,"common.actions.search","Search");
 const page = await renderGlobalSearchPage(locale);

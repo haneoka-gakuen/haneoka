@@ -1,4 +1,5 @@
 ---
+import { staticBuildPaths } from "../../../../server/static-build";
 import HelpDocument from "../../../../components/HelpDocument.astro";
 import Live2DDocument from "../../../../components/Live2DDocument.astro";
 import RouteDocument from "../../../../components/RouteDocument.astro";
@@ -35,12 +36,12 @@ const CATALOG_ROUTES: Readonly<Partial<Record<ResourceKind, string>>> = {
 };
 
 export async function getStaticPaths() {
-  return (await staticCatalogPageServers()).flatMap((server) =>
+  return staticBuildPaths("src/pages/[server]/[locale]/[kind]/index.astro", (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
       RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge" && kind !== "skills")
         .map((kind) => ({ params: { server, locale, kind } })),
     ),
-  );
+  ));
 }
 
 const { server, locale, kind } = Astro.params as {

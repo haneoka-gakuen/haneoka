@@ -1,0 +1,294 @@
+name: Build complete static frontend
+on:
+  workflow_call:
+    inputs:
+      page_groups:
+        type: string
+        default: core
+      resource_servers:
+        type: string
+        default: intl,jp
+    outputs:
+      frontend_artifact:
+        value: ${{ jobs.merge.outputs.artifact }}
+      inputs_artifact:
+        value: ${{ jobs.prepare.outputs.artifact }}
+      inputs_sha:
+        value: ${{ jobs.prepare.outputs.inputs_sha }}
+      node_version:
+        value: ${{ jobs.prepare.outputs.node_version }}
+jobs:
+  prepare:
+    name: Freeze shared static inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=5120
+      STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
+      STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
+      STATIC_CATALOG_SOURCE: http
+      STATIC_BUILD_INPUT_MODE: capture
+      STATIC_BUILD_INPUT_ROOT: data/static-build/inputs
+      PROVIDER_STATIC_SNAPSHOT: data/provider-static/snapshots/${{ github.run_id }}
+      ASTRO_TELEMETRY_DISABLED: "1"
+    outputs:
+      inputs_sha: ${{ steps.freeze.outputs.inputs_sha }}
+      artifact: ${{ steps.freeze.outputs.artifact }}
+      node_version: ${{ steps.node.outputs.node-version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            .gitmodules
+        id: node
+      - run: node scripts/external-repositories.mjs checkout
+      - uses: ./.dependencies/vega/.github/actions/setup-wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dependencies:verify
+      - uses: ./.github/actions/setup-cubism-runtime
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+      - uses: actions/cache/restore@v6
+        id: catalog-cache
+        with:
+          path: data/static-catalog/v1
+          key: static-catalog-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: static-catalog-v1-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        id: embed-cache
+        with:
+          path: public/embed
+          key: embed-compat-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: embed-compat-v1-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        id: cubism-cache
+        with:
+          path: data/static-catalog/cubism-model-metadata/v1
+          key: cubism-model-metadata-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cubism-model-metadata-v1-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        id: render-cache
+        with:
+          path: data/static-render/model-v1
+          key: model-render-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: model-render-v1-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        id: provider-http-cache
+        with:
+          path: data/provider-static/http-cache
+          key: provider-http-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: provider-http-v1-${{ runner.os }}-
+      - uses: actions/cache/restore@v6
+        id: provider-snapshot-cache
+        with:
+          path: |
+            data/provider-static/snapshots
+            data/provider-static/entities/payloads
+            data/provider-static/entities/receipts
+          key: provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-
+      - name: Build shared packages and public assets once
+        run: |
+          pnpm build:packages
+          pnpm prepare:frontend
+          pnpm build:embeds
+          pnpm build:provider-static
+      - name: Collect all production data and route matrices
+        run: |
+          node scripts/build/prepare-static-inputs.mjs
+          STATIC_BUILD_PHASE=prepare pnpm exec astro build
+      - name: Verify and freeze complete shared inputs
+        id: freeze
+        run: |
+          node scripts/build/static-build-inputs.mjs freeze --root "$PWD" --capture "$STATIC_BUILD_INPUT_ROOT" --output .output/static-frozen-inputs > .output/static-freeze-result.json
+          node scripts/build/static-build-shards.mjs plan --root "$PWD" --inputs .output/static-frozen-inputs/manifest.json --routes "$STATIC_BUILD_INPUT_ROOT/route-plan" --output .output/static-shard-plan.json
+          node --input-type=module -e 'import fs from "node:fs";const result=JSON.parse(fs.readFileSync(".output/static-freeze-result.json"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`inputs_sha=${result.sha256}\nartifact=static-inputs-${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}-${result.sha256}\n`);'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.freeze.outputs.artifact }}
+          path: |
+            .output/static-frozen-inputs
+            .output/static-shard-plan.json
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/cache/save@v6
+        if: always() && steps.catalog-cache.outputs.cache-primary-key != '' && steps.catalog-cache.outputs.cache-hit != 'true'
+        with:
+          path: data/static-catalog/v1
+          key: ${{ steps.catalog-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v6
+        if: always() && steps.embed-cache.outputs.cache-primary-key != '' && steps.embed-cache.outputs.cache-hit != 'true'
+        with:
+          path: public/embed
+          key: ${{ steps.embed-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v6
+        if: always() && steps.cubism-cache.outputs.cache-primary-key != '' && steps.cubism-cache.outputs.cache-hit != 'true'
+        with:
+          path: data/static-catalog/cubism-model-metadata/v1
+          key: ${{ steps.cubism-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v6
+        if: always() && steps.render-cache.outputs.cache-primary-key != '' && steps.render-cache.outputs.cache-hit != 'true'
+        with:
+          path: data/static-render/model-v1
+          key: ${{ steps.render-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v6
+        if: always() && steps.provider-http-cache.outputs.cache-primary-key != '' && steps.provider-http-cache.outputs.cache-hit
+          != 'true'
+        with:
+          path: data/provider-static/http-cache
+          key: ${{ steps.provider-http-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v6
+        if: always() && steps.provider-snapshot-cache.outputs.cache-primary-key != '' &&
+          steps.provider-snapshot-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            data/provider-static/snapshots
+            data/provider-static/entities/payloads
+            data/provider-static/entities/receipts
+          key: ${{ steps.provider-snapshot-cache.outputs.cache-primary-key }}
+  locale:
+    name: Render complete ${{ matrix.locale }} frontend
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        locale:
+          - en
+          - ja
+          - ko
+          - zh-CN
+          - zh-TW
+    env:
+      NODE_OPTIONS: --max-old-space-size=5120
+      STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
+      STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
+      STATIC_CATALOG_SOURCE: http
+      STATIC_BUILD_INPUT_MODE: frozen
+      STATIC_BUILD_INPUT_ROOT: data/static-build/inputs
+      STATIC_BUILD_LOCALE: ${{ matrix.locale }}
+      ASTRO_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ needs.prepare.outputs.node_version }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: node scripts/external-repositories.mjs checkout
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.prepare.outputs.artifact }}
+          path: .output
+      - name: Restore verified common artifacts and immutable inputs
+        run: |
+          node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root "$PWD" --source-root "$PWD"
+          pnpm dependencies:verify
+      - name: Render, index and pack the complete locale
+        run: |
+          pnpm exec astro build
+          pnpm finalize:frontend
+          node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --output .output/static-part
+      - uses: actions/upload-artifact@v7
+        with:
+          name: static-part-${{ needs.prepare.outputs.inputs_sha }}-${{ matrix.locale }}
+          path: .output/static-part
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+  merge:
+    name: Verify and merge complete frontend
+    needs:
+      - prepare
+      - locale
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=5120
+      STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
+      STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
+      STATIC_CATALOG_SOURCE: http
+    outputs:
+      artifact: ${{ steps.archive.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ needs.prepare.outputs.node_version }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: node scripts/external-repositories.mjs checkout
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.prepare.outputs.artifact }}
+          path: .output
+      - run: node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root
+          "$PWD" --source-root "$PWD"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: static-part-${{ needs.prepare.outputs.inputs_sha }}-*
+          path: .output/static-parts
+      - name: Verify every document, common asset and search language
+        run: |
+          for locale in en ja ko zh-CN zh-TW; do
+            mv ".output/static-parts/static-part-${{ needs.prepare.outputs.inputs_sha }}-${locale}" ".output/static-parts/${locale}"
+          done
+          node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --output .output/static-merged
+          cp -a .output/static-merged/.output/. .output/
+          pnpm runtime:cubism:verify-output
+          for entry in core vega cassiopeia home-spot vega-theme api-client; do
+            test -s ".output/public/embed/${entry}.js"
+          done
+          test -s .output/public/embed/manifest.json
+      - name: Publish complete immutable documents once
+        run: |
+          aws configure set default.s3.max_concurrent_requests 64
+          node scripts/build/publish-static-documents.mjs
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      - name: Archive complete qualified frontend
+        id: archive
+        run: |
+          git rev-parse HEAD > .output/frontend-checkpoint.source
+          tar -cf .output/frontend-checkpoint.tar .output/frontend-checkpoint.source .output/public .output/static-documents/publication.json .output/static-documents/references.json
+          echo "artifact=frontend-checkpoint-${{ github.sha }}-${{ github.run_id }}-${{ needs.prepare.outputs.inputs_sha }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.archive.outputs.artifact }}
+          path: .output/frontend-checkpoint.tar
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error

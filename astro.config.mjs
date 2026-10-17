@@ -2,11 +2,13 @@ import { defineConfig } from "astro/config";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { writeFile } from "node:fs/promises";
+import { finishStaticBuildInputs, resetStaticBuildInputErrors } from "./src/server/static-input-store.ts";
 import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { beginStaticDocumentsBuild } from "./src/server/static-documents.ts";
 import { installProviderDevRouting } from "./src/server/provider-dev-routing.ts";
 import { modelRenderCachePlugin } from "./scripts/build/model-render-cache.mjs";
+import { staticBuildSourceIdentity } from "./src/server/static-build-identity.ts";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -25,7 +27,9 @@ const workspaceFiles = [
   ]),
 ];
 /** Identifies one deployment; an open tab compares it with /build.json to offer a reload. */
-const buildId = String(process.env.GITHUB_SHA || Date.now()).slice(0, 12);
+const buildId = String(
+  process.env.GITHUB_SHA || (process.env.STATIC_BUILD_INPUT_MODE ? staticBuildSourceIdentity(root).sha : Date.now()),
+).slice(0, 12);
 const proxyTarget = String(process.env.LOCAL_WORKER_ORIGIN || process.env.LOCAL_RELEASE_ORIGIN || "").trim();
 const providerTarget = String(process.env.BESTDORI_PROVIDER_ORIGIN || process.env.LOCAL_WORKER_ORIGIN || "").trim();
 const publicResourceProxy = {
@@ -57,7 +61,10 @@ export default defineConfig({
     {
       name: "workspace-cache",
       hooks: {
-        "astro:build:start": () => beginStaticDocumentsBuild(),
+        "astro:build:start": () => {
+          resetStaticBuildInputErrors();
+          beginStaticDocumentsBuild();
+        },
         "astro:build:setup": ({ target, updateConfig }) => {
           if (target === "server") updateConfig({ plugins: [modelRenderCachePlugin(root)] });
         },
@@ -76,6 +83,7 @@ export default defineConfig({
       name: "build-id",
       hooks: {
         "astro:build:done": async ({ dir }) => {
+          await finishStaticBuildInputs();
           await writeFile(new URL("build.json", dir), JSON.stringify({ id: buildId }));
         },
       },

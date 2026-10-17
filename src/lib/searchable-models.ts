@@ -1,4 +1,4 @@
-import { cubismModelMetadata } from "../server/cubism-model-metadata";
+import { cubismModelMetadata } from "../server/captured-cubism-model-metadata";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { resolveLocalizedText } from "./localized-text";
 import {
