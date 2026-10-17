@@ -113,8 +113,8 @@ def remove_l3(raw: bytes) -> bytes:
             offset += len(line)
         else:
             break
-    match = L3.match(raw, offset)
-    return raw[:offset] + raw[match.end():] if match else raw
+    match = L3.match(raw[offset:])
+    return raw[:offset] + raw[offset + match.end():] if match else raw
 
 
 def check(root: Path, files: set[str], scope: dict, base: str | None = None) -> tuple[list[str], dict]:
@@ -210,11 +210,12 @@ def check(root: Path, files: set[str], scope: dict, base: str | None = None) -> 
             errors.append(f'{name}: missing or ignored core file')
             continue
         raw = (root / name).read_bytes()
+        header_area = raw.removeprefix(b'\xef\xbb\xbf')
         stripped = remove_l3(raw)
-        if stripped == raw or len(L3.findall(raw[:5000])) != 1:
+        if stripped == raw or len(L3.findall(header_area[:5000])) != 1:
             errors.append(f'{name}: missing, malformed or duplicate L3 header')
             continue
-        head = L3.search(raw).group().decode('utf-8')
+        head = L3.search(header_area).group().decode('utf-8')
         coordinate = next((line for line in head.splitlines() if ' Pos: ' in line), '')
         hrefs = links(coordinate)
         if len(hrefs) != 1:

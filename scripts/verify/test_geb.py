@@ -37,6 +37,7 @@ class NavigationTests(unittest.TestCase):
         head = '# L3 — GEB\r\n# Input: x\r\n# Output: y\r\n# Pos: [Map](L2.md)\r\n# Effects/Dependencies: z\r\n'.encode()
         body = b'"""Original module documentation."""\r\nfrom __future__ import annotations\r\nx = 1\r\n'
         self.assertEqual(remove_l3(prefix + head + body), prefix + body)
+        self.assertEqual(remove_l3(b'\xef\xbb\xbf' + head + body), b'\xef\xbb\xbf' + body)
         self.assertEqual(remove_l3(body + head), body + head)
         reference = b'/// <reference lib="webworker" />\r\n'
         ts_head = head.replace(b'#', b'//')
@@ -61,7 +62,7 @@ class NavigationTests(unittest.TestCase):
             self.assertTrue(any('missing, malformed or duplicate L3' in e for e in errors))
             (root / 'src/L2.md').write_text('[parent](../L1.md)\n[entry](entry.ts)', encoding='utf-8')
             (root / 'L1.md').write_text('[child](src/L2.md)', encoding='utf-8')
-            (root / 'src/entry.ts').write_text('// L3 — GEB\n// Input: x\n// Output: y\n// Pos: [Map](L2.md)\n// Effects/Dependencies: z\nexport {};\n', encoding='utf-8')
+            (root / 'src/entry.ts').write_text('// L3 — GEB\n// Input: x\n// Output: y\n// Pos: [Map](L2.md)\n// Effects/Dependencies: z\nexport {};\n', encoding='utf-8-sig')
             self.assertEqual(check(root, files, scope)[0], [])
             errors, _ = check(root, files - {'src/L2.md'}, scope)
             self.assertTrue(any('missing or ignored navigation' in e for e in errors))
