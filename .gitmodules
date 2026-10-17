@@ -89,3 +89,7 @@
 	path = .dependencies/game-data-exporter
 	url = https://github.com/haneoka-gakuen/game-data-exporter.git
 	branch = main
+[submodule "ournotes-team-builder"]
+	path = .dependencies/ournotes-team-builder
+	url = https://github.com/haneoka-gakuen/ournotes-team-builder.git
+	branch = main

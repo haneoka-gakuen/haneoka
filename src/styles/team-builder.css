@@ -180,6 +180,15 @@
   .tb p {
     margin: 0;
   }
+  .tb-credit {
+    margin-block-start: var(--md-sys-spacing-4);
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .tb-credit a {
+    color: inherit;
+    text-decoration: underline;
+  }
   /* The content pane (#main-content) is the scroller, so sticky offsets are
    * measured from the pane's top, not the window's. */
   .tb-header {

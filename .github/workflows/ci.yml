@@ -38,6 +38,9 @@ jobs:
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout
 
+      - name: Add the WebAssembly target for the team-building engine
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 

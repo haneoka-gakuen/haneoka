@@ -604,6 +604,11 @@ export class TeamBuilder extends LitElement {
           ${this.renderTabs()}
         </header>
         <section id="tb-panel" class="tb-tabpanel" role="tabpanel" tabindex="-1">${panel}</section>
+        <p class="tb-credit">
+          ${this.t("credit", "Team-building algorithm from Haneoka")} —
+          <a href="https://haneoka.org" rel="noopener">haneoka.org</a> ·
+          <a href="https://github.com/haneoka-gakuen/ournotes-team-builder" rel="noopener">${this.t("creditSource", "Source code")}</a>
+        </p>
         ${renderCardEditor(this)}
         ${this.songPicker ? renderSongPicker(this) : nothing}
         ${this.imports.render()}
