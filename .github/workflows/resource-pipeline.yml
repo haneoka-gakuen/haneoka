@@ -230,7 +230,7 @@ jobs:
           if [[ "$TGW_MODE" == 'publish-reviewed' ]] && jq -e '.promoted == true and .publicReadbackConfirmed == true' "$RUNNER_TEMP/tgw-output/publication-receipt.json" > /dev/null; then
             echo 'release_promoted=true' >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: tgw-current-${{ inputs.server }}-${{ github.run_id }}
