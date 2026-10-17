@@ -4,6 +4,8 @@ node_modules/
 .pnpm-store/
 
 # Framework and build outputs
+/src/lib/team-builder/engine/generated/
+/.cache/
 /public/embed/
 dist
 .astro/

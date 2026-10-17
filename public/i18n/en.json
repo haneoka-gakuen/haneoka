@@ -2325,7 +2325,9 @@
         "title": "Import your save with Haneoka App",
         "description": "Read your Our Notes save in the app, then send your cards to the team builder or export a file to import here.",
         "action": "Download App"
-      }
+      },
+      "credit": "Team-building algorithm from Haneoka",
+      "creditSource": "Source code"
     },
     "calendar": {
       "title": "Calendar",

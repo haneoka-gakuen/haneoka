@@ -2325,7 +2325,9 @@
         "title": "用 Haneoka App 一键导入存档",
         "description": "在 App 中读取 Our Notes 存档，将卡牌导入配队，或导出文件后在这里导入。",
         "action": "下载客户端"
-      }
+      },
+      "credit": "组队算法来自 Haneoka",
+      "creditSource": "源代码"
     },
     "calendar": {
       "title": "日历",

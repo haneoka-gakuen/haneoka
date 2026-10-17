@@ -2325,7 +2325,9 @@
         "title": "Haneoka 앱으로 세이브 가져오기",
         "description": "앱에서 Our Notes 세이브를 읽고 카드를 팀 편성으로 보내거나, 파일로 내보낸 뒤 여기에서 가져오세요.",
         "action": "앱 다운로드"
-      }
+      },
+      "credit": "편성 알고리즘: Haneoka",
+      "creditSource": "소스 코드"
     },
     "calendar": {
       "title": "달력",

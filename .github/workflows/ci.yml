@@ -38,6 +38,9 @@ jobs:
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout
 
+      - name: Set up the locked Vega Rust and WASM toolchain
+        uses: ./.dependencies/vega/.github/actions/setup-wasm
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 

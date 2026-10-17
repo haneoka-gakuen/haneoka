@@ -2325,7 +2325,9 @@
         "title": "用 Haneoka App 一鍵匯入存檔",
         "description": "在 App 中讀取 Our Notes 存檔，將卡片匯入配隊，或匯出檔案後在這裡匯入。",
         "action": "下載用戶端"
-      }
+      },
+      "credit": "組隊演算法來自 Haneoka",
+      "creditSource": "原始碼"
     },
     "calendar": {
       "title": "日曆",

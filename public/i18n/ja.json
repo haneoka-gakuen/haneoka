@@ -2325,7 +2325,9 @@
         "title": "Haneoka アプリでセーブを取り込み",
         "description": "アプリで Our Notes のセーブを読み込み、カードを編成ツールへ。ファイルを書き出して、ここに取り込むこともできます。",
         "action": "アプリをダウンロード"
-      }
+      },
+      "credit": "編成アルゴリズム：Haneoka",
+      "creditSource": "ソースコード"
     },
     "calendar": {
       "title": "カレンダー",
