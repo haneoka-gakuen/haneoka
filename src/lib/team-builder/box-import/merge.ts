@@ -1,4 +1,10 @@
-import { addInventoryEntries, updateInventoryEntries, validateInventory, type InventoryV1 } from "../inventory";
+import {
+  addInventoryEntries,
+  updateInventoryEntries,
+  validateInventory,
+  upgradeInventory,
+  type InventoryV1,
+} from "../inventory";
 import type { TeamBuilderData } from "../data";
 import { BoxImportError } from "@haneoka/game-data-exporter";
 import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext } from "./preview";
@@ -7,6 +13,7 @@ export interface BoxConfirmation {
   existingValues?: "keep" | "overwrite" | "updates";
   cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number | "keep">> }[];
   maps: { key: string; include: boolean; value?: number | "keep" }[];
+  scalars?: { key: "vipRank"; include: boolean; value?: number | "keep" }[];
 }
 /** Pure merge: card defaults and individual account-bonus choices remain independent. */
 export function applyConfirmedBoxImport(
@@ -32,7 +39,8 @@ export function applyConfirmedBoxImport(
     const proposal = preview.cards.find((r) => r.key === choice.key);
     if (!proposal) throw new BoxImportError("box_unknown_confirmation");
     if (!choice.include) continue;
-    if (preview.issues.some(issue=>issue.kind===proposal.kind && issue.id===proposal.cardId)) throw new BoxImportError("box_unresolved_values");
+    if (preview.issues.some((issue) => issue.kind === proposal.kind && issue.id === proposal.cardId))
+      throw new BoxImportError("box_unresolved_values");
     const owned = next[proposal.kind].find((r) => r.cardId === proposal.cardId);
     if (!owned) next = addInventoryEntries(next, proposal.kind, [{ cardId: proposal.cardId }], data);
     const entry = next[proposal.kind].find((r) => r.cardId === proposal.cardId)!;
@@ -47,7 +55,10 @@ export function applyConfirmedBoxImport(
       } else if (!owned || confirmation.existingValues === "overwrite" || confirmation.existingValues === "updates") {
         if (values.length > 1) throw new BoxImportError("box_conflict_required");
         const before = proposal.existing[field];
-        if (values.length === 1 && (confirmation.existingValues !== "updates" || !owned || before == null || values[0]! > before))
+        if (
+          values.length === 1 &&
+          (confirmation.existingValues !== "updates" || !owned || before == null || values[0]! > before)
+        )
           fields[field] = values[0]!;
       }
     }
@@ -71,6 +82,23 @@ export function applyConfirmedBoxImport(
     if (selected === undefined || !proposal.values.includes(selected))
       throw new BoxImportError("box_conflict_required");
     next = { ...next, [proposal.map]: { ...next[proposal.map], [String(proposal.id)]: selected } };
+  }
+  seen.clear();
+  for (const choice of confirmation.scalars ?? []) {
+    if (seen.has(choice.key)) throw new BoxImportError("box_duplicate_confirmation");
+    seen.add(choice.key);
+    const proposal = preview.scalars?.find((row) => row.key === choice.key);
+    if (!proposal) throw new BoxImportError("box_unknown_confirmation");
+    if (!choice.include) continue;
+    if (proposal.blocked) throw new BoxImportError("box_unresolved_values");
+    if (choice.value === "keep") {
+      if (!proposal.exists) throw new BoxImportError("box_unconfirmed_value");
+      continue;
+    }
+    const value = choice.value ?? (proposal.values.length === 1 ? proposal.values[0] : undefined);
+    if (value === undefined || !proposal.values.includes(value)) throw new BoxImportError("box_conflict_required");
+    const upgraded = upgradeInventory(next);
+    next = { ...upgraded, playerModifiers: { ...upgraded.playerModifiers, [proposal.key]: value } };
   }
   if (!validateInventory(next, data).valid) throw new BoxImportError("box_invalid_confirmed_inventory");
   return next;

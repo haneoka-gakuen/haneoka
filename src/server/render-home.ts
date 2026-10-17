@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import { prepareCalendarLives } from "./calendar-live-build";
 import { compactHomeGacha, homeFanInfo } from "./home-display-slices";
 import { loadStaticCrossServerHome } from "../lib/cross-server/home";
+import { homeEventDisplay } from "../lib/home-event-display";
 
 const snapshots = new Map<string, Promise<HomeSeed>>();
 let publicPosts: Promise<JsonRecord | undefined> | undefined;
@@ -25,7 +26,10 @@ const pick = (entry: JsonRecord, keys: string[]) =>
 const rows = (value: unknown) => Object.values((value || {}) as Record<string, JsonRecord>);
 async function snapshot(server: ReleaseServer, locale: Locale): Promise<HomeSeed> {
   const release = await staticCatalogRelease(server);
-  const homeUnion = server === "intl" || server === "jp" || server === "intl-test" ? await loadStaticCrossServerHome(server, locale) : {};
+  const homeUnion =
+    server === "intl" || server === "jp" || server === "intl-test"
+      ? await loadStaticCrossServerHome(server, locale)
+      : {};
   const keys = [
     "catalog/summary",
     "songs",
@@ -64,7 +68,16 @@ async function snapshot(server: ReleaseServer, locale: Locale): Promise<HomeSeed
   documents.characters = Object.fromEntries(
     rows(documents.characters).map((entry) => [
       String(entry.characterId),
-      pick(entry, ["characterId", "characterName", "englishName", "slug", "bandId", "colorCode", "faceImage", "thumbnailImage"]),
+      pick(entry, [
+        "characterId",
+        "characterName",
+        "englishName",
+        "slug",
+        "bandId",
+        "colorCode",
+        "faceImage",
+        "thumbnailImage",
+      ]),
     ]),
   );
   documents.bands = Object.fromEntries(
@@ -96,8 +109,12 @@ async function snapshot(server: ReleaseServer, locale: Locale): Promise<HomeSeed
     );
   documents.gacha = compactHomeGacha(documents.gacha, documents.cards);
   documents.stories = {
-    birthdayStories: (documents.stories.birthdayStories && typeof documents.stories.birthdayStories === "object" &&
-      !Array.isArray(documents.stories.birthdayStories)) ? documents.stories.birthdayStories : {},
+    birthdayStories:
+      documents.stories.birthdayStories &&
+      typeof documents.stories.birthdayStories === "object" &&
+      !Array.isArray(documents.stories.birthdayStories)
+        ? documents.stories.birthdayStories
+        : {},
   };
   const entries = rows(documents.events.entries);
   documents.events = {
@@ -106,26 +123,7 @@ async function snapshot(server: ReleaseServer, locale: Locale): Promise<HomeSeed
       entries.map(async (entry) => {
         const detail = await fetchOptionalStaticCatalog(`events/${entry.id}`, server, release);
         const value = { ...entry, ...((detail.value as JsonRecord) || {}) };
-        return {
-          ...pick(value, ["id", "title", "image", "backgroundImage", "logo", "startAt", "endAt", "eventType"]),
-          homeStoryId: String(((value.story as JsonRecord)?.episodes as JsonRecord[] | undefined)?.[0]?.storyKey || ""),
-          effects: rows(value.effects).map((effect) => ({
-            targets: Object.fromEntries(
-              Object.entries((effect.targets || {}) as Record<string, JsonRecord>).map(([kind, target]) => [
-                kind,
-                {
-                  ...pick(target, ["kind", "resourceId", "bandId", "cardType", "name", "image", "icon"]),
-                  homeTargetKind: kind,
-                  bandId: kind === "band" ? Number((effect.raw as JsonRecord)?._bandId || 0) : target.bandId,
-                  cardType:
-                    kind === "attribute"
-                      ? Number(effect.cardType || (effect.raw as JsonRecord)?._cardType || 0)
-                      : target.cardType,
-                },
-              ]),
-            ),
-          })),
-        };
+        return homeEventDisplay(value);
       }),
     ),
   };

@@ -1766,7 +1766,7 @@
         "keep": "Keep saved value",
         "chooseValue": "Choose a value",
         "review": "Needs review",
-        "maps": "Character and item levels",
+        "maps": "Account growth",
         "saved": "Saved",
         "issues": "Entries needing review",
         "confirm": "Confirm import",
@@ -1806,7 +1806,22 @@
         "backupNoGame": "This backup contains no supported Our Notes save.",
         "sourceTooLarge": "The selected source exceeds the supported file, record or memory limit.",
         "sourceTimeout": "Reading timed out. Select one backup or a smaller save folder and try again.",
-        "folderAccess": "The browser could not read this folder. Check its access permissions."
+        "folderAccess": "The browser could not read this folder. Check its access permissions.",
+        "notImported": "Fields not imported",
+        "cardIdentity": "Card",
+        "memory": "Memory bonuses",
+        "itemTotals": "Combined instrument bonuses",
+        "accountGrowth": "Account growth",
+        "linkedSave": "This backup uses a separate game save. Import that save file.",
+        "originalJson": "Import the original inventory JSON file.",
+        "notice": {
+          "unknown": "Unknown",
+          "conflict": "Conflicting values",
+          "needs_review": "Needs review",
+          "unsupported_summary": "Calculated from character ranks",
+          "unsupported_field": "Unsupported",
+          "inactive_band_item": "Inactive"
+        }
       },
       "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results.",
       "localDraftChanged": "Your card library changed in another tab. Export your current inputs, then reload the saved library.",

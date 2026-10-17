@@ -159,6 +159,12 @@ _RECIPE_INFRASTRUCTURE = {
     "core/config.py", "core/private_config.py", "core/storage.py",
     "core/delta.py", "core/fingerprints.py", "extract/unity_reuse.py",
 }
+# Qualified index hoist: decoding and every declared CRI output remain exact.
+# Other source revisions retain their own hash and invalidate the producer.
+_STAGE_SOURCE_COMPATIBILITY = {
+    ("cri", "extract/cri.py", "546622e848ca91f9d45c3a1a56f3a85547ab4dbbcdf9aa9f844af9e555c59271"):
+        "cb61137f76a6f9f7ef94bd5bd7ce4b4ad4603e7d892e09b9209a32d60af8a918",
+}
 _UNITY_PACKAGES = {
     "unitypy", "pillow", "texture2ddecoder", "lz4", "brotli", "etcpak",
     "astc-encoder-py", "pycryptodome", "fsspec", "attrs", "fmod-toolkit",
@@ -188,7 +194,8 @@ def _stage_sources(read: Callable[[str], bytes | None], stage: str) -> dict[str,
         body = read("scripts/" + relative)
         if body is None:
             raise FileNotFoundError(f"pipeline stage source is missing: {relative}")
-        sources[relative] = sha256_bytes(body)
+        digest = sha256_bytes(body)
+        sources[relative] = _STAGE_SOURCE_COMPATIBILITY.get((stage, relative, digest), digest)
         tree = ast.parse(body)
         for node in ast.walk(tree):
             modules: list[str] = []

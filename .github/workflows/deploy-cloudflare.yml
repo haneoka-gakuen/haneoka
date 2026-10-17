@@ -1,14 +1,12 @@
 name: Deploy to Cloudflare Workers
-
 on:
   push:
     branches:
       - main
-    # Resource producers refresh pages after publishing an immutable release.
     paths:
       - "**"
       - "!scripts/**/*.py"
-      - "scripts/build/icon_sprite.py"
+      - scripts/build/icon_sprite.py
       - "!scripts/requirements.txt"
       - "!.github/workflows/resource-*.yml"
       - "!.github/actions/setup-resource-pipeline/**"
@@ -19,14 +17,13 @@ on:
         description: Apply pending production D1 migrations on this manual run
         type: boolean
         default: true
-
-concurrency:
-  group: cloudflare-production
-  cancel-in-progress: false
-
+      worker_only:
+        description: Publish only the Worker, database and cron using the current verified static assets
+        type: boolean
+        default: false
 jobs:
-  deploy:
-    name: Build and deploy
+  build:
+    name: Build verified production artifact
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -36,14 +33,13 @@ jobs:
       STATIC_RESOURCE_SERVERS: intl,jp
       STATIC_CATALOG_SOURCE: http
       PROVIDER_STATIC_SNAPSHOT: data/provider-static/snapshots/${{ github.run_id }}
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
+        with:
+          fetch-depth: 0
       - name: Install pnpm
         run: corepack enable
-
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -54,22 +50,14 @@ jobs:
             pnpm-lock.yaml
             pnpm-workspace.yaml
             .gitmodules
-
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout
-
-      - name: Add the WebAssembly target for the team-building engine
-        run: rustup target add wasm32-unknown-unknown
-
       - name: Set up the locked Vega Rust and WASM toolchain
         uses: ./.dependencies/vega/.github/actions/setup-wasm
-
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Verify external repository compatibility lock
         run: pnpm dependencies:verify
-
       - name: Provision licensed Cubism runtime
         uses: ./.github/actions/setup-cubism-runtime
         env:
@@ -77,21 +65,20 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: "true"
-
       - name: Reuse immutable release catalog reads
         uses: actions/cache@v6
         with:
           path: data/static-catalog/v1
           key: static-catalog-v1-${{ runner.os }}-${{ github.run_id }}
           restore-keys: static-catalog-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Reuse verified immutable embed compatibility files
         uses: actions/cache@v6
         with:
           path: public/embed
           key: embed-compat-v1-${{ runner.os }}-${{ github.run_id }}
           restore-keys: embed-compat-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Restore verified provider HTTP responses
         id: provider-http-cache
         uses: actions/cache/restore@v6
@@ -99,7 +86,7 @@ jobs:
           path: data/provider-static/http-cache
           key: provider-http-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: provider-http-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Restore this run's captured provider inputs
         id: provider-snapshot-cache
         uses: actions/cache/restore@v6
@@ -110,7 +97,7 @@ jobs:
             data/provider-static/entities/receipts
           key: provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Reuse verified provider payloads and static document content
         uses: actions/cache@v6
         with:
@@ -120,7 +107,7 @@ jobs:
             .output/static-documents/content
           key: static-documents-v1-${{ runner.os }}-${{ github.run_id }}
           restore-keys: static-documents-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Restore verified Cubism model metadata
         id: cubism-metadata-cache
         uses: actions/cache/restore@v6
@@ -128,7 +115,7 @@ jobs:
           path: data/static-catalog/cubism-model-metadata/v1
           key: cubism-model-metadata-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: cubism-model-metadata-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Restore verified model workspace renders
         id: model-render-cache
         uses: actions/cache/restore@v6
@@ -136,25 +123,24 @@ jobs:
           path: data/static-render/model-v1
           key: model-render-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: model-render-v1-${{ runner.os }}-
-
+        if: ${{ !inputs.worker_only }}
       - name: Build shared engine and application packages
         run: pnpm build:packages
-
       - name: Prepare fonts and image assets
         run: pnpm prepare:frontend
-
+        if: ${{ !inputs.worker_only }}
       - name: Build standalone player bundles
         run: pnpm build:embeds
-
+        if: ${{ !inputs.worker_only }}
       - name: Prepare enabled provider snapshots
         run: pnpm build:provider-static
-
+        if: ${{ !inputs.worker_only }}
       - name: Render complete static pages
         run: pnpm exec astro build
-
+        if: ${{ !inputs.worker_only }}
       - name: Build search indexes and pack static documents
         run: pnpm finalize:frontend
-
+        if: ${{ !inputs.worker_only }}
       - name: Verify complete frontend artifacts before publication
         run: |
           pnpm runtime:cubism:verify-output
@@ -162,29 +148,33 @@ jobs:
             test -s ".output/public/embed/${entry}.js"
           done
           test -s .output/public/embed/manifest.json
+        if: ${{ !inputs.worker_only }}
       - name: Save verified provider HTTP responses after interrupted builds
-        if: always() && steps.provider-http-cache.outputs.cache-primary-key != '' && steps.provider-http-cache.outputs.cache-hit != 'true'
+        if:
+          always() && steps.provider-http-cache.outputs.cache-primary-key != '' && steps.provider-http-cache.outputs.cache-hit
+          != 'true'
         uses: actions/cache/save@v6
         with:
           path: data/provider-static/http-cache
           key: ${{ steps.provider-http-cache.outputs.cache-primary-key }}
-
       - name: Save verified Cubism model metadata after interrupted builds
-        if: always() && steps.cubism-metadata-cache.outputs.cache-primary-key != '' && steps.cubism-metadata-cache.outputs.cache-hit != 'true'
+        if: always() && steps.cubism-metadata-cache.outputs.cache-primary-key != '' &&
+          steps.cubism-metadata-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: data/static-catalog/cubism-model-metadata/v1
           key: ${{ steps.cubism-metadata-cache.outputs.cache-primary-key }}
-
       - name: Save verified model workspace renders after interrupted builds
-        if: always() && steps.model-render-cache.outputs.cache-primary-key != '' && steps.model-render-cache.outputs.cache-hit != 'true'
+        if:
+          always() && steps.model-render-cache.outputs.cache-primary-key != '' && steps.model-render-cache.outputs.cache-hit
+          != 'true'
         uses: actions/cache/save@v6
         with:
           path: data/static-render/model-v1
           key: ${{ steps.model-render-cache.outputs.cache-primary-key }}
-
       - name: Save this run's captured provider inputs and payloads
-        if: always() && steps.provider-snapshot-cache.outputs.cache-primary-key != '' && steps.provider-snapshot-cache.outputs.cache-hit != 'true'
+        if: always() && steps.provider-snapshot-cache.outputs.cache-primary-key != '' &&
+          steps.provider-snapshot-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -192,7 +182,6 @@ jobs:
             data/provider-static/entities/payloads
             data/provider-static/entities/receipts
           key: ${{ steps.provider-snapshot-cache.outputs.cache-primary-key }}
-
       - name: Publish complete static documents before switching the Worker
         run: |
           aws configure set default.s3.max_concurrent_requests 64
@@ -201,38 +190,92 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-
+        if: ${{ !inputs.worker_only }}
       - name: Check resource pipeline
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
+      - name: Check Worker types
+        run: pnpm typecheck:worker
+      - name: Prepare verified Worker publication
+        run: node scripts/deploy/worker-publication.mjs prepare ${{ inputs.worker_only && '--worker-only' || '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Archive verified publication
+        shell: bash
+        run: >-
+          publication_paths=(.output/deployment)
 
-      # Committed migrations ship with the code that needs them: every push
-      # applies whatever is still pending (a no-op when nothing is), after
-      # the build succeeds and before the new Worker goes live.
+          if [ "${{ inputs.worker_only }}" != "true" ]; then
+            publication_paths+=(.output/public .output/static-documents/publication.json .output/static-documents/references.json)
+          fi
+
+          tar -cf .output/worker-publication.tar "${publication_paths[@]}"
+      - name: Save verified publication artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-publication-${{ github.sha }}-${{ github.run_id }}
+          path: .output/worker-publication.tar
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+    concurrency:
+      group: cloudflare-production-build-${{ inputs.worker_only && 'worker' || 'frontend' }}
+      cancel-in-progress: false
+  deploy:
+    name: Publish verified production artifact
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    concurrency:
+      group: cloudflare-production-publish
+      cancel-in-progress: false
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install pnpm
+        run: corepack enable
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            .gitmodules
+      - name: Check out locked external repositories
+        run: node scripts/external-repositories.mjs checkout
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify external repository compatibility lock
+        run: pnpm dependencies:verify
+      - name: Restore verified publication artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: worker-publication-${{ github.sha }}-${{ github.run_id }}
+          path: .output/restore
+      - name: Restore publication files
+        run: |-
+          tar -xf .output/restore/worker-publication.tar
+          node scripts/deploy/worker-publication.mjs verify
       - name: Apply production D1 migrations
         if: ${{ github.event_name == 'push' || inputs.apply_d1_migrations == true }}
         run: pnpm exec wrangler d1 migrations apply haneoka-community --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Deploy to Cloudflare Workers
-        run: |
-          for deploy_attempt in 1 2 3; do
-            echo "Wrangler deployment attempt $deploy_attempt/3"
-            if pnpm exec wrangler deploy; then
-              exit 0
-            else
-              deploy_status=$?
-            fi
-            if [ "$deploy_attempt" -eq 3 ]; then
-              echo "Wrangler deployment failed after 3 attempts (exit $deploy_status)"
-              exit "$deploy_status"
-            fi
-            deploy_backoff=$((deploy_attempt * 5))
-            echo "Wrangler exited $deploy_status; retrying deployment in ${deploy_backoff}s using this run's built output/cache"
-            sleep "$deploy_backoff"
-          done
+      - name: Publish verified Worker and assets
+        run: node scripts/deploy/worker-publication.mjs publish
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          HANEOKA_PUBLICATION_LOCK: cloudflare-production-publish

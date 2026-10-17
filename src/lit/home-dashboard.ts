@@ -1324,7 +1324,7 @@ export class HomeDashboard extends LitElement {
                       }
                     </header>
                     <div class="home-event__bonuses">${bonusContents}</div>
-                    <nav class="home-event__links" aria-label=${uiText(this.locale, "navigation.events")}>
+                    <nav class="button-group home-event__links" aria-label=${uiText(this.locale, "navigation.events")}>
                       <a
                         class="button button--tonal home-event__action"
                         href=${entityHref({ server: eventServer, locale: this.locale as Locale, kind: "events", id: event.id })}

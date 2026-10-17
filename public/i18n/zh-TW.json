@@ -1766,7 +1766,7 @@
         "keep": "保留已儲存數值",
         "chooseValue": "選擇數值",
         "review": "待確認",
-        "maps": "角色與道具等級",
+        "maps": "帳號加成",
         "saved": "已儲存",
         "issues": "待確認項目",
         "confirm": "確認匯入",
@@ -1806,7 +1806,22 @@
         "backupNoGame": "此備份中沒有可匯入的 Our Notes 存檔。",
         "sourceTooLarge": "所選來源超出支援的檔案大小、記錄數或記憶體限制。",
         "sourceTimeout": "讀取逾時，請選擇單一備份或較小的存檔資料夾重試。",
-        "folderAccess": "瀏覽器無法讀取此資料夾，請檢查存取權限。"
+        "folderAccess": "瀏覽器無法讀取此資料夾，請檢查存取權限。",
+        "notImported": "未匯入的項目",
+        "cardIdentity": "卡牌",
+        "memory": "回憶加成",
+        "itemTotals": "樂器加成彙總",
+        "accountGrowth": "帳號加成",
+        "linkedSave": "此備份關聯了獨立存檔，請匯入該存檔檔案。",
+        "originalJson": "請選擇原始卡庫 JSON 檔案。",
+        "notice": {
+          "unknown": "未記錄",
+          "conflict": "資料衝突",
+          "needs_review": "待核對",
+          "unsupported_summary": "由角色評級彙總",
+          "unsupported_field": "暫不支援",
+          "inactive_band_item": "未生效"
+        }
       },
       "resourceResultsChanged": "養成或條件已變更，請重新計算以更新結果。",
       "localDraftChanged": "另一個分頁已修改卡庫。請先匯出目前輸入，再重新讀取已儲存的卡庫。",

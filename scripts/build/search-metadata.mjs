@@ -3,7 +3,32 @@ import { parseFragment } from "parse5";
 
 const plainText = (node) => node.nodeName === "#text" ? node.value : (node.childNodes || []).map(plainText).join("");
 const compact = (text) => text.replace(/\s+/gu, " ").trim();
-const INLINE_JSON = /(<script\b(?=[^>]*\btype\s*=\s*(?:"application\/json"|'application\/json'|application\/json(?=[\s>])))[^>]*>)[\s\S]*?(<\/script\s*>)/giu;
+const SCRIPT_START = /<!--|<script\b[^>]*>/giu;
+const SCRIPT_END = /<\/script\s*>/giu;
+const JSON_TYPE = /\stype\s*=\s*(?:"application\/json"|'application\/json'|application\/json(?=[\s>]))/iu;
+
+function withoutInlineJson(html) {
+  const parts = [];
+  let copied = 0;
+  SCRIPT_START.lastIndex = 0;
+  for (let match; (match = SCRIPT_START.exec(html));) {
+    if (match[0] === "<!--") {
+      const end = html.indexOf("-->", SCRIPT_START.lastIndex);
+      if (end < 0) break;
+      SCRIPT_START.lastIndex = end + 3;
+      continue;
+    }
+    const headerEnd = SCRIPT_START.lastIndex;
+    SCRIPT_END.lastIndex = headerEnd;
+    const end = SCRIPT_END.exec(html);
+    if (!end) break;
+    SCRIPT_START.lastIndex = SCRIPT_END.lastIndex;
+    if (!JSON_TYPE.test(match[0])) continue;
+    parts.push(html.slice(copied, headerEnd), end[0]);
+    copied = SCRIPT_END.lastIndex;
+  }
+  return copied ? parts.join("") + html.slice(copied) : html;
+}
 const escapeText = (text) => text.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;");
 function documentTitle(html) {
   const opening = /<head\b[^>]*>/iu.exec(html);
@@ -26,7 +51,7 @@ function documentTitle(html) {
 /** Add search-only classification and title weighting without changing the served document. */
 export function withSearchMetadata(html, sourcePath) {
   // Pagefind keeps script ids as anchors even when their text is excluded.
-  html = html.replace(INLINE_JSON, "$1$2");
+  html = withoutInlineJson(html);
   const prefix = sourcePath.split(/[\\/]/u)[0];
   const server = ["jp", "intl", "intl-test", "jp-cbt", "intl-cbt"].includes(prefix) ? prefix : "global";
   const category = searchCategory(sourcePath);

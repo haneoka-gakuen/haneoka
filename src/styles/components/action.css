@@ -158,8 +158,30 @@
    connected button group (ConnectedButtonGroupSmallTokens): 40dp segments
    2dp apart, full outer corners, 8dp inner corners that tighten to 4dp
    while pressed, and a selected segment that rounds into a full pill.
-   Markup must carry role="group" and each segment aria-pressed
-   (multi-select) or aria-checked with role="radio" (single). */
+   Action links keep their link semantics. Stateful segments carry role="group"
+   and aria-pressed (multi-select) or aria-checked with role="radio" (single). */
+.button-group {
+  display: flex;
+  min-width: 0;
+  gap: 2px;
+}
+.button-group > .button {
+  --button-group-inner: var(--md-sys-shape-corner-small);
+  flex: 1 1 0;
+  border-radius: var(--button-group-inner);
+}
+.button-group > .button:active {
+  --button-group-inner: var(--md-sys-shape-corner-extra-small);
+  border-radius: var(--button-group-inner);
+}
+.button-group > .button:first-child {
+  border-start-start-radius: var(--md-sys-shape-corner-full);
+  border-end-start-radius: var(--md-sys-shape-corner-full);
+}
+.button-group > .button:last-child {
+  border-start-end-radius: var(--md-sys-shape-corner-full);
+  border-end-end-radius: var(--md-sys-shape-corner-full);
+}
 .segmented {
   display: flex;
   width: 100%;

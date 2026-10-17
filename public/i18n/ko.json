@@ -1766,7 +1766,7 @@
         "keep": "저장된 값 유지",
         "chooseValue": "값 선택",
         "review": "확인 필요",
-        "maps": "캐릭터 및 아이템 레벨",
+        "maps": "계정 육성",
         "saved": "저장됨",
         "issues": "확인이 필요한 항목",
         "confirm": "가져오기 확인",
@@ -1806,7 +1806,22 @@
         "backupNoGame": "이 백업에 지원되는 Our Notes 세이브가 없습니다.",
         "sourceTooLarge": "파일 크기, 레코드 또는 메모리 제한을 초과했습니다.",
         "sourceTimeout": "읽기 시간이 초과되었습니다. 백업 하나 또는 더 작은 세이브 폴더로 다시 시도하세요.",
-        "folderAccess": "폴더를 읽을 수 없습니다. 접근 권한을 확인하세요."
+        "folderAccess": "폴더를 읽을 수 없습니다. 접근 권한을 확인하세요.",
+        "notImported": "가져오지 않은 항목",
+        "cardIdentity": "카드",
+        "memory": "추억 보너스",
+        "itemTotals": "악기 보너스 합계",
+        "accountGrowth": "계정 육성",
+        "linkedSave": "이 백업이 참조하는 게임 저장 파일을 가져오세요.",
+        "originalJson": "원본 카드 보유 데이터 JSON 파일을 선택하세요.",
+        "notice": {
+          "unknown": "기록 없음",
+          "conflict": "값 충돌",
+          "needs_review": "확인 필요",
+          "unsupported_summary": "캐릭터 랭크에서 합산",
+          "unsupported_field": "지원하지 않음",
+          "inactive_band_item": "효과 미적용"
+        }
       },
       "resourceResultsChanged": "육성 값이나 조건이 변경되었습니다. 결과를 갱신하려면 다시 계산해 주세요.",
       "localDraftChanged": "다른 탭에서 카드 목록이 변경되었습니다. 현재 입력을 내보낸 뒤 저장된 목록을 다시 불러오세요.",

@@ -1766,7 +1766,7 @@
         "keep": "保存済みの値を維持",
         "chooseValue": "値を選択",
         "review": "要確認",
-        "maps": "キャラクター・アイテムのレベル",
+        "maps": "アカウント育成",
         "saved": "保存済み",
         "issues": "確認が必要な項目",
         "confirm": "取り込みを確定",
@@ -1806,7 +1806,22 @@
         "backupNoGame": "このバックアップに対応する Our Notes のセーブがありません。",
         "sourceTooLarge": "ファイルサイズ、件数、メモリーの上限を超えています。",
         "sourceTimeout": "読み込みがタイムアウトしました。バックアップを1つ、または小さいセーブフォルダーを選んで再試行してください。",
-        "folderAccess": "フォルダーを読み込めません。アクセス権を確認してください。"
+        "folderAccess": "フォルダーを読み込めません。アクセス権を確認してください。",
+        "notImported": "読み込まれない項目",
+        "cardIdentity": "カード",
+        "memory": "思い出ボーナス",
+        "itemTotals": "楽器ボーナスの合計",
+        "accountGrowth": "アカウント育成",
+        "linkedSave": "このバックアップが参照するゲームセーブを読み込んでください。",
+        "originalJson": "元のカード所持データの JSON を選んでください。",
+        "notice": {
+          "unknown": "未記録",
+          "conflict": "値の競合",
+          "needs_review": "要確認",
+          "unsupported_summary": "キャラクターランクから集計",
+          "unsupported_field": "未対応",
+          "inactive_band_item": "効果なし"
+        }
       },
       "resourceResultsChanged": "育成値や条件が変わりました。結果を更新するには再計算してください。",
       "localDraftChanged": "別のタブでカード一覧が変更されました。現在の入力をエクスポートしてから、保存済みの一覧を読み直してください。",

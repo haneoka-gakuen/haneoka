@@ -28,6 +28,18 @@ const workspaceFiles = [
 const buildId = String(process.env.GITHUB_SHA || Date.now()).slice(0, 12);
 const proxyTarget = String(process.env.LOCAL_WORKER_ORIGIN || process.env.LOCAL_RELEASE_ORIGIN || "").trim();
 const providerTarget = String(process.env.BESTDORI_PROVIDER_ORIGIN || process.env.LOCAL_WORKER_ORIGIN || "").trim();
+const publicResourceProxy = {
+  target: proxyTarget,
+  changeOrigin: true,
+  configure(proxy) {
+    proxy.on("proxyReq", (request) => {
+      const allowed = new Set(["host", "accept", "if-none-match", "if-range", "range"]);
+      for (const name of Object.keys(request.getHeaders())) {
+        if (!allowed.has(name.toLowerCase())) request.removeHeader(name);
+      }
+    });
+  },
+};
 let devAssetRoutes = false;
 
 export default defineConfig({
@@ -121,10 +133,11 @@ export default defineConfig({
                 : {}),
               ...(proxyTarget
                 ? {
+                    "^/api/v1/(?:servers(?:/|$)|announcements/media/)": publicResourceProxy,
                     "/api": { target: proxyTarget, changeOrigin: true },
-                    "/assets": { target: proxyTarget, changeOrigin: true },
-                    "/objects": { target: proxyTarget, changeOrigin: true },
-                    "/runtime": { target: proxyTarget, changeOrigin: true },
+                    "/assets": publicResourceProxy,
+                    "/objects": publicResourceProxy,
+                    "/runtime": publicResourceProxy,
                     "/sonolus": { target: proxyTarget, changeOrigin: true },
                   }
                 : {}),

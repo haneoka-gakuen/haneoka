@@ -1637,6 +1637,7 @@ def extract_cri(
     declare = delta is not None
 
     tasks: list[dict[str, Any]] = []
+    cached_by_source: dict[str, dict[str, Any]] | None = None
     for artifact in sorted(
         source_manifest.get("files", []), key=lambda item: item["path"]
     ):
@@ -1671,9 +1672,10 @@ def extract_cri(
             raise FileNotFoundError(
                 f"required CRI payload is not available locally: {payload}"
             )
-        cached_by_source = _cached_by_source(
-            reuse_manifest, transform_id, "artifactSha256"
-        )
+        if cached_by_source is None:
+            cached_by_source = _cached_by_source(
+                reuse_manifest, transform_id, "artifactSha256"
+            )
         cached_source = cached_by_source.get(str(artifact["sha256"])) or {}
         record = _declare_cached_record(
             cached_by_source=cached_by_source,

@@ -26,14 +26,13 @@ import { prepareScreenshot, FULL_SCREENSHOT, type ScreenshotCrop } from "../../l
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "bandItems": "navigation.bandItems",
-  "cancel": "common.actions.cancel",
-  "clear": "common.actions.clear",
-  "close": "common.actions.close",
-  "empty": "common.states.empty",
-  "support": "navigation.support"
+  bandItems: "navigation.bandItems",
+  cancel: "common.actions.cancel",
+  clear: "common.actions.clear",
+  close: "common.actions.close",
+  empty: "common.states.empty",
+  support: "navigation.support",
 };
-
 
 /** The legacy document the import tools review against. */
 export function viewInventory(host: TeamBuilder, view: BoxView): InventoryV2 {
@@ -45,10 +44,27 @@ export function viewInventory(host: TeamBuilder, view: BoxView): InventoryV2 {
     ...(identity.sourceId ? {} : {}),
     members: [...view.members.values()]
       .filter((row) => host.catalog!.member(row.cardId))
-      .map((row) => ({ instanceId: `m${row.cardId}`, cardId: row.cardId, level: row.level, training: row.awake, awakening: row.rank, liveSkillLevel: row.skill, gekisoSkillLevel: row.gekisoSkill, locked: row.lock, excluded: !row.use })),
+      .map((row) => ({
+        instanceId: `m${row.cardId}`,
+        cardId: row.cardId,
+        level: row.level,
+        training: row.awake,
+        awakening: row.rank,
+        liveSkillLevel: row.skill,
+        gekisoSkillLevel: row.gekisoSkill,
+        locked: row.lock,
+        excluded: !row.use,
+      })),
     snapshots: [...view.snaps.values()]
       .filter((row) => host.catalog!.snap(row.cardId))
-      .map((row) => ({ instanceId: `s${row.cardId}`, cardId: row.cardId, level: row.level, awakening: row.rank, locked: row.lock, excluded: !row.use })),
+      .map((row) => ({
+        instanceId: `s${row.cardId}`,
+        cardId: row.cardId,
+        level: row.level,
+        awakening: row.rank,
+        locked: row.lock,
+        excluded: !row.use,
+      })),
     bandItems: { ...view.player.bandItems },
     characterRanks: { ...view.player.characterRanks },
     bandRanks: { ...view.bandRanks },
@@ -82,7 +98,8 @@ export class ImportController {
   private screenshotOwner: string | null | undefined;
   private imageController: AbortController | null = null;
   private localImages: { blob: Blob; url: string; crop: ScreenshotCrop }[] = [];
-  private correcting: { image: number; observation: number; kind: "members" | "snapshots"; query: string } | null = null;
+  private correcting: { image: number; observation: number; kind: "members" | "snapshots"; query: string } | null =
+    null;
   constructor(private readonly host: TeamBuilder) {}
   dispose() {
     this.closeBox();
@@ -92,12 +109,20 @@ export class ImportController {
   private context(): BoxReviewContext | null {
     const data = this.host.data;
     if (!data?.identity.sourceId) return null;
-    return { ownerId: this.host.snapshot?.owner ?? "local", revision: 0, server: data.identity.server, releaseId: data.identity.releaseId, sourceId: data.identity.sourceId };
+    return {
+      ownerId: this.host.snapshot?.owner ?? "local",
+      revision: 0,
+      server: data.identity.server,
+      releaseId: data.identity.releaseId,
+      sourceId: data.identity.sourceId,
+    };
   }
   /** Writes only fields the import changed; imports never remove cards. */
   private commit(next: unknown, base: InventoryV2) {
     const before = new Map(inventoryChanges(base).map((change) => [change.key, JSON.stringify(change.value)]));
-    const changes: { key: string; value: BoxValue }[] = inventoryChanges(next).filter((change) => before.get(change.key) !== JSON.stringify(change.value));
+    const changes: { key: string; value: BoxValue }[] = inventoryChanges(next).filter(
+      (change) => before.get(change.key) !== JSON.stringify(change.value),
+    );
     this.host.write(changes);
     this.host.notice = this.host.t("imported", "Imported {count} changes", { count: changes.length });
   }
@@ -109,22 +134,34 @@ export class ImportController {
     this.boxStore = this.host.store;
     this.boxOwner = this.host.snapshot?.owner;
     this.boxBase = viewInventory(this.host, this.host.view);
-    this.box = { phase: "select", candidates: [], selectedCandidateId: "", preview: null, confirmation: { cards: [], maps: [] }, serverLabel: "", progress: null, error: null, canConfirm: false };
+    this.box = {
+      phase: "select",
+      candidates: [],
+      selectedCandidateId: "",
+      preview: null,
+      confirmation: { cards: [], maps: [] },
+      serverLabel: "",
+      progress: null,
+      error: null,
+      canConfirm: false,
+    };
     this.box.server = context.server;
-    this.box.usbChannel = ANDROID_CHANNELS.find(channel => channel.server === context.server)?.packageId;
+    this.box.usbChannel = ANDROID_CHANNELS.find((channel) => channel.server === context.server)?.packageId;
     const generation = this.generation;
-    void import("@haneoka/game-data-exporter/webusb").then(module => {
-      this.usb = module;
-      if (generation !== this.generation || !this.box) return;
-      this.box = { ...this.box, usbReady: module.usbAvailable() };
-      this.host.requestUpdate();
-    }).catch(() => {});
+    void import("@haneoka/game-data-exporter/webusb")
+      .then((module) => {
+        this.usb = module;
+        if (generation !== this.generation || !this.box) return;
+        this.box = { ...this.box, usbReady: module.usbAvailable() };
+        this.host.requestUpdate();
+      })
+      .catch(() => {});
     this.host.requestUpdate();
   }
   private async android() {
     this.sourceStatus = "";
     if (!this.box?.usbReady || !this.box.usbChannel || !this.usb) return;
-    const controller = this.deviceController = new AbortController();
+    const controller = (this.deviceController = new AbortController());
     const generation = ++this.generation;
     const channel = this.box.usbChannel;
     this.box = { ...this.box, phase: "parsing", error: null };
@@ -132,10 +169,18 @@ export class ImportController {
     try {
       const files = await readAndroidFiles(this.usb.createUsbReader(), channel, controller.signal);
       if (generation !== this.generation || !this.box) return;
-      if (!files) { this.box = { ...this.box, phase: "select" }; return; }
+      if (!files) {
+        this.box = { ...this.box, phase: "select" };
+        return;
+      }
       await this.parse({ files });
     } catch (error) {
-      if (generation === this.generation && this.box) this.box = { ...this.box, phase: "select", error: error instanceof BoxImportError ? error.code : "device_read_failed" };
+      if (generation === this.generation && this.box)
+        this.box = {
+          ...this.box,
+          phase: "select",
+          error: error instanceof BoxImportError ? error.code : "device_read_failed",
+        };
     } finally {
       if (this.deviceController === controller) this.deviceController = null;
       this.host.requestUpdate();
@@ -155,21 +200,40 @@ export class ImportController {
   }
   private async parse(input: { files: readonly File[] } | { text: string }) {
     if ("files" in input && input.files.length === 1 && /\.(zip|imazingapp)$/i.test(input.files[0]!.name)) {
-      return this.importSource((signal, progress) => readLocalSource({ archive: input.files[0]! }, "archive", "", { signal, progress }), this.text("readingFolder", "Reading local save files"));
+      return this.importSource(
+        (signal, progress) => readLocalSource({ archive: input.files[0]! }, "archive", "", { signal, progress }),
+        this.text("readingFolder", "Reading local save files"),
+      );
     }
     this.sourceStatus = "";
     if (!this.box || !this.boxBase || !this.boxContext) return;
     const generation = ++this.generation;
     this.parserController?.abort();
-    const controller = this.parserController = new AbortController();
+    const controller = (this.parserController = new AbortController());
     this.box = { ...this.box, phase: "parsing", candidates: [], preview: null, error: null, canConfirm: false };
-    this.loading = beginLoading(this.text("parsing", "Reading Box locally"), { signal: controller.signal, scope: "owner" });
+    this.loading = beginLoading(this.text("parsing", "Reading Box locally"), {
+      signal: controller.signal,
+      scope: "owner",
+    });
     this.host.requestUpdate();
     try {
       if (isInventoryListInput(input)) {
-        const preview = await previewInventoryListInput(input, this.boxBase, this.host.data!, this.boxContext, this.host.filters.kind === "members" ? "members" : "snapshots", { signal: controller.signal });
+        const preview = await previewInventoryListInput(
+          input,
+          this.boxBase,
+          this.host.data!,
+          this.boxContext,
+          this.host.filters.kind === "members" ? "members" : "snapshots",
+          { signal: controller.signal },
+        );
         if (generation !== this.generation || !this.box) return;
-        this.box = { ...this.box, phase: "review", selectedCandidateId: preview.candidateId, preview, confirmation: { cards: preview.cards.map((row) => ({ key: row.key, include: true })), maps: [] } };
+        this.box = {
+          ...this.box,
+          phase: "review",
+          selectedCandidateId: preview.candidateId,
+          preview,
+          confirmation: { cards: preview.cards.map((row) => ({ key: row.key, include: true })), maps: [] },
+        };
         this.reconfirm(this.box.confirmation);
         return;
       }
@@ -186,7 +250,12 @@ export class ImportController {
       this.box = { ...this.box, phase: "choose", candidates: parsed.candidates, progress: null };
       if (parsed.candidates.length === 1) this.select(parsed.candidates[0]!.id);
     } catch (error) {
-      if (generation === this.generation && this.box) this.box = { ...this.box, phase: "select", error: error instanceof BoxImportError ? error.code : "box_worker_failed" };
+      if (generation === this.generation && this.box)
+        this.box = {
+          ...this.box,
+          phase: "select",
+          error: error instanceof BoxImportError ? error.code : "box_worker_failed",
+        };
     } finally {
       if (generation === this.generation) {
         this.loading?.finish();
@@ -339,10 +408,24 @@ export class ImportController {
     try {
       const preview = previewBoxImport(candidate, this.boxBase, this.host.data!, this.boxContext);
       // Everything new is pre-selected; the review is about values, not about ticking each card.
-      this.box = { ...state, phase: "review", selectedCandidateId: id, preview, confirmation: { cards: preview.cards.map((row) => ({ key: row.key, include: true })), maps: preview.maps.map((row) => ({ key: row.key, include: true })) } };
+      this.box = {
+        ...state,
+        phase: "review",
+        selectedCandidateId: id,
+        preview,
+        confirmation: {
+          cards: preview.cards.map((row) => ({ key: row.key, include: true })),
+          maps: preview.maps.map((row) => ({ key: row.key, include: true })),
+          scalars: preview.scalars?.map((row) => ({ key: row.key, include: true })),
+        },
+      };
       this.reconfirm(this.box.confirmation);
     } catch (error) {
-      this.box = { ...state, phase: "choose", error: error instanceof BoxImportError ? error.code : "box_review_context" };
+      this.box = {
+        ...state,
+        phase: "choose",
+        error: error instanceof BoxImportError ? error.code : "box_review_context",
+      };
     }
     this.host.requestUpdate();
   }
@@ -351,9 +434,14 @@ export class ImportController {
     if (!state?.preview || !this.boxBase || !this.boxContext) return;
     let canConfirm = false,
       error: string | null = null;
-    if (confirmation.cards.some((row) => row.include) || confirmation.maps.some((row) => row.include))
+    if (
+      confirmation.cards.some((row) => row.include) ||
+      confirmation.maps.some((row) => row.include) ||
+      confirmation.scalars?.some((row) => row.include)
+    )
       try {
-        if (!buildBoxImportReview(state.preview, confirmation).canConfirm) throw new BoxImportError("box_unresolved_values");
+        if (!buildBoxImportReview(state.preview, confirmation).canConfirm)
+          throw new BoxImportError("box_unresolved_values");
         applyConfirmedBoxImport(this.boxBase, state.preview, confirmation, this.host.data!, this.boxContext);
         canConfirm = true;
       } catch (failure) {
@@ -367,20 +455,31 @@ export class ImportController {
     if (!state?.canConfirm || !state.preview || !this.boxBase || !this.boxContext) return;
     try {
       const context = this.context();
-      if (!context || !this.host.view || this.host.store !== this.boxStore || this.host.snapshot?.owner !== this.boxOwner)
+      if (
+        !context ||
+        !this.host.view ||
+        this.host.store !== this.boxStore ||
+        this.host.snapshot?.owner !== this.boxOwner
+      )
         throw new BoxImportError("box_review_changed");
       const current = viewInventory(this.host, this.host.view);
       const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
       this.commit(next, this.boxBase);
       this.closeBox();
     } catch (error) {
-      this.box = { ...state, canConfirm: false, error: error instanceof BoxImportError ? error.code : "box_invalid_confirmed_inventory" };
+      this.box = {
+        ...state,
+        canConfirm: false,
+        error: error instanceof BoxImportError ? error.code : "box_invalid_confirmed_inventory",
+      };
       this.host.requestUpdate();
     }
   }
   private text(key: string, fallback: string, params?: Record<string, string | number>) {
-    if (key.startsWith("existing")) return this.host.t(`importExisting.${key.slice(8).toLowerCase()}`, fallback, params);
-    if (["close", "cancel", "clear"].includes(key)) return clientText(this.host.locale, (uiLabelPaths[key] ?? key), fallback, params);
+    if (key.startsWith("existing"))
+      return this.host.t(`importExisting.${key.slice(8).toLowerCase()}`, fallback, params);
+    if (["close", "cancel", "clear"].includes(key))
+      return clientText(this.host.locale, uiLabelPaths[key] ?? key, fallback, params);
     if (["members", "snapshots", "unknown", "notUnlocked"].includes(key)) return this.host.t(key, fallback, params);
     return this.host.t(`boxImport.${key}`, fallback, params);
   }
@@ -399,17 +498,36 @@ export class ImportController {
       return this.text(sourceErrors[code], "Could not read this source. Check the selection and try again.");
 
     if (code === "device_unsupported") return this.text("deviceUnsupported", "This browser cannot use USB devices.");
-    if (code === "device_permission" || code === "device_auth_failed") return this.text("devicePermission", "Allow USB debugging on the phone.");
+    if (code === "device_permission" || code === "device_auth_failed")
+      return this.text("devicePermission", "Allow USB debugging on the phone.");
     if (code === "device_busy") return this.text("deviceBusy", "Another ADB program is using the phone.");
-    if (["device_channel", "device_path", "device_empty"].includes(code)) return this.text("deviceEmpty", "No game data found on the phone.");
+    if (["device_channel", "device_path", "device_empty"].includes(code))
+      return this.text("deviceEmpty", "No game data found on the phone.");
     if (code.startsWith("device_")) return this.text("deviceFailed", "Could not read the phone.");
-    if (code === "box_review_changed") return this.text("changed", "Your account, data or inventory changed. Open the import again.");
+    if (code === "box_review_changed")
+      return this.text("changed", "Your account, data or inventory changed. Open the import again.");
     if (code === "box_no_player") return this.text("empty", "No supported Box records found.");
-    if (code === "box_invalid_list") return this.text("invalidList", "Choose one CSV or TSV file up to 1 MiB, or paste a card list with IDs, names and levels.");
+    if (code === "box_linked_save_required")
+      return this.text("linkedSave", "This backup links to a separate game save. Import that save file.");
+    if (code === "box_profile_requires_json")
+      return this.text("originalJson", "Import the original inventory JSON file.");
+    if (code === "box_invalid_list")
+      return this.text(
+        "invalidList",
+        "Choose one CSV or TSV file up to 1 MiB, or paste a card list with IDs, names and levels.",
+      );
     if (code.endsWith("_budget")) return this.text("tooLarge", "This file exceeds the supported size or record limit.");
-    if (["box_conflict_required", "box_unconfirmed_value", "box_unresolved_values", "box_invalid_confirmed_inventory"].includes(code))
+    if (
+      [
+        "box_conflict_required",
+        "box_unconfirmed_value",
+        "box_unresolved_values",
+        "box_invalid_confirmed_inventory",
+      ].includes(code)
+    )
       return this.text("reviewValues", "Review the selected training values or exclude the affected entries.");
-    if (code === "box_timeout" || code === "box_worker_failed") return this.text("failed", "Local parsing failed. Check the file and try again.");
+    if (code === "box_timeout" || code === "box_worker_failed")
+      return this.text("failed", "Local parsing failed. Check the file and try again.");
     return this.text("invalidFormat", "This file is not a supported Box export.");
   }
 
@@ -447,22 +565,27 @@ export class ImportController {
         }
         this.host.requestUpdate();
       },
-      onUploadProgress: (loadedBytes, totalBytes) => { if (this.session === session) loading?.update({ loadedBytes, totalBytes, byteBasis: "identity" }); },
+      onUploadProgress: (loadedBytes, totalBytes) => {
+        if (this.session === session) loading?.update({ loadedBytes, totalBytes, byteBasis: "identity" });
+      },
     });
     this.session = session;
-    this.screenshotLoadingCleanup = () => { loading?.finish(); loading = undefined; };
+    this.screenshotLoadingCleanup = () => {
+      loading?.finish();
+      loading = undefined;
+    };
     this.screenshot = session.state() as ScreenshotImportDialogState;
     this.host.requestUpdate();
   }
   private clearLocalImages() {
-    this.localImages.forEach(image => URL.revokeObjectURL(image.url));
+    this.localImages.forEach((image) => URL.revokeObjectURL(image.url));
     this.localImages = [];
   }
   private async stageImages(files: File[]) {
     const session = this.session;
     if (!session || !files.length) return;
     this.imageController?.abort();
-    const controller = this.imageController = new AbortController();
+    const controller = (this.imageController = new AbortController());
     this.clearLocalImages();
     this.screenshot = { ...session.state(), phase: "preparing" };
     this.host.requestUpdate();
@@ -474,30 +597,48 @@ export class ImportController {
         this.localImages.push({ blob, url: URL.createObjectURL(blob), crop: { ...FULL_SCREENSHOT } });
       }
       if (this.session !== session) return;
-      this.screenshot = { ...session.state(), phase: "preview", localImages: this.localImages.map(({ url, crop }) => ({ url, crop })) };
+      this.screenshot = {
+        ...session.state(),
+        phase: "preview",
+        localImages: this.localImages.map(({ url, crop }) => ({ url, crop })),
+      };
     } catch (error) {
       if (this.session === session && !controller.signal.aborted) {
         this.clearLocalImages();
-        this.screenshot = { ...session.state(), phase: "failed", error: error instanceof RangeError ? error.message : "image-format" };
+        this.screenshot = {
+          ...session.state(),
+          phase: "failed",
+          error: error instanceof RangeError ? error.message : "image-format",
+        };
       }
-    } finally { this.host.requestUpdate(); }
+    } finally {
+      this.host.requestUpdate();
+    }
   }
   private async uploadImages() {
     const session = this.session;
     if (!session || this.screenshot?.phase !== "preview") return;
-    const controller = this.imageController = new AbortController();
+    const controller = (this.imageController = new AbortController());
     this.screenshot = { ...this.screenshot, phase: "preparing", error: null };
     this.host.requestUpdate();
     try {
       const files: Blob[] = [];
-      for (const image of this.localImages) files.push(await prepareScreenshot(image.blob, image.crop, controller.signal));
+      for (const image of this.localImages)
+        files.push(await prepareScreenshot(image.blob, image.crop, controller.signal));
       controller.signal.throwIfAborted();
       if (this.session !== session) return;
       this.clearLocalImages();
       await session.files(files);
     } catch (error) {
-      if (this.session === session && !controller.signal.aborted) this.screenshot = { ...this.screenshot!, phase: "preview", error: error instanceof RangeError ? error.message : "image-format" };
-    } finally { this.host.requestUpdate(); }
+      if (this.session === session && !controller.signal.aborted)
+        this.screenshot = {
+          ...this.screenshot!,
+          phase: "preview",
+          error: error instanceof RangeError ? error.message : "image-format",
+        };
+    } finally {
+      this.host.requestUpdate();
+    }
   }
   private closeScreenshots() {
     this.screenshotLoadingCleanup?.();
@@ -518,7 +659,10 @@ export class ImportController {
     const view = this.host.view;
     if (!view) return;
     const inventory = viewInventory(this.host, view);
-    downloadBlob(new Blob([JSON.stringify(inventory, null, 2)], { type: "application/json" }), `haneoka-team-box-${inventory.server}.json`);
+    downloadBlob(
+      new Blob([JSON.stringify(inventory, null, 2)], { type: "application/json" }),
+      `haneoka-team-box-${inventory.server}.json`,
+    );
   }
 
   private appDownload(): TemplateResult {
@@ -546,33 +690,105 @@ export class ImportController {
     const host = this.host;
     if (this.box) {
       const state = this.box;
-      return renderBoxImportDialog({ ...state, serverLabel: host.data?.identity.server === "jp" ? clientText(host.locale, "settings.labels.settingsJapan", "Japan") : clientText(host.locale, "settings.labels.settingsGlobal", "Global"), error: state.error ? this.boxError(state.error) : null }, {
-        appDownload: this.appDownload(),
-        sources: this.renderSources(),
-        sourceStatus: this.sourceStatus,
-        text: (key, fallback, params) => this.text(key, fallback, params),
-        card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
-        mapName: (map, id) => host.catalog!.text(map === "bandItems" ? host.data!.bandItems[String(id)]?.name : host.data!.characters[String(id)]?.characterName) || host.t("unknown", "Unknown or not entered"),
-        fieldName: (field) => {
-          if (field === "characterTotalRank") return host.t("totalRank", "Total character rank");
-          const [map, id] = field.split(".");
-          if (map === "characterMemoryPoints") return `${host.t("importFlow.characterMemory", "Character memory bonus")} · ${host.catalog!.characterName(Number(id))}`;
-          if (map === "musicMemoryPoints") return `${host.t("importFlow.musicMemory", "Song memory bonus")} · ${host.catalog!.songTitle(Number(id))}`;
-          return host.t(field === "liveSkillLevel" ? "liveSkill" : field === "gekisoSkillLevel" ? "gekisoSkill" : field, field);
+      return renderBoxImportDialog(
+        {
+          ...state,
+          serverLabel:
+            host.data?.identity.server === "jp"
+              ? clientText(host.locale, "settings.labels.settingsJapan", "Japan")
+              : clientText(host.locale, "settings.labels.settingsGlobal", "Global"),
+          error: state.error ? this.boxError(state.error) : null,
         },
-        files: (files) => { if (files.length) void this.parse({ files }); },
-        screenshots: () => this.openScreenshots(),
-        android: () => void this.android(),
-        channel: value => { if (this.box && ANDROID_CHANNELS.some(channel => channel.packageId === value && channel.server === this.box?.server)) { this.box = { ...this.box, usbChannel: value }; host.requestUpdate(); } },
-        parseText: (text) => void this.parse({ text }),
-        selectCandidate: (id) => this.select(id),
-        confirmation: (confirmation) => this.reconfirm(confirmation),
-        close: () => this.closeBox(),
-        cancel: () => this.closeBox(),
-        confirm: () => this.confirmBox(),
-        expanded: (id) => this.expanded[id] ?? false,
-        expand: (id, value) => { this.expanded = { ...this.expanded, [id]: value }; host.requestUpdate(); },
-      });
+        {
+          appDownload: this.appDownload(),
+          sources: this.renderSources(),
+          sourceStatus: this.sourceStatus,
+          text: (key, fallback, params) => this.text(key, fallback, params),
+          card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
+          mapName: (map, id) =>
+            host.catalog!.text(
+              map === "bandItems"
+                ? host.data!.bandItems[String(id)]?.name
+                : host.data!.characters[String(id)]?.characterName,
+            ) || host.t("unknown", "Unknown or not entered"),
+          fieldName: (field) => {
+            if (field === "characterTotalRank") return host.t("totalRank", "Total character rank");
+            const [map, id] = field.split(".");
+            if (map === "characterMemoryPoints")
+              return `${host.t("importFlow.characterMemory", "Character memory bonus")} · ${host.catalog!.characterName(Number(id))}`;
+            if (map === "musicMemoryPoints")
+              return `${host.t("importFlow.musicMemory", "Song memory bonus")} · ${host.catalog!.songTitle(Number(id))}`;
+            return host.t(
+              field === "liveSkillLevel" ? "liveSkill" : field === "gekisoSkillLevel" ? "gekisoSkill" : field,
+              field,
+            );
+          },
+          noticeName: (path) => {
+            const fieldNames: Record<string, string> = {
+              awake: "training",
+              rank: "awakening",
+              skillLevel: "liveSkill",
+              liveSkillLevel: "liveSkill",
+              gekisouSkillLevel: "gekisoSkill",
+            };
+            const field = path.split(".").at(-1)!;
+            const fieldLabel =
+              field === "identity"
+                ? this.text("cardIdentity", "Card identity")
+                : host.t(fieldNames[field] ?? field, field);
+            const card = /^inventory\.growth\.(member|support)-card-(\d+)\./u.exec(path);
+            if (card) {
+              const kind = card[1] === "member" ? "members" : "snaps";
+              const name =
+                host.catalog!.cardOptions(kind, Number(card[2]))?.label ||
+                `${this.text(kind === "members" ? "members" : "snapshots", "Card")} #${card[2]}`;
+              return `${name} · ${fieldLabel}`;
+            }
+            const row = /^cards\[(\d+)\]/u.exec(path);
+            if (row) return `${this.text("listRow", "Row {row}", { row: Number(row[1]) + 1 })} · ${fieldLabel}`;
+            const entity = /^player\.(characterRanks|bandItems|bandItemStates)\.(\d+)/u.exec(path);
+            if (entity)
+              return (
+                host.catalog!.text(
+                  entity[1] === "characterRanks"
+                    ? host.data!.characters[entity[2]!]?.characterName
+                    : host.data!.bandItems[entity[2]!]?.name,
+                ) || host.t("unknown", "Unknown")
+              );
+            if (path === "player.vipRank" || path === "account.tgwCardRank") return host.t("vipRank", "TGW CARD level");
+            if (path === "player.characterTotalRank") return host.t("totalRank", "Total character rank");
+            if (path === "player.memory") return this.text("memory", "Memory");
+            if (path === "player.eventIds") return clientText(host.locale, "navigation.events");
+            if (path === "account.bandItemTotals") return this.text("itemTotals", "Combined instrument bonuses");
+            return this.text("accountGrowth", "Account growth");
+          },
+          files: (files) => {
+            if (files.length) void this.parse({ files });
+          },
+          screenshots: () => this.openScreenshots(),
+          android: () => void this.android(),
+          channel: (value) => {
+            if (
+              this.box &&
+              ANDROID_CHANNELS.some((channel) => channel.packageId === value && channel.server === this.box?.server)
+            ) {
+              this.box = { ...this.box, usbChannel: value };
+              host.requestUpdate();
+            }
+          },
+          parseText: (text) => void this.parse({ text }),
+          selectCandidate: (id) => this.select(id),
+          confirmation: (confirmation) => this.reconfirm(confirmation),
+          close: () => this.closeBox(),
+          cancel: () => this.closeBox(),
+          confirm: () => this.confirmBox(),
+          expanded: (id) => this.expanded[id] ?? false,
+          expand: (id, value) => {
+            this.expanded = { ...this.expanded, [id]: value };
+            host.requestUpdate();
+          },
+        },
+      );
     }
     if (this.screenshot && this.session) {
       const session = this.session;
@@ -580,30 +796,69 @@ export class ImportController {
         const correcting = this.correcting;
         const kind = correcting.kind === "members" ? "members" : "snaps";
         const catalog = host.catalog!;
-        const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number)
-          .filter((id) => !correcting.query || catalog.cardName(kind, id).toLocaleLowerCase(host.locale).includes(correcting.query.toLocaleLowerCase(host.locale)));
+        const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots)
+          .map(Number)
+          .filter(
+            (id) =>
+              !correcting.query ||
+              catalog
+                .cardName(kind, id)
+                .toLocaleLowerCase(host.locale)
+                .includes(correcting.query.toLocaleLowerCase(host.locale)),
+          );
         return selectionPane({
-          id: "tb-screenshot-correct", title: host.t("correctCard", "Choose the right card"), closeLabel: host.common("common.actions.close", "Close"),
-          close: () => { this.correcting = null; host.requestUpdate(); },
-          searchLabel: host.common("common.actions.search", "Search"), filterLabel: host.t("filters", "Filters"), filtersOpen: false, toggleFilters: () => undefined,
-          query: correcting.query, search: (query) => { this.correcting = { ...correcting, query }; host.requestUpdate(); }, filters: nothing,
-          kind: kind === "members" ? "member" : "support", items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })), selected: "",
-          select: (value) => { session.correct(correcting.image, correcting.observation, Number(value)); this.correcting = null; host.requestUpdate(); },
-          countLabel: host.t("cardCount", "{count} cards", { count: ids.length }), emptyLabel: host.t("noMatches", "No cards match"), preview: html``,
+          id: "tb-screenshot-correct",
+          title: host.t("correctCard", "Choose the right card"),
+          closeLabel: host.common("common.actions.close", "Close"),
+          close: () => {
+            this.correcting = null;
+            host.requestUpdate();
+          },
+          searchLabel: host.common("common.actions.search", "Search"),
+          filterLabel: host.t("filters", "Filters"),
+          filtersOpen: false,
+          toggleFilters: () => undefined,
+          query: correcting.query,
+          search: (query) => {
+            this.correcting = { ...correcting, query };
+            host.requestUpdate();
+          },
+          filters: nothing,
+          kind: kind === "members" ? "member" : "support",
+          items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
+          selected: "",
+          select: (value) => {
+            session.correct(correcting.image, correcting.observation, Number(value));
+            this.correcting = null;
+            host.requestUpdate();
+          },
+          countLabel: host.t("cardCount", "{count} cards", { count: ids.length }),
+          emptyLabel: host.t("noMatches", "No cards match"),
+          preview: html``,
         });
       }
       return renderScreenshotImportDialog(this.screenshot, {
         appDownload: this.appDownload(),
-        text: (key, fallback) => key.startsWith("existing") ? this.text(key, fallback) : clientText(host.locale, ["close", "cancel"].includes(key) ? key : `tools.teamBuilder.screenshotImport.${key}`, fallback),
+        text: (key, fallback) =>
+          key.startsWith("existing")
+            ? this.text(key, fallback)
+            : clientText(
+                host.locale,
+                ["close", "cancel"].includes(key) ? key : `tools.teamBuilder.screenshotImport.${key}`,
+                fallback,
+              ),
         card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
         levels: (kind, id) => practiceRanges(host.data!, kind, id).level ?? [],
-        files: files => void this.stageImages(files),
+        files: (files) => void this.stageImages(files),
         upload: () => void this.uploadImages(),
         crop: (index, side, value) => {
           const image = this.localImages[index];
           if (!image || this.screenshot?.phase !== "preview") return;
           image.crop = { ...image.crop, [side]: value };
-          this.screenshot = { ...this.screenshot, localImages: this.localImages.map(({ url, crop }) => ({ url, crop })) };
+          this.screenshot = {
+            ...this.screenshot,
+            localImages: this.localImages.map(({ url, crop }) => ({ url, crop })),
+          };
           host.requestUpdate();
         },
         close: () => this.closeScreenshots(),
@@ -624,7 +879,10 @@ export class ImportController {
         level: (key, value, source) => session.level(key, value, source),
         existingValues: (value) => session.existingValues(value),
         expandedSource: (key) => this.expanded[`s-${key}`] ?? false,
-        expandSource: (key, value) => { this.expanded = { ...this.expanded, [`s-${key}`]: value }; host.requestUpdate(); },
+        expandSource: (key, value) => {
+          this.expanded = { ...this.expanded, [`s-${key}`]: value };
+          host.requestUpdate();
+        },
         confirm: () => {
           const context = this.context();
           if (!context || !this.screenshotBase) return;
@@ -636,9 +894,10 @@ export class ImportController {
             this.closeScreenshots();
           } catch (error) {
             this.closeScreenshots();
-            host.notice = error instanceof RangeError && error.message === "screenshot-review-stale"
-              ? this.text("changed", "Your account, data or inventory changed. Open the import again.")
-              : host.t("importFailed", "The import could not be applied.");
+            host.notice =
+              error instanceof RangeError && error.message === "screenshot-review-stale"
+                ? this.text("changed", "Your account, data or inventory changed. Open the import again.")
+                : host.t("importFailed", "The import could not be applied.");
           }
         },
       });

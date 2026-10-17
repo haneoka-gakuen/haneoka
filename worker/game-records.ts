@@ -9,6 +9,10 @@ const CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300";
 const MAX_CARD_IMAGE_BYTES = 8 * 1024 * 1024;
 const CARD_DOWNLOAD_TIMEOUT_MS = 12_000;
 
+import { cachedEventHistory, latestEventHistory, readEventHistory, saveEventHistory } from "./game-event-history";
+
+import { eventSnapshotRows, type EventHistoryInput } from "../src/lib/game-event-history";
+
 import type {
   GameRecordsRegion,
   GameProfileCardDto,
@@ -24,6 +28,7 @@ type JsonObject = Record<string, unknown>;
 type CacheableJson = { body: string };
 export interface GameRecordsBindings {
   MOENOTES_PROFILE_API_TOKEN?: string;
+  DB?: D1Database;
 }
 type FailureKind = "invalid_request" | "not_found" | "pending" | "timeout" | "upstream" | "stale_version";
 
@@ -149,7 +154,7 @@ const readJson = async (response: Response): Promise<unknown> => {
 const upstreamJson = async (
   target: string,
   headers: Record<string, string> = {},
-): Promise<{ value: unknown; response: Response }> => {
+): Promise<{ value: unknown; response: Response; sourceBody: string }> => {
   const deadline = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
   let upstreamStatus: number | null = null;
   try {
@@ -184,10 +189,21 @@ const upstreamJson = async (
         retryAfter(response.headers),
       );
     }
-    return { value: await readJson(response), response };
+    const sourceBody = await readBoundedText(response);
+    try {
+      return { value: JSON.parse(sourceBody) as unknown, response, sourceBody };
+    } catch {
+      throw new RequestFailure(502, "upstream");
+    }
   } catch (error) {
     if (headers.Authorization)
-      console.warn(JSON.stringify({ event: "moenotes-profile-provider", upstreamStatus, noToken: false }));
+      console.warn(
+        JSON.stringify({
+          event: "moenotes-profile-provider",
+          upstreamStatus,
+          noToken: false,
+        }),
+      );
     if (deadline.aborted) throw new RequestFailure(504, "timeout");
     if (error instanceof RequestFailure) throw error;
     const name = error instanceof Error ? error.name : "";
@@ -211,9 +227,10 @@ const normalizeProfileCard = (
         ? `${RANKING_ORIGIN}/api/v1/jp/ranking/profile/${profileId}/card/${page}`
         : sourceUrl;
     const file = sourceUrl ? new URL(sourceUrl).pathname.split("/").pop() || "" : "";
-    const downloadUrl = profileId && validCardFile(file, profileId)
-      ? `${GAME_RECORDS_API_PREFIX}/${region}/players/${profileId}/cards/${page}/download?file=${encodeURIComponent(file)}`
-      : null;
+    const downloadUrl =
+      profileId && validCardFile(file, profileId)
+        ? `${GAME_RECORDS_API_PREFIX}/${region}/players/${profileId}/cards/${page}/download?file=${encodeURIComponent(file)}`
+        : null;
     return { page, sourceUrl, imageUrl, downloadUrl };
   });
   return {
@@ -402,6 +419,163 @@ const normalizeEventPoints = (
   };
 };
 
+type RecordsUpstream = Awaited<ReturnType<typeof upstreamJson>>;
+const eventRankingFromUpstream = (
+  upstream: RecordsUpstream,
+  region: GameRecordsRegion,
+  eventId: string,
+  challengeId: string | null,
+): EventRankingDto => {
+  if (!challengeId) return normalizeEventPoints(upstream.value, region, eventId, upstream.response);
+  const { musicId: _musicId, ...ranking } = normalizeRanking(upstream.value, region, 0, upstream.response, true);
+  return { ...ranking, eventId, challengeId };
+};
+const eventHistoryInput = (
+  ranking: EventRankingDto,
+  upstream: RecordsUpstream,
+  sourceUrl: string,
+): EventHistoryInput => ({
+  region: ranking.region,
+  eventId: ranking.eventId,
+  ...(ranking.challengeId ? { challengeId: ranking.challengeId } : {}),
+  kind: "snapshot",
+  sourceUrl,
+  sourceBody: upstream.sourceBody,
+  sourceHeaders: Object.fromEntries(
+    ["X-Fetched-At", "X-Server-Time", "X-Collect-Status", "ETag"].flatMap((name) => {
+      const value = upstream.response.headers.get(name);
+      return value ? [[name, value]] : [];
+    }),
+  ),
+  ranking,
+  sourceAtMs: ranking.fetchedAtMs,
+  rows: eventSnapshotRows(ranking, upstream.sourceBody),
+});
+
+export const EVENT_RANKING_HISTORY_CRON = "*/10 * * * *";
+export interface PublishedRankingCatalog {
+  region: GameRecordsRegion;
+  events: readonly {
+    id: string;
+    startAtMs: number;
+    endAtMs: number;
+    pointRankingEnabled: boolean;
+    challenges: readonly { id: string; musicId: string }[];
+  }[];
+}
+
+/** The caller resolves these event windows and challenge IDs from its published release. */
+export async function collectEventRankingHistory(
+  env: GameRecordsBindings,
+  catalogs: readonly PublishedRankingCatalog[],
+  now = Date.now(),
+): Promise<void> {
+  const db = env.DB;
+  if (!db) return;
+  const pending = [...catalogs];
+  async function drain() {
+    for (let catalog; (catalog = pending.shift());) {
+      const { region } = catalog;
+      await db!
+        .prepare(
+          `INSERT OR IGNORE INTO game_event_ranking_collection
+        (region,last_polled_at_ms,lease_until_ms,finalized_json) VALUES (?,0,0,'[]')`,
+        )
+        .bind(region)
+        .run();
+      const lease = await db!
+        .prepare(
+          `UPDATE game_event_ranking_collection SET lease_until_ms=?,last_polled_at_ms=?
+        WHERE region=? AND lease_until_ms<=? AND last_polled_at_ms<=?`,
+        )
+        .bind(now + 120_000, now, region, now, now - 540_000)
+        .run();
+      if (!lease.meta.changes) continue;
+      const state = await db!
+        .prepare("SELECT finalized_json FROM game_event_ranking_collection WHERE region=?")
+        .bind(region)
+        .first<{ finalized_json: string }>();
+      const finalized = new Set(JSON.parse(state?.finalized_json ?? "[]") as string[]);
+      let saved = 0;
+      try {
+        const targets = catalog.events
+          .filter((event) => event.startAtMs <= now)
+          .flatMap((event) => [
+            ...(event.pointRankingEnabled ? [{ event, challengeId: "" }] : []),
+            ...event.challenges.map((challenge) => ({
+              event,
+              challengeId: challenge.id,
+            })),
+          ])
+          .filter(({ event, challengeId }) => !finalized.has(`${event.id}:${challengeId}`))
+          .sort(
+            (left, right) =>
+              Number(left.event.endAtMs < now) - Number(right.event.endAtMs < now) ||
+              right.event.startAtMs - left.event.startAtMs,
+          )
+          .slice(0, 12);
+        if (!targets.length) continue;
+        const current = await upstreamJson(`${RANKING_ORIGIN}/api/v1/${region}/events/current`);
+        const native = asObject(current.value),
+          currentId = decimalId(native.eventId);
+        for (const { event, challengeId } of targets) {
+          const ended = now > event.endAtMs;
+          const nativeEnd = epochMillis(native.endAt),
+            aggregationSeconds = safeInteger(native.aggregationSeconds);
+          const finalReady =
+            currentId !== null &&
+            (BigInt(currentId) > BigInt(event.id) ||
+              (currentId === event.id &&
+                native.eventStatus === "result" &&
+                nativeEnd !== null &&
+                aggregationSeconds !== null &&
+                now >= nativeEnd + aggregationSeconds * 1000));
+          if (ended && !finalReady) continue;
+          const sourceUrl = `${RANKING_ORIGIN}/api/v1/${region}/events/${event.id}/${challengeId ? `challenges/${challengeId}/ranking` : "latest"}`;
+          try {
+            const upstream = await upstreamJson(sourceUrl);
+            const ranking = eventRankingFromUpstream(upstream, region, event.id, challengeId || null);
+            await saveEventHistory(db!, eventHistoryInput(ranking, upstream, sourceUrl));
+            saved++;
+            if (ended && (!ranking.stale || upstream.response.headers.get("X-Collect-Status") === "archived"))
+              finalized.add(`${event.id}:${challengeId}`);
+          } catch (error) {
+            if (ended && error instanceof RequestFailure && error.status === 404) {
+              const savedRanking = await latestEventHistory(db!, region, event.id, challengeId);
+              if (savedRanking && savedRanking.fetchedAtMs !== null && savedRanking.fetchedAtMs >= event.endAtMs)
+                finalized.add(`${event.id}:${challengeId}`);
+            }
+            console.warn(
+              JSON.stringify({
+                event: "event-history-poll",
+                region,
+                eventId: event.id,
+                challengeId,
+                error: error instanceof Error ? error.name : "unknown",
+              }),
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          JSON.stringify({
+            event: "event-history-discovery",
+            region,
+            error: error instanceof Error ? error.name : "unknown",
+          }),
+        );
+      } finally {
+        await db!
+          .prepare(`UPDATE game_event_ranking_collection SET lease_until_ms=0,finalized_json=? WHERE region=?`)
+          .bind(JSON.stringify([...finalized].sort()), region)
+          .run();
+        console.info(JSON.stringify({ event: "event-history-collected", region, saved }));
+      }
+    }
+  }
+  await Promise.all([drain(), drain()]);
+}
+
 const normalizeProfile = (
   value: unknown,
   region: GameRecordsRegion,
@@ -416,13 +590,14 @@ const normalizeProfile = (
   const brief = asObject(root.brief);
   const favorites = asObject(root.favorites);
   const protobufProfile = root.playerProfile !== undefined && root.playerProfile !== null;
-  const profileNumber = (value: unknown) => value === undefined && protobufProfile ? 0 : finiteNumber(value);
-  const profileInteger = (value: unknown) => value === undefined && protobufProfile ? 0 : safeInteger(value);
+  const profileNumber = (value: unknown) => (value === undefined && protobufProfile ? 0 : finiteNumber(value));
+  const profileInteger = (value: unknown) => (value === undefined && protobufProfile ? 0 : safeInteger(value));
   const totalFavoriteExact =
     typeof favorites.totalFavorite === "string" && /^[0-9]{1,19}$/u.test(favorites.totalFavorite)
       ? favorites.totalFavorite
       : typeof favorites.totalFavorite === "number" &&
-          Number.isSafeInteger(favorites.totalFavorite) && favorites.totalFavorite >= 0
+          Number.isSafeInteger(favorites.totalFavorite) &&
+          favorites.totalFavorite >= 0
         ? String(favorites.totalFavorite)
         : null;
   const favoriteMemberCard = asObject(profile.favoriteMemberCard);
@@ -478,14 +653,17 @@ const errorResponse = (
 const jsonResponse = (request: Request, body: string): Response =>
   new Response(request.method === "HEAD" ? null : body, {
     status: 200,
-    headers: { ...CORS, "Cache-Control": CACHE_CONTROL, "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      ...CORS,
+      "Cache-Control": CACHE_CONTROL,
+      "Content-Type": "application/json; charset=utf-8",
+    },
   });
 
 const cacheRequest = (request: Request): Request => {
   const url = new URL(request.url);
   url.search = "";
-  if (url.pathname.startsWith(`${GAME_RECORDS_API_PREFIX}/jp/`))
-    url.searchParams.set("schema", "jp-profile-v2");
+  if (url.pathname.startsWith(`${GAME_RECORDS_API_PREFIX}/jp/`)) url.searchParams.set("schema", "jp-profile-v2");
   url.hash = "";
   return new Request(url, { method: "GET" });
 };
@@ -544,13 +722,18 @@ const authenticatedProfile = async (region: GameRecordsRegion, profileId: string
     const favorites = await upstreamJson(favoritesUrl.href, headers);
     const value = asObject(favorites.value);
     if (
-      favorites.value === null || typeof favorites.value !== "object" ||
-      Array.isArray(favorites.value) || value.error
+      favorites.value === null ||
+      typeof favorites.value !== "object" ||
+      Array.isArray(favorites.value) ||
+      value.error
     )
       return profile;
     return {
       ...profile,
-      value: { ...asObject(profile.value), favorites: { totalFavorite: value.totalFavorite ?? 0 } },
+      value: {
+        ...asObject(profile.value),
+        favorites: { totalFavorite: value.totalFavorite ?? 0 },
+      },
     };
   } catch {
     // Optional public favorites must not make an otherwise readable profile fail.
@@ -559,8 +742,11 @@ const authenticatedProfile = async (region: GameRecordsRegion, profileId: string
 };
 
 const validCardFile = (file: string, profileId: string): boolean =>
-  file.length > 0 && file.length <= 512 && file.startsWith(`${profileId}_`) &&
-  /^[A-Za-z0-9_.-]+$/u.test(file) && !file.includes("..");
+  file.length > 0 &&
+  file.length <= 512 &&
+  file.startsWith(`${profileId}_`) &&
+  /^[A-Za-z0-9_.-]+$/u.test(file) &&
+  !file.includes("..");
 
 const cardImageBytes = async (response: Response, signal: AbortSignal): Promise<Uint8Array> => {
   const length = response.headers.get("Content-Length");
@@ -605,20 +791,26 @@ const cardImageBytes = async (response: Response, signal: AbortSignal): Promise<
   }
   const signature = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82];
   const tail = [0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
-  if (size < 45 || signature.some((byte, i) => bytes[i] !== byte) ||
-    tail.some((byte, i) => bytes[size - tail.length + i] !== byte))
+  if (
+    size < 45 ||
+    signature.some((byte, i) => bytes[i] !== byte) ||
+    tail.some((byte, i) => bytes[size - tail.length + i] !== byte)
+  )
     throw new RequestFailure(502, "upstream");
   const view = new DataView(bytes.buffer);
   const width = view.getUint32(16);
   const height = view.getUint32(20);
-  if (width < 1 || height < 1 || width > 8192 || height > 8192)
-    throw new RequestFailure(502, "upstream");
+  if (width < 1 || height < 1 || width > 8192 || height > 8192) throw new RequestFailure(502, "upstream");
   return bytes;
 };
 
 const serveCardDownload = async (
-  request: Request, env: GameRecordsBindings, region: GameRecordsRegion,
-  profileId: string, page: string, file: string,
+  request: Request,
+  env: GameRecordsBindings,
+  region: GameRecordsRegion,
+  profileId: string,
+  page: string,
+  file: string,
 ): Promise<Response> => {
   const token = env.MOENOTES_PROFILE_API_TOKEN?.trim();
   if (!token) return errorResponse(request, 502, "upstream");
@@ -626,8 +818,14 @@ const serveCardDownload = async (
   let upstreamStatus: number | null = null;
   try {
     const upstream = await fetch(`${MOENOTES_PROFILE_ORIGIN}/v1/${region}/profile/${profileId}/card/${page}`, {
-      method: "GET", redirect: "manual", signal,
-      headers: { Accept: "image/png", Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
+      method: "GET",
+      redirect: "manual",
+      signal,
+      headers: {
+        Accept: "image/png",
+        Authorization: `Bearer ${token}`,
+        "User-Agent": "Mozilla/5.0",
+      },
     });
     upstreamStatus = upstream.status;
     if (upstream.status !== 200) {
@@ -644,13 +842,24 @@ const serveCardDownload = async (
       throw new RequestFailure(502, "upstream");
     }
     const bytes = await cardImageBytes(upstream, signal);
-    return new Response(request.method === "HEAD" ? null : bytes, { headers: {
-      ...CORS, "Content-Type": "image/png", "Content-Length": String(bytes.byteLength),
-      "Content-Disposition": `attachment; filename="profilecard-${region}-${profileId}-${page}.png"`,
-      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-    } });
+    return new Response(request.method === "HEAD" ? null : bytes, {
+      headers: {
+        ...CORS,
+        "Content-Type": "image/png",
+        "Content-Length": String(bytes.byteLength),
+        "Content-Disposition": `attachment; filename="profilecard-${region}-${profileId}-${page}.png"`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch (error) {
-    console.warn(JSON.stringify({ event: "moenotes-card-download", upstreamStatus, noToken: false }));
+    console.warn(
+      JSON.stringify({
+        event: "moenotes-card-download",
+        upstreamStatus,
+        noToken: false,
+      }),
+    );
     if (signal.aborted) return errorResponse(request, 504, "timeout");
     if (error instanceof RequestFailure) return errorResponse(request, error.status, error.kind);
     return errorResponse(request, 502, "upstream");
@@ -664,16 +873,60 @@ export async function handleGameRecordsApi(
   env: GameRecordsBindings = {},
 ): Promise<Response | null> {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
-  const download = new RegExp(`^${GAME_RECORDS_API_PREFIX}/([^/]+)/players/([^/]+)/cards/([^/]+)/download$`).exec(url.pathname);
+  const history = new RegExp(
+    `^${GAME_RECORDS_API_PREFIX}/([^/]+)/events/([^/]+)/(?:challenges/([^/]+)/)?history$`,
+  ).exec(url.pathname);
+  if (history) {
+    const region = history[1]!,
+      eventId = decimalId(history[2]),
+      challengeId = history[3] ? decimalId(history[3]) : "";
+    if (!isRegion(region)) return errorResponse(request, 404, "not_found");
+    const snapshot = url.searchParams.get("snapshot") || undefined,
+      before = url.searchParams.get("before") || undefined;
+    if (
+      !eventId ||
+      challengeId === null ||
+      (snapshot && !/^[a-f0-9]{64}$/u.test(snapshot)) ||
+      (before && !/^[a-f0-9]{64}$/u.test(before)) ||
+      (snapshot && before) ||
+      [...url.searchParams.keys()].some((key) => key !== "snapshot" && key !== "before")
+    )
+      return errorResponse(request, 400, "invalid_request");
+    if (!env.DB) return errorResponse(request, 503, "pending");
+    try {
+      const result = await readEventHistory(env.DB, region, eventId, challengeId, snapshot, before);
+      return result === null ? errorResponse(request, 404, "not_found") : jsonResponse(request, JSON.stringify(result));
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          event: "event-history-read",
+          region,
+          eventId,
+          error: error instanceof Error ? error.name : "unknown",
+        }),
+      );
+      return errorResponse(request, 503, "upstream");
+    }
+  }
+  const download = new RegExp(`^${GAME_RECORDS_API_PREFIX}/([^/]+)/players/([^/]+)/cards/([^/]+)/download$`).exec(
+    url.pathname,
+  );
   if (download) {
     const [_, region, profileId, page] = download;
     if (!region || !isRegion(region)) return errorResponse(request, 404, "not_found");
     const file = url.searchParams.get("file") || "";
     const pageNumber = safeInteger(page);
-    if (!profileId || !rankingProfileIdPattern(region).test(profileId) || !decimalId(profileId) ||
-      !page || !/^[1-9][0-9]{0,18}$/u.test(page) || pageNumber === null ||
-      !validCardFile(file, profileId) || url.searchParams.getAll("file").length !== 1 ||
-      [...url.searchParams.keys()].some((key) => key !== "file"))
+    if (
+      !profileId ||
+      !rankingProfileIdPattern(region).test(profileId) ||
+      !decimalId(profileId) ||
+      !page ||
+      !/^[1-9][0-9]{0,18}$/u.test(page) ||
+      pageNumber === null ||
+      !validCardFile(file, profileId) ||
+      url.searchParams.getAll("file").length !== 1 ||
+      [...url.searchParams.keys()].some((key) => key !== "file")
+    )
       return errorResponse(request, 400, "invalid_request");
     return serveCardDownload(request, env, region, profileId, page, file);
   }
@@ -690,11 +943,18 @@ export async function handleGameRecordsApi(
       return serveCached(request, ctx, async () => {
         try {
           const upstream = await upstreamJson(`${RANKING_ORIGIN}/api/v1/${region}/events/current`);
-          return { body: JSON.stringify(normalizeTrackedEvent(upstream.value, region, upstream.response)) };
+          return {
+            body: JSON.stringify(normalizeTrackedEvent(upstream.value, region, upstream.response)),
+          };
         } catch (error) {
           if (error instanceof RequestFailure && error.status === 404) {
             return {
-              body: JSON.stringify({ region, event: null, fetchedAtMs: null, stale: false } satisfies EventTrackerDto),
+              body: JSON.stringify({
+                region,
+                event: null,
+                fetchedAtMs: null,
+                stale: false,
+              } satisfies EventTrackerDto),
             };
           }
           throw error;
@@ -705,11 +965,38 @@ export async function handleGameRecordsApi(
     if (!eventId || (challengeRanking && !challengeId)) return errorResponse(request, 400, "invalid_request");
     return serveCached(request, ctx, async () => {
       const path = challengeRanking ? `challenges/${challengeId}/ranking` : "latest";
-      const upstream = await upstreamJson(`${RANKING_ORIGIN}/api/v1/${region}/events/${eventId}/${path}`);
-      if (!challengeRanking)
-        return { body: JSON.stringify(normalizeEventPoints(upstream.value, region, eventId, upstream.response)) };
-      const { musicId: _musicId, ...ranking } = normalizeRanking(upstream.value, region, 0, upstream.response, true);
-      return { body: JSON.stringify({ ...ranking, eventId, challengeId: challengeId! } satisfies EventRankingDto) };
+      const sourceUrl = `${RANKING_ORIGIN}/api/v1/${region}/events/${eventId}/${path}`;
+      if (env.DB) {
+        const cached = await cachedEventHistory(env.DB, region, eventId, challengeId ?? "").catch(() => null);
+        if (cached) return { body: JSON.stringify(cached) };
+      }
+      try {
+        const upstream = await upstreamJson(sourceUrl);
+        const ranking = eventRankingFromUpstream(upstream, region, eventId, challengeId);
+        if (env.DB)
+          ctx.waitUntil(
+            (async () => {
+              await saveEventHistory(env.DB!, eventHistoryInput(ranking, upstream, sourceUrl));
+            })().catch((error: unknown) =>
+              console.warn(
+                JSON.stringify({
+                  event: "event-history-save",
+                  region,
+                  eventId,
+                  challengeId,
+                  error: error instanceof Error ? error.name : "unknown",
+                }),
+              ),
+            ),
+          );
+        return { body: JSON.stringify(ranking) };
+      } catch (error) {
+        if (env.DB) {
+          const saved = await latestEventHistory(env.DB, region, eventId, challengeId ?? "").catch(() => null);
+          if (saved) return { body: JSON.stringify(saved) };
+        }
+        throw error;
+      }
     });
   }
   const ranking = new RegExp(`^${GAME_RECORDS_API_PREFIX}/([^/]+)/songs/([^/]+)/ranking$`).exec(url.pathname);
@@ -725,7 +1012,9 @@ export async function handleGameRecordsApi(
       return errorResponse(request, 400, "invalid_request");
     return serveCached(request, ctx, async () => {
       const upstream = await upstreamJson(rankingUrl(region, musicIdText));
-      return { body: JSON.stringify(normalizeRanking(upstream.value, region, musicId, upstream.response)) };
+      return {
+        body: JSON.stringify(normalizeRanking(upstream.value, region, musicId, upstream.response)),
+      };
     });
   }
   if (!profile) return null;
@@ -734,7 +1023,13 @@ export async function handleGameRecordsApi(
   return serveCached(request, ctx, async () => {
     const token = env.MOENOTES_PROFILE_API_TOKEN?.trim();
     if (region === "jp" && !token) {
-      console.warn(JSON.stringify({ event: "moenotes-profile-provider", upstreamStatus: null, noToken: true }));
+      console.warn(
+        JSON.stringify({
+          event: "moenotes-profile-provider",
+          upstreamStatus: null,
+          noToken: true,
+        }),
+      );
       throw new RequestFailure(502, "upstream");
     }
     let upstream: Awaited<ReturnType<typeof upstreamJson>>;
@@ -754,6 +1049,8 @@ export async function handleGameRecordsApi(
         upstream = await authenticatedProfile(region, profileId, token);
       }
     }
-    return { body: JSON.stringify(normalizeProfile(upstream.value, region, profileId, upstream.response)) };
+    return {
+      body: JSON.stringify(normalizeProfile(upstream.value, region, profileId, upstream.response)),
+    };
   });
 }

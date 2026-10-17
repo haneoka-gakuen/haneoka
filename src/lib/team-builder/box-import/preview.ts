@@ -2,6 +2,7 @@ import { nativeRow, type TeamBuilderData } from "../data";
 import {
   bandItemLevelValues,
   practiceRanges,
+  playerModifierRanges,
   validateInventory,
   type InventoryV1,
   type InventoryKind,
@@ -30,6 +31,13 @@ export interface BoxMapProposal {
   values: number[];
   existing: number | null;
 }
+export interface BoxScalarProposal {
+  key: "vipRank";
+  values: number[];
+  existing: number | null;
+  exists: boolean;
+  blocked: boolean;
+}
 export interface BoxPreview {
   schema: "haneoka-box-preview-v1";
   context: BoxReviewContext;
@@ -37,6 +45,8 @@ export interface BoxPreview {
   original: InventoryV1;
   cards: BoxCardProposal[];
   maps: BoxMapProposal[];
+  scalars?: BoxScalarProposal[];
+  notices?: BoxCandidate["notices"];
   issues: { kind: string; id: number; field: string; code: string }[];
 }
 export function sameBoxContext(context: BoxReviewContext, data: TeamBuilderData) {
@@ -192,6 +202,19 @@ export function previewBoxImport(
     original: structuredClone(current),
     cards: [...cards.values()],
     maps: [...maps.values()],
+    scalars:
+      candidate.playerScalars?.vipRank == null
+        ? []
+        : [
+            {
+              key: "vipRank",
+              values: [candidate.playerScalars.vipRank],
+              existing: current.schema === "haneoka-team-inventory-v2" ? current.playerModifiers.vipRank : null,
+              exists: current.schema === "haneoka-team-inventory-v2",
+              blocked: !playerModifierRanges(data).vipRanks.includes(candidate.playerScalars.vipRank),
+            },
+          ],
+    notices: candidate.notices,
     issues,
   };
 }

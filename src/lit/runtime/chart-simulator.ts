@@ -293,6 +293,7 @@ export class ChartSimulator extends LitElement {
   private intro?: NativeIntroPlayback;
   private introScene?: NativeIntroAssembly;
   private introTitle?: TitleIntroductionPresentation;
+  private introDifficultyIconUrl?: string;
   private introTextures: Texture[] = [];
   private introAudioContext?: AudioContext;
   private introCategoryGains = { cheer: 0, voice: 0 };
@@ -565,6 +566,13 @@ export class ChartSimulator extends LitElement {
       if (!sourcePath || !files.has(sourcePath)) throw new Error(`Missing Sprite ${name}`);
       return assetUrl(sourcePath);
     };
+    const difficulty = this.introContent?.difficulty?.toLowerCase();
+    const difficultySprite = difficulty
+      ? `Difficulty_${difficulty === "expert" ? "easy_expert" : difficulty}.png`
+      : undefined;
+    this.introDifficultyIconUrl = difficultySprite && live.outputs?.some(
+      (entry) => entry.type === "Sprite" && logicalName(entry) === difficultySprite,
+    ) ? sprite(live, difficultySprite) : undefined;
     this.gekisouIntroIcons = this.gekisouMissionTypes?.length
       ? {
           combo: sprite(live, "Icon_gekisou_combo.png"),
@@ -1311,6 +1319,8 @@ export class ChartSimulator extends LitElement {
           gekisou: undefined,
           title: this.introContent?.title ?? this.label,
           artist: this.introContent?.artist ?? "",
+          difficultyIconUrl: this.introContent?.difficultyIconUrl ?? this.introDifficultyIconUrl,
+          highScore: this.introContent?.highScore ?? 0,
           jacketUrl: this.introContent?.jacketUrl ? this.pinResourceUrl(this.introContent.jacketUrl) : undefined,
           ...(this.gekisouPlan && this.introContent?.gekisou
             ? {
