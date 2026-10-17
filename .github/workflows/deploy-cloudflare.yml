@@ -196,6 +196,25 @@ jobs:
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
       - name: Check Worker types
         run: pnpm typecheck:worker
+      - name: Archive complete frontend before Worker compilation
+        if: ${{ !inputs.worker_only }}
+        run: |
+          git rev-parse HEAD > .output/frontend-checkpoint.source
+          tar -cf .output/frontend-checkpoint.tar \
+            .output/frontend-checkpoint.source \
+            .output/public \
+            .output/static-documents/publication.json \
+            .output/static-documents/references.json
+      - name: Save complete frontend checkpoint
+        if: ${{ !inputs.worker_only }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-checkpoint-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .output/frontend-checkpoint.tar
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
       - name: Prepare verified Worker publication
         run: node scripts/deploy/worker-publication.mjs prepare ${{ inputs.worker_only && '--worker-only' || '' }}
         env:

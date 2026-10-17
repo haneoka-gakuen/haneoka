@@ -112,7 +112,14 @@ def scan_source_names() -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTPUT_SPRITE,
+        help="Write the sprite to this path (defaults to committed public/icons.svg)",
+    )
     args = parser.parse_args()
+    output = args.output.resolve()
 
     if not ICON_COLLECTION.exists():
         raise SystemExit(f"Icon collection not found: {ICON_COLLECTION.relative_to(ROOT)} (install dependencies first)")
@@ -168,15 +175,15 @@ def main() -> int:
     if fallbacks:
         print(f"{len(fallbacks)} icons use the base body (rounded variant unpublished): {' '.join(sorted(fallbacks))}")
 
-    OUTPUT_SPRITE.parent.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
     sprite = (
         '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">'
         + "".join(symbols)
         + "</svg>\n"
     )
-    OUTPUT_SPRITE.write_text(sprite, encoding="utf-8")
-    size_kb = OUTPUT_SPRITE.stat().st_size / 1024
-    print(f"Wrote {OUTPUT_SPRITE.relative_to(ROOT)} ({size_kb:.1f} KB, {len(symbols)} icons)")
+    output.write_text(sprite, encoding="utf-8")
+    size_kb = output.stat().st_size / 1024
+    print(f"Wrote {output} ({size_kb:.1f} KB, {len(symbols)} icons)")
     return 0
 
 
