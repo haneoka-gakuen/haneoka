@@ -249,7 +249,16 @@ export function luckCurve(
     out.touch(i, lo, hi);
   };
   /** Gauge addition with overflow into lots at the row's gauge maximum. */
-  const shift = (out: Rows, key: number, vec: Float64Array, scale: number, add: number, lo: number, hi: number) => {
+  /** Adds `scale ×` gauge values [a, b) of `vec` to row `key` at gauge `g + offset`. */
+  const block = (out: Rows, key: number, vec: Float64Array, a: number, b: number, offset: number, scale: number) => {
+    const i = out.at(key);
+    const into = out.vecs[i]!;
+    for (let g = a; g < b; g++) into[g + offset]! += vec[g]! * scale;
+    out.touch(i, a + offset, b + offset);
+  };
+  /** Gauge addition with overflow into lots at the row's gauge maximum; with `buff`, a row left holding a lot consumes
+   * it at once (a luck note's draw), without an intermediate distribution. */
+  const shift = (out: Rows, key: number, vec: Float64Array, scale: number, add: number, lo: number, hi: number, buff: number | null = null) => {
     if (!(scale > 0)) return;
     const high = key & HIGH;
     const max = gaugeMaxOf(rushOf(high << 8));
@@ -260,11 +269,10 @@ export function luckCurve(
         b = Math.min(hi, (e + 1) * max - add);
       if (a >= hi) break;
       if (b <= a) continue;
-      const i = out.at(e === 0 ? key : key - lots + Math.min(lots + e, 7));
-      const into = out.vecs[i]!;
+      const target = e === 0 ? key : key - lots + Math.min(lots + e, 7);
       const offset = add - e * max;
-      for (let g = a; g < b; g++) into[g + offset]! += vec[g]! * scale;
-      out.touch(i, a + offset, b + offset);
+      if (buff === null || (target & 7) === 0) block(out, target, vec, a, b, offset, scale);
+      else consumeBlock(out, target, vec, a, b, offset, scale, buff);
     }
   };
   const unary = (fn: (s: number) => number) => {
@@ -306,29 +314,32 @@ export function luckCurve(
     return out;
   };
   /** Consumes one lot: the drawn result, the rush bonus, the next draw (every guarantee lasts one draw). */
-  const consume = (out: Rows, key: number, vec: Float64Array, lo: number, hi: number, buff: number) => {
+  /** Consumes one lot from row `key`, holding `scale ×` values [a, b) of `vec` at gauge `g + offset`. */
+  const consumeBlock = (out: Rows, key: number, vec: Float64Array, a: number, b: number, offset: number, scale: number, buff: number) => {
     const high = key & HIGH;
     const residuePart = key - high;
     const next = lotRows(high, buff);
     for (let k = 0; k < next.length; k += 3) {
       const to = residuePart + next[k]!,
-        q = next[k + 1]!,
+        q = next[k + 1]! * scale,
         after = next[k + 2]!;
-      if (!after || hi <= after + 1) {
-        axpy(out, to, vec, q, lo, hi);
-        continue;
-      }
+      if (!(q > 0)) continue;
+      // A rush start converts the gauge above its new maximum into lots.
+      const split = after ? Math.min(b, Math.max(a, after + 1 - offset)) : b;
+      if (split > a) block(out, to, vec, a, split, offset, q);
+      if (split >= b) continue;
       const lots = to & 7;
-      if (lo <= after) axpy(out, to, vec, q, lo, after + 1);
-      for (let g = Math.max(lo, after + 1); g < hi; g++) {
+      for (let g = split; g < b; g++) {
         const x = vec[g]!;
         if (x === 0) continue;
-        const i = out.at(to - lots + Math.min(lots + Math.trunc(g / after), 7));
-        out.vecs[i]![g % after]! += x * q;
-        out.touch(i, g % after, (g % after) + 1);
+        const gauge = g + offset;
+        const i = out.at(to - lots + Math.min(lots + Math.trunc(gauge / after), 7));
+        out.vecs[i]![gauge % after]! += x * q;
+        out.touch(i, gauge % after, (gauge % after) + 1);
       }
     }
   };
+  const consume = (out: Rows, key: number, vec: Float64Array, lo: number, hi: number, buff: number) => consumeBlock(out, key, vec, lo, hi, 0, 1, buff);
   const total = (vec: Float64Array, lo: number, hi: number) => {
     let sum = 0;
     for (let g = lo; g < hi; g++) sum += vec[g]!;
@@ -492,17 +503,10 @@ export function luckCurve(
         const key = n.op * 1000 + n.judgement * 100 + Math.round(n.speed * 10);
         let points = basePointCache.get(key);
         if (!points) basePointCache.set(key, (points = basePoints(n.op, n.judgement).map(([p, v]) => [p, floorToI32(f(f(n.speed + 1) * f(v)))])));
+        const buff = state <= S_END ? n.buff : null;
         pass((key, vec, lo, hi, out) => {
-          for (const [pb, add] of points!) shift(out, key, vec, pb, add, lo, hi);
+          for (const [pb, add] of points!) shift(out, key, vec, pb, add, lo, hi, buff);
         });
-        if (state <= S_END)
-          pass((key, vec, lo, hi, out) => {
-            if ((key & 7) === 0) {
-              out.adopt(key, vec, lo, hi);
-              return true;
-            }
-            consume(out, key, vec, lo, hi, n.buff);
-          });
       };
       const times = [...new Set([...luckNotes.map((n) => n.timeMs), ...judged.map((n) => n.timeMs)])].sort((a, b) => a - b);
       for (const time of times) {

@@ -230,7 +230,9 @@ export function gekisoSearch(input: GekisoSearchInput): SearchOutput<GekisoDetai
   const performerKey = (p: Performer) => {
     let id = performerKeys.get(p);
     if (id === undefined) {
-      const key = JSON.stringify([p.gekisouSkill, p.missionOnly ?? 0, p.gekisouSupportSkills, ...(p.gekisouSupportSkills.length ? readAll : readMembers).map((field) => p[field])]);
+      // A mission without skills only gates the performer's own supports: without them it simulates as nothing.
+      const mission = p.gekisouSkill || p.gekisouSupportSkills.length ? (p.missionOnly ?? 0) : 0;
+      const key = JSON.stringify([p.gekisouSkill, mission, p.gekisouSupportSkills, ...(p.gekisouSupportSkills.length ? readAll : readMembers).map((field) => p[field])]);
       id = performerIds.get(key);
       if (id === undefined) {
         performerIds.set(key, (id = performerJson.length));
