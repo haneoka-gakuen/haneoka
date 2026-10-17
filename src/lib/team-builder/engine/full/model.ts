@@ -65,14 +65,19 @@ export interface LuckRecord {
 type RecordedFrame = LuckRecord["frames"][number];
 /** Recorded frames repeat across frames and decks: each distinct one is kept once, so a Worker holding hundreds of
  * recordings holds a few hundred frames, not millions. */
-const recordedFrames = new Map<string, RecordedFrame>();
+const recordedFrames = new Map<number, RecordedFrame>();
 let nextFrame = 0;
-function recordedFrame(states: number[], updates: readonly number[], playing: number): RecordedFrame {
-  const key = `${states.join(",")}/${updates.join(",")}/${playing}`;
+function recordedFrame(states: readonly { state: number }[], updates: readonly number[], playing: number): RecordedFrame {
+  // Range states and indexes are small: the frame packs into one number.
+  let key = states.length;
+  for (const s of states) key = key * 16 + s.state;
+  key = key * 8 + updates.length;
+  for (const u of updates) key = key * 8 + u;
+  key = key * 16 + playing + 1;
   let frame = recordedFrames.get(key);
   if (!frame) {
     if (recordedFrames.size >= 4096) recordedFrames.clear();
-    recordedFrames.set(key, (frame = { states, updates: [...updates], playing, id: nextFrame++ }));
+    recordedFrames.set(key, (frame = { states: states.map((s) => s.state), updates: [...updates], playing, id: nextFrame++ }));
   }
   return frame;
 }
@@ -431,7 +436,7 @@ export class LiveModel {
       this.gk.feverUpdates = this.gk.fever.update(t);
       this.gk.ctrl.beforeUpdate(dt, t, this.gk.feverUpdates, this.score.score, this.env());
       if (this.record)
-        this.record.frames.push(recordedFrame(this.gk.ctrl.states.map((s) => s.state), this.gk.ctrl.stateUpdates, this.gk.ctrl.currentPlayingIndex));
+        this.record.frames.push(recordedFrame(this.gk.ctrl.states, this.gk.ctrl.stateUpdates, this.gk.ctrl.currentPlayingIndex));
     }
     this.frameEvents.length = 0;
     // Events due by now, in event order: a pointer over the events sorted by time.
