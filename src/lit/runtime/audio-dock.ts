@@ -59,6 +59,7 @@ interface Snapshot {
   index: number;
   currentTime: number;
   volume: number;
+  unmutedVolume: number;
   mode: PlaybackMode;
   collapsed: boolean;
 }
@@ -147,11 +148,19 @@ export class AudioDock extends LitElement {
   private audio = new Audio();
   private playbackGeneration = 0;
   private restoredTime = 0;
+  private unmutedVolume = 0.82;
   private inertTargets = new Set<HTMLElement>();
   private dockObserver?: ResizeObserver;
   private observedDock?: HTMLElement;
   private queuePanel?: HTMLElement;
   private releaseQueueFocus?: () => void;
+  private pendingToggleFocus?: { expanded: boolean; href: string };
+  private afterPageLoad = () => {
+    const pending = this.pendingToggleFocus;
+    this.pendingToggleFocus = undefined;
+    if (pending && pending.href === location.href && this.collapsed === !pending.expanded)
+      this.focusAfterToggle(pending.expanded, true);
+  };
   private afterNavigation = () => {
     this.observedDock = undefined;
     // The shell (and the rail/app-bar slots the collapsed player lives in)
@@ -232,6 +241,7 @@ export class AudioDock extends LitElement {
     this.onLocale();
     addEventListener("pagehide", this.persistBound);
     document.addEventListener("astro:after-swap", this.afterNavigation);
+    document.addEventListener("astro:page-load", this.afterPageLoad);
     addEventListener("popstate", this.onPopState);
     addEventListener("keydown", this.onKeydown);
     if (this.track) void this.prepare(false, false);
@@ -258,6 +268,7 @@ export class AudioDock extends LitElement {
     removeEventListener("haneoka:locale-ready", this.onLocale);
     removeEventListener("pagehide", this.persistBound);
     document.removeEventListener("astro:after-swap", this.afterNavigation);
+    document.removeEventListener("astro:page-load", this.afterPageLoad);
     this.releaseQueueFocus?.();
     this.releaseQueueFocus = undefined;
     this.queuePanel = undefined;
@@ -275,6 +286,8 @@ export class AudioDock extends LitElement {
   }
 
   updated() {
+    // Astro can discard an incoming dock before its pending Lit update finishes.
+    if (!this.isConnected) return;
     this.syncCollapsedSlots();
     const panel = this.queueOpen ? this.querySelector<HTMLElement>(".audio-queue-panel") : null;
     if (panel !== (this.queuePanel ?? null)) {
@@ -321,7 +334,12 @@ export class AudioDock extends LitElement {
     });
     const requested = normalizedTrack(track);
     if (!requested || !normalizedQueue.length) return;
-    if (this.track?.id === requested.id && this.track.url === requested.url) {
+    const sameQueue =
+      this.queue.length === normalizedQueue.length &&
+      this.queue.every((entry, index) =>
+        entry.id === normalizedQueue[index]!.id && entry.url === normalizedQueue[index]!.url,
+      );
+    if (sameQueue && this.track?.id === requested.id && this.track.url === requested.url) {
       await this.togglePlayback();
       return;
     }
@@ -336,7 +354,6 @@ export class AudioDock extends LitElement {
     // the list the reader is choosing from).
     this.collapsed = compactQuery.matches;
     this.currentTime = 0;
-    this.duration = 0;
     await this.prepare(true);
   }
 
@@ -350,6 +367,9 @@ export class AudioDock extends LitElement {
         : this.queue.findIndex((entry) => audioTrackKey(entry) === key);
     if (existing >= 0) {
       const changed = this.index !== existing;
+      this.queue = this.queue.map((entry, index) =>
+        index === existing ? { ...requested, queueId: entry.queueId } : entry,
+      );
       this.index = existing;
       await this.prepare(changed, true);
       this.emitState();
@@ -378,6 +398,10 @@ export class AudioDock extends LitElement {
       this.restoredTime = Math.max(0, Number(parsed.currentTime) || 0);
       this.currentTime = this.restoredTime;
       this.volume = clamp(Number.isFinite(Number(parsed.volume)) ? Number(parsed.volume) : 0.82, 0, 1);
+      this.unmutedVolume = this.volume ||
+        (Number.isFinite(parsed.unmutedVolume) && Number(parsed.unmutedVolume) > 0
+          ? clamp(Number(parsed.unmutedVolume), 0, 1)
+          : 0.82);
       this.mode = MODES.includes(parsed.mode as PlaybackMode) ? (parsed.mode as PlaybackMode) : "repeat-all";
       this.collapsed = Boolean(parsed.collapsed);
     } catch {
@@ -395,6 +419,7 @@ export class AudioDock extends LitElement {
           index: this.index,
           currentTime: this.currentTime,
           volume: this.volume,
+          unmutedVolume: this.unmutedVolume,
           mode: this.mode,
           collapsed: this.collapsed,
         } satisfies Snapshot),
@@ -414,6 +439,7 @@ export class AudioDock extends LitElement {
       this.audio.src = track.url;
       this.audio.load();
     }
+    this.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
     if (reset) {
       this.restoredTime = 0;
       this.audio.currentTime = 0;
@@ -484,6 +510,7 @@ export class AudioDock extends LitElement {
     this.persist();
   }
   private setVolume(value: number) {
+    if (this.volume > 0) this.unmutedVolume = this.volume;
     this.volume = clamp(Number(value) || 0, 0, 1);
     this.audio.volume = this.volume;
     this.persist();
@@ -549,6 +576,7 @@ export class AudioDock extends LitElement {
     this.draggedIndex = -1;
     this.dropIndex = -1;
     this.sheetDrag = undefined;
+    this.pendingToggleFocus = undefined;
     this.releaseQueueFocus?.();
     this.releaseQueueFocus = undefined;
     this.queuePanel = undefined;
@@ -647,7 +675,15 @@ export class AudioDock extends LitElement {
    */
   private setExpanded(expanded: boolean) {
     if (this.collapsed === !expanded) return;
-    if (!expanded && this.queueOpen) this.closeOverlay();
+    const moveFocus =
+      this.contains(document.activeElement) ||
+      Boolean(document.activeElement?.closest("[data-nav-player], [data-app-bar-player]")) ||
+      (expanded && compactQuery.matches);
+    if (!expanded && this.queueOpen) {
+      if (moveFocus && history.state?.__haneoka_audio_overlay)
+        this.pendingToggleFocus = { expanded, href: location.href };
+      this.closeOverlay();
+    }
     const root = document.documentElement;
     const apply = async () => {
       this.collapsed = !expanded;
@@ -656,24 +692,24 @@ export class AudioDock extends LitElement {
     };
     const start = (document as Document & { startViewTransition?: (update: () => Promise<void>) => { finished: Promise<void> } }).startViewTransition;
     if (!start || matchMedia("(prefers-reduced-motion: reduce)").matches || root.dataset.playerTransition) {
-      void apply().then(() => this.focusAfterToggle(expanded));
+      void apply().then(() => this.focusAfterToggle(expanded, moveFocus));
       return;
     }
     root.dataset.playerTransition = "true";
     const transition = start.call(document, apply);
     void transition.finished.finally(() => {
       delete root.dataset.playerTransition;
-      this.focusAfterToggle(expanded);
+      this.focusAfterToggle(expanded, moveFocus);
     });
   }
-  private focusAfterToggle(expanded: boolean) {
+  private focusAfterToggle(expanded: boolean, moveFocus: boolean) {
+    if (!moveFocus) return;
     const target = expanded
       ? this.querySelector<HTMLElement>(".player__collapse")
       : document.querySelector<HTMLElement>(
           compactQuery.matches ? "[data-app-bar-player] .now-playing" : "[data-nav-player] .now-playing__expand",
         );
-    if (target && this.contains(document.activeElement)) target.focus({ preventScroll: true });
-    else if (target && expanded && compactQuery.matches) target.focus({ preventScroll: true });
+    target?.focus({ preventScroll: true });
   }
   private collapsePlayer() {
     this.setExpanded(false);
@@ -926,7 +962,7 @@ export class AudioDock extends LitElement {
               type="button"
               aria-label=${this.t(this.volume ? "mute" : "unmute")}
               title=${this.t(this.volume ? "mute" : "unmute")}
-              @click=${() => this.setVolume(this.volume ? 0 : 0.82)}
+              @click=${() => this.setVolume(this.volume ? 0 : this.unmutedVolume)}
             >
               ${this.volume ? icon("volume_up", 24) : icon("volume_off", 24)}
             </button>

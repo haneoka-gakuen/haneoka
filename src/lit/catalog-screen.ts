@@ -5043,18 +5043,26 @@ export class CatalogScreen extends LitElement {
             musicId: this.profile.perDifficulty ? id.split("-")[0] : id,
             musicUrl: url,
           });
-    const track = (item: Item) => ({
-      id: this.itemKey(item),
-      songKey: `${this.settings.origin === "sekai" ? "sekai" : this.isProvider() ? "gbp" : "our-notes"}:${this.itemSourceServer(item)}:${item.musicId || this.itemId(item)}`,
-      title: this.itemTitle(item),
-      titleSource: item.musicTitle || item.title,
-      artistSource: item.bandName || item.artist,
-      titleLanguage: this.itemTitleLanguage(item),
-      artist: this.itemArtist(item),
-      cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
-      url: String(item.musicUrl || ""),
-      detailPath: this.itemEntityLink(item),
-    });
+    const track = (item: Item) => {
+      const rows = asItems(item.difficulty);
+      const difficulty = this.profile.perDifficulty
+        ? Number(item.__difficultyIndex)
+        : this.selected === item
+          ? this.detailDifficulty
+          : rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
+      return {
+        id: this.itemKey(item),
+        songKey: `${this.settings.origin === "sekai" ? "sekai" : this.isProvider() ? "gbp" : "our-notes"}:${this.itemSourceServer(item)}:${item.musicId || this.itemId(item)}`,
+        title: this.itemTitle(item),
+        titleSource: item.musicTitle || item.title,
+        artistSource: item.bandName || item.artist,
+        titleLanguage: this.itemTitleLanguage(item),
+        artist: this.itemArtist(item),
+        cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
+        url: String(item.musicUrl || ""),
+        detailPath: this.itemEntityLink(item, difficulty >= 0 ? difficulty : undefined),
+      };
+    };
     const requested = { ...track(item), url };
     const { AudioDock } = await import("./runtime/audio-dock");
     let dock = document.querySelector("audio-dock") as InstanceType<typeof AudioDock> | null;
