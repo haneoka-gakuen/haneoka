@@ -102,7 +102,7 @@ jobs:
           node --input-type=module -e "console.log('Sonolus-Version will advertise:', (await import('@sonolus/core')).version.sonolus)"
 
       - name: Open or update the toolchain PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.HANEOKA_PUSH_TOKEN }}
           branch: chore/sonolus-toolchain
