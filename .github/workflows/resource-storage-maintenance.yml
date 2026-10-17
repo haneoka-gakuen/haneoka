@@ -95,7 +95,7 @@ jobs:
             while IFS= read -r release; do source_args+=(--ignore-release "$release"); done < <(jq -r '.plannedReleases | keys[]' "$RUNNER_TEMP/storage-maintenance/releases.json")
           fi
           python scripts/pipeline.py --server "$RESOURCE_SERVER" prune-sources "${common[@]}" "${source_args[@]}" > "$RUNNER_TEMP/storage-maintenance/sources.json"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: storage-maintenance-${{ matrix.server }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -140,7 +140,7 @@ jobs:
           if [[ "$APPLY_CHANGES" != "true" ]]; then arguments+=(--dry-run); fi
           if [[ -n "$CAS_SHARD" ]]; then arguments+=(--shard "$CAS_SHARD"); fi
           python scripts/pipeline.py --server "$RESOURCE_SERVER" "${arguments[@]}" > "$RUNNER_TEMP/storage-maintenance/cas-gc.json"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: storage-maintenance-cas-${{ github.run_id }}-${{ github.run_attempt }}
