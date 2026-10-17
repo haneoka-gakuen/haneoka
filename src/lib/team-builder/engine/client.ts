@@ -1,6 +1,6 @@
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import type { TeamBuilderData } from "../data";
-import type { EngineRequest, EngineResponse, SongRef, TeamEvaluation, Timeline } from "./api";
+import type { EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline } from "./api";
 import type { EngineCall, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs } from "./execution";
 import { aspirationHeld, compareHits, mergeShardResponses } from "./merge";
@@ -312,6 +312,9 @@ export class EngineClient {
   }
   evaluate(request: EvaluateRequest) {
     return this.enqueue(() => this.pool[0]!.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request }));
+  }
+  growth(request: EngineRequest, progress?: Pending["progress"]) {
+    return this.enqueue(() => this.pool[0]!.send<GrowthResult>({ type: "growth", id: 0, request }, progress));
   }
   explain(request: ExplainRequest) {
     return this.enqueue(() => this.pool[0]!.send<Timeline>({ type: "explain", id: 0, request }));

@@ -25,6 +25,11 @@ export interface BuildSettings {
   missEvery: number;
   eventId: number | null;
   measure: "points" | "items" | "challenge-points";
+  /** Rank by a weighted sum of event points, items and challenge points. */
+  weighted: boolean;
+  weightPoints: number;
+  weightItems: number;
+  weightCp: number;
   route: "live" | "challenge" | "skip";
   boosts: number;
   challengePoints: number;
@@ -52,6 +57,8 @@ export interface BuildSettings {
   /** Gekisou: share of Just-eligible notes hit Just (percent) and the assumed range placement (1 for Mission). */
   just: number;
   gekisoRank: number;
+  /** Opponents' scores per range as typed (numbers separated by spaces or commas). */
+  gekisoOpponents: [string, string, string];
 }
 export const DEFAULT_SETTINGS: BuildSettings = {
   rewardMode: "recommendation",
@@ -72,6 +79,10 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   missEvery: 0,
   eventId: null,
   measure: "points",
+  weighted: false,
+  weightPoints: 1,
+  weightItems: 0,
+  weightCp: 0,
   route: "live",
   boosts: 3,
   challengePoints: 200,
@@ -95,6 +106,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   timeLimit: null,
   just: 100,
   gekisoRank: 1,
+  gekisoOpponents: ["", "", ""],
 };
 export interface BoxFilters {
   kind: "members" | "snaps";

@@ -13,7 +13,9 @@ import { skillTimeline } from "../shared/skill-timeline";
 import { ORDERS } from "../../lib/team-builder/engine/order-equivalence";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
+import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
+import type { BuildSettings } from "./types";
 import { resultSettings, SCORE_GOALS, scoreGoal, scoreProof, scoreText } from "./score-goal";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
@@ -30,10 +32,22 @@ const format = (host: TeamBuilder, value: number, digits = 0) =>
   new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
 const hitKey = (hit: EngineHit) => `${hit.song ? `${hit.song.songId}:${hit.song.difficulty}` : "-"}|${hit.members.join(",")}|${hit.snaps.join(",")}`;
 
+/** Points and items per play of a weighted-reward hit: the measure is points unless only items carry weight. */
+function eventRewards(s: BuildSettings, event: NonNullable<EngineHit["event"]>) {
+  const direct = event.directMean ?? event.mean,
+    other = event.otherMean ?? 0;
+  return s.weightPoints > 0 ? { points: direct, items: other } : { points: other, items: direct };
+}
+
 function primary(host: TeamBuilder, hit: EngineHit): { label: string; value: string; unit?: string } {
   const s = resultSettings(host);
   if (s.goal === "power") return { label: host.t("power", "Power"), value: format(host, hit.power) };
   if (s.goal === "potential" && hit.potential) return { label: host.t("potential", "Potential"), value: format(host, hit.potential.value) };
+  if (s.goal === "event" && s.weighted && hit.event) {
+    const { points, items } = eventRewards(s, hit.event);
+    const total = s.weightPoints * points + s.weightItems * items + (s.route === "live" ? s.weightCp * hit.event.challengePoints : 0);
+    return { label: host.t("weightedTotal", "Weighted total per play"), value: format(host, total, 1) };
+  }
   if ((s.goal === "event" || s.goal === "plan") && hit.event) {
     const label = s.measure === "items" && s.goal === "event" ? host.t("itemsPerPlay", "Items per play") : s.measure === "challenge-points" && s.goal === "event" ? host.t("cpPerPlay", "Challenge points per play") : host.t("pointsPerPlay", "Event points per play");
     return { label, value: format(host, s.measure === "challenge-points" && s.goal === "event" ? hit.event.challengePoints : hit.event.mean, 1) };
@@ -65,8 +79,15 @@ function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
   }
   if (hit.event) {
     out.push(chip(host.t("eventBonus", "Event bonus"), `+${format(host, hit.event.bonusPercent, 0)}%`, icon("trending_up", 16)));
+    if (s.goal === "event" && s.weighted) {
+      const { points, items } = eventRewards(s, hit.event);
+      out.push(chip(host.t("pointsPerPlay", "Event points per play"), format(host, points, 1)));
+      out.push(chip(host.t("itemsPerPlay", "Items per play"), format(host, items, 1)));
+    }
     if (hit.event.challengePoints && s.measure !== "challenge-points") out.push(chip(host.t("cpPerPlay", "Challenge points per play"), format(host, hit.event.challengePoints, 1)));
   }
+  const placements = s.goal === "gekiso" ? host.results?.results.find((result) => result.song?.songId === hit.song?.songId && result.song?.difficulty === hit.song?.difficulty)?.placements : undefined;
+  if (placements) out.push(chip(host.t("gekisoPlacements", "Placements"), placements.join(" · "), icon("leaderboard", 16)));
   if (hit.skipScore !== null) out.push(chip(host.t("skipScore", "Skip score"), format(host, hit.skipScore), icon("fast_forward", 16)));
   if (hit.potential) out.push(chip(host.t("skillCoverage", "Skill coverage"), `${format(host, hit.potential.area * 100, 0)}%·s`));
   return out;
@@ -461,6 +482,37 @@ export function compareTable(host: TeamBuilder, hits: EngineHit[]): TemplateResu
   `;
 }
 
+/** Which single card, raised to full growth, improves the best team most. */
+function growthSection(host: TeamBuilder): TemplateResult {
+  const catalog = host.catalog!;
+  const growth = host.growth?.context === host.calculationContext() ? host.growth : null;
+  const upgrades = growth?.result?.upgrades.filter((row) => row.gain > 1e-9).slice(0, 8) ?? [];
+  const base = growth?.result?.base ?? 0;
+  return html`
+    <section class="surface stack tb-growth">
+      ${sectionHeading({ icon: "trending_up", label: host.t("growthTitle", "Training priorities") })}
+      ${growth?.result
+        ? upgrades.length
+          ? html`<ul class="list">
+              ${upgrades.map((row) => {
+                const id = cardIdOf(row.key);
+                return html`<li class="list-item">
+                  <span class="list-item__leading tb-suggest__art">${tileMedia(catalog.cardOptions(row.kind, id)!)}</span>
+                  <span class="list-item__body">
+                    <strong class="list-item__headline">${catalog.cardName(row.kind, id)}</strong>
+                    <span class="list-item__supporting tabular">+${format(host, row.gain, Math.abs(row.gain) < 100 ? 2 : 0)}${base > 0 ? ` (+${format(host, (row.gain / base) * 100, 2)}%)` : ""}</span>
+                  </span>
+                </li>`;
+              })}
+            </ul>`
+          : html`<p class="supporting-text">${host.t("growthNone", "No single card upgrade improves the best team.")}</p>`
+        : html`<button class="button button--tonal" type="button" ?disabled=${!!growth || host.running} @click=${() => void host.recommendGrowth()}>
+            ${icon("trending_up", 18)}${growth ? host.t("growthProgress", "Checking cards {done}/{total}", { done: growth.done, total: growth.total || "…" }) : host.t("growthRun", "Find the best card to train")}
+          </button>`}
+    </section>
+  `;
+}
+
 export function renderResults(host: TeamBuilder): TemplateResult {
   const results = host.results;
   if (!results || (["event", "plan"].includes(host.resultSettings?.goal ?? "score") !== (host.tab === "pt"))) {
@@ -519,6 +571,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
       ${shown.length
         ? shown.map((hit, index) => renderHit(host, hit, index))
         : html`<div class="state"><p class="state__title">${proven ? host.t("noTeams", "No team meets these conditions") : host.t("noCandidate", "No recommendation yet")}</p></div>`}
+      ${shown.length && resultSettings(host).goal !== "plan" && resultSettings(host).scope !== "theoretical" && !host.stale ? growthSection(host) : nothing}
     </section>
   `;
 }

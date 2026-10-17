@@ -507,12 +507,29 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
           }
           ${
             s.goal === "gekiso"
-              ? segmented({
-                  label: host.t("gekisoRank", "Placement in each range"),
-                  value: String(s.gekisoRank),
-                  options: [1, 2, 3, 4, 5].map((rank) => ({ value: String(rank), label: `${rank}` })),
-                  onSelect: (value) => set({ gekisoRank: Number(value) }),
-                })
+              ? html`
+                  ${segmented({
+                    label: host.t("gekisoRank", "Placement in each range"),
+                    value: String(s.gekisoRank),
+                    options: [1, 2, 3, 4, 5].map((rank) => ({ value: String(rank), label: `${rank}` })),
+                    onSelect: (value) => set({ gekisoRank: Number(value) }),
+                  })}
+                  <span class="tb-field__label">${host.t("gekisoOpponents", "Opponents' scores in each range")}</span>
+                  <div class="tb-number-grid">
+                    ${[0, 1, 2].map(
+                      (range) => html`<md-outlined-text-field
+                        label=${host.t("gekisoRange", "Range {n}", { n: range + 1 })}
+                        inputmode="numeric"
+                        .value=${live(s.gekisoOpponents?.[range] ?? "")}
+                        @change=${(e: Event) => {
+                          const next = [...(s.gekisoOpponents ?? ["", "", ""])] as BuildSettings["gekisoOpponents"];
+                          next[range] = (e.target as HTMLInputElement).value;
+                          set({ gekisoOpponents: next });
+                        }}
+                      ></md-outlined-text-field>`,
+                    )}
+                  </div>
+                `
               : nothing
           }
           ${
@@ -575,18 +592,44 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                   <label class="tb-check"><md-checkbox touch-target="wrapper" .checked=${s.fullRanking}
                     @change=${(e: Event) => set({ fullRanking: (e.target as HTMLInputElement).checked })}></md-checkbox>
                     <span>${host.t("fullRanking", "Full reward ranking")}</span></label>
-                  ${segmented({
-                label: host.t("measure", "Maximize"),
-                value: s.measure,
-                options: [
-                  { value: "points", label: host.t("measurePoints", "Event points") },
-                  { value: "items", label: host.t("measureItems", "Shop items") },
-                  ...(s.route === "live"
-                    ? [{ value: "challenge-points" as const, label: host.t("measureCp", "Challenge points") }]
-                    : []),
-                ],
-                onSelect: (measure) => set({ measure }),
-              })}
+                  <md-outlined-select
+                    label=${host.t("measure", "Maximize")}
+                    .value=${s.weighted ? "weighted" : s.measure}
+                    @change=${(e: Event) => {
+                      const value = (e.target as HTMLInputElement).value;
+                      set(value === "weighted" ? { weighted: true } : { weighted: false, measure: value as BuildSettings["measure"] });
+                    }}
+                  >
+                    ${[
+                      ["points", host.t("measurePoints", "Event points")],
+                      ["items", host.t("measureItems", "Shop items")],
+                      ...(s.route === "live" ? [["challenge-points", host.t("measureCp", "Challenge points")]] : []),
+                      ["weighted", host.t("measureWeighted", "Weighted rewards")],
+                    ].map(([value, label]) => html`<md-select-option value=${value!}><div slot="headline">${label}</div></md-select-option>`)}
+                  </md-outlined-select>
+                  ${
+                    s.weighted
+                      ? html`<div class="tb-number-grid">
+                          ${(
+                            [
+                              ["weightPoints", host.t("weightPoints", "Weight per event point")],
+                              ["weightItems", host.t("weightItems", "Weight per shop item")],
+                              ...(s.route === "live" ? [["weightCp", host.t("weightCp", "Weight per challenge point")]] : []),
+                            ] as [keyof BuildSettings, string][]
+                          ).map(
+                            ([key, label]) => html`<md-outlined-text-field
+                              type="number"
+                              min="0"
+                              step="any"
+                              inputmode="decimal"
+                              label=${label}
+                              .value=${live(String(s[key]))}
+                              @change=${(e: Event) => set({ [key]: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) } as Partial<BuildSettings>)}
+                            ></md-outlined-text-field>`,
+                          )}
+                        </div>`
+                      : nothing
+                  }
                   ${
                 s.route === "challenge"
                   ? segmented({

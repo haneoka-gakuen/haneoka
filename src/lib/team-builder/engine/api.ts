@@ -79,6 +79,8 @@ export type Goal =
       /** Boosts per normal live (0–10) or challenge points per challenge live. */
       consumption: number;
       play: PlayModel;
+      /** Ranks by weights·(points, items, challenge points) instead of the measure alone. */
+      weights?: { points: number; items: number; challengePoints: number };
       /** Primary-reward ordering; pt-only additionally validates the strict solo/challenge input contract. */
       ranking?: "pt-only" | "primary";
       /** Best challenge payout per CP for this objective. Only the solo trial uses this value. */
@@ -94,6 +96,8 @@ export type Goal =
       accuracy: Accuracy;
       /** Assumed placement in every range (1 for solo Mission lives). */
       rank: number;
+      /** Opponents' scores in each range; when given they decide the placements instead of `rank`. */
+      opponents?: number[][];
       /** Luck ranges: 0 takes the exact nominal lottery expectation; n > 0 averages n native lottery seeds instead. */
       seeds: number;
     }
@@ -139,6 +143,11 @@ export interface EngineRequest {
   rewardCutoff?: number;
   cutoff?: RewardCutoff;
 }
+/** Best goal value with one card raised to full growth, for every card not there yet, most improving first. */
+export interface GrowthResult {
+  base: number;
+  upgrades: { kind: "members" | "snaps"; key: string; value: number; gain: number; team: EngineHit | null }[];
+}
 export interface HitScore {
   mean: number;
   min: number;
@@ -164,6 +173,8 @@ export interface EngineHit {
   skipScore: number | null;
   event: {
     mean: number; bonusPercent: number; challengePoints: number; perPlayMin: number; perPlayMax: number;
+    /** Per-play mean of the other reward (points ↔ items). */
+    otherMean?: number;
     /** Exact order sums used by the solo trial; mean includes CP conversion when requested. */
     rewardSum?: number; comparisonSum?: number; orders?: number; directMean?: number; convertedMean?: number;
   } | null;
@@ -175,6 +186,8 @@ export interface SongResult {
   proven: boolean;
   bound: number | null;
   stats: SearchOutput<unknown>["stats"];
+  /** Gekisou with opponents: the placement in each range that the recommended team's range scores earn. */
+  placements?: number[];
   /** Aspiration floor of a sharded search: the merged result is exact only if it holds k hits at or above it. */
   floor?: number;
   /** Exhaustive proof that no team in this scope reaches this key. Not a completed single-song optimum. */

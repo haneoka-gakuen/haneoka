@@ -2338,7 +2338,19 @@
       "cappedScore": "Capped average",
       "provenCapped": "Capped average proven optimal for these cards and conditions",
       "unprovenCapped": "Capped average: best found so far",
-      "targetScore": "Target score"
+      "targetScore": "Target score",
+      "measureWeighted": "Weighted rewards",
+      "weightPoints": "Weight per event point",
+      "weightItems": "Weight per shop item",
+      "weightCp": "Weight per challenge point",
+      "weightedTotal": "Weighted total per play",
+      "growthTitle": "Training priorities",
+      "growthRun": "Find the best card to train",
+      "growthProgress": "Checking cards {done}/{total}",
+      "growthNone": "No single card upgrade improves the best team.",
+      "gekisoOpponents": "Opponents' scores in each range",
+      "gekisoRange": "Range {n}",
+      "gekisoPlacements": "Placements"
     },
     "calendar": {
       "title": "Calendar",

@@ -152,6 +152,18 @@ self.onmessage = async (event: MessageEvent<EngineCall>) => {
       } finally {
         onProgress = null;
       }
+    } else if (call.type === "growth") {
+      const request: EngineRequest = call.request;
+      const rows = await charts(requestSongs(request).filter((song): song is SongRef => song !== null));
+      onProgress = (value) => {
+        const growth = value.growth as { done: number; total: number } | undefined;
+        if (growth) post({ type: "progress", id: call.id, done: growth.done, total: growth.total });
+      };
+      try {
+        post({ type: "result", id: call.id, result: invoke({ op: "growth", handle, request, charts: rows }, true) });
+      } finally {
+        onProgress = null;
+      }
     } else if (call.type === "evaluate") {
       const rows = await charts(call.request.songs);
       const result = invoke({ op: "evaluateAll", handle, request: call.request, charts: rows });

@@ -19,7 +19,7 @@ import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engi
 import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
 import { clock } from "../lib/team-builder/engine/execution";
 import { EngineClient } from "../lib/team-builder/engine/client";
-import type { EngineRequest, EngineResponse, Goal, TeamEvaluation } from "../lib/team-builder/engine/api";
+import type { EngineRequest, EngineResponse, Goal, TeamEvaluation, GrowthResult } from "../lib/team-builder/engine/api";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
 import { engineInputs, readBox, type BoxView } from "../lib/team-builder/sync/box-view";
 import type { BoxValue } from "../lib/team-builder/sync/box-doc";
@@ -97,6 +97,8 @@ export class TeamBuilder extends LitElement {
   compare: string[] = [];
   manual: ManualTeam = { members: [null, null, null, null, null], snaps: [null, null, null, null, null], leader: 2 };
   manualResults: TeamEvaluation[] | null = null;
+  /** Training priorities for the searched goal: each owned card raised to full growth on its own. */
+  growth: { context: string; done: number; total: number; result: GrowthResult | null } | null = null;
   manualBusy = false;
   slotPicker: { slot: number; kind: "members" | "snaps" } | null = null;
   slotFilters: BoxFilters = { kind: "members", query: "", show: "all", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
@@ -383,7 +385,10 @@ export class TeamBuilder extends LitElement {
           challengeEventId: challengeId,
           ...(s.scoreTarget !== "none" ? { target: { kind: s.scoreTarget, score: s.targetScore! } } : {}),
         };
-      case "gekiso":
+      case "gekiso": {
+        const opponents = (s.gekisoOpponents ?? ["", "", ""]).map((text) =>
+          text.split(/[\s,，、]+/u).map(Number).filter((value) => Number.isFinite(value) && value > 0),
+        );
         return s.songs.length
           ? {
               kind: "gekiso",
@@ -391,15 +396,21 @@ export class TeamBuilder extends LitElement {
               criterion: s.criterion,
               accuracy: { great: s.playMode === "ap" ? 0 : s.great / 100, just: s.just / 100, missEvery: s.playMode === "ap" ? 0 : s.missEvery || 0 },
               rank: s.gekisoRank,
+              ...(opponents.some((range) => range.length) ? { opponents } : {}),
               seeds: 0,
             }
           : null;
+      }
       case "event":
         if (s.eventId === null) return null;
         if (s.route !== "skip" && !s.songs.length) return null;
+        if (s.weighted && !(s.weightPoints > 0 || s.weightItems > 0)) return null;
         return {
           kind: "event",
-          measure: s.measure,
+          measure: s.weighted ? (s.weightPoints > 0 ? "points" : "items") : s.measure,
+          ...(s.weighted
+            ? { weights: { points: s.weightPoints, items: s.weightItems, challengePoints: s.route === "live" ? s.weightCp : 0 } }
+            : {}),
           ranking: s.fullRanking ? undefined : "primary",
           route: s.route,
           eventId: s.eventId,
@@ -516,6 +527,28 @@ export class TeamBuilder extends LitElement {
         this.requestUpdate();
       }
     }
+  }
+
+  async recommendGrowth() {
+    const request = this.request();
+    if (!request || !this.engine || this.running || this.growth?.result === null) return;
+    const context = this.calculationContext();
+    Object.assign(request, { k: 1, timeLimitMs: null, deadline: Infinity, contextKey: context });
+    this.growth = { context, done: 0, total: 0, result: null };
+    this.requestUpdate();
+    try {
+      const result = await this.engine.growth(request, (done, total) => {
+        if (this.growth?.context !== context) return;
+        this.growth = { ...this.growth, done, total };
+        this.requestUpdate();
+      });
+      if (this.growth?.context === context) this.growth = { ...this.growth, result };
+    } catch (error) {
+      if (this.growth?.context === context) this.growth = null;
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        this.error = this.t("searchFailed", "The search failed: {reason}", { reason: error instanceof Error ? error.message : String(error) });
+    }
+    this.requestUpdate();
   }
 
   cancel() {

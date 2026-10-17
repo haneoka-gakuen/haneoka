@@ -2338,7 +2338,19 @@
       "cappedScore": "封顶平均分",
       "provenCapped": "当前卡池及条件下，封顶平均分已证明最优",
       "unprovenCapped": "封顶平均分：目前找到的最佳结果",
-      "targetScore": "目标分数"
+      "targetScore": "目标分数",
+      "measureWeighted": "加权奖励",
+      "weightPoints": "每活动点数权重",
+      "weightItems": "每个商店道具权重",
+      "weightCp": "每挑战点数权重",
+      "weightedTotal": "每次加权合计",
+      "growthTitle": "养成优先级",
+      "growthRun": "找出最值得养成的卡牌",
+      "growthProgress": "正在检查卡牌 {done}/{total}",
+      "growthNone": "单独养成任何一张卡都无法提升最佳队伍。",
+      "gekisoOpponents": "各区间对手分数",
+      "gekisoRange": "区间 {n}",
+      "gekisoPlacements": "名次"
     },
     "calendar": {
       "title": "日历",

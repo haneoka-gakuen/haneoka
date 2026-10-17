@@ -2338,7 +2338,19 @@
       "cappedScore": "상한 평균",
       "provenCapped": "선택한 카드와 조건에서 상한 평균 최적성 확인",
       "unprovenCapped": "상한 평균: 현재까지 찾은 최선의 결과",
-      "targetScore": "목표 점수"
+      "targetScore": "목표 점수",
+      "measureWeighted": "가중 보상",
+      "weightPoints": "이벤트 포인트당 가중치",
+      "weightItems": "교환 아이템당 가중치",
+      "weightCp": "챌린지 포인트당 가중치",
+      "weightedTotal": "1회당 가중 합계",
+      "growthTitle": "육성 우선순위",
+      "growthRun": "육성할 카드 찾기",
+      "growthProgress": "카드 확인 중 {done}/{total}",
+      "growthNone": "카드 한 장의 육성으로는 최고 편성이 나아지지 않습니다.",
+      "gekisoOpponents": "구간별 상대 점수",
+      "gekisoRange": "구간 {n}",
+      "gekisoPlacements": "순위"
     },
     "calendar": {
       "title": "달력",

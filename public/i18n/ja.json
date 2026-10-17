@@ -2338,7 +2338,19 @@
       "cappedScore": "上限付き平均",
       "provenCapped": "選択中のカードと条件で、上限付き平均の最適性を確認済み",
       "unprovenCapped": "上限付き平均：現在見つかった最良の結果",
-      "targetScore": "目標スコア"
+      "targetScore": "目標スコア",
+      "measureWeighted": "重み付き報酬",
+      "weightPoints": "イベントポイント 1 あたりの重み",
+      "weightItems": "交換アイテム 1 個あたりの重み",
+      "weightCp": "チャレンジポイント 1 あたりの重み",
+      "weightedTotal": "1回あたりの重み付き合計",
+      "growthTitle": "育成の優先度",
+      "growthRun": "育成すべきカードを探す",
+      "growthProgress": "カードを確認中 {done}/{total}",
+      "growthNone": "1 枚の育成では最良の編成が伸びません。",
+      "gekisoOpponents": "各区間の対戦相手のスコア",
+      "gekisoRange": "区間 {n}",
+      "gekisoPlacements": "順位"
     },
     "calendar": {
       "title": "カレンダー",

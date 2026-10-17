@@ -27,6 +27,7 @@ export type ExplainRequest = {
 export type EngineCall =
   | { type: "init"; id: number; data: TeamBuilderData }
   | { type: "run"; id: number; request: EngineRequest }
+  | { type: "growth"; id: number; request: EngineRequest }
   | { type: "evaluate"; id: number; request: EvaluateRequest }
   | { type: "explain"; id: number; request: ExplainRequest }
   | { type: "charts"; id: number; songs: SongRef[] };
