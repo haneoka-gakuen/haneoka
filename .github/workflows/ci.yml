@@ -15,7 +15,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
+    env:
+      PROVIDER_STATIC_SNAPSHOT: data/provider-static/snapshots/${{ github.run_id }}
 
     steps:
       - name: Check out repository
@@ -50,10 +52,51 @@ jobs:
       - name: Test team builder search
         run: pnpm test:team-builder
 
+      - name: Restore verified provider HTTP responses
+        id: provider-http-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: data/provider-static/http-cache
+          key: ci-provider-http-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ci-provider-http-v1-${{ runner.os }}-
+            provider-http-v1-${{ runner.os }}-
+
+      - name: Restore this run's captured provider inputs and payloads
+        id: provider-snapshot-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            data/provider-static/snapshots
+            data/provider-static/entities/payloads
+            data/provider-static/entities/receipts
+          key: ci-provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ci-provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-
+
       - name: Generate production application
+        timeout-minutes: 330
         run: pnpm build
         env:
           HANEOKA_CUBISM_RUNTIME_POLICY: optional
+
+      - name: Save verified provider HTTP responses
+        if: always() && steps.provider-http-cache.outputs.cache-primary-key != '' && steps.provider-http-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        uses: actions/cache/save@v6
+        with:
+          path: data/provider-static/http-cache
+          key: ${{ steps.provider-http-cache.outputs.cache-primary-key }}
+
+      - name: Save this run's captured provider inputs and payloads
+        if: always() && steps.provider-snapshot-cache.outputs.cache-primary-key != '' && steps.provider-snapshot-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            data/provider-static/snapshots
+            data/provider-static/entities/payloads
+            data/provider-static/entities/receipts
+          key: ${{ steps.provider-snapshot-cache.outputs.cache-primary-key }}
 
       - name: Check resource pipeline
         run: |

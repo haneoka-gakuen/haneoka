@@ -1,4 +1,5 @@
 import { audioTrackKey } from "../../lib/audio-track-key";
+import { audioTrackDetailPath } from "../../lib/audio-track-link";
 import { observeSongDisplay, songTitle } from "../../lib/song-display";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { LitElement, html, nothing, render } from "lit";
@@ -845,7 +846,7 @@ export class AudioDock extends LitElement {
       <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
       <small>${track.artist || "\u00a0"}</small>
     `;
-    const detailHref = track.detailPath || `/catalog/songs?song=${encodeURIComponent(track.id)}`;
+    const detailHref = audioTrackDetailPath(track, this.uiLanguage);
     const play = html`
       <button
         class="player__play"

@@ -5053,6 +5053,7 @@ export class CatalogScreen extends LitElement {
       artist: this.itemArtist(item),
       cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
       url: String(item.musicUrl || ""),
+      detailPath: this.itemEntityLink(item),
     });
     const requested = { ...track(item), url };
     const { AudioDock } = await import("./runtime/audio-dock");
