@@ -2327,7 +2327,18 @@
         "action": "Download App"
       },
       "credit": "Team-building algorithm from Haneoka",
-      "creditSource": "Source code"
+      "creditSource": "Source code",
+      "criterionReach": "Reach rate",
+      "criterionReachHelp": "Rank by the share of the 120 skill orders that reach the target score.",
+      "reachRate": "Orders reaching the target",
+      "provenReach": "Reach rate proven optimal for these cards and conditions",
+      "unprovenReach": "Reach rate: best found so far",
+      "criterionCapped": "Capped average",
+      "criterionCappedHelp": "Rank by the average score, counting each order up to the target score.",
+      "cappedScore": "Capped average",
+      "provenCapped": "Capped average proven optimal for these cards and conditions",
+      "unprovenCapped": "Capped average: best found so far",
+      "targetScore": "Target score"
     },
     "calendar": {
       "title": "Calendar",

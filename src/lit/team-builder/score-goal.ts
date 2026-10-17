@@ -23,7 +23,24 @@ export const SCORE_GOALS = {
     proven: ["provenMin", "Minimum score proven optimal within this search"],
     unproven: ["unprovenMin", "Minimum score: best found so far"],
   },
+  "at-least": {
+    label: ["criterionReach", "Reach rate"],
+    help: ["criterionReachHelp", "Rank by the share of the 120 skill orders that reach the target score."],
+    metric: ["reachRate", "Orders reaching the target"],
+    proven: ["provenReach", "Reach rate proven optimal within this search"],
+    unproven: ["unprovenReach", "Reach rate: best found so far"],
+  },
+  capped: {
+    label: ["criterionCapped", "Capped average"],
+    help: ["criterionCappedHelp", "Rank by the average score with every order counted up to the target score."],
+    metric: ["cappedScore", "Capped average"],
+    proven: ["provenCapped", "Capped average proven optimal within this search"],
+    unproven: ["unprovenCapped", "Capped average: best found so far"],
+  },
 } as const;
+
+/** The score goal's ranking: a target when one is set, otherwise the criterion. */
+export const scoreGoal = (s: BuildSettings) => (s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget : s.criterion);
 
 export const resultSettings = (host: TeamBuilder): BuildSettings => {
   if (host.tab === "pt" && host.settings.rewardMode === "recommendation") {

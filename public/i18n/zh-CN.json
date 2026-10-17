@@ -2327,7 +2327,18 @@
         "action": "下载客户端"
       },
       "credit": "组队算法来自 Haneoka",
-      "creditSource": "源代码"
+      "creditSource": "源代码",
+      "criterionReach": "达标率",
+      "criterionReachHelp": "按 120 种技能顺序中达到目标分数的比例排序。",
+      "reachRate": "达到目标的技能顺序",
+      "provenReach": "当前卡池及条件下，达标率已证明最优",
+      "unprovenReach": "达标率：目前找到的最佳结果",
+      "criterionCapped": "封顶平均分",
+      "criterionCappedHelp": "每种技能顺序的分数最多计到目标分数，按平均分排序。",
+      "cappedScore": "封顶平均分",
+      "provenCapped": "当前卡池及条件下，封顶平均分已证明最优",
+      "unprovenCapped": "封顶平均分：目前找到的最佳结果",
+      "targetScore": "目标分数"
     },
     "calendar": {
       "title": "日历",

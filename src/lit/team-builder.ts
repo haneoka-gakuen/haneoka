@@ -374,7 +374,15 @@ export class TeamBuilder extends LitElement {
       case "power":
         return { kind: "power", song: s.powerSong ? (s.songs[0] ?? null) : null, challengeEventId: challengeId };
       case "score":
-        return s.songs.length ? { kind: "score", songs: s.songs, criterion: s.criterion, play, challengeEventId: challengeId } : null;
+        if (!s.songs.length || (s.scoreTarget !== "none" && !(s.targetScore && s.targetScore > 0))) return null;
+        return {
+          kind: "score",
+          songs: s.songs,
+          criterion: s.criterion,
+          play,
+          challengeEventId: challengeId,
+          ...(s.scoreTarget !== "none" ? { target: { kind: s.scoreTarget, score: s.targetScore! } } : {}),
+        };
       case "gekiso":
         return s.songs.length
           ? {

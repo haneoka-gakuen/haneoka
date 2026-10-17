@@ -2327,7 +2327,18 @@
         "action": "앱 다운로드"
       },
       "credit": "편성 알고리즘: Haneoka",
-      "creditSource": "소스 코드"
+      "creditSource": "소스 코드",
+      "criterionReach": "달성률",
+      "criterionReachHelp": "120가지 스킬 순서 중 목표 점수에 도달하는 비율로 비교합니다.",
+      "reachRate": "목표에 도달한 스킬 순서",
+      "provenReach": "선택한 카드와 조건에서 달성률 최적성 확인",
+      "unprovenReach": "달성률: 현재까지 찾은 최선의 결과",
+      "criterionCapped": "상한 평균",
+      "criterionCappedHelp": "각 스킬 순서의 점수를 목표 점수까지만 세어 평균으로 비교합니다.",
+      "cappedScore": "상한 평균",
+      "provenCapped": "선택한 카드와 조건에서 상한 평균 최적성 확인",
+      "unprovenCapped": "상한 평균: 현재까지 찾은 최선의 결과",
+      "targetScore": "목표 점수"
     },
     "calendar": {
       "title": "달력",

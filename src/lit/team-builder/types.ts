@@ -13,6 +13,9 @@ export interface BuildSettings {
   goal: GoalKind;
   songs: SongRef[];
   criterion: Criterion;
+  /** Score goal only: rank by the share of orders reaching targetScore, or the average capped at it. */
+  scoreTarget: "none" | "at-least" | "capped";
+  targetScore: number | null;
   playMode: "ap" | "custom";
   /** Percent of notes, 0–100. */
   great: number;
@@ -60,6 +63,8 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   goal: "score",
   songs: [],
   criterion: "mean",
+  scoreTarget: "none",
+  targetScore: null,
   playMode: "ap",
   great: 3,
   good: 0,

@@ -11,7 +11,7 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { sectionHeading } from "./catalog";
 import { renderResults } from "./results";
-import { SCORE_GOALS, scoreText } from "./score-goal";
+import { SCORE_GOALS, scoreGoal, scoreText } from "./score-goal";
 import type { BuildSettings, GoalKind } from "./types";
 import type { TeamBuilder } from "../team-builder";
 import { ptField } from "./pt-fields";
@@ -464,13 +464,44 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
           ${
             s.goal === "score" || s.goal === "gekiso"
               ? html`
-                  ${segmented({
-                    label: host.t("criterion", "Score goal"),
-                    value: s.criterion,
-                    options: (["mean", "max", "min"] as const).map((value) => ({ value, label: scoreText(host, SCORE_GOALS[value].label) })),
-                    onSelect: (criterion) => set({ criterion }),
-                  })}
-                  <p class="supporting-text tb-goal-hint">${scoreText(host, SCORE_GOALS[s.criterion].help)}</p>
+                  ${
+                    s.goal === "score"
+                      ? html`<md-outlined-select
+                          label=${host.t("criterion", "Score goal")}
+                          .value=${scoreGoal(s)}
+                          @change=${(e: Event) => {
+                            const value = (e.target as HTMLInputElement).value as keyof typeof SCORE_GOALS;
+                            set(value === "at-least" || value === "capped" ? { scoreTarget: value, criterion: "mean" } : { scoreTarget: "none", criterion: value });
+                          }}
+                        >
+                          ${(["mean", "max", "min", "at-least", "capped"] as const).map(
+                            (value) => html`<md-select-option value=${value}><div slot="headline">${scoreText(host, SCORE_GOALS[value].label)}</div></md-select-option>`,
+                          )}
+                        </md-outlined-select>`
+                      : segmented({
+                          label: host.t("criterion", "Score goal"),
+                          value: s.criterion,
+                          options: (["mean", "max", "min"] as const).map((value) => ({ value, label: scoreText(host, SCORE_GOALS[value].label) })),
+                          onSelect: (criterion) => set({ criterion }),
+                        })
+                  }
+                  <p class="supporting-text tb-goal-hint">${scoreText(host, SCORE_GOALS[scoreGoal(s)].help)}</p>
+                  ${
+                    scoreGoal(s) === "at-least" || scoreGoal(s) === "capped"
+                      ? html`<md-outlined-text-field
+                          type="number"
+                          min="1"
+                          step="1"
+                          inputmode="numeric"
+                          label=${host.t("targetScore", "Target score")}
+                          .value=${live(s.targetScore ? String(s.targetScore) : "")}
+                          @change=${(e: Event) => {
+                            const value = Math.floor(Number((e.target as HTMLInputElement).value) || 0);
+                            set({ targetScore: value > 0 ? value : null });
+                          }}
+                        ></md-outlined-text-field>`
+                      : nothing
+                  }
                 `
               : nothing
           }

@@ -61,7 +61,15 @@ export interface ConstraintInput {
 }
 export type Goal =
   | { kind: "power"; song: SongRef | null; challengeEventId: number | null }
-  | { kind: "score"; songs: SongRef[]; criterion: Criterion; play: PlayModel; challengeEventId: number | null }
+  | {
+      kind: "score";
+      songs: SongRef[];
+      criterion: Criterion;
+      play: PlayModel;
+      challengeEventId: number | null;
+      /** Replaces the criterion: share of the 120 orders reaching `score`, or the average capped at it. */
+      target?: { kind: "at-least" | "capped"; score: number };
+    }
   | {
       kind: "event";
       measure: "points" | "items" | "challenge-points";

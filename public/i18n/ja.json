@@ -2327,7 +2327,18 @@
         "action": "アプリをダウンロード"
       },
       "credit": "編成アルゴリズム：Haneoka",
-      "creditSource": "ソースコード"
+      "creditSource": "ソースコード",
+      "criterionReach": "到達率",
+      "criterionReachHelp": "120 通りのスキル順のうち、目標スコアに届く割合で比較。",
+      "reachRate": "目標に届くスキル順",
+      "provenReach": "選択中のカードと条件で、到達率の最適性を確認済み",
+      "unprovenReach": "到達率：現在見つかった最良の結果",
+      "criterionCapped": "上限付き平均",
+      "criterionCappedHelp": "各スキル順のスコアを目標スコアまでとして平均で比較。",
+      "cappedScore": "上限付き平均",
+      "provenCapped": "選択中のカードと条件で、上限付き平均の最適性を確認済み",
+      "unprovenCapped": "上限付き平均：現在見つかった最良の結果",
+      "targetScore": "目標スコア"
     },
     "calendar": {
       "title": "カレンダー",

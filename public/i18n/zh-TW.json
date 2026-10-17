@@ -2327,7 +2327,18 @@
         "action": "下載用戶端"
       },
       "credit": "組隊演算法來自 Haneoka",
-      "creditSource": "原始碼"
+      "creditSource": "原始碼",
+      "criterionReach": "達標率",
+      "criterionReachHelp": "依 120 種技能順序中達到目標分數的比例排序。",
+      "reachRate": "達到目標的技能順序",
+      "provenReach": "目前卡池及條件下，達標率已證明最優",
+      "unprovenReach": "達標率：目前找到的最佳結果",
+      "criterionCapped": "封頂平均分",
+      "criterionCappedHelp": "每種技能順序的分數最多計到目標分數，依平均分排序。",
+      "cappedScore": "封頂平均分",
+      "provenCapped": "目前卡池及條件下，封頂平均分已證明最優",
+      "unprovenCapped": "封頂平均分：目前找到的最佳結果",
+      "targetScore": "目標分數"
     },
     "calendar": {
       "title": "日曆",

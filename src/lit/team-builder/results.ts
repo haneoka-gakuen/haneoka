@@ -14,7 +14,7 @@ import { ORDERS } from "../../lib/team-builder/engine/order-equivalence";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import type { TeamBuilder } from "../team-builder";
-import { resultSettings, SCORE_GOALS, scoreProof, scoreText } from "./score-goal";
+import { resultSettings, SCORE_GOALS, scoreGoal, scoreProof, scoreText } from "./score-goal";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
 export const timelines = new Map<string, Timeline | "loading" | "error">();
@@ -38,7 +38,16 @@ function primary(host: TeamBuilder, hit: EngineHit): { label: string; value: str
     const label = s.measure === "items" && s.goal === "event" ? host.t("itemsPerPlay", "Items per play") : s.measure === "challenge-points" && s.goal === "event" ? host.t("cpPerPlay", "Challenge points per play") : host.t("pointsPerPlay", "Event points per play");
     return { label, value: format(host, s.measure === "challenge-points" && s.goal === "event" ? hit.event.challengePoints : hit.event.mean, 1) };
   }
-  if (hit.score) return { label: scoreText(host, SCORE_GOALS[s.criterion].metric), value: format(host, hit.score[s.criterion]) };
+  if (hit.score) {
+    const goal = scoreGoal(s),
+      target = s.targetScore ?? 0,
+      orders = hit.score.orders;
+    if (goal === "at-least" && orders.length)
+      return { label: scoreText(host, SCORE_GOALS[goal].metric), value: `${format(host, (orders.filter((v) => v >= target).length / orders.length) * 100, 1)}%` };
+    if (goal === "capped" && orders.length)
+      return { label: scoreText(host, SCORE_GOALS[goal].metric), value: format(host, orders.reduce((sum, v) => sum + Math.min(v, target), 0) / orders.length) };
+    return { label: scoreText(host, SCORE_GOALS[s.criterion].metric), value: format(host, hit.score[s.criterion]) };
+  }
   return { label: host.t("power", "Power"), value: format(host, hit.power) };
 }
 
@@ -48,7 +57,7 @@ function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
   const chip = (label: string, value: string, leading?: TemplateResult) => html`<span class="tb-chip">${leading ?? nothing}<span class="tb-chip__label">${label}</span><strong class="tabular">${value}</strong></span>`;
   if (s.goal !== "power") out.push(chip(host.t("power", "Power"), format(host, hit.power), icon("bolt", 16)));
   if (hit.score) {
-    if ((s.goal !== "score" && s.goal !== "gekiso") || s.criterion !== "mean") out.push(chip(host.t("expectedScore", "Average score"), format(host, hit.score.mean)));
+    if ((s.goal !== "score" && s.goal !== "gekiso") || scoreGoal(s) !== "mean") out.push(chip(host.t("expectedScore", "Average score"), format(host, hit.score.mean)));
     out.push(chip(host.t("scoreRange", "Range"), `${format(host, hit.score.min)} – ${format(host, hit.score.max)}`));
     const ranks = Object.entries(hit.score.ranks).sort((a, b) => Number(b[0]) - Number(a[0]));
     const top = ranks[0];
