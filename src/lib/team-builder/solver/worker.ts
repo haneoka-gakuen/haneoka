@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 带 runId 的 TS 求解、手动评价与规划消息。
+// Output: 进度、断点、结果、错误和停止响应。
+// Pos: [Map](L2-2.md)；TS solver／规划路线的 Worker 入口。
+// Effects/Dependencies: 加载谱面、维护活动任务和取消状态并 postMessage；不是当前 EngineClient 的 WASM Worker。
 import type { OptimizationInput, SongOption, SolverRequest, SolverResponse } from "../contracts.ts";
 import { optimizeTeams, validateOptimizationInput } from "../optimizer.ts";
 import { getTeamBuilderCapabilities } from "./capabilities.ts";

@@ -6,6 +6,10 @@ use [SUPPORT.md](SUPPORT.md) for help, and report vulnerabilities through
 
 ## Before you start
 
+Read the [repository map](L1.md) and [development guide](docs/DEV_GUIDE.md).
+Maintain maps and core file coordinates using the
+[GEB guide](docs/GEB使用与维护指南.md) when their facts change.
+
 - Search existing issues, discussions, and pull requests.
 - Discuss substantial features, data-contract changes, or new dependencies
   before implementing them.

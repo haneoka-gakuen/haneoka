@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Vue 控件参数、宿主状态和 Material Web 组件。
+// Output: UI 控件、焦点和交互公共能力。
+// Pos: [Map](../../L2.md)；工作区包的共享控件入口，区别于站点 Lit 工作区。
+// Effects/Dependencies: 导入 Material 自定义元素并使用 Vue 生命周期／DOM；不是无浏览器环境的纯类型包。
 import { defineComponent, h, nextTick, onBeforeUnmount, ref, watch, type PropType } from "vue";
 import "@material/web/button/filled-button.js";
 import "@material/web/button/filled-tonal-button.js";

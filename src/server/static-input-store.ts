@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 构建输入模式、请求键和异步生产函数。
+// Output: 捕获／重放 JSON、待完成输入汇总及一致性检查。
+// Pos: [Map](L2-2.md)；分片静态构建的输入状态与失败闸门。
+// Effects/Dependencies: 读写本地输入／错误文件、摘要及进程内 Promise；生产函数可有间接 I/O。
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

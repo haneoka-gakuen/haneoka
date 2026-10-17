@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: OptimizationInput、队伍分配与准备好的评价上下文。
+// Output: 队伍指标、证据缺口及可复用评价器。
+// Pos: [Map](L2-2.md)；TS 搜索的分配评价组合。
+// Effects/Dependencies: 按评价上下文构建局部查找／缓存并调用规则计算，不持有云端存储。
 import type {
   Candidate,
   EvidenceGap,

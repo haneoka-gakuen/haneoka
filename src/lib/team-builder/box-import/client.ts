@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Blob 文件或文本、可选取消信号／进度／Worker 工厂。
+// Output: BoxParseResult Promise 与解析错误。
+// Pos: [Map](../L2-2.md)；文本和文件 Box 本地解析入口。
+// Effects/Dependencies: 检查输入限制、创建 Worker 并发送输入，结束或取消时清理；解析结果由上层保存。
 import { BOX_LIMITS, BoxImportError, type BoxParseResult } from "@haneoka/game-data-exporter";
 export function parseBoxLocally(
   input: { files: readonly Blob[] } | { text: string },

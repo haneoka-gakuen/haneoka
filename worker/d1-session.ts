@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 请求、响应、D1 绑定与 bookmark cookie。
+// Output: 按允许路由包装的 D1 会话和响应 bookmark。
+// Pos: [Map](L2.md)；请求级 D1 读副本与主库选择边界。
+// Effects/Dependencies: AsyncLocalStorage 上下文、D1 Sessions 和响应 cookie；变更／非白名单读不走通用副本策略。
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /*

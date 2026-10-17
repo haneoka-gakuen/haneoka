@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 媒体附件／任务、队列批次、Env 与容器状态。
+// Output: 媒体呈现、任务入队／重试／处理及修复。
+// Pos: [Map](L2.md)；媒体持久任务与容器处理的协调。
+// Effects/Dependencies: 读写 D1、发送队列、调用容器并触发审核；上传与处理完成分开。
 import { getContainer } from "@cloudflare/containers";
 import { scheduleEntityModeration } from "./moderation";
 

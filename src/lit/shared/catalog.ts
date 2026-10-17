@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 目录／HTTP 参数、语言与服务器选择状态。
+// Output: JSON 请求、错误、展示和选择辅助接口。
+// Pos: [Map](../L2-2.md)；工作区与部分 lib 读取器共享的混合工具。
+// Effects/Dependencies: 请求可联网；依赖国际化和浏览器状态，不能整体当作纯格式化库。
 import { withUiMarksProjection } from "../../lib/ui-marks";
 import { clientText, getI18nClient } from "../../i18n/client";
 import { resolveLocalizedText } from "../../lib/localized-text";

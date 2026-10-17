@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 缓存根、HTTP 输入和并发限制。
+// Output: 供应方响应读取器与可复用的捕获记录。
+// Pos: [Map](L2-2.md)；供应方静态快照的输入存储适配。
+// Effects/Dependencies: HTTP 缓存可能联网；原子写本地快照、摘要和读取记录。
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";

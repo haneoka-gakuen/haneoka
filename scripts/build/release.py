@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: 完整构建、server 配置、生产者指纹与可选增量基线。
+# Output: 不可变 release、清单及本地选择结果。
+# Pos: [Map](L2-2.md)；资源构建到 release 组装的边界。
+# Effects/Dependencies: 创建／复制文件、编译存储并写清单和本地指针；R2 发布另行执行。
 """Assemble an immutable release from one complete build."""
 
 from __future__ import annotations

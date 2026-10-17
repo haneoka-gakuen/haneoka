@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 库存文档、资料身份、存储接口和会话版本。
+// Output: InventoryStore、导入导出、合并与云请求错误。
+// Pos: [Map](L2-2.md)；库存文档持久与同步，区别于当前 BoxStore。
+// Effects/Dependencies: 读写存储并可发 HTTP；验证、版本及本地变化检查决定保存结果。
 import type { TeamBuilderData } from "./data";
 import { resolveCharacterRankTotal, type CharacterRankTotalScope } from "./data/character-rank-total";
 import { characterRankInventoryIds } from "./data/character-rank-scope";

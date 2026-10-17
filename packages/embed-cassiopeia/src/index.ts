@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 宿主元素、谱面来源和播放器选项。
+// Output: 谱面嵌入挂载接口和生命周期。
+// Pos: [Map](../../L2.md)；Cassiopeia 播放器的公开宿主适配。
+// Effects/Dependencies: 挂载时连接浏览器、资源 loader 与外部播放器，生命周期由返回句柄管理。
 import { createEmbedLoader, memoryDataSource } from "@haneoka/embed-core";
 import { resolveChartAssets, resolveNativeResourceUrl } from "./resources.js";
 import { createChartHost } from "./host.js";

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 请求、资料读取器、Master／规则证据读取器。
+// Output: 固定身份的配队 DTO 响应。
+// Pos: [Map](L2.md)；配队资料的 Worker 组合与边缘缓存。
+// Effects/Dependencies: 调用注入读取器并读写边缘缓存；格式版本参与缓存键。
 import { teamBuilderDataResponse } from "../src/lib/team-builder/data/response";
 import { readRuntimeRulesDocument, type RuntimeMasterReader } from "../src/lib/team-builder/data/runtime-rules";
 

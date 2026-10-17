@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: 已验证 source／release、存储配置和保留选项。
+# Output: 远端对象／索引／current、恢复结果及清理报告。
+# Pos: [Map](L2-2.md)；R2 发布、恢复与存储维护。
+# Effects/Dependencies: S3 API 网络、文件读写和远端指针更新；prune／GC 可删除对象，需对应授权。
 from __future__ import annotations
 
 import hashlib

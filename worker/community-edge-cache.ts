@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 社区公共读取请求、响应和修订上下文。
+// Output: 缓存读取／写入及成功变更后的失效标记。
+// Pos: [Map](L2.md)；Worker 外层公共社区读取缓存。
+// Effects/Dependencies: 边缘缓存、修订状态与后台任务；不能用于替代私有路由鉴权。
 /*
  * Edge cache for anonymous community reads.
  *

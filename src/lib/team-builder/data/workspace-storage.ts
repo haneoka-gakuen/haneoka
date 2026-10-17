@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 工作区文档、本地存储、会话与云端版本。
+// Output: TeamWorkspaceStore、同步状态、合并及请求错误。
+// Pos: [Map](L2-2.md)；配队工作区文档持久化，与 Box 协议分开。
+// Effects/Dependencies: 读写注入存储并可发认证 HTTP；合并、保存和冲突按文档状态管理。
 import type { StorageLike } from "../storage";
 import { mergeSyncDocuments, sameSyncDocument, type SyncBase } from "./sync-merge";
 import {

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 请求、认证配置、凭据绑定和账户状态。
+// Output: Better Auth 实例、会话及注册／认证响应。
+// Pos: [Map](L2.md)；站点账户认证和会话入口。
+// Effects/Dependencies: D1、邮件／OAuth、访问策略和后台审核；配置来自 Env，不记录真实凭据。
 import { backgroundWork } from "./request-work";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError } from "better-auth/api";

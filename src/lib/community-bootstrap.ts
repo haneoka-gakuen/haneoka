@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 社区加载上下文、请求及浏览器读取状态。
+// Output: 社区首屏资料读取与复用接口。
+// Pos: [Map](L2-2.md)；社区工作区的读取组合。
+// Effects/Dependencies: 依赖 Lit 共享 catalog 请求工具与语言／浏览器上下文，读取可能发 HTTP。
 import { fetchJson, JsonResponseError } from "../lit/shared/catalog";
 import { CommunityRealmChanged, rememberSignedIn, type CommunityViewer } from "./community-viewer";
 import type { CommunityForum, ForumGroup } from "./community-forums";

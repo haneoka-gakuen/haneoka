@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: API 基址、查询、传输函数和请求选项。
+// Output: ApiClient、类型化请求接口和 ApiClientError。
+// Pos: [Map](../../L2.md)；公共 API 请求构造与传输基础。
+// Effects/Dependencies: 创建客户端不发请求；调用请求方法经注入 transport／fetch 访问网络。
 export type ApiQueryPrimitive = string | number | boolean | null | undefined;
 export type ApiQuery = Readonly<Record<string, ApiQueryPrimitive | readonly ApiQueryPrimitive[]>>;
 export type ApiTransport = (request: Request) => Promise<Response>;

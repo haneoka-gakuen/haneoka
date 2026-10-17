@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 本地项目／release 路径、server 与选择环境。
+// Output: 经身份、清单和路径校验的 ReleaseCatalog 或带边界的错误。
+// Pos: [Map](L2-2.md)；构建期不可变 release 读取器。
+// Effects/Dependencies: Node 文件系统、JSON 和摘要；本文件读取本地来源，HTTP 回退由上层决定。
 import { projectUiMarks } from "../lib/ui-marks.ts";
 import fs from "node:fs";
 import path from "node:path";

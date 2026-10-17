@@ -62,6 +62,10 @@ usmlogs/
 # Local documentation
 .claude/
 /docs/*
+!/docs/L2.md
+!/docs/DEV_GUIDE.md
+!/docs/GEB使用与维护指南.md
+!/docs/geb-scope.json
 !/docs/assets/
 !/docs/assets/haneoka-header.png
 !/docs/assets/haneoka-header.svg

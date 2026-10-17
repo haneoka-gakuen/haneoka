@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 可序列化队伍／歌曲／目标请求、Master 与注入的谱面读取器。
+// Output: Engine 输入输出类型及 TS 评价／搜索接口。
+// Pos: [Map](L2-2.md)；引擎 TS 契约和实现，区别于当前 Worker 的 WASM 执行。
+// Effects/Dependencies: 调用注入的谱面加载与搜索逻辑；实际 I/O 取决于读取器和调用环境。
 /** Serializable engine requests and their evaluation. Pure: charts come from an injected loader. */
 import { battleRank, compileChart, scoreRank, type ChartSource, type CompiledChart } from "./chart";
 import { AP, ORDERS, isAllPerfect, playJudgements, prepareLive, skipScore, type PlayModel, type PreparedLive } from "./live";

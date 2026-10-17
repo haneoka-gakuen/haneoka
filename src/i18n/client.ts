@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 页面消息种子、locale、命名空间和加载选项。
+// Output: MainI18nClient、消息查询及当前客户端。
+// Pos: [Map](L2-2.md)；站点浏览器国际化加载与共享上下文。
+// Effects/Dependencies: 读取页面种子、按需 HTTP 获取消息并更新内存状态；也被 SSR 初始化调用。
 import { namespaceDependencyClosure, type MainI18nNamespace } from "./namespaces";
 import {
   createCatalog,

@@ -25,6 +25,10 @@ interactive workspaces in `src/lit`, and the Material Design 3 styles in
 
 ## Development
 
+Start with the [repository map](L1.md) and [development guide](docs/DEV_GUIDE.md)
+to find the relevant source area and checks. Architecture maps and core file
+coordinates follow the [GEB maintenance guide](docs/GEB使用与维护指南.md).
+
 Requirements:
 
 - Node.js 24 and Corepack

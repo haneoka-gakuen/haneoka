@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 资源类别、server 与 locale。
+// Output: 目录集合紧凑载荷及描述。
+// Pos: [Map](L2-2.md)；静态资料到集合页面的数据适配。
+// Effects/Dependencies: 调用静态／跨服读取并缓存载荷 Promise，间接发生文件或 HTTP 读取。
 import { fetchStaticCatalog, staticCatalogRelease, type StaticCatalogRelease } from "../lib/static-catalog-source";
 import { loadStaticCrossServerCatalogs } from "../lib/cross-server/static";
 import { isCrossCatalogResource } from "../lib/cross-server/definitions";

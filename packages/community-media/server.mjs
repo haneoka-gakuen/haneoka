@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 容器 HTTP、上传内容、服务环境和处理工具。
+// Output: 媒体任务、处理输出、状态与识别服务。
+// Pos: [Map](L2-2.md)；社区媒体容器进程入口。
+// Effects/Dependencies: 启动监听、读写临时文件、执行子进程并清理任务；受并发、超时和服务认证约束。
 import { createRecognitionService } from './recognition.mjs';
 import http from 'node:http';
 import { createReadStream, createWriteStream } from 'node:fs';

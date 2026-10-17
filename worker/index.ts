@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: HTTP、scheduled、queue、Env 绑定与执行上下文。
+// Output: 静态／API 响应、后台任务及队列处理。
+// Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
+// Effects/Dependencies: 连接 D1、多个 R2、缓存、认证、外部服务与队列／容器；具体路由决定读写。
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
 import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ranking";
 import { handleCommunityBootstrap } from "./community-bootstrap";

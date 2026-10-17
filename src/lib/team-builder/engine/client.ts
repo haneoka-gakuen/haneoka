@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 配队资料、Engine 请求及进度／快照回调。
+// Output: EngineClient、搜索／成长／评价／解释结果。
+// Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
+// Effects/Dependencies: 创建和替换 Worker、消息通信及内存 Promise；取消会终止对应计算实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import type { TeamBuilderData } from "../data";
 import type { EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline } from "./api";

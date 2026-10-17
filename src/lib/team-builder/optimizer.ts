@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: OptimizationInput、预算、进度与取消 hooks。
+// Output: 输入验证、优化结果和 TS Worker 构造器。
+// Pos: [Map](L2-2.md)；TS 队伍枚举与搜索收集组合。
+// Effects/Dependencies: 搜索维护内存状态并异步调用 hooks；createTeamBuilderWorker 创建独立 Worker。
 import type {
   Candidate,
   EvidenceGap,

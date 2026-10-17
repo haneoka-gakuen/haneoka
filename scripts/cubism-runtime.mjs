@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// L3 — GEB
+// Input: 运行时锁、策略、源路径与 CLI 命令。
+// Output: 授权 runtime 准备、身份／输出验证及源路径。
+// Pos: [Map](L2.md)；Cubism 运行时与网站构建的许可输入桥。
+// Effects/Dependencies: 读取配置／环境和文件；provision 可复制运行时到输出，默认源可能在用户缓存。
 
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";

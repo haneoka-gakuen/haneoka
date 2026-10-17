@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 固定输入、构建分组／分片及产物记录。
+// Output: 分片归属、覆盖／摘要校验及组合产物。
+// Pos: [Map](L2-2.md)；完整静态前端的分片收尾与验证。
+// Effects/Dependencies: 读取和写入本地产物，解压并校验身份／覆盖；不能混用不同输入的分片。
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

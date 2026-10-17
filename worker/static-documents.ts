@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 文档请求、规范路径、Env 与 ExecutionContext。
+// Output: 文档重定向、压缩／组合内容流或未命中。
+// Pos: [Map](L2.md)；静态文档分片在边缘的读取与还原。
+// Effects/Dependencies: 读取 ASSETS 索引和 ASSET_BUCKET 对象、检查内容并使用边缘响应缓存。
 import {
   STATIC_DOCUMENT_SCHEMA,
   STATIC_DOCUMENT_INDEX_ROOT,

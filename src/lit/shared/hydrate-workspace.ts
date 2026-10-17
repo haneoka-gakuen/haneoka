@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: SSR 模板、DOM 容器与 Lit RenderOptions。
+// Output: 在指定容器中完成的 Lit 水合。
+// Pos: [Map](../L2-2.md)；嵌套 light DOM 工作区的 SSR 标记边界。
+// Effects/Dependencies: 暂存并改写嵌套标记，调用 hydrate 后在 finally 恢复；依赖 DOM。
 import { hydrate } from "@lit-labs/ssr-client";
 import type { RenderOptions } from "lit";
 

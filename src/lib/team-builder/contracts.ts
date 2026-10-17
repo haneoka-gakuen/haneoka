@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 领域类型、资料／库存与各类求解上下文。
+// Output: 优化输入、结果、证据和 TS Worker 请求／响应契约。
+// Pos: [Map](L2-2.md)；TS 求解及规划消费者共享的接口。
+// Effects/Dependencies: 主要是类型引用；当前 WASM 消息协议另在 engine/protocol.ts，不混同执行路径。
 import type { ReleaseIdentity, EvidenceGap, PowerStats, TeamAssignment } from "./model.ts";
 export type { ReleaseIdentity, NativeRuleDomain, NativeRuleEvidence, EvidenceGap, PowerStats, TeamAssignment } from "./model.ts";
 import type { TeamBuilderData } from "./data.ts";

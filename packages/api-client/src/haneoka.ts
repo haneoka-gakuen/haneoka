@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 公共 API 客户端选项、资源和请求参数。
+// Output: HaneokaClient 与目录资源访问适配。
+// Pos: [Map](../../L2.md)；Haneoka 公共 API 的包级适配。
+// Effects/Dependencies: 复用 ApiClient，调用方法可能联网；不直接读取站点私有数据库。
 import { createApiClient, type ApiClientOptions, type ApiQuery } from "./index.js";
 
 export type HaneokaLocale = "ja" | "en" | "zh-TW" | "zh-CN" | "ko";

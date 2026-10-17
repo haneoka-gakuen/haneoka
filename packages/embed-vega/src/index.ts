@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 宿主元素、故事资料／来源、locale 和挂载选项。
+// Output: mountStory、播放状态及可销毁句柄。
+// Pos: [Map](../../L2.md)；Vega 故事嵌入的浏览器入口。
+// Effects/Dependencies: 挂载创建 DOM、加载资源／引擎并维护取消与 URL 状态；需 dispose 后再挂载。
 import { createEmbedLoader, memoryDataSource } from "@haneoka/embed-core";
 import { createHaneokaBranding } from "@haneoka/embed-core/branding";
 import type { VegaEngine, VegaPlayerHandle } from "@haneoka/vega/web";

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 选定源码身份、本地构建输入与 CLI 选项。
+// Output: 输入封装、摘要／文件记录和完整性验证。
+// Pos: [Map](L2-2.md)；静态前端捕获／重放输入的 artifact 工具。
+// Effects/Dependencies: Git 子进程和文件读写；处理输入身份与路径，不代表页面构建已完成。
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";

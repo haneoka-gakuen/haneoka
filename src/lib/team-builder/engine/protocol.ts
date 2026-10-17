@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 引擎请求／结果与配队数据类型。
+// Output: EngineCall、EngineReply、停止原因及 EngineSnapshot。
+// Pos: [Map](L2-2.md)；主线程与当前引擎 Worker 的消息边界。
+// Effects/Dependencies: 类型声明；资源获取与计算由 client／worker 实现。
 import type { TeamBuilderData } from "../data";
 import type { EngineRequest, EngineResponse, SongRef, TeamSpec } from "./api";
 import type { MemberInput, SnapInput, UnknownPolicy } from "./box";

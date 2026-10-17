@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 渲染后 HTML／JSON、路径与构建覆盖。
+// Output: 压缩内容块、分片索引、引用及 publication 元数据。
+// Pos: [Map](L2-2.md)；静态文档构建与收尾的存储生产者。
+// Effects/Dependencies: 写本地内容和清单、压缩／摘要并检查覆盖；不由本文件完成线上分发。
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";

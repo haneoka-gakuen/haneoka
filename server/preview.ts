@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 构建产物、本地 release、环境选择与 HTTP 请求。
+// Output: 本地静态、目录／资源、Sonolus 和受约束代理响应。
+// Pos: [Map](L2.md)；Node 本地预览 HTTP 服务入口。
+// Effects/Dependencies: 启动监听、读本地资源并可代理网络；不是生产 D1／队列／容器的完整替身。
 import { projectUiMarks } from "../src/lib/ui-marks.ts";
 import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";

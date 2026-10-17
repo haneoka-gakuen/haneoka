@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 页面载荷、资源／实体选择、语言与跨服状态。
+// Output: 目录筛选、视图、实体详情、媒体及关联评论交互。
+// Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
+// Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { catalogLabelPath } from "../config/catalog-labels";
 import { relativeTimeWindow, relativeTimestamp, TIME_REGIONS, type TimeRegion } from "../lib/relative-time";

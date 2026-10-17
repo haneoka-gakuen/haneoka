@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 各服读取器、资源类别及加载选项。
+// Output: 保留来源身份的跨服聚合结果。
+// Pos: [Map](L2-2.md)；跨服目录的注入式加载组合。
+// Effects/Dependencies: 通过调用者提供的读取器异步访问资料；具体 I/O 由读取器决定。
 import {
   mergeCrossServerCatalog, OFFICIAL_CATALOG_SERVERS,
   type CrossCatalogResource, type CrossCatalogIdentity, type CrossCatalogRow, type CrossCatalogSnapshot, type OfficialCatalogServer,

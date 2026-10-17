@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Box 条目、操作、时钟和来源键。
+// Output: 校验、操作应用、变化比较和合并规则。
+// Pos: [Map](L2-2.md)；浏览器与 Worker 共享的 Box 文档契约。
+// Effects/Dependencies: 文档级运算；持久化、鉴权与网络由 Store／Worker 调用者承担。
 /** Conflict-free team box document shared by the browser and the Worker.
  *
  * Every card field, account bonus and saved team is its own key. A write is an

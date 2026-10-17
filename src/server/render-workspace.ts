@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 工作区实例、locale 和文档地址。
+// Output: Lit SSR HTML、应用栏状态及静态工作区页面。
+// Pos: [Map](L2-2.md)；构建期复用 Lit 工作区的渲染桥。
+// Effects/Dependencies: 安装全局 DOM shim，设置国际化／文档上下文并序列化 light DOM。
 import "@lit-labs/ssr/lib/install-global-dom-shim.js";
 import { render, LitElementRenderer } from "@lit-labs/ssr";
 import { createMaterialStyleRenderer } from "./material-ssr-styles";

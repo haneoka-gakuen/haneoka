@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 开发网关请求与执行上下文。
+// Output: 带 CORS 的 Bestdori 代理或未匹配响应。
+// Pos: [Map](../L2.md)；本地开发网关的 Worker 入口。
+// Effects/Dependencies: 调用共享 Worker 代理，可能访问供应方网络；绑定不等同生产。
 import { handleBestdoriProxy } from "../../worker/bestdori";
 
 const cors = {

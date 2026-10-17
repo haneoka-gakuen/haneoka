@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 静态文档路径、分片／内容记录和字节流。
+// Output: 格式常量、路径规范化、校验及内容流组合。
+// Pos: [Map](L2-2.md)；构建端与 Worker 共享的静态文档格式。
+// Effects/Dependencies: 使用 Web Streams 等基础接口；调用者负责实际存储与网络读取。
 import { fnv1a32Shard } from "./hash-partition.ts";
 import { assetStaticLookupPath } from "./asset-static-routing.ts";
 import { playlistStaticLookupPath } from "./playlists/static-routing.ts";

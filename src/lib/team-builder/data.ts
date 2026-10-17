@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 原始目录／Master 行、身份与规则资料。
+// Output: TeamBuilderData、领域类型、基础行解析及组装。
+// Pos: [Map](L2-2.md)；配队资料模型与运行时适配枢纽。
+// Effects/Dependencies: 调用规则／资源／证据适配；下层又引用本文件解析函数，存在运行时回边。
 import type { PowerStats, ReleaseIdentity } from "./model";
 import { projectEventDetail } from "./data/events";
 import { adaptChallengeMusicTable, type ChallengeMusicTable } from "./data/resource-stage";

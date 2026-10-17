@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 资源请求、server、可选固定 release 和构建环境。
+// Output: 目录／实体 JSON、批量记录及来源一致性错误。
+// Pos: [Map](L2-2.md)；构建期目录读取与固定身份边界。
+// Effects/Dependencies: Node 文件读取、HTTP、内存请求缓存及静态输入捕获；回退受身份策略约束。
 import { withUiMarksProjection } from "./ui-marks";
 import fs from "node:fs";
 import nodePath from "node:path";

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 页面组、路由模式、参数列表及构建环境。
+// Output: 所选静态路径与构建覆盖登记。
+// Pos: [Map](L2-2.md)；前端页面分组和物理路径记录。
+// Effects/Dependencies: 读取环境、创建目录并写路径记录；不代表页面内容已生成。
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

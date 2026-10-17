@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// L3 — GEB
+// Input: Git 锁定子模块、工作区和 checkout／verify／update 命令。
+// Output: 外部仓库检出／兼容状态或更新后的 Git 索引。
+// Pos: [Map](L2.md)；外部源码与本仓库版本的锁定边界。
+// Effects/Dependencies: 执行 Git；checkout 可下载，update 会移动子模块并暂存 gitlink，verify 只核对状态。
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: Master、已提取真实资源路径、server 和构建上下文。
+# Output: 规范目录、实体、关系与领域投影文档。
+# Pos: [Map](L2-2.md)；资源到公开目录的领域构建枢纽。
+# Effects/Dependencies: 读取构建文件并写 API／索引；媒体引用受实际资源和可用性策略约束。
 """Build the canonical catalog documents from Master data and real Unity paths.
 
 This module deliberately has no knowledge of processor directory names. Media

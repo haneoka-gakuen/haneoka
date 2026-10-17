@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: server 与可选取消信号。
+// Output: 构建期组装的 TeamBuilderData。
+// Pos: [Map](L2-2.md)；静态资料源到配队页面资料的加载入口。
+// Effects/Dependencies: 静态目录调用可能读本地文件或 HTTP；不是浏览器直接下载 Master 的入口。
 import { fetchStaticCatalog, fetchStaticCatalogBatch, staticCatalogRelease } from "../../static-catalog-source";
 import type { ReleaseServer } from "../../release-server";
 import { adaptTeamBuilderData, objectRow, type TeamBuilderData } from "../data";

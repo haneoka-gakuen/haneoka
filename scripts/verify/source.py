@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: source 清单、本地根与验证级别。
+# Output: 来源完整性结果或校验错误。
+# Pos: [Map](L2-2.md)；资源来源进入处理前的校验边界。
+# Effects/Dependencies: 读取文件和摘要；快速检查与完整字节校验范围不同。
 """Validation for immutable package and Addressables source snapshots."""
 
 from __future__ import annotations

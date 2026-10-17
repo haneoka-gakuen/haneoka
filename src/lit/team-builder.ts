@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 页面资料、跨服选择、Box 状态与用户设置。
+// Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
+// Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、同步账户数据并管理 Worker 与 DOM 生命周期。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";

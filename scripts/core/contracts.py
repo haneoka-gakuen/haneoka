@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: source／build／release 的版本与身份字段。
+# Output: 格式常量、约束和 release 身份描述。
+# Pos: [Map](L2-2.md)；Python 资源生产者的共享协议声明。
+# Effects/Dependencies: 不负责上传或选择 current；跨语言消费者分别实现对应校验。
 """Versioned contracts shared by every resource-pipeline stage."""
 
 import re

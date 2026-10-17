@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 构建／开发环境、工作区路径及静态输入身份。
+// Output: Astro 静态输出、Vite、代理和构建 hooks 配置。
+// Pos: [Map](L1.md)；前端构建组合入口。
+// Effects/Dependencies: 读取环境和路径；hooks 可写 build.json、静态输入状态并配置开发代理。
 import { defineConfig } from "astro/config";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

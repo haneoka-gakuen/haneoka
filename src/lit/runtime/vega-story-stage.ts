@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 故事资料、媒体地址和舞台选项。
+// Output: Vega 播放舞台、控制与生命周期适配。
+// Pos: [Map](L2-2.md)；故事工作区与外部故事引擎的浏览器桥。
+// Effects/Dependencies: 按需加载引擎／资源，创建渲染与媒体状态，清理依赖 dispose／舞台生命周期。
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { LitElement, html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";

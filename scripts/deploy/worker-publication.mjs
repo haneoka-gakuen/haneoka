@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// L3 — GEB
+// Input: 源码身份、Worker artifact、静态 publication 和 CLI 命令。
+// Output: 可校验部署产物、配置和 publication 操作结果。
+// Pos: [Map](../L2.md)；部署工作流的 artifact 与发布控制桥。
+// Effects/Dependencies: 文件、摘要和子进程；副作用随子命令变化，发布路线可调用 Wrangler 写远端。
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";

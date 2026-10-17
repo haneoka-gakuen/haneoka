@@ -1,4 +1,9 @@
 /// <reference lib="webworker" />
+// L3 — GEB
+// Input: EngineCall、release 资料、固定来源谱面及 WASM URL。
+// Output: EngineReply、进度、快照、计算结果或错误。
+// Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
+// Effects/Dependencies: 获取 WASM／谱面、实例化 WebAssembly，持有句柄和缓存并发送消息。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
  * serves searches and evaluations. */
 import engineUrl from "./generated/team-engine.wasm?url";

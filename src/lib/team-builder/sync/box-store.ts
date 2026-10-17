@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: server、存储／fetch 接口、会话与用户操作。
+// Output: BoxStore、BoxSnapshot 和同步状态。
+// Pos: [Map](L2-2.md)；当前配队的本地优先 Box 副本与后台同步。
+// Effects/Dependencies: 读写 localStorage 或注入存储，认证网络同步和事件通知；换号／离线有独立状态。
 /** Local-first replica of the team box with background, conflict-free cloud sync. */
 import { BoxClock, mergeEntries, newer, validEntry, type BoxEntry, type BoxOp, type BoxValue } from "./box-doc";
 import { legacyOps } from "./legacy";

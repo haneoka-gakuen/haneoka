@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 集合视图、计数、筛选／搜索和动作配置。
+// Output: 共享浏览布局与应用栏协作接口。
+// Pos: [Map](L2-2.md)；集合工作区的通用浏览模式。
+// Effects/Dependencies: 生成 Lit 模板并连接应用栏／交互；依赖宿主状态和浏览器生命周期。
 import { html, nothing, type TemplateResult } from "lit";
 import { knownImageSize } from "../../lib/image-dimensions";
 import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../../lib/app-bar";

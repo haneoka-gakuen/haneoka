@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 截图请求、参考来源提供器、Env 与认证会话。
+// Output: 私有识别响应或认证／权限／配置错误。
+// Pos: [Map](L2-2.md)；截图识别的 Worker 到容器适配。
+// Effects/Dependencies: 直接依赖站点 auth／access、D1、限流与媒体容器；处理私人截图并返回私有响应。
 import { getContainer } from "@cloudflare/containers";
 import { getAuthSession } from "../../worker/auth";
 import { communityAccessState } from "../../worker/access";

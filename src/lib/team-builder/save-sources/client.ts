@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 用户选定的本地来源、格式、密码、取消和进度选项。
+// Output: 本地存档解析 Promise 或 BoxImportError。
+// Pos: [Map](L2-2.md)；文件夹／备份／归档解析的主线程桥。
+// Effects/Dependencies: 创建 Worker、传递输入并在结束／取消时终止；本文件不上传所选来源。
 import { BoxImportError, type BoxParseResult } from "@haneoka/game-data-exporter";
 import type { FolderSource } from "./directory";
 export function readLocalSource(

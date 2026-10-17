@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 五语消息、命名空间与页面请求。
+// Output: 内容版本、命名空间包及 ServerI18nContext。
+// Pos: [Map](L2-2.md)；服务端消息种子与内容身份生产者。
+// Effects/Dependencies: 静态导入正式消息目录、计算摘要并维护上下文；不依赖浏览器消息请求完成。
 import { createHash } from "node:crypto";
 import {
   createCatalog,

@@ -1,0 +1,24 @@
+name: GEB navigation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  navigation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Check GEB navigation and core coordinates
+        run: python scripts/verify/geb.py
+      - name: Check navigation verifier regressions
+        run: python -m unittest discover -s scripts/verify -p test_geb.py

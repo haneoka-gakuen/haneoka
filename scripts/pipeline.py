@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# L3 — GEB
+# Input: CLI 命令、server 配置、包／source／release 与执行选项。
+# Output: 资源阶段产物、校验结果和可选发布。
+# Pos: [Map](L2.md)；资源流水线唯一命令行组合入口。
+# Effects/Dependencies: 按命令读写文件、联网、执行工具或访问 R2；offline 路线不得自动摄取补齐。
 """The single command-line entry point for the resource pipeline."""
 
 from __future__ import annotations

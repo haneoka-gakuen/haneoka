@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: server、项目位置和 release 选择。
+// Output: 经身份校验的 ReleaseWorkspace 和安全本地文件位置。
+// Pos: [Map](L2.md)；本地预览的资源工作目录解析。
+// Effects/Dependencies: 读取 current／release JSON 与文件系统；不从源码存在推断资料已准备。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

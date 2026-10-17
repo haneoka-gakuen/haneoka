@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: JSON 值、文件路径和待写字节／文本。
+# Output: 稳定序列化、原子写入和 JSON 读取接口。
+# Pos: [Map](L2-2.md)；流水线清单 I/O 基础。
+# Effects/Dependencies: 创建目录、临时文件替换及文件读写；原子性限于单次文件替换。
 from __future__ import annotations
 
 import json

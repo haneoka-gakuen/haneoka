@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 认证 Box 读写请求、server、操作与 Env。
+// Output: Box 版本／变化或权限、格式和状态错误。
+// Pos: [Map](L2.md)；当前配队 Box 云端同步接口。
+// Effects/Dependencies: 鉴权、服务器状态、限流和 D1 读写；复用浏览器共享 Box 文档契约。
 import {
   BOX_SCHEMA,
   MAX_BOX_BYTES,

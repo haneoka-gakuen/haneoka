@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: 规范目录、关系／视图定义与目标 release 路径。
+# Output: 分片目录、实体／关系／来源索引存储。
+# Pos: [Map](L2-2.md)；不可变目录读取模型的编译器。
+# Effects/Dependencies: 读写并复制本地资源，依赖共享格式和分片算法；不完成远端发布。
 """Compile canonical catalog documents into immutable, partitioned R2 read models."""
 
 from __future__ import annotations

@@ -1,3 +1,8 @@
+# L3 — GEB
+# Input: release 根、身份、清单与校验选项。
+# Output: 资源／目录一致性结果与验证报告。
+# Pos: [Map](L2-2.md)；组装产物在选择／发布前的校验。
+# Effects/Dependencies: 读取文件、摘要与资源内容，可写报告；不等价于远端 verify-remote。
 from __future__ import annotations
 
 import os

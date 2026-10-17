@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 社区路由、会话、读取／编辑及上传状态。
+// Output: 社区浏览、编辑与相关操作的 Lit 界面。
+// Pos: [Map](L2-2.md)；社区交互和状态生命周期的协调枢纽。
+// Effects/Dependencies: 认证 HTTP、上传与持久操作由 API 执行；本文件管理 DOM、异步请求和界面状态。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { readPageData } from "../lib/page-data";

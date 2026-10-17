@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 服务器、语言、资源类型、实体 ID 与 URL 状态。
+// Output: 规范资源地址、解析结果和旧地址实体选择。
+// Pos: [Map](L2-2.md)；站点与服务共享的资源路由契约。
+// Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
 
 export const RELEASE_SERVERS = ["jp", "intl", "intl-test", "jp-cbt", "intl-cbt"] as const;

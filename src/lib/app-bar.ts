@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 页面搜索、操作、身份和返回状态及 SSR 捕获上下文。
+// Output: 应用栏更新／清理接口与构建期捕获结果。
+// Pos: [Map](L2-2.md)；AppShell 与工作区之间的应用栏协作。
+// Effects/Dependencies: 维护模块状态；浏览器可操作 DOM／事件，SSR 捕获走独立上下文。
 /**
  * Top app bar action slot.
  *

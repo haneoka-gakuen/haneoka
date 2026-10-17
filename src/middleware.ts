@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Astro 请求上下文、构建模式与供应方静态载荷。
+// Output: 开发路由重写、首屏样式及打包后的 HTML 响应。
+// Pos: [Map](L2.md)；前端请求与静态文档的连接点。
+// Effects/Dependencies: 开发读取本地载荷；生产预渲染可写静态文档；调用下游渲染。
 import { defineMiddleware } from "astro:middleware";
 import fs from "node:fs";
 import path from "node:path";

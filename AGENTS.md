@@ -3,6 +3,21 @@
 Read this before changing anything visible. These rules come from repeated
 review; a change that breaks one of them is not finished.
 
+## Repository navigation and GEB maintenance
+
+Start with [L1](L1.md), follow the relevant L2 / L2-2 map, then read
+the file's L3 coordinate and implementation. Maps describe the current
+repository; they do not replace checking code, callers and configuration.
+Task routes and verification commands live in [DEV_GUIDE](docs/DEV_GUIDE.md).
+
+When a contract, side effect, file location or responsibility changes,
+check outward from implementation to L3, its direct map, and L1. Update
+only the layers whose facts changed. Follow the
+[GEB maintenance guide](docs/GEB使用与维护指南.md); run
+`python scripts/verify/geb.py` for navigation changes. Keep file coordinates
+in source headers, operating steps in the owning README, and local progress
+outside stable maps. Do not move or split source just to fit a map.
+
 ## Working in this repository
 
 - Several sessions edit the same checkout at once. Stage only your own

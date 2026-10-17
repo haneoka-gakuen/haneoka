@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 同源 GET 请求、导航／资源类别和浏览器缓存状态。
+// Output: 按请求类别选择的网络／缓存响应及离线导航回退。
+// Pos: [Map](L2.md)；站点 Service Worker 缓存与版本生命周期。
+// Effects/Dependencies: 注册 install／activate／fetch 事件、访问网络与 CacheStorage、淘汰旧缓存；API／认证等路径不进入通用缓存。
 // haneoka service worker: repeat visits should not re-pay the network.
 //
 // Strategy per request class:
