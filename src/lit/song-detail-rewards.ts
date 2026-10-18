@@ -7,6 +7,7 @@ import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import "./song-skill-points";
+import { roomRequiredScore } from "../lib/chart-rates";
 
 type Item = Record<string, unknown>;
 
@@ -288,6 +289,48 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
     `;
   };
   const comboPercentages = [25, 50, 75, 100];
+  const roomRanks = ranks.filter((rank) => Number(rank.battleLiveRequiredScore || 0) > 0);
+  const players = [1, 2, 3, 4, 5];
+  const rooms = roomRanks.length
+    ? html`
+        <section class="detail-section song-detail-section song-room-section">
+          ${renderDetailSectionHeading(label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores"), "characters")}
+          <div class="table-scroll" role="region" tabindex="0" aria-label=${label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores")} data-scroll-region>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">${label("catalog.analysis.fields.deckRank", "Target rank")}</th>
+                  ${players.map(
+                    (count) => html`
+                      <th scope="col" class="is-numeric">
+                        ${(count === 1 ? label("catalog.analysis.fields.roomPlayer", "1 player") : label("catalog.analysis.fields.roomPlayers", "{count} players")).replace("{count}", String(count))}
+                      </th>
+                    `,
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                ${roomRanks.map((rank) => {
+                  const rankName = names[Number(rank.scoreRank)] || "—";
+                  return html`
+                    <tr>
+                      <th scope="row">
+                        <img src=${rankIcon(rankName)} alt=${rankName} width="28" height="28" decoding="async" />
+                      </th>
+                      ${players.map(
+                        (count) => html`
+                          <td class="is-numeric tabular">${roomRequiredScore(Number(rank.battleLiveRequiredScore), count).toLocaleString()}</td>
+                        `,
+                      )}
+                    </tr>
+                  `;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `
+    : nothing;
   return html`
     <section class="detail-section song-detail-section song-rewards-section">
       ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", {
@@ -351,5 +394,6 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
         </div>
       </div>
     </section>
+    ${rooms}
   `;
 }

@@ -17,6 +17,11 @@ import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { resultSettings, SCORE_GOALS, scoreGoal, scoreProof, scoreText } from "./score-goal";
+import { resolveBox } from "../../lib/team-builder/engine/box";
+import { resolveSlotSkill, windowMs } from "../../lib/team-builder/engine/skills";
+import { resourceCollectionHref } from "../../lib/resource-route";
+import type { ReleaseServer } from "../../lib/release-server";
+import type { Locale } from "../../i18n/locales";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
 export const timelines = new Map<string, Timeline | "loading" | "error">();
@@ -408,6 +413,30 @@ export function saveTeam(host: TeamBuilder, members: number[], snaps: (number | 
   host.requestUpdate();
 }
 
+/** Song meta for this team: its power and each member's score skill as a five-second percentage. */
+function songMetaHref(host: TeamBuilder, hit: EngineHit): string | null {
+  const inputs = resultInputs(host);
+  const master = host.master;
+  if (!inputs || !master || hit.members.length !== 5) return null;
+  const box = resolveBox(
+    master,
+    inputs.members.filter((row) => hit.members.includes(row.key)),
+    inputs.snaps.filter((row) => hit.snaps.includes(row.key)),
+    inputs.unknownPolicy,
+  );
+  const skills = hit.members.map((key, slot) => {
+    const member = box.members.find((item) => item.key === key);
+    if (!member) return 0;
+    const snapKey = hit.snaps[slot];
+    const snap = snapKey ? (box.snaps.find((item) => item.key === snapKey) ?? null) : null;
+    const skill = resolveSlotSkill(master, member, snap);
+    const percent = skill.effects.reduce((sum, effect) => sum + (effect.delta / 1000) * (windowMs(effect.seconds, skill.extensionMs) / 5000), 0);
+    return Math.round(percent * 10) / 10;
+  });
+  const query = new URLSearchParams({ deckPower: String(hit.power), deckSkills: skills.join(",") });
+  return resourceCollectionHref(`catalog/song-meta?${query}`, host.server as ReleaseServer, host.locale as Locale) ?? null;
+}
+
 export function renderHit(host: TeamBuilder, hit: EngineHit, index: number, options: { rank?: TemplateResult; subtitle?: string; stale?: boolean; content?: TemplateResult } = {}): TemplateResult {
   const key = hitKey(hit);
   const expanded = host.expanded.has(key);
@@ -430,6 +459,10 @@ export function renderHit(host: TeamBuilder, hit: EngineHit, index: number, opti
           } })}
           ${iconButton({ icon: "content_copy", label: host.t("copyTeam", "Copy as text"), onClick: () => copyText(host, hit) })}
           ${iconButton({ icon: "image", label: host.t("saveImage", "Save image"), onClick: () => void exportImage(host, hit) })}
+          ${(() => {
+            const href = songMetaHref(host, hit);
+            return href ? html`<a class="icon-button" href=${href} aria-label=${host.t("songMetaWithTeam", "Song analysis with this team")} title=${host.t("songMetaWithTeam", "Song analysis with this team")}>${icon("query_stats", 24)}</a>` : nothing;
+          })()}
         </div>
       </header>
       <div class="cluster tb-hit__chips">${chips(host, hit)}</div>

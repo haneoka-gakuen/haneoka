@@ -414,6 +414,17 @@ filter-facet {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.filter-range--single {
+  grid-template-columns: 1fr;
+}
+.filter-range--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.filter-range.filter-range--five input {
+  padding-inline: 4px;
+  text-align: center;
+}
 .filter-range > label {
   display: grid;
   min-width: 0;

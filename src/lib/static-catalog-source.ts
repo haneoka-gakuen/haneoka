@@ -430,6 +430,52 @@ export async function fetchStaticApplicationJson(route: string, release: StaticC
   return fetchJson(url.pathname + url.search, release.server, release, url.toString());
 }
 
+/** One release file, verified against the release manifest's size and digest. */
+async function releaseBytes(relative: string, server: string, pinned: StaticCatalogRelease): Promise<Buffer> {
+  const local = localCatalog(server);
+  if (local) {
+    if (local.identity.releaseId !== pinned.releaseId || local.identity.sourceId !== pinned.sourceId)
+      throw new StaticCatalogConsistencyError("Release file identity mismatch");
+    return local.readReleaseBytes(relative);
+  }
+  const manifest = asRecord(await fetchJson("release", server, pinned));
+  if (manifest?.server !== server || manifest.releaseId !== pinned.releaseId || manifest.sourceId !== pinned.sourceId)
+    throw new StaticCatalogConsistencyError("Release file manifest identity mismatch");
+  const entry = releaseManifestEntry(manifest, relative);
+  if (
+    !entry ||
+    typeof entry.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
+    !Number.isSafeInteger(entry.bytes)
+  )
+    throw new StaticCatalogConsistencyError(`Release file not declared: ${relative}`);
+  const [tree, ...parts] = relative.split("/");
+  const url = new URL(`/${tree}/${encodeURIComponent(server)}/${parts.map(encodeURIComponent).join("/")}`, ORIGIN);
+  url.searchParams.set("release", pinned.releaseId);
+  const response = await fetchResponse(relative, server, pinned.releaseId, "GET", pinned.sourceId, url.toString());
+  try {
+    observedRelease(response, pinned);
+    const body = Buffer.from(await response.arrayBuffer());
+    if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
+      throw new StaticCatalogConsistencyError(`Release file hash mismatch: ${relative}`);
+    return body;
+  } finally {
+    await releaseResponseBody(response);
+  }
+}
+
+/** Public file bytes (`assets/…`) verified against the same immutable release manifest. */
+export async function fetchStaticReleaseBytes(
+  relative: string,
+  server: string,
+  release: StaticCatalogRelease,
+): Promise<Buffer> {
+  if (!/^(assets|runtime|objects)\/(?!.*(?:^|\/)\.\.?\/)[^\\?#]+$/u.test(relative))
+    throw new StaticCatalogConsistencyError("Invalid public release file path");
+  if (release.server !== server) throw new StaticCatalogConsistencyError("Release file server mismatch");
+  return releaseBytes(relative, server, release);
+}
+
 /** Public JSON bytes verified against the same immutable release manifest. */
 export async function fetchStaticReleaseJson(
   relative: string,
@@ -450,34 +496,7 @@ export async function fetchStaticReleaseJson(
           throw new StaticCatalogConsistencyError("Release JSON identity mismatch");
         return local.readReleaseJson(relative);
       }
-      const manifest = asRecord(await fetchJson("release", server, pinned));
-      if (
-        manifest?.server !== server ||
-        manifest.releaseId !== pinned.releaseId ||
-        manifest.sourceId !== pinned.sourceId
-      )
-        throw new StaticCatalogConsistencyError("Release JSON manifest identity mismatch");
-      const entry = releaseManifestEntry(manifest, relative);
-      if (
-        !entry ||
-        typeof entry.sha256 !== "string" ||
-        !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
-        !Number.isSafeInteger(entry.bytes)
-      )
-        throw new StaticCatalogConsistencyError(`Release JSON not declared: ${relative}`);
-      const [tree, ...parts] = relative.split("/");
-      const url = new URL(`/${tree}/${encodeURIComponent(server)}/${parts.map(encodeURIComponent).join("/")}`, ORIGIN);
-      url.searchParams.set("release", pinned.releaseId);
-      const response = await fetchResponse(relative, server, pinned.releaseId, "GET", pinned.sourceId, url.toString());
-      try {
-        observedRelease(response, pinned);
-        const body = Buffer.from(await response.arrayBuffer());
-        if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
-          throw new StaticCatalogConsistencyError(`Release JSON hash mismatch: ${relative}`);
-        return JSON.parse(body.toString("utf8"));
-      } finally {
-        await releaseResponseBody(response);
-      }
+      return JSON.parse((await releaseBytes(relative, server, pinned)).toString("utf8"));
     });
     requestPromises.set(key, pending);
   }

@@ -705,7 +705,19 @@
         "gekisouPhase2": "激奏階段2",
         "gekisouPhase3": "激奏階段3",
         "gekisouType": "激奏類型",
-        "scatter": "散佈圖"
+        "scatter": "散佈圖",
+        "metaDeckScore": "平均分",
+        "metaDeckPower": "所需綜合力",
+        "metaDeckReach": "達成率",
+        "deck": "編隊",
+        "deckPower": "綜合力",
+        "deckSkills": "分數技能（%）",
+        "deckRank": "目標評級",
+        "deckRoom": "房間人數",
+        "deckPlace": "名次",
+        "gekisouRoomScores": "擊奏房間分數",
+        "roomPlayer": "1 人",
+        "roomPlayers": "{count} 人"
       }
     },
     "characters": {
@@ -2371,7 +2383,8 @@
       "clearOwnership": "全部成員和留影標記未擁有",
       "clearOwnershipScope": "已擁有{count}張。保留培育值、帳號加成、隊伍和偏好。",
       "clearOwnershipConfirm": "全部標記未擁有",
-      "clearedOwnership": "已將{count}張成員和留影標記為未擁有"
+      "clearedOwnership": "已將{count}張成員和留影標記為未擁有",
+      "songMetaWithTeam": "用此編隊進行樂曲分析"
     },
     "calendar": {
       "title": "日曆",

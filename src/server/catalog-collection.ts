@@ -5,6 +5,8 @@ import { crossServerDisplayRow, type CrossCatalogDTO, type CrossCatalogResource,
 import type { ReleaseServer } from "../lib/release-server";
 import type { Locale } from "../i18n/locales";
 import { collectionDescription } from "../lib/collection-description";
+import type { ChartRateTable } from "../lib/chart-rates";
+import { chartRates } from "./chart-rates";
 
 type Row = Record<string, unknown>;
 export interface CatalogCollectionPayload {
@@ -19,6 +21,8 @@ export interface CatalogCollectionPayload {
   catalogs?: Partial<Record<CrossCatalogResource, CrossCatalogDTO>>;
   sourceMarks: Partial<Record<OfficialCatalogServer, Record<string, string>>>;
   songMeta: Partial<Record<OfficialCatalogServer, Row>>;
+  /** Song meta only: per-power score rates of every chart. */
+  chartRates?: Partial<Record<OfficialCatalogServer, ChartRateTable["charts"]>>;
 }
 
 const collections = new Map<string, Promise<CatalogCollectionPayload>>();
@@ -60,12 +64,15 @@ async function loadCollection(resource: string, server: ReleaseServer, locale: L
   ]);
   const sourceMarks: CatalogCollectionPayload["sourceMarks"] = {};
   const songMeta: CatalogCollectionPayload["songMeta"] = {};
+  const chartRateTables: NonNullable<CatalogCollectionPayload["chartRates"]> = {};
   await Promise.all(Object.values(catalogs?.[collection]?.identities || { [server]: identity }).map(async (pin) => {
     sourceMarks[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("ui-marks", pin.server, pin) as Record<string, string>;
     if (collection === "songs") songMeta[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("song-meta", pin.server, pin) as Row;
+    if (resource === "song-meta") chartRateTables[pin.server as OfficialCatalogServer] = (await chartRates(pin.server as ReleaseServer)).charts;
   }));
   return {
     schema: "haneoka-collection-payload-v1", resource, identity, document, characters, bands, gameItems,
     marks: marks as Record<string, string>, catalogs, sourceMarks, songMeta,
+    ...(resource === "song-meta" ? { chartRates: chartRateTables } : {}),
   };
 }

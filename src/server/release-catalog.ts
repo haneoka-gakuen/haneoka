@@ -507,16 +507,21 @@ export class ReleaseCatalog {
   }
 
   readReleaseJson(relative: string): CatalogJson {
-    const normalized = safeRelativePath(relative, "release JSON path");
+    if (!relative.endsWith(".json"))
+      throw new ReleaseCatalogError("catalog_path_missing", 404, `Release JSON is not declared: ${relative}`);
+    return jsonValue(JSON.parse(this.readReleaseBytes(relative).toString("utf8")), relative);
+  }
+  readReleaseBytes(relative: string): Buffer {
+    const normalized = safeRelativePath(relative, "release file path");
     const entry = this.releaseManifest.entries.get(normalized);
-    if (!entry || !normalized.endsWith(".json"))
-      throw new ReleaseCatalogError("catalog_path_missing", 404, `Release JSON is not declared: ${normalized}`);
+    if (!entry)
+      throw new ReleaseCatalogError("catalog_path_missing", 404, `Release file is not declared: ${normalized}`);
     const file = releaseFile(this.releaseRoot, normalized);
     if (!fs.existsSync(file)) missingFile(file, true);
     const body = fs.readFileSync(file);
     if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
-      throw new ReleaseCatalogError("release_manifest_invalid", 502, `Release JSON hash mismatch: ${normalized}`);
-    return jsonValue(JSON.parse(body.toString("utf8")), file);
+      throw new ReleaseCatalogError("release_manifest_invalid", 502, `Release file hash mismatch: ${normalized}`);
+    return body;
   }
   releaseEntry(relative: string): Readonly<ReleaseEntry> | undefined {
     return this.releaseManifest.entries.get(safeRelativePath(relative, "release entry path"));

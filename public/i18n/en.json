@@ -705,7 +705,19 @@
         "gekisouPhase2": "Gekiso phase 2",
         "gekisouPhase3": "Gekiso phase 3",
         "gekisouType": "Gekiso type",
-        "scatter": "Scatter"
+        "scatter": "Scatter",
+        "metaDeckScore": "Average score",
+        "metaDeckPower": "Power needed",
+        "metaDeckReach": "Reach rate",
+        "deck": "Deck",
+        "deckPower": "Power",
+        "deckSkills": "Score skills (%)",
+        "deckRank": "Target rank",
+        "deckRoom": "Players in room",
+        "deckPlace": "Placement",
+        "gekisouRoomScores": "Gekisou room scores",
+        "roomPlayer": "1 player",
+        "roomPlayers": "{count} players"
       }
     },
     "characters": {
@@ -2371,7 +2383,8 @@
       "clearOwnership": "Mark all members and snapshots not owned",
       "clearOwnershipScope": "{count} owned cards. Training values, account bonuses, teams and preferences stay saved.",
       "clearOwnershipConfirm": "Mark all not owned",
-      "clearedOwnership": "Marked {count} members and snapshots not owned"
+      "clearedOwnership": "Marked {count} members and snapshots not owned",
+      "songMetaWithTeam": "Song analysis with this team"
     },
     "calendar": {
       "title": "Calendar",

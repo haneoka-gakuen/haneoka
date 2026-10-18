@@ -705,7 +705,19 @@
         "gekisouPhase2": "撃奏区間2",
         "gekisouPhase3": "撃奏区間3",
         "gekisouType": "撃奏タイプ",
-        "scatter": "散布図"
+        "scatter": "散布図",
+        "metaDeckScore": "平均スコア",
+        "metaDeckPower": "必要総合力",
+        "metaDeckReach": "達成率",
+        "deck": "編成",
+        "deckPower": "総合力",
+        "deckSkills": "スコアスキル（%）",
+        "deckRank": "目標ランク",
+        "deckRoom": "ルーム人数",
+        "deckPlace": "順位",
+        "gekisouRoomScores": "撃奏ルームのスコア",
+        "roomPlayer": "1人",
+        "roomPlayers": "{count}人"
       }
     },
     "characters": {
@@ -2371,7 +2383,8 @@
       "clearOwnership": "全メンバーとスナップを未所持にする",
       "clearOwnershipScope": "所持カード{count}枚。育成値・アカウントボーナス・編成・設定は保持。",
       "clearOwnershipConfirm": "すべて未所持にする",
-      "clearedOwnership": "メンバーとスナップ{count}枚を未所持に変更しました"
+      "clearedOwnership": "メンバーとスナップ{count}枚を未所持に変更しました",
+      "songMetaWithTeam": "この編成で楽曲分析"
     },
     "calendar": {
       "title": "カレンダー",

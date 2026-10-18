@@ -125,6 +125,9 @@ const COLUMNS: Record<string, Column[]> = {
     column("nativeScore", "numeric", "nativeScore"),
     column("score", "numeric", "score"),
     column("eff", "numeric", "eff"),
+    column("deckScore", "numeric", "deckScore"),
+    column("deckPower", "numeric", "deckPower"),
+    column("deckReach", "numeric", "deckReach"),
     column("bpm", "numeric", "bpm"),
     column("n", "numeric", "n"),
     column("nps", "numeric", "nps"),
@@ -148,6 +151,9 @@ const COLUMNS: Record<string, Column[]> = {
     column("time", "numeric", "time"),
     column("score", "numeric", "score"),
     column("eff", "numeric", "eff"),
+    column("deckScore", "numeric", "deckScore"),
+    column("deckPower", "numeric", "deckPower"),
+    column("deckReach", "numeric", "deckReach"),
     column("justableRate", "numeric", "justableRate"),
     column("justable", "numeric", "justable"),
     column("luck", "numeric", "luck"),
@@ -241,10 +247,14 @@ export class CatalogTable extends LitElement {
     const visibleColumns = columns.filter((entry) =>
       (!entry.key.startsWith("gekisouPhase") || c.settings.origin !== "bestdori") &&
       (c.settings.origin !== "sekai" || !["sonolus", "attribute"].includes(entry.key)) &&
-      (entry.key !== "nativeScore" || c.hasNativeMetaReference()));
+      (entry.key !== "nativeScore" || c.hasNativeMetaReference()) &&
+      (!entry.key.startsWith("deck") || c.hasChartRates()));
     const metricLabels: Record<string, [string, string]> = {
       time: ["metaTime", "Song Duration"], eff: ["metaEff", "Efficiency"], bpm: ["metaBpm", "Beats per Minute"],
       n: ["metaN", "Note Count"], nps: ["metaNps", "Notes per Second"], sr: ["metaSr", "Skill Coverage Rate"],
+      deckScore: ["catalog.analysis.fields.metaDeckScore", "Expected score"],
+      deckPower: ["catalog.analysis.fields.metaDeckPower", "Power needed"],
+      deckReach: ["catalog.analysis.fields.metaDeckReach", "Reach rate"],
     };
     const label = (key: string) => (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
     return html`
@@ -545,7 +555,7 @@ export class CatalogTable extends LitElement {
       return wrap(value ? c.label(value, value) : "—");
     }
     if (key === "status") return wrap(c.systemStatusLabel(item) || "—");
-    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck"].includes(key))
+    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach"].includes(key))
       return wrap(c.songListMeta(item, key));
     if (key === "release") return wrap(c.release(item.releasedAt || item.publishedAt || item.publicStartAt) || "—");
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");

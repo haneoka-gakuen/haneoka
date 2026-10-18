@@ -705,7 +705,19 @@
         "gekisouPhase2": "격주 구간 2",
         "gekisouPhase3": "격주 구간 3",
         "gekisouType": "격주 유형",
-        "scatter": "산점도"
+        "scatter": "산점도",
+        "metaDeckScore": "평균 점수",
+        "metaDeckPower": "필요 종합력",
+        "metaDeckReach": "달성률",
+        "deck": "편성",
+        "deckPower": "종합력",
+        "deckSkills": "스코어 스킬 (%)",
+        "deckRank": "목표 랭크",
+        "deckRoom": "룸 인원",
+        "deckPlace": "순위",
+        "gekisouRoomScores": "격주 룸 점수",
+        "roomPlayer": "1명",
+        "roomPlayers": "{count}명"
       }
     },
     "characters": {
@@ -2371,7 +2383,8 @@
       "clearOwnership": "모든 멤버와 스냅을 미보유로 표시",
       "clearOwnershipScope": "보유 카드 {count}장. 육성 수치, 계정 보너스, 편성, 설정 유지.",
       "clearOwnershipConfirm": "모두 미보유로 표시",
-      "clearedOwnership": "멤버와 스냅 {count}장을 미보유로 변경했습니다"
+      "clearedOwnership": "멤버와 스냅 {count}장을 미보유로 변경했습니다",
+      "songMetaWithTeam": "이 편성으로 곡 분석"
     },
     "calendar": {
       "title": "달력",

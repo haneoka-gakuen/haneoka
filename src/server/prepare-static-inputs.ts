@@ -32,6 +32,7 @@ import {
   songPuzzlePageData,
   stampMakerPageData,
 } from "./tool-page-data";
+import { chartRates } from "./chart-rates";
 import { finishStaticBuildInputs } from "./static-input-store";
 
 /** Execute production data producers once before locale render workers start. */
@@ -65,6 +66,7 @@ export async function prepareStaticInputs(): Promise<void> {
     await skillCatalogPayload(server);
     await publicSongsPageData(server);
     await teamBuilderPageData(server);
+    await chartRates(server);
     await songPuzzlePageData(server);
     for (const locale of LOCALES) {
       console.log(`capture localized ${server}/${locale}`);
