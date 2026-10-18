@@ -7,6 +7,7 @@ import { downloadBlob } from "../../lib/canvas-capture";
 import { renderTeamResultImage, type ResultImageCard } from "../shared/team-result-image";
 import { cardRarityName } from "../shared/rarity-icon";
 import { iconButton } from "../ui/controls";
+import "../ui/scrollable-tabs";
 import { accordion } from "../ui/accordion";
 import { collectionList } from "../ui/collection-view";
 import { skillTimeline } from "../shared/skill-timeline";
@@ -17,6 +18,12 @@ import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { resultSettings, SCORE_GOALS, scoreGoal, scoreProof, scoreText } from "./score-goal";
+import { resolveBox } from "../../lib/team-builder/engine/box";
+import { resolveSlotSkill } from "../../lib/team-builder/engine/skills";
+import { resourceCollectionHref } from "../../lib/resource-route";
+import type { ReleaseServer } from "../../lib/release-server";
+import type { Locale } from "../../i18n/locales";
+import { roomRequiredScore, teamPowerNeeded } from "../../lib/chart-rates";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
 export const timelines = new Map<string, Timeline | "loading" | "error">();
@@ -78,7 +85,7 @@ function chips(host: TeamBuilder, hit: EngineHit): TemplateResult[] {
     if (top) out.push(chip(RANK_NAMES[top[0]] ?? top[0], `${format(host, (top[1] / 120) * 100, top[1] === 120 ? 0 : 1)}%`, icon("workspace_premium", 16)));
   }
   if (hit.event) {
-    out.push(chip(host.t("eventBonus", "Event bonus"), `+${format(host, hit.event.bonusPercent, 0)}%`, icon("trending_up", 16)));
+    out.push(chip(host.t("eventBonus", "Event bonus"), `+${format(host, Math.floor(hit.event.bonusPercent), 0)}%`, icon("trending_up", 16)));
     if (s.goal === "event" && s.weighted) {
       const { points, items } = eventRewards(s, hit.event);
       out.push(chip(host.t("pointsPerPlay", "Event points per play"), format(host, points, 1)));
@@ -152,6 +159,49 @@ function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null):
       <div class="cluster">${Object.entries(score.ranks)
         .sort((a, b) => Number(b[0]) - Number(a[0]))
         .map(([rank, count]) => html`<span class="tb-chip"><span class="tb-chip__label">${RANK_NAMES[rank] ?? rank}</span><strong class="tabular">${format(host, (count / 120) * 100, count === 120 ? 0 : 1)}%</strong></span>`)}</div>
+    </div>
+  `;
+}
+
+/** The power this team needs for each score rank, from its exact score in every skill order (scores scale with
+ * power): solo in Live; in Gekisou per room size, every player scoring alike, at the engine's expected luck. */
+function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): TemplateResult {
+  const score = hit.score;
+  const song = chart ? host.master?.songs.get(chart.songId) : undefined;
+  if (!score?.orders.length || !song || !hit.power) return html``;
+  const notes = song.difficulties.find((row) => row.difficulty === chart!.difficulty)?.noteCount ?? 0;
+  const ranks = (host.master?.scoreRanks.get(song.rankGroup) ?? []).filter((row) => row.rank >= 3).sort((a, b) => b.rank - a.rank);
+  if (!ranks.length) return html``;
+  const need = (target: number) => teamPowerNeeded(target, score.orders, hit.power, notes);
+  const gekisou = resultSettings(host).goal === "gekiso";
+  const players = [1, 2, 3, 4, 5];
+  return html`
+    <div class="table-scroll" role="region" tabindex="0" aria-label=${host.t("powerNeeded", "Power needed")} data-scroll-region>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">${host.t("powerNeeded", "Power needed")}</th>
+            ${gekisou
+              ? players.map((count) => html`<th scope="col" class="is-numeric">${(count === 1 ? host.t("roomPlayer", "1 player") : host.t("roomPlayers", "{count} players")).replace("{count}", String(count))}</th>`)
+              : html`<th scope="col" class="is-numeric">${host.t("averageOrder", "Average of the orders")}</th>
+                  <th scope="col" class="is-numeric">${host.t("everyOrder", "Every order")}</th>
+                  <th scope="col" class="is-numeric">${host.t("bestOrder", "Best order")}</th>`}
+          </tr>
+        </thead>
+        <tbody>
+          ${ranks.map((row) => html`
+            <tr>
+              <th scope="row">${RANK_NAMES[String(row.rank)]}</th>
+              ${gekisou
+                ? players.map((count) => html`<td class="is-numeric tabular">${format(host, need(Math.ceil(roomRequiredScore(row.battleRequired, count) / count)).mean)}</td>`)
+                : (() => {
+                    const value = need(row.required);
+                    return html`<td class="is-numeric tabular">${format(host, value.mean)}</td><td class="is-numeric tabular">${format(host, value.every)}</td><td class="is-numeric tabular">${format(host, value.best)}</td>`;
+                  })()}
+            </tr>
+          `)}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -408,6 +458,36 @@ export function saveTeam(host: TeamBuilder, members: number[], snaps: (number | 
   host.requestUpdate();
 }
 
+/** Song analysis for this team: its power and each member's score and Perfect score skills with their snap extension. */
+function songMetaHref(host: TeamBuilder, hit: EngineHit): string | null {
+  const inputs = resultInputs(host);
+  const master = host.master;
+  if (!inputs || !master || hit.members.length !== 5) return null;
+  const box = resolveBox(
+    master,
+    inputs.members.filter((row) => hit.members.includes(row.key)),
+    inputs.snaps.filter((row) => hit.snaps.includes(row.key)),
+    inputs.unknownPolicy,
+  );
+  const slots = hit.members.map((key, slot) => {
+    const member = box.members.find((item) => item.key === key);
+    if (!member) return "0:0:0";
+    const snapKey = hit.snaps[slot];
+    const snap = snapKey ? (box.snaps.find((item) => item.key === snapKey) ?? null) : null;
+    const skill = resolveSlotSkill(master, member, snap);
+    const percent = (type: number) => skill.effects.filter((effect) => effect.type === type).reduce((sum, effect) => sum + effect.delta / 1000, 0);
+    return `${percent(2000)}:${percent(2004)}:${skill.extensionMs}`;
+  });
+  const query = new URLSearchParams({ deckPower: String(hit.power), deckSlots: slots.join(",") });
+  const settings = resultSettings(host);
+  if (hit.event && settings.goal === "event" && settings.route === "live") {
+    query.set(settings.measure === "items" ? "deckItemBonus" : "deckPointBonus", String(Math.floor(hit.event.bonusPercent)));
+    if (settings.eventId) query.set("deckEvent", String(settings.eventId));
+    if (settings.boosts) query.set("deckBoosts", String(settings.boosts));
+  }
+  return resourceCollectionHref(`catalog/song-meta?${query}`, host.server as ReleaseServer, host.locale as Locale) ?? null;
+}
+
 export function renderHit(host: TeamBuilder, hit: EngineHit, index: number, options: { rank?: TemplateResult; subtitle?: string; stale?: boolean; content?: TemplateResult } = {}): TemplateResult {
   const key = hitKey(hit);
   const expanded = host.expanded.has(key);
@@ -430,6 +510,10 @@ export function renderHit(host: TeamBuilder, hit: EngineHit, index: number, opti
           } })}
           ${iconButton({ icon: "content_copy", label: host.t("copyTeam", "Copy as text"), onClick: () => copyText(host, hit) })}
           ${iconButton({ icon: "image", label: host.t("saveImage", "Save image"), onClick: () => void exportImage(host, hit) })}
+          ${(() => {
+            const href = songMetaHref(host, hit);
+            return href ? html`<a class="icon-button" href=${href} aria-label=${host.t("songMetaWithTeam", "Song analysis with this team")} title=${host.t("songMetaWithTeam", "Song analysis with this team")}>${icon("query_stats", 24)}</a>` : nothing;
+          })()}
         </div>
       </header>
       <div class="cluster tb-hit__chips">${chips(host, hit)}</div>
@@ -443,6 +527,7 @@ export function renderHit(host: TeamBuilder, hit: EngineHit, index: number, opti
       ${expanded
         ? html`<div class="tb-hit__detail stack">
             ${distribution(host, hit, hit.song)}
+            ${powerNeeded(host, hit, hit.song)}
             ${skillOrderView(host, hit)}
           </div>`
         : nothing}
@@ -463,7 +548,7 @@ export function compareTable(host: TeamBuilder, hits: EngineHit[]): TemplateResu
     ] as [string, (hit: EngineHit) => string][]) : []),
     ...(picked.some((hit) => hit.event) ? ([
       [host.t("pointsPerPlay", "Event points per play"), (hit) => (hit.event ? format(host, hit.event.mean, 1) : "—")],
-      [host.t("eventBonus", "Event bonus"), (hit) => (hit.event ? `+${format(host, hit.event.bonusPercent)}%` : "—")],
+      [host.t("eventBonus", "Event bonus"), (hit) => (hit.event ? `+${format(host, Math.floor(hit.event.bonusPercent))}%` : "—")],
     ] as [string, (hit: EngineHit) => string][]) : []),
     [host.t("leader", "Leader"), (hit) => catalog.characterName(catalog.member(cardIdOf(hit.members[0]!))?.characterId ?? 0)],
   ];
@@ -560,12 +645,13 @@ export function renderResults(host: TeamBuilder): TemplateResult {
           </section>`
         : nothing}
       ${multi
-        ? html`<nav class="tabs tabs--secondary tb-song-tabs" role="tablist" aria-label=${host.t("songs", "Songs")}>
-            ${[{ id: "overall", label: host.t("overall", "Overall") }, ...results.results.map((result) => ({ id: `${result.song!.songId}:${result.song!.difficulty}`, label: `${catalog.songTitle(result.song!.songId)} ${catalog.difficultyLabel(result.song!.songId, result.song!.difficulty)}` }))].map(
-              (item) => html`<button class="tab" type="button" role="tab" aria-selected=${String(tab === item.id)} @click=${() => { host.resultTab = item.id; host.requestUpdate(); }}>
-                <span class="clamp-1">${item.label}</span><span class="tab__indicator"></span></button>`,
-            )}
-          </nav>`
+        ? html`<scrollable-tabs class="scrollable-tabs tb-song-tabs" .value=${tab}
+            .label=${host.t("songs", "Songs")}
+            .previousLabel=${host.common("common.actions.previous", "Previous")}
+            .nextLabel=${host.common("common.actions.next", "Next")}
+            .items=${[{ id: "overall", label: host.t("overall", "Overall") }, ...results.results.map((result) => ({ id: `${result.song!.songId}:${result.song!.difficulty}`, label: `${catalog.songTitle(result.song!.songId)} ${catalog.difficultyLabel(result.song!.songId, result.song!.difficulty)}` }))]}
+            .onSelect=${(id: string) => { host.resultTab = id; host.requestUpdate(); }}>
+          </scrollable-tabs>`
         : nothing}
       ${compareTable(host, shown)}
       ${shown.length

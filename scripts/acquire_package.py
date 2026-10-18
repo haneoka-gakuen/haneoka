@@ -38,11 +38,11 @@ class _AllowedRedirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(request, fp, code, msg, headers, resolved)
 
 
-def _open(url: str, hosts: set[str]):
+def _open(url: str, hosts: set[str], timeout: float = 180):
     if _host(url) not in hosts:
         raise ValueError("package source host is not allowed")
     opener = urllib.request.build_opener(_AllowedRedirects(hosts))
-    response = opener.open(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=180)
+    response = opener.open(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=timeout)
     if _host(response.geturl()) not in hosts:
         response.close()
         raise ValueError("package source resolved outside its verified hosts")
@@ -50,7 +50,7 @@ def _open(url: str, hosts: set[str]):
 
 
 def _read_small(url: str, hosts: set[str], limit: int = 2_000_000) -> str:
-    with _open(url, hosts) as response:
+    with _open(url, hosts, timeout=20) as response:
         data = response.read(limit + 1)
     if len(data) > limit:
         raise ValueError("package discovery document is unexpectedly large")
@@ -139,6 +139,19 @@ def _discover_variant(settings: dict) -> tuple[str, str, set[str], dict[str, str
     )
 
 
+def discover_package(settings: dict) -> tuple[str, str, set[str], dict[str, str]]:
+    if not isinstance(settings, dict) or not isinstance(settings.get("sourceUrl"), str):
+        raise ValueError("package acquisition is not configured")
+    strategy = settings.get("strategy")
+    if strategy == "publisher-script":
+        return _discover_script(settings)
+    if strategy == "publisher-json":
+        return _discover_json(settings)
+    if strategy == "mirror-variant":
+        return _discover_variant(settings)
+    raise ValueError("package acquisition strategy is not supported")
+
+
 def _download(url: str, hosts: set[str], output: Path) -> tuple[int, str]:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".part")
@@ -172,17 +185,7 @@ def main() -> int:
     parser.add_argument("--probe", action="store_true", help="discover the publisher fingerprint without downloading")
     args = parser.parse_args()
     settings = load_server_config(args.server).package_acquisition
-    if not isinstance(settings, dict) or not isinstance(settings.get("sourceUrl"), str):
-        raise ValueError("package acquisition is not configured")
-    strategy = settings.get("strategy")
-    if strategy == "publisher-script":
-        url, provenance, hosts, fingerprint = _discover_script(settings)
-    elif strategy == "publisher-json":
-        url, provenance, hosts, fingerprint = _discover_json(settings)
-    elif strategy == "mirror-variant":
-        url, provenance, hosts, fingerprint = _discover_variant(settings)
-    else:
-        raise ValueError("package acquisition strategy is not supported")
+    url, provenance, hosts, fingerprint = discover_package(settings)
     if args.probe:
         print(json.dumps({"server": args.server, "provenance": provenance, **fingerprint}, sort_keys=True))
         return 0

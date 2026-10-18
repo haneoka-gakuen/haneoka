@@ -7,6 +7,10 @@ import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import "./song-skill-points";
+import { roomRequiredScore } from "../lib/chart-rates";
+import "./song-room-calculator";
+import "./song-score-targets";
+import type { ChartRates } from "../lib/chart-rates";
 
 type Item = Record<string, unknown>;
 
@@ -16,6 +20,10 @@ export interface SongRewardRenderOptions {
   server: string;
   label(key: string, fallback: string): string;
   localized(value: unknown): string;
+  locale: string;
+  /** This song's chart rates by difficulty, and the song analysis address. */
+  chartRates?: { greatFactor: number; charts: Record<string, ChartRates> };
+  analysisHref?: string;
 }
 
 export interface SongSummaryRenderOptions {
@@ -235,7 +243,18 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
   `;
 }
 
-export function renderSongRewards({ item, chart, server, label, localized }: SongRewardRenderOptions) {
+export function renderSongRewards({ item, chart, server, label, localized, locale, chartRates, analysisHref }: SongRewardRenderOptions) {
+  const rates = chartRates?.charts[String(chart.difficulty ?? "")] ?? null;
+  const targets = rates
+    ? html`
+        <song-score-targets
+          .rates=${rates}
+          .greatFactor=${chartRates!.greatFactor}
+          locale=${locale}
+          href=${analysisHref ?? ""}
+        ></song-score-targets>
+      `
+    : nothing;
   const ranks = (Array.isArray(item.scoreRanks) ? (item.scoreRanks as Item[]) : []).filter(
     (rank) => Number(rank.scoreRank || 0) >= 3,
   );
@@ -243,7 +262,7 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
     (left, right) => Number(left.liveScoreRank || 99) - Number(right.liveScoreRank || 99),
   );
   const comboRewards = item.comboRewards && typeof item.comboRewards === "object" ? (item.comboRewards as Item) : {};
-  if (!ranks.length && !scoreRewards.length && !Object.keys(comboRewards).length) return nothing;
+  if (!ranks.length && !scoreRewards.length && !Object.keys(comboRewards).length) return targets;
   const names = ["", "E", "D", "C", "B", "A", "S", "SS"];
   const active = String(chart.difficultyName || "").toLowerCase();
   const rankIcon = (rank: string) =>
@@ -288,7 +307,54 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
     `;
   };
   const comboPercentages = [25, 50, 75, 100];
+  const roomRanks = ranks.filter((rank) => Number(rank.battleLiveRequiredScore || 0) > 0);
+  const players = [1, 2, 3, 4, 5];
+  const rooms = roomRanks.length
+    ? html`
+        <section class="detail-section song-detail-section song-room-section">
+          ${renderDetailSectionHeading(label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores"), "characters")}
+          <div class="table-scroll" role="region" tabindex="0" aria-label=${label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores")} data-scroll-region>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">${label("catalog.analysis.fields.deckRank", "Target rank")}</th>
+                  ${players.map(
+                    (count) => html`
+                      <th scope="col" class="is-numeric">
+                        ${(count === 1 ? label("catalog.analysis.fields.roomPlayer", "1 player") : label("catalog.analysis.fields.roomPlayers", "{count} players")).replace("{count}", String(count))}
+                      </th>
+                    `,
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                ${roomRanks.map((rank) => {
+                  const rankName = names[Number(rank.scoreRank)] || "—";
+                  return html`
+                    <tr>
+                      <th scope="row">
+                        <img src=${rankIcon(rankName)} alt=${rankName} width="28" height="28" decoding="async" />
+                      </th>
+                      ${players.map(
+                        (count) => html`
+                          <td class="is-numeric tabular">${roomRequiredScore(Number(rank.battleLiveRequiredScore), count).toLocaleString()}</td>
+                        `,
+                      )}
+                    </tr>
+                  `;
+                })}
+              </tbody>
+            </table>
+          </div>
+          <song-room-calculator
+            .ranks=${roomRanks.map((rank) => [Number(rank.scoreRank), Number(rank.battleLiveRequiredScore)] as [number, number])}
+            locale=${locale}
+          ></song-room-calculator>
+        </section>
+      `
+    : nothing;
   return html`
+    ${targets}
     <section class="detail-section song-detail-section song-rewards-section">
       ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", {
         count: ranks.length + scoreRewards.length + combo.length,
@@ -351,5 +417,6 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
         </div>
       </div>
     </section>
+    ${rooms}
   `;
 }

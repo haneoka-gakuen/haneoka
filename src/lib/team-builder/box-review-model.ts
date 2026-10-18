@@ -109,7 +109,23 @@ export function buildBoxImportReview(preview: BoxPreview, confirmation: BoxConfi
       existing: proposal.exists,
     };
   });
-  return { cards, maps, scalars, included, canConfirm: included > 0 && !unresolved };
+  const selectedCards = cards.filter((row) => row.choice.include);
+  const removed = (["members", "snapshots"] as const).reduce(
+    (count, kind) =>
+      count +
+      preview.original[kind].filter(
+        (card) => !selectedCards.some((row) => row.proposal.kind === kind && row.proposal.cardId === card.cardId),
+      ).length,
+    0,
+  );
+  return {
+    cards,
+    maps,
+    scalars,
+    included,
+    removed,
+    canConfirm: included > 0 && !unresolved && (confirmation.ownership !== "replace" || selectedCards.length > 0),
+  };
 }
 
 export function setBoxCardIncluded(confirmation: BoxConfirmation, key: string, include: boolean): BoxConfirmation {

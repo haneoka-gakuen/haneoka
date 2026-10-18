@@ -149,7 +149,7 @@ function parseSnapshot(value: unknown, server: string): AnnouncementSnapshot {
   }
   const fetchedAt = value.fetchedAt === null ? null : readString(value.fetchedAt);
   if (value.fetchedAt !== null && fetchedAt === null) throw new Error("invalid announcement snapshot timestamp");
-  if (!Array.isArray(value.announcements) || value.announcements.length > 100) {
+  if (!Array.isArray(value.announcements)) {
     throw new Error("invalid announcement snapshot records");
   }
   const records = value.announcements.map((record) => publicRecord(record, true));
@@ -171,9 +171,9 @@ function selectedServer(request: Request): string | Response {
   return server;
 }
 
-function listLimit(request: Request): number | Response {
+function listLimit(request: Request): number | undefined | Response {
   const value = new URL(request.url).searchParams.get("limit");
-  if (value === null || value === "") return 100;
+  if (value === null || value === "") return undefined;
   if (!/^\d+$/u.test(value))
     return errorResponse(request, 400, "invalid_limit", "Limit must be an integer from 1 to 100");
   const limit = Number(value);
@@ -254,7 +254,8 @@ export async function handleAnnouncementsRequest(
   if (listMatch) {
     const limit = listLimit(request);
     if (limit instanceof Response) return limit;
-    const records = selection.entries.slice(0, limit).map((record) => publicRecord(record, false));
+    const full = url.searchParams.get("include") === "body";
+    const records = selection.entries.slice(0, limit).map((record) => publicRecord(record, full));
     if (records?.some((record): record is null => record === null)) {
       throw new Error("invalid announcement summary");
     }
@@ -267,6 +268,7 @@ export async function handleAnnouncementsRequest(
         requestedLocale,
         actualSourceLocale: selection.actualSourceLocale,
         availableSourceLocales: selection.availableSourceLocales,
+        ...(full ? { includesBody: true } : {}),
         announcements: (records || []).map((record) => ({ ...record, actualSourceLocale: selection.actualSourceLocale })) as JsonObject[],
       },
       current?.fetchedAt ?? null,

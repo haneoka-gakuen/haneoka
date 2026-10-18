@@ -71,7 +71,8 @@ const samePin = (left: CharacterRankIdentity, right: CharacterRankIdentity) =>
   left.releaseId === right.releaseId && left.sourceId === right.sourceId;
 
 /** Returns an evaluation view; never writes a derived total into the inventory.
- * Master rows use their original numeric id/characterId/_id, including NPCs.
+ * Master rows use their original numeric id/characterId/_id. Non-playable
+ * characters have no cultivatable rank and do not contribute to this total.
  * Input null ranks remain unknown. Every declared account extra must be legal
  * and covered; undeclared entries prevent qualification. */
 export function resolveCharacterRankTotal(
@@ -82,6 +83,7 @@ export function resolveCharacterRankTotal(
   const reasons = new Set<CharacterRankTotalReason>();
   const invalidIds = new Set<string>();
   const required = new Set<number>();
+  const nonPlayable = new Set<number>();
   const declaredExtras = new Set<number>();
   const ranks = new Map<number, unknown>();
   const observed = inventory.schema === "haneoka-team-inventory-v2"
@@ -106,13 +108,15 @@ export function resolveCharacterRankTotal(
       if (!validId(id) || values.some((value) => value !== id)) {
         reasons.add("invalid-master-id");
         invalidIds.add(`master:${index}`);
-      } else required.add(id);
+      } else if (row.isNonPlayable === true || row._isNonPlayable === true || raw._isNonPlayable === true)
+        nonPlayable.add(id);
+      else required.add(id);
     }
     for (const id of scope.account.extraCharacterIds) {
       if (!validId(id)) {
         reasons.add("invalid-account-id");
         invalidIds.add(`extra:${String(id)}`);
-      } else declaredExtras.add(id);
+      } else if (!nonPlayable.has(id)) declaredExtras.add(id);
     }
   }
   for (const [key, rank] of Object.entries(inventory.characterRanks)) {
@@ -120,7 +124,7 @@ export function resolveCharacterRankTotal(
     if (!validId(id) || String(id) !== key) {
       reasons.add("invalid-account-id");
       invalidIds.add(key);
-    } else ranks.set(id, rank);
+    } else if (!nonPlayable.has(id)) ranks.set(id, rank);
   }
   const extraIds = sortedIds([...declaredExtras, ...ranks.keys()].filter((id) => !required.has(id)));
   const undeclaredExtraIds = extraIds.filter((id) => !declaredExtras.has(id));

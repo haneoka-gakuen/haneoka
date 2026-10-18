@@ -10,14 +10,22 @@ export const CARD_SKILL_FACETS = [
 export function cardSkills(item: CatalogRecord, role: string): CatalogRecord[] {
   const skills = item.resolvedSkills as CatalogRecord | undefined;
   const value = skills?.[role];
-  return (Array.isArray(value) ? value : value ? [value] : []).filter((row): row is CatalogRecord => !!row && typeof row === "object");
+  return (Array.isArray(value) ? value : value ? [value] : []).filter(
+    (row): row is CatalogRecord => !!row && typeof row === "object",
+  );
 }
 // Master titles identify the original skill categories, including their
 // activation/target conditions. The identity uses the fixed source language.
-export function skillTypeTitle(title: string): string { return title.trim(); }
+export function skillTypeTitle(title: string): string {
+  return title.trim();
+}
 export function skillTypeKey(skill: CatalogRecord): string {
   const value = skill.skillName;
-  const canonical = Array.isArray(value) ? value.find((text) => typeof text === "string" && text.trim()) : typeof value === "string" ? value : "";
+  const canonical = Array.isArray(value)
+    ? value.find((text) => typeof text === "string" && text.trim())
+    : typeof value === "string"
+      ? value
+      : "";
   if (!canonical) return "";
   return skillTypeTitle(String(canonical));
 }
@@ -30,8 +38,22 @@ export function songMissions(item: CatalogRecord): string[] {
   const types = value?.missionTypes ?? value?.missionPattern;
   return (Array.isArray(types) ? types : []).map((value) => {
     const n = Number(value);
-    return Number.isInteger(n) ? ["", "Combo", "Luck", "JustCount"][n] || "" : ["Combo", "Luck", "JustCount"].includes(String(value)) ? String(value) : "";
+    return Number.isInteger(n)
+      ? ["", "Combo", "Luck", "JustCount"][n] || ""
+      : ["Combo", "Luck", "JustCount"].includes(String(value))
+        ? String(value)
+        : "";
   });
+}
+export function matchesSongMissions(item: CatalogRecord, selected: readonly string[], mode = "only"): boolean {
+  if (!selected.length) return true;
+  const missions = songMissions(item);
+  if (missions.length !== 3 || !missions.every(Boolean)) return false;
+  const mixed = new Set(missions).size > 1;
+  if (selected.includes("Mix") && mixed) return true;
+  return mode === "contains"
+    ? missions.some((mission) => selected.includes(mission))
+    : missions.every((mission) => selected.includes(mission));
 }
 export function matchesSelections(values: readonly string[], selected: readonly string[]): boolean {
   return !selected.length || values.some((value) => selected.includes(value));
@@ -40,5 +62,9 @@ export function matchesSelections(values: readonly string[], selected: readonly 
 export function cardArtwork(item: CatalogRecord): string {
   const images = item.images as CatalogRecord | undefined;
   const value = images?.thumbnail || item.thumbnail || item.image;
-  return typeof value === "string" ? value : value && typeof value === "object" ? String((value as CatalogRecord).url ?? (value as CatalogRecord).path ?? "") : "";
+  return typeof value === "string"
+    ? value
+    : value && typeof value === "object"
+      ? String((value as CatalogRecord).url ?? (value as CatalogRecord).path ?? "")
+      : "";
 }

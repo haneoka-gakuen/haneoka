@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from PIL import Image
 
-from core.config import AnnouncementRegion, ServerConfig, load_server_config
+from core.config import PROJECT_ROOT, AnnouncementRegion, ServerConfig, load_server_config
 from core.manifests import read_json, write_json
 from core.paths import build_layout, source_layout
 from ingest.version_api import (
@@ -39,7 +39,6 @@ GET_PATH = "/app.announcement.AnnouncementService/Get"
 SERVER_LIST_PATH = "/app.playerlogin.PlayerLoginService/GetServerList"
 GRPC_USER_AGENT = "grpc-dotnet/2.66.0"
 ANNOUNCEMENT_SCHEMA = "haneoka-announcements-v1"
-MAX_ANNOUNCEMENTS = 100
 MAX_BOOTSTRAP_SERVERS = 100
 ANNOUNCEMENT_CONCURRENCY = 12
 MAX_GRPC_MESSAGE_BYTES = 16 * 1024 * 1024
@@ -226,6 +225,14 @@ def _first(fields: dict[int, list[int | bytes]], field: int) -> int | bytes | No
     return values[0] if values else None
 
 
+class GrpcResponseError(RuntimeError):
+    def __init__(self, status: str, message: str):
+        self.status = status
+        self.message = message
+        detail = " (client update required)" if message == "client update required" else ""
+        super().__init__(f"announcement gRPC status {status}{detail}")
+
+
 def _parse_header_blocks(data: bytes) -> dict[str, str]:
     text = data.decode("iso-8859-1", "replace")
     blocks = [block for block in re.split(r"\r?\n\r?\n", text) if block.strip()]
@@ -256,8 +263,9 @@ def _parse_header_blocks(data: bytes) -> dict[str, str]:
     if headers.get("grpc-status") != "0":
         if headers.get("grpc-status") in {"4", "8", "13", "14"}:
             raise DiscoveryUnavailable("service", f"announcement gRPC status {headers['grpc-status']}")
-        raise RuntimeError(
-            f"announcement gRPC status {headers.get('grpc-status', 'missing')}"
+        raise GrpcResponseError(
+            headers.get("grpc-status", "missing"),
+            urllib.parse.unquote(headers.get("grpc-message", "")).strip(),
         )
     return headers
 
@@ -532,6 +540,52 @@ def public_announcement_document(
     }
 
 
+def merge_announcement_archive(
+    current: dict[str, Any], previous: dict[str, Any] | None
+) -> dict[str, Any]:
+    if not previous or previous.get("server") != current["server"]:
+        return current
+    current_time = datetime.fromisoformat(current["fetchedAt"].replace("Z", "+00:00")).timestamp() if current.get("fetchedAt") else 0
+    previous_time = datetime.fromisoformat(previous["fetchedAt"].replace("Z", "+00:00")).timestamp() if previous.get("fetchedAt") else 0
+    newer_capture = current_time >= previous_time
+    entries = {
+        record["id"]: {**record, "pinned": bool(record.get("pinned")) if not newer_capture else False}
+        for record in previous.get("announcements", [])
+    }
+    for record in current["announcements"]:
+        old = entries.get(record["id"], {})
+        newest, older = (
+            (record, old) if (record.get("updatedAt", 0), current_time) >= (old.get("updatedAt", 0), previous_time)
+            else (old, record)
+        )
+        merged = {**older, **newest, "pinned": bool(record.get("pinned")) if newer_capture else bool(old.get("pinned"))}
+        for field in ("html", "bodyImage", "banner"):
+            source = newest if newest.get(field) else older
+            if source.get(field):
+                merged[field] = source[field]
+            if field != "html":
+                for dimension in ("Width", "Height"):
+                    key = field + dimension
+                    if key in source:
+                        merged[key] = source[key]
+                    else:
+                        merged.pop(key, None)
+        entries[record["id"]] = merged
+    return {
+        **current,
+        "announcements": sorted(
+            entries.values(),
+            key=lambda item: (bool(item.get("pinned")), item["startAt"], item["id"]),
+            reverse=True,
+        ),
+    }
+
+
+def saved_announcement_archive(server: str) -> dict[str, Any] | None:
+    path = PROJECT_ROOT / "archive" / "announcements" / f"{server}.json"
+    return read_json(path) if path.exists() else None
+
+
 def _trusted_bootstrap_urls(value: str, *, allow_path: bool, host_suffixes: tuple[str, ...]) -> tuple[str, ...]:
     urls: list[str] = []
     for candidate in value.split("|"):
@@ -655,7 +709,7 @@ def _collect_from_endpoint(
     )
     raw_entries = [
         _decode_fields(item) for item in entries.get(1, []) if isinstance(item, bytes)
-    ][:MAX_ANNOUNCEMENTS]
+    ]
 
     announcements: list[dict[str, Any]] = []
     image_requests: list[tuple[int, str, str]] = []
@@ -854,16 +908,6 @@ def collect_announcements(
         for collection in collections
         for item in collection.document.get("announcements", [])
     ]
-    if len(announcements) > MAX_ANNOUNCEMENTS:
-        announcements.sort(
-            key=lambda item: (
-                bool(item.get("pinned")),
-                int(item.get("startAt") or 0),
-                int(item.get("id") or 0),
-            ),
-            reverse=True,
-        )
-        announcements = announcements[:MAX_ANNOUNCEMENTS]
     media_by_filename = {
         asset.filename: asset
         for collection in collections
@@ -899,7 +943,11 @@ def build_announcements(
     snapshot_path = layout.assets / "operation" / "announcements.json"
     media_root = layout.assets / "operation" / "announcements" / "media"
     error: str | None = None
-    document: dict[str, Any] | None = None
+    saved = saved_announcement_archive(config.id)
+    document = (
+        merge_announcement_archive(read_json(snapshot_path), saved)
+        if snapshot_path.exists() else saved
+    )
     if config.announcements_endpoint:
         try:
             client_version = None
@@ -913,7 +961,10 @@ def build_announcements(
             collection = collect_announcements(
                 config, media_root, client_version=client_version
             )
-            document = public_announcement_document(collection, config.id)
+            document = merge_announcement_archive(
+                public_announcement_document(collection, config.id),
+                document,
+            )
         except Exception as exc:  # noqa: BLE001 - auxiliary stage never blocks a release
             error = f"{type(exc).__name__}: {exc}"
     else:
@@ -934,7 +985,7 @@ def build_announcements(
             isinstance(item, dict) and ("bodyImage" in item or "banner" in item)
             for item in (document or {}).get("announcements", [])
         ),
-        "snapshotPreserved": document is None and snapshot_path.exists(),
+        "snapshotPreserved": error is not None and document is not None,
     }
     if error is not None:
         result["error"] = error

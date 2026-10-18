@@ -17,13 +17,14 @@ if str(_SCRIPTS_ROOT) not in sys.path:
 
 from build.announcements import (
     ANNOUNCEMENT_SCHEMA,
-    MAX_ANNOUNCEMENTS,
     PUBLIC_BASE_URL,
     AnnouncementCollection,
     announcement_timestamp,
     collect_announcements,
+    merge_announcement_archive,
     package_client_version,
     public_announcement_document,
+    saved_announcement_archive,
 )
 from core.config import ServerConfig, load_server_config
 from core.manifests import read_json, stable_json
@@ -44,7 +45,7 @@ def _validate_published_snapshot(value: dict[str, Any], server: str) -> None:
     if not isinstance(value.get("fetchedAt"), str) or not value["fetchedAt"]:
         raise ValueError("invalid published announcement snapshot timestamp")
     records = value.get("announcements")
-    if not isinstance(records, list) or len(records) > MAX_ANNOUNCEMENTS:
+    if not isinstance(records, list):
         raise ValueError("invalid published announcement snapshot records")
     for record in records:
         if (
@@ -106,6 +107,31 @@ def repair_published_announcements(store: R2Store, config: ServerConfig) -> dict
         "available": True,
         "announcements": len(repaired["announcements"]),
         "timestampsRepaired": changed,
+        "snapshotKey": snapshot_key,
+    }
+
+
+def restore_saved_announcements(store: R2Store, config: ServerConfig) -> dict[str, Any]:
+    saved = saved_announcement_archive(config.id)
+    if saved is None:
+        raise ValueError(f"no saved announcement archive for {config.id}")
+    _validate_published_snapshot(saved, config.id)
+    snapshot_key = f"servers/{config.id}/{OPERATION_PREFIX}/announcements.json"
+    previous = store.get_json_with_version(snapshot_key)
+    current = previous[0] if previous else saved
+    document = merge_announcement_archive(current, saved)
+    _validate_published_snapshot(document, config.id)
+    store.put_json(
+        snapshot_key, document, SNAPSHOT_CACHE,
+        expected_etag=previous[1] if previous else None,
+        if_absent=previous is None,
+    )
+    return {
+        "schema": "haneoka-announcements-publication-v1",
+        "server": config.id,
+        "available": True,
+        "announcements": len(document["announcements"]),
+        "recovered": len(document["announcements"]) - len(previous[0]["announcements"]) if previous else len(document["announcements"]),
         "snapshotKey": snapshot_key,
     }
 
@@ -176,7 +202,7 @@ def publish_announcements(
     work_dir: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Fetch, upload media, then replace the list document as one publication."""
+    """Refresh current announcements while retaining previously collected records."""
 
     snapshot_key = f"servers/{config.id}/{OPERATION_PREFIX}/announcements.json"
     if store is None and not dry_run:
@@ -199,7 +225,13 @@ def publish_announcements(
             temporary_root / "media",
             client_version=client_version,
         )
-        document = public_announcement_document(collection, config.id, base_url)
+        if previous is not None and previous.get("available") is True:
+            _validate_published_snapshot(previous, config.id)
+        document = merge_announcement_archive(
+            public_announcement_document(collection, config.id, base_url),
+            merge_announcement_archive(previous, saved_announcement_archive(config.id))
+            if previous else saved_announcement_archive(config.id),
+        )
         if document["available"]:
             _validate_published_snapshot(document, config.id)
         if dry_run:
@@ -215,7 +247,11 @@ def publish_announcements(
         uploaded, reused = _upload_media(store, config.id, collection)
         # The list document is the commit point. Every referenced media object is
         # already available before this overwrite starts.
-        store.put_json(snapshot_key, document, SNAPSHOT_CACHE)
+        store.put_json(
+            snapshot_key, document, SNAPSHOT_CACHE,
+            expected_etag=previous_version[1] if previous_version else None,
+            if_absent=previous_version is None,
+        )
         return {
             "schema": "haneoka-announcements-publication-v1",
             "server": config.id,
@@ -265,6 +301,10 @@ def main() -> int:
     parser.add_argument("--base-url", default=PUBLIC_BASE_URL)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
+        "--restore-archive", action="store_true",
+        help="merge saved historical announcements into R2 without requesting the game API",
+    )
+    mode.add_argument(
         "--repair-published", action="store_true",
         help="validate and repair only the published snapshot's exact unset-timestamp sentinel, using its ETag",
     )
@@ -274,7 +314,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     config = load_server_config(args.server)
-    if args.repair_published:
+    if args.restore_archive:
+        result = restore_saved_announcements(R2Store(config, args.concurrency), config)
+    elif args.repair_published:
         result = repair_published_announcements(R2Store(config, args.concurrency), config)
     else:
         result = publish_announcements(

@@ -6,7 +6,10 @@ export interface AudioTrackIdentity {
 
 /** Native and GBP song IDs are stable across their respective server regions. */
 export function audioTrackKey(track: AudioTrackIdentity): string {
-  if (track.songKey) return track.songKey;
+  if (track.songKey) {
+    const song = /^(gbp|our-notes):(?:[^:]+:)?(\d+)$/u.exec(track.songKey);
+    return song ? `${song[1]}:${song[2]}` : track.songKey;
+  }
   let url: URL;
   try {
     url = new URL(track.url, "https://haneoka.invalid");

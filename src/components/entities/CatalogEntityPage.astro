@@ -20,6 +20,7 @@ import "../../styles/catalog.css";
 import { renderCatalogPage } from "../../server/render-catalog";
 import { catalogEntityData, type EntityPayload } from "../../lib/entity-graph";
 import { serializePageData } from "../../lib/page-data";
+import { chartRates } from "../../server/chart-rates";
 import { loadStaticCrossServerEntry } from "../../lib/cross-server/static";
 import { loadCrossServerDetail } from "../../lib/cross-server/detail";
 import type { CrossCatalogResource, OfficialCatalogServer } from "../../lib/cross-server/catalog";
@@ -72,6 +73,16 @@ if (["jp", "intl", "intl-test"].includes(server) && isCrossCatalogResource(page.
   }
 }
 
+if (page.resource === "songs" && ["jp", "intl"].includes(server)) {
+  const table = await chartRates(server);
+  const musicId = Number((payload.item as Record<string, unknown>).musicId);
+  const charts = Object.fromEntries(
+    Object.entries(table.charts)
+      .filter(([key]) => Number(key.split(":")[0]) === musicId)
+      .map(([key, rates]) => [key.split(":")[1], rates]),
+  );
+  if (Object.keys(charts).length) payload.aux = { ...(payload.aux || {}), chartRates: { greatFactor: table.greatFactor, charts } };
+}
 const pageDataId=`catalog-page-${page.resource}-${page.id}`;
 const nativeMetaReference = process.env.NATIVE_META_REFERENCE_RECEIPTS_JSON && page.resource === "songs"
   ? nativeMetaPublicationFor(await staticCatalogRelease(server))

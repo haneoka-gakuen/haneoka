@@ -140,7 +140,7 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
         .slice(releaseServerFromPath(rawPathname) ? 2 : 1)
         .join("/")}`
     : rawPathname;
-  if (pathname === "/" || pathname === "") return HOME_I18N_NAMESPACE;
+  if (pathname === "/" || pathname === "" || pathname === "/announcements" || pathname.startsWith("/announcements/")) return HOME_I18N_NAMESPACE;
   if (pathname === "/calendar" || pathname.startsWith("/calendar/")) return CALENDAR_I18N_NAMESPACE;
   if (pathname === "/download") return DOWNLOAD_I18N_NAMESPACE;
   if (pathname === "/about" || pathname === "/join" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {

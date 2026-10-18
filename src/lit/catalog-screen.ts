@@ -14,6 +14,7 @@ import {
   skillTypeKey,
   skillTypeTitle,
   songMissions,
+  matchesSongMissions,
 } from "../lib/catalog-filters";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -67,6 +68,7 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { shopPaymentPrices, shopPriceLine } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
+import { catalogQueryNames, intersectCatalogFacets, parseCatalogQuery, type CatalogQueryAlias, type CatalogQueryFacets } from "../lib/catalog-query";
 import { facet } from "./ui/facet";
 import { fold } from "./game-system-detail";
 import { collectionList, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
@@ -130,6 +132,20 @@ import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { iconButton, inputChip, segmented } from "./ui/controls";
+import {
+  certainScore,
+  eventLiveItems,
+  eventLivePoints,
+  liveWeights,
+  roomRequiredScore,
+  slotOrderRates,
+  slotPowerNeeded,
+  slotReach,
+  soloRank,
+  type ChartRateTable,
+  type DeckSlot,
+} from "../lib/chart-rates";
+import { DEFAULT_DECK, deckParams, parseDeck, rememberDeck, rememberedDeck, type Deck } from "../lib/deck-state";
 import { icon } from "./ui/icon";
 import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -312,6 +328,9 @@ const EXTRA_FILTERS = [
   "skill",
   ...CARD_SKILL_FACETS.map((facet) => facet.key),
   "gekisouType",
+  "gekisouMatch",
+  "minRarity",
+  "maxRarity",
   "school",
   "part",
   "birthdayMonth",
@@ -662,6 +681,14 @@ const fallbackProfile: Profile = {
   defaultSort: "id",
   defaultOrder: "asc",
 };
+/** Normal-live event rewards by the rank every skill order reaches. */
+const EVENT_METRICS = ["eventPoints", "eventPointsHour", "eventItemsHour"];
+/** Score rank thresholds in the table: solo in Live, the room total in Gekisou. */
+const RANK_METRICS = ["rankC", "rankB", "rankA", "rankS", "rankSS"];
+/** Live metrics of the deck; the rank thresholds hold in both modes. */
+const LIVE_METRICS = ["deckScore", "deckPower", "deckPowerEvery", "deckReach", "deckPerMinute", "deckSkip", ...EVENT_METRICS];
+const DECK_METRICS = [...LIVE_METRICS, ...RANK_METRICS];
+const DECK_RANKS: [number, string][] = [[3, "C"], [4, "B"], [5, "A"], [6, "S"], [7, "SS"]];
 const asItems = (value: unknown, document?: string): Item[] => {
   const source = document ? readPath(value, document) : value;
   if (Array.isArray(source)) return source.filter((item): item is Item => !!item && typeof item === "object");
@@ -803,8 +830,17 @@ export class CatalogScreen extends LitElement {
   private metaBand = 0;
   /** song-meta draws its rows as a scatter instead of the table. */
   private metaChart = false;
+  private chartRates: NonNullable<CatalogCollectionPayload["chartRates"]> = {};
+  /** Only charts no other chart beats on both score per live and score per minute. */
+  private metaFrontier = false;
+  private metaX = "level";
+  private deck: Deck = DEFAULT_DECK;
   private restoreMetaReference(params: URLSearchParams) {
     this.metaChart = params.get("view") === "chart";
+    this.metaFrontier = params.get("frontier") === "1";
+    this.metaX = params.get("metaX") || "level";
+    this.deck = parseDeck(params, rememberedDeck());
+    if (this.settings.resource === "song-meta" && [...params.keys()].some((key) => key.startsWith("deck"))) rememberDeck(this.deck);
     this.metaMode = params.get("metaMode") === "gekisou" ? "gekisou" : "live";
     const tier = params.get("metaTier");
     this.metaTier = tier === "current" || tier === "band" ? tier : "theory";
@@ -2034,6 +2070,7 @@ export class CatalogScreen extends LitElement {
       label: this.label("search", "Search"),
       onInput: (value) => {
         this.query = value;
+        this.ensureSongMeta();
         this.syncUrl();
       },
     });
@@ -2299,6 +2336,7 @@ export class CatalogScreen extends LitElement {
     this.nativeCatalogPin = payload.identity;
     this.songMetaPin = payload.identity;
     this.songMeta = payload.songMeta[this.dataServer() as OfficialCatalogServer] || {};
+    this.chartRates = payload.chartRates || {};
     this.songMetaProvision = Promise.resolve();
     for (const server of ["jp", "intl", "intl-test"] as const) {
       const identity = payload.catalogs?.[this.unionResource()!]?.identities[server];
@@ -2669,6 +2707,9 @@ export class CatalogScreen extends LitElement {
       set("metaMode", this.metaMode, "live");
       set("metaTier", this.metaTier, "theory");
       set("metaBand", String(this.metaBand), "0");
+      set("frontier", this.metaFrontier ? "1" : "", "");
+      set("metaX", this.metaX, "level");
+      for (const [key, value] of deckParams(this.deck)) set(key, value ?? "");
     }
     const bandRail = this.hasBandRail();
     if (bandRail) set("band", String(this.activeBand), "0");
@@ -2720,12 +2761,14 @@ export class CatalogScreen extends LitElement {
       this.activeBand,
       this.settings.locale,
       this.selectedSongDifficulty,
-      this.settings.resource === "song-meta" ? `${this.metaMode}|${this.metaTier}|${this.metaBand}` : "",
+      this.settings.resource === "song-meta" ? `${this.metaMode}|${this.metaTier}|${this.metaBand}|${this.metaFrontier}` : "",
       JSON.stringify(this.facets),
     ].join("\u0000");
     if (this.resultCache?.key === key && this.resultCache.items.length <= this.expandedItems().length)
       return this.resultCache;
     const value = this.computeResults();
+    if (this.settings.resource === "song-meta" && this.metaFrontier && this.metaMode === "live" && this.hasChartRates())
+      value.items = this.frontier(value.items);
     this.resultCache = { key, ...value };
     return this.resultCache;
   }
@@ -2765,25 +2808,52 @@ export class CatalogScreen extends LitElement {
     this.expandedCache = { source: this.items, rows };
     return rows;
   }
+  private parsedQuery() {
+    const aliases: CatalogQueryAlias[] = [];
+    for (const kind of ["character", "band"] as const) {
+      const key = kind === "character" ? "character" : "collectionBand";
+      const field = kind === "character" ? "characterId" : "bandId";
+      const union = kind === "character" ? this.unionCharacters : this.unionBands;
+      if (this.unionCatalog) {
+        for (const [server, records] of Object.entries(union))
+          for (const [id, record] of records ?? []) {
+            const token = `${server}:${id}`;
+            aliases.push({ key, value: this.unionFacetKeys[key].get(token) || token, names: catalogQueryNames(record, kind) });
+          }
+      } else {
+        for (const record of kind === "character" ? this.characters : this.bands)
+          aliases.push({ key, value: String(record[field]), names: catalogQueryNames(record, kind) });
+      }
+    }
+    return parseCatalogQuery(this.query, {
+      game: this.settings.origin === "sekai" ? "sekai" : this.isProvider() ? "gbp" : "our-notes",
+      kind: this.profile.presentation === "song" ? "song" : "card",
+      aliases,
+    });
+  }
+  private currentQuery(): { text: string; facets: CatalogQueryFacets } {
+    const query: { text: string; facets: CatalogQueryFacets } = ["song", "member", "support"].includes(this.profile.presentation)
+      ? this.parsedQuery() : { text: this.query, facets: {} };
+    return { ...query, facets: { ...query.facets, gekisouMatch: query.facets.gekisouMatch?.length
+      ? query.facets.gekisouMatch : this.facets.gekisouMatch?.length ? this.facets.gekisouMatch : ["only"] } };
+  }
+  private queryTextMatches(item: Item, text: string) {
+    const needle = text.trim().toLocaleLowerCase(this.settings.locale);
+    if (!needle) return true;
+    return `${this.profile.presentation === "song" ? JSON.stringify([...this.songPerformer(item).names, ...this.songPerformer(item).portraits.map((p) => p.name), ...this.songPerformer(item).unresolvedNames]) : ""} ${
+      typeof item.__haystack === "string" && item.__haystack ? item.__haystack
+        : `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
+    }`.toLocaleLowerCase(this.settings.locale).includes(needle);
+  }
   private computeResults() {
-    const needle = this.query.trim().toLocaleLowerCase(this.settings.locale);
+    const query = this.currentQuery();
+    const facets = intersectCatalogFacets(this.facets, query.facets);
     // A roster shows one band at a time, so that band is the population the
     // result count is measured against — not the whole catalogue.
     const source = this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
       : this.expandedItems();
-    const faceted = source.filter((item) => this.matchesFacets(item));
-    const items = needle
-      ? faceted.filter((item) =>
-          `${this.profile.presentation === "song" ? JSON.stringify([...this.songPerformer(item).names, ...this.songPerformer(item).portraits.map((p) => p.name), ...this.songPerformer(item).unresolvedNames]) : ""} ${
-            typeof item.__haystack === "string" && item.__haystack
-              ? item.__haystack
-              : `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
-          }`
-            .toLocaleLowerCase(this.settings.locale)
-            .includes(needle),
-        )
-      : [...faceted];
+    const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     const direction = this.order === "asc" ? 1 : -1;
     items.sort((a, b) => {
       const left = this.sortValue(a);
@@ -2792,7 +2862,7 @@ export class CatalogScreen extends LitElement {
       const rightNumber = Array.isArray(right) ? Number(right[0]) : Number(right);
       if (
         this.profile.presentation === "song" &&
-        ["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck"].includes(
+        ["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", ...DECK_METRICS].includes(
           this.sort,
         )
       ) {
@@ -2994,6 +3064,7 @@ export class CatalogScreen extends LitElement {
     return this.localized(skill?.skillName) || this.displayValue(skill?.id) || "";
   }
   private songMetaValue(item: Item, key: string) {
+    if (DECK_METRICS.includes(key)) return this.deckValue(item, key);
     const metadata = this.itemSongMeta(item);
     if (!metadata) return Number.NaN;
     const song = metadata[String(item.musicId || "")] as Item | undefined;
@@ -3031,6 +3102,264 @@ export class CatalogScreen extends LitElement {
     }
     return chart[key] === null || chart[key] === undefined ? Number.NaN : Number(chart[key]);
   }
+  private orderRateCache = new WeakMap<Item, { deck: Deck; rates: number[] }>();
+  /** This row's chart rates, its rank thresholds (solo in Live, the room total in Gekisou), and the Live deck's score
+   * per unit of power in each skill order. */
+  private deckChart(item: Item) {
+    const rows = asItems(item.difficulty);
+    const difficulty = rows[0]?.difficulty ?? item.__difficultyIndex;
+    const table = this.chartRates[this.itemSourceServer(item) as OfficialCatalogServer];
+    const rates = table?.charts[`${item.musicId}:${difficulty}`];
+    if (!table || !rates) return null;
+    const required = (rankId: number) => {
+      const rank = rates.ranks.find(([id]) => id === rankId);
+      return !rank ? Number.NaN : this.metaMode === "gekisou" ? roomRequiredScore(rank[2], this.deck.room) : rank[1];
+    };
+    let cached = this.orderRateCache.get(item);
+    if (cached?.deck !== this.deck) {
+      cached = { deck: this.deck, rates: slotOrderRates(liveWeights(rates, this.deck.great / 100, table.greatFactor), this.deck.slots) };
+      this.orderRateCache.set(item, cached);
+    }
+    return { table, rates, required, orders: cached.rates };
+  }
+  /** The chosen event, or the latest one that has started. */
+  private deckEvent(table: ChartRateTable) {
+    if (this.deck.event) return table.events.find((event) => event.id === this.deck.event) ?? null;
+    const now = Date.now();
+    const started = table.events.filter((event) => event.startAt !== null && event.startAt <= now);
+    return (started.length ? started : table.events).sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))[0] ?? null;
+  }
+  private frontier(items: Item[]): Item[] {
+    const rows = items
+      .map((item) => ({ item, live: this.deckValue(item, "deckScore"), minute: this.deckValue(item, "deckPerMinute") }))
+      .filter((row) => Number.isFinite(row.live) && Number.isFinite(row.minute))
+      .sort((a, b) => b.live - a.live || b.minute - a.minute);
+    const kept = new Set<Item>();
+    let best = -Infinity;
+    for (const row of rows) {
+      if (row.minute > best) kept.add(row.item);
+      best = Math.max(best, row.minute);
+    }
+    return items.filter((item) => kept.has(item));
+  }
+  hasEventRates(): boolean {
+    return Boolean(this.chartRates[this.dataServer() as OfficialCatalogServer]?.events.length);
+  }
+  hasChartRates(): boolean {
+    return Object.keys(this.chartRates).length > 0;
+  }
+  private setDeck(change: Partial<Deck>) {
+    this.deck = { ...this.deck, ...change };
+    rememberDeck(this.deck);
+    this.resultCache = undefined;
+    this.metaView = { ...this.metaView };
+    this.requestUpdate();
+    this.syncUrl();
+  }
+  private renderDeckSettings() {
+    if (this.settings.resource !== "song-meta" || !this.hasChartRates()) return nothing;
+    const text = (key: string, fallback: string) => this.label(`catalog.analysis.fields.${key}`, fallback);
+    const players = [1, 2, 3, 4, 5].map((value) => ({ value: String(value), label: String(value) }));
+    const choice = (key: string, fallback: string, value: number, options: { value: string; label: string }[], field: "rank" | "room") =>
+      filterGroup(
+        text(key, fallback),
+        segmented({ label: text(key, fallback), value: String(value), grow: true, options, onSelect: (next) => this.setDeck({ [field]: Number(next) }) }),
+      );
+    if (this.metaMode === "gekisou") return choice("deckRoom", "Players in room", this.deck.room, players, "room");
+    const number = (value: number, name: string, max: number, step: string, apply: (value: number) => void) => html`
+      <label>
+        ${name}
+        <input
+          type="number"
+          min="0"
+          max=${max}
+          step=${step}
+          inputmode="decimal"
+          .value=${String(Math.round(value * 100) / 100)}
+          @change=${(event: Event) => {
+            const parsed = Number((event.target as HTMLInputElement).value);
+            if (Number.isFinite(parsed) && parsed >= 0 && parsed <= max) apply(parsed);
+          }}
+        />
+      </label>
+    `;
+    const slot = (index: number, change: Partial<DeckSlot>) =>
+      this.setDeck({ slots: this.deck.slots.map((entry, at) => (at === index ? { ...entry, ...change } : entry)) });
+    return html`
+      ${filterGroup(
+        text("deck", "Deck"),
+        html`
+          <div class="filter-range filter-range--single">
+            ${number(this.deck.power, text("deckPower", "Power"), 99999999, "1", (value) => value >= 1 && this.setDeck({ power: Math.round(value) }))}
+          </div>
+        `,
+      )}
+      ${filterGroup(
+        text("deckSkills", "Score skills (%)"),
+        html`
+          <div class="filter-range filter-range--five">
+            ${this.deck.slots.map((entry, index) =>
+              number(entry.score + entry.perfect, String(index + 1), 1000, "any", (value) =>
+                slot(index, entry.perfect && !entry.score ? { perfect: value } : { score: value, perfect: 0 }),
+              ),
+            )}
+          </div>
+        `,
+      )}
+      ${filterGroup(
+        text("deckExtension", "Snap skill extension (s)"),
+        html`
+          <div class="filter-range filter-range--five">
+            ${this.deck.slots.map((entry, index) =>
+              number(entry.extensionMs / 1000, String(index + 1), 6, "0.25", (value) => slot(index, { extensionMs: Math.round(value * 4) * 250 })),
+            )}
+          </div>
+        `,
+      )}
+      ${filterGroup(
+        text("deckPlay", "Play"),
+        html`
+          <div class="filter-range">
+            ${number(this.deck.great, text("deckGreat", "Great (%)"), 100, "1", (value) => this.setDeck({ great: Math.round(value) }))}
+            ${number(this.deck.overhead, text("deckOverhead", "Time between plays (s)"), 600, "1", (value) => this.setDeck({ overhead: Math.round(value) }))}
+          </div>
+        `,
+      )}
+      ${this.renderDeckEvent(text)}
+      ${filterGroup(
+        text("frontier", "Charts"),
+        segmented({
+          label: text("frontier", "Charts"),
+          value: this.metaFrontier ? "frontier" : "all",
+          grow: true,
+          options: [
+            { value: "all", label: this.label("all", "All") },
+            { value: "frontier", label: text("frontierOnly", "Not outclassed") },
+          ],
+          onSelect: (value) => {
+            this.metaFrontier = value === "frontier";
+            this.resultCache = undefined;
+            this.requestUpdate();
+            this.syncUrl();
+          },
+        }),
+      )}
+      ${this.metaChart ? this.renderMetaAxis(text) : nothing}
+      ${choice("deckRank", "Target rank", this.deck.rank, DECK_RANKS.map(([value, name]) => ({ value: String(value), label: name })), "rank")}
+    `;
+  }
+  private metaNumeric() {
+    return ["score", "eff", "time", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", "nativeScore", ...DECK_METRICS];
+  }
+  private renderMetaAxis(text: (key: string, fallback: string) => string) {
+    const options = [
+      { value: "level", label: this.label("level", "Level") },
+      ...this.sortOptions().filter((option) => this.metaNumeric().includes(option.value)),
+    ];
+    return filterGroup(
+      text("scatterX", "Horizontal axis"),
+      html`
+        <md-outlined-select
+          label=${text("scatterX", "Horizontal axis")}
+          value=${this.metaX}
+          @change=${(event: Event) => {
+            this.metaX = (event.target as HTMLSelectElement).value || "level";
+            this.requestUpdate();
+            this.syncUrl();
+          }}
+        >
+          ${options.map(
+            (option) => html`
+              <md-select-option value=${option.value} ?selected=${option.value === this.metaX}>
+                <div slot="headline">${option.label}</div>
+              </md-select-option>
+            `,
+          )}
+        </md-outlined-select>
+      `,
+    );
+  }
+  private renderDeckEvent(text: (key: string, fallback: string) => string) {
+    const table = this.chartRates[this.dataServer() as OfficialCatalogServer];
+    if (!table?.events.length) return nothing;
+    const current = this.deckEvent(table);
+    const events = [...table.events].sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0));
+    const field = (key: "boosts" | "pointBonus" | "itemBonus", name: string, max: number) => html`
+      <label>
+        ${name}
+        <input
+          type="number"
+          min="0"
+          max=${max}
+          step="1"
+          inputmode="numeric"
+          .value=${String(this.deck[key])}
+          @change=${(event: Event) => {
+            const value = Math.round(Number((event.target as HTMLInputElement).value));
+            if (Number.isFinite(value) && value >= 0 && value <= max) this.setDeck({ [key]: value });
+          }}
+        />
+      </label>
+    `;
+    return filterGroup(
+      text("deckEvent", "Event"),
+      html`
+        <div class="stack stack--tight">
+          <md-outlined-select
+            label=${text("deckEvent", "Event")}
+            value=${String(current?.id ?? "")}
+            @change=${(event: Event) => this.setDeck({ event: Number((event.target as HTMLSelectElement).value) || 0 })}
+          >
+            ${events.map(
+              (event) => html`
+                <md-select-option value=${String(event.id)} ?selected=${event.id === current?.id}>
+                  <div slot="headline">${this.localized(event.title) || `#${event.id}`}</div>
+                </md-select-option>
+              `,
+            )}
+          </md-outlined-select>
+          <div class="filter-range">
+            ${field("boosts", text("deckBoosts", "Boosts per live"), 10)}
+            ${field("pointBonus", text("deckPointBonus", "Event point bonus (%)"), 100000)}
+            ${field("itemBonus", text("deckItemBonus", "Event item bonus (%)"), 100000)}
+          </div>
+        </div>
+      `,
+    );
+  }
+  private deckValue(item: Item, key: string): number {
+    const chart = this.deckChart(item);
+    if (!chart) return Number.NaN;
+    const rank = RANK_METRICS.indexOf(key);
+    if (rank >= 0) return chart.required(rank + 3);
+    if (this.metaMode === "gekisou") return Number.NaN;
+    const { power } = this.deck;
+    const { notes, ranks } = chart.rates;
+    const mean = (value: (rate: number) => number) => chart.orders.reduce((sum, rate) => sum + value(rate), 0) / chart.orders.length;
+    const seconds = () => this.songMetaValue(item, "time");
+    if (key === "deckScore") return Math.floor(mean((rate) => power * rate));
+    if (key === "deckSkip") return Math.floor(power * chart.rates.skip);
+    if (key === "deckPerMinute") return seconds() > 0 ? Math.floor((mean((rate) => power * rate) * 60) / (seconds() + this.deck.overhead)) : Number.NaN;
+    if (EVENT_METRICS.includes(key)) {
+      const event = this.deckEvent(chart.table);
+      if (!event) return Number.NaN;
+      const boost = chart.table.boosts.find(([consumed]) => consumed === this.deck.boosts);
+      const [rate, itemRate] = this.deck.boosts && boost ? [boost[1], boost[2]] : [1, 1];
+      const perPlay = mean((orderRate) => {
+        const reached = soloRank(ranks, certainScore(power, orderRate, notes));
+        return key === "eventItemsHour"
+          ? eventLiveItems(event.items, reached, this.deck.itemBonus, itemRate)
+          : eventLivePoints(event.points.find(([id]) => id === reached)?.[1] ?? 0, this.deck.pointBonus, rate);
+      });
+      if (key === "eventPoints") return perPlay;
+      return seconds() > 0 ? (perPlay * 3600) / (seconds() + this.deck.overhead) : Number.NaN;
+    }
+    const target = chart.required(this.deck.rank);
+    if (!Number.isFinite(target)) return Number.NaN;
+    if (key === "deckReach") return slotReach(target, power, chart.orders, notes);
+    const need = slotPowerNeeded(target, chart.orders, notes);
+    return key === "deckPower" ? need.mean : need.every;
+  }
   songListMeta(item: Item, key: string) {
     if (key === "nativeScore") {
       const native = this.nativeSongScore(item);
@@ -3040,6 +3369,10 @@ export class CatalogScreen extends LitElement {
     }
 
     const value = this.songMetaValue(item, key);
+    if (EVENT_METRICS.includes(key) && Number.isFinite(value))
+      return value.toLocaleString(this.settings.locale, { maximumFractionDigits: key === "eventPoints" ? 1 : 0 });
+    if (key === "deckReach" && Number.isFinite(value))
+      return value.toLocaleString(this.settings.locale, { style: "percent", maximumFractionDigits: 1 });
     if (!Number.isFinite(value))
       return this.metaTier !== "theory" && ["score", "eff", "sr"].includes(key)
         ? this.label("unavailable", "Unavailable")
@@ -3088,7 +3421,7 @@ export class CatalogScreen extends LitElement {
       return Number((Array.isArray(item.musicCategories) ? item.musicCategories[0] : 99) || 99);
     if (this.sort === "lyrics") return this.localized(item.lyricist);
     if (this.sort === "arrangement") return this.localized(item.arranger);
-    if (["time", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck"].includes(this.sort))
+    if (["time", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", ...DECK_METRICS].includes(this.sort))
       return this.songMetaValue(item, this.sort);
     if (this.sort === "level") {
       const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
@@ -3101,7 +3434,7 @@ export class CatalogScreen extends LitElement {
   }
   private ensureSongMeta() {
     if (this.profile.presentation !== "song") return;
-    if (this.profile.perDifficulty || this.view === "table" || this.filtersOpen || this.facets.gekisouType?.length)
+    if (this.profile.perDifficulty || this.view === "table" || this.filtersOpen || this.facets.gekisouType?.length || this.parsedQuery().facets.gekisouType?.length)
       this.ensureSongMissions();
     // The meta table reads per-chart metrics on every row, so it always needs
     // the join; the songs table only needs it for the table view, filters, or
@@ -3319,7 +3652,10 @@ export class CatalogScreen extends LitElement {
   private facetValues(item: Item, key: string): string[] {
     const skillTypes = skillFacetValues(item, key);
     if (skillTypes) return skillTypes;
-    if (key === "gekisouType") return [...new Set(songMissions(item).filter(Boolean))];
+    if (key === "gekisouType") {
+      const missions = songMissions(item);
+      return [...new Set(missions.filter(Boolean)), ...(missions.length === 3 && missions.every(Boolean) && new Set(missions).size > 1 ? ["Mix"] : [])];
+    }
     if (key === "character") return this.itemCharacterIds(item).map((id) => this.facetToken(item, id));
     if (this.profile.presentation === "system") {
       if (key === "status") return [this.entryState(item)];
@@ -3355,12 +3691,12 @@ export class CatalogScreen extends LitElement {
     if (["school", "part"].includes(key)) return [this.creditKey(item[field])].filter(Boolean);
     return item[key] == null ? [] : [String(item[key])];
   }
-  private rangeValues(item: Item, key: string): number[] {
+  private rangeValues(item: Item, key: string, facets: CatalogQueryFacets = this.facets): number[] {
     if (key === "Total") return [this.total(item)].filter((value) => value > 0);
     const difficulties = (Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : []).filter(
       (row) =>
-        !this.facets.difficulty?.length ||
-        this.facets.difficulty.includes(String(row.difficultyName ?? row.difficulty)),
+        !facets.difficulty?.length ||
+        facets.difficulty.includes(String(row.difficultyName ?? row.difficulty)),
     );
     if (key === "Level" || key === "Notes")
       return difficulties
@@ -3369,31 +3705,37 @@ export class CatalogScreen extends LitElement {
     const value = Number(this.songMetaValue(item, key === "Time" ? "time" : "bpm"));
     return value > 0 ? [value] : [];
   }
-  private matchesFacets(item: Item, omitted = "") {
-    for (const [key, values] of Object.entries(this.facets)) {
+  private matchesFacets(item: Item, omitted = "", facets: CatalogQueryFacets = this.facets) {
+    for (const [key, values] of Object.entries(facets)) {
       if (
         !values.length ||
         key === omitted ||
+        key === "gekisouMatch" ||
         (key === "gekisouType" && this.isProvider()) ||
         /^(min|max|releaseFrom|releaseTo)/.test(key)
       )
         continue;
-      if (!this.facetValues(item, key).some((value) => values.includes(value))) return false;
+      if (key === "gekisouType") {
+        if (!matchesSongMissions(item, values, facets.gekisouMatch?.[0])) return false;
+      } else if (!this.facetValues(item, key).some((value) => values.includes(value))) return false;
     }
+    const rarity = Number(item.rarity);
+    if (facets.minRarity?.length && (!Number.isFinite(rarity) || rarity < Number(facets.minRarity[0]))) return false;
+    if (facets.maxRarity?.length && (!Number.isFinite(rarity) || rarity > Number(facets.maxRarity[0]))) return false;
     const chartRanges = [
       ["Level", "displayLevel", "playLevel"],
       ["Notes", "noteCount", "noteCount"],
     ];
-    if (chartRanges.some(([key]) => this.facets[`min${key}`]?.length || this.facets[`max${key}`]?.length)) {
+    if (chartRanges.some(([key]) => facets[`min${key}`]?.length || facets[`max${key}`]?.length)) {
       const charts = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
       if (
         !charts.some(
           (row) =>
-            (!this.facets.difficulty?.length ||
-              this.facets.difficulty.includes(String(row.difficultyName ?? row.difficulty))) &&
+            (!facets.difficulty?.length ||
+              facets.difficulty.includes(String(row.difficultyName ?? row.difficulty))) &&
             chartRanges.every(([key, field, fallback]) => {
-              const min = this.facets[`min${key}`]?.[0],
-                max = this.facets[`max${key}`]?.[0];
+              const min = facets[`min${key}`]?.[0],
+                max = facets[`max${key}`]?.[0];
               if (!min && !max) return true;
               const value = Number(row[field] ?? row[fallback]);
               return Number.isFinite(value) && (!min || value >= Number(min)) && (!max || value <= Number(max));
@@ -3403,16 +3745,16 @@ export class CatalogScreen extends LitElement {
         return false;
     }
     for (const key of ["Time", "Bpm", "Total"]) {
-      const min = this.facets[`min${key}`]?.[0],
-        max = this.facets[`max${key}`]?.[0];
+      const min = facets[`min${key}`]?.[0],
+        max = facets[`max${key}`]?.[0];
       if (!min && !max) continue;
       if (
-        !this.rangeValues(item, key).some((value) => (!min || value >= Number(min)) && (!max || value <= Number(max)))
+        !this.rangeValues(item, key, facets).some((value) => (!min || value >= Number(min)) && (!max || value <= Number(max)))
       )
         return false;
     }
-    const from = this.facets.releaseFrom?.[0],
-      to = this.facets.releaseTo?.[0],
+    const from = facets.releaseFrom?.[0],
+      to = facets.releaseTo?.[0],
       date = this.releaseTimestamp(item);
     const start = filterDateBound(from),
       end = filterDateBound(to, true);
@@ -3431,15 +3773,21 @@ export class CatalogScreen extends LitElement {
       groups = this.computeFacetGroups();
       this.facetCache = { items: population, locale: this.settings.locale, groups };
     }
+    const query = this.currentQuery();
     return groups.map((group) => {
       const counts = new Map<string, number>();
+      const facets = intersectCatalogFacets({ ...this.facets, [group.key]: [] }, query.facets);
       for (const item of population) {
         if (
-          !this.matchesFacets(item, group.key) ||
+          !this.matchesFacets(item, "", facets) ||
+          !this.queryTextMatches(item, query.text) ||
           (this.hasBandRail() && this.activeBand && Number(item.bandId) !== this.activeBand)
         )
           continue;
-        for (const value of new Set(this.facetValues(item, group.key))) counts.set(value, (counts.get(value) || 0) + 1);
+        const values = group.key === "gekisouType"
+          ? group.options.filter((option) => matchesSongMissions(item, [option.value], facets.gekisouMatch?.[0])).map((option) => option.value)
+          : this.facetValues(item, group.key);
+        for (const value of new Set(values)) counts.set(value, (counts.get(value) || 0) + 1);
       }
       return {
         ...group,
@@ -3575,6 +3923,7 @@ export class CatalogScreen extends LitElement {
           { value: "Combo", label: this.label("gekisouMissionCombo", "COMBO") },
           { value: "Luck", label: this.label("gekisouMissionLuck", "LUCK") },
           { value: "JustCount", label: this.label("gekisouMissionJustCount", "JUST") },
+          { value: "Mix", label: uiText(this.settings.locale, "catalog.songs.gekisou.mixed") },
         ],
       });
     const fields =
@@ -4511,7 +4860,19 @@ export class CatalogScreen extends LitElement {
 
   private renderFilters() {
     return html`
-      ${this.facetGroups().map((group) => facet(group.label, this.settings.locale, group.options, this.facets[group.key] || [], (value) => this.toggleFacet(group.key, value)))}
+      ${this.renderDeckSettings()}
+      ${this.facetGroups().map((group) => html`
+        ${facet(group.label, this.settings.locale, group.options, this.facets[group.key] || [], (value) => this.toggleFacet(group.key, value))}
+        ${group.key === "gekisouType" ? segmented({
+          label: uiText(this.settings.locale, "catalog.songs.gekisou.matchMode"),
+          value: this.facets.gekisouMatch?.[0] === "contains" ? "contains" : "only",
+          options: [
+            { value: "only", label: uiText(this.settings.locale, "catalog.songs.gekisou.only") },
+            { value: "contains", label: uiText(this.settings.locale, "catalog.songs.gekisou.contains") },
+          ],
+          onSelect: (value) => { this.facets = { ...this.facets, gekisouMatch: value === "only" ? [] : [value] }; this.syncUrl(); },
+        }) : nothing}
+      `)}
       ${(["song", "member", "support"].includes(this.profile.presentation)
         ? this.profile.presentation === "song"
           ? [
@@ -4692,6 +5053,16 @@ export class CatalogScreen extends LitElement {
         ["time", "time", "Time"],
         ["score", "metaScoreFactor", this.label("metaScore", "Factor")],
         ["eff", "eff", "Efficiency"],
+        ...(this.settings.resource === "song-meta" && this.metaMode === "live"
+          ? ([
+              ["deckScore", "catalog.analysis.fields.metaDeckScore", "Average score"],
+              ["deckPower", "catalog.analysis.fields.metaDeckPower", "Power needed"],
+              ["deckPowerEvery", "catalog.analysis.fields.metaDeckPowerEvery", "Power needed in every order"],
+              ["deckReach", "catalog.analysis.fields.metaDeckReach", "Reach rate"],
+              ["deckPerMinute", "catalog.analysis.fields.metaDeckPerMinute", "Score per minute"],
+              ["deckSkip", "catalog.analysis.fields.metaDeckSkip", "Skip score"],
+            ] as [string, string, string][])
+          : []),
         ["bpm", "bpm", "BPM"],
         ["n", "n", "Notes"],
         ["nps", "nps", "NPS"],
@@ -4736,43 +5107,35 @@ export class CatalogScreen extends LitElement {
     }));
   }
   private renderMetaScatter(items: Item[]) {
-    const numeric = [
-      "score",
-      "eff",
-      "time",
-      "bpm",
-      "n",
-      "nps",
-      "sr",
-      "justable",
-      "justableRate",
-      "luck",
-      "nativeScore",
-    ];
+    const numeric = this.metaNumeric();
     const metric = numeric.includes(this.sort) ? this.sort : "score";
-    const option = this.sortOptions().find((entry) => entry.value === metric);
-    const percent = ["score", "eff", "sr", "justableRate"].includes(metric);
-    const number = new Intl.NumberFormat(this.settings.locale, { maximumFractionDigits: percent ? 0 : 1 });
-    const format = (value: number) => (percent ? `${number.format(value * 100)}%` : number.format(value));
+    const axis = numeric.includes(this.metaX) ? this.metaX : "level";
+    const options = this.sortOptions();
+    const option = options.find((entry) => entry.value === metric);
+    const formatter = (key: string) => {
+      const percent = ["score", "eff", "sr", "justableRate", "deckReach"].includes(key);
+      const number = new Intl.NumberFormat(this.settings.locale, { maximumFractionDigits: percent ? 0 : 1, notation: key.startsWith("rank") || ["deckScore", "deckPower", "deckPerMinute", "deckSkip"].includes(key) ? "compact" : "standard" });
+      return (value: number) => (percent ? `${number.format(value * 100)}%` : number.format(value));
+    };
+    const format = formatter(metric);
+    const value = (item: Item, key: string) =>
+      key === "nativeScore" ? Number(this.nativeSongScore(item) ?? Number.NaN) : this.songMetaValue(item, key);
     return metaScatter({
       label: `${uiText(this.settings.locale, "catalog.analysis.fields.scatter")} · ${option?.label ?? metric}`,
-      xLabel: this.label("level", "Level"),
+      xLabel: axis === "level" ? this.label("level", "Level") : (options.find((entry) => entry.value === axis)?.label ?? axis),
       yLabel: option?.label ?? metric,
       format,
+      ...(axis === "level" ? {} : { xFormat: formatter(axis) }),
       points: items.map((item) => {
         const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
         const row = rows[0] || {};
         const difficulty = difficultyKey(row, Number(item.__difficultyIndex ?? 0));
-        const value =
-          metric === "nativeScore"
-            ? Number(this.nativeSongScore(item) ?? Number.NaN)
-            : this.songMetaValue(item, metric);
-        const level = Number(row.sortLevel ?? row.displayLevel ?? row.playLevel);
+        const y = value(item, metric);
         return {
-          x: level,
-          y: value,
+          x: axis === "level" ? Number(row.sortLevel ?? row.displayLevel ?? row.playLevel) : value(item, axis),
+          y,
           difficulty,
-          label: `${this.itemTitle(item)} · ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} · ${format(value)}`,
+          label: `${this.itemTitle(item)} · ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} · ${format(y)}`,
           href: this.itemEntityLink(item, Number(row.difficulty ?? item.__difficultyIndex ?? 0)),
         };
       }),
@@ -5043,18 +5406,26 @@ export class CatalogScreen extends LitElement {
             musicId: this.profile.perDifficulty ? id.split("-")[0] : id,
             musicUrl: url,
           });
-    const track = (item: Item) => ({
-      id: this.itemKey(item),
-      songKey: `${this.settings.origin === "sekai" ? "sekai" : this.isProvider() ? "gbp" : "our-notes"}:${this.itemSourceServer(item)}:${item.musicId || this.itemId(item)}`,
-      title: this.itemTitle(item),
-      titleSource: item.musicTitle || item.title,
-      artistSource: item.bandName || item.artist,
-      titleLanguage: this.itemTitleLanguage(item),
-      artist: this.itemArtist(item),
-      cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
-      url: String(item.musicUrl || ""),
-      detailPath: this.itemEntityLink(item),
-    });
+    const track = (item: Item) => {
+      const rows = asItems(item.difficulty);
+      const difficulty = this.profile.perDifficulty
+        ? Number(item.__difficultyIndex)
+        : this.selected === item
+          ? this.detailDifficulty
+          : rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty);
+      return {
+        id: this.itemKey(item),
+        songKey: `${this.settings.origin === "sekai" ? "sekai" : this.isProvider() ? "gbp" : "our-notes"}:${this.itemSourceServer(item)}:${item.musicId || this.itemId(item)}`,
+        title: this.itemTitle(item),
+        titleSource: item.musicTitle || item.title,
+        artistSource: item.bandName || item.artist,
+        titleLanguage: this.itemTitleLanguage(item),
+        artist: this.itemArtist(item),
+        cover: String(item.jacketUrl || item.jacketThumbUrl || ""),
+        url: String(item.musicUrl || ""),
+        detailPath: this.itemEntityLink(item, difficulty >= 0 ? difficulty : undefined),
+      };
+    };
     const requested = { ...track(item), url };
     const { AudioDock } = await import("./runtime/audio-dock");
     let dock = document.querySelector("audio-dock") as InstanceType<typeof AudioDock> | null;
@@ -6661,6 +7032,9 @@ export class CatalogScreen extends LitElement {
         server: this.dataServer(),
         label: (key, fallback) => this.label(key, fallback),
         localized: (value) => this.localized(value),
+        locale: this.settings.locale,
+        chartRates: this.detailAux.chartRates as import("./song-detail-rewards").SongRewardRenderOptions["chartRates"],
+        analysisHref: resourceCollectionHref("catalog/song-meta", this.dataServer(), this.settings.locale as Locale),
       }) ?? nothing
     );
   }

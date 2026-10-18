@@ -18,6 +18,20 @@
 .tabs::-webkit-scrollbar {
   display: none;
 }
+.scrollable-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.scrollable-tabs > .tabs {
+  flex: 1;
+  overflow-anchor: none;
+}
+.scrollable-tabs > .icon-button {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+}
 .tab {
   position: relative;
   display: inline-flex;

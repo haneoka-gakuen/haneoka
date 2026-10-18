@@ -4,6 +4,7 @@ import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillTypeKey, skillTypeTitle, skillFacetValues, matchesSelections } from "../../lib/catalog-filters";
 import { filterDateBound } from "../../lib/filter-date";
+import { catalogQueryNames, parseCatalogQuery, type CatalogQuery } from "../../lib/catalog-query";
 import { chooserGroup } from "../ui/chooser-filters";
 import { filterChip } from "../ui/controls";
 import { cardRarityName } from "../shared/rarity-icon";
@@ -32,6 +33,22 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 };
 
 
+const queryCache = new WeakMap<object, { query: string; plan: CatalogQuery }>();
+function cardQuery(host: TeamBuilder, query: string): CatalogQuery {
+  const catalog = host.catalog!;
+  const cached = queryCache.get(catalog);
+  if (cached?.query === query) return cached.plan;
+  const plan = parseCatalogQuery(query, {
+    game: "our-notes", kind: "card",
+    aliases: [
+      ...Object.entries(catalog.data.characters).map(([id, row]) => ({ key: "character", value: id, names: catalogQueryNames(row, "character") })),
+      ...Object.entries(catalog.data.bands).map(([id, row]) => ({ key: "collectionBand", value: id, names: catalogQueryNames({ ...row, bandName: row.bandName ?? row.name }, "band") })),
+    ],
+  });
+  queryCache.set(catalog, { query, plan });
+  return plan;
+}
+
 export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps", id: number, f: BoxFilters): boolean {
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
@@ -58,7 +75,13 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
   const date = Array.isArray(raw) ? Number(raw.find((value) => Number(value) > 0) || 0) : Number(raw || 0);
   const from = filterDateBound(f.facets.releaseFrom?.[0]), to = filterDateBound(f.facets.releaseTo?.[0], true);
   if ((from !== undefined && (!date || date < from)) || (to !== undefined && (!date || date >= to))) return false;
-  const query = f.query.normalize("NFKC").toLocaleLowerCase(host.locale).trim();
+  const plan = cardQuery(host, f.query);
+  if (!matchesSelections(catalog.bandIds(kind, id).map(String), plan.facets.collectionBand || []) ||
+      !matchesSelections(catalog.characterIds(kind, id).map(String), plan.facets.character || []) ||
+      !matchesSelections([String(card.attribute)], plan.facets.type || []) ||
+      (plan.facets.minRarity?.length && card.rarity < Number(plan.facets.minRarity[0])) ||
+      (plan.facets.maxRarity?.length && card.rarity > Number(plan.facets.maxRarity[0]))) return false;
+  const query = plan.text.normalize("NFKC").toLocaleLowerCase(host.locale).trim();
   const haystack = [`#${id}`, catalog.cardName(kind, id), ...catalog.characterIds(kind, id).map((id) => catalog.characterName(id)), ...catalog.bandIds(kind, id).map((id) => catalog.bandName(id))].join(" ").normalize("NFKC").toLocaleLowerCase(host.locale);
   return !query || haystack.includes(query);
 }

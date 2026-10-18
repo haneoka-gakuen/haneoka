@@ -22,6 +22,11 @@ on:
         description: Package source whose version should be sent to the bootstrap API
         type: string
         required: false
+      restore_archive:
+        description: Restore saved historical announcements without requesting the game API
+        type: boolean
+        required: false
+        default: false
   workflow_call:
     inputs:
       server:
@@ -34,6 +39,10 @@ on:
         type: string
         required: false
       repair_published:
+        type: boolean
+        required: false
+        default: false
+      restore_archive:
         type: boolean
         required: false
         default: false
@@ -79,13 +88,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-resource-pipeline
       - name: Start JP API egress
-        if: startsWith(inputs.server, 'jp') && env.JP_VERSION_SUBSCRIPTION != ''
+        if: ${{ !inputs.restore_archive && startsWith(inputs.server, 'jp') && env.JP_VERSION_SUBSCRIPTION != '' }}
         uses: ./.github/actions/setup-jp-api-egress
         with:
           subscription_url: ${{ env.JP_VERSION_SUBSCRIPTION }}
       - name: Refresh announcement snapshot
         run: |
-          if [[ "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then
+          if [[ "${{ inputs.restore_archive }}" != "true" && "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then
             echo "No announcement endpoint is configured for $RESOURCE_SERVER"
             exit 0
           fi
@@ -93,7 +102,9 @@ jobs:
           if [[ -n "$SOURCE_ID" ]]; then
             args+=(--source "$SOURCE_ID")
           fi
-          if [[ "${{ inputs.repair_published }}" == "true" ]]; then
+          if [[ "${{ inputs.restore_archive }}" == "true" ]]; then
+            args+=(--restore-archive)
+          elif [[ "${{ inputs.repair_published }}" == "true" ]]; then
             args+=(--repair-published)
           fi
           python scripts/publish/announcements.py "${args[@]}"

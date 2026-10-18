@@ -1,0 +1,126 @@
+{
+  "schema": "haneoka-catalog-query-aliases-v1",
+  "bands": [
+    ["poppinparty", "popipa", "poppin'party", "ポピパ"],
+    ["afterglow", "ag"],
+    ["pastelpalettes", "pasupare", "pastel*palettes", "パスパレ"],
+    ["roselia"],
+    ["hellohappyworld", "hhw", "harohapi", "ハロー、ハッピーワールド！", "ハロハピ"],
+    ["morfonica", "monica", "モニカ"],
+    ["raiseasuilen", "ras", "raise a suilen"],
+    ["mygo", "mygo!!!!!"],
+    ["avemujica", "ave mujica"],
+    ["mugendaimyutype", "yumemita", "夢限大みゅーたいぷ", "夢みた"],
+    ["leoneed", "leo/need", "ln"],
+    ["moremorejump", "mmj", "more more jump！"],
+    ["vividbadsquad", "vbs", "vivid bad squad"],
+    ["ワンダーランズ×ショウタイム", "wonderlandsxshowtime", "wxs", "wandasho", "ワンダショ"],
+    ["25時、ナイトコードで。", "nightcordat25", "niigo", "n25", "ニーゴ"],
+    ["virtualsinger", "virtual singer", "vs"]
+  ],
+  "characters": [
+    ["市ヶ谷有咲", "市谷有咲", "arisa", "有咲"],
+    ["戸山香澄", "户山香澄", "kasumi", "香澄"],
+    ["花園たえ", "花园多惠", "tae", "多惠"],
+    ["牛込りみ", "牛込里美", "rimi", "里美"],
+    ["山吹沙綾", "山吹沙绫", "saaya", "saya", "沙綾", "沙绫"],
+    ["高松燈", "高松灯", "tomori", "燈", "灯"],
+    ["千早愛音", "千早爱音", "anon", "愛音", "爱音"],
+    ["要楽奈", "要乐奈", "rana", "楽奈", "乐奈"],
+    ["長崎そよ", "长崎素世", "soyo", "素世"],
+    ["椎名立希", "taki", "立希"]
+  ],
+  "attributes": {
+    "our-notes": {
+      "1": [
+        "red",
+        "赤",
+        "紅",
+        "红",
+        "빨강",
+        "Ruby Type",
+        "Ruby",
+        "紅赤タイプ",
+        "紅赤",
+        "绯红属性",
+        "绯红",
+        "緋紅屬性",
+        "緋紅",
+        "레드 타입",
+        "레드"
+      ],
+      "2": [
+        "blue",
+        "青",
+        "藍",
+        "蓝",
+        "파랑",
+        "Azure Type",
+        "Azure",
+        "紺碧タイプ",
+        "紺碧",
+        "绀碧属性",
+        "绀碧",
+        "紺碧屬性",
+        "블루 타입",
+        "블루"
+      ],
+      "3": [
+        "green",
+        "緑",
+        "綠",
+        "绿",
+        "초록",
+        "Jade Type",
+        "Jade",
+        "翡翠タイプ",
+        "翡翠",
+        "翡翠属性",
+        "翡翠屬性",
+        "그린 타입",
+        "그린"
+      ],
+      "4": [
+        "yellow",
+        "黄",
+        "黃",
+        "노랑",
+        "Amber Type",
+        "Amber",
+        "山吹タイプ",
+        "山吹",
+        "琉金属性",
+        "琉金",
+        "琉金屬性",
+        "옐로우 타입",
+        "옐로우"
+      ],
+      "5": [
+        "purple",
+        "紫",
+        "보라",
+        "Violet Type",
+        "Violet",
+        "紫苑タイプ",
+        "紫苑",
+        "紫苑属性",
+        "紫苑屬性",
+        "퍼플 타입",
+        "퍼플"
+      ]
+    },
+    "gbp": {
+      "powerful": ["powerful", "red", "パワフル", "强力", "強力", "파워풀"],
+      "cool": ["cool", "blue", "クール", "酷炫", "쿨"],
+      "pure": ["pure", "green", "ピュア", "纯真", "純真", "퓨어"],
+      "happy": ["happy", "orange", "yellow", "ハッピー", "快乐", "快樂", "해피"]
+    },
+    "sekai": {
+      "cute": ["cute", "pink", "キュート", "可爱", "可愛", "큐트"],
+      "cool": ["cool", "blue", "クール", "쿨"],
+      "pure": ["pure", "green", "ピュア", "纯真", "純真", "퓨어"],
+      "happy": ["happy", "orange", "ハッピー", "快乐", "快樂", "해피"],
+      "mysterious": ["mysterious", "purple", "ミステリアス", "神秘", "미스테리어스"]
+    }
+  }
+}

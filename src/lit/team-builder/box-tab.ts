@@ -44,14 +44,14 @@ function bulk(host: TeamBuilder, label: string, changes: { key: string; value: B
   const previous = changes.map(({ key }) => ({ key, value: (host.snapshot!.entries[key]?.v ?? null) as BoxValue }));
   host.write(changes);
   host.notice = label;
-  undo = { notice: label, changes: previous };
+  undo = { notice: label, changes: previous, store: host.store, owner: host.snapshot.owner };
   host.requestUpdate();
 }
 /** The last bulk edit's previous values, offered while its snackbar shows. */
-let undo: { notice: string; changes: { key: string; value: BoxValue }[] } | null = null;
+let undo: { notice: string; changes: { key: string; value: BoxValue }[]; store: TeamBuilder["store"]; owner: string | null | undefined } | null = null;
 
 export function renderUndoAction(host: TeamBuilder) {
-  if (!undo || undo.notice !== host.notice) return nothing;
+  if (!undo || undo.notice !== host.notice || undo.store !== host.store || undo.owner !== host.snapshot?.owner) return nothing;
   const changes = undo.changes;
   return html`<button class="button button--text" type="button" @click=${() => {
     host.write(changes);
@@ -103,6 +103,50 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
         <small class="tile__subtitle">${options.adornment ?? nothing}<span>${options.subtitle}</span></small>
       </span>
     </div>
+  `;
+}
+
+const clearing = new WeakMap<
+  TeamBuilder,
+  { store: TeamBuilder["store"]; owner: string | null | undefined; changes: { key: string; value: BoxValue }[] }
+>();
+
+function clearOwnershipDialog(host: TeamBuilder) {
+  const pending = clearing.get(host);
+  if (!pending) return nothing;
+  const close = () => {
+    clearing.delete(host);
+    host.requestUpdate();
+  };
+  return html`
+    <dialog ${modal(close)} class="dialog" aria-labelledby="tb-clear-ownership-title">
+      <header class="dialog__header"><h2 id="tb-clear-ownership-title">${host.t("clearOwnership", "Mark all members and snapshots not owned")}</h2></header>
+      <p class="dialog__body">
+        ${host.t("clearOwnershipScope", "{count} owned cards. Training values, account bonuses, teams and preferences stay saved.", { count: pending.changes.length })}
+      </p>
+      <div class="dialog__actions">
+        <button class="button button--text" type="button" @click=${close}>
+          ${host.common("common.actions.cancel", "Cancel")}
+        </button>
+        <button
+          class="button"
+          type="button"
+          @click=${() => {
+        if (host.store === pending.store && host.snapshot?.owner === pending.owner)
+          bulk(
+            host,
+            host.t("clearedOwnership", "Marked {count} members and snapshots not owned", {
+              count: pending.changes.length,
+            }),
+            pending.changes,
+          );
+        close();
+      }}
+        >
+          ${host.t("clearOwnershipConfirm", "Mark all not owned")}
+        </button>
+      </div>
+    </dialog>
   `;
 }
 
@@ -180,11 +224,16 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           <button class="button button--text button--small" type="button" ?disabled=${!ownedRows.length}
             @click=${() => bulk(host, host.t("bulkMaxDone", "Set {count} cards to full growth", { count: ownedRows.length }), ownedRows.flatMap((row) => maxChanges(host, row)))}>
             ${icon("upgrade", 18)}${host.t("bulkMax", "Full growth")}</button>
+          <button class="button button--text button--small" type="button" ?disabled=${!view.members.size && !view.snaps.size} @click=${() => {
+            clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
+            host.requestUpdate();
+          }}>${host.t("clearOwnership", "Mark all members and snapshots not owned")}</button>
           <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
           <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openScreenshots()}>${icon("photo_camera", 18)}${host.t("importScreens", "Screenshots")}</button>
           <button class="button button--text button--small" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
         </div>
       </div>
+      ${clearOwnershipDialog(host)}
       ${rows.length
         ? html`<div class=${`collection collection--${f.kind === "members" ? "member" : "support"} tb-grid`}>${rows.map((row) => renderCard(host, row))}</div>`
         : html`<div class="state"><p class="state__title">${f.show === "owned" && !ownedCount ? host.t("emptyBox", "No cards yet") : host.t("noMatches", "No cards match")}</p>

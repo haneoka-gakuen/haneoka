@@ -601,6 +601,9 @@ export function compileFromTeamData(data: TeamBuilderData): EngineMaster {
   const liveTools = objectRow(data.liveTools);
   const progression = data.progression;
   const reference = objectRow(data.skillReference);
+  const nonPlayable = new Set((data.masterCharacterRoster?.rows ?? []).map(nativeRow)
+    .filter((row) => row.isNonPlayable === true)
+    .map((row) => num(row.characterId ?? row.id)));
   return compile({
     server: data.identity.server,
     releaseId: data.identity.releaseId,
@@ -614,7 +617,8 @@ export function compileFromTeamData(data: TeamBuilderData): EngineMaster {
     gekisoLuckBase: rowsOf(liveTools.gekisouLuckBasePoints),
     gekisoLuckLots: rowsOf(liveTools.gekisouLuckBonusLots),
     comboScoreBonuses: rowsOf(liveTools.comboScoreBonuses),
-    characters: Object.values(data.characters),
+    characters: Object.values(data.characters).filter((row) =>
+      row.isNonPlayable !== true && !nonPlayable.has(num(row.characterId ?? row.id))),
     members: Object.values(data.members).map((card) => ({
       levelLimits: card.levelLimits,
       id: card.id,
@@ -752,7 +756,8 @@ export function compileFromMasterTables(
     gekisoLuckBase: rows("MasterLiveGekisouLuckBasePoint"),
     gekisoLuckLots: rows("MasterLiveGekisouLuckBonusLot"),
     comboScoreBonuses: rows("MasterLiveComboScoreBonus"),
-    characters: characters.map((row) => ({ characterId: row.id, bandId: row.bandID ?? row.bandId })),
+    characters: characters.filter((row) => row.isNonPlayable !== true)
+      .map((row) => ({ characterId: row.id, bandId: row.bandID ?? row.bandId })),
     members: rows("MasterMemberCard").map((row) => ({
       id: num(row.id),
       characterId: num(row.characterID ?? row.characterId),

@@ -94,6 +94,36 @@ export const sortAnnouncements = (entries: readonly Announcement[]): Announcemen
   [...entries].sort(
     (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.startAt - a.startAt || b.id - a.id,
   );
+export function mergeAnnouncements(
+  current: readonly Announcement[], saved: readonly Announcement[],
+  currentFetchedAt?: string | null, savedFetchedAt?: string | null,
+): Announcement[] {
+  const newerCapture = (Date.parse(currentFetchedAt || "") || 0) >= (Date.parse(savedFetchedAt || "") || 0);
+  const entries = new Map<number, Announcement>(saved.map((entry) => [entry.id, { ...entry, pinned: !newerCapture && Boolean(entry.pinned) }]));
+  for (const entry of current) {
+    const old = entries.get(entry.id);
+    if (!old) {
+      entries.set(entry.id, { ...entry, pinned: newerCapture && Boolean(entry.pinned) });
+      continue;
+    }
+    const [newest, older] = entry.updatedAt > old.updatedAt || (entry.updatedAt === old.updatedAt && newerCapture)
+      ? [entry, old] : [old, entry];
+    const merged = { ...older, ...newest, pinned: Boolean(newerCapture ? entry.pinned : old.pinned) };
+    for (const field of ["html", "bodyImage", "banner"] as const) {
+      const source = newest[field] ? newest : older;
+      if (source[field]) merged[field] = source[field];
+      if (field !== "html") {
+        for (const dimension of ["Width", "Height"] as const) {
+          const key = `${field}${dimension}` as const;
+          if (source[key] !== undefined) merged[key] = source[key];
+          else delete merged[key];
+        }
+      }
+    }
+    entries.set(entry.id, merged);
+  }
+  return sortAnnouncements([...entries.values()]);
+}
 export function announcementDate(seconds: number, locale: string, full = false): string {
   const date = new Date(seconds * 1000);
   if (!seconds || !Number.isFinite(date.getTime())) return "—";
@@ -165,7 +195,6 @@ export function parseAnnouncementList(value: unknown, server: ReleaseServer, req
     typeof value.available !== "boolean" ||
     (value.fetchedAt !== null && typeof value.fetchedAt !== "string") ||
     !Array.isArray(value.announcements) ||
-    value.announcements.length > 100 ||
     !value.announcements.every(validAnnouncement) ||
     value.announcements.some((entry) => normalizeAuthorLocale(entry.sourceLanguage || "") !== value.actualSourceLocale)
   )

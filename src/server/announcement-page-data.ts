@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { normalizeAuthorLocale } from "@haneoka/i18n";
-import { parseAnnouncementList, parseAnnouncementDetail, selectAnnouncementLocale } from "../lib/announcements";
+import { mergeAnnouncements, parseAnnouncementList, parseAnnouncementDetail, selectAnnouncementLocale, type Announcement } from "../lib/announcements";
 import type { AnnouncementPageData } from "../lib/announcement-page-data";
 import type { ReleaseServer } from "../lib/release-server";
 import type { Locale } from "../i18n/locales";
@@ -41,14 +43,30 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
     requestedLocale = normalizeAuthorLocale(locale)!;
   const relative = "assets/operation/announcements.json";
   const declared = await fetchStaticReleaseEntry(relative, server, release);
-  if (declared) {
-    const snapshot = (await fetchStaticReleaseJson(relative, server, release)) as Record<string, unknown>;
+  let released: AnnouncementPageData | undefined;
+  const savedPath = path.resolve("archive", "announcements", `${server}.json`);
+  const snapshots: { value: unknown; origin: "release" | "archive" }[] = [];
+  if (fs.existsSync(savedPath)) {
+    const value: unknown = JSON.parse(fs.readFileSync(savedPath, "utf8"));
+    snapshots.push({ value, origin: "archive" });
+  }
+  if (declared) snapshots.push({ value: await fetchStaticReleaseJson(relative, server, release), origin: "release" });
+  let archived: Announcement[] = [];
+  let archivedFetchedAt: string | null = null;
+  let available = false;
+  for (const source of snapshots) {
+    const snapshot = source.value as Record<string, unknown>;
     if (snapshot.server !== server || typeof snapshot.available !== "boolean" || !Array.isArray(snapshot.announcements))
       throw new TypeError("Invalid announcement snapshot");
-    const selection = selectAnnouncementLocale(snapshot.announcements, requestedLocale);
+    archived = mergeAnnouncements(snapshot.announcements as Announcement[], archived, snapshot.fetchedAt as string | null, archivedFetchedAt);
+    available ||= snapshot.available;
+    if (Date.parse(String(snapshot.fetchedAt)) >= (Date.parse(archivedFetchedAt || "") || 0)) archivedFetchedAt = snapshot.fetchedAt as string | null;
+  }
+  const selectedEntries = (entries: Announcement[]) => {
+    const selection = selectAnnouncementLocale(entries, requestedLocale);
     const list = parseAnnouncementList(
       {
-        ...snapshot,
+        server, available, fetchedAt: archivedFetchedAt,
         requestedLocale,
         actualSourceLocale: selection.actualSourceLocale,
         availableSourceLocales: selection.availableSourceLocales,
@@ -60,22 +78,28 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
       server,
       requestedLocale,
     );
-    return {
+    return list.announcements;
+  };
+  if (snapshots.length) {
+    const entries = selectedEntries(archived);
+    released = {
       schema: "haneoka-announcement-page-v1",
       server,
       locale,
-      phase: list.available ? "ready" : "unavailable",
-      entries: list.announcements,
-      snapshot: { origin: "release", fetchedAt: list.fetchedAt, sha256: declared.sha256, releaseId: release.releaseId },
+      phase: available ? "ready" : "unavailable",
+      entries,
+      snapshot: { origin: declared ? "release" : "archive", fetchedAt: archivedFetchedAt, sha256: digest(entries), ...(declared ? { releaseId: release.releaseId } : {}) },
     };
   }
   try {
-    const query = new URLSearchParams({ server, locale: requestedLocale });
+    const query = new URLSearchParams({ server, locale: requestedLocale, include: "body" });
     const { value } = await operationJson(`/api/v1/announcements?${query}`);
     const list = parseAnnouncementList(value, server, requestedLocale);
+    const includesBody = (value as { includesBody?: boolean }).includesBody === true;
     const detailErrors: number[] = [];
     const entries = await Promise.all(
       list.announcements.map(async (entry) => {
+        if (includesBody || entry.html !== undefined) return entry;
         try {
           const detail = await operationJson(`/api/v1/announcements/${entry.id}?${query}`);
           if (detail.fetchedAt !== list.fetchedAt)
@@ -88,17 +112,19 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
         }
       }),
     );
+    const allEntries = selectedEntries(mergeAnnouncements(entries, archived, list.fetchedAt, archivedFetchedAt));
     return {
       schema: "haneoka-announcement-page-v1",
       server,
       locale,
-      phase: list.available ? "ready" : "unavailable",
-      entries,
+      phase: list.available || released?.phase === "ready" ? "ready" : "unavailable",
+      entries: allEntries,
       ...(detailErrors.length ? { detailErrors } : {}),
-      snapshot: { origin: "operational", fetchedAt: list.fetchedAt, sha256: digest(entries) },
+      snapshot: { origin: "operational", fetchedAt: list.fetchedAt, sha256: digest(allEntries) },
     };
   } catch (error) {
     if (!(error instanceof OperationUnavailable)) throw error;
+    if (released) return released;
     console.warn(`Static announcement snapshot unavailable: ${server}/${locale}: ${error.message}`);
     return {
       schema: "haneoka-announcement-page-v1",

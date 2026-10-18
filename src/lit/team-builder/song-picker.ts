@@ -1,4 +1,5 @@
-import { songMissions, matchesSelections } from "../../lib/catalog-filters";
+import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
+import { catalogQueryNames, parseCatalogQuery } from "../../lib/catalog-query";
 /** Multi-song chooser on the shared selection pane. */
 import { html, type TemplateResult } from "lit";
 import type { SongRef } from "../../lib/team-builder/engine/api";
@@ -15,6 +16,7 @@ export interface SongPickerState {
   bands: number[];
   attributes: number[];
   gekisouTypes: string[];
+  gekisouMatch?: "only" | "contains";
   difficulty: number;
   allowedSongIds?: number[];
   title?: string;
@@ -39,7 +41,16 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     host.songPicker = null;
     host.requestUpdate();
   };
-  const query = state.query.normalize("NFKC").toLocaleLowerCase(host.locale);
+  const plan = parseCatalogQuery(state.query, {
+    game: "our-notes", kind: "song",
+    aliases: [
+      ...Object.entries(catalog.data.characters).map(([id, row]) => ({ key: "character", value: id, names: catalogQueryNames(row, "character") })),
+      ...Object.entries(catalog.data.bands).map(([id, row]) => ({ key: "collectionBand", value: id, names: catalogQueryNames({ ...row, bandName: row.bandName ?? row.name }, "band") })),
+    ],
+  });
+  const query = plan.text.normalize("NFKC").toLocaleLowerCase(host.locale);
+  const facets = plan.facets;
+  const missionMode = facets.gekisouMatch?.[0] ?? state.gekisouMatch;
   const ids = Object.keys(catalog.data.songs)
     .map(Number)
     .filter((id) => {
@@ -48,7 +59,17 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       if (!catalog.difficultyRows(id).some((row) => Number(row.difficulty) === state.difficulty)) return false;
       if (state.bands.length && !catalog.songBands(id).some((band) => state.bands.includes(band))) return false;
       if (state.attributes.length && !state.attributes.includes(Number(song.musicType))) return false;
-      if (!matchesSelections(songMissions(song), state.gekisouTypes)) return false;
+      if (!matchesSongMissions(song, state.gekisouTypes, missionMode)) return false;
+      if (!matchesSelections(catalog.songBands(id).map(String), facets.collectionBand || []) ||
+          !matchesSelections((Array.isArray(song.vocalCharacterIds) ? song.vocalCharacterIds : []).map(String), facets.character || []) ||
+          !matchesSelections([String(song.musicType)], facets.type || []) ||
+          !matchesSongMissions(song, facets.gekisouType || [], missionMode)) return false;
+      if ((facets.minLevel?.length || facets.maxLevel?.length) && !catalog.difficultyRows(id).some((row) => {
+        const level = Number(row.displayLevel ?? row.playLevel ?? row.sortLevel);
+        return Number(row.difficulty) === state.difficulty && Number.isFinite(level) &&
+          (!facets.minLevel?.length || level >= Number(facets.minLevel[0])) &&
+          (!facets.maxLevel?.length || level <= Number(facets.maxLevel[0]));
+      })) return false;
       return !query || `${catalog.songTitle(id)} ${catalog.songArtist(id)}`.normalize("NFKC").toLocaleLowerCase(host.locale).includes(query);
     })
     .sort((a, b) => b - a);
@@ -81,7 +102,16 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     search: (value) => update({ query: value }),
     filterLayout: "facets",
     filters: html`
-      ${chooserFacet({label:host.common("catalog.analysis.fields.gekisouType", "Gekiso type"),value:state.gekisouTypes[0] || "",allLabel:all.label,options:[{value:"Combo",label:host.common("catalog.songs.gekisou.gekisouMissionCombo","COMBO")},{value:"Luck",label:host.common("catalog.songs.gekisou.gekisouMissionLuck","LUCK")},{value:"JustCount",label:host.common("catalog.songs.gekisou.gekisouMissionJustCount","JUST")}],change:(value) => update({gekisouTypes:value ? [value] : []})})}
+      ${chooserFacet({label:host.common("catalog.analysis.fields.gekisouType", "Gekiso type"),value:state.gekisouTypes[0] || "",allLabel:all.label,options:[{value:"Combo",label:host.common("catalog.songs.gekisou.gekisouMissionCombo","COMBO")},{value:"Luck",label:host.common("catalog.songs.gekisou.gekisouMissionLuck","LUCK")},{value:"JustCount",label:host.common("catalog.songs.gekisou.gekisouMissionJustCount","JUST")},{value:"Mix",label:host.common("catalog.songs.gekisou.mixed","Mixed")}],change:(value) => update({gekisouTypes:value ? [value] : []})})}
+      ${segmented({
+        label: host.common("catalog.songs.gekisou.matchMode", "Match mode"),
+        value: state.gekisouMatch ?? "only",
+        options: [
+          { value: "only", label: host.common("catalog.songs.gekisou.only", "Only selected types") },
+          { value: "contains", label: host.common("catalog.songs.gekisou.contains", "Contains a selected type") },
+        ],
+        onSelect: (gekisouMatch) => update({ gekisouMatch }),
+      })}
       ${chooserFacet({
         label: host.common("catalog.fields.band", "Band"),
         value: state.bands.length === 1 ? String(state.bands[0]) : "",

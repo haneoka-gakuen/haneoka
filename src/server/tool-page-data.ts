@@ -164,7 +164,7 @@ const resources = [
   "gekisou",
 ];
 const sourceData = new Map<string, Promise<TeamBuilderData>>();
-function teamSource(server: string): Promise<TeamBuilderData> {
+export function teamSource(server: string): Promise<TeamBuilderData> {
   let pending = sourceData.get(server);
   if (!pending) {
     pending = (async () => {

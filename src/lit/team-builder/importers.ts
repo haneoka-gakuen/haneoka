@@ -83,6 +83,7 @@ export class ImportController {
   private boxBase: InventoryV2 | null = null;
   private boxStore: TeamBuilder["store"] = null;
   private boxOwner: string | null | undefined;
+  private boxOwnership = "";
   private loading?: LoadingReporter;
   private generation = 0;
   private sourceStatus = "";
@@ -117,12 +118,21 @@ export class ImportController {
       sourceId: data.identity.sourceId,
     };
   }
-  /** Writes only fields the import changed; imports never remove cards. */
-  private commit(next: unknown, base: InventoryV2) {
+  private commit(next: unknown, base: InventoryV2, replace = false) {
     const before = new Map(inventoryChanges(base).map((change) => [change.key, JSON.stringify(change.value)]));
     const changes: { key: string; value: BoxValue }[] = inventoryChanges(next).filter(
       (change) => before.get(change.key) !== JSON.stringify(change.value),
     );
+    if (replace) {
+      const kept = new Set(
+        inventoryChanges(next)
+          .filter((change) => change.key.endsWith(".own"))
+          .map((change) => change.key),
+      );
+      for (const [key, entry] of Object.entries(this.host.snapshot?.entries ?? {}))
+        if (/^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true && !kept.has(key))
+          changes.push({ key, value: false });
+    }
     this.host.write(changes);
     this.host.notice = this.host.t("imported", "Imported {count} changes", { count: changes.length });
   }
@@ -133,9 +143,16 @@ export class ImportController {
     this.boxContext = context;
     this.boxStore = this.host.store;
     this.boxOwner = this.host.snapshot?.owner;
+    this.boxOwnership = JSON.stringify([
+      ...this.host.view.members.keys(),
+      ...[...this.host.view.snaps.keys()].map((id) => `s${id}`),
+    ]);
     this.boxBase = viewInventory(this.host, this.host.view);
     this.box = {
       phase: "select",
+      ownedKeys: Object.entries(this.host.snapshot?.entries ?? {})
+        .filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true)
+        .map(([key]) => key),
       candidates: [],
       selectedCandidateId: "",
       preview: null,
@@ -459,12 +476,17 @@ export class ImportController {
         !context ||
         !this.host.view ||
         this.host.store !== this.boxStore ||
-        this.host.snapshot?.owner !== this.boxOwner
+        this.host.snapshot?.owner !== this.boxOwner ||
+        (state.confirmation.ownership === "replace" &&
+          JSON.stringify([
+            ...this.host.view.members.keys(),
+            ...[...this.host.view.snaps.keys()].map((id) => `s${id}`),
+          ]) !== this.boxOwnership)
       )
         throw new BoxImportError("box_review_changed");
       const current = viewInventory(this.host, this.host.view);
       const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
-      this.commit(next, this.boxBase);
+      this.commit(next, this.boxBase, state.confirmation.ownership === "replace");
       this.closeBox();
     } catch (error) {
       this.box = {

@@ -13,6 +13,7 @@ import "../styles/bestdori-detail.css";
 import "./ui/image-gallery";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { filterDateBound } from "../lib/filter-date";
+import { catalogQueryNames, intersectCatalogFacets, parseCatalogQuery } from "../lib/catalog-query";
 import { facet } from "./ui/facet";
 import { collectionList, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import {
@@ -1338,8 +1339,16 @@ export class StoryWorkspace extends LitElement {
   /* ---------------------------------------------------------------- results */
 
   private visibleEpisodes(omitted = "", sorted = true) {
-    const facets = omitted ? { ...this.facets, [omitted]: [] } : this.facets;
-    const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase();
+    const query = this.isCardSection() ? parseCatalogQuery(this.query, {
+      game: "gbp", kind: "card", attributeKey: "attribute",
+      aliases: [
+        ...this.characters.map((character) => ({ key: "character", value: String(character.characterId), names: catalogQueryNames(character, "character") })),
+        ...this.bands.map((band) => ({ key: "band", value: String(band.bandId), names: catalogQueryNames(band, "band") })),
+      ],
+    }) : { text: this.query, facets: {} };
+    const combined = intersectCatalogFacets(this.facets, query.facets);
+    const facets = omitted ? { ...combined, [omitted]: [] } : combined;
+    const needle = query.text.trim().normalize("NFKC").toLocaleLowerCase();
     const chapters = facets.chapter || [];
     const bands = (facets.band || []).map(Number);
     const characters = (facets.character || []).map(Number);
@@ -1354,6 +1363,8 @@ export class StoryWorkspace extends LitElement {
       if (facets.perspective?.length && !facets.perspective.includes(String(episode.perspectiveCharacterId || "")))
         return false;
       if (facets.rarity?.length && !facets.rarity.includes(String(episode.rarity))) return false;
+      if (facets.minRarity?.length && Number(episode.rarity) < Number(facets.minRarity[0])) return false;
+      if (facets.maxRarity?.length && Number(episode.rarity) > Number(facets.maxRarity[0])) return false;
       if (facets.attribute?.length && !facets.attribute.includes(String(episode.attribute))) return false;
       if (
         (rangeStart !== -Infinity || rangeEnd !== Infinity) &&

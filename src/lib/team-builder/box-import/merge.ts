@@ -9,6 +9,7 @@ import type { TeamBuilderData } from "../data";
 import { BoxImportError } from "@haneoka/game-data-exporter";
 import { sameBoxContext, type BoxPreview, type BoxPracticeField, type BoxReviewContext } from "./preview";
 export interface BoxConfirmation {
+  ownership?: "merge" | "replace";
   /** Existing-card fields only; account bonuses use their individual map choices. */
   existingValues?: "keep" | "overwrite" | "updates";
   cards: { key: string; include: boolean; fields?: Partial<Record<BoxPracticeField, number | "keep">> }[];
@@ -99,6 +100,16 @@ export function applyConfirmedBoxImport(
     if (value === undefined || !proposal.values.includes(value)) throw new BoxImportError("box_conflict_required");
     const upgraded = upgradeInventory(next);
     next = { ...upgraded, playerModifiers: { ...upgraded.playerModifiers, [proposal.key]: value } };
+  }
+  if (confirmation.ownership === "replace") {
+    const selected = new Set(confirmation.cards.filter((choice) => choice.include).map((choice) => choice.key));
+    if (!preview.cards.some((card) => selected.has(card.key))) throw new BoxImportError("box_unresolved_values");
+    for (const kind of ["members", "snapshots"] as const) {
+      const ids = new Set(
+        preview.cards.filter((card) => card.kind === kind && selected.has(card.key)).map((card) => card.cardId),
+      );
+      next = { ...next, [kind]: next[kind].filter((card) => ids.has(card.cardId)) };
+    }
   }
   if (!validateInventory(next, data).valid) throw new BoxImportError("box_invalid_confirmed_inventory");
   return next;

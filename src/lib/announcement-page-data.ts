@@ -8,5 +8,5 @@ export interface AnnouncementPageData {
   phase: "ready" | "unavailable" | "error";
   entries: Announcement[];
   detailErrors?: number[];
-  snapshot: { origin: "release" | "operational"; fetchedAt: string | null; sha256: string; releaseId?: string };
+  snapshot: { origin: "release" | "operational" | "archive"; fetchedAt: string | null; sha256: string; releaseId?: string };
 }

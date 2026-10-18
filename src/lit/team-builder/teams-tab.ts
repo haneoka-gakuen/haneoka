@@ -244,7 +244,7 @@ export function renderTeamsTab(host: TeamBuilder): TemplateResult {
                 <th scope="row">${catalog.songTitle(row.song.songId)} <small>${catalog.difficultyLabel(row.song.songId, row.song.difficulty)}</small></th>
                 <td class="tabular">${format(host, row.power)}</td><td class="tabular">${format(host, row.score.mean)}</td>
                 <td class="tabular">${format(host, row.score.min)} – ${format(host, row.score.max)}</td><td class="tabular">${format(host, row.skipScore)}</td>
-                ${row.event ? html`<td class="tabular">${format(host, row.event.points, 1)} (+${format(host, row.event.bonusPercent)}%)</td><td class="tabular">${format(host, row.event.items, 1)}</td>` : results.some((item) => item.event) ? html`<td></td><td></td>` : nothing}
+                ${row.event ? html`<td class="tabular">${format(host, row.event.points, 1)} (+${format(host, Math.floor(row.event.bonusPercent))}%)</td><td class="tabular">${format(host, row.event.items, 1)}</td>` : results.some((item) => item.event) ? html`<td></td><td></td>` : nothing}
               </tr>`)}</tbody></table></div>`
           : nothing}
       </section>

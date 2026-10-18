@@ -22,6 +22,7 @@ import { accordion } from "../ui/accordion";
 import { ANDROID_CHANNELS } from "@haneoka/game-data-exporter";
 
 export interface BoxImportDialogState {
+  ownedKeys?: readonly string[];
   usbReady?: boolean;
   usbChannel?: string;
   server?: string;
@@ -276,6 +277,16 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         ${
         model && state.preview
           ? html`
+              ${state.preview.cards.length ? segmented<"merge" | "replace">({
+          label: t("ownershipMode", "Members and snapshots"),
+          value: state.confirmation.ownership ?? "merge",
+          options: [
+            { value: "merge", label: t("mergeOwnership", "Merge ownership") },
+            { value: "replace", label: t("replaceOwnership", "Replace member and snapshot ownership") },
+          ],
+          onSelect: (ownership) => actions.confirmation({ ...state.confirmation, ownership }),
+        }) : nothing}
+              ${state.confirmation.ownership === "replace" ? html`<p>${t("replaceScope", "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}</p>` : nothing}
               ${segmented<"keep" | "overwrite" | "updates">({
           label: t("existingPolicy", "Existing cards"),
           value: state.confirmation.existingValues ?? "keep",

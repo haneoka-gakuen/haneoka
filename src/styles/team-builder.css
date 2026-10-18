@@ -832,7 +832,7 @@
     --surface-padding: 16px;
   }
   .tb-song-tabs .tab {
-    max-width: 260px;
+    max-width: min(260px, 100%);
   }
   .tb-compare__table th,
   .tb-compare__table td,

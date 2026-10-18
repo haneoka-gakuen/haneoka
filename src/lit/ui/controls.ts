@@ -13,6 +13,7 @@ import { rarityIcon } from "../shared/rarity-icon";
 
 export interface IconButtonOptions {
   label: string;
+  shortcut?: string;
   icon: string;
   onClick: (event: MouseEvent) => void;
   variant?: "standard" | "filled" | "tonal" | "outlined";
@@ -38,7 +39,7 @@ export function iconButton(options: IconButtonOptions): TemplateResult {
       class=${classes}
       type="button"
       aria-label=${options.label}
-      title=${options.label}
+      title=${options.shortcut ? `${options.label} (${options.shortcut})` : options.label}
       aria-pressed=${options.pressed === undefined ? nothing : String(options.pressed)}
       ?disabled=${options.disabled}
       @click=${options.onClick}
@@ -60,6 +61,7 @@ export function iconButton(options: IconButtonOptions): TemplateResult {
 export interface SegmentOption<T extends string> {
   value: T;
   label: string;
+  shortcut?: string;
   icon?: string;
 }
 
@@ -71,7 +73,7 @@ export interface SegmentOption<T extends string> {
  * widget, and that is what the site had. Returns a keydown handler for the
  * container; the selected option keeps tabindex="0" and the rest -1.
  */
-export function rovingKeydown<T>(values: ReadonlyArray<T>, current: T, onSelect: (value: T) => void) {
+export function rovingKeydown<T>(values: ReadonlyArray<T>, current: T, onSelect: (value: T) => void, focusOptions?: FocusOptions) {
   return (event: KeyboardEvent) => {
     const step: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
     const index = Math.max(0, values.indexOf(current));
@@ -89,7 +91,7 @@ export function rovingKeydown<T>(values: ReadonlyArray<T>, current: T, onSelect:
     onSelect(values[next]);
     // The container re-renders on selection; move focus once it has.
     requestAnimationFrame(() =>
-      container.querySelectorAll<HTMLElement>('[role="tab"], [role="radio"], [role="checkbox"]')[next]?.focus(),
+      container.querySelectorAll<HTMLElement>('[role="tab"], [role="radio"], [role="checkbox"]')[next]?.focus(focusOptions),
     );
   };
 }
@@ -132,7 +134,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
             role="radio"
             aria-checked=${String(option.value === options.value)}
             aria-label=${options.iconOnly ? option.label : nothing}
-            title=${options.iconOnly ? option.label : nothing}
+            title=${option.shortcut ? `${option.label} (${option.shortcut})` : options.iconOnly ? option.label : nothing}
             tabindex=${option.value === options.value ? "0" : "-1"}
             @click=${() => options.onSelect(option.value)}
           >
