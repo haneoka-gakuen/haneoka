@@ -735,7 +735,10 @@
         "deckEvent": "イベント",
         "deckBoosts": "1回の Live Boost 消費量",
         "deckPointBonus": "イベントptボーナス（%）",
-        "deckItemBonus": "イベントアイテムボーナス（%）"
+        "deckItemBonus": "イベントアイテムボーナス（%）",
+        "frontier": "譜面",
+        "frontierOnly": "上位互換のない譜面",
+        "scatterX": "横軸"
       }
     },
     "characters": {

@@ -735,7 +735,10 @@
         "deckEvent": "이벤트",
         "deckBoosts": "플레이당 Live Boost 소모량",
         "deckPointBonus": "이벤트 pt 보너스 (%)",
-        "deckItemBonus": "이벤트 아이템 보너스 (%)"
+        "deckItemBonus": "이벤트 아이템 보너스 (%)",
+        "frontier": "채보",
+        "frontierOnly": "상위 호환 없는 채보",
+        "scatterX": "가로축"
       }
     },
     "characters": {

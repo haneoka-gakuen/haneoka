@@ -1,4 +1,4 @@
-/** Charts as points: official level across, one metric up, coloured by difficulty. */
+/** Charts as points: the official level or another metric across, one metric up, coloured by difficulty. */
 import { html, svg, type TemplateResult } from "lit";
 import "../../styles/components/meta-scatter.css";
 
@@ -24,17 +24,20 @@ function ticks(min: number, max: number, count: number) {
   return out;
 }
 
-export function metaScatter(options: { points: readonly ScatterPoint[]; xLabel: string; yLabel: string; format: (value: number) => string; label: string }): TemplateResult {
+/** Without `xFormat` the horizontal axis is the official level, in whole steps. */
+export function metaScatter(options: { points: readonly ScatterPoint[]; xLabel: string; yLabel: string; format: (value: number) => string; xFormat?: (value: number) => string; label: string }): TemplateResult {
   const points = options.points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
   if (!points.length) return html``;
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
-  const xMin = Math.floor(Math.min(...xs)), xMax = Math.ceil(Math.max(...xs));
+  const xPad = options.xFormat ? (Math.max(...xs) - Math.min(...xs)) * 0.05 || 1 : 0;
+  const xMin = options.xFormat ? Math.min(...xs) - xPad : Math.floor(Math.min(...xs));
+  const xMax = options.xFormat ? Math.max(...xs) + xPad : Math.ceil(Math.max(...xs));
   const yPad = (Math.max(...ys) - Math.min(...ys)) * 0.05 || 1;
   const yMin = Math.min(...ys) - yPad, yMax = Math.max(...ys) + yPad;
-  const x = (value: number) => PAD.left + ((value - xMin) / Math.max(1, xMax - xMin)) * (W - PAD.left - PAD.right);
+  const x = (value: number) => PAD.left + ((value - xMin) / (options.xFormat ? xMax - xMin : Math.max(1, xMax - xMin))) * (W - PAD.left - PAD.right);
   const y = (value: number) => H - PAD.bottom - ((value - yMin) / (yMax - yMin)) * (H - PAD.top - PAD.bottom);
-  const xTicks = ticks(xMin, xMax, 12).filter((value) => Number.isInteger(value));
+  const xTicks = options.xFormat ? ticks(xMin, xMax, 8) : ticks(xMin, xMax, 12).filter((value) => Number.isInteger(value));
   const yTicks = ticks(yMin, yMax, 6);
   return html`
     <figure class="meta-scatter">
@@ -45,7 +48,7 @@ export function metaScatter(options: { points: readonly ScatterPoint[]; xLabel: 
         )}
         ${xTicks.map(
           (value) => svg`<line class="meta-scatter__grid" x1=${x(value)} x2=${x(value)} y1=${PAD.top} y2=${H - PAD.bottom}></line>
-            <text class="meta-scatter__tick" x=${x(value)} y=${H - PAD.bottom + 18} text-anchor="middle">${value}</text>`,
+            <text class="meta-scatter__tick" x=${x(value)} y=${H - PAD.bottom + 18} text-anchor="middle">${options.xFormat ? options.xFormat(value) : value}</text>`,
         )}
         <text class="meta-scatter__axis" x=${W - PAD.right} y=${H - 6} text-anchor="end">${options.xLabel}</text>
         <text class="meta-scatter__axis" x=${PAD.left} y=${PAD.top - 4}>${options.yLabel}</text>

@@ -735,7 +735,10 @@
         "deckEvent": "活动",
         "deckBoosts": "每场 Live Boost 消耗",
         "deckPointBonus": "活动 pt 加成（%）",
-        "deckItemBonus": "活动道具加成（%）"
+        "deckItemBonus": "活动道具加成（%）",
+        "frontier": "谱面",
+        "frontierOnly": "无上位替代的谱面",
+        "scatterX": "横轴"
       }
     },
     "characters": {

@@ -839,9 +839,14 @@ export class CatalogScreen extends LitElement {
   /** song-meta draws its rows as a scatter instead of the table. */
   private metaChart = false;
   private chartRates: NonNullable<CatalogCollectionPayload["chartRates"]> = {};
+  /** Only charts no other chart beats on both score per live and score per minute. */
+  private metaFrontier = false;
+  private metaX = "level";
   private deck = { ...DEFAULT_DECK };
   private restoreMetaReference(params: URLSearchParams) {
     this.metaChart = params.get("view") === "chart";
+    this.metaFrontier = params.get("frontier") === "1";
+    this.metaX = params.get("metaX") || "level";
     const whole = (key: string, low: number, high: number, fallback: number) => {
       const value = Math.round(Number(params.get(key)));
       return params.has(key) && Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback;
@@ -2727,6 +2732,8 @@ export class CatalogScreen extends LitElement {
       set("metaMode", this.metaMode, "live");
       set("metaTier", this.metaTier, "theory");
       set("metaBand", String(this.metaBand), "0");
+      set("frontier", this.metaFrontier ? "1" : "", "");
+      set("metaX", this.metaX, "level");
       set("deckPower", String(this.deck.power), String(DEFAULT_DECK.power));
       set("deckSkills", this.deck.skills.join(","), DEFAULT_DECK.skills.join(","));
       set("deckRank", String(this.deck.rank), String(DEFAULT_DECK.rank));
@@ -2790,12 +2797,14 @@ export class CatalogScreen extends LitElement {
       this.activeBand,
       this.settings.locale,
       this.selectedSongDifficulty,
-      this.settings.resource === "song-meta" ? `${this.metaMode}|${this.metaTier}|${this.metaBand}` : "",
+      this.settings.resource === "song-meta" ? `${this.metaMode}|${this.metaTier}|${this.metaBand}|${this.metaFrontier}` : "",
       JSON.stringify(this.facets),
     ].join("\u0000");
     if (this.resultCache?.key === key && this.resultCache.items.length <= this.expandedItems().length)
       return this.resultCache;
     const value = this.computeResults();
+    if (this.settings.resource === "song-meta" && this.metaFrontier && this.hasChartRates())
+      value.items = this.frontier(value.items);
     this.resultCache = { key, ...value };
     return this.resultCache;
   }
@@ -3159,6 +3168,19 @@ export class CatalogScreen extends LitElement {
     const started = table.events.filter((event) => event.startAt !== null && event.startAt <= now);
     return (started.length ? started : table.events).sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))[0] ?? null;
   }
+  private frontier(items: Item[]): Item[] {
+    const rows = items
+      .map((item) => ({ item, live: this.deckValue(item, "deckScore"), minute: this.deckValue(item, "deckPerMinute") }))
+      .filter((row) => Number.isFinite(row.live) && Number.isFinite(row.minute))
+      .sort((a, b) => b.live - a.live || b.minute - a.minute);
+    const kept = new Set<Item>();
+    let best = -Infinity;
+    for (const row of rows) {
+      if (row.minute > best) kept.add(row.item);
+      best = Math.max(best, row.minute);
+    }
+    return items.filter((item) => kept.has(item));
+  }
   hasEventRates(): boolean {
     return Boolean(this.chartRates[this.dataServer() as OfficialCatalogServer]?.events.length);
   }
@@ -3262,10 +3284,60 @@ export class CatalogScreen extends LitElement {
         `,
       )}
       ${this.renderDeckEvent(text)}
+      ${filterGroup(
+        text("frontier", "Charts"),
+        segmented({
+          label: text("frontier", "Charts"),
+          value: this.metaFrontier ? "frontier" : "all",
+          grow: true,
+          options: [
+            { value: "all", label: this.label("all", "All") },
+            { value: "frontier", label: text("frontierOnly", "Not outclassed") },
+          ],
+          onSelect: (value) => {
+            this.metaFrontier = value === "frontier";
+            this.resultCache = undefined;
+            this.requestUpdate();
+            this.syncUrl();
+          },
+        }),
+      )}
+      ${this.metaChart ? this.renderMetaAxis(text) : nothing}
       ${choice("deckRank", "Target rank", this.deck.rank, DECK_RANKS.map(([value, name]) => ({ value: String(value), label: name })), "rank")}
       ${this.metaMode === "gekisou" ? choice("deckRoom", "Players in room", this.deck.room, places, "room") : nothing}
       ${this.metaMode === "gekisou" ? choice("deckPlace", "Placement", this.deck.place, places, "place") : nothing}
     `;
+  }
+  private metaNumeric() {
+    return ["score", "eff", "time", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", "nativeScore", ...DECK_METRICS];
+  }
+  private renderMetaAxis(text: (key: string, fallback: string) => string) {
+    const options = [
+      { value: "level", label: this.label("level", "Level") },
+      ...this.sortOptions().filter((option) => this.metaNumeric().includes(option.value)),
+    ];
+    return filterGroup(
+      text("scatterX", "Horizontal axis"),
+      html`
+        <md-outlined-select
+          label=${text("scatterX", "Horizontal axis")}
+          value=${this.metaX}
+          @change=${(event: Event) => {
+            this.metaX = (event.target as HTMLSelectElement).value || "level";
+            this.requestUpdate();
+            this.syncUrl();
+          }}
+        >
+          ${options.map(
+            (option) => html`
+              <md-select-option value=${option.value} ?selected=${option.value === this.metaX}>
+                <div slot="headline">${option.label}</div>
+              </md-select-option>
+            `,
+          )}
+        </md-outlined-select>
+      `,
+    );
   }
   private renderDeckEvent(text: (key: string, fallback: string) => string) {
     const table = this.chartRates[this.dataServer() as OfficialCatalogServer];
@@ -5097,44 +5169,35 @@ export class CatalogScreen extends LitElement {
     }));
   }
   private renderMetaScatter(items: Item[]) {
-    const numeric = [
-      "score",
-      "eff",
-      "time",
-      "bpm",
-      "n",
-      "nps",
-      "sr",
-      "justable",
-      "justableRate",
-      "luck",
-      "nativeScore",
-      ...DECK_METRICS,
-    ];
+    const numeric = this.metaNumeric();
     const metric = numeric.includes(this.sort) ? this.sort : "score";
-    const option = this.sortOptions().find((entry) => entry.value === metric);
-    const percent = ["score", "eff", "sr", "justableRate", "deckReach"].includes(metric);
-    const number = new Intl.NumberFormat(this.settings.locale, { maximumFractionDigits: percent ? 0 : 1 });
-    const format = (value: number) => (percent ? `${number.format(value * 100)}%` : number.format(value));
+    const axis = numeric.includes(this.metaX) ? this.metaX : "level";
+    const options = this.sortOptions();
+    const option = options.find((entry) => entry.value === metric);
+    const formatter = (key: string) => {
+      const percent = ["score", "eff", "sr", "justableRate", "deckReach"].includes(key);
+      const number = new Intl.NumberFormat(this.settings.locale, { maximumFractionDigits: percent ? 0 : 1, notation: key.startsWith("rank") || ["deckScore", "deckPower", "deckPerMinute", "deckSkip"].includes(key) ? "compact" : "standard" });
+      return (value: number) => (percent ? `${number.format(value * 100)}%` : number.format(value));
+    };
+    const format = formatter(metric);
+    const value = (item: Item, key: string) =>
+      key === "nativeScore" ? Number(this.nativeSongScore(item) ?? Number.NaN) : this.songMetaValue(item, key);
     return metaScatter({
       label: `${uiText(this.settings.locale, "catalog.analysis.fields.scatter")} · ${option?.label ?? metric}`,
-      xLabel: this.label("level", "Level"),
+      xLabel: axis === "level" ? this.label("level", "Level") : (options.find((entry) => entry.value === axis)?.label ?? axis),
       yLabel: option?.label ?? metric,
       format,
+      ...(axis === "level" ? {} : { xFormat: formatter(axis) }),
       points: items.map((item) => {
         const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
         const row = rows[0] || {};
         const difficulty = difficultyKey(row, Number(item.__difficultyIndex ?? 0));
-        const value =
-          metric === "nativeScore"
-            ? Number(this.nativeSongScore(item) ?? Number.NaN)
-            : this.songMetaValue(item, metric);
-        const level = Number(row.sortLevel ?? row.displayLevel ?? row.playLevel);
+        const y = value(item, metric);
         return {
-          x: level,
-          y: value,
+          x: axis === "level" ? Number(row.sortLevel ?? row.displayLevel ?? row.playLevel) : value(item, axis),
+          y,
           difficulty,
-          label: `${this.itemTitle(item)} · ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} · ${format(value)}`,
+          label: `${this.itemTitle(item)} · ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} · ${format(y)}`,
           href: this.itemEntityLink(item, Number(row.difficulty ?? item.__difficultyIndex ?? 0)),
         };
       }),

@@ -735,7 +735,10 @@
         "deckEvent": "Event",
         "deckBoosts": "Live Boost cost per live",
         "deckPointBonus": "Event point bonus (%)",
-        "deckItemBonus": "Event item bonus (%)"
+        "deckItemBonus": "Event item bonus (%)",
+        "frontier": "Charts",
+        "frontierOnly": "Not outclassed",
+        "scatterX": "Horizontal axis"
       }
     },
     "characters": {
