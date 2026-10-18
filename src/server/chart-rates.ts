@@ -8,7 +8,7 @@ import { dataRows } from "../lib/team-builder/data";
 import type { ReleaseServer } from "../lib/release-server";
 import { fetchStaticReleaseBytes, staticCatalogRelease } from "../lib/static-catalog-source";
 import { staticBuildJson } from "./static-input-store";
-import type { ChartRateTable } from "../lib/chart-rates";
+import { GREAT_STEP, type ChartRateTable } from "../lib/chart-rates";
 
 const ENGINE = path.resolve("src/lib/team-builder/engine/generated/team-engine.wasm");
 /** Placements a Gekisou player can hold in every range. */
@@ -51,7 +51,7 @@ async function engine() {
   };
 }
 
-const rounded = (values: number[]) => values.map((value) => Number(value.toPrecision(6)));
+const rounded = (values: number[]) => values.map((value) => Number(value.toPrecision(5)));
 
 async function compute(server: ReleaseServer): Promise<ChartRateTable> {
   const release = await staticCatalogRelease(server);
@@ -73,28 +73,45 @@ async function compute(server: ReleaseServer): Promise<ChartRateTable> {
         base: number;
         weights: number[];
         ranks: { rank: number; required: number; battleRequired: number }[];
+        skip: number;
       };
-      const rates = (mode: "live" | "gekiso", rank: number, rows: Doc[]) =>
+      const rates = (mode: "live" | "gekiso", rank: number, rows: Doc[], just = 1, great = 0) =>
         (
           invoke({
             op: "rates",
             handle,
-            request: { goal: { mode, songs: [ref], accuracy: { great: 0, just: 1 }, rank } },
+            request: { goal: { mode, songs: [ref], accuracy: { great, just }, rank } },
             charts: rows,
           }).songs as Row[]
         )[0]!;
       const live = rates("live", 1, [{ song: ref, chart }]);
+      const gekisou = PLACEMENTS.map((rank) => {
+        const row = rates("gekiso", rank, []);
+        return rounded([row.base, ...row.weights]);
+      });
+      const gekisouNoJust = PLACEMENTS.map((rank) => {
+        const row = rates("gekiso", rank, [], 0);
+        return rounded([row.base, ...row.weights]);
+      });
       charts[`${ref.songId}:${ref.difficulty}`] = {
         live: rounded([live.base, ...live.weights]),
-        gekisou: PLACEMENTS.map((rank) => {
-          const row = rates("gekiso", rank, []);
+        gekisou,
+        ...(JSON.stringify(gekisouNoJust) === JSON.stringify(gekisou) ? {} : { gekisouNoJust }),
+        gekisouGreat: PLACEMENTS.map((rank) => {
+          const row = rates("gekiso", rank, [], 1, GREAT_STEP);
           return rounded([row.base, ...row.weights]);
         }),
+        skip: Number(live.skip.toPrecision(5)),
         ranks: live.ranks.map((row) => [row.rank, row.required, row.battleRequired]),
       };
     }
   }
-  return { releaseId: release.releaseId, charts };
+  const percent = (judgement: number) =>
+    Number(
+      dataRows(data.liveTools.judgementParameters).find((row) => Number(row.noteSimulateJudgement) === judgement)
+        ?.scorePercent,
+    );
+  return { releaseId: release.releaseId, greatFactor: percent(4) / percent(5), charts };
 }
 
 const pending = new Map<string, Promise<ChartRateTable>>();
@@ -105,7 +122,7 @@ export function chartRates(server: ReleaseServer): Promise<ChartRateTable> {
       encoding: "utf8",
     }).trim();
     value = staticCatalogRelease(server).then((release) =>
-      staticBuildJson(`chart-rates-v1:${server}:${release.releaseId}:${build}`, "chart-rates", () => compute(server)),
+      staticBuildJson(`chart-rates-v3:${server}:${release.releaseId}:${build}`, "chart-rates", () => compute(server)),
     );
     pending.set(server, value);
   }

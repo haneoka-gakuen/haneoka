@@ -717,7 +717,18 @@
         "deckPlace": "순위",
         "gekisouRoomScores": "격주 룸 점수",
         "roomPlayer": "1명",
-        "roomPlayers": "{count}명"
+        "roomPlayers": "{count}명",
+        "metaDeckPerMinute": "분당 점수",
+        "metaDeckSkip": "스킵 점수",
+        "metaRankScore": "{rank} 점수",
+        "deckPlay": "플레이",
+        "deckGreat": "GREAT (%)",
+        "deckJust": "JUST (%)",
+        "deckOverhead": "플레이 간 시간 (초)",
+        "roomScores": "멤버 점수",
+        "roomTotal": "룸 합계",
+        "roomRank": "룸 랭크",
+        "roomNext": "다음 랭크"
       }
     },
     "characters": {

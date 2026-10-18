@@ -22,7 +22,7 @@ export interface CatalogCollectionPayload {
   sourceMarks: Partial<Record<OfficialCatalogServer, Record<string, string>>>;
   songMeta: Partial<Record<OfficialCatalogServer, Row>>;
   /** Song meta only: per-power score rates of every chart. */
-  chartRates?: Partial<Record<OfficialCatalogServer, ChartRateTable["charts"]>>;
+  chartRates?: Partial<Record<OfficialCatalogServer, ChartRateTable>>;
 }
 
 const collections = new Map<string, Promise<CatalogCollectionPayload>>();
@@ -68,7 +68,7 @@ async function loadCollection(resource: string, server: ReleaseServer, locale: L
   await Promise.all(Object.values(catalogs?.[collection]?.identities || { [server]: identity }).map(async (pin) => {
     sourceMarks[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("ui-marks", pin.server, pin) as Record<string, string>;
     if (collection === "songs") songMeta[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("song-meta", pin.server, pin) as Row;
-    if (resource === "song-meta") chartRateTables[pin.server as OfficialCatalogServer] = (await chartRates(pin.server as ReleaseServer)).charts;
+    if (resource === "song-meta") chartRateTables[pin.server as OfficialCatalogServer] = await chartRates(pin.server as ReleaseServer);
   }));
   return {
     schema: "haneoka-collection-payload-v1", resource, identity, document, characters, bands, gameItems,

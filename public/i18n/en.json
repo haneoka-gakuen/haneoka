@@ -717,7 +717,18 @@
         "deckPlace": "Placement",
         "gekisouRoomScores": "Gekisou room scores",
         "roomPlayer": "1 player",
-        "roomPlayers": "{count} players"
+        "roomPlayers": "{count} players",
+        "metaDeckPerMinute": "Score per minute",
+        "metaDeckSkip": "Skip score",
+        "metaRankScore": "{rank} score",
+        "deckPlay": "Play",
+        "deckGreat": "Great (%)",
+        "deckJust": "Just (%)",
+        "deckOverhead": "Time between plays (s)",
+        "roomScores": "Players' scores",
+        "roomTotal": "Room total",
+        "roomRank": "Room rank",
+        "roomNext": "Next rank"
       }
     },
     "characters": {

@@ -128,6 +128,13 @@ const COLUMNS: Record<string, Column[]> = {
     column("deckScore", "numeric", "deckScore"),
     column("deckPower", "numeric", "deckPower"),
     column("deckReach", "numeric", "deckReach"),
+    column("deckPerMinute", "numeric", "deckPerMinute"),
+    column("deckSkip", "numeric", "deckSkip"),
+    column("rankC", "numeric", "rankC"),
+    column("rankB", "numeric", "rankB"),
+    column("rankA", "numeric", "rankA"),
+    column("rankS", "numeric", "rankS"),
+    column("rankSS", "numeric", "rankSS"),
     column("bpm", "numeric", "bpm"),
     column("n", "numeric", "n"),
     column("nps", "numeric", "nps"),
@@ -154,6 +161,12 @@ const COLUMNS: Record<string, Column[]> = {
     column("deckScore", "numeric", "deckScore"),
     column("deckPower", "numeric", "deckPower"),
     column("deckReach", "numeric", "deckReach"),
+    column("deckPerMinute", "numeric", "deckPerMinute"),
+    column("rankC", "numeric", "rankC"),
+    column("rankB", "numeric", "rankB"),
+    column("rankA", "numeric", "rankA"),
+    column("rankS", "numeric", "rankS"),
+    column("rankSS", "numeric", "rankSS"),
     column("justableRate", "numeric", "justableRate"),
     column("justable", "numeric", "justable"),
     column("luck", "numeric", "luck"),
@@ -255,8 +268,11 @@ export class CatalogTable extends LitElement {
       deckScore: ["catalog.analysis.fields.metaDeckScore", "Expected score"],
       deckPower: ["catalog.analysis.fields.metaDeckPower", "Power needed"],
       deckReach: ["catalog.analysis.fields.metaDeckReach", "Reach rate"],
+      deckPerMinute: ["catalog.analysis.fields.metaDeckPerMinute", "Score per minute"],
+      deckSkip: ["catalog.analysis.fields.metaDeckSkip", "Skip score"],
     };
-    const label = (key: string) => (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
+    const rankLabel = (key: string) => c.label("catalog.analysis.fields.metaRankScore", "{rank} score").replace("{rank}", key.slice(4));
+    const label = (key: string) => /^rank(?:C|B|A|S|SS)$/u.test(key) ? rankLabel(key) : (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
     return html`
       <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("table", "Table")} data-scroll-region>
         <table class="data-table">
@@ -555,7 +571,7 @@ export class CatalogTable extends LitElement {
       return wrap(value ? c.label(value, value) : "—");
     }
     if (key === "status") return wrap(c.systemStatusLabel(item) || "—");
-    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach"].includes(key))
+    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", "rankC", "rankB", "rankA", "rankS", "rankSS"].includes(key))
       return wrap(c.songListMeta(item, key));
     if (key === "release") return wrap(c.release(item.releasedAt || item.publishedAt || item.publicStartAt) || "—");
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");

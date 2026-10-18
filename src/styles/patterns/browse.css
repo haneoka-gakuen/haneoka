@@ -421,6 +421,10 @@ filter-facet {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
+.filter-range--scores {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
 .filter-range.filter-range--five input {
   padding-inline: 4px;
   text-align: center;

@@ -8,6 +8,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { icon } from "./ui/icon";
 import "./song-skill-points";
 import { roomRequiredScore } from "../lib/chart-rates";
+import "./song-room-calculator";
 
 type Item = Record<string, unknown>;
 
@@ -17,6 +18,7 @@ export interface SongRewardRenderOptions {
   server: string;
   label(key: string, fallback: string): string;
   localized(value: unknown): string;
+  locale: string;
 }
 
 export interface SongSummaryRenderOptions {
@@ -236,7 +238,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
   `;
 }
 
-export function renderSongRewards({ item, chart, server, label, localized }: SongRewardRenderOptions) {
+export function renderSongRewards({ item, chart, server, label, localized, locale }: SongRewardRenderOptions) {
   const ranks = (Array.isArray(item.scoreRanks) ? (item.scoreRanks as Item[]) : []).filter(
     (rank) => Number(rank.scoreRank || 0) >= 3,
   );
@@ -328,6 +330,10 @@ export function renderSongRewards({ item, chart, server, label, localized }: Son
               </tbody>
             </table>
           </div>
+          <song-room-calculator
+            .ranks=${roomRanks.map((rank) => [Number(rank.scoreRank), Number(rank.battleLiveRequiredScore)] as [number, number])}
+            locale=${locale}
+          ></song-room-calculator>
         </section>
       `
     : nothing;

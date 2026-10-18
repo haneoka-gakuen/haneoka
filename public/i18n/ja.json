@@ -717,7 +717,18 @@
         "deckPlace": "順位",
         "gekisouRoomScores": "撃奏ルームのスコア",
         "roomPlayer": "1人",
-        "roomPlayers": "{count}人"
+        "roomPlayers": "{count}人",
+        "metaDeckPerMinute": "1分あたりのスコア",
+        "metaDeckSkip": "スキップスコア",
+        "metaRankScore": "{rank}スコア",
+        "deckPlay": "プレイ",
+        "deckGreat": "GREAT（%）",
+        "deckJust": "JUST（%）",
+        "deckOverhead": "プレイ間の時間（秒）",
+        "roomScores": "メンバーのスコア",
+        "roomTotal": "ルーム合計",
+        "roomRank": "ルームランク",
+        "roomNext": "次のランク"
       }
     },
     "characters": {
