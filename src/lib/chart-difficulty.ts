@@ -2,7 +2,7 @@ import { nativeJudgementAreaOffsetX, applyLineEase, type ChartDocument, type Cha
 
 /** Full-combo difficulty at 1x, assist 0, from the chart alone: the skill at which every 0.4 s section is
  * cleared with probability 1/2. No player, save or team score input. */
-export const CHART_DIFFICULTY_VERSION = "ournotes-fc-threshold-v5";
+export const CHART_DIFFICULTY_VERSION = "ournotes-fc-threshold-v6";
 export const CHART_DIFFICULTY_PARAMETERS = {
   maxSearchStates: 500000,
   burstReferenceMs: 200,
@@ -29,12 +29,16 @@ export const CHART_DIFFICULTY_PARAMETERS = {
   handJackWeight: 4,
   handJackTolerance: 0.05,
   otherHandShare: 0.5,
-  handStrainWeight: 3,
+  handStrainWeight: 1.5,
+  /** Extra effort of a press while the other hand holds a long note, and of a flick with a set direction. */
+  handHeldFactor: 1,
+  handAimedWeight: 1,
+  handAimedChordWeight: 1,
   sectionSeconds: 0.4,
   swipeSeconds: 0.06,
   swipeLanes: 2,
   /** Spread of the per-section miss probability in log-strain units. */
-  fcSpread: 0.3,
+  fcSpread: 0.6,
 } as const;
 import { readingTimeline } from "./chart-difficulty-reading.js";
 export const CHART_DIFFICULTY_WEIGHTS = {
@@ -272,7 +276,12 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
   };
   if (input.masterJudgedCount === null) warnings.add("master-count-unavailable");
   if (input.masterJudgedCount !== null && quality.canonicalJudgedCount !== input.masterJudgedCount)
-    warnings.add("canonical-full-combo-mismatch");
+    // A note or two apart is a conversion detail, not a different chart.
+    warnings.add(
+      Math.abs(quality.canonicalJudgedCount - input.masterJudgedCount) <= 2
+        ? "full-combo-count-near"
+        : "canonical-full-combo-mismatch",
+    );
   if (notes.length > 25000 || !Number.isFinite(chart.durationMs) || chart.durationMs <= 0 || chart.durationMs > 900000)
     warnings.add("chart-budget-or-duration");
   if (
@@ -599,12 +608,19 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
             const gap = Math.max(time - before[0], 0.04),
               speed = Math.max(0, P.handReferenceSeconds / gap - 1) ** P.handSpeedPower,
               jump = Math.abs(centre - before[1]);
-            handLoad[hand] =
-              handLoad[hand]! +
+            const effort =
               P.handSpeedWeight * speed +
               (P.handJumpWeight * jump) / gap +
               (flick !== before[2] && gap < P.handSwitchSeconds ? P.handSwitchWeight : 0) +
               (jump < P.handJackTolerance ? P.handJackWeight * speed : 0);
+            const aimed = gestures.some((row) => isFlick(row) && (row.note.direction ?? 0) !== 0);
+            const aimedChord =
+              aimed && rows.filter((row) => isFlick(row) && (row.note.direction ?? 0) !== 0).length > 1;
+            // A flick with a set direction, more so with both hands at once.
+            handLoad[hand] =
+              handLoad[hand]! + (aimed ? P.handAimedWeight : 0) + (aimedChord ? P.handAimedChordWeight : 0);
+            // A press while the other hand holds a long note: this hand carries the passage alone.
+            handLoad[hand] = handLoad[hand]! + effort * (occupied.has(1 - hand) ? 1 + P.handHeldFactor : 1);
           }
           handLast[hand] = [time, centre, flick];
           const slot = Math.floor(time / P.sectionSeconds);
