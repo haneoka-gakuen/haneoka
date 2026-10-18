@@ -714,7 +714,6 @@
         "deckSkills": "스코어 스킬 (%)",
         "deckRank": "목표 랭크",
         "deckRoom": "룸 인원",
-        "deckPlace": "순위",
         "gekisouRoomScores": "격주 룸 점수",
         "roomPlayer": "1명",
         "roomPlayers": "{count}명",
@@ -723,7 +722,6 @@
         "metaRankScore": "{rank} 점수",
         "deckPlay": "플레이",
         "deckGreat": "GREAT (%)",
-        "deckJust": "JUST (%)",
         "deckOverhead": "플레이 간 시간 (초)",
         "roomScores": "멤버 점수",
         "roomTotal": "룸 합계",
@@ -738,7 +736,15 @@
         "deckItemBonus": "이벤트 아이템 보너스 (%)",
         "frontier": "채보",
         "frontierOnly": "상위 호환 없는 채보",
-        "scatterX": "가로축"
+        "scatterX": "가로축",
+        "deckExtension": "스냅 스킬 연장 (초)",
+        "metaDeckPowerEvery": "모든 스킬 순서에서 필요한 종합력",
+        "rankScore": "점수",
+        "averageOrder": "스킬 순서 평균",
+        "everyOrder": "모든 스킬 순서",
+        "bestOrder": "최적의 스킬 순서",
+        "powerNeeded": "필요 종합력",
+        "allCharts": "모든 채보 비교"
       }
     },
     "characters": {
@@ -2405,7 +2411,12 @@
       "clearOwnershipScope": "보유 카드 {count}장. 육성 수치, 계정 보너스, 편성, 설정 유지.",
       "clearOwnershipConfirm": "모두 미보유로 표시",
       "clearedOwnership": "멤버와 스냅 {count}장을 미보유로 변경했습니다",
-      "songMetaWithTeam": "이 편성으로 곡 분석"
+      "songMetaWithTeam": "이 편성으로 곡 분석",
+      "powerNeeded": "필요 종합력",
+      "averageOrder": "스킬 순서 평균",
+      "everyOrder": "모든 스킬 순서",
+      "roomPlayer": "1명",
+      "roomPlayers": "{count}명"
     },
     "calendar": {
       "title": "달력",

@@ -9,6 +9,8 @@ import { icon } from "./ui/icon";
 import "./song-skill-points";
 import { roomRequiredScore } from "../lib/chart-rates";
 import "./song-room-calculator";
+import "./song-score-targets";
+import type { ChartRates } from "../lib/chart-rates";
 
 type Item = Record<string, unknown>;
 
@@ -19,6 +21,9 @@ export interface SongRewardRenderOptions {
   label(key: string, fallback: string): string;
   localized(value: unknown): string;
   locale: string;
+  /** This song's chart rates by difficulty, and the song analysis address. */
+  chartRates?: { greatFactor: number; charts: Record<string, ChartRates> };
+  analysisHref?: string;
 }
 
 export interface SongSummaryRenderOptions {
@@ -238,7 +243,18 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
   `;
 }
 
-export function renderSongRewards({ item, chart, server, label, localized, locale }: SongRewardRenderOptions) {
+export function renderSongRewards({ item, chart, server, label, localized, locale, chartRates, analysisHref }: SongRewardRenderOptions) {
+  const rates = chartRates?.charts[String(chart.difficulty ?? "")] ?? null;
+  const targets = rates
+    ? html`
+        <song-score-targets
+          .rates=${rates}
+          .greatFactor=${chartRates!.greatFactor}
+          locale=${locale}
+          href=${analysisHref ?? ""}
+        ></song-score-targets>
+      `
+    : nothing;
   const ranks = (Array.isArray(item.scoreRanks) ? (item.scoreRanks as Item[]) : []).filter(
     (rank) => Number(rank.scoreRank || 0) >= 3,
   );
@@ -246,7 +262,7 @@ export function renderSongRewards({ item, chart, server, label, localized, local
     (left, right) => Number(left.liveScoreRank || 99) - Number(right.liveScoreRank || 99),
   );
   const comboRewards = item.comboRewards && typeof item.comboRewards === "object" ? (item.comboRewards as Item) : {};
-  if (!ranks.length && !scoreRewards.length && !Object.keys(comboRewards).length) return nothing;
+  if (!ranks.length && !scoreRewards.length && !Object.keys(comboRewards).length) return targets;
   const names = ["", "E", "D", "C", "B", "A", "S", "SS"];
   const active = String(chart.difficultyName || "").toLowerCase();
   const rankIcon = (rank: string) =>
@@ -338,6 +354,7 @@ export function renderSongRewards({ item, chart, server, label, localized, local
       `
     : nothing;
   return html`
+    ${targets}
     <section class="detail-section song-detail-section song-rewards-section">
       ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", {
         count: ranks.length + scoreRewards.length + combo.length,

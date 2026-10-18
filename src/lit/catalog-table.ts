@@ -127,6 +127,7 @@ const COLUMNS: Record<string, Column[]> = {
     column("eff", "numeric", "eff"),
     column("deckScore", "numeric", "deckScore"),
     column("deckPower", "numeric", "deckPower"),
+    column("deckPowerEvery", "numeric", "deckPowerEvery"),
     column("deckReach", "numeric", "deckReach"),
     column("deckPerMinute", "numeric", "deckPerMinute"),
     column("deckSkip", "numeric", "deckSkip"),
@@ -161,13 +162,6 @@ const COLUMNS: Record<string, Column[]> = {
     column("time", "numeric", "time"),
     column("score", "numeric", "score"),
     column("eff", "numeric", "eff"),
-    column("deckScore", "numeric", "deckScore"),
-    column("deckPower", "numeric", "deckPower"),
-    column("deckReach", "numeric", "deckReach"),
-    column("deckPerMinute", "numeric", "deckPerMinute"),
-    column("eventPoints", "numeric", "eventPoints"),
-    column("eventPointsHour", "numeric", "eventPointsHour"),
-    column("eventItemsHour", "numeric", "eventItemsHour"),
     column("rankC", "numeric", "rankC"),
     column("rankB", "numeric", "rankB"),
     column("rankA", "numeric", "rankA"),
@@ -274,6 +268,7 @@ export class CatalogTable extends LitElement {
       n: ["metaN", "Note Count"], nps: ["metaNps", "Notes per Second"], sr: ["metaSr", "Skill Coverage Rate"],
       deckScore: ["catalog.analysis.fields.metaDeckScore", "Expected score"],
       deckPower: ["catalog.analysis.fields.metaDeckPower", "Power needed"],
+      deckPowerEvery: ["catalog.analysis.fields.metaDeckPowerEvery", "Power needed in every order"],
       deckReach: ["catalog.analysis.fields.metaDeckReach", "Reach rate"],
       deckPerMinute: ["catalog.analysis.fields.metaDeckPerMinute", "Score per minute"],
       deckSkip: ["catalog.analysis.fields.metaDeckSkip", "Skip score"],
@@ -581,7 +576,7 @@ export class CatalogTable extends LitElement {
       return wrap(value ? c.label(value, value) : "—");
     }
     if (key === "status") return wrap(c.systemStatusLabel(item) || "—");
-    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", "eventPoints", "eventPointsHour", "eventItemsHour", "rankC", "rankB", "rankA", "rankS", "rankSS"].includes(key))
+    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckPowerEvery", "deckReach", "deckPerMinute", "deckSkip", "eventPoints", "eventPointsHour", "eventItemsHour", "rankC", "rankB", "rankA", "rankS", "rankSS"].includes(key))
       return wrap(c.songListMeta(item, key));
     if (key === "release") return wrap(c.release(item.releasedAt || item.publishedAt || item.publicStartAt) || "—");
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");

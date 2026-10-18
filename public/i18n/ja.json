@@ -714,7 +714,6 @@
         "deckSkills": "スコアスキル（%）",
         "deckRank": "目標ランク",
         "deckRoom": "ルーム人数",
-        "deckPlace": "順位",
         "gekisouRoomScores": "撃奏ルームのスコア",
         "roomPlayer": "1人",
         "roomPlayers": "{count}人",
@@ -723,7 +722,6 @@
         "metaRankScore": "{rank}スコア",
         "deckPlay": "プレイ",
         "deckGreat": "GREAT（%）",
-        "deckJust": "JUST（%）",
         "deckOverhead": "プレイ間の時間（秒）",
         "roomScores": "メンバーのスコア",
         "roomTotal": "ルーム合計",
@@ -738,7 +736,15 @@
         "deckItemBonus": "イベントアイテムボーナス（%）",
         "frontier": "譜面",
         "frontierOnly": "上位互換のない譜面",
-        "scatterX": "横軸"
+        "scatterX": "横軸",
+        "deckExtension": "スナップによるスキル延長（秒）",
+        "metaDeckPowerEvery": "全スキル順で必要な総合力",
+        "rankScore": "スコア",
+        "averageOrder": "スキル順の平均",
+        "everyOrder": "全スキル順",
+        "bestOrder": "最良のスキル順",
+        "powerNeeded": "必要総合力",
+        "allCharts": "全譜面で比較"
       }
     },
     "characters": {
@@ -2405,7 +2411,12 @@
       "clearOwnershipScope": "所持カード{count}枚。育成値・アカウントボーナス・編成・設定は保持。",
       "clearOwnershipConfirm": "すべて未所持にする",
       "clearedOwnership": "メンバーとスナップ{count}枚を未所持に変更しました",
-      "songMetaWithTeam": "この編成で楽曲分析"
+      "songMetaWithTeam": "この編成で楽曲分析",
+      "powerNeeded": "必要総合力",
+      "averageOrder": "スキル順の平均",
+      "everyOrder": "全スキル順",
+      "roomPlayer": "1人",
+      "roomPlayers": "{count}人"
     },
     "calendar": {
       "title": "カレンダー",

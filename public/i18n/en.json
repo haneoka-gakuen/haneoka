@@ -714,7 +714,6 @@
         "deckSkills": "Score skills (%)",
         "deckRank": "Target rank",
         "deckRoom": "Players in room",
-        "deckPlace": "Placement",
         "gekisouRoomScores": "Gekisou room scores",
         "roomPlayer": "1 player",
         "roomPlayers": "{count} players",
@@ -723,7 +722,6 @@
         "metaRankScore": "{rank} score",
         "deckPlay": "Play",
         "deckGreat": "Great (%)",
-        "deckJust": "Just (%)",
         "deckOverhead": "Time between plays (s)",
         "roomScores": "Players' scores",
         "roomTotal": "Room total",
@@ -738,7 +736,15 @@
         "deckItemBonus": "Event item bonus (%)",
         "frontier": "Charts",
         "frontierOnly": "Not outclassed",
-        "scatterX": "Horizontal axis"
+        "scatterX": "Horizontal axis",
+        "deckExtension": "Snap skill extension (s)",
+        "metaDeckPowerEvery": "Power needed in every order",
+        "rankScore": "Score",
+        "averageOrder": "Average of the orders",
+        "everyOrder": "Every order",
+        "bestOrder": "Best order",
+        "powerNeeded": "Power needed",
+        "allCharts": "Every chart"
       }
     },
     "characters": {
@@ -2405,7 +2411,12 @@
       "clearOwnershipScope": "{count} owned cards. Training values, account bonuses, teams and preferences stay saved.",
       "clearOwnershipConfirm": "Mark all not owned",
       "clearedOwnership": "Marked {count} members and snapshots not owned",
-      "songMetaWithTeam": "Song analysis with this team"
+      "songMetaWithTeam": "Song analysis with this team",
+      "powerNeeded": "Power needed",
+      "averageOrder": "Average of the orders",
+      "everyOrder": "Every order",
+      "roomPlayer": "1 player",
+      "roomPlayers": "{count} players"
     },
     "calendar": {
       "title": "Calendar",
