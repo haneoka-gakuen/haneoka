@@ -728,7 +728,14 @@
         "roomScores": "Players' scores",
         "roomTotal": "Room total",
         "roomRank": "Room rank",
-        "roomNext": "Next rank"
+        "roomNext": "Next rank",
+        "metaEventPoints": "Event points per live",
+        "metaEventPointsHour": "Event points per hour",
+        "metaEventItemsHour": "Event items per hour",
+        "deckEvent": "Event",
+        "deckBoosts": "Live Boost cost per live",
+        "deckPointBonus": "Event point bonus (%)",
+        "deckItemBonus": "Event item bonus (%)"
       }
     },
     "characters": {

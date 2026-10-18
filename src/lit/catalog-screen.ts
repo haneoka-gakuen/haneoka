@@ -127,7 +127,18 @@ import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { iconButton, inputChip, segmented } from "./ui/controls";
-import { meanRate, playRates, reachChance, requiredPower, roomRequiredScore } from "../lib/chart-rates";
+import {
+  eventLiveItems,
+  eventLivePoints,
+  meanRate,
+  orderScores,
+  playRates,
+  reachChance,
+  requiredPower,
+  roomRequiredScore,
+  soloRank,
+  type ChartRateTable,
+} from "../lib/chart-rates";
 import { icon } from "./ui/icon";
 import { COMPACT, EXPANDED, matches, watchMedia } from "./ui/media";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -664,10 +675,26 @@ const fallbackProfile: Profile = {
   defaultOrder: "asc",
 };
 /** song-meta deck: power, the five members' score skills in percent, the target rank, and in Gekisou the room. */
-const DEFAULT_DECK = { power: 1000000, skills: [100, 100, 100, 100, 100], rank: 7, room: 5, place: 1, great: 0, just: 100, overhead: 30 };
+const DEFAULT_DECK = {
+  power: 1000000,
+  skills: [100, 100, 100, 100, 100],
+  rank: 7,
+  room: 5,
+  place: 1,
+  great: 0,
+  just: 100,
+  overhead: 30,
+  /** 0 is the latest event that has started. */
+  event: 0,
+  boosts: 0,
+  pointBonus: 0,
+  itemBonus: 0,
+};
+/** Normal-live event rewards; Live mode only. */
+const EVENT_METRICS = ["eventPoints", "eventPointsHour", "eventItemsHour"];
 /** Score rank thresholds in the table: solo in Live, the room total in Gekisou. */
 const RANK_METRICS = ["rankC", "rankB", "rankA", "rankS", "rankSS"];
-const DECK_METRICS = ["deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", ...RANK_METRICS];
+const DECK_METRICS = ["deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", ...RANK_METRICS, ...EVENT_METRICS];
 const DECK_RANKS: [number, string][] = [[3, "C"], [4, "B"], [5, "A"], [6, "S"], [7, "SS"]];
 const asItems = (value: unknown, document?: string): Item[] => {
   const source = document ? readPath(value, document) : value;
@@ -828,6 +855,10 @@ export class CatalogScreen extends LitElement {
       great: whole("deckGreat", 0, 100, DEFAULT_DECK.great),
       just: whole("deckJust", 0, 100, DEFAULT_DECK.just),
       overhead: whole("deckOverhead", 0, 600, DEFAULT_DECK.overhead),
+      event: whole("deckEvent", 0, 99999, DEFAULT_DECK.event),
+      boosts: whole("deckBoosts", 0, 10, DEFAULT_DECK.boosts),
+      pointBonus: whole("deckPointBonus", 0, 100000, DEFAULT_DECK.pointBonus),
+      itemBonus: whole("deckItemBonus", 0, 100000, DEFAULT_DECK.itemBonus),
     };
     this.metaMode = params.get("metaMode") === "gekisou" ? "gekisou" : "live";
     const tier = params.get("metaTier");
@@ -2703,6 +2734,10 @@ export class CatalogScreen extends LitElement {
       set("deckGreat", String(this.deck.great), String(DEFAULT_DECK.great));
       set("deckJust", String(this.deck.just), String(DEFAULT_DECK.just));
       set("deckOverhead", String(this.deck.overhead), String(DEFAULT_DECK.overhead));
+      set("deckEvent", String(this.deck.event), String(DEFAULT_DECK.event));
+      set("deckBoosts", String(this.deck.boosts), String(DEFAULT_DECK.boosts));
+      set("deckPointBonus", String(this.deck.pointBonus), String(DEFAULT_DECK.pointBonus));
+      set("deckItemBonus", String(this.deck.itemBonus), String(DEFAULT_DECK.itemBonus));
     }
     const bandRail = this.hasBandRail();
     if (bandRail) set("band", String(this.activeBand), "0");
@@ -3108,11 +3143,23 @@ export class CatalogScreen extends LitElement {
     const room = required(this.deck.rank);
     const accuracy = { great: this.deck.great / 100, just: this.deck.just / 100 };
     return {
+      table,
+      ranks: rates.ranks,
       rates: playRates(rates, gekisou ? "gekisou" : "live", this.deck.place, accuracy, table.greatFactor),
       skip: rates.skip,
       required,
       target: gekisou ? Math.ceil(room / this.deck.room) : room,
     };
+  }
+  /** The chosen event, or the latest one that has started. */
+  private deckEvent(table: ChartRateTable) {
+    if (this.deck.event) return table.events.find((event) => event.id === this.deck.event) ?? null;
+    const now = Date.now();
+    const started = table.events.filter((event) => event.startAt !== null && event.startAt <= now);
+    return (started.length ? started : table.events).sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))[0] ?? null;
+  }
+  hasEventRates(): boolean {
+    return Boolean(this.chartRates[this.dataServer() as OfficialCatalogServer]?.events.length);
   }
   hasChartRates(): boolean {
     return Object.keys(this.chartRates).length > 0;
@@ -3213,10 +3260,59 @@ export class CatalogScreen extends LitElement {
           </div>
         `,
       )}
+      ${this.metaMode === "live" ? this.renderDeckEvent(text) : nothing}
       ${choice("deckRank", "Target rank", this.deck.rank, DECK_RANKS.map(([value, name]) => ({ value: String(value), label: name })), "rank")}
       ${this.metaMode === "gekisou" ? choice("deckRoom", "Players in room", this.deck.room, places, "room") : nothing}
       ${this.metaMode === "gekisou" ? choice("deckPlace", "Placement", this.deck.place, places, "place") : nothing}
     `;
+  }
+  private renderDeckEvent(text: (key: string, fallback: string) => string) {
+    const table = this.chartRates[this.dataServer() as OfficialCatalogServer];
+    if (!table?.events.length) return nothing;
+    const current = this.deckEvent(table);
+    const events = [...table.events].sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0));
+    const field = (key: "boosts" | "pointBonus" | "itemBonus", name: string, max: number) => html`
+      <label>
+        ${name}
+        <input
+          type="number"
+          min="0"
+          max=${max}
+          step="1"
+          inputmode="numeric"
+          .value=${String(this.deck[key])}
+          @change=${(event: Event) => {
+            const value = Math.round(Number((event.target as HTMLInputElement).value));
+            if (Number.isFinite(value) && value >= 0 && value <= max) this.setDeck({ [key]: value });
+          }}
+        />
+      </label>
+    `;
+    return filterGroup(
+      text("deckEvent", "Event"),
+      html`
+        <div class="stack stack--tight">
+          <md-outlined-select
+            label=${text("deckEvent", "Event")}
+            value=${String(current?.id ?? "")}
+            @change=${(event: Event) => this.setDeck({ event: Number((event.target as HTMLSelectElement).value) || 0 })}
+          >
+            ${events.map(
+              (event) => html`
+                <md-select-option value=${String(event.id)} ?selected=${event.id === current?.id}>
+                  <div slot="headline">${this.localized(event.title) || `#${event.id}`}</div>
+                </md-select-option>
+              `,
+            )}
+          </md-outlined-select>
+          <div class="filter-range">
+            ${field("boosts", text("deckBoosts", "Boosts per live"), 10)}
+            ${field("pointBonus", text("deckPointBonus", "Event point bonus (%)"), 100000)}
+            ${field("itemBonus", text("deckItemBonus", "Event item bonus (%)"), 100000)}
+          </div>
+        </div>
+      `,
+    );
   }
   private deckValue(item: Item, key: string): number {
     const chart = this.deckChart(item);
@@ -3226,6 +3322,21 @@ export class CatalogScreen extends LitElement {
     if (rank >= 0) return chart.required(rank + 3);
     if (key === "deckScore") return Math.floor(power * meanRate(chart.rates, skills));
     if (key === "deckSkip") return this.metaMode === "gekisou" ? Number.NaN : Math.floor(power * chart.skip);
+    if (EVENT_METRICS.includes(key)) {
+      const event = this.deckEvent(chart.table);
+      if (!event || this.metaMode === "gekisou") return Number.NaN;
+      const rate = this.deck.boosts ? (chart.table.boosts.find(([consumed]) => consumed === this.deck.boosts)?.[1] ?? 1) : 1;
+      const itemRate = this.deck.boosts ? (chart.table.boosts.find(([consumed]) => consumed === this.deck.boosts)?.[2] ?? 1) : 1;
+      const ranks = orderScores(power, chart.rates, skills).map((score) => soloRank(chart.ranks, score));
+      const mean = (value: (rank: number) => number) => ranks.reduce((sum, rank) => sum + value(rank), 0) / ranks.length;
+      const perPlay =
+        key === "eventItemsHour"
+          ? mean((rank) => eventLiveItems(event.items, rank, this.deck.itemBonus, itemRate))
+          : mean((rank) => eventLivePoints(event.points.find(([id]) => id === rank)?.[1] ?? 0, this.deck.pointBonus, rate));
+      if (key === "eventPoints") return perPlay;
+      const seconds = this.songMetaValue(item, "time");
+      return seconds > 0 ? (perPlay * 3600) / (seconds + this.deck.overhead) : Number.NaN;
+    }
     if (key === "deckPerMinute") {
       const seconds = this.songMetaValue(item, "time");
       return seconds > 0 ? Math.floor((power * meanRate(chart.rates, skills) * 60) / (seconds + this.deck.overhead)) : Number.NaN;
@@ -3244,6 +3355,8 @@ export class CatalogScreen extends LitElement {
     }
 
     const value = this.songMetaValue(item, key);
+    if (EVENT_METRICS.includes(key) && Number.isFinite(value))
+      return value.toLocaleString(this.settings.locale, { maximumFractionDigits: key === "eventPoints" ? 1 : 0 });
     if (key === "deckReach" && Number.isFinite(value))
       return value.toLocaleString(this.settings.locale, { style: "percent", maximumFractionDigits: 1 });
     if (!Number.isFinite(value))

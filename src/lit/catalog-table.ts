@@ -130,6 +130,9 @@ const COLUMNS: Record<string, Column[]> = {
     column("deckReach", "numeric", "deckReach"),
     column("deckPerMinute", "numeric", "deckPerMinute"),
     column("deckSkip", "numeric", "deckSkip"),
+    column("eventPoints", "numeric", "eventPoints"),
+    column("eventPointsHour", "numeric", "eventPointsHour"),
+    column("eventItemsHour", "numeric", "eventItemsHour"),
     column("rankC", "numeric", "rankC"),
     column("rankB", "numeric", "rankB"),
     column("rankA", "numeric", "rankA"),
@@ -261,7 +264,8 @@ export class CatalogTable extends LitElement {
       (!entry.key.startsWith("gekisouPhase") || c.settings.origin !== "bestdori") &&
       (c.settings.origin !== "sekai" || !["sonolus", "attribute"].includes(entry.key)) &&
       (entry.key !== "nativeScore" || c.hasNativeMetaReference()) &&
-      (!entry.key.startsWith("deck") || c.hasChartRates()));
+      (!entry.key.startsWith("deck") || c.hasChartRates()) &&
+      (!entry.key.startsWith("event") || c.hasEventRates()));
     const metricLabels: Record<string, [string, string]> = {
       time: ["metaTime", "Song Duration"], eff: ["metaEff", "Efficiency"], bpm: ["metaBpm", "Beats per Minute"],
       n: ["metaN", "Note Count"], nps: ["metaNps", "Notes per Second"], sr: ["metaSr", "Skill Coverage Rate"],
@@ -270,6 +274,9 @@ export class CatalogTable extends LitElement {
       deckReach: ["catalog.analysis.fields.metaDeckReach", "Reach rate"],
       deckPerMinute: ["catalog.analysis.fields.metaDeckPerMinute", "Score per minute"],
       deckSkip: ["catalog.analysis.fields.metaDeckSkip", "Skip score"],
+      eventPoints: ["catalog.analysis.fields.metaEventPoints", "Event points per live"],
+      eventPointsHour: ["catalog.analysis.fields.metaEventPointsHour", "Event points per hour"],
+      eventItemsHour: ["catalog.analysis.fields.metaEventItemsHour", "Event items per hour"],
     };
     const rankLabel = (key: string) => c.label("catalog.analysis.fields.metaRankScore", "{rank} score").replace("{rank}", key.slice(4));
     const label = (key: string) => /^rank(?:C|B|A|S|SS)$/u.test(key) ? rankLabel(key) : (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
@@ -571,7 +578,7 @@ export class CatalogTable extends LitElement {
       return wrap(value ? c.label(value, value) : "—");
     }
     if (key === "status") return wrap(c.systemStatusLabel(item) || "—");
-    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", "rankC", "rankB", "rankA", "rankS", "rankSS"].includes(key))
+    if (["time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justableRate", "justable", "luck", "deckScore", "deckPower", "deckReach", "deckPerMinute", "deckSkip", "eventPoints", "eventPointsHour", "eventItemsHour", "rankC", "rankB", "rankA", "rankS", "rankSS"].includes(key))
       return wrap(c.songListMeta(item, key));
     if (key === "release") return wrap(c.release(item.releasedAt || item.publishedAt || item.publicStartAt) || "—");
     if (key === "subtitle") return wrap(c.localized(item.subTitle) || "—");

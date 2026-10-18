@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { teamSource } from "./tool-page-data";
+import { compileFromTeamData } from "../lib/team-builder/engine/master";
 import { dataRows } from "../lib/team-builder/data";
 import type { ReleaseServer } from "../lib/release-server";
 import { fetchStaticReleaseBytes, staticCatalogRelease } from "../lib/static-catalog-source";
@@ -111,7 +112,28 @@ async function compute(server: ReleaseServer): Promise<ChartRateTable> {
       dataRows(data.liveTools.judgementParameters).find((row) => Number(row.noteSimulateJudgement) === judgement)
         ?.scorePercent,
     );
-  return { releaseId: release.releaseId, greatFactor: percent(4) / percent(5), charts };
+  const master = compileFromTeamData(data);
+  const events = [...master.events.values()]
+    .filter((event) => event.livePoints.size)
+    .map((event) => {
+      return {
+        id: event.id,
+        title: data.events[String(event.id)]?.title ?? null,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        points: [...event.livePoints].sort((a, b) => a[0] - b[0]),
+        items: event.liveRewards
+          .filter((reward) => !event.itemId || reward.resourceId === event.itemId)
+          .map((reward): [number, number, number] => [reward.scoreRank, reward.count, reward.probability]),
+      };
+    });
+  return {
+    releaseId: release.releaseId,
+    greatFactor: percent(4) / percent(5),
+    boosts: master.boosts.map((row) => [row.consumed, row.eventPointRate, row.rewardRate]),
+    events,
+    charts,
+  };
 }
 
 const pending = new Map<string, Promise<ChartRateTable>>();
@@ -122,7 +144,7 @@ export function chartRates(server: ReleaseServer): Promise<ChartRateTable> {
       encoding: "utf8",
     }).trim();
     value = staticCatalogRelease(server).then((release) =>
-      staticBuildJson(`chart-rates-v3:${server}:${release.releaseId}:${build}`, "chart-rates", () => compute(server)),
+      staticBuildJson(`chart-rates-v4:${server}:${release.releaseId}:${build}`, "chart-rates", () => compute(server)),
     );
     pending.set(server, value);
   }

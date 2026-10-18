@@ -19,6 +19,18 @@ export interface ChartRateTable {
   releaseId: string;
   /** A Great note's score over a Perfect note's. */
   greatFactor: number;
+  /** Live boosts as [consumed, event point rate, reward rate]; no boost is rate 1. */
+  boosts: [number, number, number][];
+  /** Events with normal-live points: each score rank as [rank, points], and the event item rewards as
+   * [rank, count, probability out of 10000], at rate 1. */
+  events: {
+    id: number;
+    title: unknown;
+    startAt: number | null;
+    endAt: number | null;
+    points: [number, number][];
+    items: [number, number, number][];
+  }[];
   /** `songId:difficulty` → its rates. */
   charts: Record<string, ChartRates>;
 }
@@ -93,4 +105,38 @@ export function roomRank(ranks: [number, number][], total: number, players: numb
     rank = id;
   }
   return { rank: Math.max(2, rank), next: null };
+}
+/** The score of each of the 120 skill orders. */
+export function orderScores(power: number, rates: number[], skills: number[]): number[] {
+  return SKILL_ORDERS.map((order) => {
+    let rate = rates[0]!;
+    for (let event = 1; event < rates.length; event++) rate += (skills[order[event - 1]!]! / 100) * rates[event]!;
+    return power * rate;
+  });
+}
+/** The solo score rank a score reaches; `ranks` is [rank, solo score, …] in ascending rank. */
+export function soloRank(ranks: readonly (readonly number[])[], score: number): number {
+  let rank = 2;
+  for (const row of ranks) if (row[1]! <= score) rank = Math.max(rank, row[0]!);
+  return rank;
+}
+/** Event points of one normal live (LiveEventPoint × (1 + bonus) × boost rate, truncated like the game). */
+export function eventLivePoints(points: number, bonusPercent: number, rate: number): number {
+  return Math.trunc(Math.imul(Math.imul(Math.round(bonusPercent * 100) + 10000, rate), points) / 10000);
+}
+/** Expected event items of one normal live at a rank: each reward truncated like the game, then weighted. */
+export function eventLiveItems(
+  items: readonly (readonly number[])[],
+  rank: number,
+  bonusPercent: number,
+  rate: number,
+): number {
+  let total = 0;
+  for (const [id, count, probability] of items)
+    if (id === rank)
+      total +=
+        (Math.trunc(Math.imul(Math.imul(count!, Math.round(bonusPercent * 100) + 10000), rate) / 10000) *
+          probability!) /
+        10000;
+  return total;
 }

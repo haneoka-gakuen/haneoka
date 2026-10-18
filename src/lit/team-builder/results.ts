@@ -435,6 +435,12 @@ function songMetaHref(host: TeamBuilder, hit: EngineHit): string | null {
     return Math.round(percent * 10) / 10;
   });
   const query = new URLSearchParams({ deckPower: String(hit.power), deckSkills: skills.join(",") });
+  const settings = resultSettings(host);
+  if (hit.event && settings.goal === "event" && settings.route === "live") {
+    query.set(settings.measure === "items" ? "deckItemBonus" : "deckPointBonus", String(Math.floor(hit.event.bonusPercent)));
+    if (settings.eventId) query.set("deckEvent", String(settings.eventId));
+    if (settings.boosts) query.set("deckBoosts", String(settings.boosts));
+  }
   return resourceCollectionHref(`catalog/song-meta?${query}`, host.server as ReleaseServer, host.locale as Locale) ?? null;
 }
 

@@ -728,7 +728,14 @@
         "roomScores": "メンバーのスコア",
         "roomTotal": "ルーム合計",
         "roomRank": "ルームランク",
-        "roomNext": "次のランク"
+        "roomNext": "次のランク",
+        "metaEventPoints": "1回のイベントpt",
+        "metaEventPointsHour": "1時間のイベントpt",
+        "metaEventItemsHour": "1時間のイベントアイテム",
+        "deckEvent": "イベント",
+        "deckBoosts": "1回の Live Boost 消費量",
+        "deckPointBonus": "イベントptボーナス（%）",
+        "deckItemBonus": "イベントアイテムボーナス（%）"
       }
     },
     "characters": {

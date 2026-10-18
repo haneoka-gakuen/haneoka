@@ -728,7 +728,14 @@
         "roomScores": "成员分数",
         "roomTotal": "房间总分",
         "roomRank": "房间评级",
-        "roomNext": "下一评级"
+        "roomNext": "下一评级",
+        "metaEventPoints": "每局活动 pt",
+        "metaEventPointsHour": "每小时活动 pt",
+        "metaEventItemsHour": "每小时活动道具",
+        "deckEvent": "活动",
+        "deckBoosts": "每场 Live Boost 消耗",
+        "deckPointBonus": "活动 pt 加成（%）",
+        "deckItemBonus": "活动道具加成（%）"
       }
     },
     "characters": {
