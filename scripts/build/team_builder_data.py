@@ -57,9 +57,11 @@ def build_team_builder_data(data: Any, source_id: str) -> dict[str, Any]:
             "sourceTable": table,
         } for row in data.rows(table)}
     characters = {str(row["_id"]): {"characterId": int(row["_id"]), "bandId": int(row.get("_bandID") or 0),
-        "characterName": data.text(row.get("_nameTextID")), "colorCode": row.get("_mainColorCode")}
+        "characterName": data.text(row.get("_nameTextID")), "colorCode": row.get("_mainColorCode"),
+        "faceImage": data.asset(f"Assets/AddressableResources/Character/Image/{row['_id']}/character_face_icon.png")}
         for row in data.rows("MasterCharacter")}
-    bands = {str(row["_id"]): {"bandId": int(row["_id"]), "bandName": data.text(row.get("_nameTextID"))}
+    bands = {str(row["_id"]): {"bandId": int(row["_id"]), "bandName": data.text(row.get("_nameTextID")),
+        "icon": data.asset(f"Assets/AddressableResources/Band/{row['_id']}/band_small_Icon.png")}
         for row in data.rows("MasterBand")}
     band_items = {str(row["_id"]): {"bandItemId": int(row["_id"]), "bandId": int(row.get("_bandId") or 0),
         "name": data.text(row.get("_nameTextId")), "resourceGroupId": int(row.get("_resourceGroupId") or 0),
@@ -79,6 +81,8 @@ def build_team_builder_data(data: Any, source_id: str) -> dict[str, Any]:
                     "noteCount": score.get("_fullComboCount"),
                     "file": data.asset(f"Assets/AddressableResources/Live/MusicScore/{score.get('_musicScoreTextFileName')}.bytes")})
         songs[str(row["_id"])] = {"musicId": row["_id"], "musicTitle": data.text(row.get("_titleTextID")),
+            "artistId": row.get("_bandNameTextID"), "artistName": data.text(row.get("_bandNameTextID")),
+            "vocalCharacterIds": row.get("_vocalCharacterIDs", []),
             "bestMusicTagIds": row.get("_bestMusicTagIDs", []),
             "bandIds": row.get("_bandIDs", []), "musicType": row.get("_musicType"), "difficulty": difficulties,
             "liveScoreRankGroup": row.get("_liveScoreRankGroup"),

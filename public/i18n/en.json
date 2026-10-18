@@ -1174,6 +1174,15 @@
     }
   },
   "media": {
+    "rendering": {
+      "title": "Graphics",
+      "resolution": "Render resolution",
+      "native": "Native",
+      "quality": "Quality",
+      "balanced": "Balanced",
+      "sharpness": "Sharpness",
+      "description": "FSR 1"
+    },
     "availability": {
       "availableImage": "Image available",
       "availableAudio": "Audio available"

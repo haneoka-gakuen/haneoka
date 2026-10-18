@@ -4,6 +4,7 @@ export function setSekaiSourceReader(reader?: ProviderSourceReader): void { sour
 const sourceResponse = (input: RequestInfo | URL, init?: ProviderFetchInit): Promise<Response> => sourceReader ? sourceReader.response(input, init) : providerFetch(input, init);
 import { BESTDORI_CACHE_POLICY, bestdoriCacheControl } from "@haneoka/bestdori/cache-policy";
 import { convertBestdoriScenario, type BestdoriScenarioBase } from "@haneoka/bestdori/scenario";
+import { SEKAI_UNITS as UNITS, sekaiUnitBands } from "../src/lib/sekai-units";
 
 /**
  * Project Sekai data from Sekai Viewer, projected into the record shapes the
@@ -29,7 +30,7 @@ const ASSET_ORIGIN = "https://storage.sekai.best";
 export const SEKAI_API_PREFIX = "/api/v1/sekai";
 export { songRecords as projectSekaiSongs, unitRecords as projectSekaiBands, storyList as projectSekaiEventStories, unitStoryList as projectSekaiUnitStories, characterStoryList as projectSekaiCharacterStories, cardStoryList as projectSekaiCardStories, areaTalkList as projectSekaiAreaStories, specialStoryList as projectSekaiSpecialStories, mysekaiTalkList as projectSekaiMySekaiStories, virtualLiveList as projectSekaiLiveStories, storyDetail as projectSekaiStory };
 /** Bump when a projection changes so cached responses are not reused. */
-const RESPONSE_VERSION = "5";
+const RESPONSE_VERSION = "6";
 const JSON_CACHE_CONTROL = bestdoriCacheControl(BESTDORI_CACHE_POLICY.catalog);
 const MEDIA_CACHE_CONTROL = bestdoriCacheControl(BESTDORI_CACHE_POLICY.media);
 const CORS: Readonly<Record<string, string>> = {
@@ -42,16 +43,6 @@ const MEDIA_PATH =
   /^(?:music\/(?:jacket|long|music_score)|home\/banner|event_story|story\/(?:chapter_image|episode_image)|scenario\/background|sound\/(?:scenario|card_scenario|actionset)\/(?:voice|bgm|se)|character\/member_small|mysekai\/talk\/voice|virtual_live\/(?:mc\/voice|select\/banner))\/[\w./ ()★・-]+\.(?:webp|png|mp3|txt)$/u;
 
 const DIFFICULTIES = ["easy", "normal", "hard", "expert", "master", "append"] as const;
-/** The game's unit tags, in its own order, with the units' official names. */
-const UNITS: readonly (readonly [string, string])[] = [
-  ["vocaloid", "VIRTUAL SINGER"],
-  ["light_music_club", "Leo/need"],
-  ["idol", "MORE MORE JUMP！"],
-  ["street", "Vivid BAD SQUAD"],
-  ["theme_park", "ワンダーランズ×ショウタイム"],
-  ["school_refusal", "25時、ナイトコードで。"],
-  ["other", "Other"],
-];
 const BACKGROUND_ASPECT = 2048 / 1261;
 const BACKGROUND_STAGE_REF = "sekai:background";
 /** Model size and vertical placement on the 1280×720 stage. */
@@ -202,10 +193,7 @@ const songRecords = async (): Promise<Obj> => {
   );
 };
 
-const unitRecords = (): Obj =>
-  Object.fromEntries(
-    UNITS.map(([, bandName], index) => [String(index + 1), { bandId: index + 1, bandName, official: true }]),
-  );
+const unitRecords = (): Obj => sekaiUnitBands();
 
 /* ---------------------------------------------------------------- stories */
 

@@ -127,6 +127,7 @@ export interface SongPuzzlePageData {
   server: string;
   songs: Record<string, Record<string, unknown>>;
   variants: Record<string, Record<string, Record<string, unknown>>>;
+  cardData?: Record<string, { identity?: HaneokaReleaseIdentity; bands: Record<string, unknown>; characters: Record<string, unknown>; marks: Record<string, string> }>;
   tiles: number[];
 }
 export interface StampMakerPageData {
@@ -217,9 +218,10 @@ function teamSource(server: string): Promise<TeamBuilderData> {
 async function visuals(server: string): Promise<Visuals> {
   const identity = await staticCatalogRelease(server);
   const read = (resource: string) => fetchStaticCatalog(resource, server, identity);
-  const [marks, characters, songs, cards, supportCards, bandItems] = await Promise.all([
+  const [marks, characters, bands, songs, cards, supportCards, bandItems] = await Promise.all([
     read("ui-marks"),
     read("characters"),
+    read("bands"),
     read("songs"),
     read("cards"),
     read("support-cards"),
@@ -237,6 +239,7 @@ async function visuals(server: string): Promise<Visuals> {
         : [],
     ),
     characters: objectRow(characters) as Record<string, Record<string, unknown>>,
+    bands: objectRow(bands) as Record<string, Record<string, unknown>>,
     songs: objectRow(songs) as Record<string, Record<string, unknown>>,
     cards: objectRow(cards),
     supportCards: objectRow(supportCards),
@@ -273,16 +276,27 @@ export function songPuzzlePageData(server: string): Promise<SongPuzzlePageData> 
   let pending = puzzlePages.get(server);
   if (!pending) {
     pending = (async () => {
-      const read = async (peer: string) =>
-        objectRow(await fetchStaticCatalog("songs", peer, await staticCatalogRelease(peer))) as Record<
-          string,
-          Record<string, unknown>
-        >;
+      const read = async (peer: string) => {
+        const identity = await staticCatalogRelease(peer);
+        const [songs, bands, characters, marks] = await Promise.all(
+          ["songs", "bands", "characters", "ui-marks"].map((resource) => fetchStaticCatalog(resource, peer, identity)),
+        );
+        return {
+          songs: objectRow(songs) as Record<string, Record<string, unknown>>,
+          cardData: {
+            identity: { schema: "haneoka-resource-release-identity-v1" as const, ...identity, server: peer },
+            bands: objectRow(bands), characters: objectRow(characters),
+            marks: Object.fromEntries(Object.entries(objectRow(marks))
+              .filter(([name]) => /^(?:sp_icon_live_music_type_\d+|CardType-(?:Red|Blue|Green|Yellow|Purple))\.png$/u.test(name))
+              .map(([name, value]) => [name, `/runtime/${peer}/${String(value).replace(/^runtime\//u, "")}?release=${identity.releaseId}`])),
+          },
+        };
+      };
       const servers = [server, ...["jp", "intl"].filter((peer) => peer !== server)];
       const results = await Promise.allSettled(servers.map(read));
       if (results[0]!.status === "rejected") throw results[0]!.reason;
       const variants = Object.fromEntries(
-        results.flatMap((result, index) => (result.status === "fulfilled" ? [[servers[index]!, result.value]] : [])),
+        results.flatMap((result, index) => (result.status === "fulfilled" ? [[servers[index]!, result.value.songs]] : [])),
       );
       const goal = goalBoard(3);
       return {
@@ -290,6 +304,7 @@ export function songPuzzlePageData(server: string): Promise<SongPuzzlePageData> 
         server,
         songs: variants[server]!,
         variants,
+        cardData: Object.fromEntries(results.flatMap((result, index) => result.status === "fulfilled" ? [[servers[index]!, result.value.cardData]] : [])),
         tiles: shuffle({ size: 3, tiles: goal, goal }, 20),
       };
     })();

@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from build.catalog_storage import compile_catalog_storage, compile_source_index_storage
 from build.game_client import assemble_game_client
+from build.http_encoding import moc_gzip_path, precompress_runtime
 from core.manifests import read_json, write_json
 from core.config import PROJECT_ROOT, load_server_config
 from core.fingerprints import pipeline_producer
@@ -277,6 +278,13 @@ def _base_fill_entries(
     # Native identities come from the current manifest, never PNG->legacy Basis naming.
     texture_records = _runtime_texture_records(build, server, source_id)
     local_by_path = {entry["path"]: entry for entry in local_entries}
+    for path in list(expected):
+        encoded_path = moc_gzip_path(path)
+        if encoded_path is None or encoded_path not in base_entries:
+            continue
+        original = local_by_path.get(path) or base_entries.get(path)
+        if original and base_entries.get(path, {}).get("sha256") == original["sha256"]:
+            expected.add(encoded_path)
     for path, variant in texture_records.items():
         actual = local_by_path.get(path) or base_entries.get(path)
         if actual is None or actual.get("sha256") != variant["sha256"] or actual.get("bytes") != variant["byteLength"]:
@@ -326,6 +334,9 @@ def assemble_release(server: str, source_id: str, build_id: str, base_manifest: 
     try:
         _copy_tree(build.assets, staging / "assets")
         _copy_tree(build.runtime, staging / "runtime")
+        precompress_runtime(staging, {
+            entry["path"]: entry for entry in (base_manifest or {}).get("entries", [])
+        })
         _copy_tree(build.objects, staging / "objects")
         _copy_decoded_master(build.master, staging / "objects" / "master")
         # Raw encrypted Master tables and a sharded Addressables index form the

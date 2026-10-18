@@ -36,7 +36,11 @@ import {
 } from "../lib/song-puzzle/model";
 import type { SolveProgress, SolveResult } from "../lib/song-puzzle/solver";
 import { LazyImages } from "./ui/lazy-images";
+import { songTile } from "./shared/song-tile";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
+import { createCreationSongCardData, creationSongCard, type CreationSongCardData } from "../lib/chart-creation/song-card";
 interface Song {
+  row: Record<string, unknown>;
   labels: Record<Locale, string>;
   band: unknown;
   artist: unknown;
@@ -94,6 +98,7 @@ export class SongPuzzle extends LitElement {
   private coverFailed = false;
   private catalogController?: AbortController;
   private pageData?: SongPuzzlePageData;
+  private cardData?: CreationSongCardData;
   constructor() {
     super();
     this.locale = "en";
@@ -130,10 +135,12 @@ export class SongPuzzle extends LitElement {
   preparePage(payload: SongPuzzlePageData) {
     this.pageData = payload;
     this.server = payload.server;
+    const cards = payload.cardData?.[payload.server];
+    this.cardData = cards ? createCreationSongCardData({ provider: "haneoka", region: payload.server, ...cards, assetUrl: (value) => typeof value === "string" ? value : "" }) : undefined;
     this.songs = Object.entries(payload.songs).flatMap(([id, value]) => {
       const cover = String(value.jacketUrl || value.jacketThumbUrl || "");
       return /^\d+$/u.test(id) && cover.startsWith("/assets/") && !cover.includes("\\")
-        ? [{ id, title: value.musicTitle, labels: {} as Record<Locale, string>, band: value.bandName,
+        ? [{ id, row: value, title: value.musicTitle, labels: {} as Record<Locale, string>, band: value.bandName,
           artist: value.artistName, name: localizedText(value.musicTitle, this.locale) || id, cover }]
         : [];
     });
@@ -229,14 +236,20 @@ export class SongPuzzle extends LitElement {
         },
       }),
       kind: "song",
-      items: filtered.map((song) => ({
-        value: song.id,
-        title: song.name,
-        label: song.name,
-        image: song.cover,
-        subtitle: localizedText(song.band, this.locale) || localizedText(song.artist, this.locale),
-        kind: "song",
-      })),
+      items: filtered.map((song) => {
+        const dto = this.cardData ? creationSongCard(song.row, this.cardData, this.locale) : undefined;
+        return {
+          ...songTile(song.row, {
+            locale: this.locale, title: () => ({ text: song.name }), image: () => song.cover,
+            artist: () => dto?.artist ?? (localizedText(song.band, this.locale) || localizedText(song.artist, this.locale)),
+            bandIcon: () => dto?.bandIconUrl ?? "", imageForLocale: (source) => source,
+            performerAdornment: dto ? () => songPerformerAdornment(dto.performer) : undefined,
+            attributeMark: () => dto?.attributeIconUrl ?? "",
+            attributeLabel: () => dto?.attributeLabelKey ? clientText(this.locale, dto.attributeLabelKey) : "",
+          }, ""),
+          value: song.id,
+        };
+      }),
       selected: this.song,
       select: (id) => {
         if (!this.songs.some((song) => song.id === id)) return;
@@ -305,6 +318,19 @@ export class SongPuzzle extends LitElement {
       )
         throw new Error("identity");
       const data = (await response.json()) as Record<string, Record<string, unknown>>;
+      const read = async (resource: string) => {
+        const url = new URL(catalogUrl(resource, "", sourceServer), location.origin);
+        url.searchParams.set("release", release);
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok || response.headers.get("x-haneoka-release-id") !== release || response.headers.get("x-haneoka-source-id") !== source) throw new Error("identity");
+        return response.json();
+      };
+      const [bands, characters, marks] = await Promise.all([read("bands"), read("characters"), read("ui-marks")]);
+      this.cardData = createCreationSongCardData({
+        provider: "haneoka", identity: { schema: "haneoka-resource-release-identity-v1", server: sourceServer, releaseId: release, sourceId: source }, bands, characters,
+        marks: Object.fromEntries(Object.entries(marks).map(([name, value]) => [name, `/runtime/${sourceServer}/${String(value).replace(/^runtime\//u, "")}?release=${release}`])),
+        assetUrl: (value) => typeof value === "string" ? value : "",
+      });
       if (controller.signal.aborted || !this.isConnected) return;
       this.songs = Object.entries(data).flatMap(([id, value]) => {
         if (!value || typeof value !== "object" || !/^\d+$/.test(id)) return [];
@@ -313,6 +339,7 @@ export class SongPuzzle extends LitElement {
         return [
           {
             id,
+            row: value,
             title: value.musicTitle,
             labels: {} as Record<Locale, string>,
             band: value.bandName,

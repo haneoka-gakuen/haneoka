@@ -3165,22 +3165,23 @@ export class CatalogScreen extends LitElement {
       /* Source names remain available when a portrait archive is unavailable. */
     }
   }
-  private songPerformer(item: Item): SongPerformer {
-    const gbp = this.isProvider();
-    const server = gbp ? this.bestdoriRegion() : this.itemSourceServer(item);
-    const characters = gbp
+  songPerformer(item: Item): SongPerformer {
+    const provider = this.isProvider();
+    const game = this.settings.origin === "sekai" ? "sekai" : provider ? "gbp" : "our-notes";
+    const server = provider ? this.bestdoriRegion() : this.itemSourceServer(item);
+    const characters = provider
       ? this.characters
       : (this.unionCharacters[server as OfficialCatalogServer] ?? this.characters);
-    const bands = gbp ? this.bands : (this.unionBands[server as OfficialCatalogServer] ?? this.bands);
+    const bands = provider ? this.bands : (this.unionBands[server as OfficialCatalogServer] ?? this.bands);
     const entry = this.unionEntry(item);
-    const pin = gbp
+    const pin = provider
       ? undefined
       : entry
         ? entry.perServer[entry.displayServer]?.identity
         : this.nativeCatalogPin?.server === server
           ? this.nativeCatalogPin
           : undefined;
-    const identity = JSON.stringify([gbp ? "gbp" : "our-notes", server, pin?.releaseId, pin?.sourceId]);
+    const identity = JSON.stringify([game, server, pin?.releaseId, pin?.sourceId]);
     const cached = this.performerRegistries.get(server);
     if (
       cached?.characters === characters &&
@@ -3194,7 +3195,7 @@ export class CatalogScreen extends LitElement {
         ? (source as Map<number, Item>)
         : new Map(asItems(source).map((row) => [Number(row[id]), row]));
     const registry: PerformerRegistry = {
-      game: gbp ? "gbp" : "our-notes",
+      game,
       server,
       sourceId: pin?.server === server ? pin.sourceId : undefined,
       characters: rows(characters, "characterId"),
@@ -3847,16 +3848,7 @@ export class CatalogScreen extends LitElement {
     kind: Presentation = this.profile.presentation,
   ): GridIdentityAdornment {
     if ((kind === "comic" || kind === "stamp") && ids.length) return this.characterAvatars(ids);
-    if (kind === "song" && this.bandIcon(Number(item.bandId || 0)))
-      return html`
-        <img
-          src=${this.imageForLocale(this.bandIcon(Number(item.bandId || 0)))}
-          alt=""
-          @error=${(event: Event) => {
-            (event.currentTarget as HTMLImageElement).hidden = true;
-          }}
-        />
-      `;
+    if (kind === "song") return songPerformerAdornment(this.songPerformer(item), (source) => this.imageForLocale(source));
     if ((kind === "member" || kind === "support") && ids.length)
       return this.characterAvatars(ids, asItems(item.characterDetails));
     return nothing;
@@ -4914,7 +4906,10 @@ export class CatalogScreen extends LitElement {
           title: (entry) => songTitle(entry, this.settings.locale),
           image: (entry) =>
             this.imageSource(this.first(entry, ["jacketUrl", "jacketThumbUrl", "jacket", "thumbnail", "image"])),
-          artist: (entry) => this.itemArtistContent(entry),
+          artist: (entry) => {
+            const names = this.songPerformer(entry).names;
+            return names.length ? localizedList(names, this.settings.locale) : this.itemArtistContent(entry);
+          },
           bandIcon: (entry) => String(this.itemBand(entry, Number(entry.bandId || 0))?.icon || ""),
           performerAdornment: (entry) =>
             songPerformerAdornment(this.songPerformer(entry), (source) => this.imageForLocale(source)),

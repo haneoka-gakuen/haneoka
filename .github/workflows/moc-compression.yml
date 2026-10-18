@@ -1,0 +1,74 @@
+name: Precompress current MOC transport
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: Official resource server
+        type: choice
+        options: [intl, jp]
+        default: intl
+        required: true
+      producer_pin:
+        description: Full reviewed commit containing the MOC publisher
+        type: string
+        required: true
+      release:
+        description: Exact reviewed current immutable release id
+        type: string
+        required: true
+      publish:
+        description: Upload verified encodings and conditionally promote current
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: moc-compression-${{ inputs.server }}
+  cancel-in-progress: false
+jobs:
+  moc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: resource-${{ inputs.server }}
+    env:
+      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.producer_pin }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install the existing bounded R2 import closure
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/moc-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/moc-dependencies/requirements.txt"
+      - name: Prepare MOC representations and optionally promote current
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PRODUCER_PIN: ${{ inputs.producer_pin }}
+          RESOURCE_SERVER: ${{ inputs.server }}
+          MOC_RELEASE: ${{ inputs.release }}
+          MOC_PUBLISH: ${{ inputs.publish }}
+        run: |
+          publish=()
+          if [ "$MOC_PUBLISH" = true ]; then publish=(--publish); fi
+          python scripts/publish/moc_compression.py \
+            --server "$RESOURCE_SERVER" --release "$MOC_RELEASE" \
+            --output "$RUNNER_TEMP/moc-output" "${publish[@]}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: moc-transport-${{ inputs.server }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/moc-output/publication-receipt.json
+            ${{ runner.temp }}/moc-output/release/release.json
+            ${{ runner.temp }}/moc-output/release/release-identity.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -34,7 +34,9 @@ import { createCubismPlugin } from "@haneoka/vega-plugin-cubism";
 import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { createVegaRichTextPlugin } from "@haneoka/vega-plugin-richtext";
 import { createThreeRendererPlugin } from "@haneoka/vega-renderer-three";
-import { vegaDefaultShell } from "@haneoka/vega-shell-default";
+import { createDefaultShellPlugin } from "@haneoka/vega-shell-default";
+import { applyRenderQuality, observeRenderQuality } from "../../lib/render-quality";
+import "../ui/render-quality-settings";
 import {
   vegaHaneokaTheme,
   createHaneokaThemeAssetsPlugin,
@@ -170,6 +172,7 @@ export class VegaStoryStage extends LitElement {
   private sequenceListeners = new Set<() => void>();
   private stopCompletionObserver?: () => void;
   private stopSpeakerLocaleObserver?: () => void;
+  private stopRenderQuality?: () => void;
   private completionEmitted = false;
   private transportFrame = 0;
   private scrubbing = false;
@@ -213,12 +216,16 @@ export class VegaStoryStage extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.stopRenderQuality = observeRenderQuality((settings) => {
+      applyRenderQuality(this.handle?.player.SceneRoot, settings);
+    });
     addEventListener("haneoka:locale-ready", this.onDocumentLocale);
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
     void import("@material/web/slider/slider.js");
     this.requestUpdate();
   }
   disconnectedCallback() {
+    this.stopRenderQuality?.();
     removeEventListener("haneoka:locale-ready", this.onDocumentLocale);
     this.loadController?.abort();
     this.loadedKey = "";
@@ -327,21 +334,28 @@ export class VegaStoryStage extends LitElement {
       if (!active()) return;
       const mount = this.querySelector<HTMLElement>(".vega-story-runtime__mount");
       if (!mount) throw new Error("Vega player host is unavailable");
-      const stage = this;
+      const continuous = () => this.continuousPlay;
       const engine = createVega({
         plugins: [
           createVegaRichTextPlugin(),
           vegaPortableUiPlugin,
-          vegaDefaultShell,
+          createDefaultShellPlugin({
+            displaySettings: (host) => {
+              const settings = host.ownerDocument.createElement("render-quality-settings");
+              settings.setAttribute("locale", host.closest<HTMLElement>(".vega-shell")?.lang || this.locale);
+              host.append(settings);
+              return () => settings.remove();
+            },
+          }),
           createThreeRendererPlugin({ postTextureAssets: HANEOKA_POST_TEXTURE_ASSETS }),
           createCubismPlugin({ adapter: cubismAdapter() }),
           createHaneokaThemeAssetsPlugin({
             resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
           }),
-          createHaneokaThemeHostPlugin(stage.themeHostAdapter()),
+          createHaneokaThemeHostPlugin(this.themeHostAdapter()),
           createHaneokaStorySequencePlugin({
             get continuous() {
-              return stage.continuousPlay;
+              return continuous();
             },
             toggleContinuous: () => {
               this.continuousPlay = !this.continuousPlay;
@@ -414,6 +428,7 @@ export class VegaStoryStage extends LitElement {
       }
       this.stopBootStateObserver();
       this.handle = player;
+      applyRenderQuality(player.player.SceneRoot);
       player.player.runtime.displayNameJoiner = this.speakerNameJoiner();
       const speakerLocaleSubscription = player.shell?.subscribe(({ settings }) => {
         const separator = this.speakerNameJoiner(settings.uiLanguage === "auto" ? this.locale : settings.uiLanguage);
@@ -920,7 +935,7 @@ export class VegaStoryStage extends LitElement {
           class="vega-story-runtime__mount"
           aria-busy=${this.phase === "loading" || this.phase === "booting" ? "true" : "false"}
           @click=${(event: MouseEvent) => {
-            if (!this.started && !(event.target as Element)?.closest("button, input, select, a, [role=button]"))
+            if (!this.started && !(event.target as Element)?.closest("button, input, select, a, [role=button], [data-vega-ui-slot]"))
               this.startPlayback();
           }}
         ></div>

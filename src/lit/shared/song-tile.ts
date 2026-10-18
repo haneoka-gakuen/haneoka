@@ -14,6 +14,7 @@ import type { TileMark, TileOptions } from "../ui/tile";
 import { nextImageCandidate } from "../ui/lazy-images";
 import { difficultyKey } from "../ui/difficulty-picker";
 import { difficultyEstimateCaption } from "./difficulty-caption";
+import { catalogPortraitStack } from "./catalog-relationships";
 
 type Item = Record<string, unknown>;
 
@@ -96,19 +97,7 @@ export function songTile(
     adornment: deps.performerAdornment
       ? deps.performerAdornment(item)
       : bandIcons.length
-        ? bandIcons.map(
-            (bandIcon) => html`
-              <img
-                src=${deps.imageForLocale(bandIcon)}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                @error=${(event: Event) => {
-              (event.currentTarget as HTMLImageElement).hidden = true;
-            }}
-              />
-            `,
-          )
+        ? catalogPortraitStack(bandIcons.map((image) => ({ key: image, name: "", image: deps.imageForLocale(image) })))
         : nothing,
     label: title.text,
     image,

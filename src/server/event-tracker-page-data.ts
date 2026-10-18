@@ -10,7 +10,7 @@ import { staticBuildJson } from "./static-input-store";
 let page: Promise<TrackerPageData> | undefined;
 export function eventTrackerPageData(): Promise<TrackerPageData> {
   return (page ||= (async () => {
-    const [intl, jp, snapshots, musicTypeMarks] = await Promise.all([
+    const [intl, jp, snapshots, musicTypeMarks, songPerformers] = await Promise.all([
       rankingCardCatalog("intl"),
       rankingCardCatalog("jp"),
       eventTrackerSnapshots(),
@@ -29,8 +29,22 @@ export function eventTrackerPageData(): Promise<TrackerPageData> {
           ];
         }),
       ).then(Object.fromEntries),
+      Promise.all(
+        (["intl", "jp"] as const).map(async (source) => {
+          const graph = await entityGraph(source);
+          const pin = { ...graph.release, server: source };
+          return [
+            source,
+            {
+              sourceId: graph.release.sourceId,
+              bands: pinCrossCatalogValue([...graph.bands.values()], pin),
+              characters: pinCrossCatalogValue([...graph.characters.values()], pin),
+            },
+          ];
+        }),
+      ).then(Object.fromEntries),
     ]);
-    return { schema: "haneoka-event-tracker-page-v1", intl, jp, snapshots, musicTypeMarks };
+    return { schema: "haneoka-event-tracker-page-v1", intl, jp, snapshots, musicTypeMarks, songPerformers };
   })());
 }
 
@@ -83,7 +97,10 @@ async function loadSnapshot(region: GameRecordsRegion): Promise<EventTrackerSnap
     }
     if (songs.status === "fulfilled")
       for (const [id, song] of songs.value)
-        snapshot.songs[id] = pinCrossCatalogValue(song, { ...identity, server }) as Record<string, unknown>;
+        snapshot.songs[id] = {
+          ...(pinCrossCatalogValue(song, { ...identity, server }) as Record<string, unknown>),
+          catalogSourceServer: server,
+        };
     if (snapshot.info && data.event.challenges.every((row) => snapshot.songs[row.musicId])) break;
   }
   return snapshot;

@@ -1,4 +1,7 @@
 @layer pages {
+  .vega-story-runtime__mount:has(.vega-shell-host--active) + .vega-story-runtime__start {
+    visibility: hidden;
+  }
   vega-story-stage:has([data-vega-ui-hidden="true"]) .playback-controls {
     visibility: hidden;
     pointer-events: none;

@@ -1,7 +1,7 @@
 import "./character-voices";
 import { modelTile } from "./ui/model-tile";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { songTitle } from "../lib/song-display";
+import type { SongPerformer } from "../lib/song-performer";
 import { LitElement, html, nothing } from "lit";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { resourceKindForCollection } from "../lib/resource-route";
@@ -9,7 +9,7 @@ import { characterProfile } from "./shared/character-profile";
 import { characterPair } from "./ui/character-pair";
 import { renderDetailSectionHeading, type DetailSectionKind } from "./shared/detail-section-heading";
 import type { GridIdentityAdornment } from "./shared/grid-identity";
-import { tile, tileMedia } from "./ui/tile";
+import { tile, tileMedia, type TileOptions } from "./ui/tile";
 import { storyCastMedia } from "./ui/story-media";
 import { LazyImages, localeTaggedCandidates, nextImageCandidate } from "./ui/lazy-images";
 import { rovingKeydown } from "./ui/controls";
@@ -34,6 +34,8 @@ interface Controller {
   bandName(id: number): string;
   character(id: number): Item | undefined;
   band(id: number): Item | undefined;
+  songPerformer(item: Item): SongPerformer;
+  songTileOptions(item: Item): TileOptions;
   imageForLocale(source: string): string;
   imageForRelated(item: Item, route: string): string;
   relatedImageCandidates(item: Item, route: string): string[];
@@ -164,11 +166,7 @@ export class CharacterDetailArchive extends LitElement {
           String(left.live2dKey || "").localeCompare(String(right.live2dKey || ""), "en", { numeric: true }),
         ),
       songs: values(c.detailAux.songs)
-        .filter((entry) => {
-          const bandId = Number(this.item.bandId || 0);
-          const bandIds = Array.isArray(entry.bandIds) ? entry.bandIds.map(Number) : [Number(entry.bandId || 0)];
-          return bandIds.includes(bandId);
-        })
+        .filter((entry) => c.songPerformer(entry).participantCharacterIds.includes(id))
         .sort(numeric("musicId")),
       voices: values(c.detailAux.voices, "entries")
         .filter((entry) => c.itemCharacterIds(entry).includes(id))
@@ -250,18 +248,15 @@ export class CharacterDetailArchive extends LitElement {
       return items.length ? [{ category, label: this.storyLabel(category), items }] : [];
     });
   }
-  private songCategory(entry: Item) {
-    const names = ["", "original", "virtual", "jpop", "anime", "game"];
-    return this.controller.formatList(
-      (Array.isArray(entry.musicCategories) ? entry.musicCategories : [])
-        .map(Number)
-        .map((id) => this.controller.label(names[id] || "", names[id] || ""))
-        .filter(Boolean),
-      "unit",
-    );
-  }
   private relatedTile(entry: Item, route: string, characterId: number) {
     const c = this.controller;
+    if (route === "songs")
+      return tile({
+        ...c.songTileOptions(entry),
+        href: resourceHrefForCurrent(c, "songs", c.relatedId(entry, route)),
+        fit: "contain",
+        onImageError: nextImageCandidate,
+      });
     if (route === "live2d")
       return modelTile({
         model: entry,
@@ -274,13 +269,11 @@ export class CharacterDetailArchive extends LitElement {
         ? "member"
         : route === "support-cards"
           ? "support"
-          : route === "songs"
-            ? "song"
-            : route === "stamps"
-              ? "stamp"
-              : route === "live2d"
-                ? "live2d"
-                : "story";
+          : route === "stamps"
+            ? "stamp"
+            : route === "live2d"
+              ? "live2d"
+              : "story";
     const storyVisual = route === "stories" ? this.storyVisual(entry) : undefined;
     const imageCandidates = storyVisual?.image ? [storyVisual.image] : c.relatedImageCandidates(entry, route);
     const source = imageCandidates[0] || "";
@@ -288,42 +281,34 @@ export class CharacterDetailArchive extends LitElement {
     const description =
       route === "member-cards" || route === "support-cards"
         ? c.formatList(ids.map((id) => c.characterName(id)))
-        : route === "songs"
-          ? c.bandName(Number(entry.bandId || 0))
-          : route === "live2d"
-            ? c.characterName(characterId)
-            : route === "stories"
-              ? ["band", "tutorial"].includes(storyVisual?.category || "")
-                ? c.localized(entry.chapterName) || c.localized(this.storyChapter(entry)?.chapterName)
-                : storyVisual?.category === "afterlive"
-                  ? `${c.label("friendship", "Friendship")} ${entry.unlockCharacterFriendshipLevel == null ? "—" : `Lv.${entry.unlockCharacterFriendshipLevel}`}`
-                  : ""
-              : c.formatList(ids.map((id) => c.characterName(id))) || c.localized(entry.chapterName);
+        : route === "live2d"
+          ? c.characterName(characterId)
+          : route === "stories"
+            ? ["band", "tutorial"].includes(storyVisual?.category || "")
+              ? c.localized(entry.chapterName) || c.localized(this.storyChapter(entry)?.chapterName)
+              : storyVisual?.category === "afterlive"
+                ? `${c.label("friendship", "Friendship")} ${entry.unlockCharacterFriendshipLevel == null ? "—" : `Lv.${entry.unlockCharacterFriendshipLevel}`}`
+                : ""
+            : c.formatList(ids.map((id) => c.characterName(id))) || c.localized(entry.chapterName);
     const adornment =
       route === "stamps" && ids.length
         ? c.characterAvatars(ids)
         : (route === "member-cards" || route === "support-cards") && ids.length
           ? c.characterAvatars(ids)
-          : route === "songs" && c.band(Number(entry.bandId || 0))?.icon
+          : route === "live2d" && c.character(characterId)?.faceImage
             ? html`
-                <img src=${c.imageForLocale(String(c.band(Number(entry.bandId || 0))?.icon))} alt="" />
+                <img src=${c.imageForLocale(String(c.character(characterId)?.faceImage))} alt="" />
               `
-            : route === "live2d" && c.character(characterId)?.faceImage
-              ? html`
-                  <img src=${c.imageForLocale(String(c.character(characterId)?.faceImage))} alt="" />
-                `
-              : nothing;
-    const attribute = route === "songs" ? c.attributeMark(entry.musicType, true) : c.attributeMark(entry.cardType);
+            : nothing;
+    const attribute = c.attributeMark(entry.cardType);
     const rarity = c.rarityMark(entry.rarity);
     const hrefKind = (route === "stories" ? "stories" : route) as ResourceKind;
     const hrefQuery = route === "stories" ? { mode: storyVisual?.category || "band" } : undefined;
     return tile({
       kind,
       title: c.relatedTitle(entry, route),
-      titleLanguage:
-        route === "songs"
-          ? songTitle(entry, this.controller.contentLocale).locale
-          : resolveLocalizedText(entry.prefix || entry.name || entry.title, this.controller.contentLocale).locale,
+      titleLanguage: resolveLocalizedText(entry.prefix || entry.name || entry.title, this.controller.contentLocale)
+        .locale,
       subtitle: description,
       adornment,
       label: c.relatedTitle(entry, route),
@@ -345,7 +330,6 @@ export class CharacterDetailArchive extends LitElement {
       marks: [
         attribute && ["member", "support", "song"].includes(kind) ? { at: "start", image: attribute } : null,
         rarity && ["member", "support"].includes(kind) ? { at: "end", image: rarity } : null,
-        route === "songs" ? { at: "bottom-start", text: this.songCategory(entry) } : null,
       ],
     });
   }
@@ -704,14 +688,14 @@ export class CharacterDetailArchive extends LitElement {
                   </span>
                   <span>
                     ${
-                    kind && reference?.id
-                      ? html`
-                          <a href=${c.relatedEntityHref(kind, String(reference.id))}>${name}</a>
-                        `
-                      : html`
-                          <strong>${name}</strong>
-                        `
-                  }
+                      kind && reference?.id
+                        ? html`
+                            <a href=${c.relatedEntityHref(kind, String(reference.id))}>${name}</a>
+                          `
+                        : html`
+                            <strong>${name}</strong>
+                          `
+                    }
                   </span>
                   <b>×${Number(reward.resourceCount || 0).toLocaleString(c.contentLocale)}</b>
                 </div>

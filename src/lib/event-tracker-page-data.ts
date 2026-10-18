@@ -10,5 +10,11 @@ export interface EventTrackerSnapshot {
 export type TrackerPageData = Partial<Record<"jp" | "intl", RankingCardCatalog>> & {
   schema?: "haneoka-event-tracker-page-v1";
   musicTypeMarks?: Partial<Record<"jp" | "intl", Record<string, string>>>;
+  songPerformers?: Partial<
+    Record<
+      "jp" | "intl",
+      { sourceId?: string; bands: Record<string, unknown>[]; characters: Record<string, unknown>[] }
+    >
+  >;
   snapshots?: Partial<Record<GameRecordsRegion, EventTrackerSnapshot>>;
 };

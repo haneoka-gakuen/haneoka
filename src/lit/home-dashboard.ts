@@ -53,9 +53,11 @@ import {
   type CrossCatalogResource,
   type OfficialCatalogServer,
 } from "../lib/cross-server/catalog";
-import { localizedContent, localizedList } from "./ui/localized-content";
 import { eventArtwork } from "./ui/event-artwork";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
+import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../lib/song-performer";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
+import { resolveRelationshipText } from "../lib/localized-text";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { segmented } from "./ui/controls";
 import {
@@ -458,6 +460,7 @@ export class HomeDashboard extends LitElement {
     super.update(changed);
   }
   prepareHome(seed: HomeSeed, locale: string) {
+    this.songPerformers.clear();
     if (this.seed?.server !== seed.server || this.seed?.releaseId !== seed.releaseId) this.birthdaySelection = "";
     this.catalogRequests.cancel();
     this.liveRequests.cancel();
@@ -529,6 +532,28 @@ export class HomeDashboard extends LitElement {
       : server === this.sourceServer()
         ? this.bands.find((band) => Number(band.bandId) === Number(id))
         : undefined;
+  }
+  private readonly songPerformers = new Map<string, PerformerRegistry>();
+  private songPerformer(row: JsonRecord) {
+    const server = this.rowServer(row);
+    const pin = (row.homeCatalogEntry as CrossCatalogEntry | undefined)?.perServer[server as OfficialCatalogServer]?.identity;
+    const key = JSON.stringify([server, pin?.releaseId ?? this.seed?.releaseId, pin?.sourceId]);
+    let registry = this.songPerformers.get(key);
+    if (!registry) {
+      const ids = (resource: "bands" | "characters", field: string, fallback: JsonRecord[]) => [
+        ...new Set([
+          ...fallback.map((entry) => Number(entry[field])),
+          ...(this.crossServerCatalogs[resource]?.entries ?? []).map((entry) => Number(entry.perServer[server as OfficialCatalogServer]?.row[field])),
+        ]),
+      ];
+      registry = createPerformerRegistry({
+        game: "our-notes", server, sourceId: pin?.sourceId,
+        bands: ids("bands", "bandId", this.bands).flatMap((id) => this.relationshipBand(id, row) ?? []),
+        characters: ids("characters", "characterId", this.characters).flatMap((id) => this.relationshipCharacter(id, row) ?? []),
+      });
+      this.songPerformers.set(key, registry);
+    }
+    return resolveSongPerformer(row, registry);
   }
   private marksFor(row?: JsonRecord) {
     const server = row ? this.rowServer(row) : this.sourceServer();
@@ -632,6 +657,7 @@ export class HomeDashboard extends LitElement {
 
   /* ---------- data ---------- */
   private applyDocuments(documents: Record<string, JsonRecord>) {
+    this.songPerformers.clear();
     const now = Date.now();
     const resources = (documents.summary?.resources || {}) as Record<string, JsonRecord>;
     this.counts = Object.fromEntries(Object.entries(resources).map(([key, entry]) => [key, Number(entry?.count) || 0]));
@@ -1561,16 +1587,9 @@ export class HomeDashboard extends LitElement {
                           locale: songTitle(entry, this.locale).locale,
                         }),
                         image: (entry) => String(entry.jacketUrl || entry.jacketThumbUrl || ""),
-                        artist: (entry) => {
-                          for (const value of [entry.artistName, entry.bandName])
-                            if (localizedText(value, this.locale)) return localizedContent(value, this.locale);
-                          const ids = Array.isArray(entry.bandIds) ? entry.bandIds : [entry.bandId];
-                          return localizedList(
-                            ids.map((id) => this.relationshipBand(id, entry)?.bandName),
-                            this.locale,
-                          );
-                        },
+                        artist: (entry) => resolveRelationshipText(this.songPerformer(entry).names, this.locale).text,
                         bandIcon: (entry) => String(this.relationshipBand(entry.bandId, entry)?.icon || ""),
+                        performerAdornment: (entry) => songPerformerAdornment(this.songPerformer(entry), (source) => localizedAssetUrl(source, this.locale)),
                         imageForLocale: (source) => localizedAssetUrl(source, this.locale),
                         attributeMark: (entry) => this.attributeMark(entry.musicType, entry),
                         attributeLabel: () => String(song.musicType || ""),

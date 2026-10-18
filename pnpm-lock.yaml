@@ -142,6 +142,9 @@ catalogs:
       specifier: 4.111.0
       version: 4.111.0
 
+overrides:
+  '@haneoka/render-shaders': workspace:*
+
 patchedDependencies:
   '@sonolus/sonolus.js-compiler@1.8.4': f935b96016d1888110fbc05c7f6241405874471814f953d6c917934a1b20ffb7
 
@@ -212,6 +215,9 @@ importers:
       '@haneoka/i18n':
         specifier: workspace:*
         version: link:packages/i18n
+      '@haneoka/render-shaders':
+        specifier: workspace:*
+        version: link:.dependencies/render-shaders
       '@haneoka/sonolus':
         specifier: workspace:*
         version: link:packages/sonolus
@@ -511,6 +517,9 @@ importers:
       '@haneoka/cassiopeia-plugin-our-notes':
         specifier: ^0.1.0
         version: link:../cassiopeia-plugin-our-notes
+      '@haneoka/render-shaders':
+        specifier: workspace:*
+        version: link:../render-shaders
       fast-png:
         specifier: ^8.0.0
         version: 8.0.0
@@ -606,6 +615,12 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
+
+  .dependencies/render-shaders:
+    dependencies:
+      three:
+        specifier: '>=0.184.0 <0.185.0'
+        version: 0.184.0
 
   .dependencies/sonolus-our-notes:
     dependencies:
@@ -739,6 +754,9 @@ importers:
 
   .dependencies/vega-renderer-three:
     devDependencies:
+      '@haneoka/render-shaders':
+        specifier: workspace:*
+        version: link:../render-shaders
       '@haneoka/vega':
         specifier: ^0.1.0
         version: link:../vega

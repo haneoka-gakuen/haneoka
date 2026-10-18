@@ -3,6 +3,7 @@ import type { HaneokaLocale, HaneokaReleaseIdentity } from "../../../packages/ap
 import { readBytes } from "../../../packages/embed-core/src/io";
 import { resolveLocalizedText, resolveRelationshipText } from "../localized-text";
 import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
+import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../song-performer";
 
 type Row = Record<string, unknown>;
 export interface CreationSongCardData {
@@ -14,6 +15,7 @@ export interface CreationSongCardData {
   readonly characters: ReadonlyMap<number, Row>;
   readonly bands: ReadonlyMap<number, Row>;
   readonly assetUrl: (value: unknown) => string;
+  readonly performers: PerformerRegistry;
 }
 function record(value: unknown): Row {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_song_card_data");
@@ -49,6 +51,13 @@ export function createCreationSongCardData(options: {
     characters: entities(options.characters, "characterId"),
     bands: entities(options.bands, "bandId"),
     assetUrl: options.assetUrl,
+    performers: createPerformerRegistry({
+      game: options.provider === "bestdori" ? "gbp" : "our-notes",
+      server: options.identity?.server ?? options.region ?? "jp",
+      sourceId: options.identity?.sourceId,
+      bands: options.bands,
+      characters: options.characters,
+    }),
   };
 }
 /** Three small metadata tables supplement the complete songs index under its exact release/source pin. */
@@ -102,16 +111,9 @@ export function defaultCreationDifficulty<T extends Row>(rows: readonly T[]) {
 }
 /** A source-complete song DTO for the existing songTile; the original full-resolution jacket leads. */
 export function creationSongCard<T extends Row>(row: T, context: CreationSongCardData, locale: string) {
-  const ids = Array.isArray(row.bandIds) ? row.bandIds : [row.bandId];
-  const bands = ids.map((id) => context.bands.get(Number(id))).filter((band): band is Row => Boolean(band));
-  const primaryBand = context.bands.get(Number(row.bandId)) ?? bands[0];
+  const performer = resolveSongPerformer(row, context.performers);
   const authored = resolveLocalizedText(row.artistName, locale).text || resolveLocalizedText(row.bandName, locale).text;
-  const artist =
-    authored ||
-    resolveRelationshipText(
-      bands.map((band) => band.bandName),
-      locale,
-    ).text;
+  const artist = authored || resolveRelationshipText(performer.names, locale).text;
   const musicType = Number(row.musicType),
     color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][musicType];
   const attributeIconUrl = color
@@ -128,7 +130,8 @@ export function creationSongCard<T extends Row>(row: T, context: CreationSongCar
       ...(row.jacketUrl ? { jacketUrl: context.assetUrl(row.jacketUrl) } : {}),
       ...(row.jacketThumbUrl ? { jacketThumbUrl: context.assetUrl(row.jacketThumbUrl) } : {}),
     },
-    bandIconUrl: context.assetUrl(primaryBand?.icon),
+    performer,
+    bandIconUrl: context.assetUrl(performer.logos[0]?.image),
     artist,
     attributeIconUrl,
     attributeLabelKey: color ? `catalog.songs.liveTypes.${color.toLowerCase()}` : "",

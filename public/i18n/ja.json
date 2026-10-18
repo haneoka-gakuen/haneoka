@@ -1174,6 +1174,15 @@
     }
   },
   "media": {
+    "rendering": {
+      "title": "画質",
+      "resolution": "描画解像度",
+      "native": "ネイティブ",
+      "quality": "高画質",
+      "balanced": "バランス",
+      "sharpness": "シャープネス",
+      "description": "FSR 1"
+    },
     "availability": {
       "availableImage": "画像あり",
       "availableAudio": "音源あり"

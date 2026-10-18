@@ -131,6 +131,7 @@ jobs:
   deploy:
     name: Publish verified production artifact
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

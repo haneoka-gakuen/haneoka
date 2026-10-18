@@ -51,6 +51,7 @@ export async function homePageData(server: ReleaseServer, locale: Locale): Promi
         "bandName",
         "bandIds",
         "artistName",
+        "vocalCharacterIds",
         "jacketUrl",
         "jacketThumbUrl",
         "musicType",

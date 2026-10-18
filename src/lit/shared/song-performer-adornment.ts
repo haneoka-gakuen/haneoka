@@ -1,21 +1,14 @@
-import { html, nothing } from "lit";
+import { nothing } from "lit";
 import type { SongPerformer } from "../../lib/song-performer";
 import { catalogPortraitStack } from "./catalog-relationships";
 
-/** Band logos and source-qualified portraits use the existing snapshot avatar composition. */
+/** Round band emblems and source-qualified portraits share one avatar composition. */
 export function songPerformerAdornment(
   value: SongPerformer,
   imageForLocale: (image: string) => string = (image) => image,
 ) {
-  return html`
-    ${value.logos.map(
-      (logo) => html`
-        <img src=${imageForLocale(logo.image)} alt="" loading="lazy" decoding="async" />
-      `,
-    )}${
-      value.portraits.length
-        ? catalogPortraitStack(value.portraits.map((p) => ({ ...p, image: imageForLocale(p.image) })))
-        : nothing
-    }
-  `;
+  const images = [...value.logos.map((logo) => ({ ...logo, key: `band:${logo.id}` })), ...value.portraits];
+  return images.length
+    ? catalogPortraitStack(images.map((image) => ({ ...image, image: imageForLocale(image.image) })))
+    : nothing;
 }

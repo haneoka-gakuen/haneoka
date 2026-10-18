@@ -1174,6 +1174,15 @@
     }
   },
   "media": {
+    "rendering": {
+      "title": "그래픽",
+      "resolution": "렌더링 해상도",
+      "native": "원본",
+      "quality": "화질 우선",
+      "balanced": "균형",
+      "sharpness": "선명도",
+      "description": "FSR 1"
+    },
     "availability": {
       "availableImage": "이미지 있음",
       "availableAudio": "음원 있음"

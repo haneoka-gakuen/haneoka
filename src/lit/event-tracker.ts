@@ -7,7 +7,10 @@ import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { TrackerPageData } from "../lib/event-tracker-page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { resourcePath } from "../lib/resource-route";
-import { resolveLocalizedText } from "../lib/localized-text";
+import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
+import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../lib/song-performer";
+import { loadPlaylistCatalogSource } from "../lib/playlist-tracks";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import type { Locale } from "../i18n/locales";
 import type { ReleaseServer } from "../lib/release-server";
 import type { EventTrackerDto, EventChallengeDto, GameRecordsRegion, RankingCardCatalog } from "../lib/game-records";
@@ -71,6 +74,7 @@ export class EventTracker extends LitElement {
   private infoServer: ReleaseServer = "intl";
   private cards: Partial<Record<"jp" | "intl", RankingCardCatalog>> = {};
   private musicTypeMarks: Partial<Record<"jp" | "intl", Map<string, string>>> = {};
+  private readonly songPerformers = new Map<string, PerformerRegistry>();
   private readonly owner = `event-tracker-${++trackerSequence}`;
   private pageAdopted = false;
 
@@ -107,6 +111,8 @@ export class EventTracker extends LitElement {
   private applyPageCatalogs(pageData: TrackerPageData) {
     this.cards = { intl: pageData.intl, jp: pageData.jp };
     this.musicTypeMarks = Object.fromEntries(Object.entries(pageData.musicTypeMarks || {}).map(([source, marks]) => [source, new Map(Object.entries(marks))]));
+    for (const [server, source] of Object.entries(pageData.songPerformers ?? {}))
+      this.songPerformers.set(server, createPerformerRegistry({ game: "our-notes", server, ...source }));
   }
   private applyEventData(data: EventTrackerDto) {
     const changed = this.data?.event?.id !== data.event?.id;
@@ -221,7 +227,15 @@ export class EventTracker extends LitElement {
         info = eventResult.value;
         this.infoServer = server;
       }
-      if (songResult.status === "fulfilled" && songResult.value) Object.assign(songs, songResult.value.items);
+      if (songResult.status === "fulfilled" && songResult.value)
+        for (const [id, song] of Object.entries(songResult.value.items)) songs[id] = { ...song, catalogSourceServer: server };
+      if (!this.songPerformers.has(server) && songResult.status === "fulfilled" && songResult.value) {
+        try {
+          const source = await loadPlaylistCatalogSource("our-notes", server);
+          if (!this.requests.current(signal)) return;
+          this.songPerformers.set(server, source.registry);
+        } catch { /* Keep the available ranking and authored song credits. */ }
+      }
       if (info && challenges.every((challenge) => songs[challenge.musicId])) break;
     }
     if (this.requests.current(signal)) {
@@ -390,6 +404,8 @@ export class EventTracker extends LitElement {
                         musicId: row.musicId,
                         musicTitle: [this.challengeTitle(row)],
                       };
+                      const registry = this.songPerformers.get(String(song.catalogSourceServer ?? this.infoServer));
+                      const performer = registry ? resolveSongPerformer(song, registry) : undefined;
                       const categories = formatList(
                         (Array.isArray(song.musicCategories) ? song.musicCategories : [])
                           .map((id) => ["", "original", "virtual", "jpop", "anime", "game"][Number(id)])
@@ -404,8 +420,9 @@ export class EventTracker extends LitElement {
                           locale: this.locale,
                           title: (entry) => songTitle(entry, this.locale),
                           image: (entry) => String(entry.jacketThumbUrl || entry.jacketUrl || entry.image || ""),
-                          artist: (entry) => resolveLocalizedText(entry.bandName || entry.secondary, this.locale).text,
+                          artist: (entry) => performer ? resolveRelationshipText(performer.names, this.locale).text : resolveLocalizedText(entry.artistName || entry.bandName || entry.secondary, this.locale).text,
                           bandIcon: (entry) => String((entry.bandDetails as JsonRecord | undefined)?.icon || ""),
+                          performerAdornment: performer ? () => songPerformerAdornment(performer, (source) => localizedAssetUrl(source, this.locale)) : undefined,
                           imageForLocale: (source) => localizedAssetUrl(source, this.locale),
                           attributeMark: (entry) => liveMusicTypeMark(marks, entry.musicType),
                           attributeLabel: (entry) => {

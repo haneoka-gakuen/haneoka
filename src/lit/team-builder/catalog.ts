@@ -1,7 +1,9 @@
 /** Names, tiles and growth helpers shared by the team builder views. */
 import { html, nothing } from "lit";
 import { clientText } from "../../i18n/client";
-import { resolveLocalizedText } from "../../lib/localized-text";
+import { resolveLocalizedText, resolveRelationshipText } from "../../lib/localized-text";
+import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../../lib/song-performer";
+import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { songTitle } from "../../lib/song-display";
 import type { TeamBuilderData, MemberCatalog, SnapshotCatalog } from "../../lib/team-builder/data";
 import { dataRows } from "../../lib/team-builder/data";
@@ -27,6 +29,8 @@ type GrowthValues = { level: number | null; rank: number | null; awake?: number 
 
 export class Catalog {
   visuals: Visuals | null = null;
+  private performerRegistry?: PerformerRegistry;
+  private readonly songRows = new Map<number, Record<string, unknown>>();
   constructor(
     private readonly host: TeamBuilder,
     readonly data: TeamBuilderData,
@@ -34,6 +38,8 @@ export class Catalog {
   ) {}
   setVisuals(visuals: Visuals) {
     this.visuals = visuals;
+    this.performerRegistry = undefined;
+    this.songRows.clear();
   }
   serverMark(collection: string, id: number) {
     const cross = this.data.crossServer;
@@ -67,8 +73,8 @@ export class Catalog {
     return this.text(row?.bandName ?? row?.name);
   }
   bandIcon(id: number) {
-    const row = this.data.bands[String(id)];
-    return String(row?.icon ?? row?.logo ?? "");
+    const row = this.visuals?.bands?.[String(id)] ?? this.data.bands[String(id)];
+    return String(row?.icon ?? "");
   }
   attributeName(attribute: number) {
     const key = ["", "red", "blue", "green", "yellow", "purple"][attribute];
@@ -195,7 +201,23 @@ export class Catalog {
     return { ...max, levelCap: snapLevelCap(this.master, card, rank ?? max.rank) };
   }
   song(id: number) {
-    return { ...this.data.songs[String(id)], ...this.visuals?.songs[String(id)] } as Record<string, unknown>;
+    let song = this.songRows.get(id);
+    if (!song) {
+      song = { ...this.data.songs[String(id)], ...this.visuals?.songs[String(id)] };
+      this.songRows.set(id, song);
+    }
+    return song;
+  }
+  songPerformer(id: number) {
+    this.performerRegistry ??= createPerformerRegistry({
+      game: "our-notes", server: this.data.identity.server, sourceId: this.data.identity.sourceId,
+      bands: { ...this.data.bands, ...this.visuals?.bands },
+      characters: { ...this.data.characters, ...this.visuals?.characters },
+    });
+    return resolveSongPerformer(this.song(id), this.performerRegistry);
+  }
+  songArtist(id: number) {
+    return resolveRelationshipText(this.songPerformer(id).names, this.host.locale).text;
   }
   songTitle(id: number) {
     return songTitle(this.song(id), this.host.locale).text;
@@ -217,15 +239,15 @@ export class Catalog {
     const rows = this.difficultyRows(id);
     const row =
       difficulty !== undefined ? rows.find((item) => Number(item.difficulty) === difficulty) : [...rows].sort((a, b) => Number(b.playLevel) - Number(a.playLevel))[0];
-    const bands = this.songBands(id).map((band) => this.bandName(band)).filter(Boolean).join(" · ");
     const options = songTile(
       song,
       {
         locale: this.host.locale,
         title: (item) => songTitle(item, this.host.locale),
         image: (item) => String(item.jacketThumbUrl ?? item.jacketUrl ?? ""),
-        artist: () => bands,
+        artist: () => this.songArtist(id),
         bandIcon: () => this.bandIcon(this.songBands(id)[0] ?? 0),
+        performerAdornment: () => songPerformerAdornment(this.songPerformer(id)),
         imageForLocale: (source) => source,
         attributeMark: (item) => liveMusicTypeMark(this.visuals?.marks ?? new Map(), item.musicType),
         attributeLabel: (item) => this.attributeName(Number(item.musicType)),

@@ -1,0 +1,50 @@
+@layer components {
+  render-quality-settings {
+    display: block;
+    min-width: 0;
+  }
+
+  .render-quality-settings {
+    display: grid;
+    gap: 12px;
+  }
+
+  .render-quality-settings h4 {
+    margin: 12px 0 0;
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+
+  .render-quality-settings__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 45%);
+    align-items: center;
+    gap: 8px 12px;
+    min-height: 48px;
+  }
+
+  .render-quality-settings__row select {
+    min-width: 0;
+    min-height: 48px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 8px;
+    color: inherit;
+    background: var(--md-sys-color-surface-container-high);
+    font: inherit;
+  }
+
+  .render-quality-settings__row output {
+    justify-self: end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .render-quality-settings__row input {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    margin: 0;
+    accent-color: var(--md-sys-color-primary);
+  }
+}

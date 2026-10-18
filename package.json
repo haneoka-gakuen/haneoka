@@ -135,7 +135,8 @@
     "parse5": "catalog:",
     "photoswipe": "catalog:",
     "sql.js": "catalog:",
-    "three": "catalog:"
+    "three": "catalog:",
+    "@haneoka/render-shaders": "workspace:*"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",

@@ -93,3 +93,7 @@
 	path = .dependencies/ournotes-team-builder
 	url = https://github.com/haneoka-gakuen/ournotes-team-builder.git
 	branch = main
+[submodule "render-shaders"]
+	path = .dependencies/render-shaders
+	url = https://github.com/haneoka-gakuen/render-shaders.git
+	branch = main

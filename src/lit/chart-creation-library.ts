@@ -5,6 +5,7 @@ import "@material/web/textfield/outlined-text-field.js";
 import { chooserFacet, chooserGroup } from "./ui/chooser-filters";
 import { selectionPane } from "./ui/selection-pane";
 import { songTile } from "./shared/song-tile";
+import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { difficultyPicker } from "./ui/difficulty-picker";
 import { LazyImages } from "./ui/lazy-images";
 import { clientText, initializeI18nClient } from "../i18n/client";
@@ -423,6 +424,7 @@ export class ChartCreationLibrary extends LitElement {
           image: () => row.jacketUrl as string,
           artist: () => dto?.artist ?? resolveLocalizedText(value.bandName, this.locale).text,
           bandIcon: (entry) => this.filterCatalog?.assetUrl(this.filterCatalog.bands.get(Number(entry.bandId))?.icon) || dto?.bandIconUrl || "",
+          performerAdornment: dto ? () => songPerformerAdornment(dto.performer, this.filterCatalog!.assetUrl) : undefined,
           imageForLocale: (source) => source,
           attributeMark: () => dto?.attributeIconUrl ?? "",
           attributeLabel: () => dto?.attributeLabelKey ? clientText(this.locale, (uiLabelPaths[dto.attributeLabelKey] ?? dto.attributeLabelKey)) : "",

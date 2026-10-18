@@ -10,7 +10,9 @@ export async function fetchCatalogVisuals(
 ) {
   const read = async (resource: string) => {
     const response = await fetch(
-      withUiMarksProjection(`/api/v1/servers/${encodeURIComponent(identity.server)}/${resource}?release=${encodeURIComponent(identity.releaseId)}`),
+      withUiMarksProjection(
+        `/api/v1/servers/${encodeURIComponent(identity.server)}/${resource}?release=${encodeURIComponent(identity.releaseId)}`,
+      ),
       { signal },
     );
     if (
@@ -22,16 +24,19 @@ export async function fetchCatalogVisuals(
     const value = objectRow(await response.json());
     return objectRow(value.entries ?? value.items ?? value[resource] ?? value);
   };
-  const [marks, characters, songs, cards, supportCards, bandItems] = await Promise.all([
+  const [marks, characters, bands, songs, cards, supportCards, bandItems] = await Promise.all([
     read("ui-marks"),
     read("characters"),
+    read("bands"),
     read("songs"),
     cardMetadata ? read("cards") : Promise.resolve({} as Record<string, unknown>),
     cardMetadata ? read("support-cards") : Promise.resolve({} as Record<string, unknown>),
     bandItemMetadata ? read("band-items") : Promise.resolve({} as Record<string, unknown>),
   ]);
   return {
-    cards, supportCards,
+    cards,
+    supportCards,
+    bands: Object.fromEntries(Object.entries(bands).map(([id, row]) => [id, objectRow(row)])),
     bandItems: Object.fromEntries(
       Object.entries(bandItems)
         .filter(([, row]) => row && typeof row === "object")

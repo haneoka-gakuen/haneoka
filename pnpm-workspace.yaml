@@ -18,6 +18,7 @@ packages:
   # Materialized privately at the exact locked commits.
   - ".dependencies/vega"
   - ".dependencies/vega/packages/*"
+  - ".dependencies/render-shaders"
   - ".dependencies/vega-renderer-three"
   - ".dependencies/vega-theme-haneoka"
   - ".dependencies/vega-shell-default"
@@ -85,3 +86,6 @@ verifyDepsBeforeRun: false
 
 patchedDependencies:
   "@sonolus/sonolus.js-compiler@1.8.4": ".dependencies/sonolus-our-notes/patches/sonolus.js-compiler@1.8.4.patch"
+
+overrides:
+  "@haneoka/render-shaders": "workspace:*"

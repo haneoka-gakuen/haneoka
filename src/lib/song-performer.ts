@@ -1,6 +1,6 @@
 /** Display/relationship participants are separate from the game's vocal and bonus fields. */
 export type PerformerRecord = Record<string, unknown>;
-export type PerformerGame = "our-notes" | "gbp";
+export type PerformerGame = "our-notes" | "gbp" | "sekai";
 export interface PerformerPortrait {
   key: string;
   provider: PerformerGame;
@@ -50,6 +50,26 @@ const split = (value: unknown) =>
 // Names are resolved separately against each game's real character registry.
 const CRYCHIC = ["高松燈", "長崎そよ", "椎名立希", "若葉睦", "豊川祥子"];
 const performerCache = new WeakMap<PerformerRegistry, WeakMap<PerformerRecord, SongPerformer>>();
+
+/** A source-scoped registry shared by catalogue, related lists and tool pickers. */
+export function createPerformerRegistry(options: {
+  game: PerformerGame;
+  server: string;
+  sourceId?: string;
+  bands: unknown;
+  characters: unknown;
+}): PerformerRegistry {
+  const records = (value: unknown, id: string): ReadonlyMap<number, PerformerRecord> => {
+    if (value instanceof Map) return value;
+    const rows = Array.isArray(value) ? value : Object.values((value ?? {}) as Record<string, PerformerRecord>);
+    return new Map(rows.map((row) => [Number(row[id]), row]));
+  };
+  return {
+    ...options,
+    bands: records(options.bands, "bandId"),
+    characters: records(options.characters, "characterId"),
+  };
+}
 
 export function resolveSongPerformer(song: PerformerRecord, registry: PerformerRegistry): SongPerformer {
   const cache = performerCache.get(registry) ?? new WeakMap<PerformerRecord, SongPerformer>();
@@ -107,7 +127,7 @@ export function resolveSongPerformer(song: PerformerRecord, registry: PerformerR
     const roster = ids(row.memberCharacterIds);
     for (const [characterId, character] of registry.characters)
       if (Number(character.bandId) === id) roster.push(characterId);
-    const image = String(row.logo ?? row.icon ?? "");
+    const image = String(row.icon ?? "");
     if (image) logos.push({ id, name: row.bandName ?? row.name, image });
     for (const characterId of new Set(roster)) addCharacter(characterId, !image, false);
   };

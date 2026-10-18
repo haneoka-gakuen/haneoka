@@ -1174,6 +1174,15 @@
     }
   },
   "media": {
+    "rendering": {
+      "title": "畫質",
+      "resolution": "繪製解析度",
+      "native": "原始",
+      "quality": "畫質優先",
+      "balanced": "均衡",
+      "sharpness": "銳化",
+      "description": "FSR 1"
+    },
     "availability": {
       "availableImage": "有圖片",
       "availableAudio": "有音訊"

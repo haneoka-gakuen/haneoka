@@ -80,6 +80,8 @@ import {
   type ChartOverviewExportMeta,
 } from "./chart-image-export";
 import { loadingIndicator } from "../ui/loading-indicator";
+import { applyRenderQuality, observeRenderQuality, readRenderQuality, writeRenderQuality, DEFAULT_RENDER_QUALITY } from "../../lib/render-quality";
+import "../ui/render-quality-settings";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -196,6 +198,7 @@ const renderPixelRatio = (width: number, height: number) =>
   Math.max(1, Math.min(2, devicePixelRatio || 1, Math.sqrt((1920 * 1080) / Math.max(1, width * height))));
 
 export class ChartSimulator extends LitElement {
+  private stopRenderQuality?: () => void;
   static properties = {
     source: { type: String },
     audioUrl: { type: String, attribute: "audio-url" },
@@ -417,12 +420,17 @@ export class ChartSimulator extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    this.stopRenderQuality = observeRenderQuality((settings) => {
+      applyRenderQuality(this.renderer, settings);
+      this.draw();
+    });
     this.chartPerfEnabled = new URLSearchParams(window.location.search).get("chartPerf") === "1";
     void Promise.all([import("@material/web/slider/slider.js"), import("@material/web/progress/circular-progress.js")]);
     void this.load();
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
   }
   disconnectedCallback() {
+    this.stopRenderQuality?.();
     this.persistSettings();
     this.dispose();
     this.viewportFullscreen.dispose();
@@ -971,6 +979,7 @@ export class ChartSimulator extends LitElement {
     await this.applyStageBackground();
   }
   private async resetSettings() {
+    writeRenderQuality(DEFAULT_RENDER_QUALITY);
     this.playerSettings = { ...DEFAULT_RENDER_SETTINGS };
     this.stageBackground = "auto";
     this.playbackRate = 1;
@@ -1013,6 +1022,7 @@ export class ChartSimulator extends LitElement {
           : {}),
       });
     this.renderer = renderer;
+    applyRenderQuality(renderer, readRenderQuality());
     await Promise.all([
       loadDetailedOverviewSkin(this.assets).then((skin) => {
         if (signal.aborted) skin.dispose();
@@ -2248,6 +2258,7 @@ export class ChartSimulator extends LitElement {
           </span>
         </header>
         <div class="chart-runtime__settings-content">
+          <render-quality-settings .locale=${this.locale}></render-quality-settings>
           <section>
             <h4>${this.ui("playback")}</h4>
             ${

@@ -190,7 +190,9 @@ interface CatalogStorageManifest {
 interface R2ResponseOptions {
   attachment?: boolean;
   cacheControl?: string;
+  contentEncoding?: "gzip";
   expectedBytes?: number;
+  varyAcceptEncoding?: boolean;
 }
 
 interface GameClientManifest {
@@ -825,14 +827,16 @@ async function serveR2Object(
   const mediaType = requestedType.split(";", 1)[0]?.trim().toLocaleLowerCase("en-US") || "";
   const safeInline = INLINE_MEDIA_TYPES.has(mediaType);
   const finalType = safeInline ? requestedType : "application/octet-stream";
-  let rangeHeader = request.method === "GET" ? request.headers.get("Range") : null;
+  let rangeHeader = request.method === "GET" && !options.contentEncoding ? request.headers.get("Range") : null;
   const ifNoneMatch = request.headers.get("If-None-Match");
   const ifRange = request.headers.get("If-Range");
   const headersFor = (object: R2Object): Headers => {
     const headers = new Headers(CORS);
     object.writeHttpMetadata(headers);
     headers.set("Content-Type", finalType);
-    headers.set("Accept-Ranges", "bytes");
+    headers.set("Accept-Ranges", options.contentEncoding ? "none" : "bytes");
+    if (options.contentEncoding) headers.set("Content-Encoding", options.contentEncoding);
+    if (options.varyAcceptEncoding) headers.append("Vary", "Accept-Encoding");
     headers.set("Cache-Control", options.cacheControl || cacheControlFor(finalType));
     headers.set("ETag", object.httpEtag);
     headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
@@ -851,26 +855,57 @@ async function serveR2Object(
     if (!metadata) return null;
     validateSize(metadata);
     const headers = headersFor(metadata);
-    if (ifNoneMatch && etagMatches(ifNoneMatch, metadata.httpEtag)) return new Response(null, { status: 304, headers });
+    if (ifNoneMatch && etagMatches(ifNoneMatch, metadata.httpEtag))
+      return new Response(null, {
+        status: 304,
+        headers,
+        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+      });
     if (rangeHeader && ifRange && ifRange.trim() !== metadata.httpEtag) rangeHeader = null;
     const range = parseRange(rangeHeader, metadata.size);
     if (range && "invalid" in range) {
       headers.set("Content-Range", `bytes */${metadata.size}`);
-      return new Response(null, { status: 416, headers });
+      return new Response(null, {
+        status: 416,
+        headers,
+        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+      });
     }
     if (range) {
       headers.set("Content-Range", `bytes ${range.start}-${range.end}/${metadata.size}`);
       headers.set("Content-Length", String(range.length));
-      if (request.method === "HEAD") return new Response(null, { status: 206, headers });
+      if (request.method === "HEAD")
+        return new Response(null, {
+          status: 206,
+          headers,
+          encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+        });
       const object = await env.ASSET_BUCKET.get(key, { range: { offset: range.start, length: range.length } });
       if (object) validateSize(object);
-      return object ? new Response(object.body, { status: 206, headers }) : null;
+      return object
+        ? new Response(object.body, {
+            status: 206,
+            headers,
+            encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+          })
+        : null;
     }
     headers.set("Content-Length", String(metadata.size));
-    if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+    if (request.method === "HEAD")
+      return new Response(null, {
+        status: 200,
+        headers,
+        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+      });
     const object = await env.ASSET_BUCKET.get(key);
     if (object) validateSize(object);
-    return object ? new Response(object.body, { status: 200, headers }) : null;
+    return object
+      ? new Response(object.body, {
+          status: 200,
+          headers,
+          encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+        })
+      : null;
   }
 
   const object = await env.ASSET_BUCKET.get(key);
@@ -878,7 +913,11 @@ async function serveR2Object(
   validateSize(object);
   const headers = headersFor(object);
   headers.set("Content-Length", String(object.size));
-  return new Response(object.body, { status: 200, headers });
+  return new Response(object.body, {
+    status: 200,
+    headers,
+    encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+  });
 }
 
 async function edgeCached(
@@ -910,14 +949,27 @@ async function edgeCached(
     const etag = hit.headers.get("ETag");
     if (etag && etagMatches(request.headers.get("If-None-Match"), etag)) {
       if (hit.body) ctx.waitUntil(hit.body.cancel());
-      return new Response(null, { status: 304, headers: responseHeaders });
+      return new Response(null, {
+        status: 304,
+        headers: responseHeaders,
+        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+      });
     }
     if (request.method === "HEAD") {
       if (hit.body) ctx.waitUntil(hit.body.cancel());
-      return new Response(null, { status: hit.status, headers: responseHeaders });
+      return new Response(null, {
+        status: hit.status,
+        headers: responseHeaders,
+        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+      });
     }
     return cacheControl
-      ? new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers: responseHeaders })
+      ? new Response(hit.body, {
+          status: hit.status,
+          statusText: hit.statusText,
+          headers: responseHeaders,
+          encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+        })
       : hit;
   }
   const response = await producer();
@@ -940,6 +992,7 @@ async function edgeCached(
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
+      encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
     });
     const cached = outgoing.clone();
     const cacheResponseHeaders = new Headers(cached.headers);
@@ -948,7 +1001,11 @@ async function edgeCached(
       cacheControl ? `public, max-age=${ttl}` : cached.headers.get("Cache-Control") || `public, max-age=${ttl}`,
     );
     cacheResponseHeaders.delete("Content-Range");
-    const stored = new Response(cached.body, { status: 200, headers: cacheResponseHeaders });
+    const stored = new Response(cached.body, {
+      status: 200,
+      headers: cacheResponseHeaders,
+      encodeBody: cacheResponseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+    });
     ctx.waitUntil(
       caches.default.put(cacheKey, stored).catch((error: unknown) => {
         console.warn("edge_cache_write_failed", error instanceof Error ? error.message : String(error));
@@ -1722,6 +1779,7 @@ function releaseResponseHeaders(response: Response, release: Release): Response 
     status: response.status,
     statusText: response.statusText,
     headers,
+    encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
   });
 }
 
@@ -2736,21 +2794,41 @@ async function handleReleaseMedia(
   // change, so browsers keep it for a year instead of revalidating every
   // jacket on every visit. Unpinned URLs follow the moving current pointer.
   const cacheControl = requested ? PINNED_MEDIA_CACHE_CONTROL : CATALOG_API_CACHE_CONTROL;
-  const cacheRequest = releaseCacheRequest(request, release.releaseId);
-  const response = await edgeCached(
-    cacheRequest,
-    ctx,
-    MEDIA_CACHE_TTL,
-    async () => {
-      let response: Response | null = null;
-      for (const candidate of localizedReleasePaths(`${tree}/${relative}`)) {
-        response = await serveReleaseObject(env, request, release, candidate, undefined, { cacheControl });
-        if (response) break;
+  const moc = tree === "runtime" && relative.endsWith(".moc3");
+  const clientEncoding = request.cf?.clientAcceptEncoding;
+  const gzip =
+    moc &&
+    !request.headers.has("Range") &&
+    acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
+  let cacheRequest = releaseCacheRequest(request, release.releaseId);
+  if (moc) {
+    const cacheUrl = new URL(cacheRequest.url);
+    cacheUrl.searchParams.set("__moc_encoding", gzip ? "gzip-v1" : "identity-v1");
+    cacheRequest = new Request(cacheUrl, cacheRequest);
+  }
+  const produce = async () => {
+    let response: Response | null = null;
+    for (const candidate of localizedReleasePaths(`${tree}/${relative}`)) {
+      if (gzip) {
+        response = await serveReleaseObject(env, request, release, `${candidate}.gz`, "application/octet-stream", {
+          cacheControl,
+          contentEncoding: "gzip",
+          varyAcceptEncoding: true,
+        });
       }
-      return response || new Response("not found", { status: 404, headers: CORS });
-    },
-    cacheControl,
-  );
+      response ??= await serveReleaseObject(env, request, release, candidate, undefined, {
+        cacheControl,
+        varyAcceptEncoding: moc,
+      });
+      if (response) break;
+    }
+    return response || new Response("not found", { status: 404, headers: CORS });
+  };
+  // Cache API hits expose decoded streams while retaining Content-Encoding.
+  // Keep the precompressed MOC response on the direct R2 path.
+  const response = gzip
+    ? await produce()
+    : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
   return releaseResponseHeaders(response, release);
 }
 

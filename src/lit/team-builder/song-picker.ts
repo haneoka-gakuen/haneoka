@@ -49,7 +49,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       if (state.bands.length && !catalog.songBands(id).some((band) => state.bands.includes(band))) return false;
       if (state.attributes.length && !state.attributes.includes(Number(song.musicType))) return false;
       if (!matchesSelections(songMissions(song), state.gekisouTypes)) return false;
-      return !query || `${catalog.songTitle(id)} ${catalog.songBands(id).map((band) => catalog.bandName(band)).join(" ")}`.normalize("NFKC").toLocaleLowerCase(host.locale).includes(query);
+      return !query || `${catalog.songTitle(id)} ${catalog.songArtist(id)}`.normalize("NFKC").toLocaleLowerCase(host.locale).includes(query);
     })
     .sort((a, b) => b - a);
   const selected = new Set(state.songs.filter((song) => song.difficulty === state.difficulty).map((song) => String(song.songId)));
