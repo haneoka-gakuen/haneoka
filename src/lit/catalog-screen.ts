@@ -135,6 +135,7 @@ import {
   playRates,
   reachChance,
   requiredPower,
+  roomRank,
   roomRequiredScore,
   soloRank,
   type ChartRateTable,
@@ -690,7 +691,7 @@ const DEFAULT_DECK = {
   pointBonus: 0,
   itemBonus: 0,
 };
-/** Normal-live event rewards; Live mode only. */
+/** Event rewards by the rank of every skill order: solo in Live, the room rank in Gekisou. */
 const EVENT_METRICS = ["eventPoints", "eventPointsHour", "eventItemsHour"];
 /** Score rank thresholds in the table: solo in Live, the room total in Gekisou. */
 const RANK_METRICS = ["rankC", "rankB", "rankA", "rankS", "rankSS"];
@@ -3260,7 +3261,7 @@ export class CatalogScreen extends LitElement {
           </div>
         `,
       )}
-      ${this.metaMode === "live" ? this.renderDeckEvent(text) : nothing}
+      ${this.renderDeckEvent(text)}
       ${choice("deckRank", "Target rank", this.deck.rank, DECK_RANKS.map(([value, name]) => ({ value: String(value), label: name })), "rank")}
       ${this.metaMode === "gekisou" ? choice("deckRoom", "Players in room", this.deck.room, places, "room") : nothing}
       ${this.metaMode === "gekisou" ? choice("deckPlace", "Placement", this.deck.place, places, "place") : nothing}
@@ -3324,10 +3325,14 @@ export class CatalogScreen extends LitElement {
     if (key === "deckSkip") return this.metaMode === "gekisou" ? Number.NaN : Math.floor(power * chart.skip);
     if (EVENT_METRICS.includes(key)) {
       const event = this.deckEvent(chart.table);
-      if (!event || this.metaMode === "gekisou") return Number.NaN;
+      if (!event) return Number.NaN;
       const rate = this.deck.boosts ? (chart.table.boosts.find(([consumed]) => consumed === this.deck.boosts)?.[1] ?? 1) : 1;
       const itemRate = this.deck.boosts ? (chart.table.boosts.find(([consumed]) => consumed === this.deck.boosts)?.[2] ?? 1) : 1;
-      const ranks = orderScores(power, chart.rates, skills).map((score) => soloRank(chart.ranks, score));
+      const room = this.deck.room;
+      const battle = chart.ranks.map(([id, , required]) => [id, required] as [number, number]);
+      const ranks = orderScores(power, chart.rates, skills).map((score) =>
+        this.metaMode === "gekisou" ? roomRank(battle, score * room, room).rank : soloRank(chart.ranks, score),
+      );
       const mean = (value: (rank: number) => number) => ranks.reduce((sum, rank) => sum + value(rank), 0) / ranks.length;
       const perPlay =
         key === "eventItemsHour"
