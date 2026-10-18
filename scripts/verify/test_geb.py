@@ -4,7 +4,7 @@ import tempfile
 import subprocess
 import unittest
 
-from geb import check, git, heading_ids, links, local_target, remove_l3
+from geb import check, git, heading_ids, links, local_target, remove_l3, repository_files
 
 TEST_TMP = Path(__file__).resolve().parents[2] / 'tmp' / 'geb-tests'
 
@@ -78,6 +78,56 @@ class NavigationTests(unittest.TestCase):
             errors, _ = check(root, {'L1.md', 'src/L2.md', 'src/entry.ts'}, scope)
             self.assertTrue(any('parent cycle' in e for e in errors))
             self.assertTrue(any('Pos must link closest map' in e for e in errors))
+
+    def test_ignored_link_target_requires_repository_membership(self):
+        with temporary_repository() as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, capture_output=True)
+            (root / 'docs').mkdir()
+            (root / '.gitignore').write_text('/docs/*\n', encoding='utf-8')
+            (root / 'docs/local-only.md').write_text('# Local\n', encoding='utf-8')
+            (root / 'L1.md').write_text('[local](docs/local-only.md#local)', encoding='utf-8')
+            scope = {'schema': 'haneoka-geb-scope-v1', 'maps': {'L1.md': None}}
+            files = repository_files(root)
+            self.assertNotIn('docs/local-only.md', files)
+            self.assertEqual(check(root, files, scope)[0], [
+                'L1.md: ignored or unlisted link target docs/local-only.md#local',
+            ])
+
+            # A tracked file remains valid even when an ignore pattern matches.
+            git(root, 'add', '--force', '--', 'docs/local-only.md')
+            self.assertEqual(check(root, repository_files(root), scope)[0], [])
+
+            # Non-ignored new files can be checked before staging them.
+            (root / 'docs/new.md').write_text('# New\n', encoding='utf-8')
+            (root / '.gitignore').write_text('/docs/*\n!/docs/new.md\n', encoding='utf-8')
+            (root / 'L1.md').write_text('[new](docs/new.md#new)\n[directory](docs/)', encoding='utf-8')
+            self.assertEqual(check(root, repository_files(root), scope)[0], [])
+
+    def test_unregistered_l3_is_detected_with_and_without_bom(self):
+        for suffix, prefix in (('ts', '//'), ('py', '#')):
+            for encoding in ('utf-8', 'utf-8-sig'):
+                with self.subTest(suffix=suffix, encoding=encoding), temporary_repository() as directory:
+                    root = Path(directory)
+                    (root / 'src').mkdir()
+                    name = f'src/entry.{suffix}'
+                    (root / 'L1.md').write_text('[child](src/L2.md)', encoding='utf-8')
+                    (root / 'src/L2.md').write_text(f'[parent](../L1.md)\n[entry](entry.{suffix})', encoding='utf-8')
+                    header = '\n'.join(f'{prefix} {line}' for line in (
+                        'L3 — GEB', 'Input: x', 'Output: y',
+                        'Pos: [Map](missing-map.md)', 'Effects/Dependencies: z',
+                    )) + '\n'
+                    (root / name).write_text(header, encoding=encoding)
+                    scope = {
+                        'schema': 'haneoka-geb-scope-v1', 'maps': {'L1.md': None, 'src/L2.md': 'L1.md'},
+                        'source_roots': ['src'], 'source_suffixes': [f'.{suffix}'], 'core_files': [],
+                    }
+                    files = {'L1.md', 'src/L2.md', name}
+                    self.assertEqual(check(root, files, scope)[0], [f'{name}: L3 header absent from core scope'])
+                    scope['core_files'] = [name]
+                    self.assertEqual(check(root, files, scope)[0], [f'{name}: Pos must link closest map src/L2.md'])
+                    (root / name).write_text(header.replace('missing-map.md', 'L2.md'), encoding=encoding)
+                    self.assertEqual(check(root, files, scope)[0], [])
 
     def test_base_guard_accepts_new_header_but_rejects_logic_change(self):
         with temporary_repository() as directory:

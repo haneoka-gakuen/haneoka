@@ -148,6 +148,9 @@ def check(root: Path, files: set[str], scope: dict, base: str | None = None) -> 
             if not (root / dest).exists():
                 errors.append(f'{name}: missing link {href}')
                 continue
+            if (root / dest).is_file() and dest not in files:
+                errors.append(f'{name}: ignored or unlisted link target {href}')
+                continue
             linked_files.add(dest)
             if dest in docs:
                 graph[name].add(dest)
@@ -228,7 +231,8 @@ def check(root: Path, files: set[str], scope: dict, base: str | None = None) -> 
         except ValueError as exc:
             errors.append(f'{name}: {exc}')
     for name in owned_sources - core:
-        if re.search(rb'(?m)^(?:#|//) L3 \xe2\x80\x94 GEB', (root / name).read_bytes()[:5000]):
+        header_area = (root / name).read_bytes().removeprefix(b'\xef\xbb\xbf')[:5000]
+        if re.search(rb'(?m)^(?:#|//) L3 \xe2\x80\x94 GEB', header_area):
             errors.append(f'{name}: L3 header absent from core scope')
 
     protected = 0
