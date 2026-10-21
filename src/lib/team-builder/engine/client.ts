@@ -228,13 +228,103 @@ export class EngineClient {
     const work = async (): Promise<EngineResponse> => {
       if (!remaining(deadline)) { stop("budget"); return latest; }
       if (completeResponse(latest)) return latest;
-      const parallel = this.pool.length > 1 && request.members.length >= PARALLEL_MIN_MEMBERS && request.goal.kind !== "plan";
+      const parallel = this.pool.length > 1 && request.members.length >= PARALLEL_MIN_MEMBERS && request.goal.kind !== "plan" && !request.seedOnly;
       if (!parallel) {
         const response = await this.idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
         if (!stopped) onFinalResult?.({ requestId: request.requestId!, contextKey: request.contextKey!, response: structuredClone(response) });
         return response;
       }
       const songs = requestSongs(request);
+      if (request.goal.kind === "gekiso" && !request.goal.opponents) {
+        const goal = request.goal;
+        const count = request.constraints.leader ? 1 : this.pool.length;
+        const parts = [...latest.results];
+        const unknownCards = new Set(latest.unknownCards);
+        const same = (song: SongRef) => (hit: { song: SongRef | null }) => hit.song?.songId === song.songId && hit.song?.difficulty === song.difficulty;
+        const states = goal.songs.map((song, index) => {
+          const part: EngineRequest = { ...request, goal: { ...goal, songs: [song] }, completed: undefined, seeds: request.seeds?.filter(same(song)) };
+          const responses = Array.from({ length: count }, () => {
+            const response = emptyResponse(part);
+            response.results[0]!.hits = parts[index]!.hits;
+            return response;
+          });
+          return { request: part, responses, seeded: request.seeded === true, seedStarted: false, next: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
+        });
+        const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknownCards], elapsedMs: clock() - started });
+        const waiters = new Set<() => void>();
+        const wake = () => { for (const resolve of waiters) resolve(); waiters.clear(); };
+        let failed = false;
+        let done = states.filter(state => state.done).length * count;
+        const take = (preferred: number) => {
+          const ready = (index: number) => { const state = states[index]; return state && !state.done && state.seeded && state.next < count; };
+          let index = ready(preferred) ? preferred : states.findIndex((_, index) => ready(index));
+          if (index >= 0) {
+            const state = states[index]!;
+            state.running++;
+            return { index, shard: state.next++ };
+          }
+          index = states.findIndex(state => !state.done && !state.seeded && !state.seedStarted);
+          if (index < 0) return null;
+          states[index]!.seedStarted = true;
+          states[index]!.running++;
+          return { index, shard: null };
+        };
+        const run = async (engine: EngineWorker) => {
+          let preferred = -1;
+          while (!stopped && !failed && remaining(deadline) > 0) {
+            const job = take(preferred);
+            if (!job) {
+              if (states.every(state => state.done)) return;
+              await new Promise<void>(resolve => waiters.add(resolve));
+              continue;
+            }
+            preferred = job.index;
+            const state = states[job.index]!;
+            const current = parts[job.index]!;
+            const key = `${current.song!.songId}:${current.song!.difficulty}`;
+            const floors = current.hits.length >= request.k ? { [key]: current.hits[request.k - 1]!.key } : {};
+            const part: EngineRequest = { ...state.request, seeds: current.hits, floors,
+              ...(job.shard === null ? { seedOnly: true } : { seeded: true, seedOnly: false, shard: { index: job.shard, count } }) };
+            const update = (response: EngineResponse) => {
+              for (const key of response.unknownCards) unknownCards.add(key);
+              if (job.shard === null) parts[job.index] = response.results[0] ?? parts[job.index]!;
+              else {
+                state.responses[job.shard] = response;
+                parts[job.index] = mergeShardResponses(state.responses, request.k, clock() - started).results[0]!;
+              }
+              publish(merged());
+            };
+            try {
+              const response = await engine.send<EngineResponse>({ type: "run", id: 0, request: part }, undefined, value => {
+                if (!stopped && value.contextKey === request.contextKey && value.requestId === request.requestId) update(value.response);
+              });
+              if (stopped) return;
+              update(response);
+              if (job.shard === null) {
+                state.seeded = true;
+                state.done = completeResponse(response);
+                if (state.done) done += count;
+                for (const shard of state.responses) shard.results[0]!.hits = parts[job.index]!.hits;
+              } else {
+                done++;
+                state.done = state.next === count && state.running === 1;
+              }
+              progress?.(done / (states.length * count), 1);
+            } catch (error) {
+              failed = true;
+              throw error;
+            } finally {
+              state.running--;
+              wake();
+            }
+          }
+        };
+        await Promise.all(this.pool.map(run));
+        const response = merged();
+        if (!aspirationHeld(response, request.k) && !request.noFloor && remaining(deadline))
+          return this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: parts.flatMap(part => part.hits), seeded: true, noFloor: true } }, progress, accept);
+        return response;
+      }
       if (songs.length > 1 && songs.every((song): song is SongRef => song !== null)) {
         // Songs run whole, side by side: a Worker keeps only the current song's chart, seeds and contexts, and
         // shards that each walked the whole list would prepare every song once per shard. Each song gets an even
@@ -270,9 +360,8 @@ export class EngineClient {
         await Promise.all(this.pool.map(runSong));
         return merged();
       }
-      // A Gekiso song's cost lies in work every shard repeats (calibration, member bounds, lottery curves): it runs
-      // whole on one Worker, which also seeds its own search.
-      if (request.goal.kind === "gekiso") return this.idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
+      if (request.goal.kind === "gekiso")
+        return this.idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
       let seeds = request.seeds ?? [];
       if (!request.noFloor) {
         const quick = await this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, deadline: Math.min(deadline, clock() + QUICK_MS) } }, progress, accept);

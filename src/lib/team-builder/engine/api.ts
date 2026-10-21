@@ -208,6 +208,7 @@ export interface PlanSummary {
   normal: EngineHit | null;
   challenge: EngineHit | null;
   normalLives: number;
+  /** Expected challenge lives after spending the finite boost budget. */
   challengeLives: number;
   challengePointsEarned: number;
   leftoverChallengePoints: number;

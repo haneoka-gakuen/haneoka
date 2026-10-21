@@ -746,9 +746,9 @@ export function renderResults(host: TeamBuilder): TemplateResult {
             <strong class="tb-hit__value tabular">${format(host, results.plan.eventPoints)}</strong>
             <div class="cluster">
               <span class="tb-chip"><span class="tb-chip__label">${host.t("normalLives", "Normal lives")}</span><strong>${results.plan.normalLives}</strong></span>
-              <span class="tb-chip"><span class="tb-chip__label">${host.t("challengeLives", "Challenge lives")}</span><strong>${results.plan.challengeLives}</strong></span>
-              <span class="tb-chip"><span class="tb-chip__label">${host.t("cpEarned", "Challenge points earned")}</span><strong>${format(host, results.plan.challengePointsEarned)}</strong></span>
-              <span class="tb-chip"><span class="tb-chip__label">${host.t("cpLeft", "Left over")}</span><strong>${format(host, results.plan.leftoverChallengePoints)}</strong></span>
+              <span class="tb-chip"><span class="tb-chip__label">${host.t("challengeLives", "Challenge lives")}</span><strong>${results.plan.challengeLives.toLocaleString(host.locale, { maximumFractionDigits: 2 })}</strong></span>
+              <span class="tb-chip"><span class="tb-chip__label">${host.t("cpEarned", "Challenge points earned")}</span><strong>${results.plan.challengePointsEarned.toLocaleString(host.locale, { maximumFractionDigits: 2 })}</strong></span>
+              <span class="tb-chip"><span class="tb-chip__label">${host.t("cpLeft", "Left over")}</span><strong>${results.plan.leftoverChallengePoints.toLocaleString(host.locale, { maximumFractionDigits: 2 })}</strong></span>
               <span class="tb-chip"><span class="tb-chip__label">${host.t("perBoost", "Per boost")}</span><strong>${format(host, results.plan.perBoost, 1)}</strong></span>
             </div>
           </section>`
