@@ -4,7 +4,7 @@ import { clock, remaining, type RewardCutoff } from "./engine/execution";
 import type { EngineSnapshot } from "./engine/protocol";
 import { cpExchange } from "./engine/pt-value";
 
-export const PT_VERSION = "reward-other-score-cb-v5";
+export const PT_VERSION = "reward-other-score-base-cb-v6";
 export type PtMeasure = "points" | "items";
 export type PtScope = "top-one" | "top-five" | "all";
 export interface PtCycleInput {

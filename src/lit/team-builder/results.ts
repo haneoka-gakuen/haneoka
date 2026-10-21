@@ -149,7 +149,7 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
       out.push(chip(s.goal === "score" ? `${rankLabel} ${host.t("reachOrders", "Orders reaching rank")}` : rankLabel, s.goal === "score" ? `${top[1]}/${Object.values(hit.score.ranks).reduce((sum, count) => sum + count, 0)}` : `${format(host, (top[1] / Object.values(hit.score.ranks).reduce((sum, count) => sum + count, 0)) * 100, top[1] === Object.values(hit.score.ranks).reduce((sum, count) => sum + count, 0) ? 0 : 1)}%`, icon("workspace_premium", 16)));
     }
   }
-  if (hit.comboBonus != null) out.push(chip(host.t("comboBonus", "COMBO BONUS"), `×${format(host, hit.comboBonus)}`));
+  if (hit.comboBonus != null) out.push(chip(host.t("comboBonus", "Base COMBO BONUS"), `×${format(host, hit.comboBonus)}`));
   if (hit.event) {
     if (!(s.goal === "event" && (s.measure === "challenge-points" && !s.weighted || s.weighted && s.weightPoints === 0 && s.weightItems === 0)))
       out.push(chip(bonusLabel, `+${format(host, Math.floor(hit.event.bonusPercent), 0)}%`, icon("trending_up", 16)));
@@ -168,8 +168,8 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
   if (hit.potential) out.push(chip(host.t("skillCoverage", "Skill coverage"), `${format(host, hit.potential.area * 100, 0)}%·s`));
   if (!compact) return out;
   const selected = s.goal === "event" || s.goal === "plan"
-    ? [s.measure === "items" ? host.t("pointsPerPlay", "Event points per play") : host.t("itemsPerPlay", "Items per play"), hit.comboBonus != null ? host.t("comboBonus", "COMBO BONUS") : bonusLabel, rankLabel ?? host.t("power", "Power")]
-    : s.goal === "gekiso" ? [host.t("comboBonus", "COMBO BONUS"), host.t("gekisoPlacements", "Placements"), host.t("power", "Power")]
+    ? [s.measure === "items" ? host.t("pointsPerPlay", "Event points per play") : host.t("itemsPerPlay", "Items per play"), hit.comboBonus != null ? host.t("comboBonus", "Base COMBO BONUS") : bonusLabel, rankLabel ?? host.t("power", "Power")]
+    : s.goal === "gekiso" ? [host.t("comboBonus", "Base COMBO BONUS"), host.t("gekisoPlacements", "Placements"), host.t("power", "Power")]
     : [host.t("power", "Power"), host.t("scoreRange", "Range"), ...(s.goal === "score" && rankLabel ? [`${rankLabel} ${host.t("reachOrders", "Orders reaching rank")}`] : [])];
   return [...selected.flatMap(label => out.filter(item => labels.get(item) === label)), ...out.filter(item => !selected.includes(labels.get(item)!))].slice(0, 3);
 }

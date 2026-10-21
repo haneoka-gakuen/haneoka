@@ -288,9 +288,6 @@
       height: 28px;
     }
   }
-  .tb-goal-hint {
-    min-height: 2.5em;
-  }
   .tb-goal {
     position: relative;
     display: grid;
@@ -1357,17 +1354,22 @@
   .team-builder .tb-picker-footer > .segmented { min-width: 0; max-width: 100%; overflow-x: auto; }
   .team-builder .tb-picker-footer > .segmented > button { min-height: 48px; }
 
-  .tb .tb-result-song { display: flex; gap: var(--md-sys-spacing-4, 1rem); align-items: center; padding: 1rem; min-width: 0; }
+  .tb .tb-result-song { display: flex; gap: var(--md-sys-spacing-4); align-items: center; padding: var(--md-sys-spacing-4); min-width: 0; }
   .tb .tb-result-song__image { width: 64px; height: 64px; flex: 0 0 64px; overflow: hidden; border-radius: var(--md-sys-shape-corner-small); }
   .tb .tb-result-song__image .tile__media > img { width: 100%; height: 100%; object-fit: cover; }
   .tb .tb-result-song > .stack { min-width: 0; overflow-wrap: anywhere; }
   .tb .tb-action-menu, .tb-resources details { position: relative; }
-  .tb .tb-action-menu > div, .tb-resources details > div { position: absolute; z-index: 30; inset-inline-end: 0; min-width: 12rem; max-width: min(24rem, 90vw); padding: .5rem; box-shadow: var(--md-sys-elevation-level2); }
-  .tb .tb-picker-quick { padding: 1rem; }
-  .tb .tb-hit__actions { flex-wrap: wrap; padding: .5rem; }
+  .tb .tb-action-menu > div, .tb-resources details > div { position: absolute; z-index: 30; inset-inline-end: 0; min-width: 12rem; max-width: min(24rem, 90vw); padding: var(--md-sys-spacing-2); box-shadow: var(--md-sys-elevation-level2); }
+  .tb .tb-picker-quick { padding: var(--md-sys-spacing-4); }
+  .tb .tb-hit__actions { flex-wrap: wrap; padding: var(--md-sys-spacing-2); }
   .tb .tb-picker-footer .row { flex-wrap: wrap; }
   .tb .tb-tabs { min-width: 0; }
-  @media (max-width: 600px) { .tb .tb-tabs .tab { min-width: 0; flex: 1; padding-inline: .5rem; } }
+  .tb .tb-eval-mobile { display: none; list-style: none; padding: 0; margin: 0; }
+  @media (max-width: 600px) {
+    .tb .tb-eval-desktop { display: none; }
+    .tb .tb-eval-mobile { display: grid; }
+  }
+  @media (max-width: 600px) { .tb .tb-tabs .tab { min-width: 0; flex: 1; padding-inline: var(--md-sys-spacing-2); } }
   .tb-resources .tb-resources__mobile { display: none; }
   @media (max-width: 900px) {
     .tb-resources .tb-resources__desktop { display: none; }

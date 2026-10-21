@@ -101,7 +101,7 @@ export type Goal =
       accuracy: Accuracy;
       /** Assumed placement in every range (1 for solo Mission lives). */
       rank: number;
-      /** Minimum team COMBO BONUS multiplier on charts with COMBO missions. */
+      /** Minimum base multiplier at the opening COMBO, evaluated at initial LIFE. */
       minComboBonus?: number;
       /** Opponents' scores in each range; when given they decide the placements instead of `rank`. */
       opponents?: number[][];
@@ -169,6 +169,7 @@ export interface HitScore {
   rangeScores?: number[];
 }
 export interface EngineHit {
+  /** Base multiplier, including the first-COMBO sustained bonus. */
   comboBonus?: number | null;
   gekiso?: { just: GekisoJustSummary; luckSamples: number; sampled: boolean; rank: 1 };
   song: SongRef | null;

@@ -34,7 +34,7 @@ export function gekisoSamplesControl(host: TeamBuilder): TemplateResult {
 export function comboBonusControl(host: TeamBuilder): TemplateResult | typeof nothing {
   if (!host.hasComboSongs()) return nothing;
   return html`<md-outlined-text-field id="tb-combo" data-tb-field type="number" min="1" step="1" inputmode="numeric"
-    label=${host.t("minComboBonus", "Minimum COMBO BONUS")} prefix-text="×"
+    label=${host.t("minComboBonus", "Minimum base COMBO BONUS")} prefix-text="×"
     .value=${live(host.settings.minComboBonus === 1 ? "" : String(host.settings.minComboBonus))}
     placeholder=${host.t("unlimitedCombo", "No minimum")}
     ?error=${host.submitted && (!Number.isInteger(host.settings.minComboBonus) || host.settings.minComboBonus < 1)}
@@ -488,7 +488,6 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                             (value) => html`<md-select-option value=${value}><div slot="headline">${scoreText(host, SCORE_GOALS[value].label)}</div></md-select-option>`,
                           )}
                         </md-outlined-select>
-                  <p class="supporting-text tb-goal-hint">${scoreText(host, SCORE_GOALS[scoreGoal(s)].help)}</p>
                   ${
                     scoreGoal(s) === "at-least" || scoreGoal(s) === "capped"
                       ? html`<md-outlined-text-field

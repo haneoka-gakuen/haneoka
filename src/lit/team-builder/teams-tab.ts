@@ -8,6 +8,7 @@ import { iconButton } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { selectionPane } from "../ui/selection-pane";
 import { tileMedia } from "../ui/tile";
+import { specList } from "../ui/spec";
 import { sectionHeading } from "./catalog";
 import { saveTeam } from "./results";
 import { renderSongComparison } from "./song-comparison-view";
@@ -324,7 +325,18 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
         ${!comparison
           ? html`<section class="surface stack tb-manual__scores">
             ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score"), count: rows.length || undefined })}
-            <div class="table-scroll" role="region" tabindex="0" aria-label=${showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score")}><table class="data-table tb-eval">
+            <ul class="tb-eval-mobile stack">
+              ${rows.map(({ song, row }) => html`<li class="card card--outlined"><div class="card__body stack">
+                <div><strong>${catalog.songTitle(song.songId)}</strong><div class="card__supporting">${catalog.difficultyLabel(song.songId, song.difficulty)}</div></div>
+                ${specList([
+                  { label: host.t("power", "Power"), value: row ? format(host, row.power) : "—" },
+                  { label: host.t("expectedScore", "Expected score"), value: row ? format(host, row.score.mean) : "—" },
+                  { label: host.t("scoreRange", "Range"), value: row ? `${format(host, row.score.min)} – ${format(host, row.score.max)}` : "—" },
+                  showSkipScore ? { label: host.t("skipScore", "Skip score"), value: row ? format(host, row.skipScore) : "—" } : null,
+                ], { numeric: true })}
+              </div></li>`)}
+            </ul>
+            <div class="table-scroll tb-eval-desktop" role="region" tabindex="0" aria-label=${showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score")}><table class="data-table tb-eval">
               <thead><tr><th scope="col">${host.t("song", "Song")}</th><th scope="col" class="is-numeric">${host.t("power", "Power")}</th><th scope="col" class="is-numeric">${host.t("expectedScore", "Expected score")}</th><th scope="col" class="is-numeric">${host.t("scoreRange", "Range")}</th>${showSkipScore ? html`<th scope="col" class="is-numeric">${host.t("skipScore", "Skip score")}</th>` : nothing}</tr></thead>
               <tbody>${rows.map(({ song, row }) => html`<tr>
                 <th scope="row">${catalog.songTitle(song.songId)} <small>${catalog.difficultyLabel(song.songId, song.difficulty)}</small></th>
