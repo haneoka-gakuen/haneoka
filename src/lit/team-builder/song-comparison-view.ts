@@ -343,7 +343,7 @@ export function renderSongComparison(host: TeamBuilder) {
       <dt>${t("contribution")}</dt><dd>${metrics ? `${format(metrics.contribution, 1)}%` : "—"}</dd>
     </dl>`;
   };
-  const mobileResults = () => html`<div class="sc-mobile stack">${c.groups().map(group => {
+  const mobileResults = () => html`<div class="sc-mobile">${c.groups().map(group => {
     const row = group.representative ?? group.charts[0]!, open = c.expanded.has(group.id);
     return html`<article class="surface stack">
       ${resultSong(host, row.song)}${mobileMetrics(row)}

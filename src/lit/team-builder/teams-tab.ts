@@ -325,7 +325,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
         ${!comparison
           ? html`<section class="surface stack tb-manual__scores">
             ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score"), count: rows.length || undefined })}
-            <ul class="tb-eval-mobile stack">
+            <ul class="tb-eval-mobile">
               ${rows.map(({ song, row }) => html`<li class="card card--outlined"><div class="card__body stack">
                 <div><strong>${catalog.songTitle(song.songId)}</strong><div class="card__supporting">${catalog.difficultyLabel(song.songId, song.difficulty)}</div></div>
                 ${specList([
