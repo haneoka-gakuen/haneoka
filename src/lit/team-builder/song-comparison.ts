@@ -29,9 +29,15 @@ export class SongComparison {
   rows: ComparisonRow[] = [];
   private previous: { rows: ComparisonRow[]; settings: ComparisonSettings } | null = null;
   private evaluatedSettings: ComparisonSettings | null = null;
-  get stale() { return this.previous !== null; }
-  get resultRows() { return this.previous?.rows ?? this.rows; }
-  get resultSettings() { return { ...(this.previous?.settings ?? this.evaluatedSettings ?? this.settings), sort: this.settings.sort }; }
+  get stale() {
+    return this.previous !== null;
+  }
+  get resultRows() {
+    return this.previous?.rows ?? this.rows;
+  }
+  get resultSettings() {
+    return { ...(this.previous?.settings ?? this.evaluatedSettings ?? this.settings), sort: this.settings.sort };
+  }
   expanded = new Set<number>();
   issues: ComparisonIssue[] = [];
   submitted = false;
@@ -53,7 +59,11 @@ export class SongComparison {
     this.sync();
   }
   get effectiveSettings(): ComparisonSettings {
-    const songs = this.settings.songs.filter(song => availableOnServer(this.host.data!, "songs", song.songId) && this.host.catalog!.difficultyRows(song.songId).some(row => Number(row.difficulty) === song.difficulty));
+    const songs = this.settings.songs.filter(
+      (song) =>
+        availableOnServer(this.host.data!, "songs", song.songId) &&
+        this.host.catalog!.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty),
+    );
     return { ...this.settings, songs, just: this.host.hasMission("JustCount", songs) ? this.settings.just : 100 };
   }
   private context() {
@@ -83,7 +93,12 @@ export class SongComparison {
     if (!this.host.master || !this.host.view) return;
     const signature = this.context(),
       selection = canonical(this.settings.songs);
-    const owner = canonical([this.host.snapshot?.owner, this.host.server, this.host.data?.identity, this.host.data?.crossServer]);
+    const owner = canonical([
+      this.host.snapshot?.owner,
+      this.host.server,
+      this.host.data?.identity,
+      this.host.data?.crossServer,
+    ]);
     if (this.owner !== owner || this.engine !== this.host.engine) {
       this.stop();
       this.cache.clear();
@@ -96,15 +111,21 @@ export class SongComparison {
     }
     if (signature === this.signature && selection === this.selection) return;
     this.stop();
-    if (!this.previous && this.rows.some(row => row.hit) && this.evaluatedSettings)
+    if (!this.previous && this.rows.some((row) => row.hit) && this.evaluatedSettings)
       this.previous = { rows: structuredClone(this.rows), settings: structuredClone(this.evaluatedSettings) };
     if (signature !== this.signature) this.cache.clear();
     this.signature = signature;
     this.selection = selection;
-    this.rows = this.settings.songs.filter(song => availableOnServer(this.host.data!, "songs", song.songId) && this.host.catalog!.difficultyRows(song.songId).some(row => Number(row.difficulty) === song.difficulty)).map((song) => {
-      const hit = this.cache.get(chartKey(song));
-      return { song, status: hit ? "complete" : "pending", hit };
-    });
+    this.rows = this.settings.songs
+      .filter(
+        (song) =>
+          availableOnServer(this.host.data!, "songs", song.songId) &&
+          this.host.catalog!.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty),
+      )
+      .map((song) => {
+        const hit = this.cache.get(chartKey(song));
+        return { song, status: hit ? "complete" : "pending", hit };
+      });
     this.order = [...new Set(this.rows.map((row) => row.song.songId))];
     this.validate();
   }
@@ -113,13 +134,21 @@ export class SongComparison {
     if (this.settings.rank !== null && this.settings.rank > this.settings.players) this.settings.rank = null;
     this.host.write([{ key: `pref.${PREF}`, value: this.settings as unknown as BoxValue }]);
     this.sync();
-    if (!this.stale && this.evaluatedSettings) this.evaluatedSettings = { ...this.evaluatedSettings, target: this.settings.target, players: this.settings.players };
+    if (!this.stale && this.evaluatedSettings)
+      this.evaluatedSettings = {
+        ...this.evaluatedSettings,
+        target: this.settings.target,
+        players: this.settings.players,
+      };
     if (patch.sort || patch.target || patch.players) this.reorder();
     this.host.requestUpdate();
   }
   private validate() {
     const team = this.team();
-    this.issues = [...team.issues, ...comparisonIssues({ ...this.effectiveSettings, songs: this.rows.map(row => row.song) })];
+    this.issues = [
+      ...team.issues,
+      ...comparisonIssues({ ...this.effectiveSettings, songs: this.rows.map((row) => row.song) }),
+    ];
     for (const [slot, id] of this.host.manual.members.entries())
       if (id !== null && !availableOnServer(this.host.data!, "members", id))
         this.issues.push({ field: `sc-slot-${slot}`, reason: "source", slot });
@@ -204,7 +233,7 @@ export class SongComparison {
     if (this.issues.length || !host.engine) {
       host.requestUpdate();
       await host.updateComplete;
-      host.querySelector<HTMLElement>("#sc-issues")?.focus();
+      if (this.issues[0]) await host.focusInput(this.issues[0].field);
       return;
     }
     const token = host.acquireTask("comparison");
@@ -223,6 +252,7 @@ export class SongComparison {
       (row) => row.status !== "complete" && (!only || chartKey(row.song) === chartKey(only)),
     );
     this.running = true;
+    host.calculationSubmitted();
     host.requestUpdate();
     try {
       for (const row of queue) {

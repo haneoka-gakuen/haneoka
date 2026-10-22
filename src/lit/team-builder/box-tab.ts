@@ -165,6 +165,21 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
   return html`
     <div class=${`tb-box${host.pt.showIssues && host.pt.issues.some((issue) => issue.code === "inventory") ? " pt-field--invalid" : ""}`} data-pt-field="inventory" tabindex="-1">
       
+      <div class="row row--wrap tb-box__import-entry">
+        ${segmented({
+          label: host.t("boxImport.libraryServer", "Card library server"),
+          value: host.data!.identity.server,
+          grow: false,
+          options: [
+            { value: "jp", label: host.t("boxImport.servers.jp", "Japan") },
+            { value: "intl", label: host.t("boxImport.servers.intl", "International") },
+          ],
+          onSelect: (server) => host.switchServer(server),
+        })}
+        <span class="row__spacer"></span>
+          <button class="button button--tonal" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
+          <button class="button button--text" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
+      </div>
       <div class="surface tb-toolbar">
         <div class="row row--wrap tb-toolbar__row">
           ${segmented({
@@ -228,9 +243,6 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
             clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
             host.requestUpdate();
           }}>${host.t("clearOwnership", "Mark all members and snapshots not owned")}</button>
-          <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
-          <button class="button button--tonal button--small" type="button" @click=${() => host.imports.openScreenshots()}>${icon("photo_camera", 18)}${host.t("importScreens", "Screenshots")}</button>
-          <button class="button button--text button--small" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
         </div>
       </div>
       ${clearOwnershipDialog(host)}

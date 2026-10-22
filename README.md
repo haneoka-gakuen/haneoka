@@ -22,6 +22,7 @@ interactive workspaces in `src/lit`, and the Material Design 3 styles in
 - ADV story playback and authoring
 - Sonolus-compatible play, watch, preview, and tutorial engines
 - Accounts and community features
+- Team builder with separate server inventories and reviewed cross-server JSON imports
 - Community chart publishing, cloud drafts, version history, remixes, and Sonolus play
 
 The chart editor saves local revisions automatically and reopens the latest local

@@ -76,7 +76,7 @@ function fromExp(
   }
   return best;
 }
-/** Pure preview: the supplied Box is unbound to a game server until the user confirms the current data context. */
+/** Pure preview: imported values are checked against the target server before confirmation copies them there. */
 export function previewBoxImport(
   candidate: BoxCandidate,
   current: InventoryV1,
@@ -85,14 +85,22 @@ export function previewBoxImport(
 ): BoxPreview {
   if (!sameBoxContext(context, data) || !validateInventory(current, data).valid)
     throw new BoxImportError("box_review_context");
-  if (candidate.declaredIdentity && candidate.declaredIdentity.server !== context.server)
-    throw new BoxImportError("box_review_context");
+  const copying = !!candidate.declaredIdentity && candidate.declaredIdentity.server !== context.server;
+  if (copying && ![candidate.declaredIdentity!.server, context.server].every(
+    (server) => server === "jp" || server === "intl",
+  )) throw new BoxImportError("box_incompatible_server");
   const issues: BoxPreview["issues"] = [],
     cards = new Map<string, BoxCardProposal>(),
     maps = new Map<string, BoxMapProposal>();
+  const inTarget = (collection: string, id: number) =>
+    !data.crossServer || data.crossServer.availability[collection][String(id)].includes(context.server);
   for (const kind of ["members", "snapshots"] as const)
     for (const source of candidate[kind]) {
       const card = (kind === "members" ? data.members : data.snapshots)[String(source.cardId)];
+      if (copying && (!card || !inTarget(kind, source.cardId))) {
+        issues.push({ kind, id: source.cardId, field: "cardId", code: "unavailable_target_card" });
+        continue;
+      }
       if (!card) {
         issues.push({ kind, id: source.cardId, field: "cardId", code: "unknown_current_card" });
         continue;
@@ -161,6 +169,10 @@ export function previewBoxImport(
   ] as const)
     for (const source of rows) {
       const record = (map === "bandItems" ? data.bandItems : data.characters)[String(source.id)];
+      if (copying && (!record || !inTarget(map === "bandItems" ? map : "characters", source.id))) {
+        issues.push({ kind: map, id: source.id, field: "id", code: "unavailable_target_entity" });
+        continue;
+      }
       if (!record) {
         issues.push({ kind: map, id: source.id, field: "id", code: "unknown_current_entity" });
         continue;

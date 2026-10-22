@@ -526,8 +526,10 @@ export class ImportController {
     if (["device_channel", "device_path", "device_empty"].includes(code))
       return this.text("deviceEmpty", "No game data found on the phone.");
     if (code.startsWith("device_")) return this.text("deviceFailed", "Could not read the phone.");
-    if (code === "box_review_changed")
+    if (code === "box_review_changed" || code === "box_review_context")
       return this.text("changed", "Your account, data or inventory changed. Open the import again.");
+    if (code === "box_incompatible_server")
+      return this.text("incompatibleServer", "Card IDs from this server cannot be matched to the target server.");
     if (code === "box_no_player") return this.text("empty", "No supported Box records found.");
     if (code === "box_linked_save_required")
       return this.text("linkedSave", "This backup links to a separate game save. Import that save file.");
@@ -712,13 +714,13 @@ export class ImportController {
     const host = this.host;
     if (this.box) {
       const state = this.box;
+      const sourceServer = state.candidates.find((candidate) => candidate.id === state.selectedCandidateId)?.declaredIdentity?.server;
+      const serverLabel = (server: string) => this.text(`servers.${server}`, server);
       return renderBoxImportDialog(
         {
           ...state,
-          serverLabel:
-            host.data?.identity.server === "jp"
-              ? clientText(host.locale, "settings.labels.settingsJapan", "Japan")
-              : clientText(host.locale, "settings.labels.settingsGlobal", "Global"),
+          serverLabel: serverLabel(state.server!),
+          sourceServerLabel: sourceServer && sourceServer !== state.server ? serverLabel(sourceServer) : undefined,
           error: state.error ? this.boxError(state.error) : null,
         },
         {

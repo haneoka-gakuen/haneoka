@@ -20,6 +20,9 @@ export function selectionPane(options: {
   search: (value: string) => void;
   filters: unknown;
   quickFilters?: unknown;
+  layout?: "grid" | "list";
+  filterCount?: number;
+  status?: unknown;
   /** Stamp-style chip groups; existing other callers may still supply fields. */
   filterLayout?: "facets" | "fields";
   kind: "member" | "support" | "song" | "system";
@@ -41,7 +44,7 @@ export function selectionPane(options: {
   const selectedVisible = options.items.some((item) => item.value === options.selected);
   return html`
     <dialog
-      class="selection-pane"
+      class=${`selection-pane${options.layout === "list" ? " selection-pane--list" : ""}${options.filtersOpen ? " is-filtering" : ""}`}
       aria-label=${options.title}
       @cancel=${(event: Event) => {
         event.preventDefault();
@@ -51,9 +54,29 @@ export function selectionPane(options: {
         if (event.target === event.currentTarget) options.close();
       }}
     >
-      ${chooserHeader({ title: options.title, filterLabel: options.filterLabel, filtersOpen: options.filtersOpen,
-        toggleFilters: options.toggleFilters, closeLabel: options.closeLabel, close: options.close })}
-      ${chooserFilters(options.filtersOpen, options.filterLayout === "facets" ? options.filters : html`<div class="chooser-facet"><div class="team-builder__fields" aria-label=${options.filterLabel}>${options.filters}</div></div>`)}
+      ${chooserHeader({
+        title: options.title,
+        filterLabel: options.filterLabel,
+        filtersOpen: options.filtersOpen,
+        toggleFilters: options.toggleFilters,
+        closeLabel: options.closeLabel,
+        close: options.close,
+        actions: options.filterCount
+          ? html`
+              <span class="badge">${options.filterCount}</span>
+            `
+          : nothing,
+      })}
+      ${chooserFilters(
+        options.filtersOpen,
+        options.filterLayout === "facets"
+          ? options.filters
+          : html`
+              <div class="chooser-facet">
+                <div class="team-builder__fields" aria-label=${options.filterLabel}>${options.filters}</div>
+              </div>
+            `,
+      )}
       <div class="selection-pane__body">
         <md-outlined-text-field
           type="search"
@@ -63,35 +86,64 @@ export function selectionPane(options: {
         ></md-outlined-text-field>
         ${options.quickFilters ?? nothing}
         <p role="status" class="team-builder__hint">${options.countLabel}</p>
+        ${options.status ?? nothing}
         <div
           class=${`collection collection--${options.kind}`}
           role=${options.selectedValues ? "group" : "tablist"}
           aria-label=${options.title}
-          @keydown=${options.selectedValues ? nothing : rovingKeydown(
-            options.items.map((item) => item.value),
-            options.selected,
-            options.select,
-          )}
+          @keydown=${
+            options.selectedValues
+              ? nothing
+              : rovingKeydown(
+                  options.items.map((item) => item.value),
+                  options.selected,
+                  options.select,
+                )
+          }
         >
-          ${options.items.map((item, index) => options.selectedValues ? html`
-            <label class=${`tile tile--${item.kind ?? options.kind} selection-pane__choice${options.selectedValues.has(item.value) ? " is-selected" : ""}`} style=${item.style || nothing}>
-              <span class="selection-pane__choice-media">
-                ${tileMedia(item)}
-                <md-checkbox class="selection-pane__choice-checkbox" touch-target="wrapper" ?disabled=${options.disabled || item.disabled} .checked=${live(options.selectedValues.has(item.value))} aria-label=${item.label}
-                  @change=${() => { if (!options.disabled && !item.disabled) options.select(item.value); }}></md-checkbox>
-              </span>
-              <span class="tile__identity">
-                <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
-                ${item.subtitle === undefined || item.subtitle === null ? nothing : html`<small class="tile__subtitle">${item.adornment ?? nothing}<span>${item.subtitle}</span></small>`}
-              </span>
-            </label>` : tile({
-              ...item,
-              selected: item.value === options.selected,
-              role: "tab",
-              controls: previewId,
-              tabIndex: item.value === options.selected || (!selectedVisible && index === 0) ? 0 : -1,
-              onOpen: () => options.select(item.value),
-            }),
+          ${options.items.map((item, index) =>
+            options.selectedValues
+              ? html`
+                  <label
+                    class=${`tile tile--${item.kind ?? options.kind} selection-pane__choice${options.selectedValues.has(item.value) ? " is-selected" : ""}`}
+                    style=${item.style || nothing}
+                  >
+                    <span class="selection-pane__choice-media">
+                      ${tileMedia(item)}
+                      <md-checkbox
+                        class="selection-pane__choice-checkbox"
+                        touch-target="wrapper"
+                        ?disabled=${options.disabled || item.disabled}
+                        .checked=${live(options.selectedValues.has(item.value))}
+                        aria-label=${item.label}
+                        @change=${() => {
+                          if (!options.disabled && !item.disabled) options.select(item.value);
+                        }}
+                      ></md-checkbox>
+                    </span>
+                    <span class="tile__identity">
+                      <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
+                      ${
+                        item.subtitle === undefined || item.subtitle === null
+                          ? nothing
+                          : html`
+                              <small class="tile__subtitle">
+                                ${item.adornment ?? nothing}
+                                <span>${item.subtitle}</span>
+                              </small>
+                            `
+                      }
+                    </span>
+                  </label>
+                `
+              : tile({
+                  ...item,
+                  selected: item.value === options.selected,
+                  role: "tab",
+                  controls: previewId,
+                  tabIndex: item.value === options.selected || (!selectedVisible && index === 0) ? 0 : -1,
+                  onOpen: () => options.select(item.value),
+                }),
           )}
         </div>
         ${
@@ -101,10 +153,18 @@ export function selectionPane(options: {
               `
             : nothing
         }
-        ${options.more ? html`<button class="button button--text" @click=${options.more}>${options.moreLabel ?? "More"}</button>` : nothing}
+        ${
+          options.more
+            ? html`
+                <button class="button button--text" @click=${options.more}>${options.moreLabel ?? "More"}</button>
+              `
+            : nothing
+        }
       </div>
       <footer class="selection-pane__footer">
-        <div id=${previewId} role=${options.selectedValues ? "group" : "tabpanel"} class="team-builder__picker-preview">${options.preview}</div>
+        <div id=${previewId} role=${options.selectedValues ? "group" : "tabpanel"} class="team-builder__picker-preview">
+          ${options.preview}
+        </div>
       </footer>
     </dialog>
   `;

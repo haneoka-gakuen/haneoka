@@ -39,7 +39,11 @@ export function catalogQueryNames(record: CatalogRecord, kind: "character" | "ba
   return [...new Set(names)];
 }
 
-export function parseCatalogQuery(query: string, context: CatalogQueryContext): CatalogQuery {
+export function parseCatalogQuery(
+  query: string,
+  context: CatalogQueryContext,
+  consumed?: (start: number, end: number, keys: string[]) => void,
+): CatalogQuery {
   const facets: CatalogQueryFacets = {};
   const add = (key: string, value: string) => {
     const values = (facets[key] ??= []);
@@ -63,6 +67,8 @@ export function parseCatalogQuery(query: string, context: CatalogQueryContext): 
   const tokens = [...query.matchAll(/"([^"]*)"|'([^']*)'|\S+/gu)].map((match) => ({
     value: match[1] ?? match[2] ?? match[0],
     quoted: match[1] !== undefined || match[2] !== undefined,
+    start: match.index!,
+    end: match.index! + match[0].length,
   }));
   const remaining: string[] = [];
   for (let index = 0; index < tokens.length; index++) {
@@ -97,6 +103,7 @@ export function parseCatalogQuery(query: string, context: CatalogQueryContext): 
         add(`min${field}`, String(value));
         add(`max${field}`, numeric[6] ?? String(value));
       }
+      consumed?.(token.start, tokens[index + length - 1]!.end, [`min${field}`, `max${field}`]);
       index += length - 1;
       numericMatched = true;
       break;
@@ -109,6 +116,7 @@ export function parseCatalogQuery(query: string, context: CatalogQueryContext): 
         ({ combo: "Combo", just: "JustCount", luck: "Luck", mix: "Mix" } as Record<string, string>)[mission[2]],
       );
       if (mission[1]) facets.gekisouMatch = [mission[1]];
+      consumed?.(token.start, token.end, ["gekisouType", "gekisouMatch"]);
       continue;
     }
     let recognized = false;
@@ -131,6 +139,7 @@ export function parseCatalogQuery(query: string, context: CatalogQueryContext): 
       const keys = new Set(entries.map((entry) => entry.key));
       if (keys.size > 1) continue;
       for (const entry of entries) add(entry.key, entry.value);
+      consumed?.(token.start, tokens[index + length - 1]!.end, [...keys]);
       index += length - 1;
       recognized = true;
       break;
@@ -142,6 +151,20 @@ export function parseCatalogQuery(query: string, context: CatalogQueryContext): 
     text: Object.keys(facets).length ? remaining.join(" ") : query.trim(),
     facets,
   };
+}
+
+/** Remove recognized filter terms without reinterpreting quoted free text. */
+export function removeCatalogQueryFacets(
+  query: string,
+  context: CatalogQueryContext,
+  keys?: readonly string[],
+): string {
+  const ranges: [number, number][] = [];
+  parseCatalogQuery(query, context, (start, end, facets) => {
+    if (!keys || facets.some((key) => keys.includes(key))) ranges.push([start, end]);
+  });
+  for (const [start, end] of ranges.reverse()) query = query.slice(0, start) + query.slice(end);
+  return query.trim();
 }
 
 export function intersectCatalogFacets(left: CatalogQueryFacets, right: CatalogQueryFacets): CatalogQueryFacets {

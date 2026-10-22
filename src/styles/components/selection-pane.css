@@ -109,4 +109,96 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  .selection-pane--list .selection-pane__body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .selection-pane--list .selection-pane__body > :not(.collection) {
+    flex-shrink: 0;
+  }
+  .selection-pane--list .collection {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    min-height: 0;
+    gap: var(--md-sys-spacing-1);
+  }
+  .selection-pane--list .selection-pane__choice {
+    position: relative;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    text-align: start;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    min-height: 88px;
+    flex-shrink: 0;
+    gap: var(--md-sys-spacing-3);
+    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-2) var(--md-sys-spacing-2) 56px;
+    align-items: center;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .selection-pane--list .selection-pane__choice-media {
+    position: static;
+    width: 48px;
+    height: 48px;
+  }
+  .selection-pane--list .selection-pane__choice-checkbox {
+    --md-checkbox-container-size: 20px;
+    margin: 0;
+    inset-inline-start: 14px;
+    inset-inline-end: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+  }
+  .selection-pane--list .tile__identity {
+    padding: 0;
+    min-width: 0;
+    width: 100%;
+    text-align: start;
+    min-height: 0;
+  }
+  .selection-pane--list .tile__title {
+    height: auto;
+    min-height: 0;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+  }
+  .selection-pane--list .tile__subtitle {
+    height: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .selection-pane--list .tile__media {
+    width: 48px;
+    height: 48px;
+  }
+  .selection-pane--list .tile__server-mark {
+    display: none;
+  }
+  .selection-pane--list .chooser-filters {
+    flex: 0 1 auto;
+    max-height: 30%;
+    overflow: auto;
+  }
+  @media (max-width: 599px) {
+    .selection-pane--list.is-filtering .selection-pane__body {
+      display: none;
+    }
+    .selection-pane--list.is-filtering .chooser-filters {
+      flex: 1;
+      max-height: none;
+    }
+    .selection-pane--list .sheet__header {
+      padding-inline: var(--md-sys-spacing-2);
+    }
+    .selection-pane--list .selection-pane__body {
+      padding: var(--md-sys-spacing-2);
+    }
+    .selection-pane--list .selection-pane__footer {
+      padding: var(--md-sys-spacing-2);
+    }
+  }
 }

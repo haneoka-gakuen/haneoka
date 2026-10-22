@@ -41,28 +41,49 @@ export const SCORE_GOALS = {
 } as const;
 
 /** The score goal's ranking: a target when one is set, otherwise the criterion. */
-export const scoreGoal = (s: BuildSettings) => (s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget : s.criterion);
+export const scoreGoal = (s: BuildSettings) =>
+  s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget : s.criterion;
 
-export const usesPtResults = (host: TeamBuilder) => host.tab === "pt" && host.settings.rewardMode !== "plan" &&
+export const usesPtResults = (host: TeamBuilder) =>
+  host.tab === "pt" &&
+  host.settings.rewardMode !== "plan" &&
   (host.farmResultMode ?? host.settings.rewardMode) === "recommendation";
-export const resultSettings = (host: TeamBuilder, hit?: EngineHit): BuildSettings => {
+export const resultSettings = (
+  host: TeamBuilder,
+  hit?: EngineHit,
+  source?: Pick<BuildSettings, "route" | "measure">,
+): BuildSettings => {
   if (usesPtResults(host)) {
-    const job = host.pt.job, request = job?.request, goal = request?.goal;
-    const task = hit ? job?.tasks.find(task => task.result?.hits.includes(hit)) : undefined;
-    return { ...DEFAULT_SETTINGS, eventId: goal?.kind === "event" && goal.eventId >= 0 ? goal.eventId : null,
-      goal: "event", route: task?.route ?? "live", challengePoints: job?.cycle?.consumption ?? DEFAULT_SETTINGS.challengePoints, measure: task?.measure ?? (goal?.kind === "event" ? goal.measure : "points"), weighted: false, ptCycle: !!job?.cycle,
+    const job = host.pt.job,
+      request = job?.request,
+      goal = request?.goal;
+    const task = source ?? (hit ? job?.tasks.find((task) => task.result?.hits.includes(hit)) : undefined);
+    return {
+      ...DEFAULT_SETTINGS,
+      eventId: goal?.kind === "event" && goal.eventId >= 0 ? goal.eventId : null,
+      goal: "event",
+      route: task?.route ?? "live",
+      challengePoints: job?.cycle?.consumption ?? DEFAULT_SETTINGS.challengePoints,
+      measure: task?.measure ?? (goal?.kind === "event" ? goal.measure : "points"),
+      weighted: false,
+      ptCycle: !!job?.cycle,
       scope: job?.presentation?.scope ?? "box",
       unknownPolicy: request?.unknownPolicy ?? "min",
       boosts: goal?.kind === "event" ? goal.consumption : 0,
       ptMode: goal?.kind === "event" && goal.gekiso ? "gekiso" : "solo",
       ptJust: goal?.kind === "event" && goal.gekiso ? goal.gekiso.just * 100 : DEFAULT_SETTINGS.ptJust,
-      minComboBonus: goal?.kind === "event" ? goal.gekiso?.minComboBonus ?? 1 : 1,
-      songs: goal?.kind === "event" ? goal.songs : [] };
+      minComboBonus: goal?.kind === "event" ? (goal.gekiso?.minComboBonus ?? 1) : 1,
+      songs: goal?.kind === "event" ? goal.songs : [],
+    };
   }
   const settings = host.resultSettings ?? host.searchSettings;
-  if (settings.goal === "plan" && hit) return { ...settings,
-    route: hit === host.results?.plan?.challenge ? "challenge" : "live",
-    boosts: settings.planBoostsPerLive, measure: "points" };
+  if (settings.goal === "plan" && hit)
+    return {
+      ...settings,
+      route: hit === host.results?.plan?.challenge ? "challenge" : "live",
+      boosts: settings.planBoostsPerLive,
+      measure: "points",
+    };
   return settings;
 };
 

@@ -3,6 +3,7 @@
 // Output: 条件表单、歌曲代表谱面、可展开明细与固定队伍活动加成。
 // Pos: [Map](../L2-2.md)；独立激奏选曲页签的结果视图。
 // Effects/Dependencies: Lit light DOM；事件回调交由控制器处理。
+import { toolLayout } from "./tool-layout";
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -166,7 +167,14 @@ function conditions(host: TeamBuilder) {
         <dd>${t("luck")}</dd>
         <dt>GREAT</dt>
         <dd>${s.mode === "ap" ? 0 : (s.great ?? "—")}%</dd>
-        ${host.hasMission("JustCount", c.effectiveSettings.songs) ? html`<dt>JUST</dt><dd>${s.just ?? "—"}%</dd>` : nothing}
+        ${
+          host.hasMission("JustCount", c.effectiveSettings.songs)
+            ? html`
+                <dt>JUST</dt>
+                <dd>${s.just ?? "—"}%</dd>
+              `
+            : nothing
+        }
         <dt>MISS</dt>
         <dd>${s.mode === "ap" ? 0 : (s.missEvery ?? "—")}</dd>
       </dl>
@@ -190,14 +198,14 @@ function conditions(host: TeamBuilder) {
                   </thead>
                   <tbody>
                     ${missing.map(
-                    (row) => html`
-                      <tr>
-                        <th>${row.name}</th>
-                        <td>${row.field}</td>
-                        <td>${row.value ?? "—"}</td>
-                      </tr>
-                    `,
-                  )}
+                      (row) => html`
+                        <tr>
+                          <th>${row.name}</th>
+                          <td>${row.field}</td>
+                          <td>${row.value ?? "—"}</td>
+                        </tr>
+                      `,
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -272,7 +280,7 @@ function eventBonus(host: TeamBuilder) {
   `;
 }
 
-export function renderSongComparison(host: TeamBuilder) {
+export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
   const c = host.songComparison,
     s = c.settings,
     result = c.resultSettings,
@@ -337,121 +345,172 @@ export function renderSongComparison(host: TeamBuilder) {
   const mobileMetrics = (row: ComparisonRow) => {
     const score = row.status === "complete" ? row.hit?.score?.mean : undefined;
     const metrics = score === undefined ? null : songMetrics(host.master!, row.song, result, score);
-    return html`<dl class="spec-list sc-primary">
-      <dt>${t("score")}</dt><dd>${score === undefined ? "—" : format(score)}</dd>
-      <dt>${t("remaining")}</dt><dd>${metrics ? format(Math.ceil(metrics.remaining)) : "—"}</dd>
-      <dt>${t("contribution")}</dt><dd>${metrics ? `${format(metrics.contribution, 1)}%` : "—"}</dd>
-    </dl>`;
+    return html`
+      <dl class="spec-list sc-primary">
+        <dt>${t("score")}</dt>
+        <dd>${score === undefined ? "—" : format(score)}</dd>
+        <dt>${t("remaining")}</dt>
+        <dd>${metrics ? format(Math.ceil(metrics.remaining)) : "—"}</dd>
+        <dt>${t("contribution")}</dt>
+        <dd>${metrics ? `${format(metrics.contribution, 1)}%` : "—"}</dd>
+      </dl>
+    `;
   };
-  const mobileResults = () => html`<div class="sc-mobile">${c.groups().map(group => {
-    const row = group.representative ?? group.charts[0]!, open = c.expanded.has(group.id);
-    return html`<article class="surface stack">
-      ${resultSong(host, row.song)}${mobileMetrics(row)}
-      <button class="button button--text" aria-expanded=${String(open)} aria-controls=${`sc-mobile-${group.id}`}
-        @click=${() => { if (open) c.expanded.delete(group.id); else c.expanded.add(group.id); host.requestUpdate(); }}>
-        ${t("coverage", { done: group.charts.filter(chart => chart.status === "complete").length, total: group.charts.length })} · ${t("details")}
-      </button>
-      <div id=${`sc-mobile-${group.id}`} class="stack" ?hidden=${!open}>${group.charts.map(chart => {
-        const metrics = chart.hit?.score ? songMetrics(host.master!, chart.song, result, chart.hit.score.mean) : null;
-        return html`<section class="stack">
-          <strong>${catalog.difficultyLabel(group.id, chart.song.difficulty)}</strong>
-          <span>${chart.reason ? t(chart.reason as keyof typeof COMPARISON_TEXT) : chart.status === "running" ? host.computationStatus() : chart.status === "complete" && !metrics ? t("threshold") : t(chart.status)}</span>
-          ${mobileMetrics(chart)}
-          <dl class="spec-list"><dt>${t("total")}</dt><dd>${metrics ? format(metrics.total) : "—"}</dd>
-            <dt>${t("average")}</dt><dd>${metrics ? format(Math.ceil(metrics.average)) : "—"}</dd></dl>
-          <div class="cluster">
-            ${chart.status === "failed" || chart.status === "cancelled" ? html`<button class="button button--text" ?disabled=${host.running} @click=${() => void c.start(chart.song)}>${t("retry")}</button>` : nothing}
-            <button class="button button--text" @click=${() => c.update({ songs: s.songs.filter(song => song.songId !== chart.song.songId || song.difficulty !== chart.song.difficulty) })}>${t("remove")}</button>
-          </div>
-        </section>`;
-      })}</div>
-    </article>`;
-  })}</div>`;
+  const mobileResults = () => html`
+    <div class="sc-mobile">
+      ${c.groups().map((group) => {
+        const row = group.representative ?? group.charts[0]!,
+          open = c.expanded.has(group.id);
+        return html`
+          <article class="surface stack">
+            ${resultSong(host, row.song)}${mobileMetrics(row)}
+            <button
+              class="button button--text"
+              aria-expanded=${String(open)}
+              aria-controls=${`sc-mobile-${group.id}`}
+              @click=${() => {
+                if (open) c.expanded.delete(group.id);
+                else c.expanded.add(group.id);
+                host.requestUpdate();
+              }}
+            >
+              ${t("coverage", { done: group.charts.filter((chart) => chart.status === "complete").length, total: group.charts.length })}
+              · ${t("details")}
+            </button>
+            <div id=${`sc-mobile-${group.id}`} class="stack" ?hidden=${!open}>
+              ${group.charts.map((chart) => {
+                const metrics = chart.hit?.score
+                  ? songMetrics(host.master!, chart.song, result, chart.hit.score.mean)
+                  : null;
+                return html`
+                  <section class="stack">
+                    <strong>${catalog.difficultyLabel(group.id, chart.song.difficulty)}</strong>
+                    <span>
+                      ${chart.reason ? t(chart.reason as keyof typeof COMPARISON_TEXT) : chart.status === "running" ? host.computationStatus() : chart.status === "complete" && !metrics ? t("threshold") : t(chart.status)}
+                    </span>
+                    ${mobileMetrics(chart)}
+                    <dl class="spec-list">
+                      <dt>${t("total")}</dt>
+                      <dd>${metrics ? format(metrics.total) : "—"}</dd>
+                      <dt>${t("average")}</dt>
+                      <dd>${metrics ? format(Math.ceil(metrics.average)) : "—"}</dd>
+                    </dl>
+                    <div class="cluster">
+                      ${
+                        chart.status === "failed" || chart.status === "cancelled"
+                          ? html`
+                              <button
+                                class="button button--text"
+                                ?disabled=${host.running}
+                                @click=${() => void c.start(chart.song)}
+                              >
+                                ${t("retry")}
+                              </button>
+                            `
+                          : nothing
+                      }
+                      <button
+                        class="button button--text"
+                        @click=${() => c.update({ songs: s.songs.filter((song) => song.songId !== chart.song.songId || song.difficulty !== chart.song.difficulty) })}
+                      >
+                        ${t("remove")}
+                      </button>
+                    </div>
+                  </section>
+                `;
+              })}
+            </div>
+          </article>
+        `;
+      })}
+    </div>
+  `;
   const headers = html`
     <th>${t("score")}</th>
     <th>${t("contribution")}</th>
     <th>${t("remaining")}</th>
   `;
   const done = rows.filter((row) => row.status === "complete").length;
-  return html`
-    <div class="sc tb-build">
-      <div class="stack">
-        <section class="surface stack">
-          ${sectionHeading({ icon: "tune", label: t("conditions") })}
-          <button
-            id="sc-songs"
-            data-sc-field
-            class="button button--tonal button--full"
-            type="button"
-            @click=${() => c.choose()}
-          >
-            ${t("choose")} · ${c.rows.length}
-          </button>
-          ${select(
-            "sc-target",
-            t("target"),
-            s.target,
-            [
-              { value: "SS", label: "SS" },
-              { value: "S", label: "S" },
-            ],
-            (value) => c.update({ target: value as "S" | "SS" }),
-          )}
-          ${select(
-            "sc-players",
-            t("players"),
-            String(s.players),
-            [2, 3, 4, 5].map((value) => ({ value: String(value), label: String(value) })),
-            (value) => c.update({ players: Number(value) }),
-          )}
-          ${select(
-            "sc-mode",
-            t("mode"),
-            s.mode ?? "",
-            [
-              { value: "", label: t("select") },
-              { value: "ap", label: t("ap") },
-              { value: "custom", label: t("custom") },
-            ],
-            (value) => c.update({ mode: value === "ap" || value === "custom" ? value : null }),
-          )}
-          ${host.hasMission("JustCount", c.effectiveSettings.songs) ? number("sc-just", t("just"), s.just, (value) => c.update({ just: value }), 100) : nothing}
-          ${
-            s.mode === "custom"
-              ? html`
-                  ${number("sc-great", t("great"), s.great, (value) => c.update({ great: value }), 100)}${number("sc-miss", t("miss"), s.missEvery, (value) => c.update({ missEvery: value }))}
-                `
-              : nothing
-          }
-          ${select("sc-rank", t("rank"), s.rank === null ? "" : String(s.rank), [{ value: "", label: t("select") }, ...Array.from({ length: s.players }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))], (value) => c.update({ rank: value ? Number(value) : null }))}
-          ${accordion({
-            id: "sc-conditions",
-            label: t("details"),
-            supportingText: [...c.team().members, ...c.team().snaps].some((card) => Object.values(card).includes(null))
-              ? t("unknown")
-              : t("play"),
-            expanded: c.expanded.has(-1),
-            onExpandedChange: (open) => {
-              if (open) c.expanded.add(-1);
-              else c.expanded.delete(-1);
-              host.requestUpdate();
-            },
-            content: conditions(host),
-          })}
-          ${
-            c.submitted && c.issues.length
-              ? html`
-                  <div id="sc-issues" tabindex="-1">
-                    <strong>${t("issues")}</strong>
-                    <ul>
-                      ${c.issues.map(
+  return toolLayout(
+    host,
+    html`
+      ${editor}
+      <section class="surface stack">
+        ${sectionHeading({ icon: "tune", label: t("conditions") })}
+        <button
+          id="sc-songs"
+          data-sc-field
+          class="button button--tonal button--full"
+          type="button"
+          @click=${() => c.choose()}
+        >
+          ${t("choose")} · ${c.rows.length}
+        </button>
+        ${select(
+          "sc-target",
+          t("target"),
+          s.target,
+          [
+            { value: "SS", label: "SS" },
+            { value: "S", label: "S" },
+          ],
+          (value) => c.update({ target: value as "S" | "SS" }),
+        )}
+        ${select(
+          "sc-players",
+          t("players"),
+          String(s.players),
+          [2, 3, 4, 5].map((value) => ({ value: String(value), label: String(value) })),
+          (value) => c.update({ players: Number(value) }),
+        )}
+        ${select(
+          "sc-mode",
+          t("mode"),
+          s.mode ?? "",
+          [
+            { value: "", label: t("select") },
+            { value: "ap", label: t("ap") },
+            { value: "custom", label: t("custom") },
+          ],
+          (value) => c.update({ mode: value === "ap" || value === "custom" ? value : null }),
+        )}
+        ${host.hasMission("JustCount", c.effectiveSettings.songs) ? number("sc-just", t("just"), s.just, (value) => c.update({ just: value }), 100) : nothing}
+        ${
+          s.mode === "custom"
+            ? html`
+                ${number("sc-great", t("great"), s.great, (value) => c.update({ great: value }), 100)}${number("sc-miss", t("miss"), s.missEvery, (value) => c.update({ missEvery: value }))}
+              `
+            : nothing
+        }
+        ${select("sc-rank", t("rank"), s.rank === null ? "" : String(s.rank), [{ value: "", label: t("select") }, ...Array.from({ length: s.players }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))], (value) => c.update({ rank: value ? Number(value) : null }))}
+        ${accordion({
+          id: "sc-conditions",
+          label: t("details"),
+          supportingText: [...c.team().members, ...c.team().snaps].some((card) => Object.values(card).includes(null))
+            ? t("unknown")
+            : t("play"),
+          expanded: c.expanded.has(-1),
+          onExpandedChange: (open) => {
+            if (open) c.expanded.add(-1);
+            else c.expanded.delete(-1);
+            host.requestUpdate();
+          },
+          content: conditions(host),
+        })}
+        ${
+          c.submitted && c.issues.length
+            ? html`
+                <div id="sc-issues" tabindex="-1">
+                  <strong>${t("issues")}</strong>
+                  <ul>
+                    ${c.issues.map(
                       (issue) => html`
                         <li>
                           <a
                             href=${"#" + issue.field}
                             @click=${(e: Event) => {
                               e.preventDefault();
-                              host.querySelector<HTMLElement>("#" + issue.field)?.focus();
+                              void host.focusInput(issue.field);
                             }}
                           >
                             ${issue.slot === undefined ? "" : t("slot", { slot: issue.slot + 1 }) + " · "}${t(issue.reason as keyof typeof COMPARISON_TEXT)}
@@ -459,60 +518,89 @@ export function renderSongComparison(host: TeamBuilder) {
                         </li>
                       `,
                     )}
-                    </ul>
-                  </div>
-                `
-              : nothing
-          }
-          <button
-            class="button button--full"
-            type="button"
-            ?disabled=${host.running && !c.running}
-            @click=${() => (c.running ? c.stop() : void c.start())}
-          >
-            ${c.running ? t("stop") : host.running ? t("busy") : t("start")}
-          </button>
-        </section>
-        ${rows.length ? html`<button class="button button--text" type="button" @click=${() => host.querySelector("#sc-results")?.scrollIntoView({ block: "start" })}>${host.t("viewResults", "View results")}</button>` : nothing}
-        ${eventBonus(host)}
+                  </ul>
+                </div>
+              `
+            : nothing
+        }
+      </section>
+      ${
+        rows.length
+          ? html`
+              <button
+                class="button button--text"
+                type="button"
+                @click=${() => host.querySelector("#sc-results")?.scrollIntoView({ block: "start" })}
+              >
+                ${host.t("viewResults", "View results")}
+              </button>
+            `
+          : nothing
+      }
+      ${eventBonus(host)}
+    `,
+    html`
+      <div class="tb-run">
+        <button
+          class="button button--full tb-run__button"
+          type="button"
+          ?disabled=${host.running && !c.running}
+          @click=${() => (c.running ? c.stop() : void c.start())}
+        >
+          ${c.running ? t("stop") : host.running ? t("busy") : t("start")}
+        </button>
       </div>
+    `,
+    html`
       <section id="sc-results" class="surface stack">
         ${sectionHeading({ icon: "music_note", label: t("title") })}
-        ${rows.length ? html`
-        <div class="cluster">
-          <span class="chip chip--static">${c.stale ? host.t("stale", "Conditions changed") : t("conditions")}</span>
-          <span class="chip chip--static">${result.mode ? t(result.mode) : t("select")}${host.hasMission("JustCount", result.songs) ? ` · JUST ${result.just ?? "—"}%` : ""}</span>
-          <span class="chip chip--static">${t("placement", { rank: result.rank ?? "—" })}</span>
-          <span class="chip chip--static">${result.players} · ${result.target}</span>
-        </div>
-        <div class="cluster">
-          <span class="chip chip--static">
-            GREAT ${result.mode === "ap" ? 0 : (result.great ?? "—")}% · MISS ${result.mode === "ap" ? 0 : (result.missEvery ?? "—")}
-          </span>
-          <span class="chip chip--static">${t("noAssist")}</span>
-        </div>
-        <div class="row row--wrap">
-          <span role="status" class="tabular">${c.running ? `${host.computationStatus()} · ` : ""}${t("coverage", { done, total: rows.length })}</span>
-        </div>
-        <md-linear-progress
-          .value=${rows.length ? done / rows.length : 0}
-          aria-label=${t("coverage", { done, total: rows.length })}
-        ></md-linear-progress>
-        ${select(
-          "sc-sort",
-          t("sort"),
-          s.sort,
-          [
-            { value: "contribution", label: t("contribution") },
-            { value: "score", label: t("score") },
-            { value: "remaining", label: t("remaining") },
-          ],
-          (value) => c.update({ sort: value as typeof s.sort }),
-        )}
-        ` : nothing}
         ${
           rows.length
-            ? html`${mobileResults()}
+            ? html`
+                <div class="cluster">
+                  <span class="chip chip--static">
+                    ${c.stale ? host.t("stale", "Conditions changed") : t("conditions")}
+                  </span>
+                  <span class="chip chip--static">
+                    ${result.mode ? t(result.mode) : t("select")}${host.hasMission("JustCount", result.songs) ? ` · JUST ${result.just ?? "—"}%` : ""}
+                  </span>
+                  <span class="chip chip--static">${t("placement", { rank: result.rank ?? "—" })}</span>
+                  <span class="chip chip--static">${result.players} · ${result.target}</span>
+                </div>
+                <div class="cluster">
+                  <span class="chip chip--static">
+                    GREAT ${result.mode === "ap" ? 0 : (result.great ?? "—")}% · MISS
+                    ${result.mode === "ap" ? 0 : (result.missEvery ?? "—")}
+                  </span>
+                  <span class="chip chip--static">${t("noAssist")}</span>
+                </div>
+                <div class="row row--wrap">
+                  <span role="status" class="tabular">
+                    ${c.running ? `${host.computationStatus()} · ` : ""}${t("coverage", { done, total: rows.length })}
+                  </span>
+                </div>
+                <md-linear-progress
+                  .value=${rows.length ? done / rows.length : 0}
+                  aria-label=${t("coverage", { done, total: rows.length })}
+                ></md-linear-progress>
+                ${select(
+                  "sc-sort",
+                  t("sort"),
+                  s.sort,
+                  [
+                    { value: "contribution", label: t("contribution") },
+                    { value: "score", label: t("score") },
+                    { value: "remaining", label: t("remaining") },
+                  ],
+                  (value) => c.update({ sort: value as typeof s.sort }),
+                )}
+              `
+            : nothing
+        }
+        ${
+          rows.length
+            ? html`
+                ${mobileResults()}
                 <div class="table-scroll sc-desktop" role="region" tabindex="0" aria-label=${t("title")}>
                   <table class="data-table sc-results">
                     <thead>
@@ -524,112 +612,117 @@ export function renderSongComparison(host: TeamBuilder) {
                     </thead>
                     <tbody>
                       ${repeat(
-                      c.groups(),
-                      (group) => group.id,
-                      (group) => {
-                        const row = group.representative,
-                          open = c.expanded.has(group.id),
-                          completed = group.charts.filter((chart) => chart.status === "complete").length;
+                        c.groups(),
+                        (group) => group.id,
+                        (group) => {
+                          const row = group.representative,
+                            open = c.expanded.has(group.id),
+                            completed = group.charts.filter((chart) => chart.status === "complete").length;
 
-                        return html`
-                          <tr data-sc-song=${group.id}>
-                            <th scope="row">
-                              ${resultSong(host, row?.song ?? group.charts[0]!.song)}
-                              <button
-                                class="button button--text"
-                                type="button"
-                                aria-expanded=${String(open)}
-                                aria-controls=${`sc-chart-${group.id}`}
-                                @click=${() => {
-                      if (open) c.expanded.delete(group.id);
-                      else c.expanded.add(group.id);
-                      host.requestUpdate();
-                    }}
-                              >
-                                ${t("coverage", { done: completed, total: group.charts.length })}
-                              </button>
-                            </th>
-                            <td>${row ? catalog.difficultyLabel(group.id, row.song.difficulty) : "—"}</td>
-                            ${metricsCells(row)}
-                          </tr>
-                          <tr id=${`sc-chart-${group.id}`} ?hidden=${!open}>
-                            <td colspan="5">
-                              <table class="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>${t("difficulty")}</th>
-                                    ${headers}
-                                    <th>${t("details")}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  ${group.charts.map((chart) => {
-                        const metrics = chart.hit?.score
-                          ? songMetrics(host.master!, chart.song, result, chart.hit.score.mean)
-                          : null;
-                        const missions = host
-                          .master!.songs.get(group.id)
-                          ?.gekisoMissions.map((id) => ({ 1: "COMBO", 2: "LUCK", 3: "JUST" })[id as 1 | 2 | 3] ?? "—")
-                          .join(" / ");
-                        return html`
-                          <tr>
-                            <th>${catalog.difficultyLabel(group.id, chart.song.difficulty)}</th>
-                            ${metricsCells(chart)}
-                            <td>
-                              <span>
-                                ${chart.reason ? t(chart.reason as keyof typeof COMPARISON_TEXT) : chart.status === "complete" && !metrics ? t("threshold") : chart.status === "running" ? host.computationStatus() : t(chart.status)}
-                              </span>
-                              <dl class="spec-list">
-                                <dt>${t("total")}</dt>
-                                <dd>${metrics ? format(metrics.total) : "—"}</dd>
-                                <dt>${t("average")}</dt>
-                                <dd>${metrics ? format(Math.ceil(metrics.average)) : "—"}</dd>
-                                <dt>${t("score")}</dt>
-                                <dd>${chart.hit?.score ? format(chart.hit.score.mean) : "—"}</dd>
-                                <dt>${t("rank")}</dt>
-                                <dd>${missions} · ${result.rank ?? "—"}</dd>
-                              </dl>
-                              ${
-                        chart.status === "failed" || chart.status === "cancelled"
-                          ? html`
-                              <button
-                                class="button button--text"
-                                type="button"
-                                ?disabled=${host.running}
-                                @click=${() => void c.start(chart.song)}
-                              >
-                                ${t("retry")}
-                              </button>
-                            `
-                          : nothing
-                      }
-                              <button
-                                class="button button--text"
-                                type="button"
-                                @click=${() => c.update({ songs: s.songs.filter((song) => song.songId !== chart.song.songId || song.difficulty !== chart.song.difficulty) })}
-                              >
-                                ${t("remove")}
-                              </button>
-                            </td>
-                          </tr>
-                        `;
-                      })}
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        `;
-                      },
-                    )}
+                          return html`
+                            <tr data-sc-song=${group.id}>
+                              <th scope="row">
+                                ${resultSong(host, row?.song ?? group.charts[0]!.song)}
+                                <button
+                                  class="button button--text"
+                                  type="button"
+                                  aria-expanded=${String(open)}
+                                  aria-controls=${`sc-chart-${group.id}`}
+                                  @click=${() => {
+                                    if (open) c.expanded.delete(group.id);
+                                    else c.expanded.add(group.id);
+                                    host.requestUpdate();
+                                  }}
+                                >
+                                  ${t("coverage", { done: completed, total: group.charts.length })}
+                                </button>
+                              </th>
+                              <td>${row ? catalog.difficultyLabel(group.id, row.song.difficulty) : "—"}</td>
+                              ${metricsCells(row)}
+                            </tr>
+                            <tr id=${`sc-chart-${group.id}`} ?hidden=${!open}>
+                              <td colspan="5">
+                                <table class="data-table">
+                                  <thead>
+                                    <tr>
+                                      <th>${t("difficulty")}</th>
+                                      ${headers}
+                                      <th>${t("details")}</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    ${group.charts.map((chart) => {
+                                      const metrics = chart.hit?.score
+                                        ? songMetrics(host.master!, chart.song, result, chart.hit.score.mean)
+                                        : null;
+                                      const missions = host
+                                        .master!.songs.get(group.id)
+                                        ?.gekisoMissions.map(
+                                          (id) => ({ 1: "COMBO", 2: "LUCK", 3: "JUST" })[id as 1 | 2 | 3] ?? "—",
+                                        )
+                                        .join(" / ");
+                                      return html`
+                                        <tr>
+                                          <th>${catalog.difficultyLabel(group.id, chart.song.difficulty)}</th>
+                                          ${metricsCells(chart)}
+                                          <td>
+                                            <span>
+                                              ${chart.reason ? t(chart.reason as keyof typeof COMPARISON_TEXT) : chart.status === "complete" && !metrics ? t("threshold") : chart.status === "running" ? host.computationStatus() : t(chart.status)}
+                                            </span>
+                                            <dl class="spec-list">
+                                              <dt>${t("total")}</dt>
+                                              <dd>${metrics ? format(metrics.total) : "—"}</dd>
+                                              <dt>${t("average")}</dt>
+                                              <dd>${metrics ? format(Math.ceil(metrics.average)) : "—"}</dd>
+                                              <dt>${t("score")}</dt>
+                                              <dd>${chart.hit?.score ? format(chart.hit.score.mean) : "—"}</dd>
+                                              <dt>${t("rank")}</dt>
+                                              <dd>${missions} · ${result.rank ?? "—"}</dd>
+                                            </dl>
+                                            ${
+                                              chart.status === "failed" || chart.status === "cancelled"
+                                                ? html`
+                                                    <button
+                                                      class="button button--text"
+                                                      type="button"
+                                                      ?disabled=${host.running}
+                                                      @click=${() => void c.start(chart.song)}
+                                                    >
+                                                      ${t("retry")}
+                                                    </button>
+                                                  `
+                                                : nothing
+                                            }
+                                            <button
+                                              class="button button--text"
+                                              type="button"
+                                              @click=${() => c.update({ songs: s.songs.filter((song) => song.songId !== chart.song.songId || song.difficulty !== chart.song.difficulty) })}
+                                            >
+                                              ${t("remove")}
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      `;
+                                    })}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          `;
+                        },
+                      )}
                     </tbody>
                   </table>
                 </div>
               `
             : html`
-                <div class="state"><p class="state__title">${t("empty")}</p></div>
+                <div class="state">
+                  <p class="state__title">${t("empty")}</p>
+                  <button class="button button--tonal" @click=${() => c.choose()}>${t("choose")}</button>
+                </div>
               `
         }
       </section>
-    </div>
-  `;
+    `,
+  );
 }

@@ -34,6 +34,7 @@ export interface BoxImportDialogState {
   preview: BoxPreview | null;
   confirmation: BoxConfirmation;
   serverLabel: string;
+  sourceServerLabel?: string;
   progress: { completed: number; total: number } | null;
   /** Owning UI supplies a localized, sanitized error; never the raw parser input. */
   error: string | null;
@@ -149,7 +150,19 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
     }}
     >
       <header class="sheet__header">
-        <strong>${t("title", "Import Box")}</strong>
+        <div class="team-builder__import-heading">
+          <strong>${t("title", "Import Box")}</strong>
+          <span class="team-builder__import-server">
+            ${
+              state.sourceServerLabel
+                ? t("serverTransfer", "{source} → {target}", {
+                    source: state.sourceServerLabel,
+                    target: state.serverLabel,
+                  })
+                : state.serverLabel
+            }
+          </span>
+        </div>
         ${iconButton({ icon: "close", label: t("close", "Close"), onClick: actions.close })}
       </header>
       <div class="selection-pane__body">
@@ -164,7 +177,26 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         state.phase === "select"
           ? html`
               ${actions.appDownload ?? nothing}
-              <div class="team-builder__fields">
+              <div class="team-builder__import-file">
+                  <button
+                    type="button"
+                    class="button button--tonal"
+                    @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}
+                  >
+                    ${icon("upload_file")}${t("chooseFiles", "Choose Box files")}
+                  </button>
+                  <input
+                    hidden
+                    type="file"
+                    multiple
+                    @change=${(event: Event) => {
+                      const input = event.target as HTMLInputElement;
+                      actions.files([...(input.files ?? [])]);
+                      input.value = "";
+                    }}
+                  />
+                </div>
+                <div class="team-builder__fields">
                 <button type="button" class="button button--outlined" @click=${actions.screenshots}>
                   ${t("screenshots", "Screenshots")}
                 </button>
@@ -199,26 +231,14 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                     ${t("android", "Read Android phone")}
                   </button>
                 </div>
-                <div>
-                  <button
-                    type="button"
-                    class="button button--outlined"
-                    @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}
-                  >
-                    ${t("chooseFiles", "Choose Box files")}
-                  </button>
-                  <input
-                    hidden
-                    type="file"
-                    multiple
-                    @change=${(event: Event) => {
-            const input = event.target as HTMLInputElement;
-            actions.files([...(input.files ?? [])]);
-            input.value = "";
-          }}
-                  />
                 </div>
-                <div class="team-builder__practice-control">
+                ${accordion({
+                  id: "team-box-paste",
+                  label: t("paste", "Paste Box text"),
+                  expanded: actions.expanded?.("box-paste") ?? false,
+                  onExpandedChange: (value) => actions.expand?.("box-paste", value),
+                  content: html`
+                    <div class="team-builder__practice-control">
                   <md-outlined-text-field
                     type="textarea"
                     rows="4"
@@ -237,9 +257,20 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                     ${t("parse", "Read Box")}
                   </button>
                 </div>
-              </div>
-              ${actions.sources ?? nothing}
-            `
+              `,
+                })}
+                ${
+                  actions.sources
+                    ? accordion({
+                        id: "team-box-sources",
+                        label: t("otherSources", "Save folders and backups"),
+                        expanded: actions.expanded?.("box-sources") ?? false,
+                        onExpandedChange: (value) => actions.expand?.("box-sources", value),
+                        content: actions.sources,
+                      })
+                    : nothing
+                }
+              `
           : nothing
       }
         ${
@@ -281,7 +312,13 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         ${
         model && state.preview
           ? html`
-              ${state.preview.cards.length ? segmented<"merge" | "replace">({
+              <section class="surface team-builder__import-policies">
+                  ${
+                    state.preview.cards.length
+                      ? html`
+                          <div class="team-builder__practice-control">
+                            <strong class="detail-section-title">${t("ownershipMode", "Members and snapshots")}</strong>
+                            ${segmented<"merge" | "replace">({
           label: t("ownershipMode", "Members and snapshots"),
           value: state.confirmation.ownership ?? "merge",
           options: [
@@ -289,9 +326,22 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
             { value: "replace", label: t("replaceOwnership", "Replace member and snapshot ownership") },
           ],
           onSelect: (ownership) => actions.confirmation({ ...state.confirmation, ownership }),
-        }) : nothing}
-              ${state.confirmation.ownership === "replace" ? html`<p>${t("replaceScope", "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}</p>` : nothing}
-              ${segmented<"keep" | "overwrite" | "updates">({
+        })}
+                          </div>
+                        `
+                      : nothing
+                  }
+                  ${
+                    state.confirmation.ownership === "replace" ? html`
+                          <p>
+                            ${t("replaceScope", "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}
+                          </p>
+                        `
+                      : nothing
+                  }
+                  <div class="team-builder__practice-control">
+                    <strong class="detail-section-title">${t("existingPolicy", "Existing cards")}</strong>
+                    ${segmented<"keep" | "overwrite" | "updates">({
           label: t("existingPolicy", "Existing cards"),
           value: state.confirmation.existingValues ?? "keep",
           options: [
@@ -301,7 +351,9 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
           ],
           onSelect: (value) => actions.confirmation(setBoxExistingValues(state.preview!, state.confirmation, value)),
         })}
-              <div class="team-builder__actions">
+              </div>
+                </section>
+                <div class="team-builder__actions">
                 <button
                   type="button"
                   class="button button--text"
@@ -323,6 +375,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
           return html`
             <div
               class="team-builder__owned-card"
+              ?data-selected=${row.choice.include}
               role="group"
               aria-label=${options?.label ?? t("review", "Needs review")}
             >
@@ -486,7 +539,9 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                           }
                           ·
                           ${
-                            issue.field === "row"
+                            issue.code === "unavailable_target_card" || issue.code === "unavailable_target_entity"
+                              ? t("unavailableTarget", "Not in the target server's catalogue")
+                              : issue.field === "row"
                               ? t("listRowCheck", "Check the card ID, name, type and training values in this row.")
                               : html`
                                   ${actions.fieldName(issue.field)} · ${t("review", "Needs review")}
@@ -505,11 +560,22 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
       }
       </div>
       <footer class="selection-pane__footer team-builder__actions">
-        ${actions.onOpenHistory ? html`
+        ${
+          model
+            ? html`
+          <span class="team-builder__import-count" role="status">
+                  ${t("selectedEntries", "{count} selected", { count: model.included })}
+                </span>
+              ` : nothing
+        }
+        ${
+          state.phase === "select" && actions.onOpenHistory
+            ? html`
           <button type="button" class="button button--tonal" @click=${actions.onOpenHistory}>
             ${icon("history")}${clientText(actions.locale ?? "ja", "catalog.gachaHistory.title", "Gacha history")}
           </button>
-        ` : nothing}
+        ` : nothing
+        }
         ${
         state.phase === "parsing"
           ? html`
