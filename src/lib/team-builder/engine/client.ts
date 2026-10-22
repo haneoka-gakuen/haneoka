@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 创建和替换 Worker、消息通信及内存 Promise；合并主分边界后补齐原生评分，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
-import type { TeamBuilderData } from "../data";
+import { objectRow, type TeamBuilderData } from "../data";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline } from "./api";
 import type { EngineCall, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs } from "./execution";
@@ -162,12 +162,19 @@ const QUICK_MS = 700;
 /** Leader shards per Worker: enough for the free Workers to even out uneven subtrees. */
 const SHARDS_PER_WORKER = 4;
 
+function wholeSongReward(data: TeamBuilderData, request: EngineRequest): boolean {
+  const goal = request.goal;
+  if (request.k !== 1 || goal.kind !== "event" || !goal.gekiso || goal.songs.length !== 1) return false;
+  const missions = objectRow(data.songs[String(goal.songs[0]!.songId)]?.gekisou).missionTypes;
+  return Array.isArray(missions) && missions.length > 0 && missions.every(mission => mission === 2 || mission === 3);
+}
+
 /** Main-thread handle on the engine Workers. A search is split by leader over a pool of Workers and merged; cancelling
  * replaces every Worker, so a long search never blocks. */
 export class EngineClient {
   private readonly pool: EngineWorker[];
   private readonly dataIdentity: string;
-  constructor(data: TeamBuilderData, changed: () => void = () => {}) {
+  constructor(private readonly data: TeamBuilderData, changed: () => void = () => {}) {
     this.dataIdentity = JSON.stringify([data.identity, data.crossServer?.identities]);
     this.pool = Array.from({ length: poolSize() }, (_, index) => new EngineWorker(data, `team-engine-${index + 1}`, changed));
   }
@@ -269,6 +276,7 @@ export class EngineClient {
       if (!remaining(deadline)) { stop("budget"); return latest; }
       if (completeResponse(latest)) return latest;
       const parallel = this.pool.length > 1 && request.members.length >= PARALLEL_MIN_MEMBERS && request.goal.kind !== "plan" && !request.seedOnly
+        && !wholeSongReward(this.data, request)
         && !(request.goal.kind === "gekiso" && request.constraints.leader !== null && request.goal.songs.length === 1);
       if (!parallel) {
         const response = await this.idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
