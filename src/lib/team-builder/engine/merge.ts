@@ -32,7 +32,9 @@ export function mergeShardResponses(responses: readonly EngineResponse[], k: num
     const proven = !exclusion && allExhausted && excludedBelow === undefined &&
       parts.every((part) => (part.exclusion === undefined || (hits.length >= k && hits[k - 1]!.key >= part.exclusion.key)) &&
         (part.excludedBelow === undefined || (hits.length >= k && hits[k - 1]!.key >= part.excludedBelow)));
+    const phase = parts[0]!.rewardPhase;
     return {
+      ...(phase && parts.every(part => part.rewardPhase === phase) ? { rewardPhase: phase } : {}),
       ...(exclusion ? { exclusion } : {}),
       ...(floors.length ? { floor: Math.max(...floors) } : {}),
       ...(excludedBelow === undefined ? {} : { excludedBelow }),

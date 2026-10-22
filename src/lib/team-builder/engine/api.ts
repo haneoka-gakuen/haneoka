@@ -143,7 +143,11 @@ export interface EngineRequest {
   noFloor?: boolean;
   /** Gekiso: only the shard-independent seeding, whose teams then seed every shard (`seeded`). */
   seedOnly?: boolean;
+  /** Private sampled warm pass; retained candidates still use every requested seed. */
+  seedVariant?: "sample" | "quiet";
   seeded?: boolean;
+  /** Internal COMBO reward proof stage; later stages follow completed global reward proofs. */
+  rewardPhase?: { kind: "primary" } | { kind: "other"; reward: number; floor?: number } | { kind: "score"; reward: number; other: number; floor?: number };
   /** Known lower bounds on each song's k-th key (`songId:difficulty`), from teams other shards already found. */
   floors?: Record<string, number>;
   /** Other songs' Top-K key. Only a pt-only k=1 request may prove this song strictly below the cutoff. */
@@ -191,6 +195,8 @@ export interface EngineHit {
   potential: { value: number; area: number } | null;
 }
 export interface SongResult {
+  /** Internal stage proof, consumed by the Worker coordinator. */
+  rewardPhase?: "primary" | "other" | "score";
   song: SongRef | null;
   hits: EngineHit[];
   proven: boolean;

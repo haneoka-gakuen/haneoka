@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 创建和替换 Worker、消息通信及内存 Promise；合并主分边界后补齐原生评分，取消与重试替换对应实例。
+// Effects/Dependencies: 创建和替换 Worker、消息通信及内存 Promise；合并主分边界后补齐原生评分，COMBO 奖励分阶段证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { objectRow, type TeamBuilderData } from "../data";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline } from "./api";
@@ -144,7 +144,7 @@ function scoredResponse(response: EngineResponse): EngineResponse {
   })), overall: response.overall.filter(hit => !pendingScores(hit)) };
 }
 
-/** How many Workers share a search: the device's cores, minus one for the page, at most eight. */
+/** How many Workers share a search: the device's cores, minus one for the page, at most six. */
 const poolSize = () => {
   const nav = typeof navigator !== "undefined" ? (navigator as Navigator & { deviceMemory?: number }) : null;
   const cores = nav?.hardwareConcurrency || 4;
@@ -152,7 +152,7 @@ const poolSize = () => {
   // one does. Browsers that do not report memory (Safari, Firefox) are sized by form factor alone.
   const phone = !!nav && (/Android|iPhone|iPad|iPod|Mobile/u.test(nav.userAgent) || (nav.maxTouchPoints > 1 && /Macintosh/u.test(nav.userAgent)));
   const memory = nav?.deviceMemory ?? (phone ? 2 : 8);
-  const limit = memory <= 2 ? 2 : memory <= 4 ? 3 : phone ? 4 : 8;
+  const limit = memory <= 2 ? 2 : memory <= 4 ? 3 : phone ? 4 : 6;
   return Math.max(1, Math.min(limit, cores - 1));
 };
 /** Below this many members a single Worker finishes before the others would compile the release. */
@@ -167,6 +167,13 @@ function wholeSongReward(data: TeamBuilderData, request: EngineRequest): boolean
   if (request.k !== 1 || goal.kind !== "event" || !goal.gekiso || goal.songs.length !== 1) return false;
   const missions = objectRow(data.songs[String(goal.songs[0]!.songId)]?.gekisou).missionTypes;
   return Array.isArray(missions) && missions.length > 0 && missions.every(mission => mission === 2 || mission === 3);
+}
+
+function phasedReward(data: TeamBuilderData, request: EngineRequest): boolean {
+  const goal = request.goal;
+  if (request.k !== 1 || goal.kind !== "event" || !goal.gekiso || goal.songs.length !== 1) return false;
+  const missions = objectRow(data.songs[String(goal.songs[0]!.songId)]?.gekisou).missionTypes;
+  return Array.isArray(missions) && missions.length > 0 && missions.every(mission => mission === 1);
 }
 
 /** Main-thread handle on the engine Workers. A search is split by leader over a pool of Workers and merged; cancelling
@@ -288,6 +295,7 @@ export class EngineClient {
         const goal = request.goal;
         const deferScores = goal.criterion === "max" && goal.seeds === 0 && request.k > 1;
         const count = request.constraints.leader ? 1 : this.pool.length;
+        const seedCount = goal.songs.length === 1 && goal.seeds > 1 && goal.criterion === "max" ? 2 : 1;
         const parts = [...latest.results];
         const completeScores = new Map<string, EngineHit>();
         const unknownCards = new Set(latest.unknownCards);
@@ -299,7 +307,8 @@ export class EngineClient {
             response.results[0]!.hits = parts[index]!.hits;
             return response;
           });
-          return { request: part, responses, deferred: false, seeded: request.seeded === true, seedStarted: false, next: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
+          const warm = Array.from({ length: seedCount }, () => emptyResponse(part));
+          return { request: part, responses, warm, deferred: false, seeded: request.seeded === true, seedNext: 0, seedDone: 0, next: 0, finished: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
         });
         const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknownCards], elapsedMs: clock() - started });
         const waiters = new Set<() => void>();
@@ -314,13 +323,13 @@ export class EngineClient {
           if (index >= 0) {
             const state = states[index]!;
             state.running++;
-            return { index, shard: state.next++ };
+            return { index, shard: state.next++, seed: null };
           }
-          index = states.findIndex(state => !state.done && !state.seeded && !state.seedStarted);
+          index = states.findIndex(state => !state.done && !state.seeded && state.seedNext < seedCount);
           if (index < 0) return null;
-          states[index]!.seedStarted = true;
-          states[index]!.running++;
-          return { index, shard: null };
+          const state = states[index]!;
+          state.running++;
+          return { index, shard: null, seed: state.seedNext++ };
         };
         const completeHit = async (engine: EngineWorker, job: { index: number; hit: EngineHit }) => {
           const hit = job.hit;
@@ -359,7 +368,8 @@ export class EngineClient {
             const key = `${current.song!.songId}:${current.song!.difficulty}`;
             const floors = privateHits.length >= request.k ? { [key]: privateHits[request.k - 1]!.key } : {};
             const part: EngineRequest = { ...state.request, seeds: privateHits, floors,
-              ...(job.shard === null ? { seedOnly: true } : { seeded: true, seedOnly: false, shard: { index: job.shard, count } }) };
+              ...(job.shard === null ? { seedOnly: true, seedVariant: seedCount === 2 ? (job.seed === 0 ? "sample" as const : "quiet" as const) : undefined }
+                : { seeded: true, seedOnly: false, seedVariant: undefined, shard: { index: job.shard, count } }) };
             const update = (response: EngineResponse) => {
               state.deferred ||= response.results.some(part => part.hits.some(pendingScores));
               if (state.deferred) for (const part of response.results) for (const hit of part.hits)
@@ -367,8 +377,11 @@ export class EngineClient {
               if (state.deferred) for (const part of response.results)
                 part.hits = part.hits.map(hit => completeScores.get(exactTeam(hit)) ?? hit);
               for (const key of response.unknownCards) unknownCards.add(key);
-              if (job.shard === null) parts[job.index] = scoredResponse(response).results[0] ?? parts[job.index]!;
-              else {
+              if (job.shard === null) {
+                state.warm[job.seed!] = response;
+                if (state.seeded && state.next > 0) return;
+                parts[job.index] = mergeShardResponses(state.warm.map(scoredResponse), request.k, clock() - started).results[0]!;
+              } else {
                 state.responses[job.shard] = response;
                 parts[job.index] = mergeShardResponses(state.responses.map(scoredResponse), request.k, clock() - started).results[0]!;
               }
@@ -381,15 +394,20 @@ export class EngineClient {
               if (stopped) return;
               update(response);
               if (job.shard === null) {
-                state.seeded = true;
-                state.done = completeResponse(response);
-                if (state.done) {
-                  done += count;
-                  state.responses.fill(response);
-                } else for (const shard of state.responses) shard.results[0]!.hits = response.results[0]?.hits ?? [];
+                state.seedDone++;
+                if (!state.seeded) {
+                  const warm = mergeShardResponses(state.warm, request.k, clock() - started);
+                  state.seeded = state.seedDone === seedCount || warm.overall.length >= request.k;
+                  state.done = state.seeded && completeResponse(warm);
+                  if (state.done) {
+                    done += count;
+                    state.finished = count;
+                    state.responses.fill(warm);
+                  } else for (const shard of state.responses) shard.results[0]!.hits = warm.results[0]?.hits ?? [];
+                }
               } else {
                 done++;
-                state.done = state.next === count && state.running === 1;
+                state.done = ++state.finished === count;
               }
               progress?.(done / progressTotal, 1);
             } catch (error) {
@@ -466,64 +484,105 @@ export class EngineClient {
       }
       if (request.goal.kind === "gekiso")
         return this.idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
-      let seeds = request.seeds ?? [];
-      if (!request.noFloor) {
-        const quick = await this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, deadline: Math.min(deadline, clock() + QUICK_MS) } }, progress, accept);
-        publish(quick);
-        if (completeResponse(quick)) return quick;
-        seeds = quick.results.flatMap(result => result.hits);
-      }
-      const sampledRewards = request.goal.kind === "event" && request.goal.gekiso;
-      const count = sampledRewards
-        ? (request.constraints.leader ? 1 : this.pool.length)
-        : this.pool.length * SHARDS_PER_WORKER;
-      const responses = Array.from({ length: count }, () => emptyResponse(request));
-      for (const response of responses) for (const result of response.results)
-        result.hits = seeds.filter(hit => hit.song?.songId === result.song?.songId && hit.song?.difficulty === result.song?.difficulty).slice(0, request.k);
-      let next = 0, done = 0;
-      const merge = () => mergeShardResponses(responses, request.k, clock() - started);
-      const active = new Map<EngineWorker, { floor: number; retry: boolean }>();
-      const runShard = async (engine: EngineWorker) => {
-        while (!stopped && remaining(deadline) > 0 && next < count) {
-          const index = next++;
-          while (!stopped && remaining(deadline) > 0) {
-            const current = merge();
-            const floors = Object.fromEntries(current.results.filter(result => result.song && result.hits.length >= request.k).map(result => [`${result.song!.songId}:${result.song!.difficulty}`, result.hits[request.k - 1]!.key]));
-            const job = { floor: Math.max(-Infinity, ...Object.values(floors)), retry: false };
-            active.set(engine, job);
-            let response: EngineResponse;
-            try {
-              response = await engine.send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: sampledRewards ? current.overall : seeds, shard: { index, count }, floors } }, undefined, value => {
-                if (stopped || job.retry || active.get(engine) !== job || value.contextKey !== request.contextKey || value.requestId !== request.requestId) return;
-                responses[index] = value.response;
-                publish(merge());
-              });
-            } catch (error) {
-              if (job.retry && !stopped) continue;
-              throw error;
-            } finally {
-              active.delete(engine);
-            }
-            if (stopped) return;
-            responses[index] = response;
-            publish(merge());
-            progress?.(++done / count, 1);
-            if (sampledRewards && !request.noFloor && completeResponse(response)) {
-              const floor = response.overall[request.k - 1]?.key ?? -Infinity;
-              for (const [worker, running] of active) if (!running.retry && floor > running.floor) {
-                running.retry = true;
-                worker.cancel();
-              }
-            }
-            break;
-          }
+      const runShards = async (request: EngineRequest, publish: (response: EngineResponse) => void, stage = -1): Promise<EngineResponse> => {
+        const stageProgress: Pending["progress"] = stage < 0 ? progress
+          : (done, total) => progress?.((stage + done / total) / 3, 1);
+        const acceptPart = (value: EngineSnapshot) => {
+          if (!stopped && value.requestId === request.requestId && value.contextKey === request.contextKey) publish(value.response);
+        };
+        let seeds = request.seeds ?? [];
+        if (!request.noFloor && stage < 0) {
+          const quick = await this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, deadline: Math.min(deadline, clock() + QUICK_MS) } }, stageProgress, acceptPart);
+          publish(quick);
+          if (completeResponse(quick)) return quick;
+          seeds = quick.results.flatMap(result => result.hits);
         }
+        const valueOf = (hit: EngineHit) => request.rewardPhase?.kind === "other" ? hit.event?.otherMean ?? 0
+          : request.rewardPhase?.kind === "score" ? hit.score?.mean ?? 0 : hit.key;
+        const sampledRewards = request.goal.kind === "event" && request.goal.gekiso;
+        const workers = request.rewardPhase ? this.pool.slice(0, 4) : this.pool;
+        const count = sampledRewards
+          ? (request.constraints.leader ? 1 : workers.length)
+          : workers.length * SHARDS_PER_WORKER;
+        const responses = Array.from({ length: count }, () => emptyResponse(request));
+        for (const response of responses) for (const result of response.results)
+          result.hits = seeds.filter(hit => hit.song?.songId === result.song?.songId && hit.song?.difficulty === result.song?.difficulty).slice(0, request.k);
+        let next = 0, done = 0;
+        const merge = () => mergeShardResponses(responses, request.k, clock() - started);
+        const active = new Map<EngineWorker, { floor: number; retry: boolean }>();
+        const runShard = async (engine: EngineWorker) => {
+          while (!stopped && remaining(deadline) > 0 && next < count) {
+            const index = next++;
+            while (!stopped && remaining(deadline) > 0) {
+              const current = merge();
+              const floors = Object.fromEntries(current.results.filter(result => result.song && result.hits.length >= request.k).map(result => [`${result.song!.songId}:${result.song!.difficulty}`, valueOf(result.hits[request.k - 1]!)]));
+              const job = { floor: Math.max(-Infinity, ...Object.values(floors)), retry: false };
+              active.set(engine, job);
+              let response: EngineResponse;
+              try {
+                const rewardPhase = request.rewardPhase && request.rewardPhase.kind !== "primary"
+                  ? { ...request.rewardPhase, floor: Math.max(0, job.floor) } : request.rewardPhase;
+                response = await engine.send<EngineResponse>({ type: "run", id: 0, request: { ...request, rewardPhase,
+                  seeded: request.rewardPhase ? current.overall.length > 0 : request.seeded,
+                  seeds: sampledRewards ? current.overall : seeds, shard: { index, count }, floors: rewardPhase && rewardPhase.kind !== "primary" ? undefined : floors } }, undefined, value => {
+                  if (stopped || job.retry || active.get(engine) !== job || value.contextKey !== request.contextKey || value.requestId !== request.requestId) return;
+                  if (request.rewardPhase) {
+                    const hit = value.response.overall[request.k - 1];
+                    if (hit) job.floor = Math.max(job.floor, valueOf(hit));
+                  }
+                  responses[index] = value.response;
+                  publish(merge());
+                });
+              } catch (error) {
+                if (job.retry && !stopped) continue;
+                throw error;
+              } finally {
+                active.delete(engine);
+              }
+              if (stopped) return;
+              responses[index] = response;
+              publish(merge());
+              stageProgress?.(++done / count, 1);
+              if (sampledRewards && !request.noFloor && completeResponse(response)) {
+                const hit = response.overall[request.k - 1];
+                const floor = hit ? valueOf(hit) : -Infinity;
+                for (const [worker, running] of active) if (!running.retry && floor > running.floor) {
+                  running.retry = true;
+                  worker.cancel();
+                }
+              }
+              break;
+            }
+          }
+        };
+        await Promise.all(workers.map(runShard));
+        const merged = merge();
+        if (!aspirationHeld(merged, request.k) && !request.noFloor && remaining(deadline))
+          return this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: merged.overall, noFloor: true } }, stageProgress, acceptPart);
+        return merged;
       };
-      await Promise.all(this.pool.map(runShard));
-      const merged = merge();
-      if (!aspirationHeld(merged, request.k) && !request.noFloor && remaining(deadline))
-        return this.idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: merged.overall, noFloor: true } }, progress, accept);
-      return merged;
+      if (!phasedReward(this.data, request)) return runShards(request, publish);
+      let seeds = request.seeds ?? [];
+      let response = emptyResponse(request);
+      for (const kind of ["primary", "other", "score"] as const) {
+        if (stopped || !remaining(deadline)) return latest;
+        const best = seeds[0];
+        const rewardPhase: EngineRequest["rewardPhase"] = kind === "primary" ? { kind }
+          : kind === "other" ? { kind, reward: best!.key }
+          : { kind, reward: best!.key, other: best!.event?.otherMean ?? 0 };
+        const publicResponse = (response: EngineResponse): EngineResponse => ({ ...response,
+          results: response.results.map(({ rewardPhase: _phase, ...part }) => ({ ...part, bound: null,
+            proven: kind === "score" && part.proven })),
+        });
+        response = await runShards({ ...request, seeds, rewardPhase, completed: undefined },
+          response => publish(publicResponse(response)), kind === "primary" ? 0 : kind === "other" ? 1 : 2);
+        if (stopped) return latest;
+        if (!completeResponse(response) || !response.overall.length) return publicResponse(response);
+        if (response.results.some(part => part.rewardPhase !== kind)) throw new Error("engine-reward-phase-mismatch");
+        seeds = response.overall;
+        response = publicResponse(response);
+      }
+      return response;
     };
     try {
       const response = await Promise.race([work(), interrupted]);
