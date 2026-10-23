@@ -66,6 +66,10 @@ if (process.argv[2] === "child") {
           url: "data:text/javascript,export function staticBuildSourceIdentity(){return {fixture:'fixed-source-A'}}",
           shortCircuit: true,
         };
+      if (specifier.startsWith(".") && context.parentURL?.startsWith("file:")) {
+        const source = new URL(`${specifier}.ts`, context.parentURL);
+        if (fs.existsSync(source)) return { url: source.href, shortCircuit: true };
+      }
       return next(specifier, context);
     },
   });
