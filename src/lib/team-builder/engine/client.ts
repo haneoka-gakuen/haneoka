@@ -295,7 +295,7 @@ export class EngineClient {
         const goal = request.goal;
         const deferScores = goal.criterion === "max" && goal.seeds === 0 && request.k > 1;
         const count = request.constraints.leader ? 1 : this.pool.length;
-        const seedCount = goal.songs.length === 1 && goal.seeds > 1 && goal.criterion === "max" ? 2 : 1;
+        const seedCount = goal.songs.length === 1 && goal.seeds > 1 && goal.criterion !== "mean" ? 2 : 1;
         const parts = [...latest.results];
         const completeScores = new Map<string, EngineHit>();
         const unknownCards = new Set(latest.unknownCards);
