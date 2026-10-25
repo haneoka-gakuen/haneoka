@@ -1,6 +1,12 @@
 name: Publish Haneoka app downloads
 on:
   workflow_dispatch:
+  push:
+    branches: [main, codex/download-offline]
+    paths:
+      - scripts/publish/app_downloads.py
+      - scripts/publish/download_store.py
+      - .github/workflows/app-downloads.yml
   schedule:
     - cron: "*/15 * * * *"
 permissions:

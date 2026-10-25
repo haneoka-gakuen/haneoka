@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - worker/downloads.ts
+      - worker/downloads-configuration.d.ts
+      - worker/tsconfig.downloads.json
       - wrangler.downloads.jsonc
       - .github/workflows/download-service.yml
 permissions:
