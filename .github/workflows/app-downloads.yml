@@ -2,7 +2,7 @@ name: Publish Haneoka app downloads
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/download-offline]
+    branches: [main]
     paths:
       - scripts/publish/app_downloads.py
       - scripts/publish/download_store.py
