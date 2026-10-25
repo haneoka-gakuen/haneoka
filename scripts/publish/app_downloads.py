@@ -128,11 +128,13 @@ def mirror(store: DownloadStore, directory: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--wrangler", action="store_true")
+    credentials = parser.add_mutually_exclusive_group()
+    credentials.add_argument("--wrangler", action="store_true")
+    credentials.add_argument("--cloudflare-token", action="store_true")
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    store = DownloadStore("haneoka-downloads", wrangler=args.wrangler)
+    store = DownloadStore("haneoka-downloads", wrangler=args.wrangler, cloudflare_token=args.cloudflare_token)
     if args.directory:
         result = mirror(store, args.directory)
     else:

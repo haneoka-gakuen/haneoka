@@ -34,11 +34,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
-          python scripts/publish/app_downloads.py --output "$RUNNER_TEMP/app-download-result.json"
+          python scripts/publish/app_downloads.py --cloudflare-token --output "$RUNNER_TEMP/app-download-result.json"
           echo "changed=$(python -c 'import json,os;print(str(json.load(open(os.environ["RUNNER_TEMP"]+"/app-download-result.json"))["changed"]).lower())')" >> "$GITHUB_OUTPUT"
       - name: Refresh website download metadata
         if: steps.mirror.outputs.changed == 'true'

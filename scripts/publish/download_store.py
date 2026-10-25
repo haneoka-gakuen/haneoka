@@ -17,6 +17,7 @@ import tomllib
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 IMMUTABLE = "public, max-age=31536000, immutable"
 
@@ -24,7 +25,7 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 class DownloadStore:
     _refresh_lock = threading.Lock()
 
-    def __init__(self, bucket: str, *, wrangler: bool = False):
+    def __init__(self, bucket: str, *, wrangler: bool = False, cloudflare_token: bool = False):
         self.bucket = bucket
         self.wrangler = wrangler
         self.account = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "0095917ca8180fcd95ed1f3f11ecf881")
@@ -40,8 +41,27 @@ class DownloadStore:
         else:
             import boto3
             from botocore.config import Config
+            credentials = {}
+            if cloudflare_token:
+                token = os.environ["CLOUDFLARE_API_TOKEN"]
+                identity = None
+                for path in ("user/tokens/verify", f"accounts/{self.account}/tokens/verify"):
+                    try:
+                        request = Request("https://api.cloudflare.com/client/v4/" + path,
+                                          headers={"Authorization": "Bearer " + token})
+                        with urlopen(request, timeout=30) as response:
+                            identity = json.load(response)["result"]
+                        break
+                    except HTTPError as error:
+                        if error.code not in {401, 403, 404}:
+                            raise
+                if not identity or identity.get("status") != "active":
+                    raise ValueError("Cloudflare deployment token could not be verified")
+                credentials = {"aws_access_key_id": identity["id"],
+                               "aws_secret_access_key": hashlib.sha256(token.encode()).hexdigest()}
             self.client = boto3.client("s3", endpoint_url=f"https://{self.account}.r2.cloudflarestorage.com",
-                                       region_name="auto", config=Config(retries={"max_attempts": 8, "mode": "standard"}))
+                                       region_name="auto", config=Config(retries={"max_attempts": 8, "mode": "standard"}),
+                                       **credentials)
 
     def _refresh(self, rejected):
         with self._refresh_lock:

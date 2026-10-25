@@ -449,7 +449,10 @@ large or partially downloaded objects use individual range requests.
 projection releases every fifteen minutes. It leaves the resource current pointer
 unchanged. Fully downloaded App snapshots retain their own metadata and objects.
 
-Both publishers use the existing S3 account and credential environment variables.
+The story publisher uses the existing resource S3 credentials. The app mirror
+workflow uses `--cloudflare-token` with the existing deployment identity, deriving
+S3 credentials in memory through Cloudflare's documented token mapping. It does
+not expand the resource bucket token's access or save additional credentials.
 For an operator's local bootstrap, `--wrangler` explicitly uses the configured
 Wrangler identity; `--directory DIR` retains verified input files across retries.
 Deploy the service with `pnpm exec wrangler deploy --config wrangler.downloads.jsonc`.
