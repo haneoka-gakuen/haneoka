@@ -231,7 +231,12 @@
     "src/lit/ui/action-menu.ts",
     "scripts/publish/reward_catalog.py",
     "packages/chart-editor/src/formats/sus-export.ts",
-    "packages/chart-editor/src/formats/mmws.ts"
+    "packages/chart-editor/src/formats/mmws.ts",
+    "worker/downloads.ts",
+    "scripts/publish/app_downloads.py",
+    "scripts/publish/download_store.py",
+    "scripts/publish/story_offline.py",
+    "src/server/app-release.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

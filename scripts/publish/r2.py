@@ -1132,7 +1132,7 @@ def publish_release(
 
 
 def prune_releases(store: R2Store, config: ServerConfig, dry_run: bool = False) -> dict[str, Any]:
-    """Retain at most the configured number of releases, including the selected one."""
+    """Retain recent releases plus active offline and resumable pipeline roots."""
 
     pointer = _current_pointer(store, config)
     if pointer is None:
@@ -1188,6 +1188,13 @@ def prune_releases(store: R2Store, config: ServerConfig, dry_run: bool = False) 
         )
 
     keep = {current}
+    offline = store.get_json(f"servers/{config.id}/offline/current.json")
+    if isinstance(offline, dict) and offline.get("schema") == "haneoka-story-offline-v1" and offline.get("server") == config.id:
+        offline_release = offline.get("releaseId")
+        if isinstance(offline_release, str) and any(
+            candidate[0] == offline_release and candidate[3] == offline.get("sourceId") for candidate in candidates
+        ):
+            keep.add(offline_release)
     previous = sorted(
         (
             candidate

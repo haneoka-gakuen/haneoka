@@ -5268,5 +5268,21 @@
     "saveBody": "Android는 Shizuku 또는 지원되는 폴더 접근 방식으로 세이브를 읽습니다. 데스크톱에서는 Android 기기를 연결하고 승인한 뒤 가져오거나 iPhone / iPad 로컬 백업을 사용할 수 있습니다. 일반 iOS 설치는 컴퓨터에서 내보낸 세이브 파일을 가져옵니다.",
     "saveGuide": "세이브 가져오기 안내",
     "windowsArmPackage": "Windows 11 ARM64 → x64"
+  },
+  "app": {
+    "offline": {
+      "title": "오프라인 스토리",
+      "check": "업데이트 확인",
+      "download": "다운로드",
+      "downloadAll": "모두 다운로드",
+      "update": "다운로드 업데이트",
+      "downloadFailed": "다운로드 실패",
+      "loadFailed": "다운로드를 불러올 수 없습니다",
+      "resume": "계속",
+      "pause": "일시 정지",
+      "remove": "다운로드 삭제",
+      "removeConfirm": "다운로드한 스토리를 삭제할까요?",
+      "text": "텍스트 읽기"
+    }
   }
 }

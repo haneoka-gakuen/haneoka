@@ -24,6 +24,13 @@ interactive workspaces in `src/lit`, and the Material Design 3 styles in
 - Accounts and community features
 - Team builder with separate server inventories and reviewed cross-server JSON imports, including MoeNotes card inventories
 - Community chart publishing, cloud drafts, version history, remixes, and Sonolus play
+- App installations and updates through the Haneoka R2 download mirror
+
+The native App's Storage and cache settings include Offline stories. Download
+individual chapters or the complete server catalogue, pause and resume transfers,
+and open downloaded episodes for playback or text reading. Updates reuse files
+by content hash across chapters, resource releases and servers. Downloaded stories
+are retained separately from ordinary cache cleanup.
 
 In the team builder's My cards view, Quick add lets you tap member or Snapshot
 artwork to toggle ownership while keeping the filtered list in place. Finish

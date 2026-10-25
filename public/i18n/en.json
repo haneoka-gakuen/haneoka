@@ -5268,5 +5268,21 @@
     "saveBody": "Read Android saves with Shizuku or supported folder access. On desktop, connect and authorize an Android phone to import, or use a local iPhone / iPad backup. Standard iOS installations import save files exported on a computer.",
     "saveGuide": "Explore save import",
     "windowsArmPackage": "Windows 11 ARM64 → x64"
+  },
+  "app": {
+    "offline": {
+      "title": "Offline stories",
+      "check": "Check for updates",
+      "download": "Download",
+      "downloadAll": "Download all",
+      "update": "Update downloads",
+      "downloadFailed": "Download failed",
+      "loadFailed": "Could not load downloads",
+      "resume": "Resume",
+      "pause": "Pause",
+      "remove": "Remove download",
+      "removeConfirm": "Remove downloaded stories?",
+      "text": "Read text"
+    }
   }
 }

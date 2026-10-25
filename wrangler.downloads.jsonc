@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "haneoka-downloads",
+  "main": "worker/downloads.ts",
+  "compatibility_date": "2026-10-25",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "haneoka.org/downloads/*", "zone_name": "haneoka.org" }],
+  "r2_buckets": [
+    { "binding": "APP_RELEASES", "bucket_name": "haneoka-downloads" },
+    { "binding": "ASSET_BUCKET", "bucket_name": "hotdori-assets" }
+  ],
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}

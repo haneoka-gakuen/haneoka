@@ -4,250 +4,291 @@
   "published_at": "2026-10-23T23:24:45Z",
   "assets": [
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/altstore-source.json",
+      "digest": "sha256:bf56a8bba571b31847629b3a46abab6dae3ce4760ea8e137c13b7343077b3f71",
       "name": "altstore-source.json",
-      "size": 1086,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/altstore-source.json",
-      "digest": "sha256:f67f6205397d1ecb1168fb14a1d4148b263b19ead62215c6c4777176efd2e6e8"
+      "size": 994,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-android-arm64-v8a.apk",
+      "digest": "sha256:02f1c31eb45595ce0183149dc9c62042bf9f4c09af86f522ef854516ecad2e08",
       "name": "haneoka-0.1.10-android-arm64-v8a.apk",
       "size": 183104882,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-android-arm64-v8a.apk",
-      "digest": "sha256:02f1c31eb45595ce0183149dc9c62042bf9f4c09af86f522ef854516ecad2e08"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-android-x86_64.apk",
+      "digest": "sha256:70637066bed38a3466a58c81e925484c766c7db21acf44093495a1ea832c6db5",
       "name": "haneoka-0.1.10-android-x86_64.apk",
       "size": 191135456,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-android-x86_64.apk",
-      "digest": "sha256:70637066bed38a3466a58c81e925484c766c7db21acf44093495a1ea832c6db5"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-android.aab",
+      "digest": "sha256:482b2ca693da659c4d5fc288169fad59dcb7d6e47119622ebf0b498ff339f633",
       "name": "haneoka-0.1.10-android.aab",
       "size": 225708605,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-android.aab",
-      "digest": "sha256:482b2ca693da659c4d5fc288169fad59dcb7d6e47119622ebf0b498ff339f633"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-android.apk",
+      "digest": "sha256:d7d75b3ab16d0bf1c3a5a7f8bbe3004e89e551b366bf9303e15fe126afa661bc",
       "name": "haneoka-0.1.10-android.apk",
       "size": 262948262,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-android.apk",
-      "digest": "sha256:d7d75b3ab16d0bf1c3a5a7f8bbe3004e89e551b366bf9303e15fe126afa661bc"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-ios-trollstore.tipa",
+      "digest": "sha256:ed0d53be03fd3e2dc72cc07c49aa4d558b3a5d42e2b8f1bd04e39e9f8e609849",
       "name": "haneoka-0.1.10-ios-trollstore.tipa",
       "size": 139294330,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-ios-trollstore.tipa",
-      "digest": "sha256:ed0d53be03fd3e2dc72cc07c49aa4d558b3a5d42e2b8f1bd04e39e9f8e609849"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-ios-unsigned.ipa",
+      "digest": "sha256:a7a1192b0900bb3fa47466c062fce9d6eb780794ac416b3eca7677b874ba2105",
       "name": "haneoka-0.1.10-ios-unsigned.ipa",
       "size": 139240062,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-ios-unsigned.ipa",
-      "digest": "sha256:a7a1192b0900bb3fa47466c062fce9d6eb780794ac416b3eca7677b874ba2105"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.AppImage",
+      "digest": "sha256:959b63e5fae0102b86a234538bf61d35543a04c50c3c2ec34b738fd2364ca359",
       "name": "haneoka-0.1.10-linux-arm64.AppImage",
       "size": 238393864,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.AppImage",
-      "digest": "sha256:959b63e5fae0102b86a234538bf61d35543a04c50c3c2ec34b738fd2364ca359"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.deb",
+      "digest": "sha256:2d5eca2e7be35f2ddc3eff2bd80300136cb902b5370107fb51051407299a21e8",
       "name": "haneoka-0.1.10-linux-arm64.deb",
       "size": 254491630,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.deb",
-      "digest": "sha256:2d5eca2e7be35f2ddc3eff2bd80300136cb902b5370107fb51051407299a21e8"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.flatpak",
+      "digest": "sha256:44944e20e39544f7ae6de63c3184248d171effa25cf73921f1ff23ee6b325c94",
       "name": "haneoka-0.1.10-linux-arm64.flatpak",
       "size": 197175256,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.flatpak",
-      "digest": "sha256:44944e20e39544f7ae6de63c3184248d171effa25cf73921f1ff23ee6b325c94"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.pkg.tar.zst",
+      "digest": "sha256:b0f3e7c498c4ea90c2f10c7b1cf8f9879d64faac9246d35e0dc705071f110446",
       "name": "haneoka-0.1.10-linux-arm64.pkg.tar.zst",
       "size": 248551843,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.pkg.tar.zst",
-      "digest": "sha256:b0f3e7c498c4ea90c2f10c7b1cf8f9879d64faac9246d35e0dc705071f110446"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.rpm",
+      "digest": "sha256:101b15430fbd11f08b8b5336e520d9562686c6c060393c024f47e928b5ff8109",
       "name": "haneoka-0.1.10-linux-arm64.rpm",
       "size": 254645832,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.rpm",
-      "digest": "sha256:101b15430fbd11f08b8b5336e520d9562686c6c060393c024f47e928b5ff8109"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.snap",
+      "digest": "sha256:a0eb3e8003766656a3a6016f318080826666c65821829d96a021de191f177e39",
       "name": "haneoka-0.1.10-linux-arm64.snap",
       "size": 218742784,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.snap",
-      "digest": "sha256:a0eb3e8003766656a3a6016f318080826666c65821829d96a021de191f177e39"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-arm64.tar.gz",
+      "digest": "sha256:14362bf97aaa42e713bc969f257d2345426313e957d8dca1bb46da7bf1448435",
       "name": "haneoka-0.1.10-linux-arm64.tar.gz",
       "size": 254411120,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-arm64.tar.gz",
-      "digest": "sha256:14362bf97aaa42e713bc969f257d2345426313e957d8dca1bb46da7bf1448435"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.AppImage",
+      "digest": "sha256:5b254718f9856fcddf5319fe52868e55d2069917a3dc0cf7530b7cee5c2308ca",
       "name": "haneoka-0.1.10-linux-x64.AppImage",
       "size": 236788216,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.AppImage",
-      "digest": "sha256:5b254718f9856fcddf5319fe52868e55d2069917a3dc0cf7530b7cee5c2308ca"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.deb",
+      "digest": "sha256:52c13c928e1023ec6409bf1c42a5ff8160ee819fa69fa89c419ca99295febd2f",
       "name": "haneoka-0.1.10-linux-x64.deb",
       "size": 256697112,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.deb",
-      "digest": "sha256:52c13c928e1023ec6409bf1c42a5ff8160ee819fa69fa89c419ca99295febd2f"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.flatpak",
+      "digest": "sha256:84fb456cd9faf5a7a2ef6cddf4741a4f20f95fbb5f0a1eee035d5f8c4b7d02db",
       "name": "haneoka-0.1.10-linux-x64.flatpak",
       "size": 200189320,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.flatpak",
-      "digest": "sha256:84fb456cd9faf5a7a2ef6cddf4741a4f20f95fbb5f0a1eee035d5f8c4b7d02db"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.pkg.tar.zst",
+      "digest": "sha256:485d8407ade90a0e7df64b9f48cdd504304c529cd383f77a3b8beb02e9e2a26b",
       "name": "haneoka-0.1.10-linux-x64.pkg.tar.zst",
       "size": 250668444,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.pkg.tar.zst",
-      "digest": "sha256:485d8407ade90a0e7df64b9f48cdd504304c529cd383f77a3b8beb02e9e2a26b"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.rpm",
+      "digest": "sha256:10df61a3863d06a4c88fa116e958b75aca9cf8c9d21e99f582137d48ff9311cc",
       "name": "haneoka-0.1.10-linux-x64.rpm",
       "size": 256829020,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.rpm",
-      "digest": "sha256:10df61a3863d06a4c88fa116e958b75aca9cf8c9d21e99f582137d48ff9311cc"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.snap",
+      "digest": "sha256:4f66f5c0e2e81b371d277ee1bc476cc1023f85963a06b6666b9449a19f27c6fd",
       "name": "haneoka-0.1.10-linux-x64.snap",
       "size": 222105600,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.snap",
-      "digest": "sha256:4f66f5c0e2e81b371d277ee1bc476cc1023f85963a06b6666b9449a19f27c6fd"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-linux-x64.tar.gz",
+      "digest": "sha256:bc5131f123af4901b29f98622676213f4355cbe9746c312e6473a707a0353091",
       "name": "haneoka-0.1.10-linux-x64.tar.gz",
       "size": 256621495,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-linux-x64.tar.gz",
-      "digest": "sha256:bc5131f123af4901b29f98622676213f4355cbe9746c312e6473a707a0353091"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-arm64.dmg",
+      "digest": "sha256:bf9437f3d3aba86b734ef5578f8460f9f3c94ccf450321ad5b5937c412c725d9",
       "name": "haneoka-0.1.10-macos-arm64.dmg",
       "size": 157657398,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-arm64.dmg",
-      "digest": "sha256:bf9437f3d3aba86b734ef5578f8460f9f3c94ccf450321ad5b5937c412c725d9"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-arm64.pkg",
+      "digest": "sha256:c1e39a8c70a06ebacaed836e99c51f6ac05ede9bf236a56bc59325ad163267d1",
       "name": "haneoka-0.1.10-macos-arm64.pkg",
       "size": 146377671,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-arm64.pkg",
-      "digest": "sha256:c1e39a8c70a06ebacaed836e99c51f6ac05ede9bf236a56bc59325ad163267d1"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-arm64.zip",
+      "digest": "sha256:fc77226b48d2d99d0a84b99624e119a00ac8d614a62b9b1c7829e4b385fee3ad",
       "name": "haneoka-0.1.10-macos-arm64.zip",
       "size": 146557385,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-arm64.zip",
-      "digest": "sha256:fc77226b48d2d99d0a84b99624e119a00ac8d614a62b9b1c7829e4b385fee3ad"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-x64.dmg",
+      "digest": "sha256:4f712cf793b9d4b0175476da78a593f1c194262777bf3847e9f2602190b7d3a7",
       "name": "haneoka-0.1.10-macos-x64.dmg",
       "size": 162281978,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-x64.dmg",
-      "digest": "sha256:4f712cf793b9d4b0175476da78a593f1c194262777bf3847e9f2602190b7d3a7"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-x64.pkg",
+      "digest": "sha256:c23d6d9f2090981b11b9f11dd4263686d9540bd7f0ce3ba53377fb3c6493ea7d",
       "name": "haneoka-0.1.10-macos-x64.pkg",
       "size": 149040615,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-x64.pkg",
-      "digest": "sha256:c23d6d9f2090981b11b9f11dd4263686d9540bd7f0ce3ba53377fb3c6493ea7d"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-macos-x64.zip",
+      "digest": "sha256:58e6d184e2f1d8794cdc52c19d0b4a27b0347ed6206b34ff7d443bdf41ba6e88",
       "name": "haneoka-0.1.10-macos-x64.zip",
       "size": 149229239,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-macos-x64.zip",
-      "digest": "sha256:58e6d184e2f1d8794cdc52c19d0b4a27b0347ed6206b34ff7d443bdf41ba6e88"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-windows-signing.cer",
+      "digest": "sha256:4271a905afc0bddfe7a5e7fe6c3890b56a96b33fc2418eb3b90db7bc03f71304",
       "name": "haneoka-0.1.10-windows-signing.cer",
       "size": 1067,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-windows-signing.cer",
-      "digest": "sha256:4271a905afc0bddfe7a5e7fe6c3890b56a96b33fc2418eb3b90db7bc03f71304"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-windows-x64-setup.exe",
+      "digest": "sha256:6cffd9f56e579c479a933c8e9b89bb7190a9abe7dae6aa8f601b4b80e04b282d",
       "name": "haneoka-0.1.10-windows-x64-setup.exe",
       "size": 137481818,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-windows-x64-setup.exe",
-      "digest": "sha256:6cffd9f56e579c479a933c8e9b89bb7190a9abe7dae6aa8f601b4b80e04b282d"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-windows-x64.msi",
+      "digest": "sha256:870bbc7cc6d953b1b69ecf1a0deb3193d96c8fb5f9b058023d95fe88dcf54791",
       "name": "haneoka-0.1.10-windows-x64.msi",
       "size": 150786936,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-windows-x64.msi",
-      "digest": "sha256:870bbc7cc6d953b1b69ecf1a0deb3193d96c8fb5f9b058023d95fe88dcf54791"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-windows-x64.msix",
+      "digest": "sha256:af912e394d6c615e259b17c2960d438771d12ab2a732d9f8fd5e6c3100bf626d",
       "name": "haneoka-0.1.10-windows-x64.msix",
       "size": 169200426,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-windows-x64.msix",
-      "digest": "sha256:af912e394d6c615e259b17c2960d438771d12ab2a732d9f8fd5e6c3100bf626d"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-0.1.10-windows-x64.zip",
+      "digest": "sha256:74a4a38a2574ca4d06e397a3c51f2fb52f8fd25d1fc1890ee044db75239a65c0",
       "name": "haneoka-0.1.10-windows-x64.zip",
       "size": 165801954,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-0.1.10-windows-x64.zip",
-      "digest": "sha256:74a4a38a2574ca4d06e397a3c51f2fb52f8fd25d1fc1890ee044db75239a65c0"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-windows-arm64.appinstaller",
+      "digest": "sha256:a4c410871a832dff4a54248a8db3c96edd730abf356402283aaf30e202f12b7e",
       "name": "haneoka-windows-arm64.appinstaller",
-      "size": 630,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-windows-arm64.appinstaller",
-      "digest": "sha256:703b606dc8b01af15a8b1f98f024f18805262bd5446d889731cf58063a6e7d40"
+      "size": 570,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka-windows-x64.appinstaller",
+      "digest": "sha256:660b151a51884bd6fe105c9df1cbdf97a55c63413639a59af2a0f19b9dedfb50",
       "name": "haneoka-windows-x64.appinstaller",
-      "size": 628,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka-windows-x64.appinstaller",
-      "digest": "sha256:b48454816e15d7a58c136f7345e0a7a1e56738f55d161f333c31f716d35d64c0"
+      "size": 568,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/Haneoka.Haneoka.installer.yaml",
+      "digest": "sha256:b7ed35f7250960147a9d63ec57f8c4ce86fb38eac7693af5c00dcec719b896cd",
       "name": "Haneoka.Haneoka.installer.yaml",
-      "size": 826,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/Haneoka.Haneoka.installer.yaml",
-      "digest": "sha256:4a166b188c3a84dbdfb62293afcaf178df0b28192113b0aca25f6df604019d51"
+      "size": 766,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/Haneoka.Haneoka.locale.en-US.yaml",
+      "digest": "sha256:e66296873cf4fef604c38c89abc73b46704f049996f8a5e2b413a3cc95871235",
       "name": "Haneoka.Haneoka.locale.en-US.yaml",
       "size": 321,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/Haneoka.Haneoka.locale.en-US.yaml",
-      "digest": "sha256:e66296873cf4fef604c38c89abc73b46704f049996f8a5e2b413a3cc95871235"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/Haneoka.Haneoka.yaml",
+      "digest": "sha256:df3afcab020c8632e2dcb579aa8341fea031cb7e49642c15795418c8a23627b7",
       "name": "Haneoka.Haneoka.yaml",
       "size": 163,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/Haneoka.Haneoka.yaml",
-      "digest": "sha256:df3afcab020c8632e2dcb579aa8341fea031cb7e49642c15795418c8a23627b7"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/haneoka.rb",
+      "digest": "sha256:5ec4f99ce0e16dddfa1aea5d1fefb05d1bf36bae14d456ea56a649fff3a9c557",
       "name": "haneoka.rb",
-      "size": 494,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/haneoka.rb",
-      "digest": "sha256:86115d1c92e443c945b1504bb96ec3ff38b12b6fc9010349ec481c14224a4882"
+      "size": 464,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/release-version.json",
+      "digest": "sha256:76b22bda97ee51c30a8b69773a39381f0a00e675fe07c7935b9fa1e973f611c4",
       "name": "release-version.json",
       "size": 43,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/release-version.json",
-      "digest": "sha256:76b22bda97ee51c30a8b69773a39381f0a00e675fe07c7935b9fa1e973f611c4"
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/scoop-haneoka.json",
+      "digest": "sha256:99e16ef7142d4d239b9797342135039c70925fc577e264e275b0f5b436927a3a",
       "name": "scoop-haneoka.json",
-      "size": 828,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/scoop-haneoka.json",
-      "digest": "sha256:ff573593e79b22e49e088c14d7305e37aadf5c23dff2186f0ac3641a4c749a9a"
+      "size": 768,
+      "state": "uploaded"
     },
     {
+      "browser_download_url": "https://haneoka.org/downloads/app/v0.1.10/SHA256SUMS",
+      "digest": "sha256:3ea500b586ddcef6fa640be836e97696bbee67610c79ab5c55efe8b1a6b00e30",
       "name": "SHA256SUMS",
       "size": 3866,
-      "browser_download_url": "https://github.com/haneoka-gakuen/haneoka-app/releases/download/v0.1.10/SHA256SUMS",
-      "digest": "sha256:b1002bbcc27ce30c37b81945a38c141127e77febf0abf2ee1a0d0ed124d9b55e"
+      "state": "uploaded"
     }
   ]
 }

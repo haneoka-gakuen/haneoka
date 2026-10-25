@@ -5268,5 +5268,21 @@
     "saveBody": "Android 可通过 Shizuku 或受支持的文件夹访问方式读取存档；电脑端连接并授权 Android 手机后即可导入，也支持 iPhone / iPad 本地备份。标准 iOS 版可导入从电脑导出的存档文件。",
     "saveGuide": "了解存档导入",
     "windowsArmPackage": "Windows 11 ARM64 → x64"
+  },
+  "app": {
+    "offline": {
+      "title": "离线剧情",
+      "check": "检查更新",
+      "download": "下载",
+      "downloadAll": "下载全部",
+      "update": "更新下载",
+      "downloadFailed": "下载失败",
+      "loadFailed": "无法读取下载清单",
+      "resume": "继续下载",
+      "pause": "暂停",
+      "remove": "删除下载",
+      "removeConfirm": "删除已下载的剧情？",
+      "text": "阅读文本"
+    }
   }
 }

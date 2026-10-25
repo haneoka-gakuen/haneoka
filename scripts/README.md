@@ -417,6 +417,44 @@ Set `RESOURCE_RELEASE_ROOT` to select an immutable release directly, or
 
 ## R2 publication
 
+### App downloads and native story downloads
+
+`wrangler.downloads.jsonc` deploys the independent download Worker on
+`haneoka.org/downloads/*`. This specific route takes precedence over the site's
+wildcard route and retains its existing DNS, TLS and preferred network routing.
+The private `haneoka-downloads` bucket holds app distributions. Game resources
+remain in `hotdori-assets`; the download Worker only exposes objects listed by
+the corresponding formal release's offline manifest.
+
+`python scripts/publish/app_downloads.py` verifies each stable GitHub attachment,
+preserves signed package bytes, rewrites distribution feeds, regenerates their
+checksums and uploads a versioned mirror. It promotes `app/latest.json` after
+every attachment succeeds and the source release is checked again. The web and
+native update readers share `/downloads/app/latest.json`. The fifteen-minute
+`app-downloads.yml` workflow skips an unchanged source release.
+
+`python scripts/publish/story_offline.py --server jp` compiles chapter dependency
+manifests from one complete release, including native source descriptors and
+object archives, model data, media and the runtime catalogue. Generated files
+live under that release's `offline/` prefix. Their referenced bytes already belong
+to the release's CAS roots. The independent `servers/{server}/offline/current.json`
+pointer advances after a complete snapshot; resource updates keep the previous
+snapshot downloadable. Release cleanup retains the active offline release.
+Root and chapter manifests are addressed by their own hashes; producer updates
+can refresh the small pointer without invalidating earlier manifests. Small
+objects travel in bounded `HNPK1` streams (up to 32 objects and 4 MiB per request).
+The App verifies each object's SHA-256 and retains only its shared object file;
+large or partially downloaded objects use individual range requests.
+`story-offline.yml` runs after full formal releases and checks for subsequent
+projection releases every fifteen minutes. It leaves the resource current pointer
+unchanged. Fully downloaded App snapshots retain their own metadata and objects.
+
+Both publishers use the existing S3 account and credential environment variables.
+For an operator's local bootstrap, `--wrangler` explicitly uses the configured
+Wrangler identity; `--directory DIR` retains verified input files across retries.
+Deploy the service with `pnpm exec wrangler deploy --config wrangler.downloads.jsonc`.
+
+
 Static document collection uses `python scripts/publish/static_documents.py collect
 --plan .output/static-gc-plan.json --report .output/static-gc-report.json`. It keeps
 the active publication, the latest three successfully deployed publication roots,

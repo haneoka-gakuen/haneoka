@@ -5268,5 +5268,21 @@
     "saveBody": "Android 可透過 Shizuku 或支援的資料夾存取方式讀取存檔；電腦連接並授權 Android 手機後即可匯入，也支援 iPhone / iPad 本機備份。標準 iOS 版可匯入從電腦匯出的存檔。",
     "saveGuide": "瞭解存檔匯入",
     "windowsArmPackage": "Windows 11 ARM64 → x64"
+  },
+  "app": {
+    "offline": {
+      "title": "離線劇情",
+      "check": "檢查更新",
+      "download": "下載",
+      "downloadAll": "下載全部",
+      "update": "更新下載",
+      "downloadFailed": "下載失敗",
+      "loadFailed": "無法讀取下載清單",
+      "resume": "繼續下載",
+      "pause": "暫停",
+      "remove": "刪除下載",
+      "removeConfirm": "刪除已下載的劇情？",
+      "text": "閱讀文字"
+    }
   }
 }

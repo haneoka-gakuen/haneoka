@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": [] },
+  "include": ["downloads.ts", "downloads-configuration.d.ts"],
+  "exclude": []
+}

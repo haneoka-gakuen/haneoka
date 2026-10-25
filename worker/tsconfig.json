@@ -21,5 +21,6 @@
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["./**/*.ts", "./**/*.d.ts"]
+  "include": ["./**/*.ts", "./**/*.d.ts"],
+  "exclude": ["downloads.ts", "downloads-configuration.d.ts"]
 }

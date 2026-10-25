@@ -62,7 +62,7 @@
     "types:worker:check": "wrangler types worker/worker-configuration.d.ts --env-file .dev.vars.example --check",
     "typecheck:tools": "tsc -p tsconfig.tools.json && tsc -p server/tsconfig.json && tsc -p packages/sonolus/tsconfig.tools.json && tsc -p .dependencies/sonolus-our-notes/tsconfig.tools.json",
     "typecheck:worker": "tsc -p worker/tsconfig.json",
-    "typecheck": "pnpm build:packages && astro check && pnpm --filter @haneoka/design-tokens typecheck && pnpm --filter @haneoka/chart-editor typecheck && pnpm --filter @haneoka/vega typecheck && pnpm --filter @haneoka/vega-plugin-richtext typecheck && pnpm --filter @haneoka/vega-ui-portable typecheck && pnpm --filter @haneoka/vega-renderer-three typecheck && pnpm --filter @haneoka/vega-theme-haneoka typecheck && pnpm --filter @haneoka/vega-shell-default typecheck && pnpm --filter @haneoka/vega-plugin-cubism typecheck && pnpm --filter @haneoka/vega-plugin-haneoka typecheck && pnpm --filter @haneoka/bestdori typecheck && pnpm --filter @haneoka/sonolus-core typecheck && pnpm --filter @haneoka/sonolus typecheck && pnpm typecheck:tools && pnpm typecheck:worker && pnpm types:worker:check",
+    "typecheck": "pnpm build:packages && astro check && pnpm --filter @haneoka/design-tokens typecheck && pnpm --filter @haneoka/chart-editor typecheck && pnpm --filter @haneoka/vega typecheck && pnpm --filter @haneoka/vega-plugin-richtext typecheck && pnpm --filter @haneoka/vega-ui-portable typecheck && pnpm --filter @haneoka/vega-renderer-three typecheck && pnpm --filter @haneoka/vega-theme-haneoka typecheck && pnpm --filter @haneoka/vega-shell-default typecheck && pnpm --filter @haneoka/vega-plugin-cubism typecheck && pnpm --filter @haneoka/vega-plugin-haneoka typecheck && pnpm --filter @haneoka/bestdori typecheck && pnpm --filter @haneoka/sonolus-core typecheck && pnpm --filter @haneoka/sonolus typecheck && pnpm typecheck:tools && pnpm typecheck:downloads && pnpm typecheck:worker && pnpm types:worker:check",
     "lint": "pnpm lint:frontend && pnpm lint:services && pnpm lint:packages && pnpm lint:sonolus",
     "lint:frontend": "astro check",
     "lint:services": "eslint worker server scripts",
@@ -79,7 +79,10 @@
     "sonolus:release:prepared": "node packages/sonolus/scripts/build-worker-assets.ts",
     "sonolus:payload:prepared": "SONOLUS_ENGINE_ONLY=1 SONOLUS_OUTPUT_DIR=data/sonolus/current node packages/sonolus/scripts/build-worker-assets.ts",
     "build:standalone-tools": "pnpm --filter @haneoka/cassiopeia-plugin-sekai build && pnpm --filter @haneoka/altair-plugin-sandbox build",
-    "build:provider-static": "node scripts/build/provider-static.mjs"
+    "build:provider-static": "node scripts/build/provider-static.mjs",
+    "typecheck:downloads": "tsc -p worker/tsconfig.downloads.json",
+    "types:downloads": "wrangler types worker/downloads-configuration.d.ts --config wrangler.downloads.jsonc --env-interface DownloadEnv",
+    "types:downloads:check": "wrangler types worker/downloads-configuration.d.ts --config wrangler.downloads.jsonc --env-interface DownloadEnv --check"
   },
   "dependencies": {
     "@bbob/parser": "catalog:",

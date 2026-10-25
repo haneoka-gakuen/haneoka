@@ -5268,5 +5268,21 @@
     "saveBody": "Android は Shizuku または対応するフォルダーアクセスで読み込み。PC では Android 端末の接続・認証後に取り込めるほか、iPhone / iPad のローカルバックアップにも対応。通常の iOS 版では PC で書き出したセーブファイルを取り込めます。",
     "saveGuide": "セーブの取り込み方法",
     "windowsArmPackage": "Windows 11 ARM64 → x64"
+  },
+  "app": {
+    "offline": {
+      "title": "オフラインストーリー",
+      "check": "更新を確認",
+      "download": "ダウンロード",
+      "downloadAll": "すべてダウンロード",
+      "update": "ダウンロードを更新",
+      "downloadFailed": "ダウンロードに失敗しました",
+      "loadFailed": "ダウンロードを読み込めません",
+      "resume": "再開",
+      "pause": "一時停止",
+      "remove": "ダウンロードを削除",
+      "removeConfirm": "ダウンロード済みのストーリーを削除しますか？",
+      "text": "テキストを読む"
+    }
   }
 }

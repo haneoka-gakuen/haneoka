@@ -1119,6 +1119,15 @@ jobs:
           if-no-files-found: ignore
 
 
+  story_offline:
+    name: Publish complete story offline manifests
+    needs: [release]
+    if: needs.release.outputs.release_promoted == 'true' && (inputs.server == 'jp' || inputs.server == 'intl')
+    uses: ./.github/workflows/story-offline.yml
+    with:
+      server: ${{ inputs.server }}
+    secrets: inherit
+
   catalog_pages:
     name: Publish complete core page snapshots
     needs: [release]

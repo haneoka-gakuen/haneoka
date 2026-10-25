@@ -32,7 +32,7 @@
 | 文档、地图、文件头 | `python scripts/verify/geb.py`；`python -m unittest discover -s scripts/verify -p test_geb.py`；`git diff --check` |
 | 仅文档／L3、需证明业务正文未变 | `python scripts/verify/geb.py --base <修改前提交>`；日常业务修改不使用此限制 |
 | 前端与跨包类型 | `pnpm typecheck`；含包构建，须完整外部依赖 |
-| Worker、执行工具 | `pnpm typecheck:worker`、`pnpm typecheck:tools`、`pnpm types:worker:check`；按改动选择 |
+| Worker、执行工具 | `pnpm typecheck:worker`、`pnpm typecheck:downloads`、`pnpm typecheck:tools`、`pnpm types:worker:check`、`pnpm types:downloads:check`；按改动选择 |
 | lint | `pnpm lint:frontend`、`pnpm lint:services`、`pnpm lint:packages`、`pnpm lint:sonolus` |
 | 应用构建 | `pnpm build`；许可 runtime 可选策略及安装步骤见 README，不跳过资源前提 |
 | Garupa 工具 | `python -m unittest discover -s scripts/garupa_master/tests -t .` |

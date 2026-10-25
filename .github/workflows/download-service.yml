@@ -1,0 +1,29 @@
+name: Deploy download service
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - worker/downloads.ts
+      - wrangler.downloads.jsonc
+      - .github/workflows/download-service.yml
+permissions:
+  contents: read
+concurrency:
+  group: haneoka-download-service
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check download Worker types
+        run: npm exec --yes --package=typescript@6.0.3 -- tsc -p worker/tsconfig.downloads.json
+      - name: Deploy route on the existing preferred hostname
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm exec --yes --package=wrangler@4.111.0 -- wrangler deploy --config wrangler.downloads.jsonc

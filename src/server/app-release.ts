@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Haneoka 已完成镜像的应用发布清单及内置快照。
+// Output: 网页安装入口所用的固定版本下载地址。
+// Pos: [Map](L2-2.md)；构建期应用发布读取器。
+// Effects/Dependencies: 构建输入捕获与 Haneoka HTTP 读取，失败使用已验证内置快照。
 import fallback from "../config/app-release.json";
 import { staticBuildJson } from "./static-input-store";
 
@@ -31,7 +36,7 @@ let release: Promise<AppRelease> | undefined;
 /** Resolve once per build; a verified release keeps downloads available offline. */
 export function appRelease(): Promise<AppRelease> {
   return (release ??= staticBuildJson("app-release:latest", "public-data", () =>
-    fetch("https://api.github.com/repos/haneoka-gakuen/haneoka-app/releases/latest", {
+    fetch("https://haneoka.org/downloads/app/latest.json", {
       headers: { Accept: "application/vnd.github+json" },
       signal: AbortSignal.timeout(8000),
     })
@@ -47,7 +52,7 @@ export function appRelease(): Promise<AppRelease> {
             (asset) =>
               typeof asset.name === "string" &&
               typeof asset.size === "number" &&
-              asset.browser_download_url.startsWith("https://github.com/haneoka-gakuen/haneoka-app/releases/download/"),
+              asset.browser_download_url.startsWith("https://haneoka.org/downloads/app/"),
           )
         ) {
           throw new Error("Invalid app release");
