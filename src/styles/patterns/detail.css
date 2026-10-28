@@ -117,6 +117,9 @@
   gap: 12px;
   min-width: 0;
 }
+.spec-list > div:has(> dd > .detail-object-list) {
+  align-items: center;
+}
 .spec-list :where(dt) {
   margin: 0;
   color: var(--md-sys-color-on-surface-variant);

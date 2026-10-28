@@ -709,11 +709,13 @@
 
   .home-footer {
     display: flex;
+    width: min(100%, var(--content-max));
+    margin-inline: auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 8px 24px;
-    padding: 16px 8px 0;
+    padding: 16px var(--pane-gutter) 24px;
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }

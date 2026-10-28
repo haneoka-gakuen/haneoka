@@ -85,7 +85,10 @@ export default defineConfig({
           updateConfig({ vite: { cacheDir: path.join(root, ".astro/vite", command) } });
         },
         "astro:route:setup": ({ route }) => {
-          if (devAssetRoutes && route.component === "src/pages/asset-static/[server]/[locale]/[...id].astro")
+          if (devAssetRoutes && [
+            "src/pages/asset-static/[server]/[locale]/[...id].astro",
+            "src/pages/[locale]/community/charts/[id].astro",
+          ].includes(route.component))
             route.prerender = false;
         },
       },

@@ -34,7 +34,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const legacyChart = legacyCommunityChartRedirectTarget(context.url.pathname, context.url.search);
     if (legacyChart && (context.request.method === "GET" || context.request.method === "HEAD")) return context.redirect(legacyChart, 308);
     chartShell = communityChartShellPath(context.url.pathname);
-    chartPath = chartShell ? context.url.pathname : context.request.headers.get("x-haneoka-chart-path") || undefined;
+    chartPath = chartShell ? context.url.pathname
+      : /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/charts\/_\/?$/u.test(context.url.pathname)
+        ? context.request.headers.get("x-haneoka-chart-path") || undefined : undefined;
     const selected = providerEntityFromUrl(context.url);
     if (selected && fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))) {
       const entry = providerEntityManifestEntry(providerEntityHtmlPath(selected), true);

@@ -13,9 +13,9 @@ const resources = new Map(CATALOG_HUB.map((item) => [item.route, item.resource])
 // The catalogue destination's own sections; stories, tools, games and the community have their own destinations.
 const sections = NAV_SECTIONS.filter((section) => section.id === "library");
 ---
-<div class:list={["page", "catalog-hub", { "page--embedded": embedded }]}>
+<div class:list={["page", "catalog-hub", "stack", "stack--tight", { "page--embedded": embedded }]}>
   {sections.map((section) => (
-    <section class="catalog-hub__section" aria-labelledby={`catalog-hub-${section.id}`}>
+    <section class="catalog-hub__section stack stack--tight" aria-labelledby={`catalog-hub-${section.id}`}>
       <h2 class="catalog-hub__headline" id={`catalog-hub-${section.id}`}><I18nText keyName={section.label} fallback={section.id} locale={locale} /></h2>
       <ul class="catalog-hub__grid" role="list">
         {section.items.map((item) => (
@@ -64,37 +64,32 @@ const sections = NAV_SECTIONS.filter((section) => section.id === "library");
   document.addEventListener("astro:page-load", () => void fillCounts());
 </script>
 <style is:global>
-  .catalog-hub {
-    display: grid;
-    gap: 8px;
-  }
-  .catalog-hub__section {
-    display: grid;
-    gap: 8px;
-  }
-  .catalog-hub__headline {
-    margin: 12px 0 0;
-    padding-inline: 4px;
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
-      var(--md-sys-typescale-title-small-line-height) var(--app-font);
-  }
-  .catalog-hub__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
-    gap: 8px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .catalog-hub .hub-link > span:nth-child(2) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  @media (max-width: 599px) {
+  @layer pages {
+    .catalog-hub__headline {
+      margin: 12px 0 0;
+      padding-inline: 4px;
+      color: var(--md-sys-color-on-surface-variant);
+      font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+        var(--md-sys-typescale-title-small-line-height) var(--app-font);
+    }
     .catalog-hub__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      display: grid;
+      align-content: start;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .catalog-hub .hub-link > span:nth-child(2) {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @media (max-width: 599px) {
+      .catalog-hub__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
   }
 </style>
