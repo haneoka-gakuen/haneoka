@@ -1033,7 +1033,7 @@
         "upcoming": "예정",
         "ended": "종료",
         "retired": "절판",
-        "availability": "종료 임박순",
+        "availability": "진행 상태순",
         "starts": "시작",
         "ends": "종료",
         "status": "상태",

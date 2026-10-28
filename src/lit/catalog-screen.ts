@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 页面载荷、资源／实体选择、语言与跨服状态。
-// Output: 目录筛选、视图、实体详情、媒体及关联评论交互。
+// Output: 目录筛选、开放顺序与日期排序、视图、实体详情、媒体及关联评论交互。
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
@@ -600,7 +600,7 @@ const profiles: Record<string, Profile> = {
     defaultOrder: "asc",
   },
   // The rotating game systems share one presentation: a dated banner whose
-  // status is a facet, sorted by start date, with per-resource sections in
+  // status is a facet, with availability/date sorting and per-resource sections in
   // the detail pane (rewards, rates, goods, levels).
   events: {
     id: ["id"],
@@ -1721,7 +1721,7 @@ export class CatalogScreen extends LitElement {
     this.query = params.get("q") || "";
     this.restoreFacets(params);
     this.sort = this.normalizeSort(params.get("sort") || this.profile.defaultSort);
-    this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
+    this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.defaultSortOrder();
     this.ensureSongMeta();
     this.syncBestdoriChartPage(params);
     const id = this.settings.entityId || params.get(this.selectionParam()) || "";
@@ -2034,7 +2034,7 @@ export class CatalogScreen extends LitElement {
     this.query = params.get("q") ?? "";
     this.selectedSongDifficulty = params.get("chartDifficulty") || "expert";
     this.sort = this.normalizeSort(params.get("sort") ?? this.profile.defaultSort);
-    this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.profile.defaultOrder;
+    this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.defaultSortOrder();
     this.view = this.profile.perDifficulty ? "table" : collectionView(params.get("view"));
     if (this.profile.presentation === "song") this.restoreMetaReference(params);
     this.restoreFacets(params);
@@ -2382,6 +2382,9 @@ export class CatalogScreen extends LitElement {
   private label(key: string, fallback: string) {
     const alias = this.settings.labelAliases?.[key] || catalogLabelPath(key) || key;
     return clientText(this.settings.locale, uiLabelPaths[alias] ?? alias, fallback);
+  }
+  private defaultSortOrder(): "asc" | "desc" {
+    return this.sort === "availability" ? "asc" : this.profile.defaultOrder;
   }
   private normalizeSort(value: string) {
     if (value === "type" && ["member", "support"].includes(this.profile.presentation)) return this.profile.defaultSort;
@@ -2904,7 +2907,7 @@ export class CatalogScreen extends LitElement {
       value && value !== fallback ? params.set(key, value) : params.delete(key);
     set("q", this.query);
     set("sort", this.sort, this.profile.defaultSort);
-    set("order", this.order, this.profile.defaultOrder);
+    set("order", this.order, this.defaultSortOrder());
     set("view", this.view, this.profile.perDifficulty ? "table" : "grid");
     if (this.settings.resource === "song-meta") {
       set("view", this.metaChart ? "chart" : "", "");
@@ -3059,16 +3062,24 @@ export class CatalogScreen extends LitElement {
       : this.expandedItems();
     const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     const direction = this.order === "asc" ? 1 : -1;
+    const now = Date.now();
     items.sort((a, b) => {
+      if (this.sort === "availability") {
+        const left = this.availabilityRank(a, now);
+        const right = this.availabilityRank(b, now);
+        const tie = this.itemId(b).localeCompare(this.itemId(a), "en", { numeric: true });
+        return (left[0] - right[0] || left[1] - right[1] || tie) * direction;
+      }
       const left = this.sortValue(a);
       const right = this.sortValue(b);
       const leftNumber = Array.isArray(left) ? Number(left[0]) : Number(left);
       const rightNumber = Array.isArray(right) ? Number(right[0]) : Number(right);
       if (
-        this.profile.presentation === "song" &&
-        ["level", "time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", ...DECK_METRICS].includes(
-          this.sort,
-        )
+        (this.profile.presentation === "song" &&
+          ["level", "time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", ...DECK_METRICS].includes(
+            this.sort,
+          )) ||
+        (this.profile.presentation === "system" && ["startAt", "endAt"].includes(this.sort))
       ) {
         const leftValid = Number.isFinite(leftNumber),
           rightValid = Number.isFinite(rightNumber);
@@ -3088,6 +3099,13 @@ export class CatalogScreen extends LitElement {
     });
     return { items, source: source.length };
   }
+  private availabilityRank(item: Item, now: number): [number, number] {
+    const region = this.windowRegion(item);
+    const start = relativeTimestamp(item.startAt, region) ?? 0;
+    const end = relativeTimestamp(item.endAt, region);
+    if (end === undefined) return [1, -start];
+    return end > now ? [0, end] : [2, -start];
+  }
   private releaseTimestamp(item: Item) {
     if (this.isProvider() && "releaseAt" in item) {
       const release = Number(item.releaseAt || 0);
@@ -3100,12 +3118,11 @@ export class CatalogScreen extends LitElement {
   /** A rotating entry is in one of three states, measured against the wall clock. */
   private entryState(item: Item): "ongoing" | "upcoming" | "ended" {
     const now = Date.now();
-    const value = (source: unknown) =>
-      Number((Array.isArray(source) ? source.find((entry) => Number(entry) > 0) : source) || 0);
-    const start = value(item.startAt);
-    const end = value(item.endAt);
+    const region = this.windowRegion(item);
+    const start = relativeTimestamp(item.startAt, region);
+    const end = relativeTimestamp(item.endAt, region);
     if (start && start > now) return "upcoming";
-    if (end && end < now) return "ended";
+    if (end && end <= now) return "ended";
     return "ongoing";
   }
   /** A sticker whose acquisition window has closed is retired, for good. */
@@ -3160,7 +3177,10 @@ export class CatalogScreen extends LitElement {
     return TIME_REGIONS.find((region) => region === item.sourceServer) || (this.bestdoriRegion() as TimeRegion);
   }
   private scheduleRelativeTimeRefresh() {
-    const grid = this.profile.presentation === "system" && this.view === "grid" && !this.selected;
+    const collection = this.profile.presentation === "system" && !this.selected;
+    const grid = collection && this.view === "grid";
+    const timeOrder = collection && this.sort === "availability";
+    const timeStatus = collection && Boolean(this.facets.status?.length);
     const recruitments =
       this.settings.resource === "events" && Array.isArray(this.selected?.recruitments)
         ? (this.selected.recruitments as Item[])
@@ -3173,7 +3193,7 @@ export class CatalogScreen extends LitElement {
       this.relativeTimeBoundaries = [];
       this.relativeTimeVisible = false;
     };
-    if (!this.isConnected || (!grid && !recruitments.length)) {
+    if (!this.isConnected || (!grid && !timeOrder && !timeStatus && !recruitments.length)) {
       clear();
       return;
     }
@@ -3190,14 +3210,14 @@ export class CatalogScreen extends LitElement {
       this.resultCache,
     ];
     if (inputs.some((value, index) => value !== this.relativeTimeInputs[index])) {
-      const displayed = grid ? this.filtered() : [];
-      this.relativeTimeVisible = displayed.length > 0 || recruitments.length > 0;
+      const displayed = collection ? this.filtered() : [];
+      this.relativeTimeVisible = (grid && displayed.length > 0) || recruitments.length > 0;
       // An empty time-state filter still needs the next real source boundary
       // to reveal a newly matching row. It does not need minute-only repaints.
-      const rows = [...(grid && this.facets.status?.length ? this.items : displayed), ...recruitments];
+      const rows = [...(timeStatus ? this.items : displayed), ...recruitments];
       this.relativeTimeBoundaries = rows
         .filter((row) => {
-          if (recruitments.includes(row)) return true;
+          if (timeOrder || timeStatus || recruitments.includes(row)) return true;
           if (this.settings.resource === "challenge") return false;
           if (this.settings.resource !== "shop") return true;
           const payment = (row.payment || {}) as Item;
@@ -3614,12 +3634,8 @@ export class CatalogScreen extends LitElement {
       return this.resolvedSkillName(item, this.profile.presentation === "support" ? "gekisouSupport" : "gekisou");
     if (this.sort === "type") return this.localized(item.type ?? item.itemTypeName);
     if (this.sort === "release") return this.releaseTimestamp(item);
-    if (this.sort === "availability") {
-      // Ending soonest leads; standing offers follow, newest ids first.
-      const end = Number((Array.isArray(item.endAt) ? item.endAt.find((entry) => Number(entry) > 0) : item.endAt) || 0);
-      if (end) return end;
-      return Number.MAX_SAFE_INTEGER - Number(this.itemId(item).replace(/\D/g, "")) * 1000;
-    }
+    if (this.sort === "startAt" || this.sort === "endAt")
+      return relativeTimestamp(item[this.sort], this.windowRegion(item)) ?? Number.NaN;
     if (this.sort === "subtitle") return this.localized(item.subTitle);
     if (this.sort === "category")
       return Number((Array.isArray(item.musicCategories) ? item.musicCategories[0] : 99) || 99);
@@ -5267,6 +5283,7 @@ export class CatalogScreen extends LitElement {
                 this.sort = String(
                   (event.target as HTMLElement & { value?: string }).value || this.profile.defaultSort,
                 );
+                if (this.sort === "availability") this.order = "asc";
                 this.ensureSongMeta();
                 this.syncUrl();
               }}
@@ -5299,7 +5316,7 @@ export class CatalogScreen extends LitElement {
     if (this.sort === value) this.order = this.order === "asc" ? "desc" : "asc";
     else {
       this.sort = value;
-      this.order = this.profile.defaultOrder;
+      this.order = this.defaultSortOrder();
     }
     this.ensureSongMeta();
     this.syncUrl();
@@ -5410,7 +5427,9 @@ export class CatalogScreen extends LitElement {
       system: [
         ["id", "id", "ID"],
         ["title", "title", "Title"],
-        ["availability", "availability", "Ending soonest"],
+        ["availability", "availability", "Availability order"],
+        ["startAt", "starts", "Starts"],
+        ["endAt", "ends", "Ends"],
         ["release", "release", "Release"],
       ],
     };
