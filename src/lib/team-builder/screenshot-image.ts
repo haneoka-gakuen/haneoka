@@ -97,8 +97,8 @@ export async function prepareScreenshot(file: Blob, crop: ScreenshotCrop, signal
       Math.sqrt(8_000_000 / (rect.width * rect.height)),
     );
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(rect.width * scale);
-    canvas.height = Math.round(rect.height * scale);
+    canvas.width = Math.floor(rect.width * scale);
+    canvas.height = Math.floor(rect.height * scale);
     if (canvas.width < 128 || canvas.height < 128) throw new RangeError("image-crop");
     try {
       const context = canvas.getContext("2d", { alpha: false, colorSpace: "srgb" });

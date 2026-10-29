@@ -83,3 +83,16 @@ index and two canonical card catalogs. Missing local thumbnail files do not bloc
 projection: hashes are taken from verified source metadata and the serving cache
 fetches those exact thumbnails later. Optional font/binding/level-range failures
 produce `levelReader: null` and a bounded status, while card references remain.
+
+Grid detection handles member cards and snapshots with overlaid attribute and
+bonus badges. Small inputs use a normalized detection scale; returned boxes stay
+in the original coordinate space. Missing cells are filled only between aligned
+contour-supported rows and columns, leaving clipped edge cards out of the grid.
+
+Offline regressions use generated card grids and synthetic image dimensions;
+they do not require screenshots or release assets:
+
+```sh
+python -m unittest scripts.recognize.test_grid
+node --test scripts/verify/screenshot-image.mjs
+```
