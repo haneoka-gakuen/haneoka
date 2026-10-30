@@ -2,6 +2,10 @@ import { createEmbedLoader, httpDataSource } from "@haneoka/embed-core";
 import type { EmbedLoaderOptions } from "@haneoka/embed-core";
 import type { AdvStory } from "@haneoka/vega/engine";
 import type { CubismEmbedOptions } from "./haneoka.js";
+
+/** The default chat template keeps its images beside `ChatLINE`, while its icons stay inside it. */
+const chatTemplateAsset = (path: string) =>
+  path.replace(/(\/Adv\/Chat\/Data\/_template\/data)\/ChatLINE\/(back|chatwindow_image|lock|stamp)\.png$/u, "$1/$2.png");
 import type { MountStoryOptions, StoryEmbedEvent, StoryEmbedHandle, StoryEmbedSnapshot } from "./types.js";
 
 export type HaneokaStoryStage = "manifest" | "modules" | "runtime" | "data" | "resources" | "ready";
@@ -275,7 +279,7 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
       const sourceAssets = theme.createHaneokaThemeAssetsPlugin({
         resolveSourceAsset: (path: string) =>
           /^(?:Assets|Packages)\//u.test(path)
-            ? sdk.haneokaSourceAssetUrl(path, source.assetsBase, server)
+            ? sdk.haneokaSourceAssetUrl(chatTemplateAsset(path), source.assetsBase, server)
             : /^(?:https?:\/\/|blob:|data:|\/)/iu.test(path)
               ? new URL(path, source.assetsBase).href
               : "",
