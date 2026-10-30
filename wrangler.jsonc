@@ -98,22 +98,16 @@
     "image_build_context": "./server/ranking-collector-official",
     "instance_type": "basic",
     "max_instances": 4
-  }, {
-    "class_name": "SearchContainer",
-    "image": "./server/search-meilisearch/Dockerfile",
-    "image_build_context": "./server/search-meilisearch",
-    "instance_type": "basic",
-    "max_instances": 1
   }],
   "durable_objects": {"bindings": [
     {"name": "MEDIA_PROCESSOR", "class_name": "CommunityMediaContainer"},
-    {"name": "OFFICIAL_RANKING_COLLECTOR", "class_name": "OfficialRankingCollector"},
-    {"name": "SEARCH_INDEX", "class_name": "SearchContainer"}
+    {"name": "OFFICIAL_RANKING_COLLECTOR", "class_name": "OfficialRankingCollector"}
   ]},
   "migrations": [
     {"tag": "community-media-v1", "new_sqlite_classes": ["CommunityMediaContainer"]},
     {"tag": "official-ranking-v1", "new_sqlite_classes": ["OfficialRankingCollector"]},
-    {"tag": "search-container-v1", "new_sqlite_classes": ["SearchContainer"]}
+    {"tag": "search-container-v1", "new_sqlite_classes": ["SearchContainer"]},
+    {"tag": "search-container-v2", "deleted_classes": ["SearchContainer"]}
   ],
 
   "browser": { "binding": "BROWSER" },

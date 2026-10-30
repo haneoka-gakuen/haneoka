@@ -81,7 +81,6 @@
     "worker/account-lifecycle.ts",
     "worker/official-player-api.ts",
     "worker/official-ranking-collector.ts",
-    "worker/search-container.ts",
     "worker/search-index.ts",
     "worker/official-ranking-store.ts",
     "src/lib/card-growth.ts",

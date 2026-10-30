@@ -1,4 +1,0 @@
-FROM getmeili/meilisearch:v1.12.8
-
-ENV MEILI_DB_PATH=/tmp/meili MEILI_NO_ANALYTICS=true MEILI_ENV=production MEILI_HTTP_ADDR=0.0.0.0:7700
-EXPOSE 7700

@@ -1,26 +1,69 @@
 // L3 — GEB
-// Input: Published release catalogues, search queries and a Meilisearch backend.
-// Output: `/api/v1/search` results and an index that follows each server's current release.
+// Input: Published release catalogues, search queries and the D1 database.
+// Output: `/api/v1/search` results and a full-text index that follows each server's current release.
 // Pos: [Map](L2.md); catalogue search. Community posts stay on the access-aware D1 route.
-// Effects/Dependencies: Reads catalogues; writes only to the search container.
+// Effects/Dependencies: Reads catalogues; writes only the catalog_search tables, and only when a release changes.
 import { localizedFallbacks } from "../src/lib/localized-text";
+import HAN_FOLD from "./search-han-fold.json";
 
 const SEARCH_PATH = "/api/v1/search";
-const INDEX = "catalog";
-const META_INDEX = "catalog_meta";
 const SERVERS = ["jp", "intl"] as const;
 const LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
-const FIELD_SUFFIX: Record<(typeof LOCALES)[number], string> = { ja: "ja", en: "en", "zh-TW": "zhTW", "zh-CN": "zhCN", ko: "ko" };
-const LANGUAGE: Record<string, string> = { ja: "jpn", en: "eng", "zh-TW": "cmn", "zh-CN": "cmn", ko: "kor" };
 const PAGE_SIZE = 100;
 const MAX_QUERY = 200;
-const PRE = "\u0001";
-const POST = "\u0002";
+const EXCERPT = 120;
+/** The thing itself before what merely carries its name, such as a sticker of a song. */
+const KIND_TIER = `CASE document.kind
+  WHEN 'characters' THEN 0 WHEN 'songs' THEN 0
+  WHEN 'member-cards' THEN 1 WHEN 'support-cards' THEN 1 WHEN 'events' THEN 1 WHEN 'gacha' THEN 1
+  WHEN 'real-lives' THEN 2 WHEN 'comics' THEN 2 WHEN 'stories' THEN 2
+  ELSE 3 END`;
+const TYPO_MINIMUM = 5;
 
 type Row = Record<string, unknown>;
 type Server = (typeof SERVERS)[number];
-export type SearchBackend = (path: string, init?: RequestInit) => Promise<Response>;
 export type CatalogReader = (request: Request) => Promise<Response | null>;
+interface SearchDocument {
+  server: Server;
+  releaseId: string;
+  kind: string;
+  section: string;
+  path: string;
+  image: string | null;
+  titles: string[];
+  texts: string[];
+}
+
+/** Simplified, traditional and shinjitai forms of one character share an index form, as do both kana. */
+const HAN = new Map<string, string>();
+{
+  const pairs = [...(HAN_FOLD as string)];
+  for (let index = 0; index + 1 < pairs.length; index += 2) HAN.set(pairs[index]!, pairs[index + 1]!);
+}
+const foldCharacter = (character: string) => {
+  const code = character.codePointAt(0)!;
+  if (code >= 0x3041 && code <= 0x3096) return String.fromCodePoint(code + 0x60);
+  return HAN.get(character) ?? character.toLowerCase();
+};
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+/** FTS5's tokenizer has no CJK segmentation, so each such character becomes its own token. */
+const indexText = (value: string) =>
+  [...value.normalize("NFKC")].map((character) => {
+    const folded = foldCharacter(character);
+    return CJK.test(folded) ? ` ${folded} ` : folded;
+  }).join("").replace(/\s+/gu, " ").trim();
+
+function matchExpression(query: string, operator: " " | " OR ") {
+  const terms = query.normalize("NFKC").split(/\s+/u).filter(Boolean).flatMap((word) => {
+    const runs: string[] = [];
+    for (const part of word.match(new RegExp(`${CJK.source}+|[^\\s]+?(?=${CJK.source}|$)`, "gu")) ?? []) {
+      const tokens = indexText(part).replace(/[^\p{L}\p{N}\s]/gu, " ").trim();
+      if (tokens) runs.push(CJK.test(part) ? `"${tokens}"` : tokens.split(" ").map((token) => `"${token}"*`).join(" "));
+    }
+    return runs;
+  });
+  return terms.join(operator);
+}
 
 interface Source {
   resource: string;
@@ -74,55 +117,35 @@ function entityPath(kind: string, id: string, row: Row) {
   return mode ? `stories/${mode}/${encodeURIComponent(id)}/` : null;
 }
 
-export function searchDocument(server: Server, releaseId: string, from: Source, id: string, row: Row): Row | null {
+export function searchDocument(server: Server, releaseId: string, from: Source, id: string, row: Row): SearchDocument | null {
   const titles = joined(row, from.title, " ");
   const path = entityPath(from.kind, id, row);
   if (!path || !titles.some(Boolean)) return null;
   const texts = joined(row, from.text, " · ");
   const image = from.image.map((path) => pathValue(row, path)).find((value) => typeof value === "string" && value);
-  const document: Row = {
-    id: `${server}-${from.kind}-${id}`.replace(/[^A-Za-z0-9_-]/gu, "_"),
-    server, releaseId, kind: from.kind, section: from.section, path,
-    ...(image ? { image } : {}),
-  };
-  LOCALES.forEach((locale, index) => {
-    document[`title_${FIELD_SUFFIX[locale]}`] = titles[index];
-    document[`text_${FIELD_SUFFIX[locale]}`] = texts[index];
-  });
-  return document;
+  return { server, releaseId, kind: from.kind, section: from.section, path, image: typeof image === "string" ? image : null, titles, texts };
 }
 
-const fieldNames = (prefix: string) => LOCALES.map((locale) => `${prefix}_${FIELD_SUFFIX[locale]}`);
-const settings = () => ({
-  searchableAttributes: [...fieldNames("title"), ...fieldNames("text")],
-  filterableAttributes: ["server", "section", "kind", "releaseId"],
-  localizedAttributes: LOCALES.map((locale) => ({
-    attributePatterns: [`*_${FIELD_SUFFIX[locale]}`],
-    locales: [LANGUAGE[locale]],
-  })),
-});
-
-const required = async (response: Response, step: string) => {
-  if (!response.ok) throw new Error(`search_${step}_${response.status}`);
-  return response;
-};
-const post = (backend: SearchBackend, path: string, body: unknown, method = "POST") =>
-  backend(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const insertDocument = (db: D1Database, document: SearchDocument) => [
+  db.prepare(`INSERT INTO catalog_search_documents (server, release_id, kind, section, path, image, titles_json, texts_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(document.server, document.releaseId, document.kind, document.section, document.path, document.image,
+      JSON.stringify(document.titles), JSON.stringify(document.texts)),
+  db.prepare("INSERT INTO catalog_search_fts (rowid, title, body) VALUES (last_insert_rowid(), ?, ?)")
+    .bind(indexText(document.titles.join(" ")), indexText(document.texts.join(" "))),
+];
 
 async function currentRelease(read: CatalogReader, server: Server) {
   const response = await read(new Request(`https://catalog.internal/api/v1/servers/${server}/release?projection=identity`, { method: "HEAD" }));
   await response?.body?.cancel();
   return response?.ok ? response.headers.get("x-haneoka-release-id") : null;
 }
-async function indexedRelease(backend: SearchBackend, server: Server) {
-  const response = await backend(`/indexes/${META_INDEX}/documents/${server}`);
-  if (!response.ok) {
-    await response.body?.cancel();
-    return null;
-  }
-  return ((await response.json()) as { releaseId?: string }).releaseId ?? null;
-}
-async function indexServer(backend: SearchBackend, read: CatalogReader, server: Server, releaseId: string) {
+async function indexServer(db: D1Database, read: CatalogReader, server: Server, releaseId: string) {
+  // A failed earlier attempt may have left rows for this release.
+  await db.batch([
+    db.prepare(`DELETE FROM catalog_search_fts WHERE rowid IN (SELECT rowid FROM catalog_search_documents WHERE server = ? AND release_id = ?)`).bind(server, releaseId),
+    db.prepare("DELETE FROM catalog_search_documents WHERE server = ? AND release_id = ?").bind(server, releaseId),
+  ]);
   for (const from of SOURCES) {
     let cursor: string | null = null;
     do {
@@ -138,26 +161,62 @@ async function indexServer(backend: SearchBackend, read: CatalogReader, server: 
       }
       const page = (await response.json()) as { items?: Array<{ id: string; value: Row }>; nextCursor?: string | null };
       const documents = (page.items ?? []).flatMap(({ id, value }) => searchDocument(server, releaseId, from, id, value) ?? []);
-      if (documents.length) await required(await post(backend, `/indexes/${INDEX}/documents?primaryKey=id`, documents), "documents");
+      if (documents.length) await db.batch(documents.flatMap((document) => insertDocument(db, document)));
       cursor = page.nextCursor ?? null;
     } while (cursor);
   }
-  await required(await post(backend, `/indexes/${INDEX}/documents/delete`, { filter: `server = ${server} AND releaseId != "${releaseId}"` }), "prune");
-  await required(await post(backend, `/indexes/${META_INDEX}/documents?primaryKey=id`, [{ id: server, releaseId }]), "meta");
+  // Readers follow this row, so the new index appears all at once and the old one is never half gone.
+  await db.prepare(`INSERT INTO catalog_search_releases (server, release_id, indexed_at) VALUES (?, ?, ?)
+    ON CONFLICT(server) DO UPDATE SET release_id = excluded.release_id, indexed_at = excluded.indexed_at`)
+    .bind(server, releaseId, Date.now()).run();
+  await db.batch([
+    db.prepare(`DELETE FROM catalog_search_fts WHERE rowid IN (SELECT rowid FROM catalog_search_documents WHERE server = ? AND release_id <> ?)`).bind(server, releaseId),
+    db.prepare("DELETE FROM catalog_search_documents WHERE server = ? AND release_id <> ?").bind(server, releaseId),
+  ]);
 }
 
-/** Rebuilds a server only when its release moved or the container came back with an empty disk. */
-export async function syncSearchIndex(backend: SearchBackend, read: CatalogReader) {
-  await required(await post(backend, `/indexes/${INDEX}/settings`, settings(), "PATCH"), "settings");
+/** Does nothing unless a server's release moved, so the hourly check costs one read per server. */
+export async function syncSearchIndex(db: D1Database, read: CatalogReader) {
   for (const server of SERVERS) {
     const releaseId = await currentRelease(read, server);
-    if (!releaseId || releaseId === (await indexedRelease(backend, server))) continue;
-    await indexServer(backend, read, server, releaseId);
+    if (!releaseId) continue;
+    const indexed = await db.prepare("SELECT release_id AS releaseId FROM catalog_search_releases WHERE server = ?").bind(server).first<{ releaseId: string }>();
+    if (indexed?.releaseId !== releaseId) await indexServer(db, read, server, releaseId);
   }
 }
 
 const escapeHtml = (value: string) => value.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;");
-const marked = (value: string) => escapeHtml(value).replaceAll(POST + PRE, "").replaceAll(PRE, "<mark>").replaceAll(POST, "</mark>");
+function typoStem(query: string) {
+  const words = query.normalize("NFKC").toLowerCase().split(/\s+/u).filter(Boolean);
+  if (!words.length || !words.every((word) => /^[\p{Script=Latin}\p{N}]+$/u.test(word))) return "";
+  const stems = words.map((word) => (word.length >= TYPO_MINIMUM ? word.slice(0, -2) : word));
+  return stems.join("") === words.join("") ? "" : stems.map((word) => `"${word}"*`).join(" ");
+}
+
+/** Marks matched words in display text, comparing folded forms so `爱音` marks `愛音`. */
+function marked(value: string, query: string, crop: boolean) {
+  const characters = [...value];
+  // Spaces are skipped so that `千早爱音` marks `千早 愛音`.
+  const positions = characters.flatMap((character, index) => (/\s/u.test(character) ? [] : [index]));
+  const folded = positions.map((index) => foldCharacter(characters[index]!.normalize("NFKC")));
+  const terms = query.normalize("NFKC").split(/\s+/u).filter(Boolean).map((term) => [...term].map(foldCharacter));
+  const hit = new Array<boolean>(characters.length).fill(false);
+  for (const term of terms)
+    for (let start = 0; start + term.length <= folded.length; start++)
+      if (term.every((character, offset) => folded[start + offset] === character))
+        hit.fill(true, positions[start]!, positions[start + term.length - 1]! + 1);
+  const first = hit.indexOf(true);
+  const from = crop && first > EXCERPT / 2 ? first - 20 : 0;
+  const to = crop ? Math.min(characters.length, from + EXCERPT) : characters.length;
+  let html = from ? "…" : "";
+  for (let index = from; index < to; index++) {
+    if (hit[index] && !hit[index - 1]) html += "<mark>";
+    html += escapeHtml(characters[index]!);
+    if (hit[index] && (index + 1 === to || !hit[index + 1])) html += "</mark>";
+  }
+  return html + (to < characters.length ? "…" : "");
+}
+
 const json = (value: object, status = 200, cache = "no-store") =>
   new Response(JSON.stringify(value), {
     status,
@@ -165,13 +224,16 @@ const json = (value: object, status = 200, cache = "no-store") =>
   });
 const failure = (status: number, code: string, message: string) => json({ error: { code, message } }, status);
 
-interface SearchResponse {
-  hits: Array<Row & { _formatted: Row }>;
-  estimatedTotalHits: number;
-  facetDistribution?: { kind?: Record<string, number> };
+interface SearchRow {
+  kind: string;
+  section: string;
+  path: string;
+  image: string | null;
+  titles: string;
+  texts: string;
 }
 
-export async function handleSearchRequest(request: Request, backend: SearchBackend): Promise<Response | null> {
+export async function handleSearchRequest(request: Request, db: D1Database | undefined): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== SEARCH_PATH) return null;
   if (request.method !== "GET" && request.method !== "HEAD") return failure(405, "method_not_allowed", "Method not allowed");
@@ -189,40 +251,51 @@ export async function handleSearchRequest(request: Request, backend: SearchBacke
   if (kind && !/^[a-z-]{1,32}$/u.test(kind)) return failure(400, "invalid_kind", "Unknown kind");
   if (!Number.isInteger(limit) || limit < 1 || limit > 50) return failure(400, "invalid_limit", "limit must be between 1 and 50");
   if (!Number.isInteger(offset) || offset < 0 || offset > 1000) return failure(400, "invalid_offset", "offset must be between 0 and 1000");
-  const filter = [`server = ${server}`, ...(section ? [`section = ${section}`] : []), ...(kind ? [`kind = ${kind}`] : [])];
-  const order = localizedFallbacks(locale).filter((value): value is (typeof LOCALES)[number] => (LOCALES as readonly string[]).includes(value));
-  const search = (matchingStrategy: "all" | "last") =>
-    post(backend, `/indexes/${INDEX}/search`, {
-      q: query, limit, offset, filter, facets: ["kind"], locales: [LANGUAGE[locale]], matchingStrategy,
-      attributesToHighlight: [...fieldNames("title"), ...fieldNames("text")], attributesToCrop: fieldNames("text"), cropLength: 32,
-      highlightPreTag: PRE, highlightPostTag: POST,
-    });
-  let data: SearchResponse;
+  if (!db) return failure(503, "search_unavailable", "Search is unavailable");
+  const scope = `FROM catalog_search_fts AS fts
+    JOIN catalog_search_documents AS document ON document.rowid = fts.rowid
+    JOIN catalog_search_releases AS release ON release.server = document.server AND release.release_id = document.release_id
+    WHERE catalog_search_fts MATCH ? AND document.server = ?${section ? " AND document.section = ?" : ""}`;
+  const base = [server, ...(section ? [section] : [])];
+  const run = async (expression: string) => {
+    const counts = await db.prepare(`SELECT document.kind AS kind, COUNT(*) AS count ${scope} GROUP BY document.kind`)
+      .bind(expression, ...base).all<{ kind: string; count: number }>();
+    const kinds = Object.fromEntries(counts.results.map((row) => [row.kind, row.count]));
+    const hits = await db.prepare(`SELECT document.kind, document.section, document.path, document.image,
+        document.titles_json AS titles, document.texts_json AS texts
+      ${scope}${kind ? " AND document.kind = ?" : ""}
+      ORDER BY ${KIND_TIER}, bm25(catalog_search_fts, 10.0, 1.0) LIMIT ? OFFSET ?`)
+      .bind(expression, ...base, ...(kind ? [kind] : []), limit, offset).all<SearchRow>();
+    return { kinds, total: kind ? (kinds[kind] ?? 0) : Object.values(kinds).reduce((sum, count) => sum + count, 0), hits: hits.results };
+  };
+  const strict = matchExpression(query, " ");
+  if (!strict) return json({ total: 0, kinds: {}, hits: [] }, 200, "public, max-age=60");
+  let found;
   try {
-    let response = await search("all");
-    data = (await required(response, "query").then((value) => value.json())) as SearchResponse;
+    found = await run(strict);
     // Every term is required first; only a query that finds nothing loosens.
-    if (!data.estimatedTotalHits) {
-      response = await search("last");
-      data = (await required(response, "query").then((value) => value.json())) as SearchResponse;
-    }
+    if (!found.total && strict.includes(" ")) found = await run(matchExpression(query, " OR "));
+    // A misspelt word usually differs at its end, and FTS5 has no fuzzy match of its own.
+    const stem = typoStem(query);
+    if (!found.total && stem) found = await run(stem);
   } catch {
     return failure(503, "search_unavailable", "Search is unavailable");
   }
-  const pick = (hit: Row & { _formatted: Row }, prefix: string) => {
-    const field = order.map((value) => `${prefix}_${FIELD_SUFFIX[value]}`).find((name) => hit[name]);
-    return field ? String(hit._formatted[field] ?? hit[field]) : "";
-  };
+  const order = localizedFallbacks(locale).flatMap((value) => {
+    const index = (LOCALES as readonly string[]).indexOf(value);
+    return index < 0 ? [] : [index];
+  });
+  const pick = (values: string[]) => order.map((index) => values[index]).find(Boolean) ?? values.find(Boolean) ?? "";
   return json(
     {
-      total: data.estimatedTotalHits,
-      kinds: data.facetDistribution?.kind ?? {},
-      hits: data.hits.map((hit) => ({
-        url: `/${server}/${locale}/${String(hit.path)}`,
+      total: found.total,
+      kinds: found.kinds,
+      hits: found.hits.map((hit) => ({
+        url: `/${server}/${locale}/${hit.path}`,
         kind: hit.kind,
         section: hit.section,
-        title: marked(pick(hit, "title")),
-        excerpt: marked(pick(hit, "text")),
+        title: marked(pick(JSON.parse(hit.titles) as string[]), query, false),
+        excerpt: marked(pick(JSON.parse(hit.texts) as string[]), query, true),
         ...(hit.image ? { image: hit.image } : {}),
       })),
     },
