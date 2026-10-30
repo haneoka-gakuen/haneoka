@@ -12,5 +12,6 @@ core/*
 !core/transport.py
 !core/http2.py
 !core/arena.py
+!core/demand.py
 !core/total-descriptors.pb
 !core/intl-descriptors.pb
