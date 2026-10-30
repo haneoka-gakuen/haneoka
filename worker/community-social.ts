@@ -646,6 +646,84 @@ const resolveTag = async (env: Env, normalizedName: string, includeHidden: boole
     .bind(normalizedName, normalizedName, includeHidden ? 1 : 0)
     .first<ResolvedTagRow>();
 
+/** The viewer's own block and mute lists, for account settings. */
+const getRelationships = async (request: Request, env: Env): Promise<Response> => {
+  const session = await getAuthSession(request, env);
+  if (!session?.user?.id) return error(request, 401, "authentication_required", "Sign in to view relationships");
+  const { results } = await env.DB.prepare(
+    `SELECT relation.kind, relation.created_at AS createdAt, identity.uid,
+            COALESCE(profile.display_name, account.name) AS name, profile.handle,
+            ${avatarUrlSelect("account")} AS avatarUrl
+     FROM (
+       SELECT 'block' AS kind, blocked_user_id AS user_id, created_at FROM community_user_block WHERE blocker_user_id = ?
+       UNION ALL
+       SELECT 'mute', muted_user_id, created_at FROM community_user_mute WHERE muter_user_id = ?
+     ) AS relation
+     JOIN "user" AS account ON account.id = relation.user_id
+     JOIN community_profile AS profile ON profile.user_id = relation.user_id
+     JOIN community_identity AS identity ON identity.user_id = relation.user_id
+     ORDER BY relation.created_at DESC
+     LIMIT 500`,
+  )
+    .bind(session.user.id, session.user.id)
+    .all();
+  return json(request, { relationships: results });
+};
+
+/** A public profile's followers or followed users, hiding anyone the viewer has a block with. */
+const getFollowList = async (
+  request: Request,
+  env: Env,
+  uid: number,
+  direction: "followers" | "following",
+): Promise<Response> => {
+  const target = await publicUserByUid(env, uid);
+  if (!target) return error(request, 404, "user_not_found", "User not found");
+  const session = await getAuthSession(request, env);
+  const viewerId = session?.user?.id ?? "";
+  const [listed, other] =
+    direction === "followers"
+      ? ["followed_user_id", "follower_user_id"]
+      : ["follower_user_id", "followed_user_id"];
+  const { results } = await env.DB.prepare(
+    `SELECT identity.uid, profile.display_name AS name, profile.handle, profile.bio,
+            ${avatarUrlSelect("account")} AS avatarUrl
+     FROM community_user_follow AS follow
+     JOIN "user" AS account ON account.id = follow.${other}
+     JOIN community_profile AS profile ON profile.user_id = follow.${other}
+     JOIN community_identity AS identity ON identity.user_id = follow.${other}
+     WHERE follow.${listed} = ? AND profile.status = 'active' AND profile.deleted_at IS NULL
+       AND profile.display_name IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM community_user_block AS block
+         WHERE (block.blocker_user_id = ? AND block.blocked_user_id = follow.${other})
+            OR (block.blocker_user_id = follow.${other} AND block.blocked_user_id = ?)
+       )
+     ORDER BY follow.created_at DESC
+     LIMIT 200`,
+  )
+    .bind(target.userId, viewerId, viewerId)
+    .all();
+  return json(request, { users: results });
+};
+
+/** The community member who publicly linked a game account, if any. */
+const getGameAccountOwner = async (request: Request, env: Env, region: string, playerUid: string): Promise<Response> => {
+  const owner = await env.DB.prepare(
+    `SELECT identity.uid, profile.display_name AS name
+     FROM community_game_account AS game_account
+     JOIN community_profile AS profile ON profile.user_id = game_account.user_id
+     JOIN community_identity AS identity ON identity.user_id = game_account.user_id
+     WHERE game_account.region = ? AND game_account.external_account_id = ?
+       AND game_account.visibility = 'public' AND game_account.deleted_at IS NULL
+       AND profile.status = 'active' AND profile.deleted_at IS NULL AND profile.display_name IS NOT NULL
+     LIMIT 1`,
+  )
+    .bind(region, playerUid)
+    .first();
+  return json(request, { owner: owner ?? null });
+};
+
 const getTagPreferences = async (request: Request, env: Env, url: URL): Promise<Response> => {
   const session = await getAuthSession(request, env);
   if (!session?.user?.id) {
@@ -1487,9 +1565,24 @@ export const handleCommunitySocialRequest = async (request: Request, env: Env): 
       ? mutation(request, () => putTagPreference(request, env, normalizedName))
       : error(request, 404, "tag_not_found", "Tag not found");
   }
+  if (path.length === 3 && path[0] === "game-accounts" && (path[1] === "jp" || path[1] === "intl") && /^\d{1,20}$/u.test(path[2] ?? "")) {
+    if (method !== "GET") return methodNotAllowed(request, "GET, HEAD, OPTIONS");
+    if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
+    return getGameAccountOwner(request, env, path[1], path[2]!);
+  }
+  if (path.length === 2 && path[0] === "me" && path[1] === "relationships") {
+    if (method !== "GET") return methodNotAllowed(request, "GET, HEAD, OPTIONS");
+    if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
+    return getRelationships(request, env);
+  }
   if (path.length === 3 && path[0] === "users" && path[1] && path[2]) {
     const rawUid = path[1];
     const action = path[2];
+    if (UID_PATTERN.test(rawUid) && (action === "followers" || action === "following")) {
+      if (method !== "GET") return methodNotAllowed(request, "GET, HEAD, OPTIONS");
+      if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
+      return getFollowList(request, env, Number(rawUid), action);
+    }
     if (!UID_PATTERN.test(rawUid) || (action !== "follow" && action !== "block" && action !== "mute")) return null;
     if (method !== "PUT") return methodNotAllowed(request, "PUT, OPTIONS");
     if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");

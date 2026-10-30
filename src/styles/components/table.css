@@ -85,7 +85,7 @@
 }
 .data-table th > .table-sort {
   display: flex;
-  min-height: 32px;
+  min-height: 48px;
   width: 100%;
   gap: 8px;
   align-items: center;

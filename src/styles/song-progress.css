@@ -72,7 +72,7 @@
   }
   .song-progress__mark {
     min-width: 48px;
-    height: 32px;
+    height: 40px;
     padding-inline: 8px;
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-small);

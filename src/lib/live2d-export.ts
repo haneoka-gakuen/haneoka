@@ -1,4 +1,33 @@
 import { exportCubismModel, type ExportCubismModelOptions } from "@haneoka/vega-plugin-cubism/export";
+import { unzipSync, zipSync, type Zippable } from "fflate";
+
+type Motion = Record<string, unknown>;
+
+/**
+ * One motion group per motion, named after its file, plus an Idle group.
+ * Still a standard model3.json; it lets WebGAL (and other pixi-live2d-display
+ * hosts, which play a motion by group name) reach every motion, and idles
+ * the figure on load.
+ */
+function webgalMotionGroups(descriptor: Record<string, unknown>) {
+  const references = descriptor.FileReferences as Record<string, unknown> | undefined;
+  const motions = references?.Motions;
+  if (!motions || typeof motions !== "object" || Array.isArray(motions)) return;
+  const groups: Record<string, Motion[]> = {};
+  const idle: Motion[] = [];
+  for (const [group, list] of Object.entries(motions as Record<string, unknown>)) {
+    if (!Array.isArray(list)) continue;
+    for (const motion of list as Motion[]) {
+      const file = typeof motion.File === "string" ? motion.File : "";
+      const stem = file.split(/[?#]/u, 1)[0]!.split("/").pop()!.replace(/\.motion3\.json$/iu, "") || group;
+      let name = stem;
+      for (let suffix = 2; Object.hasOwn(groups, name); suffix += 1) name = `${stem}-${suffix}`;
+      groups[name] = [motion];
+      if (/idle/iu.test(stem) || /^idle$/iu.test(group)) idle.push(motion);
+    }
+  }
+  references!.Motions = idle.length ? { Idle: idle, ...groups } : groups;
+}
 
 export class Live2DExportError extends Error {
   readonly messageKey: "invalidModelPackage" | "emptyModelResource";
@@ -89,7 +118,18 @@ export async function exportLive2DModel(options: ExportCubismModelOptions) {
     if (pngUrls.has(url) && ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)) {
       throw new Live2DExportError("invalidModelPackage", url);
     }
+    if (url === modelUrl && modern) {
+      const descriptor = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+      webgalMotionGroups(descriptor);
+      return new TextEncoder().encode(JSON.stringify(descriptor));
+    }
     return bytes;
   };
-  return exportCubismModel({ ...options, modelUrl, load });
+  const result = await exportCubismModel({ ...options, modelUrl, load });
+  // One top-level folder, so the archive unpacks as a single figure directory.
+  const folder = result.fileName.replace(/\.zip$/iu, "");
+  const files: Zippable = {};
+  for (const [path, data] of Object.entries(unzipSync(result.bytes)))
+    files[`${folder}/${path}`] = [data, { level: /\.(?:png|ogg|mp3|webm)$/iu.test(path) ? 0 : 6 }];
+  return { ...result, bytes: zipSync(files) };
 }

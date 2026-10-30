@@ -34,6 +34,8 @@ interface AccountProfileRow {
   memberTier: MemberTier;
   userId: string;
   writeRestricted: number;
+  restrictions: string;
+  createdAt: string;
 }
 
 interface ProfileWriteAccess {
@@ -113,14 +115,20 @@ const readProfile = (env: Env, userId: string): Promise<AccountProfileRow | null
               WHERE restriction.user_id = profile.user_id AND restriction.kind = 'upload'
                 AND restriction.revoked_at IS NULL
                 AND (restriction.expires_at IS NULL OR restriction.expires_at > ?)
-            ) AS uploadRestricted
+            ) AS uploadRestricted,
+            (SELECT json_group_array(json_object('kind', restriction.kind, 'reasonCode', restriction.reason_code,
+                                                 'expiresAt', restriction.expires_at, 'createdAt', restriction.created_at))
+             FROM community_user_restriction AS restriction
+             WHERE restriction.user_id = profile.user_id AND restriction.revoked_at IS NULL
+               AND (restriction.expires_at IS NULL OR restriction.expires_at > ?)) AS restrictions,
+            account.createdAt AS createdAt
      FROM community_profile AS profile
      JOIN "user" AS account ON account.id = profile.user_id
      LEFT JOIN community_identity AS identity ON identity.user_id = profile.user_id
      WHERE profile.user_id = ?
      LIMIT 1`,
   )
-    .bind(Date.now(), Date.now(), Date.now(), userId)
+    .bind(Date.now(), Date.now(), Date.now(), Date.now(), userId)
     .first<AccountProfileRow>();
 
 const profileValue = (profile: AccountProfileRow): object => ({
@@ -143,6 +151,8 @@ const profileValue = (profile: AccountProfileRow): object => ({
     deleteAvatar: profile.emailVerified === 1 && profile.profileStatus === "active" && profile.signInRestricted === 0,
   },
   bio: profile.bio,
+  createdAt: profile.createdAt,
+  restrictions: JSON.parse(profile.restrictions) as unknown,
   candidateDisplayName: profile.pendingDisplayName,
   displayName: profile.displayName,
   displayNameRevision: profile.displayNameRevision,

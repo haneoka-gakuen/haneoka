@@ -27,15 +27,15 @@ import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { resourcePath, releaseServerFromPath, type ReleaseServer } from "../lib/resource-route";
-import { gekisouMission } from "../lib/gekisou";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { catalogUrl, fetchJson, gameDateTime, localizedText, preferredLocale } from "./shared/catalog";
 import { renderDetailSectionHeading as heading } from "./shared/detail-section-heading";
 import { defaultGameRecordsRegion, gameRecordsRegionPicker } from "./shared/game-records";
+import { arenaAttribute, arenaAttributeLabel, arenaMission, arenaMissionLabel, arenaRuleMarks, arenaRuleText, type ArenaRuleContext, type ArenaRuleView } from "./shared/arena-rule";
 import { collectionTable } from "./ui/collection-view";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { LazyImages } from "./ui/lazy-images";
-import { icon, gameGlyph } from "./ui/icon";
+import { icon } from "./ui/icon";
 import { filterChip, iconButton, rovingKeydown, segmented } from "./ui/controls";
 import "./arena-ranking";
 import "../styles/settings.css";
@@ -335,80 +335,29 @@ export class ArenaWorkspace extends LitElement {
       : nothing;
   }
   private attributeLabel(value: number) {
-    const key = ["", "red", "blue", "green", "yellow", "purple"][value];
-    return value === 99
-      ? "ALL"
-      : value === 0
-        ? this.t("originalRule")
-        : clientText(this.locale, `catalog.songs.liveTypes.${key}`);
+    return arenaAttributeLabel(this.locale, value);
   }
   private attribute(value: number, size = 24) {
-    const color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][value];
-    const url = (source: string | undefined) =>
-      source &&
-      `/runtime/${this.dataServer}/${source.replace(/^runtime\//u, "")}?release=${this.catalog!.identity.releaseId}`;
-    const fallback = color ? url(this.marks[`CardType-${color}.png`]) : "";
-    const image = url(this.marks[`sp_icon_live_music_type_${value}.png`]) || fallback;
-    return image
-      ? html`
-          <img
-            class="arena-attribute"
-            src=${image}
-            width=${size}
-            height=${size}
-            alt=""
-            @error=${(event: Event) => {
-              const element = event.currentTarget as HTMLImageElement;
-              if (fallback && element.getAttribute("src") !== fallback) element.src = fallback;
-              else element.hidden = true;
-            }}
-          />
-        `
-      : html`
-          <span class="arena-attribute arena-attribute--text">${this.attributeLabel(value)}</span>
-        `;
+    return arenaAttribute(this.ruleContext(), value, size);
   }
   private missionLabel(value: number) {
-    return gekisouMission(value)?.fallback || this.t("originalRule");
+    return arenaMissionLabel(this.locale, value);
   }
   private mission(value: number, size = 24) {
-    const image = this.catalog?.images?.missions[value];
-    return image
-      ? html`
-          <span class="arena-mission" title=${this.missionLabel(value)}>${gameGlyph(image, size)}</span>
-        `
-      : html`
-          <span class="arena-mission arena-mission--text">${this.missionLabel(value)}</span>
-        `;
+    return arenaMission(this.ruleContext(), value, size);
   }
   /** The rule in words beside its icons: the attribute, then the sections as `JUST×3` or `COMBO / LUCK / JUST`. */
-  private ruleText(rule: { musicType: number; missions: readonly number[] }) {
-    const same = rule.missions.every((value) => value === rule.missions[0]);
-    return same
-      ? `${this.missionLabel(rule.missions[0]!)}×3`
-      : rule.missions.map((value) => this.missionLabel(value)).join(" / ");
+  private ruleText(rule: ArenaRuleView) {
+    return arenaRuleText(this.locale, rule);
   }
-  private ruleMarks(rule: { musicType: number; missions: readonly number[] } | undefined, size = 24) {
-    if (!rule)
-      return html`
-        <span class="arena-rule arena-rule--empty">—</span>
-      `;
-    const same = rule.missions.every((value) => value === rule.missions[0]);
-    return html`
-      <span class="arena-rule">
-        <span class="arena-rule__part">
-          ${this.attribute(rule.musicType, size)}
-          <span>${this.attributeLabel(rule.musicType)}</span>
-        </span>
-        <span class="arena-rule__part">
-          ${same ? this.mission(rule.missions[0]!, size) : rule.missions.map((value) => this.mission(value, size))}
-          <strong>${this.ruleText(rule)}</strong>
-        </span>
-      </span>
-    `;
+  private ruleMarks(rule: ArenaRuleView | undefined, size = 24) {
+    return arenaRuleMarks(this.ruleContext(), rule, size);
+  }
+  private ruleContext(): ArenaRuleContext {
+    return { locale: this.locale, server: this.dataServer, catalog: this.catalog!, marks: this.marks };
   }
   private range(start: number, end: number) {
-    return formatDateRange(this.locale, start, end, { time: true, weekday: true });
+    return formatDateRange(this.locale, start, end, { time: true });
   }
   private rewardList(rewards: readonly ArenaReward[]) {
     return html`
@@ -458,7 +407,7 @@ export class ArenaWorkspace extends LitElement {
             ? html`
                 <a
                   class="icon-button"
-                  href=${`/${this.locale}/team-builder/?tab=arena&league=${league.id}`}
+                  href=${`/${this.locale}/team-builder/?tab=arena&server=${this.dataServer === "jp" || this.dataServer === "jp-cbt" ? "jp" : "intl"}&league=${league.id}`}
                   aria-label=${this.t("buildTeam")}
                   title=${this.t("buildTeam")}
                 >
@@ -665,7 +614,7 @@ export class ArenaWorkspace extends LitElement {
               ${rule ? this.t("currentRule") : shown ? this.t("nextRule") : this.t("noSchedule")}
             </span>
           </div>
-          <a class="button button--filled" href=${`/${this.locale}/team-builder/?tab=arena&league=${league.id}`}>
+          <a class="button button--filled" href=${`/${this.locale}/team-builder/?tab=arena&server=${this.dataServer === "jp" || this.dataServer === "jp-cbt" ? "jp" : "intl"}&league=${league.id}`}>
             ${icon("groups")}${this.t("buildTeam")}
           </a>
         </header>
@@ -1043,7 +992,8 @@ export class ArenaWorkspace extends LitElement {
                 class="arena-period"
                 aria-current=${period.startAt <= this.now && this.now < period.endAt ? "time" : nothing}
               >
-                ${this.range(period.startAt, period.endAt)}
+                <span>${formatDate(this.locale, period.startAt, { time: true })}</span>
+                <span>– ${formatDate(this.locale, period.endAt, { time: true })}</span>
               </span>
             `,
             ...period.rules.map((rule) => this.ruleMarks(rule, 22)),
@@ -1127,7 +1077,7 @@ export class ArenaWorkspace extends LitElement {
                 </span>
               `,
               rank.points.toLocaleString(this.locale),
-              rank.resetPoints == null ? "—" : rank.resetPoints.toLocaleString(this.locale),
+              rank.resetPoints ? `−${rank.resetPoints.toLocaleString(this.locale)}` : this.t("resetKept"),
               this.rewardList(league.promotionRewards.filter((reward) => reward.rankId === rank.id)),
             ]),
             { numeric: true },

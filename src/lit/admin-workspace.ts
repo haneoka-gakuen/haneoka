@@ -28,9 +28,11 @@ import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsO
 import "./community-sticker";
 import { snackbar } from "../lib/snackbar";
 import { formatDate } from "../lib/date-format";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import "./admin-comments";
 
 type Value = Record<string, unknown>;
-const sections = ["overview", "users", "posts", "forums", "reports", "appeals", "operations"] as const;
+const sections = ["overview", "comments", "reports", "appeals", "posts", "users", "forums", "operations"] as const;
 type Section = (typeof sections)[number];
 type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
 type ContentKind = "posts" | "charts" | "playlists";
@@ -266,7 +268,26 @@ export class AdminWorkspace extends LitElement {
     return this;
   }
   private announced = { error: "" };
+  private appBarOwner = `admin-${Math.random().toString(36).slice(2)}`;
+  private syncAppBar() {
+    setAppBarActions(
+      this.appBarOwner,
+      html`
+        <button
+          class="icon-button"
+          type="button"
+          aria-label=${this.label("refresh", "Refresh")}
+          title=${this.label("refresh", "Refresh")}
+          ?disabled=${this.phase === "loading" || this.refreshing || !!this.busy}
+          @click=${() => this.refresh()}
+        >
+          ${icon("refresh", 22)}
+        </button>
+      `,
+    );
+  }
   updated() {
+    this.syncAppBar();
     if (this.error !== this.announced.error) {
       this.announced.error = this.error;
       if (this.error) snackbar(this.error, { error: true, action: { label: this.label("retry", "Retry"), run: () => void this.refresh() } });
@@ -282,6 +303,7 @@ export class AdminWorkspace extends LitElement {
   }
   private readonly onLocale = () => this.requestUpdate();
   disconnectedCallback() {
+    clearAppBarActions(this.appBarOwner);
     this.lifetime.abort();
     this.invalidatePrivateState();
     removeEventListener("haneoka:locale-ready", this.onLocale);
@@ -366,7 +388,6 @@ export class AdminWorkspace extends LitElement {
     return known.length
       ? html`
           <div class="admin-ip-audit">
-            <small>${this.label("ip.approximate", "IP geolocation is approximate.")}</small>
             <dl>
               ${known.map(
                 ([key, fallback, entry]) => html`
@@ -560,6 +581,8 @@ export class AdminWorkspace extends LitElement {
               statisticsGeneratedAt: statistics.generatedAt,
               sessionCounts: statistics.sessions,
             }))
+          : section === "comments"
+            ? await this.request(`/api/v1/admin/overview`, { signal })
           : section === "forums"
             ? await this.request("/api/v1/admin/forums", { signal })
               : await this.request(`/api/v1/admin/${section === "posts" ? contentKind : section}?${query}`, { signal });
@@ -705,6 +728,94 @@ export class AdminWorkspace extends LitElement {
       });
       assertCurrent();
       await this.load(false);
+    });
+  }
+  /** Settles every open report on one target; a block also records the moderation verdict on the content. */
+  private settleReports(reports: Value[], status: "resolved" | "dismissed", block = false) {
+    const open = reports.filter((report) => ["pending", "reviewing"].includes(String(report.status)));
+    const target = (reports[0]?.target as Value | undefined) || {};
+    void this.mutate(`reports:${String(target.id)}`, async (assertCurrent) => {
+      if (block && (target.kind === "comment" || target.kind === "post"))
+        await this.request(`/api/v1/admin/${target.kind === "comment" ? "comments" : "posts"}/${encodeURIComponent(String(target.id))}/moderation`, {
+          method: "PUT",
+          body: JSON.stringify({ verdict: "block", reasonCode: "staff.report.block" }),
+        }).catch(() => undefined);
+      for (const report of open) {
+        if (report.status === "pending")
+          await this.request(`/api/v1/admin/reports/${encodeURIComponent(String(report.id))}/status`, {
+            method: "PUT",
+            body: JSON.stringify({ expectedVersion: report.version, resolutionReasonCode: null, status: "reviewing" }),
+          });
+        await this.request(`/api/v1/admin/reports/${encodeURIComponent(String(report.id))}/status`, {
+          method: "PUT",
+          body: JSON.stringify({
+            expectedVersion: Number(report.version) + (report.status === "pending" ? 1 : 0),
+            resolutionReasonCode: `admin.dashboard.report.${status}`,
+            status,
+          }),
+        });
+        assertCurrent();
+      }
+      await this.load(false);
+    });
+  }
+  private renderReportGroups(records: Value[]) {
+    const groups = new Map<string, Value[]>();
+    for (const record of records) {
+      const target = (record.target as Value | undefined) || {};
+      const key = `${String(target.kind)}:${String(target.id)}`;
+      groups.set(key, [...(groups.get(key) || []), record]);
+    }
+    const ordered = [...groups.values()].sort(
+      (a, b) =>
+        Number(b.some((r) => ["pending", "reviewing"].includes(String(r.status)))) -
+          Number(a.some((r) => ["pending", "reviewing"].includes(String(r.status)))) || b.length - a.length,
+    );
+    return ordered.map((reports) => {
+      const target = (reports[0]!.target as Value | undefined) || {};
+      const open = reports.filter((report) => ["pending", "reviewing"].includes(String(report.status)));
+      const reasons = new Map<string, number>();
+      for (const report of reports) reasons.set(String(report.reasonCode), (reasons.get(String(report.reasonCode)) || 0) + 1);
+      const details = reports.map((report) => report.detail).filter(Boolean) as string[];
+      const reporters = reports.map((report) => String((report.reporter as Value | undefined)?.displayName || (report.reporter as Value | undefined)?.accountName || ""));
+      const text = String(target.body || target.title || target.displayName || target.id || "—");
+      return html`
+        <article class="admin-record admin-report">
+          <span class="admin-report__count tabular">${reports.length}</span>
+          <span class="admin-report__body">
+            <span class="admin-appeal__head">
+              <strong>${this.valueLabel(target.kind)}</strong>
+              ${open.length ? this.statusBadge("pending") : this.statusBadge(reports[0]!.status)}
+              ${[...reasons].map(([reason, count]) => html`<span class="admin-comment__status admin-comment__status--error">${this.valueLabel(reason)}${count > 1 ? ` ×${count}` : ""}</span>`)}
+            </span>
+            <blockquote class="admin-appeal__content md-body-medium">${text}</blockquote>
+            ${details.length ? html`<small>${details.slice(0, 3).join(" · ")}</small>` : nothing}
+            <small>${reporters.slice(0, 4).join("、")}${reporters.length > 4 ? ` +${reporters.length - 4}` : ""} · ${this.date(reports.at(-1)!.createdAt)}</small>
+          </span>
+          <div class="admin-record-actions">
+            ${
+              target.kind === "comment" && target.postId
+                ? html`<button class="button button--text" @click=${() => this.openHistory(target.postId, target.id)}>${this.label("history.open", "History")}</button>`
+                : target.kind === "post"
+                  ? html`<button class="button button--text" @click=${() => this.openHistory(target.id)}>${this.label("history.open", "History")}</button>`
+                  : nothing
+            }
+            ${
+              open.length
+                ? html`
+                    ${
+                      target.kind === "comment" || target.kind === "post"
+                        ? html`<button class="button button--danger" ?disabled=${Boolean(this.busy)} @click=${() => this.settleReports(reports, "resolved", true)}>${this.label("reports.block", "Block content")}</button>`
+                        : nothing
+                    }
+                    <button class="button" ?disabled=${Boolean(this.busy)} @click=${() => this.settleReports(reports, "resolved")}>${this.label("reports.resolve", "Resolve")}</button>
+                    <button class="button button--tonal" ?disabled=${Boolean(this.busy)} @click=${() => this.settleReports(reports, "dismissed")}>${this.label("reports.dismiss", "Dismiss")}</button>
+                  `
+                : nothing
+            }
+          </div>
+        </article>
+      `;
     });
   }
   private decideAppeal(appeal: Value, decision: "accepted" | "rejected") {
@@ -1280,8 +1391,16 @@ export class AdminWorkspace extends LitElement {
     `;
   }
   private renderNavigation() {
+    const counts = ((this.document.overview as Value | undefined) || {}) as Record<string, number>;
+    const badges: Partial<Record<Section, number>> = {
+      comments: counts.reviewComments,
+      reports: counts.pendingReports,
+      appeals: counts.pendingAppeals,
+      posts: counts.reviewPosts,
+    };
     const icons: Record<Section, string> = {
       overview: "space_dashboard",
+      comments: "comment",
       users: "group",
       posts: "article",
       forums: "forum",
@@ -1302,6 +1421,7 @@ export class AdminWorkspace extends LitElement {
               >
                 ${icon(icons[section])}
                 <span>${section === "posts" ? this.label("creations.content", "Content") : this.label(`sections.${section}`, section)}</span>
+                ${badges[section] ? html`<span class="admin-sections__badge">${badges[section]!.toLocaleString(preferredLocale())}</span>` : nothing}
               </a>
             `,
           )}
@@ -1563,9 +1683,6 @@ export class AdminWorkspace extends LitElement {
         <header class="admin-section-heading">
           <div>
             <h3>${this.label("analytics.title", "Community analytics")}</h3>
-            <p class="admin-muted">
-              ${this.label("analytics.utcRange", "Trend windows use UTC; the end date is exclusive.")}
-            </p>
           </div>
           ${segmented({ label: this.label("analytics.range", "Time range"), value: this.analyticsRange, options: ["7", "30", "90", "365"].map((value) => ({ value, label: this.label("analytics.days", "{count} days").replace("{count}", value) })), onSelect: (value) => this.selectAnalyticsRange(value) })}
         </header>
@@ -1632,29 +1749,16 @@ export class AdminWorkspace extends LitElement {
               : nothing
           }
           ${
-            this.analyticsMetric === "moderationCasesLatestCompleted"
-              ? html`
-                  <p class="admin-muted">
-                    ${this.label("analytics.latestCompletionNote", "This is the latest stored completion time of each case, not every historical decision.")}
-                  </p>
-                `
-              : nothing
-          }
-          ${
             this.analyticsSeries && this.analyticsMetric !== "moderationCasesLatestCompleted"
               ? html`
-                  <p class="admin-muted">
-                    ${this.analyticsMetric === "moderationDecisions" ? this.label("analytics.decisionBasis", "Counts represent recorded terminal review events; a case may have more than one decision.") : this.label("analytics.creationBasis", "Counts use the creation times of records still retained.")}
-                  </p>
+                  
                 `
               : nothing
           }
           ${
             this.analyticsSeries?.activity?.historicalSeriesAvailable === false
               ? html`
-                  <p class="admin-muted">
-                    ${this.label("analytics.activityUnavailable", "Historical daily activity is unavailable; only each user's latest visit is retained.")}
-                  </p>
+                  
                 `
               : nothing
           }
@@ -1697,17 +1801,12 @@ export class AdminWorkspace extends LitElement {
             `,
           )}
         </div>
-        <p class="admin-muted">
-          ${this.label("analytics.currentPartitions", "Status distributions are current snapshots. Each chart uses one separate status dimension.")}
-        </p>
+        
         <section class="admin-chart-card" aria-busy=${String(this.geoLoading)}>
           <header>
             <div>
               <h4>${this.label("analytics.map", "IP location distribution")}</h4>
-              <p class="admin-muted">
-                ${this.label("analytics.approximate", "Approximate recorded IP locations, not GPS.")}
-                ${this.label("analytics.pointSize", "Marker size represents user count.")}
-              </p>
+              
             </div>
             <span class="admin-map-actions">
               <button
@@ -1794,9 +1893,7 @@ export class AdminWorkspace extends LitElement {
                       `,
                     )}
                   </div>
-                  <p class="admin-muted">
-                    ${this.label("analytics.selectLocation", "Select a location with recorded users to open its filtered user list.")}${geo.pointsTruncated ? ` ${this.label("analytics.pointsTruncated", "Map locations are truncated; country totals still cover the full cohort.")}` : ""}
-                  </p>
+                  
                 `
               : nothing
           }
@@ -1873,42 +1970,28 @@ export class AdminWorkspace extends LitElement {
         </dl>
       </section>
     `;
+    const access = this.document.siteSettings as Value | undefined;
     return html`
       <div class="admin-overview">
-        ${this.document.siteSettings ? html`
-          <section class="admin-summary surface">
-            <label class="cluster">
-              <md-switch .selected=${(this.document.siteSettings as Value).showRestrictedContent === true}
-                ?disabled=${Boolean(this.busy)} @change=${(event: Event) => this.changeContentAccess(event)}
-                aria-label=${this.label("showRestrictedContent", "Show unpublished content")}></md-switch>
-              <strong>${this.label("showRestrictedContent", "Show unpublished content")}</strong>
-            </label>
-            <p>${this.label("showRestrictedContentHint", "Only selected account groups can access this content. Public pages remain unchanged.")}</p>
-            <div class="cluster" role="group" aria-label=${this.label("contentAccessGroups", "Allowed account groups")}>
-              ${USER_ROLES.map(role => html`<label class="cluster">
-                <md-checkbox aria-label=${this.label(`roles.${role}`, role)} .checked=${((this.document.siteSettings as Value).contentAccessRoles as string[]).includes(role)}
-                  ?disabled=${Boolean(this.busy)} @change=${(event: Event) => this.changeContentAccess(event, role)}></md-checkbox>
-                ${this.label(`roles.${role}`, role)}
-              </label>`)}
-            </div>
-          </section>` : nothing}
         <section class="admin-work-queue" aria-labelledby="admin-queue-heading">
-          <div class="admin-section-heading">
-            <h3 id="admin-queue-heading">${this.label("workspace.needsAttention", "Needs attention")}</h3>
-            <span>${this.label("workspace.currentCounts", "Current totals")}</span>
-          </div>
+          <h3 id="admin-queue-heading" class="detail-section-title">${this.label("workspace.needsAttention", "Needs attention")}</h3>
           <div class="admin-attention-grid">
-            ${metric("pendingReports", "/admin/reports", "flag")} ${metric("pendingAppeals", "/admin/appeals", "gavel")}
+            ${metric("reviewComments", "/admin/comments", "comment")}
+            ${metric("pendingReports", "/admin/reports", "flag")}
+            ${metric("pendingAppeals", "/admin/appeals", "gavel")}
+            ${metric("reviewPosts", "/admin/posts?moderationStatus=review", "article")}
           </div>
         </section>
         <div class="admin-summary-grid">
           ${group(this.label("workspace.accounts", "Account status"), [
             ["totalUsers", "/admin/users"],
             ["activeUsers", "/admin/users"],
-            ["suspendedUsers", "/admin/users"],
+            ["suspendedUsers", "/admin/users?status=suspended"],
+            ["pendingDisplayNames", "/admin/users"],
           ])}
           ${group(this.label("workspace.content", "Content"), [
             ["publishedPosts", "/admin/posts"],
+            ["totalComments", "/admin/comments?filter=all"],
             ["blockedPosts", "/admin/posts?moderationStatus=block"],
           ])}
           ${group(this.label("sections.operations", "Operations"), [
@@ -1918,18 +2001,38 @@ export class AdminWorkspace extends LitElement {
           ])}
         </div>
         ${this.renderAnalytics()}${this.renderStatistics()}
-        <section class="admin-review-entry surface">
-          <span class="admin-review-entry__icon">${icon("fact_check", 28)}</span>
-          <div>
-            <h3>${this.label("workspace.contentDesk", "Content review")}</h3>
-            <p>
-              ${this.label("workspace.contentDeskDescription", "Inspect posts, their visibility, revisions and moderation history in one place.")}
-            </p>
-          </div>
-          <a class="button button--tonal" href="/admin/posts">
-            ${this.label("workspace.allPosts", "All posts")}${icon("arrow_forward", 18)}
-          </a>
-        </section>
+        ${
+          access
+            ? html`
+                <section class="admin-summary surface stack">
+                  <label class="row row--between">
+                    <strong>${this.label("showRestrictedContent", "Show unpublished content")}</strong>
+                    <md-switch
+                      .selected=${access.showRestrictedContent === true}
+                      ?disabled=${Boolean(this.busy)}
+                      @change=${(event: Event) => this.changeContentAccess(event)}
+                      aria-label=${this.label("showRestrictedContent", "Show unpublished content")}
+                    ></md-switch>
+                  </label>
+                  <div class="chip-set" role="group" aria-label=${this.label("contentAccessGroups", "Allowed account groups")}>
+                    ${USER_ROLES.map(
+                      (role) => html`
+                        <label class="chip">
+                          <md-checkbox
+                            aria-label=${this.label(`roles.${role}`, role)}
+                            .checked=${(access.contentAccessRoles as string[]).includes(role)}
+                            ?disabled=${Boolean(this.busy)}
+                            @change=${(event: Event) => this.changeContentAccess(event, role)}
+                          ></md-checkbox>
+                          ${this.label(`roles.${role}`, role)}
+                        </label>
+                      `,
+                    )}
+                  </div>
+                </section>
+              `
+            : nothing
+        }
       </div>
     `;
   }
@@ -1969,9 +2072,7 @@ export class AdminWorkspace extends LitElement {
       supportingText: `${this.label("workspace.updated", "Updated")} ${this.date(this.document.statisticsGeneratedAt)}`,
       leading: icon("bar_chart"),
       content: html`
-        <p class="admin-muted">
-          ${this.label("workspace.statisticsNote", "Each status dimension is counted separately, including retained deleted records.")}
-        </p>
+        
         <div class="admin-summary-grid">
           <section class="admin-summary">
             <h3>${this.label("workspace.accounts", "Account status")}</h3>
@@ -2229,9 +2330,7 @@ export class AdminWorkspace extends LitElement {
             </div>
           `,
         })}
-        <p class="admin-muted">
-          ${this.label("workspace.statisticsNote", "Each status dimension is counted separately, including retained deleted records.")}
-        </p>
+        
       </section>
     `;
   }
@@ -2290,9 +2389,7 @@ export class AdminWorkspace extends LitElement {
         label: this.label("sections.operations", "Operations"),
         supportingText: summary(operations),
         content: html`
-          <p class="admin-muted">
-            ${this.label("userDetails.operationsScope", "Operations performed by this account or directly targeting it.")}
-          </p>
+          
           <div class="admin-revision-list">
             ${rows(operations).map(
               (record) => html`
@@ -2401,9 +2498,7 @@ export class AdminWorkspace extends LitElement {
                           </span>
                         </div>
                         ${this.renderUserId(user, true, true)}
-                        <p class="admin-muted">
-                          ${this.label("userDetails.idExplanation", "UID identifies the Haneoka community profile; account ID identifies the internal sign-in account.")}
-                        </p>
+                        
                         ${this.userFields([
                           [this.label("accountName", "Account name"), user.accountName],
                           [this.label("publicDisplayName", "Public name"), user.publicDisplayName],
@@ -2444,9 +2539,6 @@ export class AdminWorkspace extends LitElement {
                           visit
                             ? html`
                                 <p class="admin-user-visit-time">${this.fullDate(visit.visitedAt)}</p>
-                                <p class="admin-muted">
-                                  ${this.label("ip.visitSampling", "Authenticated requests are sampled once a minute; IP changes are recorded immediately.")}
-                                </p>
                                 ${this.renderIpAudit(visit)}${this.userFields([
                                   [this.label("userDetails.countryCode", "Country code"), location?.countryCode],
                                   [this.label("userDetails.regionCode", "Region code"), location?.regionCode],
@@ -2682,6 +2774,10 @@ export class AdminWorkspace extends LitElement {
             <span class="admin-status">${this.label(`roles.${record.role}`, String(record.role || "—"))}</span>
             ${this.statusBadge(record.status)}
           </span>
+          <span class="admin-user-activity">
+            <span title=${this.label("userDetails.posts", "Posts")}>${icon("article", 16)}${Number(record.postCount || 0).toLocaleString(preferredLocale())}</span>
+            <span title=${this.label("userDetails.comments", "Comments")}>${icon("comment", 16)}${Number(record.commentCount || 0).toLocaleString(preferredLocale())}</span>
+          </span>
           <span class="admin-user-last-visit">
             <time>${visit ? this.date(visit.visitedAt) : this.label("ip.unknown", "Unknown")}</time>
             <code>${String(visit?.ipAddress || "—")}</code>
@@ -2799,10 +2895,14 @@ export class AdminWorkspace extends LitElement {
       return html`
         <article class="admin-record admin-record--expanded">
           <span>${icon("gavel", 22)}</span>
-          <span>
-            <strong>${this.valueLabel(record.entityKind)} · ${String(record.entityId || "")}</strong>
-            ${this.statusBadge(record.status)}
-            <small>${String(record.statement || "")}</small>
+          <span class="admin-appeal">
+            <span class="admin-appeal__head">
+              <strong>${this.valueLabel(record.entityKind)}</strong>
+              ${this.statusBadge(record.status)}
+              ${((record.caseCategories as string[] | undefined) || []).map((category) => html`<span class="admin-comment__status admin-comment__status--error">${category}</span>`)}
+            </span>
+            ${record.entityText ? html`<blockquote class="admin-appeal__content md-body-medium">${String(record.entityText)}</blockquote>` : nothing}
+            <span class="admin-appeal__statement md-body-medium">${icon("chat", 18)}${String(record.statement || "")}</span>
             <small>${String(record.appellantName || "")} · ${this.date(record.createdAt)}</small>
           </span>
           ${
@@ -3219,7 +3319,7 @@ export class AdminWorkspace extends LitElement {
           )}
         </section>
         ${this.groupDraft ? this.renderForumGroupEditor() : nothing}
-        ${!draft && !this.groupDraft ? html`<section class="admin-forum-empty surface">${icon("forum",32)}<h3>${this.label("forum.selectToEdit", "Select a forum to edit")}</h3><p>${this.label("forum.selectHint", "Choose a forum to manage its name, group and access permissions.")}</p></section>` : nothing}
+        ${!draft && !this.groupDraft ? html`<section class="admin-forum-empty surface">${icon("forum",32)}<h3>${this.label("forum.selectToEdit", "Select a forum to edit")}</h3></section>` : nothing}
         ${
           draft
             ? html`
@@ -4097,74 +4197,11 @@ export class AdminWorkspace extends LitElement {
 
   render() {
     const records = this.records();
-    const user = (this.staff.user as Value | undefined) || {};
-    const description =
-      this.section === "overview"
-        ? this.label(
-            "workspace.overviewDescription",
-            "Review what needs attention and see the current state of your community.",
-          )
-        : this.section === "posts"
-          ? ""
-          : this.section === "users"
-            ? this.label(
-                "workspace.usersDescription",
-                "Manage account roles, restrictions and recent account activity.",
-              )
-            : "";
     return html`
       <section class="page admin-page">
         <div class=${`admin-shell${!this.staff.role ? " admin-shell--unavailable" : ""}`}>
           ${this.renderNavigation()}
           <main class="admin-stage">
-            <header class="admin-workspace-header">
-              <div>
-                <span class="admin-eyebrow">
-                  ${this.label("workspace.communityOperations", "Community operations")}
-                </span>
-                <h2>${this.section === "posts" ? this.label("creations.content", "Content") : this.label(`sections.${this.section}`, this.section)}</h2>
-                ${
-                  description
-                    ? html`
-                        <p>${description}</p>
-                      `
-                    : nothing
-                }
-              </div>
-              <div class="admin-toolbar">
-                ${
-                  user.name
-                    ? html`
-                        <a class="admin-session" href="/account">
-                          <span class="admin-avatar">
-                            ${
-                              user.avatarUrl
-                                ? html`
-                                    <img src=${String(user.avatarUrl)} alt="" />
-                                  `
-                                : String(user.name).slice(0, 1)
-                            }
-                          </span>
-                          <span>
-                            <strong>${String(user.name)}</strong>
-                            <small>${this.label(`roles.${this.staff.role}`, String(this.staff.role))}</small>
-                          </span>
-                        </a>
-                      `
-                    : nothing
-                }
-                <button
-                  class="icon-button"
-                  type="button"
-                  aria-label=${this.label("refresh", "Refresh")}
-                  title=${this.label("refresh", "Refresh")}
-                  ?disabled=${this.phase === "loading" || this.refreshing || !!this.busy}
-                  @click=${() => this.refresh()}
-                >
-                  ${icon("refresh", 22)}
-                </button>
-              </div>
-            </header>
             ${
               this.phase === "loading"
                 ? loadingState(this.label("loading", "Loading"))
@@ -4184,6 +4221,8 @@ export class AdminWorkspace extends LitElement {
                     `
                   : this.section === "overview"
                     ? this.renderOverview()
+                    : this.section === "comments"
+                      ? html`<admin-comments @admin-open-history=${(event: CustomEvent<{ postId: string; commentId: string }>) => void this.openHistory(event.detail.postId, event.detail.commentId)}></admin-comments>`
                     : this.section === "forums"
                       ? this.renderForums()
                       : html`
@@ -4249,6 +4288,7 @@ export class AdminWorkspace extends LitElement {
                                         <span>${this.label("columns.user", "User")} / UID</span>
                                         <span>${this.label("userDetails.email", "Email")}</span>
                                         <span>${this.label("userDetails.access", "Role and status")}</span>
+                                        <span>${this.label("userDetails.activity", "Activity")}</span>
                                         <span>${this.label("ip.lastVisit", "Recent visit")}</span>
                                         <span>${this.label("actions.manage", "Manage")}</span>
                                       </div>
@@ -4258,7 +4298,9 @@ export class AdminWorkspace extends LitElement {
                               <div class="admin-record-list">
                                 ${
                                   records.length
-                                    ? records.map((record) => this.renderRecord(record))
+                                    ? this.section === "reports"
+                                      ? this.renderReportGroups(records)
+                                      : records.map((record) => this.renderRecord(record))
                                     : html`
                                         <div class="admin-empty">
                                           ${icon("inbox", 32)}

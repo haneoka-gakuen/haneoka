@@ -11,6 +11,8 @@ import { compactHomeGacha, homeFanInfo } from "./home-display-slices";
 import { loadStaticCrossServerHome } from "../lib/cross-server/home";
 import { homeEventDisplay } from "../lib/home-event-display";
 import { staticBuildJson } from "./static-input-store";
+import { arenaCatalog } from "./arena-catalog";
+import { arenaRuleMarkNames, compactArenaCatalog } from "../lib/arena";
 
 let publicPosts: Promise<JsonRecord | undefined> | undefined;
 const origin = (process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org").replace(/\/$/u, "");
@@ -148,11 +150,19 @@ export async function homePageData(server: ReleaseServer, locale: Locale): Promi
   const calendarFile = await prepareCalendarLives(server, release, documents["real-lives"]);
   const fanInfo = homeFanInfo(calendarFile ? JSON.parse(await fs.readFile(calendarFile, "utf8")) : undefined);
   delete documents["real-lives"];
+  const arena = await arenaCatalog(server, release)
+    .then(async (catalog) => ({
+      catalog: compactArenaCatalog(catalog),
+      marks: arenaRuleMarkNames(((await fetchOptionalStaticCatalog("ui-marks", server, release)).value as Record<string, string>) || {}),
+      server,
+    }))
+    .catch(() => undefined);
   return {
     server,
     releaseId: release.releaseId,
     documents,
     announcements,
+    arena,
     fanInfo,
     ...homeUnion,
     profiles: {

@@ -121,6 +121,15 @@
   .search-result__image img.is-error {
     visibility: hidden;
   }
+  .search-page__summary {
+    display: grid;
+    gap: 8px;
+    margin-block-end: 8px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .search-result__kind {
+    color: var(--md-sys-color-primary);
+  }
   .search-page__more {
     margin-block: 12px;
   }

@@ -1,7 +1,7 @@
 import { getAuthSession } from "./auth";
 import { avatarUrlSelect } from "./avatar-url";
 import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
-import { resolveModerationAppeal } from "./moderation";
+import { decideModerationManually, resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
 import { listAdminCreations, readAdminCreation, removeAdminCreation, type CreationKind } from "./admin-creations";
@@ -98,9 +98,15 @@ interface OverviewRow {
   resourceRuns: number;
   suspendedUsers: number;
   totalUsers: number;
+  reviewComments: number;
+  reviewPosts: number;
+  pendingDisplayNames: number;
+  totalComments: number;
 }
 
 interface UserListRow {
+  postCount: number;
+  commentCount: number;
   lastVisitedAt: number | null;
   lastVisitIpAddress: string | null;
   lastVisitCountryCode: string | null;
@@ -341,6 +347,10 @@ interface AppealListRow {
   status: "accepted" | "pending" | "rejected" | "superseded";
   updatedAt: number;
   version: number;
+  entityText: string | null;
+  entityPostId: string | null;
+  caseCategories: string | null;
+  caseReason: string | null;
 }
 
 interface OperationRow {
@@ -454,6 +464,17 @@ const appealValue = (row: AppealListRow): JsonObject => ({
   status: row.status,
   updatedAt: row.updatedAt,
   version: row.version,
+  entityText: row.entityText,
+  entityPostId: row.entityPostId,
+  caseReason: row.caseReason,
+  caseCategories: (() => {
+    try {
+      const parsed: unknown = JSON.parse(row.caseCategories || "[]");
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    } catch {
+      return [];
+    }
+  })(),
 });
 
 const ipAuditValue = (row: IpAuditRow): JsonObject => {
@@ -778,6 +799,10 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
        (SELECT COUNT(*) FROM community_appeal WHERE status = 'pending') AS pendingAppeals,
        (SELECT COUNT(*) FROM admin_operation WHERE status IN ('pending', 'running')) AS pendingOperations,
        (SELECT COUNT(*) FROM community_content_report WHERE status IN ('pending', 'reviewing')) AS pendingReports,
+       (SELECT COUNT(*) FROM community_comment WHERE moderation_status IN ('pending', 'review') AND deleted_at IS NULL) AS reviewComments,
+       (SELECT COUNT(*) FROM community_post WHERE moderation_status IN ('pending', 'review') AND deleted_at IS NULL) AS reviewPosts,
+       (SELECT COUNT(*) FROM community_profile WHERE display_name_status = 'pending' AND pending_display_name IS NOT NULL AND deleted_at IS NULL) AS pendingDisplayNames,
+       (SELECT COUNT(*) FROM community_comment WHERE deleted_at IS NULL) AS totalComments,
        (SELECT COUNT(*) FROM resource_package_upload WHERE status = 'ready') AS readyPackages,
        (SELECT COUNT(*) FROM resource_run) AS resourceRuns`,
   ).first<OverviewRow>();
@@ -790,6 +815,10 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
       pendingAppeals: counts.pendingAppeals,
       pendingOperations: counts.pendingOperations,
       pendingReports: counts.pendingReports,
+      reviewComments: counts.reviewComments,
+      reviewPosts: counts.reviewPosts,
+      pendingDisplayNames: counts.pendingDisplayNames,
+      totalComments: counts.totalComments,
       publishedPosts: counts.publishedPosts,
       readyPackages: counts.readyPackages,
       resourceRuns: counts.resourceRuns,
@@ -857,6 +886,8 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
     `SELECT account.id, identity.uid AS publicUid, account.name AS accountName, account.email, account.emailVerified AS emailVerified,
             ${avatarUrlSelect("account")} AS image,
             account.createdAt AS createdAt, account.updatedAt AS updatedAt,
+            (SELECT COUNT(*) FROM community_post AS post WHERE post.author_id = account.id AND post.status <> 'draft') AS postCount,
+            (SELECT COUNT(*) FROM community_comment AS comment WHERE comment.author_id = account.id) AS commentCount,
             v.visited_at AS lastVisitedAt, v.ip_address AS lastVisitIpAddress,
             v.ip_country_code AS lastVisitCountryCode, v.ip_region_code AS lastVisitRegionCode,
             v.ip_region_name AS lastVisitRegionName, v.ip_details_json AS lastVisitIpDetails,
@@ -921,6 +952,8 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
     accountName: row.accountName,
     candidateDisplayName: row.candidateDisplayName,
     displayNameStatus: row.displayNameStatus,
+    postCount: row.postCount,
+    commentCount: row.commentCount,
     email: row.email,
     emailVerified: row.emailVerified === 1,
     image: row.image,
@@ -995,6 +1028,183 @@ const handleAdminCreations = async (request: Request, env: Env, kind: CreationKi
     return error(request, 409, "version_conflict", "The content changed; refresh and try again");
   }
   return json(request, { deleted: true, version: version + 1 });
+};
+
+interface CommentListRow {
+  id: string;
+  postId: string;
+  parentId: string | null;
+  body: string;
+  version: number;
+  moderationStatus: string;
+  likeCount: number;
+  floorNumber: number | null;
+  hiddenAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  ipCountryCode: string | null;
+  authorId: string;
+  authorUid: number | null;
+  authorName: string | null;
+  authorHandle: string | null;
+  authorImage: string | null;
+  postTitle: string;
+  forumId: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  parentBody: string | null;
+  reports: number;
+  caseSource: string | null;
+  caseCategories: string | null;
+  caseReason: string | null;
+}
+
+/** Every comment across forums and entity pages, newest first, with what a moderator needs to decide. */
+const getComments = async (request: Request, env: Env, url: URL): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const limit = parseLimit(url, 100);
+  if (!limit) return error(request, 400, "invalid_limit", "limit must be between 1 and 100");
+  const moderation = url.searchParams.get("moderationStatus");
+  const state = url.searchParams.get("state");
+  const target = url.searchParams.get("target");
+  const authorId = url.searchParams.get("authorId");
+  const postId = url.searchParams.get("postId");
+  const query = (url.searchParams.get("q") || "").normalize("NFKC").trim();
+  const cursorRaw = url.searchParams.get("cursor");
+  const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
+  if (
+    (moderation && !["pending", "review", "block", "allow", "attention"].includes(moderation)) ||
+    (state && !["visible", "hidden", "reported"].includes(state)) ||
+    (target && !["forum", "entity"].includes(target)) ||
+    (authorId && !SAFE_ID_PATTERN.test(authorId)) ||
+    (postId && !UUID_PATTERN.test(postId)) ||
+    query.length > 100 ||
+    (cursorRaw && (!cursor || typeof cursor.sort !== "number"))
+  )
+    return error(request, 400, "invalid_query", "Invalid comment filters");
+  const conditions = ["comment.deleted_at IS NULL"];
+  const values: BindValue[] = [];
+  if (moderation === "attention") conditions.push("comment.moderation_status IN ('pending', 'review')");
+  else if (moderation) {
+    conditions.push("comment.moderation_status = ?");
+    values.push(moderation);
+  }
+  if (state === "visible") conditions.push("comment.hidden_at IS NULL");
+  if (state === "hidden") conditions.push("comment.hidden_at IS NOT NULL");
+  if (state === "reported")
+    conditions.push(
+      "EXISTS (SELECT 1 FROM community_content_report AS r WHERE r.comment_id = comment.id AND r.status IN ('pending', 'reviewing'))",
+    );
+  if (target === "entity") conditions.push("thread.post_id IS NOT NULL");
+  if (target === "forum") conditions.push("thread.post_id IS NULL");
+  if (authorId) {
+    conditions.push("comment.author_id = ?");
+    values.push(authorId);
+  }
+  if (postId) {
+    conditions.push("comment.post_id = ?");
+    values.push(postId);
+  }
+  if (query) {
+    conditions.push("comment.body LIKE ? ESCAPE '\\' COLLATE NOCASE");
+    values.push(`%${escapeLike(query)}%`);
+  }
+  if (cursor && typeof cursor.sort === "number") {
+    conditions.push("(comment.created_at < ? OR (comment.created_at = ? AND comment.id < ?))");
+    values.push(cursor.sort, cursor.sort, cursor.id);
+  }
+  const result = await env.DB.prepare(
+    `SELECT comment.id, comment.post_id AS postId, comment.parent_id AS parentId, comment.body, comment.version,
+            comment.moderation_status AS moderationStatus, comment.like_count AS likeCount,
+            comment.floor_number AS floorNumber, comment.hidden_at AS hiddenAt,
+            comment.created_at AS createdAt, comment.updated_at AS updatedAt, comment.ip_country_code AS ipCountryCode,
+            comment.author_id AS authorId, identity.uid AS authorUid,
+            COALESCE(profile.display_name, account.name) AS authorName, profile.handle AS authorHandle,
+            ${avatarUrlSelect("account")} AS authorImage,
+            post.title AS postTitle, post.forum_id AS forumId,
+            thread.entity_type AS entityType, thread.original_id AS entityId,
+            parent.body AS parentBody,
+            (SELECT COUNT(*) FROM community_content_report AS report
+             WHERE report.comment_id = comment.id AND report.status IN ('pending', 'reviewing')) AS reports,
+            moderation_case.source AS caseSource, moderation_case.categories_json AS caseCategories,
+            moderation_case.reason_code AS caseReason
+     FROM community_comment AS comment
+     JOIN community_post AS post ON post.id = comment.post_id
+     LEFT JOIN community_entity_thread AS thread ON thread.post_id = comment.post_id
+     LEFT JOIN community_comment AS parent ON parent.id = comment.parent_id
+     LEFT JOIN "user" AS account ON account.id = comment.author_id
+     LEFT JOIN community_profile AS profile ON profile.user_id = comment.author_id
+     LEFT JOIN community_identity AS identity ON identity.user_id = comment.author_id
+     LEFT JOIN community_moderation_case AS moderation_case ON moderation_case.id = (
+       SELECT candidate.id FROM community_moderation_case AS candidate
+       WHERE candidate.entity_kind = 'comment' AND candidate.entity_id = comment.id
+         AND candidate.entity_revision = comment.moderation_revision AND candidate.status <> 'superseded'
+       ORDER BY candidate.policy_generation DESC LIMIT 1)
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY comment.created_at DESC, comment.id DESC
+     LIMIT ?`,
+  )
+    .bind(...values, limit)
+    .all<CommentListRow>();
+  const comments = result.results.map((row) => {
+    let categories: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(row.caseCategories || "[]");
+      if (Array.isArray(parsed)) categories = parsed.filter((value): value is string => typeof value === "string");
+    } catch {
+      categories = [];
+    }
+    return {
+      id: row.id,
+      postId: row.postId,
+      parentId: row.parentId,
+      parentBody: row.parentBody,
+      body: row.body,
+      version: row.version,
+      moderationStatus: row.moderationStatus,
+      hidden: row.hiddenAt !== null,
+      likeCount: row.likeCount,
+      floorNumber: row.floorNumber,
+      reports: row.reports,
+      decision: row.caseSource ? { source: row.caseSource, categories, reasonCode: row.caseReason } : null,
+      author: { id: row.authorId, uid: row.authorUid, name: row.authorName, handle: row.authorHandle, image: row.authorImage },
+      target: row.entityType
+        ? { kind: "entity", entityType: row.entityType, entityId: row.entityId, postId: row.postId }
+        : { kind: "forum", forumId: row.forumId, postId: row.postId, title: row.postTitle },
+      countryCode: row.ipCountryCode,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  });
+  const last = result.results.at(-1);
+  return json(request, {
+    comments,
+    nextCursor: last && result.results.length === limit ? encodeCursor({ sort: last.createdAt, id: last.id }) : null,
+  });
+};
+
+/** Approve or block a post or comment's current revision by hand. */
+const putModeration = async (request: Request, env: Env, entityKind: "post" | "comment", id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const verdict = body?.verdict;
+  const reasonCode = body?.reasonCode;
+  if ((verdict !== "allow" && verdict !== "block") || typeof reasonCode !== "string" || !REASON_PATTERN.test(reasonCode))
+    return error(request, 422, "invalid_moderation_decision", "verdict and reasonCode are required");
+  const started = await startOperation(request, env, access, `${entityKind}.moderation.set`, entityKind, id);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const result = await decideModerationManually(env, { entityKind, entityId: id, verdict, reasonCode, reviewerUserId: access.userId });
+  if (!result.ok) {
+    await failOperation(env, started.operationId, result.code);
+    return result.code === "not_found"
+      ? error(request, 404, "content_not_found", "Content not found")
+      : error(request, 409, result.code, "The decision could not be recorded; refresh and try again");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { verdict, reasonCode }, id, null);
+  return json(request, { verdict, operation: operationValue(operation) });
 };
 
 const getPosts = async (request: Request, env: Env, url: URL): Promise<Response> => {
@@ -1880,7 +2090,19 @@ const getAppeals = async (request: Request, env: Env, url: URL): Promise<Respons
             appeal.version, appeal.created_at AS createdAt, appeal.updated_at AS updatedAt,
             appeal.resolved_at AS resolvedAt,
             moderation.entity_kind AS entityKind, moderation.entity_id AS entityId,
-            moderation.entity_revision AS entityRevision, moderation.status AS caseStatus
+            moderation.entity_revision AS entityRevision, moderation.status AS caseStatus,
+            moderation.categories_json AS caseCategories, moderation.reason_code AS caseReason,
+            CASE moderation.entity_kind
+              WHEN 'comment' THEN (SELECT revision.body FROM community_comment_revision AS revision
+                WHERE revision.comment_id = moderation.entity_id AND revision.revision_number = moderation.entity_revision)
+              WHEN 'post' THEN (SELECT revision.title || char(10) || revision.body FROM community_post_revision AS revision
+                WHERE revision.post_id = moderation.entity_id AND revision.revision_number = moderation.entity_revision)
+              WHEN 'profile-name' THEN (SELECT pending_display_name FROM community_profile WHERE user_id = moderation.entity_id)
+            END AS entityText,
+            CASE moderation.entity_kind
+              WHEN 'comment' THEN (SELECT post_id FROM community_comment WHERE id = moderation.entity_id)
+              WHEN 'post' THEN moderation.entity_id
+            END AS entityPostId
      FROM community_appeal AS appeal
      JOIN community_moderation_case AS moderation ON moderation.id = appeal.case_id
      JOIN "user" AS appellant ON appellant.id = appeal.appellant_user_id
@@ -1909,7 +2131,19 @@ const findAppealForAdmin = async (env: Env, appealId: string): Promise<AppealLis
             appeal.version, appeal.created_at AS createdAt, appeal.updated_at AS updatedAt,
             appeal.resolved_at AS resolvedAt,
             moderation.entity_kind AS entityKind, moderation.entity_id AS entityId,
-            moderation.entity_revision AS entityRevision, moderation.status AS caseStatus
+            moderation.entity_revision AS entityRevision, moderation.status AS caseStatus,
+            moderation.categories_json AS caseCategories, moderation.reason_code AS caseReason,
+            CASE moderation.entity_kind
+              WHEN 'comment' THEN (SELECT revision.body FROM community_comment_revision AS revision
+                WHERE revision.comment_id = moderation.entity_id AND revision.revision_number = moderation.entity_revision)
+              WHEN 'post' THEN (SELECT revision.title || char(10) || revision.body FROM community_post_revision AS revision
+                WHERE revision.post_id = moderation.entity_id AND revision.revision_number = moderation.entity_revision)
+              WHEN 'profile-name' THEN (SELECT pending_display_name FROM community_profile WHERE user_id = moderation.entity_id)
+            END AS entityText,
+            CASE moderation.entity_kind
+              WHEN 'comment' THEN (SELECT post_id FROM community_comment WHERE id = moderation.entity_id)
+              WHEN 'post' THEN moderation.entity_id
+            END AS entityPostId
      FROM community_appeal AS appeal
      JOIN community_moderation_case AS moderation ON moderation.id = appeal.case_id
      JOIN "user" AS appellant ON appellant.id = appeal.appellant_user_id
@@ -4276,6 +4510,13 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     return postId && UUID_PATTERN.test(postId)
       ? putPostState(request, env, postId)
       : error(request, 404, "post_not_found", "Post not found");
+  }
+  if (method === "GET" && path.length === 1 && path[0] === "comments") return getComments(request, env, url);
+  if (method === "PUT" && path.length === 3 && (path[0] === "comments" || path[0] === "posts") && path[2] === "moderation") {
+    const id = path[1];
+    return id && UUID_PATTERN.test(id)
+      ? putModeration(request, env, path[0] === "posts" ? "post" : "comment", id)
+      : error(request, 404, "content_not_found", "Content not found");
   }
   if (method === "GET" && path.length === 3 && path[0] === "comments" && path[2] === "history") {
     const commentId = path[1];

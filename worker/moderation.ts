@@ -4219,3 +4219,61 @@ export const resolveModerationAppeal = async (
     throw batchFailure;
   }
 };
+
+export type ManualModerationResult =
+  | { ok: true; unchanged: boolean }
+  | { ok: false; code: "not_found" | "already_decided" | "conflict" };
+
+/** A moderator's verdict on a post or comment's current revision, recorded like any other decision. */
+export const decideModerationManually = async (
+  env: Env,
+  input: {
+    entityKind: "post" | "comment";
+    entityId: string;
+    verdict: ModerationVerdict;
+    reasonCode: string;
+    reviewerUserId: string;
+  },
+): Promise<ManualModerationResult> => {
+  const table = input.entityKind === "post" ? "community_post" : "community_comment";
+  const current = await env.DB.prepare(
+    `SELECT moderation_case.id, moderation_case.entity_kind AS entityKind, moderation_case.entity_id AS entityId,
+            moderation_case.entity_revision AS entityRevision, moderation_case.policy_generation AS policyGeneration,
+            moderation_case.policy_version AS policyVersion, moderation_case.source, moderation_case.status,
+            moderation_case.categories_json AS categoriesJson
+     FROM ${table} AS entity
+     JOIN community_moderation_case AS moderation_case
+       ON moderation_case.entity_kind = ? AND moderation_case.entity_id = entity.id
+      AND moderation_case.entity_revision = entity.moderation_revision
+     WHERE entity.id = ? AND entity.deleted_at IS NULL AND moderation_case.status <> 'superseded'
+     ORDER BY moderation_case.policy_generation DESC
+     LIMIT 1`,
+  )
+    .bind(input.entityKind, input.entityId)
+    .first<CaseRow & { categoriesJson: string }>();
+  if (!current) return { ok: false, code: "not_found" };
+  if (current.status === input.verdict) return { ok: true, unchanged: true };
+  if (current.source === "appeal" || current.source === "manual") return { ok: false, code: "already_decided" };
+  let categories: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(current.categoriesJson);
+    if (Array.isArray(parsed)) categories = parsed.filter((value): value is string => typeof value === "string");
+  } catch {
+    // A malformed stored category list is replaced by an empty one.
+  }
+  try {
+    await recordDecision(
+      env,
+      current,
+      { verdict: input.verdict, categories: input.verdict === "allow" ? [] : categories, reasonCode: input.reasonCode },
+      "manual",
+      "moderator",
+      input.reviewerUserId,
+      null,
+      null,
+    );
+  } catch {
+    return { ok: false, code: "conflict" };
+  }
+  return { ok: true, unchanged: false };
+};

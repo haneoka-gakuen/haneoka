@@ -180,6 +180,9 @@ import { isPublicReleaseServer, normalizeReleaseServer, type ReleaseServer } fro
 import { LOCALES, type Locale } from "../i18n/locales";
 import { metaScatter } from "./shared/meta-scatter";
 
+/** Collections whose detail is a picture and a few facts: comments go below, full width. */
+const SPARSE_DETAIL = new Set(["stamps", "stickers", "backgrounds", "chat-customizations", "band-items", "comics", "real-lives"]);
+
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
   all: "common.states.all",
@@ -6851,7 +6854,11 @@ export class CatalogScreen extends LitElement {
     return {
       comments: this.renderEntityDiscussion(item),
       hasMedia,
-      placement: hasMedia && !this.commentsCompact ? ("media" as const) : ("bottom" as const),
+      // Beside the artwork only where the facts column is long enough to sit next to it.
+      placement:
+        hasMedia && !this.commentsCompact && !SPARSE_DETAIL.has(this.settings.resource)
+          ? ("media" as const)
+          : ("bottom" as const),
     };
   }
   private renderCharacterArchive(item: Item, fields: Array<{ key: string; value: string }>) {

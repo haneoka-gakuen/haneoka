@@ -3,6 +3,8 @@
 // Output: 三种集合视图、共用歌曲详情摘要／统计与推荐难度、歌曲播放、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
+import "@material/web/select/outlined-select.js";
+import "@material/web/select/select-option.js";
 import { LitElement, html, nothing } from "lit";
 import { parseCommunityChartDocument } from "../lib/community-chart-route";
 import { readReleaseServer } from "../lib/release-server";
@@ -829,21 +831,19 @@ export class CommunityCharts extends LitElement {
                 : [...this.difficulties, value];
             },
           )}
-          <label class="stack">
-            <span>${this.t("sort")}</span>
-            <span class="field">
-              <select
-                .value=${this.sort}
-                @change=${(e: Event) => {
-                  this.sort = (e.target as HTMLSelectElement).value;
-                }}
-              >
-                <option value="new">${this.t("newest")}</option>
-                <option value="popular">${this.t("popular")}</option>
-                <option value="recommended" ?disabled=${!hasRecommendation}>${this.t("recommendedLevel")}</option>
-              </select>
-            </span>
-          </label>
+          <md-outlined-select
+            label=${this.t("sort")}
+            .value=${this.sort}
+            @change=${(e: Event) => {
+              this.sort = (e.currentTarget as HTMLElement & { value: string }).value as typeof this.sort;
+            }}
+          >
+            <md-select-option value="new" ?selected=${this.sort === "new"}><div slot="headline">${this.t("newest")}</div></md-select-option>
+            <md-select-option value="popular" ?selected=${this.sort === "popular"}><div slot="headline">${this.t("popular")}</div></md-select-option>
+            <md-select-option value="recommended" ?disabled=${!hasRecommendation} ?selected=${this.sort === "recommended"}>
+              <div slot="headline">${this.t("recommendedLevel")}</div>
+            </md-select-option>
+          </md-outlined-select>
         `,
       },
       results,

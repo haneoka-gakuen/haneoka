@@ -8,7 +8,7 @@ import { communityPostMedia, communityMediaThumbnail } from "../lib/community-ar
 import { readReleaseServer } from "../lib/release-server";
 import { SEARCH_SCOPES, isSearchScope, searchCategory, type SearchScope } from "../lib/search-categories";
 import { loadingState, emptyState, errorState } from "./ui/state";
-import { segmented } from "./ui/controls";
+import { filterChip, segmented } from "./ui/controls";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { readCommunityViewer, CommunityRealmChanged } from "../lib/community-viewer";
 import { JsonResponseError } from "./shared/catalog";
@@ -41,6 +41,11 @@ interface SearchResult {
   meta: { title?: string; label?: string; image?: string; kind?: string };
   sub_results?: Array<{ url: string; title: string; excerpt: string }>;
 }
+interface ServiceResults {
+  total: number;
+  kinds: Record<string, number>;
+  hits: Array<{ url: string; kind: string; title: string; excerpt: string; image?: string }>;
+}
 interface SearchHit { id: string; data(): Promise<SearchResult>; }
 type SearchFilter = string | string[] | { any: string[] };
 interface SearchOptions { filters?: Record<string, SearchFilter>; }
@@ -51,6 +56,13 @@ interface SearchApi {
   preload(query: string, options?: SearchOptions): Promise<void>;
   search(query: string, options?: SearchOptions): Promise<{ results: SearchHit[] }>;
 }
+const KIND_LABELS: Readonly<Record<string, string>> = {
+  songs: "navigation.songs", "member-cards": "navigation.memberCards", "support-cards": "navigation.supportCards",
+  characters: "navigation.characters", events: "navigation.events", gacha: "navigation.gacha",
+  "real-lives": "navigation.realLives", comics: "navigation.comics", stamps: "navigation.stamps",
+  stickers: "navigation.stickers", backgrounds: "navigation.backgrounds", items: "navigation.items",
+  "band-items": "navigation.bandItems", stories: "navigation.stories",
+};
 const moduleUrl = "/pagefind/pagefind.js";
 const RECENT_KEY = "haneoka.search.recent.v1";
 const BROWSE: ReadonlyArray<[path: string, label: string, icon: string]> = [
@@ -108,10 +120,14 @@ export class GlobalSearch extends LitElement {
     catalogBusy: { state: true }, communityBusy: { state: true },
     results: { state: true }, posts: { state: true }, catalogError: { state: true },
     communityError: { state: true }, total: { state: true }, catalogMore: { state: true },
-    recent: { state: true },
+    recent: { state: true }, kind: { state: true }, kinds: { state: true },
   };
   /** Read after hydration: the browser's history cannot be part of the pre-rendered markup. */
   declare recent: string[];
+  /** Result kind picked from the service's facets; empty is every kind. */
+  declare kind: string;
+  declare kinds: Record<string, number>;
+  private fromService = false;
   declare locale: string;
   declare query: string;
   declare scope: SearchScope;
@@ -134,7 +150,7 @@ export class GlobalSearch extends LitElement {
   private composing = false;
   constructor() {
     super();
-    this.locale = "en"; this.query = ""; this.scope = "all"; this.recent = [];
+    this.locale = "en"; this.query = ""; this.scope = "all"; this.recent = []; this.kind = ""; this.kinds = {};
     this.catalogBusy = false; this.communityBusy = false;
     this.results = []; this.posts = []; this.catalogError = ""; this.communityError = "";
     this.total = 0; this.catalogMore = false;
@@ -276,7 +292,7 @@ export class GlobalSearch extends LitElement {
     window.clearTimeout(this.timer);
     const input = document.querySelector<HTMLElement & { value: string }>("[data-global-search-input]");
     if (input) this.query = input.value.trim();
-    this.scope = scope; this.syncUrl(); this.search();
+    this.scope = scope; this.kind = ""; this.syncUrl(); this.search();
   }
   private search() {
     const generation = ++this.generation;
@@ -289,14 +305,38 @@ export class GlobalSearch extends LitElement {
     if (this.scope !== "community") void this.loadCatalog(generation);
     if (this.scope === "all" || this.scope === "community") void this.loadCommunity(generation);
   }
+  /** The search service; false hands this query to the static index. */
+  private async loadService(append: boolean, current: () => boolean) {
+    const server = readReleaseServer();
+    if (server !== "jp" && server !== "intl") return false;
+    if (this.scope === "help") return false;
+    const params = new URLSearchParams({ q: this.query.trim(), server, locale: this.locale, limit: "24", offset: String(append ? this.results.length : 0) });
+    if (this.scope === "catalog" || this.scope === "stories") params.set("section", this.scope);
+    if (this.kind) params.set("kind", this.kind);
+    const response = await fetch(`/api/v1/search?${params}`).catch(() => null);
+    if (!response?.ok) return false;
+    const data = (await response.json()) as ServiceResults;
+    if (!current()) return true;
+    const rows = data.hits.map((hit): SearchResult => ({
+      url: hit.url, excerpt: hit.excerpt,
+      meta: { label: hit.title, ...(hit.image ? { image: hit.image } : {}), kind: hit.kind },
+    }));
+    this.results = append ? [...this.results, ...rows] : rows;
+    this.total = data.total; this.kinds = data.kinds;
+    this.catalogMore = this.results.length < data.total;
+    this.fromService = true;
+    return true;
+  }
   private async loadCatalog(generation: number, append = false) {
     if (this.catalogBusy) return;
-    if (!append) { this.results = []; this.hits = []; this.consumed = 0; this.catalogMore = false; }
+    if (!append) { this.results = []; this.hits = []; this.consumed = 0; this.catalogMore = false; this.kinds = {}; this.fromService = false; }
     const query = this.query.trim(), locale = this.locale, scope = this.scope, server = readReleaseServer();
     const current = () => this.isConnected && generation === this.generation && locale === this.locale && server === readReleaseServer();
     const key = JSON.stringify([locale, server, scope, query]);
     this.catalogBusy = true; this.catalogError = "";
     try {
+      if ((!append || this.fromService) && (await this.loadService(append, current))) return;
+      if (!current()) return;
       const api = await searchIndex();
       if (!current()) return;
       const cached = !append ? publicResults.get(key) : undefined;
@@ -375,6 +415,32 @@ export class GlobalSearch extends LitElement {
       return url.origin === location.origin ? `${url.pathname}${url.search}${url.hash}` : "#";
     } catch { return "#"; }
   }
+  private kindLabel(kind: string) {
+    return clientText(this.locale, KIND_LABELS[kind] ?? "navigation.catalog", kind);
+  }
+  /** One relevance-ordered list; titles and excerpts arrive escaped from the search service. */
+  private renderRanked() {
+    const kinds = Object.entries(this.kinds).sort((a, b) => b[1] - a[1]);
+    return html`
+      <div class="search-page__summary">
+        <span class="md-label-large">${clientText(this.locale, "common.search.results", "{count} results", { count: this.total.toLocaleString(this.locale) })}</span>
+        ${kinds.length > 1 || this.kind ? html`
+          <div class="chip-set">
+            ${kinds.map(([kind, count]) => filterChip({
+              label: `${this.kindLabel(kind)} ${count}`, selected: this.kind === kind,
+              onToggle: () => { this.kind = this.kind === kind ? "" : kind; void this.loadCatalog(this.generation); },
+            }))}
+          </div>` : nothing}
+      </div>
+      <ul class="search-results">
+        ${this.results.map((result) => html`<li><a class="search-result state-layer" href=${this.resultHref(result.url)}>
+          ${this.image(result.meta.image)}<span class="search-result__copy">
+            <span class="search-result__kind md-label-small">${this.kindLabel(String(result.meta.kind))}</span>
+            <strong>${unsafeHTML(result.meta.label ?? "")}</strong>
+            ${result.excerpt ? html`<p>${unsafeHTML(result.excerpt)}</p>` : nothing}
+          </span></a></li>`)}
+      </ul>`;
+  }
   render() {
     const groups = new Map<string, SearchResult[]>();
     for (const result of this.results) {
@@ -394,7 +460,7 @@ export class GlobalSearch extends LitElement {
           <section aria-label=${this.label(this.scope === "all" ? "search" : this.scope)} aria-busy=${String(this.catalogBusy)}>
             ${this.catalogBusy && !this.results.length ? loadingState(this.label("loading"), { local: true }) : nothing}
             ${this.catalogError ? errorState(this.label("unavailable"), this.label("retry"), () => void this.loadCatalog(this.generation)) : nothing}
-            ${[...groups].map(([kind, rows]) => html`
+            ${this.fromService ? this.renderRanked() : [...groups].map(([kind, rows]) => html`
               <div class="search-page__group"><h2>${this.label(kind)}</h2><ul class="search-results">
                 ${rows.map((result) => {
                   const target = result.sub_results?.find((row) => row.url.includes("#")) || result;

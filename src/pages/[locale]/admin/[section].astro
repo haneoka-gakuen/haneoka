@@ -5,7 +5,7 @@ import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
   return staticBuildPaths("src/pages/[locale]/admin/[section].astro", LOCALES.flatMap((locale) =>
-    ["users", "posts", "reports", "appeals", "operations", "forums"].map((section) => ({
+    ["comments", "users", "posts", "reports", "appeals", "operations", "forums"].map((section) => ({
       params: { locale, section },
       props: { locale, section },
     })),

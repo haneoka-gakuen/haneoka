@@ -18,11 +18,11 @@ import { fetchCrossServerCatalogs, crossCatalogSeedSources } from "../lib/cross-
 import { homeEventDisplay } from "../lib/home-event-display";
 import { pinCrossCatalogValue } from "../lib/cross-server/presentation";
 import { crossCatalogRows } from "../lib/cross-server/definitions";
-import { announcementPath } from "../lib/announcements";
-import { announcementText, announcementRow } from "./shared/announcement";
-import { fetchAnnouncements, type Announcement } from "../lib/announcements";
-import "../styles/announcements.css";
+import { announcementText } from "./shared/announcement";
+import type { Announcement } from "../lib/announcements";
 import type { Locale } from "../i18n/locales";
+import { ARENA_PROJECTION, arenaBoundaries, arenaContains, arenaCurrentRule, arenaRuleMarkNames, compactArenaCatalog, type ArenaCatalog } from "../lib/arena";
+import { arenaRuleMarks } from "./shared/arena-rule";
 import { clientText } from "../i18n/client";
 import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
@@ -76,6 +76,7 @@ import {
 } from "../lib/home-birthday";
 import { formatDate } from "../lib/date-format";
 import { cardRarityName } from "../lib/card-rarity";
+import { backdropPress, isBackdropClick } from "./ui/modal";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -121,7 +122,7 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 };
 
 
-type ModuleId = "songs" | "cards" | "birthdays" | "community" | "news" | "fanInfo";
+type ModuleId = "songs" | "cards" | "birthdays" | "community" | "arena" | "fanInfo";
 export interface HomeFanInfo {
   status: "ready" | "empty" | "unavailable";
   entries: Array<{
@@ -143,6 +144,7 @@ export interface HomeSeed {
   releaseId: string;
   documents: Record<string, JsonRecord>;
   announcements: Announcement[];
+  arena?: { catalog: ArenaCatalog; marks: Record<string, string>; server: string };
   profiles: { characters: JsonRecord[]; cast: JsonRecord[] };
   fanInfo?: HomeFanInfo;
   crossServerCatalogs?: Partial<Record<CrossCatalogResource, CrossCatalogDTO>>;
@@ -186,7 +188,7 @@ type Banner = {
   endAt: number;
 };
 
-const MODULES: ModuleId[] = ["birthdays", "news", "cards", "songs", "community", "fanInfo"];
+const MODULES: ModuleId[] = ["birthdays", "arena", "cards", "songs", "community", "fanInfo"];
 const PROFILE_LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"];
 const STORAGE_KEY = "haneoka:home-layout:v6";
 /* MasterBand colours for the character-profile fallback (profiles use slugs, not ids). */
@@ -226,6 +228,7 @@ export class HomeDashboard extends LitElement {
     songs: { state: true },
     cards: { state: true },
     announcements: { state: true },
+    arena: { state: true },
     announcementsPhase: { state: true },
     fanInfo: { state: true },
     characters: { state: true },
@@ -247,6 +250,7 @@ export class HomeDashboard extends LitElement {
   declare songs: JsonRecord[];
   declare cards: JsonRecord[];
   declare announcements: Announcement[];
+  declare arena: { catalog: ArenaCatalog; marks: Record<string, string>; server: string } | null;
   declare announcementsPhase: "loading" | "ready" | "error";
   declare fanInfo: HomeFanInfo;
   private birthdayGacha: JsonRecord[] = [];
@@ -323,7 +327,7 @@ export class HomeDashboard extends LitElement {
     this.communityPhase = "loading";
     this.order = [...MODULES];
     this.hiddenModules = {};
-    this.slide = 0;
+    this.slide = 1;
     this.songLimit = 24;
     this.birthdaySelection = "";
   }
@@ -492,6 +496,7 @@ export class HomeDashboard extends LitElement {
     this.applyDocuments(seed.documents);
     this.announcements = seed.announcements;
     this.announcementsPhase = "ready";
+    this.arena = seed.arena ?? null;
     this.fanInfo = seed.fanInfo || { status: "unavailable", entries: [] };
     this.characterProfiles = seed.profiles.characters;
     this.castProfiles = seed.profiles.cast;
@@ -790,13 +795,14 @@ export class HomeDashboard extends LitElement {
     const locale = this.locale;
     const signal = this.liveRequests.begin();
     const currentPanel = () => this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
-    const newsWork = fetchAnnouncements(server, AbortSignal.any([signal, AbortSignal.timeout(15000)]), locale)
-      .then((news) => {
-        if (!currentPanel()) return;
-        this.announcements = news.announcements.slice(0, 5);
-        this.announcementsPhase = "ready";
-      })
-      .catch(() => { if (currentPanel()) this.announcementsPhase = this.announcements.length ? "ready" : "error"; });
+    const newsWork = (async () => {
+      if (this.arena?.server === server) return;
+      const catalog = await fetchJson<ArenaCatalog>(`${catalogUrl("arena", "", server)}?projection=${ARENA_PROJECTION}`, { signal });
+      const marksUrl = new URL(catalogUrl("ui-marks", "", server), location.origin);
+      marksUrl.searchParams.set("release", catalog.identity.releaseId);
+      const marks = await fetchJson<Record<string, string>>(marksUrl.toString(), { signal });
+      if (currentPanel()) this.arena = { catalog: compactArenaCatalog(catalog), marks: arenaRuleMarkNames(marks), server };
+    })().catch(() => undefined);
     try {
       const bootstrap = await readCommunityBootstrap<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), signal);
       if (!currentPanel()) return;
@@ -844,22 +850,42 @@ export class HomeDashboard extends LitElement {
       details: entry,
     };
   }
+  /** Where a banner leads, by its MasterHomeBanner display type, as a canonical page address. */
+  private bannerHref(entry: JsonRecord): string {
+    const server = this.sourceServer();
+    if (!isPublicReleaseServer(server)) return "";
+    const locale = this.locale as Locale;
+    const content = String(entry.contentId || "");
+    const type = Number(entry.displayType);
+    const entity = (kind: Parameters<typeof entityHref>[0]["kind"], id: string) =>
+      id ? entityHref({ server, locale, kind, id }) : "";
+    if (type === 1) return entity("events", content);
+    if (type === 2) return entity("gacha", content);
+    if (type === 3) return entity("exchange", content);
+    if (type === 4) return entity("shop", content);
+    if (type === 11) return entity("exchange", /Exchange\/Banner\/Banner_(\d+)/u.exec(String(entry.image || ""))?.[1] ?? "");
+    if (type === 16) return `/${server}/${locale}/arena/`;
+    if (type === 24) return `/${server}/${locale}/missions/`;
+    if (type === 25) return entity("passes", content ? `season-${content}` : "");
+    return "";
+  }
   /** Active home banners in the game's own display order. */
   private carousel(value: unknown, now: number): Banner[] {
     return values(value, "entries")
       .map<Banner>((entry) => ({
         id: String(entry.id || ""),
         image: String(entry.image || ""),
-        href: String(entry.href || ""),
+        href: this.bannerHref(entry),
         endAt: timestamp(entry.endAt),
       }))
       .filter((entry) => entry.image && (!entry.endAt || entry.endAt >= now))
       .sort((a, b) => Number(a.id) - Number(b.id))
       .sort((a, b) => a.endAt - b.endAt);
   }
-  /** The carousel keeps a clone of the first slide at the tail: advancing off
-   the last slide lands on it, then an unanimated jump rewrites position 0 —
-   an endless belt rather than a snap backwards. */
+  /** The carousel is a belt with a clone at each end: track position 1..n are the
+   banners, 0 is a copy of the last and n+1 a copy of the first. Stepping onto a
+   copy animates as usual; when the move ends the belt jumps, unanimated, to the
+   real slide underneath, so it runs on forever in both directions. */
   private startAuto() {
     this.stopAuto();
     this.slideTimer = window.setInterval(() => {
@@ -872,29 +898,20 @@ export class HomeDashboard extends LitElement {
   }
   private step(delta: number) {
     const total = this.banners.length;
-    if (!total) return;
+    if (total < 2) return;
+    // A step during the jump-back frame starts from the settled real slide.
+    const position = Math.min(Math.max(this.slide, 0), total + 1);
     this.slideAnimated = true;
-    // Previous from the head: hop invisibly onto the tail clone, then step.
-    if (delta < 0 && this.slide === 0) {
-      this.slideAnimated = false;
-      this.slide = total;
-      requestAnimationFrame(() => {
-        this.slideAnimated = true;
-        this.slide = total - 1;
-      });
-      return;
-    }
-    this.slide += delta;
+    this.slide = Math.min(Math.max(position + delta, 0), total + 1);
   }
-  /** After any update, an arrival on the tail clone rewrites to slide 0. */
-  protected carouselWrap() {
-    if (this.banners.length && this.slide > this.banners.length - 1) {
-      requestAnimationFrame(() => {
-        this.slideAnimated = false;
-        this.slide = 0;
-      });
-    }
+  /** At the end of a move onto a clone, land on the real slide it copies. */
+  private settleCarousel() {
+    const total = this.banners.length;
+    if (this.slide !== 0 && this.slide !== total + 1) return;
+    this.slideAnimated = false;
+    this.slide = this.slide === 0 ? total : 1;
   }
+  private swipeFrom?: number;
   private async loadProfiles() {
     const [characters, cast] = await Promise.all([import("../data/characterProfiles"), import("../data/castProfiles")]);
     if (!this.isConnected) return;
@@ -913,6 +930,12 @@ export class HomeDashboard extends LitElement {
           localStorage.getItem("haneoka:home-layout:v4") ||
           "null",
       );
+      // The announcements module became the Arena module; keep its place and visibility.
+      if (Array.isArray(state?.order)) state.order = state.order.map((id: string) => (id === "news" ? "arena" : id));
+      if (state?.hidden && typeof state.hidden === "object" && "news" in state.hidden) {
+        state.hidden.arena = state.hidden.news;
+        delete state.hidden.news;
+      }
       if (
         Array.isArray(state?.order) &&
         new Set(state.order).size === state.order.length &&
@@ -1131,8 +1154,10 @@ export class HomeDashboard extends LitElement {
   /* ---------- render: spotlight (banners + event) ---------- */
   private renderSpotlight() {
     const banners = this.banners;
-    const track = banners.length > 1 ? [...banners, banners[0]] : banners;
-    const slide = banners.length ? Math.min(this.slide, banners.length - 1) : 0;
+    const looping = banners.length > 1;
+    const track = looping ? [banners.at(-1)!, ...banners, banners[0]!] : banners;
+    const position = looping ? Math.min(Math.max(this.slide, 0), banners.length + 1) : 0;
+    const slide = looping ? (position - 1 + banners.length) % banners.length : 0;
     const slideBody = (banner: Banner, index: number) => {
       const countdown = banner.endAt ? this.countdown(banner.endAt, true) : nothing;
       // Banners ship per-locale variants beside the base art; fall back to it.
@@ -1141,7 +1166,7 @@ export class HomeDashboard extends LitElement {
         <img
           src=${localized}
           alt=""
-          loading=${index === slide ? "eager" : "lazy"}
+          loading=${index === position ? "eager" : "lazy"}
           decoding="async"
           @error=${(event: Event) => {
             const image = event.currentTarget as HTMLImageElement;
@@ -1166,7 +1191,6 @@ export class HomeDashboard extends LitElement {
             <div class="home-carousel__slide">${body}</div>
           `;
     };
-    this.carouselWrap();
     return html`
       <section class="home-spotlight" aria-label=${this.text("banners", "Banners")}>
         <div
@@ -1182,7 +1206,26 @@ export class HomeDashboard extends LitElement {
               ? html`
                   <div
                     class="home-carousel__track${this.slideAnimated ? "" : " home-carousel__track--snap"}"
-                    style=${`transform: translateX(${-(100 * Math.min(this.slide, track.length - 1))}%)`}
+                    style=${`transform: translateX(${-100 * position}%)`}
+                    @transitionend=${(event: TransitionEvent) => {
+                      if (event.target === event.currentTarget) this.settleCarousel();
+                    }}
+                    @pointerdown=${(event: PointerEvent) => {
+                      this.swipeFrom = event.clientX;
+                    }}
+                    @pointerup=${(event: PointerEvent) => {
+                      const from = this.swipeFrom;
+                      if (from !== undefined && Math.abs(event.clientX - from) > 40) this.step(event.clientX < from ? 1 : -1);
+                    }}
+                    @pointercancel=${() => {
+                      this.swipeFrom = undefined;
+                    }}
+                    @click=${(event: MouseEvent) => {
+                      // A swipe is not a tap on the banner link.
+                      const from = this.swipeFrom;
+                      this.swipeFrom = undefined;
+                      if (from !== undefined && Math.abs(event.clientX - from) > 40) event.preventDefault();
+                    }}
                   >
                     ${track.map((banner, index) => slideBody(banner, index))}
                   </div>
@@ -1199,7 +1242,7 @@ export class HomeDashboard extends LitElement {
                                   aria-label=${`${this.text("banners", "Banner")} ${index + 1}`}
                                   @click=${() => {
                                     this.slideAnimated = true;
-                                    this.slide = index;
+                                    this.slide = index + 1;
                                   }}
                                 ></button>
                               `,
@@ -2210,36 +2253,77 @@ export class HomeDashboard extends LitElement {
       </section>
     `;
   }
-  private renderNews() {
+  /** The current Arena season: every league's live stage attribute and sections, and when they change. */
+  private renderArena() {
+    const server = this.sourceServer();
+    const link = isPublicReleaseServer(server) ? `/${server}/${this.locale}/arena/` : "";
+    const arena = this.arena;
+    const now = Date.now();
+    const seasons = Object.values(arena?.catalog.entries || {}).sort((a, b) => a.startAt - b.startAt);
+    const season =
+      seasons.find((entry) => arenaContains(entry, now)) || seasons.find((entry) => entry.startAt > now) || seasons.at(-1);
+    const context = arena && season ? { locale: this.locale, server: arena.server, catalog: arena.catalog, marks: arena.marks } : null;
+    const span = (until: number) => {
+      const minutes = Math.max(0, Math.round((until - now) / 60000));
+      const days = Math.floor(minutes / 1440),
+        hours = Math.floor((minutes % 1440) / 60);
+      return days
+        ? clientText(this.locale, "catalog.arena.remainingDays", "{days}d {hours}h", { days, hours })
+        : clientText(this.locale, "catalog.arena.remainingHours", "{hours}h {minutes}m", { hours, minutes: minutes % 60 });
+    };
+    const live = season ? arenaContains(season, now) : false;
+    const nextChange = season
+      ? arenaBoundaries(season)
+          .filter((at) => at > now)
+          .sort((a, b) => a - b)[0]
+      : undefined;
     return html`
-      <section class="home-card home-info home-news" aria-labelledby="home-news-title">
+      <section class="home-card home-info home-arena" aria-labelledby="home-arena-title">
         ${this.moduleHeader(
-          icon("newspaper"),
-          announcementText(this.locale, "title", "Announcements"),
-          "home-news-title",
-          html`
-            <a
-              class="icon-button"
-              href=${announcementPath(this.sourceServer(), this.locale as Locale)}
-              aria-label=${announcementText(this.locale, "viewAll", "View all")}
-              title=${announcementText(this.locale, "viewAll", "View all")}
-            >
-              ${icon("arrow_forward", 20)}
-            </a>
-          `,
+          icon("emoji_events"),
+          clientText(this.locale, "catalog.arena.title", "Arena"),
+          "home-arena-title",
+          link
+            ? html`
+                <a class="icon-button" href=${link} aria-label=${this.text("viewAll", "View all")} title=${this.text("viewAll", "View all")}>
+                  ${icon("arrow_forward", 20)}
+                </a>
+              `
+            : nothing,
         )}
         ${
-          this.announcements.length
+          season && context
             ? html`
-                <ul class="list list--divided announcement-list home-info__body" data-home-fit role="list">
-                  ${this.announcements.map((entry) => announcementRow(entry, this.sourceServer(), this.locale as Locale))}
+                <div class="home-arena__season md-label-large">
+                  <strong>${localizedText(season.title, this.locale)}</strong>
+                  <span class="home-arena__status${live ? " is-live" : ""}">
+                    ${clientText(this.locale, live ? "catalog.arena.status.current" : "catalog.arena.status.upcoming", live ? "Live" : "Upcoming")}
+                  </span>
+                  <span class="home-arena__times md-body-small">
+                    <span class="home-arena__remaining">
+                      ${live ? html`${icon("hourglass_bottom", 16)}${span(season.endAt + 1000)}` : html`${icon("event", 16)}${formatDate(this.locale, season.startAt, { time: true })}`}
+                    </span>
+                    ${live && nextChange ? html`<span>${icon("autorenew", 16)}${span(nextChange)}</span>` : nothing}
+                  </span>
+                </div>
+                <ul class="home-arena__leagues" role="list">
+                  ${season.leagues.map((league) => {
+                    const rule = arenaCurrentRule(season, league, live ? now : season.startAt);
+                    return html`
+                      <li>
+                        <a class="home-arena__league state-layer" href=${link ? `${link}?band=${league.bandId}` : nothing}>
+                          ${league.image ? html`<img class="home-arena__band" src=${league.image} alt="" width="28" height="28" loading="lazy" />` : nothing}
+                          <span class="home-arena__name md-title-small">${localizedText(league.name, this.locale)}</span>
+                          ${arenaRuleMarks(context, rule, 20)}
+                        </a>
+                      </li>
+                    `;
+                  })}
                 </ul>
               `
             : html`
                 <div class="state state--inline home-info__body" role="status">
-                  <p class="state__body">
-                    ${this.announcementsPhase === "loading" ? this.text("loading", "Loading…") : this.announcementsPhase === "error" ? this.text("sourceUnavailable", "Unavailable") : announcementText(this.locale, "empty", "No announcements yet.")}
-                  </p>
+                  <p class="state__body">${this.text("loading", "Loading…")}</p>
                 </div>
               `
         }
@@ -2357,7 +2441,7 @@ export class HomeDashboard extends LitElement {
     if (id === "birthdays") return this.renderBirthdays();
     if (id === "community") return this.renderCommunity();
     if (id === "fanInfo") return this.renderFanInfo();
-    return this.renderNews();
+    return this.renderArena();
   }
   private moduleLabel(id: ModuleId) {
     return {
@@ -2366,7 +2450,7 @@ export class HomeDashboard extends LitElement {
       birthdays: this.text("birthdaysTitle", "Birthday countdown"),
       community: this.text("communityTitle", "Trending community"),
       fanInfo: "bandori.fans",
-      news: announcementText(this.locale, "title", "Announcements"),
+      arena: clientText(this.locale, "catalog.arena.title", "Arena"),
     }[id];
   }
   private renderDialog() {
@@ -2375,8 +2459,9 @@ export class HomeDashboard extends LitElement {
       <dialog
         class="dialog home-layout-dialog"
         aria-labelledby="home-layout-title"
+        @pointerdown=${backdropPress}
         @click=${(event: MouseEvent) => {
-          if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close();
+          if (isBackdropClick(event)) (event.currentTarget as HTMLDialogElement).close();
         }}
       >
         <div class="dialog__surface">

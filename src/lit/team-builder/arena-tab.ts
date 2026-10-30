@@ -64,6 +64,9 @@ export class ArenaController {
       build: restoreBuildSettings({ ...initial.build, ...objectRow(saved.build) }),
       rule: { ...initial.rule, ...objectRow(saved.rule) },
     } as ArenaDraft;
+    const requested = this.host.requestedArenaLeague;
+    if (requested && requested !== this.draft.leagueId)
+      this.draft = { ...this.draft, leagueId: requested, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } };
     this.sync();
   }
   get catalog() {
@@ -138,6 +141,7 @@ export class ArenaController {
     this.update({ automatic: false, customized: true, rule: { ...this.rule, ...patch } });
   }
   league(leagueId: number) {
+    this.host.requestedArenaLeague = 0;
     this.update({ leagueId, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } });
   }
   selectPool() {

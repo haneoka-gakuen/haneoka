@@ -1,6 +1,9 @@
 import { clearContentAccess, refreshContentAccess } from "../lib/content-access";
 import { clientText } from "../i18n/client";
+import { gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
+import { modal } from "./ui/modal";
+import { specList } from "./ui/spec";
 import { loadingState } from "./ui/state";
 import { svg as discordSvg } from "@thesvg/icons/discord";
 import { svg as githubSvg } from "@thesvg/icons/github";
@@ -15,11 +18,6 @@ import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
-  appeal: "community.page.appeal",
-  appealStatement: "community.page.appealStatement",
-  submitAppeal: "community.page.submitAppeal",
-  appealSubmitted: "community.page.appealSubmitted",
-  appealFailed: "community.page.appealFailed",
   close: "common.actions.close",
   save: "account.page.save",
   privacy: "home.dashboard.privacy",
@@ -27,8 +25,17 @@ const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
 };
 
 type Value = Record<string, unknown>;
+
+/** `Chrome · Windows` from a user-agent string; product names stay as they are in every locale. */
+function deviceLabel(agent: unknown) {
+  const text = String(agent || "");
+  const find = (rules: Array<[RegExp, string]>) => rules.find(([pattern]) => pattern.test(text))?.[1];
+  const browser = find([[/Edg\//u, "Edge"], [/SamsungBrowser/u, "Samsung Internet"], [/Firefox\//u, "Firefox"], [/Chrome\//u, "Chrome"], [/Safari\//u, "Safari"]]);
+  const system = find([[/Android/u, "Android"], [/iPhone|iPad/u, "iOS"], [/Windows/u, "Windows"], [/Mac OS/u, "macOS"], [/Linux/u, "Linux"]]);
+  return [browser, system].filter(Boolean).join(" · ");
+}
 type AuthMode = "signIn" | "signUp" | "forgotPassword" | "verifyEmail";
-type Section = "profile" | "security" | "sessions" | "management";
+type Section = "profile" | "games" | "security" | "sessions" | "relationships" | "moderation" | "management";
 
 const AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
@@ -57,6 +64,10 @@ export class AccountWorkspace extends LitElement {
     sessions: { state: true },
     accounts: { state: true },
     appeals: { state: true },
+    games: { state: true },
+    relationships: { state: true },
+    draft: { state: true },
+    removing: { state: true },
     mode: { state: true },
     section: { state: true },
     busy: { state: true },
@@ -75,6 +86,12 @@ export class AccountWorkspace extends LitElement {
   declare sessions: Value[];
   declare accounts: Value[];
   declare appeals: Value[];
+  declare games: Value[];
+  declare relationships: Value[];
+  /** Unsaved name, handle and bio, shown in the public card preview. */
+  declare draft: { name?: string; handle?: string; bio?: string };
+  /** The game account awaiting the removal confirmation. */
+  declare removing: Value | null;
   declare mode: AuthMode;
   declare section: Section;
   declare busy: boolean;
@@ -101,6 +118,10 @@ export class AccountWorkspace extends LitElement {
     this.sessions = [];
     this.accounts = [];
     this.appeals = [];
+    this.games = [];
+    this.relationships = [];
+    this.draft = {};
+    this.removing = null;
     this.mode = "signIn";
     this.section = "profile";
     this.busy = false;
@@ -325,11 +346,16 @@ export class AccountWorkspace extends LitElement {
     const ownSignal = this.securityRequests.begin();
     const userId = this.user()?.id;
     const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
-    const [sessions, accounts] = await Promise.all([
+    const optional = (url: string) => this.request(url, init).catch((): Value => ({}));
+    const [sessions, accounts, games, relationships] = await Promise.all([
       speculative?.sessions ?? this.request("/api/auth/list-sessions", init),
       speculative?.accounts ?? this.request("/api/auth/list-accounts", init),
+      optional("/api/v1/account/game-accounts"),
+      optional("/api/v1/community/me/relationships"),
     ]);
     if (!this.isConnected || !this.securityRequests.current(ownSignal) || userId !== this.user()?.id) return;
+    this.games = Array.isArray(games.accounts) ? (games.accounts as Value[]) : [];
+    this.relationships = Array.isArray(relationships.relationships) ? (relationships.relationships as Value[]) : [];
     this.sessions = Array.isArray(sessions)
       ? (sessions as unknown as Value[])
       : Array.isArray(sessions.sessions)
@@ -917,7 +943,7 @@ ${
     `;
   }
 
-  private sectionButton(id: Section, iconName: string, label: string) {
+  private sectionButton(id: Section, iconName: string, label: string, count = 0) {
     return html`
       <button
         role="tab"
@@ -927,80 +953,263 @@ ${
       >
         ${icon(iconName)}
         <span>${label}</span>
+        ${count ? html`<small>${count}</small>` : nothing}
       </button>
     `;
   }
-  private renderAccount() {
+  private heading(iconName: string, label: string, count?: number) {
+    return html`
+      <h3 class="detail-section-title">
+        <span class="detail-section-title__icon" aria-hidden="true">${icon(iconName, 18)}</span>
+        <span class="detail-section-title__label">${label}</span>
+        ${count ? html`<span class="detail-section-title__count">${count}</span>` : nothing}
+      </h3>
+    `;
+  }
+  private avatarOf(image: unknown, name: string) {
+    return html`
+      <span class="account-avatar" aria-hidden="true">
+        ${image ? html`<img src=${String(image)} alt="" width="40" height="40" loading="lazy" />` : name.slice(0, 1)}
+      </span>
+    `;
+  }
+  private renderSummary() {
     const user = this.user() || {};
     const profile = this.profile || {};
     const identity = String(profile.displayName || profile.accountName || user.name || user.email || "?");
-    const avatar = this.avatarPreview || String(profile.avatarUrl || "");
     const uid = profile.publicUid;
     const role = String(profile.role || "member");
     const status = String(profile.profileStatus || "active");
+    const chip = (glyph: string, label: string) => html`<span class="chip chip--static">${icon(glyph, 18)}<span class="chip__label">${label}</span></span>`;
+    return html`
+      <section class="surface account-summary">
+        <div class="account-summary__identity">
+          ${this.avatarOf(this.avatarPreview || profile.avatarUrl, identity)}
+          <div>
+            <h2 class="md-title-large">${identity}</h2>
+            ${profile.handle ? html`<p class="md-body-medium">@${String(profile.handle)}</p>` : nothing}
+            <p class="md-body-small">${String(user.email || "")}</p>
+          </div>
+        </div>
+        <div class="chip-set">
+          ${chip("person", this.label(`role${role[0]?.toUpperCase()}${role.slice(1)}`, role))}
+          ${chip(user.emailVerified ? "check_circle" : "alternate_email", user.emailVerified ? this.label("verified", "Verified") : this.label("unverified", "Not verified"))}
+          ${status === "active" ? nothing : chip("verified_user", this.label(`status${status[0]?.toUpperCase()}${status.slice(1)}`, status))}
+        </div>
+        ${specList([
+          {
+            label: this.label("publicUid", "UID"),
+            value: html`<button class="button button--text account-uid" ?disabled=${uid == null} title=${this.label("copyUid", "Copy UID")} @click=${this.copyUid}>${uid ?? "—"}${icon("content_copy", 16)}</button>`,
+          },
+          profile.createdAt ? { label: this.label("joined", "Joined"), value: formatDate(preferredLocale(), String(profile.createdAt)) } : null,
+        ])}
+        <div class="account-summary__actions">
+          ${
+            Number.isSafeInteger(uid)
+              ? html`
+                  <a class="button button--tonal" href=${`/community/users/${uid}`}>
+                    ${icon("open_in_new", 18)}${this.label("publicProfile", "Public profile")}
+                  </a>
+                `
+              : nothing
+          }
+          ${
+            hasUserCapability(role, "community.moderate")
+              ? html`
+                  <a class="icon-button icon-button--tonal" href=${role === "moderator" ? "/admin/appeals" : "/admin"} title=${this.label("adminConsole", "Admin console")} aria-label=${this.label("adminConsole", "Admin console")}>
+                    ${icon("admin_panel_settings", 22)}
+                  </a>
+                `
+              : nothing
+          }
+          <button class="icon-button" ?disabled=${this.busy} title=${this.label("signOut", "Sign out")} aria-label=${this.label("signOut", "Sign out")} @click=${this.signOut}>
+            ${icon("logout", 22)}
+          </button>
+        </div>
+      </section>
+    `;
+  }
+  private renderAccount() {
+    const restrictions = Array.isArray(this.profile?.restrictions) ? this.profile.restrictions.length : 0;
+    const sections: Record<Section, () => unknown> = {
+      profile: () => this.renderProfile(),
+      games: () => this.renderGames(),
+      security: () => this.renderSecurity(),
+      sessions: () => this.renderSessions(),
+      relationships: () => this.renderRelationships(),
+      moderation: () => this.renderModeration(),
+      management: () => this.renderManagement(),
+    };
     return html`
       <div class="account-workspace">
-        <header class="account-identity">
-          <div class="account-avatar-picker">
-            ${
-              avatar
-                ? html`
-                    <img src=${avatar} alt="" />
-                  `
-                : html`
-                    <span>${identity.slice(0, 1)}</span>
-                  `
-            }
-          </div>
-          <div class="account-identity__copy">
-            <h2>${identity}</h2>
-            <p>${String(user.email || "")}</p>
-            <button class="button button--tonal account-uid" ?disabled=${uid == null} @click=${this.copyUid}>
-              ${icon("content_copy", 17)} ${this.label("publicUid", "UID")}
-              <strong>${uid ?? "—"}</strong>
-            </button>
-          </div>
-          <div class="account-identity__status">
-            <span>${icon("person", 17)}${this.label(`role${role[0]?.toUpperCase()}${role.slice(1)}`, role)}</span>
-            <span class=${user.emailVerified ? "verified" : ""}>
-              ${icon(user.emailVerified ? "check_circle" : "alternate_email", 17)}${user.emailVerified ? this.label("verified", "Verified") : this.label("unverified", "Not verified")}
-            </span>
-            <span>
-              ${icon("verified_user", 17)}${this.label(`status${status[0]?.toUpperCase()}${status.slice(1)}`, status)}
-            </span>
-          </div>
-          <div class="account-identity__actions">
-            ${
-              Number.isSafeInteger(uid)
-                ? html`
-                    <a class="button button--tonal" href=${`/community/users/${uid}`}>
-                      ${icon("open_in_new", 18)}${this.label("publicProfile", "Public profile")}
-                    </a>
-                  `
-                : nothing
-            }${
-              hasUserCapability(role, "community.moderate")
-                ? html`
-                    <a class="button button--tonal" href=${role === "moderator" ? "/admin/appeals" : "/admin"}>
-                      ${icon("admin_panel_settings", 18)}${this.label("adminConsole", "Admin console")}
-                    </a>
-                  `
-                : nothing
-            }
-            <button class="button button--danger" ?disabled=${this.busy} @click=${this.signOut}>
-              ${icon("logout", 18)}${this.label("signOut", "Sign out")}
-            </button>
-          </div>
-        </header>
-        <div class="account-main">
+        <aside class="account-aside">
+          ${this.renderSummary()}
           <nav class="account-navigation" role="tablist">
-            ${this.sectionButton("profile", "person", this.label("profile", "Profile"))}${this.sectionButton("security", "verified_user", this.label("security", "Sign-in & security"))}${this.sectionButton("sessions", "devices", this.label("sessions", "Sessions"))}${this.sectionButton("management", "settings", this.label("accountManagement", "Account management"))}
+            ${this.sectionButton("profile", "person", this.label("profile", "Profile"))}
+            ${this.sectionButton("games", "sports_esports", this.label("gameAccounts", "Game accounts"), this.games.length)}
+            ${this.sectionButton("security", "verified_user", this.label("security", "Sign-in & security"))}
+            ${this.sectionButton("sessions", "devices", this.label("sessions", "Sessions"), this.sessions.length)}
+            ${this.sectionButton("relationships", "block", this.label("relationships", "Blocks & mutes"), this.relationships.length)}
+            ${this.sectionButton("moderation", "policy", this.label("moderation", "Restrictions & appeals"), restrictions + this.appeals.length)}
+            ${this.sectionButton("management", "settings", this.label("accountManagement", "Account management"))}
           </nav>
-          <main class="account-content">
-            ${this.section === "profile" ? this.renderProfile() : this.section === "security" ? this.renderSecurity() : this.section === "sessions" ? this.renderSessions() : this.renderManagement()}
-          </main>
-        </div>
+        </aside>
+        <main class="account-content">${sections[this.section]()}</main>
       </div>
+    `;
+  }
+
+  private renderGames() {
+    const locale = preferredLocale();
+    const number = (value: unknown) => new Intl.NumberFormat(locale).format(Number(value));
+    const removing = this.removing;
+    return html`
+      <section class="surface account-block">
+        ${this.heading("sports_esports", this.label("gameAccounts", "Game accounts"), this.games.length)}
+        ${
+          this.games.length
+            ? html`
+                <ul class="detail-object-list" role="list">
+                  ${this.games.map((account) => {
+                    const summary = (account.summary || {}) as Value;
+                    const region = String(account.region);
+                    return html`
+                      <li class="account-object">
+                        <a class="detail-object" href=${`/${locale}/player-profile/?region=${gameAccountRegion(region, locale)}&profileId=${account.playerUid}`}>
+                          <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
+                          <span>
+                            ${String(account.displayName || account.playerUid)}
+                            <small class="md-body-small">
+                              ${[
+                                region === "jp" ? clientText(locale, "settings.labels.settingsJapan", "Japan") : clientText(locale, "settings.labels.settingsGlobal", "International"),
+                                String(account.playerUid),
+                                typeof summary.rank === "number" ? clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(summary.rank) }) : "",
+                                typeof summary.rating === "number" ? clientText(locale, "account.page.gameRating", "Rating {value}", { value: number(summary.rating) }) : "",
+                              ].filter(Boolean).join(" · ")}
+                            </small>
+                          </span>
+                        </a>
+                        <span class="chip chip--static"><span class="chip__label">${account.visibility === "public" ? this.label("visibilityPublic", "Public") : this.label("visibilityPrivate", "Private")}</span></span>
+                        <button class="icon-button" type="button" title=${this.label("remove", "Remove")} aria-label=${this.label("remove", "Remove")} ?disabled=${this.busy} @click=${() => (this.removing = account)}>
+                          ${icon("delete", 20)}
+                        </button>
+                      </li>
+                    `;
+                  })}
+                </ul>
+              `
+            : html`<a class="button button--tonal" href=${`/${locale}/player-profile/`}>${icon("person_search", 18)}${this.label("findPlayer", "Find a player")}</a>`
+        }
+      </section>
+      ${
+        removing
+          ? html`
+              <dialog class="dialog" ${modal(() => (this.removing = null))}>
+                <div class="dialog__surface">
+                  <header class="dialog__header"><h2>${this.label("removeGameAccount", "Remove this game account?")}</h2></header>
+                  <div class="dialog__body">${String(removing.displayName || removing.playerUid)}</div>
+                  <footer class="dialog__actions">
+                    <button class="button button--text" type="button" @click=${() => (this.removing = null)}>${this.label("close", "Close")}</button>
+                    <button class="button button--danger" type="button" ?disabled=${this.busy} @click=${this.removeGame}>${this.label("remove", "Remove")}</button>
+                  </footer>
+                </div>
+              </dialog>
+            `
+          : nothing
+      }
+    `;
+  }
+  private async removeGame() {
+    const account = this.removing;
+    if (!account) return;
+    await this.action(
+      async () => {
+        const data = await this.request(`/api/v1/account/game-accounts/${account.region}/${account.playerUid}`, { method: "DELETE" });
+        this.games = Array.isArray(data.accounts) ? (data.accounts as Value[]) : [];
+      },
+      this.label("gameAccountRemoved", "Game account removed."),
+    );
+    this.removing = null;
+  }
+  private async setRelationship(row: Value) {
+    await this.action(
+      () =>
+        this.request(`/api/v1/community/users/${row.uid}/${row.kind}`, {
+          method: "PUT",
+          body: JSON.stringify({ active: false }),
+        }),
+      undefined,
+      () => this.loadSecurity(),
+    );
+  }
+  private renderRelationships() {
+    const list = (kind: string, glyph: string, title: string, action: string) => {
+      const rows = this.relationships.filter((row) => row.kind === kind);
+      return html`
+        <section class="surface account-block">
+          ${this.heading(glyph, title, rows.length)}
+          ${
+            rows.length
+              ? html`
+                  <ul class="detail-object-list" role="list">
+                    ${rows.map((row) => {
+                      const name = String(row.name || row.uid);
+                      return html`
+                        <li class="account-object">
+                          <a class="detail-object" href=${`/community/users/${row.uid}`}>
+                            ${this.avatarOf(row.avatarUrl, name)}
+                            <span>${name}<small class="md-body-small">${row.handle ? `@${row.handle} · ` : ""}${this.date(row.createdAt)}</small></span>
+                          </a>
+                          <button class="button button--text" type="button" ?disabled=${this.busy} @click=${() => this.setRelationship(row)}>${action}</button>
+                        </li>
+                      `;
+                    })}
+                  </ul>
+                `
+              : html`<p class="md-body-medium account-empty">${this.label("listEmpty", "None")}</p>`
+          }
+        </section>
+      `;
+    };
+    return html`
+      ${list("block", "block", this.label("blockedUsers", "Blocked users"), this.label("unblockUser", "Unblock"))}
+      ${list("mute", "volume_off", this.label("mutedUsers", "Muted users"), this.label("unmute", "Unmute"))}
+    `;
+  }
+  private renderModeration() {
+    const restrictions = (Array.isArray(this.profile?.restrictions) ? this.profile.restrictions : []) as Value[];
+    const kinds: Record<string, string> = {
+      write: this.label("restrictionWrite", "Posting"),
+      upload: this.label("restrictionUpload", "Uploads"),
+      sign_in: this.label("restrictionSignIn", "Sign-in"),
+    };
+    return html`
+      <section class="surface account-block">
+        ${this.heading("policy", this.label("restrictions", "Restrictions"), restrictions.length)}
+        ${
+          restrictions.length
+            ? specList(
+                restrictions.map((row) => ({
+                  label: kinds[String(row.kind)] ?? String(row.kind),
+                  value: row.expiresAt ? this.date(row.expiresAt) : this.label("restrictionPermanent", "Permanent"),
+                })),
+              )
+            : html`<p class="md-body-medium account-empty">${this.label("listEmpty", "None")}</p>`
+        }
+      </section>
+      <section class="surface account-block">
+        ${this.heading("gavel", this.label("appealsTitle", "Your appeals"), this.appeals.length)}
+        ${
+          this.appeals.length
+            ? specList(
+                this.appeals.map((appeal) => ({
+                  label: appeal.entityKind === "profile-name" ? this.label("displayName", "Display name") : appeal.entityKind === "attachment" ? this.label("avatar", "Avatar") : this.label("appeal", "Appeal"),
+                  value: `${this.label(`appealStatus.${appeal.status}`, String(appeal.status))} · ${this.date(appeal.updatedAt)}`,
+                })),
+              )
+            : html`<p class="md-body-medium account-empty">${this.label("listEmpty", "None")}</p>`
+        }
+      </section>
     `;
   }
 
@@ -1011,17 +1220,7 @@ ${
     const avatarReview = p.avatarReview as Value | undefined;
     return html`
       <section class="account-section">
-        <header class="account-section__title">
-          ${icon("person")}
-          <h2>${this.label("profile", "Profile")}</h2>
-          <button
-            class="button button--text"
-            ?disabled=${this.busy}
-            @click=${() => this.action(() => this.loadProfile())}
-          >
-            ${icon("refresh", 18)}${this.label("refresh", "Refresh")}
-          </button>
-        </header>
+        ${this.renderPreview(avatar)}
         ${
           !this.permission("write")
             ? html`
@@ -1107,7 +1306,14 @@ ${
                 `
               : nothing
           }
-          <form class="account-profile-form" @submit=${this.updateProfile}>
+          <form
+            class="account-profile-form"
+            @submit=${this.updateProfile}
+            @input=${(event: Event) => {
+              const form = new FormData(event.currentTarget as HTMLFormElement);
+              this.draft = { name: String(form.get("displayName")), handle: String(form.get("handle")), bio: String(form.get("bio")) };
+            }}
+          >
             <label class="account-setting-row">
               <span class="account-setting-row__label">${this.label("displayName", "Display name")}</span>
               <span class="field">
@@ -1213,30 +1419,27 @@ ${
                 `
               : nothing
           }
-          ${
-            this.appeals.length
-              ? html`
-                  <section class="account-block" aria-label=${this.label("appealsTitle", "Your appeals")}>
-                    <h3>${this.label("appealsTitle", "Your appeals")}</h3>
-                    ${this.appeals.map(
-                      (appeal) => html`
-                        <article class="account-setting-row">
-                          <span>
-                            ${appeal.entityKind === "profile-name" ? this.label("displayName", "Display name") : appeal.entityKind === "attachment" ? this.label("avatar", "Avatar") : this.label("appeal", "Appeal")}
-                          </span>
-                          <span>
-                            ${this.label(`appealStatus.${appeal.status}`, String(appeal.status))} ·
-                            ${this.date(appeal.updatedAt)}
-                          </span>
-                        </article>
-                      `,
-                    )}
-                  </section>
-                `
-              : nothing
-          }
         </div>
       </section>
+    `;
+  }
+  private renderPreview(avatar: string) {
+    const p = this.profile || {};
+    const name = this.draft.name ?? String(p.candidateDisplayName || p.displayName || p.accountName || "");
+    const handle = this.draft.handle ?? String(p.handle || "");
+    const bio = this.draft.bio ?? String(p.bio || "");
+    return html`
+      <aside class="surface account-preview" aria-label=${this.label("preview", "Preview")}>
+        ${this.heading("visibility", this.label("preview", "Preview"))}
+        <div class="account-summary__identity">
+          ${this.avatarOf(avatar, name || "?")}
+          <div>
+            <strong class="md-title-medium">${name}</strong>
+            ${handle ? html`<p class="md-body-small">@${handle}</p>` : nothing}
+          </div>
+        </div>
+        ${bio ? html`<p class="md-body-medium">${bio}</p>` : nothing}
+      </aside>
     `;
   }
 
@@ -1246,12 +1449,8 @@ ${
     const linked = new Set(this.accounts.map((account) => String(account.providerId)));
     return html`
       <section class="account-section">
-        <header class="account-section__title">
-          ${icon("verified_user")}
-          <h2>${this.label("security", "Sign-in & security")}</h2>
-        </header>
-        <article class="account-block">
-          <h3>${this.label("emailSettings", "Email address")}</h3>
+        <article class="surface account-block">
+          ${this.heading("alternate_email", this.label("emailSettings", "Email address"))}
           <div class="account-setting-row">
             <span class="account-setting-row__label">${this.label("currentEmail", "Current email address")}</span>
             <strong>${String(user.email || "")}</strong>
@@ -1267,8 +1466,8 @@ ${
         ${
           linked.has("credential")
             ? html`
-                <article class="account-block">
-                  <h3>${this.label("changePassword", "Change password")}</h3>
+                <article class="surface account-block">
+                  ${this.heading("password", this.label("changePassword", "Change password"))}
                   <form class="account-password-form" @submit=${this.changePassword}>
                     <input
                       type="email"
@@ -1315,8 +1514,8 @@ ${
               `
             : nothing
         }
-        <article class="account-block">
-          <h3>${this.label("connectedAccounts", "Connected accounts")}</h3>
+        <article class="surface account-block">
+          ${this.heading("link", this.label("connectedAccounts", "Connected accounts"), this.accounts.length)}
           <div class="provider-list">
             ${this.accounts.map(
               (account) => html`
@@ -1327,7 +1526,7 @@ ${
                     }
                   </span>
                   <span>
-                    <strong>${String(account.providerId || "")}</strong>
+                    <strong>${account.providerId === "credential" ? this.label("emailPassword", "Email & password") : String(account.providerId || "")}</strong>
                     <small>${this.label("linked", "Linked")} ${this.date(account.createdAt)}</small>
                   </span>
                   ${
@@ -1370,29 +1569,22 @@ ${
 
   private renderSessions() {
     const current = String((this.session?.session as Value | undefined)?.token || "");
+    const newestFirst = [...this.sessions].sort(
+      (a, b) => Number(b.token === current) - Number(a.token === current) || Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)),
+    );
     return html`
       <section class="account-section">
-        <header class="account-section__title">
-          ${icon("devices")}
-          <h2>${this.label("sessions", "Sessions")}</h2>
-          <button
-            class="button button--text"
-            ?disabled=${this.busy}
-            @click=${() => this.action(() => this.loadSecurity())}
-          >
-            ${icon("refresh", 18)}${this.label("refresh", "Refresh")}
-          </button>
-        </header>
-        <article class="account-block">
+        <article class="surface account-block">
+          ${this.heading("devices", this.label("sessions", "Sessions"), this.sessions.length)}
           <div class="session-list">
-            ${this.sessions.map(
+            ${newestFirst.map(
               (session) => html`
                 <div class="session-item">
                   <span class=${`session-item__icon${session.token === current ? " current" : ""}`}>
                     ${icon(session.token === current ? "devices" : "phonelink", 20)}
                   </span>
                   <div>
-                    <strong>${String(session.userAgent || this.label("sessionUnknown", "Unknown device"))}</strong>
+                    <strong title=${String(session.userAgent || "")}>${deviceLabel(session.userAgent) || this.label("sessionUnknown", "Unknown device")}</strong>
                     <small>
                       ${session.token === current ? `${this.label("currentSession", "Current session")} · ` : ""}${String(session.ipAddress || "—")}
                       · ${this.date(session.createdAt)}
@@ -1436,10 +1628,6 @@ ${
     const user = this.user() || {};
     return html`
       <section class="account-section">
-        <header class="account-section__title">
-          ${icon("settings")}
-          <h2>${this.label("accountManagement", "Account management")}</h2>
-        </header>
         <article class="account-danger">
           <header>
             <span>${icon("warning", 22)}</span>

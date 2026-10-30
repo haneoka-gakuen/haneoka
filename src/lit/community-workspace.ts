@@ -69,6 +69,7 @@ import {
 import { formatCommunityTime, isEdited } from "../lib/community-time";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 import { keyed } from "lit/directives/keyed.js";
+import { gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -83,6 +84,7 @@ import {
 } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, inputChip, segmented } from "./ui/controls";
+import "./ui/scrollable-tabs";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { snackbar } from "../lib/snackbar";
 
@@ -268,6 +270,8 @@ export class CommunityWorkspace extends LitElement {
     editorReady: { state: true },
     session: { state: true },
     loadingMore: { state: true },
+    profileTab: { state: true },
+    followList: { state: true },
     refreshing: { state: true },
     commentsLoading: { state: true },
     columnCount: { state: true },
@@ -346,6 +350,9 @@ export class CommunityWorkspace extends LitElement {
   declare editorReady: boolean;
   declare session: Value | null;
   declare loadingMore: boolean;
+  declare profileTab: "posts" | "works" | "followers" | "following";
+  /** Rows of the open followers or following tab; null while loading. */
+  declare followList: Value[] | null;
   declare refreshing: boolean;
   private readViewer?: CommunityViewer;
   declare commentsLoading: boolean;
@@ -517,6 +524,8 @@ export class CommunityWorkspace extends LitElement {
     this.editorReady = false;
     this.session = null;
     this.loadingMore = false;
+    this.profileTab = "posts";
+    this.followList = null;
     this.refreshing = false;
     this.commentsLoading = false;
     this.columnCount = 2;
@@ -1149,6 +1158,10 @@ export class CommunityWorkspace extends LitElement {
         (this.routeKind === "collection" && this.mode === "forums" && !this.forumSlug) ||
         (this.routeKind === "user-detail" && /^[1-9]\d{0,15}$/u.test(this.entityId)) ||
         (this.routeKind === "collection" && this.mode === "tags"));
+      if (this.routeKind === "user-detail" && !refresh) {
+        this.profileTab = "posts";
+        this.followList = null;
+      }
       let bootstrapFailed = false;
       if (canBootstrap) {
         const query = new URLSearchParams({ commentsSort: this.commentSort });
@@ -4555,188 +4568,180 @@ export class CommunityWorkspace extends LitElement {
       this.loadingMore = false;
     }
   }
-  private renderUserDetail() {
-    const profile = ((this.document?.profile as Value | undefined) ||
-      this.document ||
-      {}) as Value;
-    const posts = Array.isArray(this.document?.posts)
-      ? (this.document.posts as Value[])
-      : [];
-    const works = Array.isArray(this.document?.works)
-      ? (this.document.works as Value[])
-      : [];
-    const gameAccounts = Array.isArray(this.document?.gameAccounts)
-      ? (this.document.gameAccounts as Value[])
-      : [];
-    const viewer = ((this.document?.viewer as Value | undefined) ||
-      {}) as Value;
-    const stats = ((profile.stats as Value | undefined) || {}) as Value;
+  private async openProfileTab(tab: string) {
+    this.profileTab = tab as CommunityWorkspace["profileTab"];
+    if (tab !== "followers" && tab !== "following") return;
+    this.followList = null;
+    try {
+      const result = await this.request(`/api/v1/community/users/${encodeURIComponent(this.entityId)}/${tab}`);
+      if (this.profileTab === tab) this.followList = Array.isArray(result.users) ? (result.users as Value[]) : [];
+    } catch {
+      if (this.profileTab === tab) this.followList = [];
+    }
+  }
+  private renderProfilePosts(profile: Value, posts: Value[]) {
     return html`
-      <section class="page page--compact community-user-page">
+      <div class="community-masonry--profile">
+        ${posts.map((post) =>
+          this.renderPin({
+            ...post,
+            authorUid: post.authorUid || profile.uid || this.entityId,
+            authorName: post.authorName || profile.displayName || profile.handle,
+            authorImage: post.authorImage || profile.avatarUrl,
+          }),
+        )}
+      </div>
+      ${
+        this.document?.postsNextCursor
+          ? html`
+              <button class="button button--tonal" ?disabled=${this.loadingMore} @click=${this.loadProfilePosts}>
+                ${this.label("loadMore", "Load more")}
+              </button>
+            `
+          : nothing
+      }
+    `;
+  }
+  private renderProfileWorks(works: Value[]) {
+    return html`
+      <ul class="list list--divided" role="list">
+        ${works.map(
+          (work) => html`
+            <li>
+              <a class="list-item list-item--two-line list-item--interactive" href=${String(work.url || "#")}>
+                <span class="list-item__body">
+                  <span class="list-item__headline">${String(work.title || "")}</span>
+                  <span class="list-item__supporting">${String(work.summary || work.kind || "")}</span>
+                </span>
+              </a>
+            </li>
+          `,
+        )}
+      </ul>
+    `;
+  }
+  private renderFollowList() {
+    if (!this.followList) return loadingState(this.label("loading", "Loading"), { local: true });
+    if (!this.followList.length) return emptyState({ icon: "group", title: this.label("emptyList", "Nothing here yet") });
+    return html`
+      <ul class="list list--divided" role="list">
+        ${this.followList.map((user) => {
+          const name = String(user.name || user.uid);
+          return html`
+            <li>
+              <a class="list-item list-item--two-line list-item--interactive" href=${this.detailHref(`/community/users/${user.uid}`)}>
+                <span class="list-item__avatar">
+                  ${user.avatarUrl ? html`<img src=${String(user.avatarUrl)} alt="" width="40" height="40" loading="lazy" />` : name.slice(0, 1)}
+                </span>
+                <span class="list-item__body">
+                  <span class="list-item__headline">${name}</span>
+                  <span class="list-item__supporting">${String(user.bio || (user.handle ? `@${user.handle}` : ""))}</span>
+                </span>
+              </a>
+            </li>
+          `;
+        })}
+      </ul>
+    `;
+  }
+  private renderUserDetail() {
+    const profile = ((this.document?.profile as Value | undefined) || this.document || {}) as Value;
+    const posts = Array.isArray(this.document?.posts) ? (this.document.posts as Value[]) : [];
+    const works = Array.isArray(this.document?.works) ? (this.document.works as Value[]) : [];
+    const gameAccounts = Array.isArray(this.document?.gameAccounts) ? (this.document.gameAccounts as Value[]) : [];
+    const viewer = ((this.document?.viewer as Value | undefined) || {}) as Value;
+    const stats = ((profile.stats as Value | undefined) || {}) as Value;
+    const count = (key: string) => Number(stats[key] || 0).toLocaleString(this.locale);
+    const tabs = (["posts", "works", "followers", "following"] as const).map((id) => ({ id, label: `${this.label(id, id)} ${count(id)}` }));
+    return html`
+      <section class="page community-user-page">
         ${this.renderMutationProgress()}
         <header class="surface surface--tonal community-user-hero">
           <div class="community-avatar">
-            ${
-              profile.avatarUrl
-                ? html` <img src=${String(profile.avatarUrl)} alt="" /> `
-                : String(profile.displayName || "?").slice(0, 1)
-            }
+            ${profile.avatarUrl ? html`<img src=${String(profile.avatarUrl)} alt="" />` : String(profile.displayName || "?").slice(0, 1)}
           </div>
-          <span>
-            <h2>
-              ${String(profile.displayName || profile.handle || this.entityId)}
-            </h2>
-            <p>${String(profile.bio || "")}</p>
-            <small
-              >${this.label("joined", "Joined")}
-              ${this.time(profile.joinedAt)}</small
-            >
-          </span>
+          <div class="community-user-hero__copy">
+            <h2 class="md-headline-small">${String(profile.displayName || profile.handle || this.entityId)}</h2>
+            <p class="md-body-medium community-user-hero__meta">
+              ${profile.handle ? html`<span>@${String(profile.handle)}</span>` : nothing}
+              <span>UID ${String(profile.uid ?? this.entityId)}</span>
+              <span>${this.label("joined", "Joined")} ${this.time(profile.joinedAt)}</span>
+              ${viewer.followedBy ? html`<span class="chip chip--static"><span class="chip__label">${this.label("followsYou", "Follows you")}</span></span>` : nothing}
+            </p>
+            ${profile.bio ? html`<p class="md-body-medium">${String(profile.bio)}</p>` : nothing}
+          </div>
           ${
-            !profile.owner &&
-            (viewer.canInteract || viewer.blocked || !this.session)
+            profile.owner
               ? html`
                   <div class="community-user-actions">
-                    <button
-                      class=${viewer.following ? "button" : "button button--tonal"}
-                      @click=${() => this.relationship("follow", !viewer.following)}
-                    >
-                      ${icon(viewer.following ? "person_remove" : "person_add", 18)}${viewer.following ? this.label("unfollow", "Unfollow") : this.label("follow", "Follow")}
-                    </button>
-                    <button
-                      class="icon-button"
-                      aria-label=${this.label("mute", "Mute")}
-                      @click=${() => this.relationship("mute", !viewer.muted)}
-                    >
-                      ${icon(viewer.muted ? "volume_up" : "volume_off", 20)}
-                    </button>
-                    <button
-                      class="icon-button"
-                      aria-label=${this.label("block", "Block")}
-                      @click=${() => this.relationship("block", !viewer.blocked)}
-                    >
-                      ${icon(viewer.blocked ? "lock_open" : "block", 20)}
-                    </button>
-                    <button
-                      class="icon-button"
-                      aria-label=${this.label("report", "Report")}
-                      @click=${() => this.openDialog("report", "user", profile.uid, profile.displayName)}
-                    >
-                      ${icon("flag", 20)}
-                    </button>
+                    <a class="button button--tonal" href=${`/${this.locale}/account/`}>${icon("edit", 18)}${this.label("editProfile", "Edit profile")}</a>
                   </div>
+                `
+              : !profile.owner && (viewer.canInteract || viewer.blocked || !this.session)
+                ? html`
+                    <div class="community-user-actions">
+                      <button class=${viewer.following ? "button" : "button button--tonal"} @click=${() => this.relationship("follow", !viewer.following)}>
+                        ${icon(viewer.following ? "person_remove" : "person_add", 18)}${viewer.following ? this.label("unfollow", "Unfollow") : this.label("follow", "Follow")}
+                      </button>
+                      <button class="icon-button" aria-label=${this.label("mute", "Mute")} title=${this.label("mute", "Mute")} @click=${() => this.relationship("mute", !viewer.muted)}>
+                        ${icon(viewer.muted ? "volume_up" : "volume_off", 20)}
+                      </button>
+                      <button class="icon-button" aria-label=${this.label("block", "Block")} title=${this.label("block", "Block")} @click=${() => this.relationship("block", !viewer.blocked)}>
+                        ${icon(viewer.blocked ? "lock_open" : "block", 20)}
+                      </button>
+                      <button class="icon-button" aria-label=${this.label("report", "Report")} title=${this.label("report", "Report")} @click=${() => this.openDialog("report", "user", profile.uid, profile.displayName)}>
+                        ${icon("flag", 20)}
+                      </button>
+                    </div>
+                  `
+                : nothing
+          }
+        </header>
+        <div class=${`community-user-layout${gameAccounts.length ? " has-games" : ""}`}>
+          <div class="community-user-main">
+            <scrollable-tabs
+              .items=${tabs}
+              .value=${this.profileTab}
+              .label=${String(profile.displayName || "")}
+              .previousLabel=${this.label("previous", "Previous")}
+              .nextLabel=${this.label("next", "Next")}
+              .onSelect=${(tab: string) => void this.openProfileTab(tab)}
+            ></scrollable-tabs>
+            ${
+              this.profileTab === "posts"
+                ? this.renderProfilePosts(profile, posts)
+                : this.profileTab === "works"
+                  ? works.length
+                    ? this.renderProfileWorks(works)
+                    : emptyState({ icon: "bar_chart", title: this.label("emptyList", "Nothing here yet") })
+                  : this.renderFollowList()
+            }
+          </div>
+          ${
+            gameAccounts.length
+              ? html`
+                  <aside class="surface community-user-games">
+                    ${renderDetailSectionHeading(this.label("gameAccounts", "Game accounts"), "accounts", { count: gameAccounts.length })}
+                    <ul class="list" role="list">
+                      ${gameAccounts.map(
+                        (account) => html`
+                          <li>
+                            <a class="list-item list-item--three-line list-item--interactive" href=${`/${this.locale}/player-profile/?region=${gameAccountRegion(String(account.region), this.locale)}&profileId=${account.playerUid}`}>
+                              <span class="list-item__avatar">${icon("sports_esports", 20)}</span>
+                              <span class="list-item__body">
+                                <span class="list-item__headline">${String(account.displayName || account.playerUid || "")}</span>
+                                <span class="list-item__supporting">${this.gameAccountFacts(account).join(" · ")}</span>
+                              </span>
+                            </a>
+                          </li>
+                        `,
+                      )}
+                    </ul>
+                  </aside>
                 `
               : nothing
           }
-        </header>
-        <dl class="community-user-stats">
-          ${["posts", "works", "followers", "following", "gameAccounts"].map(
-            (key) => html`
-              <div>
-                <dt>${this.label(key, key)}</dt>
-                <dd>${Number(stats[key] || 0).toLocaleString()}</dd>
-              </div>
-            `,
-          )}
-        </dl>
-        <div class="community-masonry--profile">
-          ${posts.map((post) =>
-            this.renderPin({
-              ...post,
-              authorUid: post.authorUid || profile.uid || this.entityId,
-              authorName:
-                post.authorName || profile.displayName || profile.handle,
-              authorImage: post.authorImage || profile.avatarUrl,
-            }),
-          )}
         </div>
-        ${
-          this.document?.postsNextCursor
-            ? html`
-                <button
-                  class="button button--tonal"
-                  ?disabled=${this.loadingMore}
-                  @click=${this.loadProfilePosts}
-                >
-                  ${this.label("loadMore", "Load more")}
-                </button>
-              `
-            : nothing
-        }
-        ${
-          works.length
-            ? html`
-                <section class="community-profile-section">
-                  ${renderDetailSectionHeading(
-                    this.label("customCharts", "Works"),
-                    "works",
-                    {
-                      count: works.length,
-                      level: 2,
-                    },
-                  )}
-                  <ul class="list list--divided" role="list">
-                    ${works.map(
-                      (work) => html`
-                        <li>
-                          <a
-                            class="list-item list-item--two-line list-item--interactive"
-                            href=${String(work.url || "#")}
-                          >
-                            <span class="list-item__body">
-                              <span class="list-item__headline"
-                                >${String(work.title || "")}</span
-                              >
-                              <span class="list-item__supporting"
-                                >${String(work.summary || work.kind || "")}</span
-                              >
-                            </span>
-                          </a>
-                        </li>
-                      `,
-                    )}
-                  </ul>
-                </section>
-              `
-            : nothing
-        }
-        ${
-          gameAccounts.length
-            ? html`
-                <section class="community-profile-section">
-                  ${renderDetailSectionHeading(
-                    this.label("gameAccounts", "Game accounts"),
-                    "accounts",
-                    {
-                      count: gameAccounts.length,
-                      level: 2,
-                    },
-                  )}
-                  <ul class="list list--divided" role="list">
-                    ${gameAccounts.map(
-                      (account) => html`
-                        <li>
-                          <div class="list-item list-item--three-line">
-                            <span class="list-item__avatar"
-                              >${icon("sports_esports", 20)}</span
-                            >
-                            <span class="list-item__body">
-                              <span class="list-item__headline">
-                                ${String(account.displayName || account.playerUid || "")}
-                              </span>
-                              <span class="list-item__supporting">
-                                ${this.gameAccountFacts(account).join(" · ")}
-                              </span>
-                            </span>
-                          </div>
-                        </li>
-                      `,
-                    )}
-                  </ul>
-                </section>
-              `
-            : nothing
-        }
         ${this.renderCardMenu()}${this.renderDialog()}
       </section>
     `;

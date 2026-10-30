@@ -41,6 +41,9 @@
   .destination-hub .destination-hub__tile--r3 {
     grid-row: span 3;
   }
+  .destination-hub .destination-hub__tile--r4 {
+    grid-row: span 4;
+  }
   .destination-hub a.destination-hub__tile:active {
     border-radius: var(--md-sys-shape-corner-large);
   }
@@ -488,6 +491,9 @@
     }
     .destination-hub .destination-hub__tile--c6 {
       grid-column: span 6;
+    }
+    .destination-hub .destination-hub__tile--r4 {
+      grid-row: span 3;
     }
   }
   @container (max-width: 420px) {

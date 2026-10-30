@@ -43,11 +43,12 @@ interface __BaseEnv_Env {
 	OFFICIAL_RANKING_KR_CONFIG: string;
 	MEDIA_PROCESSOR: DurableObjectNamespace<import("./index").CommunityMediaContainer>;
 	OFFICIAL_RANKING_COLLECTOR: DurableObjectNamespace<import("./index").OfficialRankingCollector>;
+	SEARCH_INDEX: DurableObjectNamespace<import("./index").SearchContainer>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./index");
-		durableNamespaces: "CommunityMediaContainer" | "OfficialRankingCollector";
+		durableNamespaces: "CommunityMediaContainer" | "OfficialRankingCollector" | "SearchContainer";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

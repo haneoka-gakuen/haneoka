@@ -25,6 +25,7 @@ import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-
 import { sonolusShareRedirectTarget } from "./sonolus-share";
 export { CommunityMediaContainer } from "./community-media-container";
 export { OfficialRankingCollector } from "./official-ranking-collector";
+export { SearchContainer } from "./search-container";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
@@ -67,6 +68,7 @@ import type { ChartMediaRef } from "../src/lib/chart-creation/community-types";
 import { handleCommunityForumsRequest } from "./community-forums";
 import { handleCommunityEntityRequest } from "./community-entities";
 import { createCommunityEntityResolver } from "./community-entity-catalog";
+import { handleSearchRequest, syncSearchIndex, type SearchBackend } from "./search-index";
 import { handleCommunityActivityRequest } from "./community-activity";
 import { handleAnnouncementsRequest } from "./announcements";
 import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src/lib/announcement-document";
@@ -3911,6 +3913,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (contentAccess) return contentAccess;
     const appAccount = await handleAppAccountRequest(request, env);
     if (appAccount) return appAccount;
+    const search = await handleSearchRequest(request, searchBackend(env));
+    if (search) return search;
     const resolveCommunityEntity = createCommunityEntityResolver((catalogEnv, catalogRequest) =>
       handleCatalogApi(catalogEnv, ctx, catalogRequest, new URL(catalogRequest.url).pathname),
     );
@@ -4141,6 +4145,9 @@ const MODERATION_RECONCILIATION_CRON = "17 * * * *";
 const COMMUNITY_UPLOAD_CLEANUP_CRON = "37 */6 * * *";
 const DATABASE_CLEANUP_CRON = "23 3 * * *";
 const MEDIA_RECONCILIATION_CRON = "*/2 * * * *";
+const SEARCH_SYNC_CRON = "41 * * * *";
+const searchBackend = (env: Env): SearchBackend => (path, init) =>
+  env.SEARCH_INDEX.getByName("catalog").fetch(new Request(`http://search${path}`, init));
 
 async function cleanupDatabase(env: Env): Promise<void> {
   const now = new Date();
@@ -4213,6 +4220,8 @@ const worker: ExportedHandler<Env> = {
           ? ["community_ranking", () => refreshCommunityRanking(env)]
           : controller.cron === MEDIA_RECONCILIATION_CRON
             ? ["community_media_reconciliation", () => reconcileCommunityMedia(env)]
+            : controller.cron === SEARCH_SYNC_CRON
+              ? ["search_sync", () => syncSearchIndex(searchBackend(env), (catalogRequest) => handleCatalogApi(env, ctx, catalogRequest, new URL(catalogRequest.url).pathname))]
             : controller.cron === MODERATION_RECONCILIATION_CRON
               ? ["moderation_reconciliation", () => reconcileModerationState(env)]
               : controller.cron === COMMUNITY_UPLOAD_CLEANUP_CRON

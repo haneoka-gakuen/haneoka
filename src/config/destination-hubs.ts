@@ -26,7 +26,7 @@ export interface HubTile {
   route: string;
   visual: HubVisual;
   columns: 3 | 4 | 6;
-  rows: 2 | 3;
+  rows: 2 | 3 | 4;
   limit?: number;
   related?: string[];
 }
@@ -56,10 +56,10 @@ const curated: Record<HubId, HubTile[]> = {
   stories: [
     tile("/catalog/stories/band", "banners", 6, 3, 2),
     tile("/catalog/stories/event", "banners", 6, 3, 2),
-    tile("/catalog/stories/link", "friendship", 6, 3),
+    tile("/catalog/stories/link", "friendship", 6, 4),
     tile("/catalog/stories/birthday", "banners", 6, 2),
     tile("/catalog/stories/home", "landscape", 6, 2),
-    tile("/catalog/stories/afterlive", "stamps", 3, 2),
+    tile("/catalog/stories/afterlive", "stamps", 6, 2),
     tile("/catalog/stories/tutorial", "landscape", 6, 2),
   ],
   tools: [

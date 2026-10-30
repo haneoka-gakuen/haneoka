@@ -147,6 +147,7 @@
     display: flex;
     align-items: center;
     min-width: 0;
+    min-height: 48px;
     flex: 1;
     gap: 6px;
     text-decoration: none;
@@ -835,21 +836,37 @@
   .community-user-page {
     display: grid;
     align-content: start;
-    gap: 24px;
+    gap: 16px;
   }
   .community-user-hero {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 20px;
     flex-wrap: wrap;
     padding: 24px;
     border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-surface-container-low);
   }
-  .community-user-hero h2 {
+  .community-user-hero .community-avatar {
+    width: 88px;
+    height: 88px;
+    flex: 0 0 88px;
+  }
+  .community-user-hero__copy {
+    display: grid;
+    min-width: 0;
+    flex: 1 1 240px;
+    gap: 4px;
+    overflow-wrap: anywhere;
+  }
+  .community-user-hero__copy :is(h2, p) {
     margin: 0;
   }
-  .community-user-hero p {
+  .community-user-hero__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
     color: var(--md-sys-color-on-surface-variant);
   }
   .community-user-actions {
@@ -858,33 +875,32 @@
     flex-wrap: wrap;
     margin-inline-start: auto;
   }
-  .community-user-stats {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    margin: 0;
-    padding-inline: 24px;
-  }
-  .community-user-stats > div {
-    display: flex;
-    flex-direction: column-reverse;
-    gap: 4px;
-  }
-  .community-user-stats dt {
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: var(--md-sys-typescale-label-medium-size);
-  }
-  .community-user-stats dd {
-    margin: 0;
-    font-size: var(--md-sys-typescale-title-large-size);
-  }
-  .community-profile-section {
+  .community-user-layout {
     display: grid;
-    gap: 12px;
+    min-width: 0;
+    align-items: start;
+    gap: 16px;
   }
-  .community-profile-section h2 {
-    margin: 0;
-    font-size: var(--md-sys-typescale-title-medium-size);
+  .community-user-layout.has-games {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .community-user-main {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+  }
+  .community-user-games {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+  }
+  @media (max-width: 960px) {
+    .community-user-layout.has-games {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .community-user-games {
+      order: -1;
+    }
   }
   .community-stack {
     display: grid;
@@ -1204,10 +1220,6 @@
     .community-user-actions {
       width: 100%;
       margin-inline-start: 0;
-    }
-    .community-user-stats {
-      gap: 16px;
-      padding: 0;
     }
   }
   .playlist-detail {

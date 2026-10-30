@@ -5,6 +5,7 @@ import "@material/web/checkbox/checkbox.js";
 import { tile, tileMedia, type TileOptions } from "./tile";
 import { rovingKeydown } from "./controls";
 import { chooserHeader, chooserFilters } from "./chooser-filters";
+import { backdropPress, isBackdropClick } from "./modal";
 
 /** Native chooser dialog, matching the stamp selector above the app shell. */
 export function selectionPane(options: {
@@ -50,8 +51,9 @@ export function selectionPane(options: {
         event.preventDefault();
         options.close();
       }}
+      @pointerdown=${backdropPress}
       @click=${(event: MouseEvent) => {
-        if (event.target === event.currentTarget) options.close();
+        if (isBackdropClick(event)) options.close();
       }}
     >
       ${chooserHeader({

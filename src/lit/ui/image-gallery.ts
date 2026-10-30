@@ -92,7 +92,9 @@ export class ImageGallery extends LitElement {
   };
   private currentMovieUrl?: string;
   private movieFetchLifetime?: AbortController;
+  /** Clip downloads, kept across loops, replays and switches until the image set changes. */
   private movieBlobs = new Map<string, Promise<Blob>>();
+  private movieBusyTimer?: ReturnType<typeof setTimeout>;
   private viewer?: PhotoSwipe;
   private releaseFocus?: () => void;
   private generation = 0;
@@ -125,9 +127,15 @@ export class ImageGallery extends LitElement {
     }
     super.update(changed);
   }
+  private dropMovieDownloads() {
+    this.movieFetchLifetime?.abort();
+    this.movieFetchLifetime = undefined;
+    this.movieBlobs.clear();
+  }
   disconnectedCallback() {
     this.generation++;
     this.stopMovie();
+    this.dropMovieDownloads();
     this.viewer?.destroy();
     this.releaseFocus?.();
     super.disconnectedCallback();
@@ -149,6 +157,7 @@ export class ImageGallery extends LitElement {
       this.busy = false;
       this.error = "";
       this.dimensions.clear();
+      this.dropMovieDownloads();
     }
   }
   protected updated(changed: PropertyValues) {
@@ -167,8 +176,14 @@ export class ImageGallery extends LitElement {
     this.movieDeadline = undefined;
   }
   private waitForMovie = () => {
-    if (!this.movieVideo?.getAttribute("src")) return;
-    this.movieBusy = true;
+    if (!this.movieVideo) return;
+    // A stall at a loop point or a cached switch resolves within a few frames;
+    // only one that lasts shows the indicator over the poster or last frame.
+    clearTimeout(this.movieBusyTimer);
+    const busyGeneration = this.movieGeneration;
+    this.movieBusyTimer = setTimeout(() => {
+      if (this.isConnected && busyGeneration === this.movieGeneration) this.movieBusy = true;
+    }, 400);
     this.clearMovieDeadline();
     const generation = this.movieGeneration;
     this.movieDeadline = setTimeout(() => {
@@ -180,11 +195,9 @@ export class ImageGallery extends LitElement {
   };
   private stopMovie() {
     this.movieGeneration++;
+    clearTimeout(this.movieBusyTimer);
     this.clearMovieDeadline();
     this.releaseNextMovie();
-    this.movieFetchLifetime?.abort();
-    this.movieFetchLifetime = undefined;
-    this.movieBlobs.clear();
     this.movieRenderer?.dispose();
     this.movieRenderer = undefined;
     if (this.movieVideo) {
@@ -236,6 +249,7 @@ export class ImageGallery extends LitElement {
       signal.throwIfAborted();
       return blob;
     });
+    pending.catch(() => this.movieBlobs.delete(url));
     this.movieBlobs.set(url, pending);
     return pending;
   }
@@ -359,7 +373,10 @@ export class ImageGallery extends LitElement {
         const renderer = new AlphaVideo(video, canvas, {
           frame: () => {
             if (this.movieRenderer !== renderer || !this.isConnected) return;
-            if (!this.movieStarting) this.clearMovieDeadline();
+            if (!this.movieStarting) {
+              this.clearMovieDeadline();
+              clearTimeout(this.movieBusyTimer);
+            }
             this.movieBusy = this.movieStarting;
             this.movieReady = true;
             this.movieBackdrop = this.desiredBackdrop;
@@ -396,10 +413,9 @@ export class ImageGallery extends LitElement {
       video.muted = true;
       video.playsInline = true;
       video.loop = Boolean(clip.loop);
+      const download = prepared ? undefined : this.movieBlob(source.url);
       if (!prepared) {
         this.movieReady = false;
-        video.src = source.url;
-        video.load();
         this.waitForMovie();
       }
       this.prepareNextMovie(active!);
@@ -416,6 +432,14 @@ export class ImageGallery extends LitElement {
         if (startup) {
           await startup.ready;
           if (startup.error) throw startup.error;
+        }
+        if (download) {
+          // One download per clip, kept for loops, replays and switching back.
+          const blob = await download;
+          if (!this.isConnected || generation !== this.movieGeneration) return;
+          this.currentMovieUrl = URL.createObjectURL(blob);
+          video.src = this.currentMovieUrl;
+          video.load();
         }
         if (!this.isConnected || generation !== this.movieGeneration) return;
         this.movieStarting = false;

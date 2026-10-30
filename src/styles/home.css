@@ -143,6 +143,14 @@
     color: #fff;
     font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
+  /* Horizontal swipes belong to the carousel; vertical ones still scroll the page. */
+  .home-carousel__track {
+    touch-action: pan-y;
+  }
+  .home-carousel__track img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
   .home-carousel__dots {
     position: absolute;
     right: 44px;
@@ -354,6 +362,126 @@
     min-height: 0;
     overflow: hidden;
     grid-template-rows: auto minmax(0, 1fr);
+  }
+  /* Arena: the five leagues side by side — band, stage attribute, sections — sized to the card. */
+  .home-arena .home-arena__season {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 0 16px 4px;
+  }
+  .home-arena .home-arena__status {
+    padding: 0 8px;
+    border-radius: var(--md-sys-shape-corner-small);
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container-highest);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .home-arena .home-arena__status.is-live {
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+  }
+  .home-arena .home-arena__times {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-inline-start: auto;
+    color: var(--md-sys-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
+  }
+  .home-arena .home-arena__times > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .home-arena .home-arena__times > span + span {
+    margin-inline-start: 6px;
+  }
+  .home-info.home-arena {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .home-arena .home-arena__leagues {
+    min-height: 0;
+    margin: 0;
+    padding: 0 8px 8px;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-content: center;
+    gap: 4px;
+  }
+  .home-arena .home-arena__league {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 4px;
+    block-size: 100%;
+    min-block-size: 48px;
+    padding: 6px 2px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    color: inherit;
+    text-decoration: none;
+  }
+  .home-arena .home-arena__band {
+    inline-size: 32px;
+    block-size: 32px;
+    object-fit: contain;
+  }
+  .home-arena .home-arena__name {
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .home-arena .home-arena__league .arena-rule {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+  .home-arena .home-arena__league .arena-rule__part:last-child > .arena-mission {
+    display: none;
+  }
+  .home-arena .home-arena__league .arena-rule__part > strong {
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+      var(--md-sys-typescale-label-small-line-height) var(--app-font);
+  }
+  @container home-arena (max-width: 420px) {
+    .home-arena .home-arena__name,
+    .home-arena .home-arena__times > .home-arena__remaining,
+    .home-arena .home-arena__league .arena-rule__part:first-child > span,
+    .home-arena .home-arena__league .arena-rule__part > strong {
+      display: none;
+    }
+    /* Sections as icons only: one when all three agree, otherwise all three. */
+    .home-arena .home-arena__league .arena-rule__part:last-child > .arena-mission {
+      display: inline-flex;
+    }
+    .home-arena .home-arena__league .arena-rule__part:last-child {
+      gap: 0;
+    }
+    .home-arena .home-arena__season {
+      flex-wrap: nowrap;
+      padding-block-end: 2px;
+    }
+    .home-arena .home-arena__band {
+      inline-size: 24px;
+      block-size: 24px;
+    }
+    .home-arena .home-arena__league {
+      gap: 2px;
+      padding-block: 2px;
+    }
+    .home-arena .home-arena__league .arena-rule__part:first-child img {
+      inline-size: 18px;
+      block-size: 18px;
+    }
+  }
+  .home-arena {
+    container: home-arena / inline-size;
   }
   .home-info__body {
     min-width: 0;
@@ -1135,6 +1263,15 @@
   }
   .home-carousel__dots button::after {
     content: none;
+  }
+  /* The dot stays small; its tap area reaches the 48px target. */
+  .home-carousel__dots button {
+    position: relative;
+  }
+  .home-carousel__dots button::before {
+    content: "";
+    position: absolute;
+    inset: -20px -3px;
   }
   .home-carousel__dots button[aria-selected="true"] {
     width: 24px;

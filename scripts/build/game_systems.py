@@ -1910,8 +1910,13 @@ def _home_banners(
     announcement stay unlinked rather than guessed.
     """
     targets = {
+        1: ("events", "entry"),
         2: ("gacha", "entry"),
         3: ("exchange", "entry"),
+        4: ("shop", "entry"),
+        11: ("exchange", "entry"),
+        16: ("arena", ""),
+        24: ("missions", ""),
         25: ("passes", "entry"),
     }
     entries: dict[str, Any] = {}
@@ -1926,6 +1931,10 @@ def _home_banners(
         key = str(content) if content else ""
         if resource == "passes":
             key = f"season-{content}" if content else ""
+        if display_type == 11:
+            # Exchange banners name their exchange in the art path, not in _contentId.
+            match = re.search(r"Exchange/Banner/Banner_(\d+)", str(row.get("_imageAsset") or ""))
+            key = match.group(1) if match else ""
         entries[str(identity)] = _entry(
             str(identity),
             [],
@@ -1936,7 +1945,11 @@ def _home_banners(
             displayOrder=_number(row, "_displayOrder"),
             displayType=display_type,
             contentId=content,
-            href=f"/catalog/{resource}?{param}={key}" if resource and key else "",
+            href=(
+                f"/catalog/{resource}?{param}={key}"
+                if resource and param and key
+                else f"/catalog/{resource}" if resource and not param else ""
+            ),
         )
     return {"entries": entries}
 

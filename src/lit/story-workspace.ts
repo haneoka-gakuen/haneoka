@@ -1404,9 +1404,9 @@ export class StoryWorkspace extends LitElement {
     const chapter = this.relevantChapters().find((item) => String(item.chapterId) === value);
     const event = this.eventForChapter(chapter);
     const title = (event ? this.text(event.name) : "") || this.chapterName(chapter);
-    // Sections whose single chapter is unnamed (friendship, home, tutorial)
-    // have nothing to head: the page title already says where you are.
-    if (!chapter || !title) return undefined;
+    // A section with a single chapter (after-live, tutorial) or an unnamed one
+    // (friendship, home) has nothing to head: the page title already says where you are.
+    if (!chapter || !title || this.relevantChapters().length < 2) return undefined;
     const description = this.text(chapter.description) || this.text(chapter.caption) || "";
     return {
       title,

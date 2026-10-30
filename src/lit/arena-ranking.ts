@@ -186,6 +186,15 @@ export class ArenaRanking extends GameRecordsCardsElement {
     const favorite = this.cardArtwork(row.favoriteMemberCardId, false);
     const level = this.levelFromExp(this.sourceCatalog()?.playerLevels, row.rankExp);
     const tier = arenaTier(this.ranks, row.point, observedAt);
+    const card = row.profileCard?.thumbnailUrls[0] || "";
+    const cardTitle = [
+      row.profileCard?.name,
+      row.profileCard?.slot != null
+        ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(row.profileCard.slot))
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
     const identity = html`
       <strong>${name}</strong>
       <small class="song-ranking__player-stats">
@@ -202,6 +211,28 @@ export class ArenaRanking extends GameRecordsCardsElement {
       <li class="song-ranking__entry" data-rank=${row.rank} data-target=${String(row.rank === this.target)}>
         <div class="song-ranking__row arena-ranking__row">
           <span class="song-ranking__rank" aria-label=${`${this.label("rank", "Rank")} ${row.rank}`}>${row.rank}</span>
+          ${
+            this.limit
+              ? nothing
+              : card
+                ? html`
+                    <a
+                      class="song-ranking__namecard"
+                      href=${card}
+                      target="_blank"
+                      rel="noopener"
+                      title=${cardTitle}
+                      aria-label=${cardTitle || this.label("profileCard", "Profile card")}
+                    >
+                      ${this.profileMedia(name, card)}
+                    </a>
+                  `
+                : html`
+                    <span class="song-ranking__namecard song-ranking__namecard--empty" aria-label=${this.label("noProfileCard", "No profile card")}>
+                      ${icon("badge", 24)}
+                    </span>
+                  `
+          }
           <span class="song-ranking__avatar">
             ${
               favorite?.avatar

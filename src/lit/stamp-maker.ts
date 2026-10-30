@@ -82,6 +82,7 @@ import { STAMP_LANGUAGES } from "../lib/stamp-maker/languages";
 
 import { registerImportedFont, removeImportedFont, type StampFont } from "../lib/stamp-maker/fonts";
 import { snackbar } from "../lib/snackbar";
+import { backdropPress, isBackdropClick } from "./ui/modal";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -1934,8 +1935,9 @@ export class StampMaker extends LitElement {
           @close=${() => {
             if (this.chooserOpener?.isConnected) this.chooserOpener.focus({ preventScroll: true });
           }}
+          @pointerdown=${backdropPress}
           @click=${(event: MouseEvent) => {
-            if (event.target === event.currentTarget) (event.currentTarget as HTMLDialogElement).close();
+            if (isBackdropClick(event)) (event.currentTarget as HTMLDialogElement).close();
           }}
         >
           ${chooserHeader({ title: this.t("choose"), filterLabel: clientText(this.locale, "common.actions.filter", "Filter"),

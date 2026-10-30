@@ -259,6 +259,21 @@
     height: 64px;
     flex-shrink: 0;
   }
+  .song-ranking__landing {
+    display: grid;
+    width: 100%;
+    max-width: 960px;
+    margin-inline: auto;
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+    align-items: start;
+    gap: 16px;
+    padding: 16px;
+  }
+  .song-ranking__landing-group {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+  }
   .song-ranking__profile-identity {
     min-width: 0;
   }

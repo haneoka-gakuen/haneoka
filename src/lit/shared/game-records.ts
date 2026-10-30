@@ -14,6 +14,10 @@ export const GAME_RECORDS_REGIONS = [
   { value: "kr", key: "regionKr", flag: krFlag },
 ] as const;
 
+/** A linked game account stores its release server; the records region follows the visitor's locale for intl. */
+export const gameAccountRegion = (server: string, locale: string): GameRecordsRegion =>
+  server === "jp" ? "jp" : defaultGameRecordsRegion("intl", locale);
+
 export function defaultGameRecordsRegion(server: ReleaseServer, locale: string): GameRecordsRegion {
   if (server === "jp" || server === "jp-cbt") return "jp";
   return locale === "en" ? "en" : locale === "ko" ? "kr" : "tw";

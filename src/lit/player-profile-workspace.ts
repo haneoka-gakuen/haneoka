@@ -26,7 +26,8 @@ import {
 } from "../lib/player-profile-route";
 import { emptyState, errorState } from "./ui/state";
 import { clearAppBarActions, clearAppBarSearch, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
-import { GAME_RECORDS_REGIONS, defaultGameRecordsRegion } from "./shared/game-records";
+import { GAME_RECORDS_REGIONS, defaultGameRecordsRegion, gameAccountRegion } from "./shared/game-records";
+import { signedInHint } from "../lib/community-viewer";
 import type {
   GameRecordsRegion,
   GameProfileCardPageDto,
@@ -40,6 +41,21 @@ import "../styles/song-ranking.css";
 import { formatDate } from "../lib/date-format";
 type Phase = "idle" | "loading" | "ready" | "error" | "unavailable";
 let profileOwnerSequence = 0;
+interface RecentPlayer {
+  region: string;
+  id: string;
+  name: string;
+}
+const RECENT_PLAYERS_KEY = "haneoka.player-profile.recent.v1";
+function readRecentPlayers(): RecentPlayer[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(RECENT_PLAYERS_KEY) || "[]");
+    return Array.isArray(value) ? (value as RecentPlayer[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   static properties = {
     locale: { type: String },
@@ -51,6 +67,9 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     profileImageError: { state: true },
     selectedEntry: { state: true },
     queryInvalid: { state: true },
+    recent: { state: true },
+    linked: { state: true },
+    communityOwner: { state: true },
   };
   declare profilePhase: Phase;
   declare profile: PlayerProfileDto["profile"] | null;
@@ -59,6 +78,10 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   declare profileImageError: boolean;
   declare selectedEntry: SongRankingRowDto | null;
   declare queryInvalid: boolean;
+  declare recent: RecentPlayer[];
+  declare linked: RecentPlayer[];
+  /** The community member who publicly linked the open profile. */
+  declare communityOwner: { uid: number; name: string } | null;
   private profileRequests = new RequestScope();
   private profileDownloads = new RequestScope();
   private lifetime?: AbortController;
@@ -79,6 +102,9 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.profileImageError = false;
     this.selectedEntry = null;
     this.queryInvalid = false;
+    this.recent = [];
+    this.linked = [];
+    this.communityOwner = null;
   }
   connectedCallback() {
     const cards = readPageData<typeof this.cardCatalogs>(this);
@@ -121,6 +147,20 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       },
       { signal: this.lifetime.signal },
     );
+    this.recent = readRecentPlayers();
+    if (signedInHint())
+      void fetchJson<{ accounts: Array<{ region: string; playerUid: string; displayName: string | null }> }>("/api/v1/account/game-accounts", {
+        credentials: "same-origin",
+        signal: this.lifetime.signal,
+      })
+        .then(({ accounts }) => {
+          this.linked = accounts.map((account) => ({
+            region: gameAccountRegion(account.region, this.locale),
+            id: account.playerUid,
+            name: account.displayName || account.playerUid,
+          }));
+        })
+        .catch(() => undefined);
     if (this.profileQuery) {
       if (validPlayerProfileId(this.region, this.profileQuery)) void this.loadProfile(this.profileQuery);
       else this.queryInvalid = true;
@@ -171,6 +211,16 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       );
       if (!this.currentProfile(signal, region, id)) return;
       this.profile = value.profile;
+      this.communityOwner = null;
+      this.rememberPlayer({ region, id, name: value.profile.name || id });
+      void fetchJson<{ owner: { uid: number; name: string } | null }>(
+        `/api/v1/community/game-accounts/${region === "jp" ? "jp" : "intl"}/${encodeURIComponent(id)}`,
+        { signal, credentials: "same-origin" },
+      )
+        .then(({ owner }) => {
+          if (this.currentProfile(signal, region, id)) this.communityOwner = owner;
+        })
+        .catch(() => undefined);
       const pages = this.profilePages();
       this.profileImageId = pages.length ? String(pages[0].page) : "";
       if (pages.length) void import("./ui/image-gallery");
@@ -182,6 +232,54 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             ? "unavailable"
             : "error";
     }
+  }
+  private rememberPlayer(player: RecentPlayer) {
+    this.recent = [player, ...this.recent.filter((entry) => entry.id !== player.id || entry.region !== player.region)].slice(0, 8);
+    try {
+      localStorage.setItem(RECENT_PLAYERS_KEY, JSON.stringify(this.recent));
+    } catch {
+      // Private mode keeps the list for this page view.
+    }
+  }
+  private openPlayer(player: RecentPlayer) {
+    if (player.region !== this.region) this.selectRegion(player.region as GameRecordsRegion);
+    this.submitProfile(player.id);
+  }
+  private renderLanding() {
+    const group = (title: string, glyph: string, players: RecentPlayer[]) =>
+      players.length
+        ? html`
+            <section class="surface song-ranking__landing-group">
+              <h2 class="detail-section-title">
+                <span class="detail-section-title__icon" aria-hidden="true">${icon(glyph, 18)}</span>
+                <span class="detail-section-title__label">${title}</span>
+              </h2>
+              <ul class="list" role="list">
+                ${players.map(
+                  (player) => html`
+                    <li>
+                      <button class="list-item list-item--two-line list-item--interactive" type="button" @click=${() => this.openPlayer(player)}>
+                        <span class="list-item__avatar">${icon("person", 20)}</span>
+                        <span class="list-item__body">
+                          <span class="list-item__headline">${player.name}</span>
+                          <span class="list-item__supporting">${player.id}</span>
+                        </span>
+                      </button>
+                    </li>
+                  `,
+                )}
+              </ul>
+            </section>
+          `
+        : nothing;
+    if (!this.recent.length && !this.linked.length)
+      return emptyState({ title: clientText(this.locale, "tools.playerProfile.queryIdle", "Enter a player ID"), icon: "person_search" });
+    return html`
+      <div class="song-ranking__landing">
+        ${group(clientText(this.locale, "tools.playerProfile.linked", "Your game accounts"), "sports_esports", this.linked)}
+        ${group(clientText(this.locale, "tools.playerProfile.recent", "Recent lookups"), "history", this.recent)}
+      </div>
+    `;
   }
   private syncUrl(id: string) {
     const url = new URL(navigationDocumentUrl());
@@ -314,7 +412,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
               : nothing
           }
         </div>
-        ${this.queryInvalid ? emptyState({ title: clientText(this.locale, "tools.playerProfile.invalidId", "Check the player ID"), icon: "error" }) : this.profilePhase === "idle" ? emptyState({ title: clientText(this.locale, "tools.playerProfile.queryIdle", "Enter a player ID"), icon: "person_search" }) : this.renderProfile()}
+        ${this.queryInvalid ? emptyState({ title: clientText(this.locale, "tools.playerProfile.invalidId", "Check the player ID"), icon: "error" }) : this.profilePhase === "idle" ? this.renderLanding() : this.renderProfile()}
       </section>
     `;
   }
@@ -446,6 +544,15 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             <p class="song-ranking__profile-id">
               ${this.label("profileSearch", "Player profile ID")} · ${this.selectedProfileId}
             </p>
+            ${
+              this.communityOwner
+                ? html`
+                    <a class="chip chip--assist" href=${`/${this.locale}/community/users/${this.communityOwner.uid}/`}>
+                      ${icon("person", 18)}<span class="chip__label">${this.communityOwner.name}</span>
+                    </a>
+                  `
+                : nothing
+            }
             ${
               level != null
                 ? html`

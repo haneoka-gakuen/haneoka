@@ -188,7 +188,8 @@
       "placeholder": "搜尋資料、劇情與社群",
       "hint": "查找樂曲、角色、劇情對白、說明指南與社群貼文。",
       "recent": "最近搜尋",
-      "browse": "瀏覽"
+      "browse": "瀏覽",
+      "results": "{count} 筆結果"
     }
   },
   "navigation": {
@@ -1477,7 +1478,7 @@
       "added": "加入時間",
       "thresholds": "段位門檻",
       "rank": "段位",
-      "resetPoints": "下賽季起始",
+      "resetPoints": "賽季重置扣除",
       "opens": "開放",
       "basePoints": "基礎積分",
       "players": "對局人數",
@@ -1516,7 +1517,8 @@
         "playerId": "玩家 ID",
         "find": "查詢",
         "notFound": "前 {count} 名中未找到"
-      }
+      },
+      "resetKept": "保留"
     },
     "comics": {
       "numbered": "第{number}話"
@@ -3315,7 +3317,9 @@
     "playerProfile": {
       "title": "玩家查詢",
       "queryIdle": "輸入玩家 ID",
-      "invalidId": "請檢查玩家 ID"
+      "invalidId": "請檢查玩家 ID",
+      "linked": "我的遊戲帳號",
+      "recent": "最近查詢"
     },
     "songPuzzle": {
       "title": "歌曲封面華容道",
@@ -4033,7 +4037,43 @@
       "signInDescription": "登入以存取您的帳號。",
       "roleRegular": "活躍使用者",
       "roleTrusted": "受信使用者",
-      "roleContributor": "貢獻者"
+      "roleContributor": "貢獻者",
+      "relationships": "封鎖與靜音",
+      "moderation": "限制與申訴",
+      "blockedUsers": "已封鎖的使用者",
+      "mutedUsers": "已靜音的使用者",
+      "restrictions": "限制",
+      "restrictionWrite": "發布",
+      "restrictionUpload": "上傳",
+      "restrictionSignIn": "登入",
+      "restrictionPermanent": "永久",
+      "listEmpty": "無",
+      "preview": "預覽",
+      "joined": "加入時間",
+      "remove": "移除",
+      "removeGameAccount": "移除此遊戲帳號?",
+      "gameAccountRemoved": "已移除遊戲帳號。",
+      "findPlayer": "尋找玩家",
+      "visibilityPublic": "公開",
+      "visibilityPrivate": "私密",
+      "gameAccounts": "遊戲帳號",
+      "unblockUser": "解除封鎖",
+      "unmute": "解除靜音",
+      "gameRank": "等級 {value}",
+      "gameRating": "高分評級 {value}",
+      "appealsTitle": "我的申訴",
+      "appealStatus": {
+        "pending": "審核中",
+        "accepted": "已通過",
+        "rejected": "已駁回",
+        "superseded": "已取代"
+      },
+      "appeal": "申訴",
+      "appealStatement": "申訴內容",
+      "submitAppeal": "送出申訴",
+      "appealSubmitted": "申訴已送出",
+      "appealFailed": "無法送出申訴。",
+      "emailPassword": "信箱與密碼"
     },
     "profile": {
       "title": "個人主頁",
@@ -4617,7 +4657,10 @@
       },
       "gameAccountPlayerId": "玩家 ID {id}",
       "gameAccountRank": "玩家等級 {value}",
-      "gameAccountRating": "高分評級 {value}"
+      "gameAccountRating": "高分評級 {value}",
+      "editProfile": "編輯個人資料",
+      "followsYou": "關注了你",
+      "emptyList": "暫無內容"
     },
     "charts": {
       "title": "社群譜面",
@@ -5083,7 +5126,8 @@
         "reports": "檢舉",
         "appeals": "申訴",
         "operations": "操作紀錄",
-        "forums": "板塊"
+        "forums": "板塊",
+        "comments": "留言"
       },
       "metrics": {
         "totalUsers": "使用者總數",
@@ -5095,7 +5139,11 @@
         "pendingReports": "待處理檢舉",
         "pendingOperations": "處理中操作",
         "readyPackages": "就緒資源包",
-        "resourceRuns": "資源任務"
+        "resourceRuns": "資源任務",
+        "reviewComments": "待處理留言",
+        "reviewPosts": "待處理貼文",
+        "pendingDisplayNames": "待審暱稱",
+        "totalComments": "留言"
       },
       "columns": {
         "user": "使用者",
@@ -5247,7 +5295,8 @@
         "openHistory": "開啟目標歷史與治理",
         "openProfile": "開啟公開主頁",
         "manageUser": "開啟使用者管理",
-        "governanceNote": "更新檢舉只會記錄審核狀態，不會自動隱藏內容或限制使用者。"
+        "governanceNote": "更新檢舉只會記錄審核狀態，不會自動隱藏內容或限制使用者。",
+        "block": "攔截內容"
       },
       "history": {
         "open": "檢視歷史記錄",
@@ -5449,7 +5498,10 @@
         "sessionNote": "工作階段有效性與紀錄更新不代表使用者是否在線。",
         "displayTimezone": "顯示時區：{zone}",
         "restrictionRecord": "限制紀錄",
-        "access": "角色與狀態"
+        "access": "角色與狀態",
+        "posts": "貼文",
+        "comments": "留言",
+        "activity": "活動"
       },
       "analytics": {
         "trends": "趨勢",
@@ -5571,14 +5623,41 @@
         "displaySettings": "名稱與外觀",
         "accessSettings": "存取權限",
         "destinationSettings": "預設與啟用狀態",
-        "selectToEdit": "選擇要編輯的板塊",
-        "selectHint": "請選擇板塊以管理名稱、分組與存取權限。"
+        "selectToEdit": "選擇要編輯的板塊"
       },
       "save": "儲存",
       "cancel": "取消",
       "showRestrictedContent": "顯示未公開內容",
       "showRestrictedContentHint": "僅所選身分組可以存取這些內容，公開頁面維持不變。",
       "contentAccessGroups": "允許存取的身分組"
+    },
+    "comments": {
+      "search": "搜尋留言",
+      "partial": "已處理 {done} 則 · 失敗 {failed} 則",
+      "updated": "已處理 {count} 則",
+      "selected": "已選 {count} 則",
+      "approve": "通過",
+      "block": "攔截",
+      "hide": "隱藏",
+      "unhide": "取消隱藏",
+      "history": "歷史",
+      "select": "選擇",
+      "selectAll": "全選 {count} 則",
+      "statusReview": "需複核",
+      "statusPending": "待審核",
+      "statusBlocked": "已攔截",
+      "statusHidden": "已隱藏",
+      "reports": "檢舉 {count}",
+      "filterAttention": "待處理",
+      "filterReported": "被檢舉",
+      "filterBlocked": "已攔截",
+      "filterHidden": "已隱藏",
+      "filterAll": "全部",
+      "target": "位置",
+      "targetAll": "全部",
+      "targetForum": "板塊",
+      "targetEntity": "圖鑑頁",
+      "empty": "沒有內容"
     }
   },
   "download": {

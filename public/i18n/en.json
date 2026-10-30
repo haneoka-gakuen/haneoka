@@ -188,7 +188,8 @@
       "placeholder": "Search the archive and community",
       "hint": "Find songs, characters, story dialogue, guides and community posts.",
       "recent": "Recent",
-      "browse": "Browse"
+      "browse": "Browse",
+      "results": "{count} results"
     }
   },
   "navigation": {
@@ -1477,7 +1478,7 @@
       "added": "Added",
       "thresholds": "Rank thresholds",
       "rank": "Rank",
-      "resetPoints": "Next season start",
+      "resetPoints": "Season reset",
       "opens": "Opens",
       "basePoints": "Base points",
       "players": "Players",
@@ -1516,7 +1517,8 @@
         "playerId": "Player ID",
         "find": "Find",
         "notFound": "Not in the top {count}"
-      }
+      },
+      "resetKept": "Kept"
     },
     "comics": {
       "numbered": "Comic {number}"
@@ -3315,7 +3317,9 @@
     "playerProfile": {
       "title": "Player lookup",
       "queryIdle": "Enter a player ID",
-      "invalidId": "Check the player ID"
+      "invalidId": "Check the player ID",
+      "linked": "Your game accounts",
+      "recent": "Recent lookups"
     },
     "songPuzzle": {
       "title": "Song cover puzzle",
@@ -4033,7 +4037,43 @@
       "signInDescription": "Sign in to access your account.",
       "roleRegular": "Regular",
       "roleTrusted": "Trusted member",
-      "roleContributor": "Contributor"
+      "roleContributor": "Contributor",
+      "relationships": "Blocks & mutes",
+      "moderation": "Restrictions & appeals",
+      "blockedUsers": "Blocked users",
+      "mutedUsers": "Muted users",
+      "restrictions": "Restrictions",
+      "restrictionWrite": "Posting",
+      "restrictionUpload": "Uploads",
+      "restrictionSignIn": "Sign-in",
+      "restrictionPermanent": "Permanent",
+      "listEmpty": "None",
+      "preview": "Preview",
+      "joined": "Joined",
+      "remove": "Remove",
+      "removeGameAccount": "Remove this game account?",
+      "gameAccountRemoved": "Game account removed.",
+      "findPlayer": "Find a player",
+      "visibilityPublic": "Public",
+      "visibilityPrivate": "Private",
+      "gameAccounts": "Game accounts",
+      "unblockUser": "Unblock",
+      "unmute": "Unmute",
+      "gameRank": "Rank {value}",
+      "gameRating": "Rating {value}",
+      "appealsTitle": "Your appeals",
+      "appealStatus": {
+        "pending": "Pending",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "superseded": "Superseded"
+      },
+      "appeal": "Appeal",
+      "appealStatement": "Appeal statement",
+      "submitAppeal": "Submit appeal",
+      "appealSubmitted": "Appeal submitted",
+      "appealFailed": "The appeal could not be submitted.",
+      "emailPassword": "Email & password"
     },
     "profile": {
       "title": "Public profile",
@@ -4617,7 +4657,10 @@
       },
       "gameAccountPlayerId": "Player ID {id}",
       "gameAccountRank": "Player rank {value}",
-      "gameAccountRating": "High score rating {value}"
+      "gameAccountRating": "High score rating {value}",
+      "editProfile": "Edit profile",
+      "followsYou": "Follows you",
+      "emptyList": "Nothing here yet"
     },
     "charts": {
       "title": "Community Charts",
@@ -5083,7 +5126,8 @@
         "reports": "Reports",
         "appeals": "Appeals",
         "operations": "Operations",
-        "forums": "Forums"
+        "forums": "Forums",
+        "comments": "Comments"
       },
       "metrics": {
         "totalUsers": "Total users",
@@ -5095,7 +5139,11 @@
         "pendingReports": "Pending reports",
         "pendingOperations": "Pending operations",
         "readyPackages": "Ready packages",
-        "resourceRuns": "Resource runs"
+        "resourceRuns": "Resource runs",
+        "reviewComments": "Comments to review",
+        "reviewPosts": "Posts to review",
+        "pendingDisplayNames": "Names awaiting review",
+        "totalComments": "Comments"
       },
       "columns": {
         "user": "User",
@@ -5247,7 +5295,8 @@
         "openHistory": "Open target history and governance",
         "openProfile": "Open public profile",
         "manageUser": "Open user management",
-        "governanceNote": "Updating the report only records its review status; it does not automatically hide content or restrict a user."
+        "governanceNote": "Updating the report only records its review status; it does not automatically hide content or restrict a user.",
+        "block": "Block content"
       },
       "history": {
         "open": "View history",
@@ -5449,7 +5498,10 @@
         "sessionNote": "Session validity and record updates do not indicate whether a person is online.",
         "displayTimezone": "Displayed time zone: {zone}",
         "restrictionRecord": "Restriction record",
-        "access": "Role and status"
+        "access": "Role and status",
+        "posts": "Posts",
+        "comments": "Comments",
+        "activity": "Activity"
       },
       "analytics": {
         "trends": "Trends",
@@ -5571,14 +5623,41 @@
         "displaySettings": "Name and appearance",
         "accessSettings": "Access permissions",
         "destinationSettings": "Defaults and availability",
-        "selectToEdit": "Select a forum to edit",
-        "selectHint": "Choose a forum to manage its name, group and access permissions."
+        "selectToEdit": "Select a forum to edit"
       },
       "save": "Save",
       "cancel": "Cancel",
       "showRestrictedContent": "Show unpublished content",
       "showRestrictedContentHint": "Only selected account groups can access this content. Public pages remain unchanged.",
       "contentAccessGroups": "Allowed account groups"
+    },
+    "comments": {
+      "search": "Search comments",
+      "partial": "{done} updated · {failed} failed",
+      "updated": "{count} updated",
+      "selected": "{count} selected",
+      "approve": "Approve",
+      "block": "Block",
+      "hide": "Hide",
+      "unhide": "Show",
+      "history": "History",
+      "select": "Select",
+      "selectAll": "Select all {count}",
+      "statusReview": "Needs review",
+      "statusPending": "Pending",
+      "statusBlocked": "Blocked",
+      "statusHidden": "Hidden",
+      "reports": "{count} reports",
+      "filterAttention": "To review",
+      "filterReported": "Reported",
+      "filterBlocked": "Blocked",
+      "filterHidden": "Hidden",
+      "filterAll": "All",
+      "target": "Where",
+      "targetAll": "All",
+      "targetForum": "Forums",
+      "targetEntity": "Entity pages",
+      "empty": "Nothing here"
     }
   },
   "download": {

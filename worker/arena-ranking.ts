@@ -11,6 +11,7 @@ import type {
   GameRecordsRegion,
   SongRankingCardDto,
 } from "../src/lib/game-records";
+import { officialProfileCard } from "./official-ranking-api";
 import { readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, type OfficialRankingStoreBindings } from "./official-ranking-store";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
@@ -92,7 +93,7 @@ export function arenaRankingRow(value: unknown, fallbackRank: number): ArenaRank
     deckId: positive(deck.id),
     deckName: text(deck.name),
     totalPower: positive(field(deck, "totalPower")),
-    profileCard: null,
+    profileCard: officialProfileCard(field(profile, "profileCard")),
     cards: (Array.isArray(deck.cards) ? deck.cards : [])
       .slice(0, 5)
       .map(card)

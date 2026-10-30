@@ -188,7 +188,8 @@
       "placeholder": "搜索资料、剧情与社区",
       "hint": "查找乐曲、角色、剧情对白、帮助指南和社区帖子。",
       "recent": "最近搜索",
-      "browse": "浏览"
+      "browse": "浏览",
+      "results": "{count} 条结果"
     }
   },
   "navigation": {
@@ -1477,7 +1478,7 @@
       "added": "加入时间",
       "thresholds": "段位门槛",
       "rank": "段位",
-      "resetPoints": "下赛季起始",
+      "resetPoints": "赛季重置扣除",
       "opens": "开放",
       "basePoints": "基础积分",
       "players": "对局人数",
@@ -1516,7 +1517,8 @@
         "playerId": "玩家 ID",
         "find": "查找",
         "notFound": "前 {count} 名中未找到"
-      }
+      },
+      "resetKept": "保留"
     },
     "comics": {
       "numbered": "第{number}话"
@@ -3315,7 +3317,9 @@
     "playerProfile": {
       "title": "玩家查询",
       "queryIdle": "输入玩家 ID",
-      "invalidId": "请检查玩家 ID"
+      "invalidId": "请检查玩家 ID",
+      "linked": "我的游戏账号",
+      "recent": "最近查询"
     },
     "songPuzzle": {
       "title": "歌曲封面华容道",
@@ -4033,7 +4037,43 @@
       "signInDescription": "登录以访问您的账号。",
       "roleRegular": "活跃用户",
       "roleTrusted": "受信用户",
-      "roleContributor": "贡献者"
+      "roleContributor": "贡献者",
+      "relationships": "屏蔽与静音",
+      "moderation": "限制与申诉",
+      "blockedUsers": "已屏蔽的用户",
+      "mutedUsers": "已静音的用户",
+      "restrictions": "限制",
+      "restrictionWrite": "发布",
+      "restrictionUpload": "上传",
+      "restrictionSignIn": "登录",
+      "restrictionPermanent": "永久",
+      "listEmpty": "无",
+      "preview": "预览",
+      "joined": "加入时间",
+      "remove": "移除",
+      "removeGameAccount": "移除此游戏账号?",
+      "gameAccountRemoved": "已移除游戏账号。",
+      "findPlayer": "查找玩家",
+      "visibilityPublic": "公开",
+      "visibilityPrivate": "私密",
+      "gameAccounts": "游戏账号",
+      "unblockUser": "取消屏蔽",
+      "unmute": "取消静音",
+      "gameRank": "等级 {value}",
+      "gameRating": "高分评级 {value}",
+      "appealsTitle": "我的申诉",
+      "appealStatus": {
+        "pending": "审核中",
+        "accepted": "已通过",
+        "rejected": "已驳回",
+        "superseded": "已取代"
+      },
+      "appeal": "申诉",
+      "appealStatement": "申诉内容",
+      "submitAppeal": "提交申诉",
+      "appealSubmitted": "申诉已提交",
+      "appealFailed": "无法提交申诉。",
+      "emailPassword": "邮箱与密码"
     },
     "profile": {
       "title": "个人主页",
@@ -4617,7 +4657,10 @@
       },
       "gameAccountPlayerId": "玩家 ID {id}",
       "gameAccountRank": "玩家等级 {value}",
-      "gameAccountRating": "高分评级 {value}"
+      "gameAccountRating": "高分评级 {value}",
+      "editProfile": "编辑资料",
+      "followsYou": "关注了你",
+      "emptyList": "暂无内容"
     },
     "charts": {
       "title": "社区谱面",
@@ -5083,7 +5126,8 @@
         "reports": "举报",
         "appeals": "申诉",
         "operations": "操作记录",
-        "forums": "板块"
+        "forums": "板块",
+        "comments": "评论"
       },
       "metrics": {
         "totalUsers": "用户总数",
@@ -5095,7 +5139,11 @@
         "pendingReports": "待处理举报",
         "pendingOperations": "处理中操作",
         "readyPackages": "就绪资源包",
-        "resourceRuns": "资源任务"
+        "resourceRuns": "资源任务",
+        "reviewComments": "待处理评论",
+        "reviewPosts": "待处理帖子",
+        "pendingDisplayNames": "待审昵称",
+        "totalComments": "评论"
       },
       "columns": {
         "user": "用户",
@@ -5247,7 +5295,8 @@
         "openHistory": "打开目标历史与治理",
         "openProfile": "打开公开主页",
         "manageUser": "打开用户管理",
-        "governanceNote": "更新举报只记录审核状态，不会自动隐藏内容或限制用户。"
+        "governanceNote": "更新举报只记录审核状态，不会自动隐藏内容或限制用户。",
+        "block": "拦截内容"
       },
       "history": {
         "open": "查看历史记录",
@@ -5449,7 +5498,10 @@
         "sessionNote": "会话有效性和记录更新不代表用户是否在线。",
         "displayTimezone": "显示时区：{zone}",
         "restrictionRecord": "限制记录",
-        "access": "角色与状态"
+        "access": "角色与状态",
+        "posts": "帖子",
+        "comments": "评论",
+        "activity": "活动"
       },
       "analytics": {
         "trends": "趋势",
@@ -5571,14 +5623,41 @@
         "displaySettings": "名称与外观",
         "accessSettings": "访问权限",
         "destinationSettings": "默认值与启用状态",
-        "selectToEdit": "选择要编辑的板块",
-        "selectHint": "选择板块以管理名称、分组和访问权限。"
+        "selectToEdit": "选择要编辑的板块"
       },
       "save": "保存",
       "cancel": "取消",
       "showRestrictedContent": "显示未公开内容",
       "showRestrictedContentHint": "仅所选身份组可以访问这些内容，公开页面保持不变。",
       "contentAccessGroups": "允许访问的身份组"
+    },
+    "comments": {
+      "search": "搜索评论",
+      "partial": "已处理 {done} 条 · 失败 {failed} 条",
+      "updated": "已处理 {count} 条",
+      "selected": "已选 {count} 条",
+      "approve": "通过",
+      "block": "拦截",
+      "hide": "隐藏",
+      "unhide": "取消隐藏",
+      "history": "历史",
+      "select": "选择",
+      "selectAll": "全选 {count} 条",
+      "statusReview": "需复核",
+      "statusPending": "待审核",
+      "statusBlocked": "已拦截",
+      "statusHidden": "已隐藏",
+      "reports": "举报 {count}",
+      "filterAttention": "待处理",
+      "filterReported": "被举报",
+      "filterBlocked": "已拦截",
+      "filterHidden": "已隐藏",
+      "filterAll": "全部",
+      "target": "位置",
+      "targetAll": "全部",
+      "targetForum": "板块",
+      "targetEntity": "图鉴页",
+      "empty": "没有内容"
     }
   },
   "download": {

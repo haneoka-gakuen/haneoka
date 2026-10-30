@@ -34,6 +34,7 @@ export interface ArenaRank {
   division: number;
   points: number;
   /** Points a player in this rank starts the next season with. */
+  /** AP deducted when the next season starts, by the rank held at season end (0 keeps it). */
   resetPoints: number;
   top: boolean;
   /** When the rank opens; 0 when it is open from the season start. */
@@ -135,4 +136,42 @@ export function arenaPeriods(season: ArenaSeason) {
     const rules = season.leagues.map((league) => arenaCurrentRule(season, league, startAt));
     return rules.some(Boolean) ? [{ startAt, endAt: boundaries[index + 1]!, rules }] : [];
   });
+}
+
+/**
+ * The seasons a glance needs (the live one, else the next, else the last), with
+ * each league reduced to its name, art and rules: what the home Arena card shows.
+ */
+export function compactArenaCatalog(catalog: ArenaCatalog, now = Date.now()): ArenaCatalog {
+  const seasons = Object.values(catalog.entries).sort((a, b) => a.startAt - b.startAt);
+  const season =
+    seasons.find((entry) => arenaContains(entry, now)) || seasons.find((entry) => entry.startAt > now) || seasons.at(-1);
+  const next = season ? seasons.find((entry) => entry.startAt > season.endAt) : undefined;
+  const keep = [season, next].filter((entry): entry is ArenaSeason => Boolean(entry));
+  return {
+    schema: catalog.schema,
+    identity: catalog.identity,
+    ...(catalog.images ? { images: { ranks: {}, missions: catalog.images.missions } } : {}),
+    entries: Object.fromEntries(
+      keep.map((entry) => [
+        entry.id,
+        {
+          ...entry,
+          dailyRewards: [],
+          seasonRewards: [],
+          rankingRewards: [],
+          events: [],
+          exchanges: [],
+          leagues: entry.leagues.map((league) => ({ ...league, songs: [], ranks: [], promotionRewards: [] })),
+        },
+      ]),
+    ),
+  };
+}
+
+/** The UI marks the Arena rule marks read: stage attribute sprites and their card-attribute fallbacks. */
+export function arenaRuleMarkNames(marks: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(marks).filter(([name]) => /^(?:sp_icon_live_music_type_\d+|CardType-[A-Za-z]+)\.png$/u.test(name)),
+  );
 }

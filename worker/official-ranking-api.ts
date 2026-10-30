@@ -101,7 +101,7 @@ function officialCard(value: unknown): SongRankingCardDto {
   };
 }
 
-function officialProfileCard(value: unknown): SongRankingRowDto["profileCard"] {
+export function officialProfileCard(value: unknown): SongRankingRowDto["profileCard"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const card = object(value);
   const thumbnailUrls = (Array.isArray(card.thumbnail_url) ? card.thumbnail_url : []).flatMap((source) => {

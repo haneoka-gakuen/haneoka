@@ -1507,7 +1507,7 @@ export class GachaHistory extends LitElement {
               label:
                 day === "unknown"
                   ? this.t("unknownTime")
-                  : formatDate(this.locale, `${day}T12:00:00`, { weekday: true }),
+                  : formatDate(this.locale, `${day}T12:00:00`),
               metadata: this.drawSummary(batches),
               expanded: this.expanded.has(day),
               onExpandedChange: (open) => this.toggleExpanded(day, open),

@@ -87,3 +87,29 @@ class ModalDirective extends AsyncDirective {
 
 /** Native top-layer placement preserves the existing dialog surface and theme. */
 export const modal = directive(ModalDirective);
+
+const backdropPresses = new WeakMap<HTMLDialogElement, boolean>();
+
+/** The dialog's own padding shares its target with the backdrop; only the box edges tell them apart. */
+const outside = (dialog: HTMLDialogElement, event: MouseEvent) => {
+  const box = dialog.getBoundingClientRect();
+  return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+};
+
+/** Records whether a press started on the backdrop, outside the dialog's box. */
+export function backdropPress(event: PointerEvent) {
+  const dialog = event.currentTarget as HTMLDialogElement;
+  backdropPresses.set(dialog, event.target === dialog && outside(dialog, event));
+}
+
+/**
+ * True only for a click that both started and ended on the backdrop. A drag that
+ * begins inside the dialog (selecting text in a field) and is released outside it
+ * fires a click on the dialog too, and must not close it.
+ */
+export function isBackdropClick(event: MouseEvent): boolean {
+  const dialog = event.currentTarget as HTMLDialogElement;
+  const started = backdropPresses.get(dialog) === true;
+  backdropPresses.delete(dialog);
+  return started && event.target === dialog && outside(dialog, event);
+}
