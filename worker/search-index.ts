@@ -220,7 +220,7 @@ function marked(value: string, query: string, crop: boolean) {
 const json = (value: object, status = 200, cache = "no-store") =>
   new Response(JSON.stringify(value), {
     status,
-    headers: { "Cache-Control": cache, "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff" },
+    headers: { "Cache-Control": cache, "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" },
   });
 const failure = (status: number, code: string, message: string) => json({ error: { code, message } }, status);
 
