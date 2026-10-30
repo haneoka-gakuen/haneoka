@@ -1,5 +1,6 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
@@ -250,7 +251,7 @@ export class SongProgress extends LitElement {
     const shown = charts
       .filter((chart) => this.filter === "all" || this.status(chart) === Number(this.filter))
       .filter((chart) => !this.query || chart.title.toLowerCase().includes(this.query) || chart.artist.toLowerCase().includes(this.query))
-      .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale));
+      .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId);
     const present = DIFFICULTIES.map((name, index) => ({ name, value: index === 4 ? 5 : index })).filter(({ value }) =>
       this.charts.some((chart) => chart.difficulty === value),
     );
@@ -279,7 +280,7 @@ export class SongProgress extends LitElement {
                 }),
               )}
             </div>
-            <ol class="song-progress__list" role="list">${shown.map((chart) => this.row(chart))}</ol>
+            ${keyed(`${this.server}:${this.difficulty}`, html`<ol class="song-progress__list" role="list">${shown.map((chart) => this.row(chart))}</ol>`)}
             ${shown.length ? nothing : html`<p class="detail-copy">${uiText(this.locale, "common.states.empty")}</p>`}
           </div>
         </div>

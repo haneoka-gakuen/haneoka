@@ -43,21 +43,21 @@
   /* A full board is thousands of images; rows off screen skip style, layout and paint. */
   .song-ranking__entry {
     content-visibility: auto;
-    contain-intrinsic-size: auto 88px;
+    contain-intrinsic-size: auto 68px;
   }
   .song-ranking__entry + .song-ranking__entry {
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
   .song-ranking__row {
     display: grid;
-    grid-template-columns: 32px 72px 36px minmax(80px, 1fr) minmax(88px, auto) 256px;
+    grid-template-columns: 44px 64px 32px minmax(96px, 1fr) minmax(76px, auto) 216px;
     align-items: center;
     gap: 8px;
-    padding: 4px 12px;
+    padding: 2px 8px;
     min-width: 0;
   }
   .song-ranking__row.song-ranking__row--points {
-    grid-template-columns: 32px 72px 36px minmax(80px, 1fr) minmax(88px, auto);
+    grid-template-columns: 44px 64px 32px minmax(96px, 1fr) minmax(76px, auto);
   }
   .song-ranking__rank {
     font: var(--md-sys-typescale-title-medium-weight)
@@ -65,6 +65,7 @@
     font-variant-numeric: tabular-nums;
     text-align: center;
     color: var(--md-sys-color-on-surface-variant);
+    white-space: nowrap;
   }
   .song-ranking__namecard {
     position: relative;
@@ -79,8 +80,8 @@
   }
   .song-ranking__avatar {
     display: block;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--md-sys-shape-corner-full);
     overflow: hidden;
   }
@@ -130,11 +131,11 @@
   }
   .song-ranking__player-copy {
     display: grid;
-    gap: 4px;
+    gap: 0;
     min-width: 0;
     text-align: start;
     color: var(--md-sys-color-on-surface);
-    padding: 8px 0;
+    padding: 4px 0;
     border-radius: var(--md-sys-shape-corner-small);
   }
   :is(button, a).song-ranking__player-copy {
@@ -170,7 +171,7 @@
   .song-ranking__deck-cards {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
   }
   .song-ranking__card {
@@ -382,7 +383,7 @@
     outline: 3px solid var(--md-sys-color-primary);
     outline-offset: 3px;
   }
-  @container (max-width:760px) {
+  @container (max-width:640px) {
     .song-ranking__row {
       grid-template-columns: 24px 56px 32px minmax(0, 1fr) minmax(72px, auto);
       gap: 4px 8px;
