@@ -21,6 +21,7 @@ CARD_ORIGIN = 'https://static.bang-dream-on.jp'
 CARD_FILE = re.compile(r'(\d{1,19})_[A-Za-z0-9_.-]{1,200}')
 CARD_BYTES = 4 * 1024 * 1024
 CARD_SECONDS = 2
+CARD_BUDGET_SECONDS = 15
 PNG = b'\x89PNG\r\n\x1a\n'
 PACE_SECONDS = 2
 
@@ -113,8 +114,9 @@ class Demand:
             return
         if not authorization:
             return
+        stop = min(time.time() + CARD_BUDGET_SECONDS, self.budget)
         for file in files:
-            if time.time() + CARD_SECONDS >= self.budget:
+            if time.time() + CARD_SECONDS >= stop:
                 return
             try:
                 self.card(file, authorization)
@@ -129,11 +131,12 @@ class Demand:
                 if not self.room(1):
                     return None
                 self.song(int(music_id))
+            # Cards go first: a full player queue would otherwise spend the whole budget every run.
+            self.cards()
             for profile_id in self.job.get('playerLookups', [])[:16]:
                 if not self.room(PLAYER_RPCS):
                     return None
                 self.player(profile_id)
-            self.cards()
         except DemandStopped as stopped:
             return stopped.receipt
         finally:
