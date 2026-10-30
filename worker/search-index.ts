@@ -270,6 +270,9 @@ export async function handleSearchRequest(request: Request, db: D1Database | und
   };
   const strict = matchExpression(query, " ");
   if (!strict) return json({ total: 0, kinds: {}, hits: [] }, 200, "public, max-age=60");
+  // Before the first sync an empty result would read as "no matches"; callers fall back on this instead.
+  const indexed = await db.prepare("SELECT 1 AS ready FROM catalog_search_releases WHERE server = ?").bind(server).first().catch(() => null);
+  if (!indexed) return failure(503, "search_unavailable", "Search is unavailable");
   let found;
   try {
     found = await run(strict);
