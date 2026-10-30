@@ -2,29 +2,36 @@
 @layer pages {
   .destination-hub {
     container-type: inline-size;
-    --hub-surface: oklch(from var(--md-sys-color-surface-container-high) l 0 h);
   }
   .destination-hub .destination-hub__mosaic {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     grid-auto-rows: 100px;
     grid-auto-flow: dense;
-    gap: var(--md-sys-spacing-2);
+    gap: 8px;
   }
   .destination-hub .destination-hub__tile {
+    --tile-accent: var(--md-sys-color-primary);
+    --tile-on-accent: var(--md-sys-color-on-primary);
     position: relative;
     display: flex;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-low);
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: var(--md-sys-spacing-4);
+    overflow: hidden;
     border-radius: var(--md-sys-shape-corner-extra-large);
-    background: var(--hub-surface);
-    color: var(--md-sys-color-on-surface);
     isolation: isolate;
-    transition:
-      border-radius var(--motion-spatial),
-      background-color var(--motion-effects);
+    text-decoration: none;
+    transition: border-radius var(--motion-spatial);
+  }
+  .destination-hub a.destination-hub__tile:hover {
+    border-radius: 48px;
+    background: var(--md-sys-color-surface-container);
+  }
+  .destination-hub a.destination-hub__tile:active {
+    border-radius: var(--md-sys-shape-corner-large);
   }
   .destination-hub .destination-hub__tile--c3 {
     grid-column: span 3;
@@ -44,45 +51,45 @@
   .destination-hub .destination-hub__tile--r4 {
     grid-row: span 4;
   }
-  .destination-hub a.destination-hub__tile:active {
-    border-radius: var(--md-sys-shape-corner-large);
-  }
   .destination-hub .destination-hub__tile-label {
     position: relative;
     z-index: 2;
     display: flex;
     min-width: 0;
-    align-items: center;
-    justify-content: space-between;
     flex-shrink: 0;
-    gap: var(--md-sys-spacing-2);
-    min-height: 48px;
-    margin-top: var(--md-sys-spacing-3);
+    align-items: center;
+    gap: 8px;
+    padding: 12px 12px 4px 20px;
   }
   .destination-hub .destination-hub__tile-label h2 {
+    min-width: 0;
+    flex: 1;
     margin: 0;
-    text-wrap: balance;
     overflow-wrap: anywhere;
-    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
-      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    text-wrap: balance;
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
   }
   .destination-hub .destination-hub__tile--c6 .destination-hub__tile-label h2 {
-    font-size: var(--md-sys-typescale-headline-small-size);
-    line-height: var(--md-sys-typescale-headline-small-line-height);
+    font-size: var(--md-sys-typescale-headline-medium-size);
+    line-height: var(--md-sys-typescale-headline-medium-line-height);
   }
   .destination-hub .destination-hub__open {
     display: grid;
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
     place-items: center;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: var(--hub-surface);
-    color: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    clip-path: var(--shape-cookie-9);
     transition: transform var(--motion-spatial);
   }
   .destination-hub a.destination-hub__tile:hover .destination-hub__open {
-    transform: rotate(-35deg);
+    transform: rotate(60deg);
+  }
+  .destination-hub a.destination-hub__tile:hover .destination-hub__open > svg {
+    transform: rotate(-60deg);
   }
   .destination-hub .destination-hub__art {
     position: relative;
@@ -92,6 +99,7 @@
     min-height: 0;
     align-items: center;
     justify-content: center;
+    margin: 0 12px 12px;
     pointer-events: none;
   }
   .destination-hub .destination-hub__pictures {
@@ -114,86 +122,11 @@
     transform-origin: center 80%;
     transition: transform var(--motion-spatial);
   }
-  .destination-hub .destination-hub__picture img {
+  .destination-hub .destination-hub__picture > img:first-child {
     width: 100%;
     height: 100%;
     object-fit: contain;
     filter: drop-shadow(0 3px 3px color-mix(in srgb, var(--md-sys-color-shadow) 18%, transparent));
-  }
-  .destination-hub .destination-hub__pictures--1 .destination-hub__picture {
-    width: 96%;
-    height: 96%;
-    top: 50%;
-  }
-  .destination-hub .destination-hub__art--portraits .destination-hub__picture {
-    width: 48%;
-    height: 82%;
-  }
-  .destination-hub .destination-hub__art--jackets .destination-hub__picture {
-    width: 64%;
-    height: 70%;
-  }
-  .destination-hub .destination-hub__art--models .destination-hub__picture {
-    width: 76%;
-    height: 92%;
-    transform: translate(calc(-50% + var(--fan-x) * 20%), calc(-50% + var(--fan-y) * 1%))
-      rotate(calc(var(--fan-angle) / 3));
-  }
-  .destination-hub .destination-hub__art--stamps .destination-hub__picture {
-    width: 52%;
-    height: 78%;
-    transform: translate(calc(-50% + var(--fan-x) * 34%), calc(-50% + var(--fan-y) * 2%))
-      rotate(calc(var(--fan-angle) / 2));
-  }
-  .destination-hub .destination-hub__tile--c3 .destination-hub__picture {
-    width: 58%;
-    height: 75%;
-  }
-  .destination-hub .destination-hub__tile--c3 .destination-hub__art--models .destination-hub__picture {
-    width: 76%;
-    height: 92%;
-  }
-  .destination-hub .destination-hub__tile--c3 .destination-hub__pictures--1 .destination-hub__picture {
-    width: 96%;
-    height: 96%;
-  }
-  .destination-hub a.destination-hub__tile:hover .destination-hub__picture {
-    transform: translate(calc(-50% + var(--fan-x) * 17%), calc(-50% + var(--fan-y) * 2%))
-      rotate(calc(var(--fan-angle) * 1.1));
-  }
-  .destination-hub .destination-hub__art--stamps .destination-hub__picture {
-    width: 48%;
-    height: 76%;
-    top: 52%;
-    transform: translate(calc(-50% + var(--fan-x) * 26%), calc(-50% + var(--fan-y) * 3%))
-      rotate(calc(var(--fan-angle) / 2));
-  }
-  .destination-hub a.destination-hub__tile:hover .destination-hub__art--stamps .destination-hub__picture {
-    transform: translate(calc(-50% + var(--fan-x) * 29%), calc(-50% + var(--fan-y) * 3%))
-      rotate(calc(var(--fan-angle) / 2));
-  }
-  .destination-hub .destination-hub__art--landscape .destination-hub__picture {
-    width: 70%;
-    height: 74%;
-    transform: translate(calc(-50% + var(--fan-x) * 10%), calc(-50% + var(--fan-y) * 1%))
-      rotate(calc(var(--fan-angle) / 2));
-  }
-  .destination-hub .destination-hub__art--banners .destination-hub__picture {
-    width: 82%;
-    height: 85%;
-    top: 50%;
-    transform: translate(calc(-50% + var(--fan-x) * 8%), -50%) rotate(calc(var(--fan-angle) / 4));
-  }
-  .destination-hub a.destination-hub__tile:hover .destination-hub__art--landscape .destination-hub__picture {
-    transform: translate(calc(-50% + var(--fan-x) * 12%), calc(-50% + var(--fan-y) * 1%))
-      rotate(calc(var(--fan-angle) / 2));
-  }
-  .destination-hub a.destination-hub__tile:hover .destination-hub__art--banners .destination-hub__picture {
-    transform: translate(calc(-50% + var(--fan-x) * 10%), -50%) rotate(calc(var(--fan-angle) / 4));
-  }
-  .destination-hub a.destination-hub__tile:hover .destination-hub__art--models .destination-hub__picture {
-    transform: translate(calc(-50% + var(--fan-x) * 24%), calc(-50% + var(--fan-y) * 1%))
-      rotate(calc(var(--fan-angle) / 3));
   }
   .destination-hub .destination-hub__team {
     width: 100%;
@@ -370,7 +303,7 @@
     width: 64px;
     height: 64px;
     place-items: center;
-    background: var(--hub-surface);
+    background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface);
     border-radius: var(--md-sys-shape-corner-large);
   }
@@ -389,8 +322,8 @@
     position: absolute;
     inset: 0;
     background:
-      repeating-linear-gradient(90deg, transparent 0 calc(33.33% - 2px), var(--hub-surface) calc(33.33% - 2px) 33.33%),
-      repeating-linear-gradient(0deg, transparent 0 calc(33.33% - 2px), var(--hub-surface) calc(33.33% - 2px) 33.33%);
+      repeating-linear-gradient(90deg, transparent 0 calc(33.33% - 2px), var(--md-sys-color-surface-container-highest) calc(33.33% - 2px) 33.33%),
+      repeating-linear-gradient(0deg, transparent 0 calc(33.33% - 2px), var(--md-sys-color-surface-container-highest) calc(33.33% - 2px) 33.33%);
   }
   .destination-hub .destination-hub__guess {
     --icon-size: 40px;
@@ -423,20 +356,20 @@
     height: 88px;
     place-items: center;
     color: var(--md-sys-color-primary);
-    background: var(--hub-surface);
+    background: var(--md-sys-color-surface-container-highest);
     border-radius: var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-large)
       var(--md-sys-shape-corner-extra-large) var(--md-sys-shape-corner-extra-small);
   }
   .destination-hub .destination-hub__conversation > span:nth-child(2) {
     margin-left: -12px;
     transform: translateY(36px);
-    background: var(--hub-surface);
+    background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface);
   }
   .destination-hub .destination-hub__conversation > span:nth-child(3) {
     margin-left: -12px;
     transform: translateY(-24px);
-    background: var(--hub-surface);
+    background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface);
   }
   .destination-hub .destination-hub__personal {
@@ -464,7 +397,7 @@
     flex: 1 1 calc(50% - 8px);
     min-height: 48px;
     padding: 10px 14px;
-    background: var(--hub-surface);
+    background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
     white-space: normal;
@@ -480,6 +413,301 @@
   .destination-hub .destination-hub__symbol > svg {
     width: 64px;
     height: 64px;
+  }
+  /* Compositions: each shows what the destination holds using its own artwork. */
+  .destination-hub [class*="--look-"] .destination-hub__art {
+    position: relative;
+    margin: 0;
+  }
+  /* Members: a hand of real cards, each with its attribute and rarity. */
+  .destination-hub .destination-hub__tile--look-arc .destination-hub__picture {
+    top: 60%;
+    width: auto;
+    height: 92%;
+    aspect-ratio: 1;
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent);
+    transform: translate(calc(-50% + var(--fan-x) * 62%), calc(-50% + var(--fan-y) * -3%)) rotate(calc(var(--fan-x) * 7deg));
+    transform-origin: center 130%;
+  }
+  .destination-hub a.destination-hub__tile--look-arc:hover .destination-hub__picture {
+    transform: translate(calc(-50% + var(--fan-x) * 74%), calc(-53% + var(--fan-y) * -3%)) rotate(calc(var(--fan-x) * 9deg));
+  }
+  .destination-hub .destination-hub__tile--look-arc .destination-hub__picture > img:first-child {
+    border-radius: inherit;
+    object-fit: cover;
+    filter: none;
+  }
+  .destination-hub .destination-hub__picture > .destination-hub__attribute {
+    top: 4px;
+    left: 4px;
+    width: 24%;
+  }
+  .destination-hub .destination-hub__picture > .destination-hub__rarity {
+    top: 4px;
+    right: 4px;
+    width: 30%;
+    height: auto;
+  }
+  /* Songs: jackets with band, attribute and the chart levels. */
+  .destination-hub .destination-hub__tile--look-records .destination-hub__picture {
+    top: 48%;
+    width: auto;
+    height: 74%;
+    aspect-ratio: 1;
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent);
+    transform: translate(calc(-50% + var(--fan-x) * 26%), calc(-50% + var(--fan-y) * 2%)) rotate(calc(var(--fan-angle) * .6));
+  }
+  .destination-hub a.destination-hub__tile--look-records:hover .destination-hub__picture {
+    transform: translate(calc(-50% + var(--fan-x) * 34%), calc(-50% + var(--fan-y) * 2%)) rotate(calc(var(--fan-angle) * .8));
+  }
+  .destination-hub .destination-hub__tile--look-records .destination-hub__picture > img:first-child {
+    border-radius: inherit;
+    object-fit: cover;
+    filter: none;
+  }
+  .destination-hub .destination-hub__song-marks {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    display: flex;
+    gap: 2px;
+  }
+  .destination-hub .destination-hub__song-marks img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+  .destination-hub .destination-hub__levels {
+    position: absolute;
+    right: 0;
+    bottom: -22px;
+    left: 0;
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .destination-hub .destination-hub__levels li {
+    min-width: 24px;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    text-align: center;
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / 18px var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  /* People: portraits cut from expressive shapes. */
+  .destination-hub .destination-hub__tile--look-cookies .destination-hub__picture {
+    top: 54%;
+    width: auto;
+    height: 72%;
+    aspect-ratio: 1;
+    transform: translate(calc(-50% + var(--fan-x) * 64%), calc(-50% + var(--fan-x) * var(--fan-x) * -6%));
+  }
+  .destination-hub .destination-hub__tile--look-cookies .destination-hub__picture::before {
+    position: absolute;
+    inset: -4%;
+    background: var(--character);
+    clip-path: var(--shape-cookie-9);
+    content: "";
+  }
+  .destination-hub .destination-hub__tile--look-cookies .destination-hub__picture > .destination-hub__character-band {
+    position: absolute;
+    right: 4%;
+    bottom: 4%;
+    width: 30%;
+    height: 30%;
+    object-fit: contain;
+  }
+  .destination-hub .destination-hub__tile--look-cookies .destination-hub__picture > img:first-child {
+    position: relative;
+    clip-path: var(--shape-cookie-9);
+    object-fit: cover;
+    object-position: 50% 10%;
+    filter: none;
+  }
+  /* Snapshots: framed prints with their attribute and rarity. */
+  .destination-hub .destination-hub__tile--look-polaroid .destination-hub__picture {
+    top: 54%;
+    width: 54%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    padding: 4px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-lowest);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent);
+    transform: translate(calc(-50% + var(--fan-x) * 44%), calc(-50% + var(--fan-y) * 2%)) rotate(var(--fan-angle));
+  }
+  .destination-hub a.destination-hub__tile--look-polaroid:hover .destination-hub__picture {
+    transform: translate(calc(-50% + var(--fan-x) * 54%), calc(-50% + var(--fan-y) * 2%)) rotate(calc(var(--fan-angle) * 1.3));
+  }
+  .destination-hub .destination-hub__tile--look-polaroid .destination-hub__picture > img:first-child {
+    object-fit: cover;
+    filter: none;
+  }
+  /* Comics: panels on a page, the frames slightly askew. */
+  .destination-hub .destination-hub__tile--look-panels .destination-hub__pictures {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 6px;
+    padding: 0 16px 16px;
+    transform: rotate(-2deg) scale(1.04);
+  }
+  .destination-hub .destination-hub__tile--look-panels .destination-hub__picture {
+    position: relative;
+    inset: auto;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+    border: 2px solid currentcolor;
+    border-radius: var(--md-sys-shape-corner-small);
+    transform: none;
+  }
+  .destination-hub .destination-hub__tile--look-panels .destination-hub__picture:first-child {
+    grid-row: span 2;
+  }
+  .destination-hub .destination-hub__tile--look-panels .destination-hub__picture > img:first-child {
+    object-fit: cover;
+    object-position: top;
+    filter: none;
+  }
+  /* Scenes: the artwork is the tile, the title sits on a scrim. */
+  .destination-hub .destination-hub__tile--look-bleed .destination-hub__art {
+    position: absolute;
+    inset: 0;
+  }
+  .destination-hub .destination-hub__tile--look-bleed .destination-hub__picture {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: none;
+    transition: scale var(--motion-spatial);
+  }
+  .destination-hub .destination-hub__tile--look-bleed .destination-hub__picture:not(:first-child) {
+    display: none;
+  }
+  .destination-hub a.destination-hub__tile--look-bleed:hover .destination-hub__picture {
+    scale: 1.04;
+  }
+  .destination-hub .destination-hub__tile--look-bleed .destination-hub__picture > img:first-child {
+    object-fit: cover;
+    filter: none;
+  }
+  .destination-hub .destination-hub__tile--look-bleed .destination-hub__tile-label {
+    color: #fff;
+    background: linear-gradient(rgb(0 0 0 / 62%), rgb(0 0 0 / 0%));
+    padding-block-end: 28px;
+  }
+  /* Gacha and bands: a banner inside a capsule. */
+  .destination-hub .destination-hub__tile--look-capsule .destination-hub__picture {
+    top: 52%;
+    width: 84%;
+    height: 72%;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-full);
+    outline: 6px solid var(--tile-accent);
+    outline-offset: -6px;
+    transform: translate(-50%, -50%);
+  }
+  .destination-hub .destination-hub__tile--look-capsule .destination-hub__picture:not(:first-child) {
+    display: none;
+  }
+  .destination-hub .destination-hub__tile--look-capsule .destination-hub__picture > img:first-child {
+    object-fit: cover;
+    filter: none;
+  }
+  /* Stamps and stickers: loose pieces on a burst of colour. */
+  .destination-hub .destination-hub__tile--look-scatter .destination-hub__art::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: auto;
+    height: 130%;
+    aspect-ratio: 1;
+    background: color-mix(in srgb, var(--tile-accent) 18%, transparent);
+    clip-path: var(--shape-very-sunny);
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+  .destination-hub .destination-hub__tile--look-scatter .destination-hub__picture {
+    top: 50%;
+    width: 42%;
+    height: 82%;
+    transform: translate(calc(-50% + var(--fan-x) * 52%), calc(-50% + var(--fan-y) * 3%)) rotate(var(--fan-angle));
+  }
+  .destination-hub a.destination-hub__tile--look-scatter:hover .destination-hub__picture {
+    transform: translate(calc(-50% + var(--fan-x) * 58%), calc(-50% + var(--fan-y) * 3%)) rotate(calc(var(--fan-angle) * -1));
+  }
+  /* Items: objects set out on a shelf. */
+  .destination-hub .destination-hub__tile--look-shelf .destination-hub__art::after {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    left: 16px;
+    height: 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--tile-accent);
+    content: "";
+  }
+  .destination-hub .destination-hub__tile--look-shelf .destination-hub__picture {
+    top: auto;
+    bottom: 20px;
+    width: 30%;
+    height: 72%;
+    transform: translateX(calc(-50% + var(--fan-x) * 100%));
+  }
+  /* Models: figures standing on a stage. */
+  .destination-hub .destination-hub__tile--look-stage .destination-hub__art::before {
+    position: absolute;
+    right: 12%;
+    bottom: -18%;
+    left: 12%;
+    height: 44%;
+    background: color-mix(in srgb, var(--tile-accent) 22%, transparent);
+    clip-path: var(--shape-oval);
+    content: "";
+  }
+  .destination-hub .destination-hub__tile--look-stage .destination-hub__picture {
+    top: auto;
+    bottom: 0;
+    width: 62%;
+    height: 112%;
+    transform: translateX(calc(-50% + var(--fan-x) * 34%));
+  }
+  .destination-hub .destination-hub__tile--look-stage .destination-hub__picture > img:first-child {
+    object-position: bottom;
+  }
+  /* Everything else: its own icon inside a large expressive shape. */
+  .destination-hub .destination-hub__tile--look-burst .destination-hub__symbol {
+    --icon-size: 56px;
+    position: absolute;
+    right: -20px;
+    bottom: -28px;
+    width: 148px;
+    height: 148px;
+    color: var(--tile-on-accent);
+    background: var(--tile-accent);
+    clip-path: var(--shape-soft-burst);
+    transition: rotate var(--motion-spatial);
+  }
+  .destination-hub .destination-hub__tile--look-burst:nth-child(3n) .destination-hub__symbol {
+    clip-path: var(--shape-cookie-12);
+  }
+  .destination-hub .destination-hub__tile--look-burst:nth-child(3n + 1) .destination-hub__symbol {
+    clip-path: var(--shape-clover-8);
+  }
+  .destination-hub a.destination-hub__tile--look-burst:hover .destination-hub__symbol {
+    rotate: 24deg;
+  }
+  .destination-hub .destination-hub__tile--look-burst .destination-hub__symbol > svg {
+    width: 56px;
+    height: 56px;
   }
   @container (max-width: 700px) {
     .destination-hub .destination-hub__mosaic {
@@ -497,47 +725,40 @@
     }
   }
   @container (max-width: 420px) {
-    .destination-hub .destination-hub__symbol {
-      --icon-size: 48px;
-    }
     .destination-hub .destination-hub__mosaic {
       grid-auto-rows: 80px;
     }
+    .destination-hub .destination-hub__tile--look-burst .destination-hub__symbol {
+      width: 104px;
+      height: 104px;
+    }
+    .destination-hub .destination-hub__tile--look-burst .destination-hub__symbol > svg {
+      width: 40px;
+      height: 40px;
+    }
+    .destination-hub .destination-hub__symbol,
+    .destination-hub .destination-hub__conversation > span {
+      --icon-size: 48px;
+    }
     .destination-hub .destination-hub__tile {
-      padding: var(--md-sys-spacing-3);
       border-radius: var(--md-sys-shape-corner-large);
     }
     .destination-hub .destination-hub__tile-label {
-      gap: var(--md-sys-spacing-1);
-      margin-top: var(--md-sys-spacing-2);
+      gap: 4px;
+      padding: 8px 8px 2px 12px;
     }
     .destination-hub .destination-hub__tile-label h2 {
-      font-size: var(--md-sys-typescale-label-large-size);
-      line-height: var(--md-sys-typescale-label-large-line-height);
+      font-size: var(--md-sys-typescale-title-small-size);
+      line-height: var(--md-sys-typescale-title-small-line-height);
     }
     .destination-hub .destination-hub__tile--c6 .destination-hub__tile-label h2 {
       font-size: var(--md-sys-typescale-title-large-size);
       line-height: var(--md-sys-typescale-title-large-line-height);
     }
-    .destination-hub .destination-hub__open {
-      flex-basis: 28px;
-      width: 28px;
-      height: 28px;
-    }
-    .destination-hub .destination-hub__tile--c3 .destination-hub__open,
-    .destination-hub .destination-hub__tile--c4 .destination-hub__open {
+    .destination-hub .destination-hub__tile--c3 .destination-hub__open {
       display: none;
     }
-    .destination-hub .destination-hub__symbol > svg {
-      width: 48px;
-      height: 48px;
-    }
-    .destination-hub .destination-hub__score-media {
-      gap: var(--md-sys-spacing-3);
-      padding: var(--md-sys-spacing-3);
-    }
     .destination-hub .destination-hub__conversation > span {
-      --icon-size: 48px;
       width: 80px;
       height: 68px;
     }

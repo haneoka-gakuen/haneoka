@@ -37,6 +37,45 @@ const tile = (
   rows: HubTile["rows"],
   limit = 3,
 ): HubTile => ({ route, visual, columns, rows, limit });
+export type HubLook = "arc" | "records" | "cookies" | "polaroid" | "panels" | "bleed" | "capsule" | "scatter" | "shelf" | "stage" | "burst" | "scene";
+/** Each destination's composition in the collage, showing what it holds. */
+const looks: Record<string, HubLook> = {
+  "/catalog/member-cards": "arc",
+  "/catalog/songs": "records",
+  "/catalog/characters": "cookies",
+  "/catalog/stamps": "scatter",
+  "/catalog/support-cards": "polaroid",
+  "/catalog/comics": "panels",
+  "/catalog/events": "bleed",
+  "/catalog/gacha": "capsule",
+  "/catalog/backgrounds": "bleed",
+  "/catalog/stickers": "scatter",
+  "/catalog/items": "shelf",
+  "/catalog/band-items": "shelf",
+  "/catalog/real-lives": "bleed",
+  "/catalog/stories/band": "capsule",
+  "/catalog/stories/event": "bleed",
+  "/catalog/stories/link": "scene",
+  "/catalog/stories/birthday": "cookies",
+  "/catalog/stories/home": "bleed",
+  "/catalog/stories/afterlive": "cookies",
+  "/catalog/stories/tutorial": "bleed",
+  "/team-builder": "scene",
+  "/stamp-maker": "scatter",
+  "/chart-editor/create": "scene",
+  "/catalog/live2d": "stage",
+  "/catalog/spine": "stage",
+  "/catalog/assets": "polaroid",
+  "/catalog/help": "bleed",
+  "/sonolus": "scene",
+  "/song-puzzle": "scene",
+  "/song-guess": "scene",
+  "/community/feeds": "scene",
+  "/community/playlists": "records",
+  "/community/charts": "scene",
+  "/community/mine": "scene",
+};
+export const hubLook = (route: string): HubLook => looks[route] ?? "burst";
 const curated: Record<HubId, HubTile[]> = {
   catalog: [
     tile("/catalog/member-cards", "portraits", 6, 3, 5),

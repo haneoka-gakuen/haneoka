@@ -2,7 +2,7 @@
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
 import HubArtwork from "./HubArtwork.astro";
-import { homeHubTiles, hubTiles, hubEntry, type HubId } from "../config/destination-hubs";
+import { homeHubTiles, hubLook, hubTiles, hubEntry, type HubId } from "../config/destination-hubs";
 import { t } from "../i18n/messages";
 import { localePath, type Locale } from "../i18n/locales";
 import { resourceCollectionHref } from "../lib/resource-route";
@@ -21,15 +21,20 @@ const href = (route: string) => resourceCollectionHref(route, server, locale) ??
       const entry = hubEntry(tile.route);
       const visual = tile.visual === "icon" && media[tile.route]?.images.length ? "stamps" : tile.visual;
       const art = <HubArtwork visual={visual} media={media[tile.route]} icon={entry.icon} limit={tile.limit} locale={locale} />;
-      const className = `destination-hub__tile destination-hub__tile--${visual} destination-hub__tile--c${tile.columns} destination-hub__tile--r${tile.rows}`;
+      const look = hubLook(tile.route);
+      const className = `destination-hub__tile destination-hub__tile--${visual} destination-hub__tile--c${tile.columns} destination-hub__tile--r${tile.rows} destination-hub__tile--look-${look}`;
+      const header = <div class="destination-hub__tile-label">
+        <h2><I18nText keyName={entry.label} locale={locale} /></h2>
+        <span class="destination-hub__open"><Icon name="arrow_forward" size={20} /></span>
+      </div>;
       return tile.related ? <div class={`${className} destination-hub__tile--compound`}>
         {art}
         <div class="destination-hub__related">
           {[tile.route, ...tile.related].map(route => { const item = hubEntry(route); return <a class="button button--tonal state-layer" href={href(route)} data-hub-route={route}><Icon name={item.icon} size={22} /><I18nText keyName={item.label} locale={locale} /></a>; })}
         </div>
       </div> : <a class={`${className} state-layer`} href={href(tile.route)} data-hub-route={tile.route} aria-label={t(locale, entry.label)}>
+        {header}
         {art}
-        <div class="destination-hub__tile-label"><h2><I18nText keyName={entry.label} locale={locale} /></h2><span class="destination-hub__open"><Icon name="arrow_forward" size={22} /></span></div>
       </a>;
     })}
   </div>

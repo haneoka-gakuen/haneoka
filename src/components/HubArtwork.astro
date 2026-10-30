@@ -13,7 +13,16 @@ const photographic = ["portraits", "landscape", "jackets", "banners", "models", 
 ---
 <div class={`destination-hub__art destination-hub__art--${visual}`} aria-hidden="true">
   {photographic.includes(visual) && images.length > 0 && <div class:list={["destination-hub__pictures", `destination-hub__pictures--${images.length}`]}>
-    {images.map((src, index) => <div class="destination-hub__picture" style={`--fan-x:${offsets[index % offsets.length][0]};--fan-y:${offsets[index % offsets.length][1]};--fan-angle:${images.length === 1 ? 0 : offsets[index % offsets.length][2]}deg;z-index:${images.length-index}`}><img src={src} alt="" loading="lazy" decoding="async" /></div>)}
+    {images.map((src, index) => <div class="destination-hub__picture" style={`--character:${media?.characters?.[index]?.color || "transparent"};--fan-x:${offsets[index % offsets.length][0]};--fan-y:${offsets[index % offsets.length][1]};--fan-angle:${images.length === 1 ? 0 : offsets[index % offsets.length][2]}deg;z-index:${images.length-index}`}><img src={src} alt="" loading="lazy" decoding="async" />
+      {media?.cards?.[index]?.attribute && <img class="destination-hub__attribute" src={media.cards[index]!.attribute} alt="" loading="lazy" />}
+      {media?.cards?.[index]?.rarity && <img class="destination-hub__rarity" src={media.cards[index]!.rarity} alt="" loading="lazy" />}
+      {media?.songs?.[index] && <div class="destination-hub__song-marks">
+        {media.songs[index]!.band && <img src={media.songs[index]!.band} alt="" loading="lazy" />}
+        {media.songs[index]!.attribute && <img src={media.songs[index]!.attribute} alt="" loading="lazy" />}
+      </div>}
+      {index === 0 && media?.songs?.[0] && <ol class="destination-hub__levels">{media.songs[0]!.levels.map((level, difficulty) => <li data-difficulty={difficulty}>{level}</li>)}</ol>}
+      {media?.characters?.[index]?.band && <img class="destination-hub__character-band" src={media.characters[index]!.band} alt="" loading="lazy" />}
+    </div>)}
   </div>}
   {visual === "team" && <div class="destination-hub__team">
     <div class="destination-hub__formation">{media?.team?.map(slot => <div class:list={["destination-hub__slot", {"destination-hub__slot--leader":slot.leader}]}>

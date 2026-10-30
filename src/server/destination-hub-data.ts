@@ -20,8 +20,21 @@ interface HubCard {
   attribute: string;
   rarity: string;
 }
+export interface HubSong {
+  band: string;
+  attribute: string;
+  levels: number[];
+}
+export interface HubCharacter {
+  band: string;
+  color: string;
+}
 export interface HubMedia {
   images: string[];
+  /** Native marks for `images`, by index. */
+  cards?: HubCard[];
+  songs?: HubSong[];
+  characters?: HubCharacter[];
   team?: { member: HubCard; snap?: HubCard; leader: boolean }[];
   friendship?: {
     board: string;
@@ -139,7 +152,7 @@ export function destinationHubMedia(id: HubId, server: ReleaseServer, locale: Lo
   const key = `${id}:${server}:${locale}`;
   let pending = cache.get(key);
   if (!pending) {
-    pending = staticBuildJson(`destination-hub:v1:${key}`, "destination-hub", () => loadMedia(id, server, locale));
+    pending = staticBuildJson(`destination-hub:v2:${key}`, "destination-hub", () => loadMedia(id, server, locale));
     cache.set(key, pending);
   }
   return pending;
@@ -179,8 +192,6 @@ async function loadMedia(id: HubId, server: ReleaseServer, locale: Locale): Prom
       published(character),
       ...cards.filter((card) => card.characterId === character.characterId).map(published),
     );
-  assign(["/catalog/member-cards"], cards, ["images.full", "images.thumbnail"], 5);
-  assign(["/catalog/support-cards"], snaps, ["images.full", "images.thumbnail"], 4);
   assign(["/catalog/characters"], latest(characters, characterDate), ["thumbnailImage", "profileImage"], 4);
   assign(
     [
@@ -221,26 +232,54 @@ async function loadMedia(id: HubId, server: ReleaseServer, locale: Locale): Prom
     assign([`/catalog/${kind}`], display(kind), ["image", "thumbnail", "icon", "banner"], 4);
   assign(["/catalog/help"], display("help-tips"), ["image", "thumbnail"], 3);
 
-  if (id === "tools") {
-    const marks = new Map<string, Row>();
-    await Promise.all(
-      Object.values(catalogs.cards.identities).map(async (identity) => {
-        if (identity) marks.set(identity.server, row(await fetchStaticCatalog("ui-marks", identity.server, identity)));
-      }),
-    );
-    const nativeCard = (card: Row): HubCard => {
-      const image = artwork(card, ["images.thumbnail", "images.full"]);
-      const source = /^\/assets\/([^/]+)/u.exec(image)?.[1] ?? server;
-      const symbols = marks.get(source) ?? {};
-      const mark = (name: string) =>
-        symbols[name] ? pin(`/runtime/${source}/${String(symbols[name]).replace(/^runtime\//u, "")}`) : "";
-      const color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][Number(card.cardType)];
-      return {
-        image,
-        attribute: mark(`CardType-${color}.png`),
-        rarity: mark(`RarityIconCenter_${cardRarityName(Number(card.rarity))}.png`),
-      };
+  const marks = new Map<string, Row>();
+  await Promise.all(
+    Object.values(catalogs.cards?.identities ?? {}).map(async (identity) => {
+      if (identity) marks.set(identity.server, row(await fetchStaticCatalog("ui-marks", identity.server, identity)));
+    }),
+  );
+  const sourceOf = (image: string) => /^\/assets\/([^/]+)/u.exec(image)?.[1] ?? server;
+  const mark = (source: string, name: string) => {
+    const symbol = marks.get(source)?.[name];
+    return symbol ? pin(`/runtime/${source}/${String(symbol).replace(/^runtime\//u, "")}`) : "";
+  };
+  const bandMark = (source: string, bandId: unknown) =>
+    Number(bandId) > 0 ? pin(`/assets/${source}/Assets/AddressableResources/Band/${String(bandId)}/band_small_Icon.png`) : "";
+  const nativeCard = (card: Row): HubCard => {
+    const image = artwork(card, ["images.thumbnail", "images.full"]);
+    const source = sourceOf(image);
+    const color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][Number(card.cardType)];
+    return {
+      image,
+      attribute: mark(source, `CardType-${color}.png`),
+      rarity: mark(source, `RarityIconCenter_${cardRarityName(Number(card.rarity))}.png`),
     };
+  };
+  const cardSet = (route: string, values: Row[], limit: number) => {
+    const set = values.slice(0, limit).map(nativeCard).filter((card) => card.image);
+    if (set.length) result[route] = { images: set.map((card) => card.image), cards: set };
+  };
+  cardSet("/catalog/member-cards", cards, 5);
+  cardSet("/catalog/support-cards", snaps, 3);
+  const songRows = display("songs");
+  const songs = songRows.slice(0, 6).map((song) => {
+    const source = sourceOf(artwork(song, ["jacketThumbUrl", "jacketUrl"]));
+    const levels = (Array.isArray(song.difficulty) ? song.difficulty : []).flatMap((entry) => {
+      const level = Number(row(entry).level ?? row(entry).playLevel);
+      return Number.isFinite(level) && level > 0 ? [level] : [];
+    });
+    return { band: bandMark(source, song.bandId), attribute: mark(source, `sp_icon_live_music_type_${Number(song.musicType)}.png`), levels };
+  });
+  for (const route of ["/catalog/songs", "/community/playlists"])
+    if (result[route]) result[route] = { ...result[route], songs };
+  const cast = latest(characters, characterDate).slice(0, 4);
+  if (result["/catalog/characters"])
+    result["/catalog/characters"].characters = cast.map((character) => ({
+      band: bandMark(sourceOf(artwork(character, ["thumbnailImage"])), character.bandId),
+      color: /^#[0-9a-f]{6}$/iu.test(String(character.colorCode)) ? String(character.colorCode) : "",
+    }));
+
+  if (id === "tools") {
     const members = distinct(cards, (card) => card.characterId, 5);
     const used = new Set<Row>();
     const team = members.map((member, index) => {
