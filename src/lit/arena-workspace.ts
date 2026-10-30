@@ -971,6 +971,8 @@ export class ArenaWorkspace extends LitElement {
                 <button
                   type="button"
                   class="arena-schedule__band"
+                  aria-label=${this.name(league.name)}
+                  title=${this.name(league.name)}
                   aria-pressed=${String(league.bandId === selected.bandId)}
                   @click=${() => this.select({ bandId: league.bandId })}
                 >

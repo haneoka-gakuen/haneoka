@@ -515,6 +515,53 @@
     }
   }
   @container arena (max-width: 599px) {
+    /* The whole schedule fits on screen: five columns of marks, the words stay in the tooltip. */
+    .arena-schedule .data-table {
+      width: 100%;
+      min-width: 0;
+      table-layout: fixed;
+    }
+    .arena-schedule .data-table :where(th, td) {
+      padding: 6px 2px;
+      white-space: normal;
+      text-align: center;
+    }
+    .arena-schedule .data-table :where(th, td).is-sticky {
+      position: static;
+      width: 28%;
+      min-width: 0;
+      max-width: none;
+      padding-inline-start: 8px;
+      box-shadow: none;
+      text-align: start;
+    }
+    .arena-schedule .table-scroll {
+      overflow-x: clip;
+    }
+    .arena-schedule__band {
+      min-block-size: 48px;
+      place-content: center;
+    }
+    .arena-schedule__band > span {
+      display: none;
+    }
+    .arena-schedule .arena-period {
+      white-space: normal;
+      font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+        var(--md-sys-typescale-label-small-line-height) var(--app-font);
+    }
+    .arena-schedule .arena-rule {
+      display: grid;
+      justify-items: center;
+      gap: 2px;
+    }
+    .arena-schedule .arena-rule__part {
+      display: inline-flex;
+      gap: 0;
+    }
+    .arena-schedule .arena-rule__part > :not(img, .arena-mission) {
+      display: none;
+    }
     .arena-hero {
       padding: 12px 16px 16px;
     }
