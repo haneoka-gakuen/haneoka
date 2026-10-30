@@ -361,26 +361,8 @@
   }
 
   /* Leaderboard */
-  /* The event ranking's row: rank, profile card, avatar, player, tier, points; the deck beneath. */
-  .arena-ranking__row {
-    grid-template-columns: 40px 96px 40px minmax(0, 1fr) minmax(88px, auto) minmax(64px, auto);
-    row-gap: 6px;
-    padding-block: 8px;
-  }
-  .arena-ranking__row .song-ranking__deck-preview {
-    grid-column: 3 / -1;
-    grid-row: 2;
-    inline-size: 100%;
-    max-inline-size: 360px;
-    gap: 4px;
-  }
-  .arena-ranking__row .song-ranking__deck-slot {
-    gap: 2px;
-  }
-  .arena-ranking__list--compact .arena-ranking__row {
-    grid-template-columns: 32px 36px minmax(0, 1fr) minmax(88px, auto) 56px;
-    padding: 6px 4px;
-    gap: 8px;
+  .arena-ranking__list--compact .song-ranking__row--bare {
+    grid-template-columns: 32px 36px minmax(0, 1fr) minmax(88px, auto);
   }
   .arena-ranking__tier {
     white-space: nowrap;
@@ -515,9 +497,6 @@
       overflow-x: auto;
       scrollbar-width: none;
     }
-    .arena-ranking__row {
-      grid-template-columns: 32px 68px 32px minmax(0, 1fr) minmax(80px, auto) minmax(56px, auto);
-    }
   }
   @container arena (max-width: 839px) {
     .arena-grid {
@@ -543,61 +522,6 @@
     }
     .arena-condition__rule {
       grid-template-columns: minmax(0, 1fr);
-    }
-    .arena-ranking__row {
-      grid-template-columns: 24px 56px 28px minmax(0, 1fr) minmax(64px, auto);
-      row-gap: 4px;
-      column-gap: 6px;
-      padding-inline: 8px;
-    }
-    .arena-ranking__list--compact .arena-ranking__row {
-      grid-template-columns: 24px 28px minmax(0, 1fr) auto auto;
-      gap: 6px;
-    }
-    .arena-ranking__list--compact .arena-ranking__row .song-ranking__player-copy {
-      grid-column: 3;
-      grid-row: 1;
-    }
-    .arena-ranking__list--compact .arena-ranking__row .arena-ranking__tier {
-      grid-column: 4;
-      grid-row: 1;
-    }
-    .arena-ranking__list--compact .arena-ranking__row .song-ranking__score {
-      grid-column: 5;
-      grid-row: 1;
-    }
-    .arena-ranking__list--compact .song-ranking__player-stats {
-      display: none;
-    }
-    .arena-ranking__list--compact .song-ranking__player-copy {
-      align-content: center;
-    }
-    .arena-ranking__list--compact .song-ranking__player-copy strong {
-      display: block;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .arena-ranking__row .arena-ranking__tier {
-      grid-column: 5;
-      grid-row: 2;
-      justify-self: end;
-    }
-    .arena-ranking__row .song-ranking__score {
-      grid-column: 5;
-      grid-row: 1;
-    }
-    .arena-ranking__row .song-ranking__player-copy {
-      grid-column: 4;
-      grid-row: 1 / span 2;
-    }
-    .arena-ranking__row :is(.song-ranking__rank, .song-ranking__namecard, .song-ranking__avatar) {
-      grid-row: 1 / span 2;
-    }
-    .arena-ranking__row .song-ranking__deck-preview {
-      grid-row: 3;
-      grid-column: 2 / -1;
-      max-inline-size: none;
     }
     .arena-usage__list {
       grid-template-columns: repeat(4, minmax(0, 1fr));

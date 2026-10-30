@@ -26,6 +26,7 @@ import { sonolusShareRedirectTarget } from "./sonolus-share";
 export { CommunityMediaContainer } from "./community-media-container";
 export { OfficialRankingCollector } from "./official-ranking-collector";
 export { SearchContainer } from "./search-container";
+import { handleOfficialPlayerApi } from "./official-player-api";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
@@ -4011,6 +4012,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (arenaRanking) return arenaRanking;
   const officialRecords = await handleOfficialRankingApi(request, url, env);
   if (officialRecords) return officialRecords;
+  const officialPlayer = await handleOfficialPlayerApi(request, ctx, url, env);
+  if (officialPlayer) return officialPlayer;
   const gameRecords = await handleGameRecordsApi(ctx, request, url, env);
   if (gameRecords) return gameRecords;
   const bestdori = await handleGarupaBestdoriApi(ctx, request, url, env.BESTDORI_UPSTREAM_BASE);

@@ -28,7 +28,7 @@ import { emptyState, errorState } from "./ui/state";
 import { clearAppBarActions, clearAppBarSearch, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
 import { GAME_RECORDS_REGIONS, defaultGameRecordsRegion, gameAccountRegion } from "./shared/game-records";
 import { signedInHint } from "../lib/community-viewer";
-import type {
+import type { GameRecordsErrorDto,
   GameRecordsRegion,
   GameProfileCardPageDto,
   GameRankingDto,
@@ -47,6 +47,7 @@ interface RecentPlayer {
   name: string;
 }
 const RECENT_PLAYERS_KEY = "haneoka.player-profile.recent.v1";
+const PROFILE_RETRIES = 4;
 function readRecentPlayers(): RecentPlayer[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(RECENT_PLAYERS_KEY) || "[]");
@@ -182,7 +183,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       this.profileRequests.current(signal)
     );
   }
-  private async loadProfile(id: string) {
+  private async loadProfile(id: string, attempt = 0): Promise<void> {
     if (!validPlayerProfileId(this.region, id)) {
       this.queryInvalid = true;
       return;
@@ -226,6 +227,12 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       if (pages.length) void import("./ui/image-gallery");
       this.profilePhase = "ready";
     } catch (error) {
+      const retryAfter = error instanceof JsonResponseError && error.status === 503 ? (error.body as GameRecordsErrorDto | null)?.error?.retryAfter : null;
+      if (retryAfter && attempt < PROFILE_RETRIES && this.currentProfile(signal, region, id)) {
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+        if (this.currentProfile(signal, region, id)) return this.loadProfile(id, attempt + 1);
+        return;
+      }
       if (this.currentProfile(signal, region, id))
         this.profilePhase =
           error instanceof JsonResponseError && (error.status === 403 || error.status === 404)

@@ -182,126 +182,23 @@ export class ArenaRanking extends GameRecordsCardsElement {
   }
 
   private renderRow(row: ArenaRankingRowDto, observedAt: number) {
-    const name = row.name || this.label("privatePlayer", "Unknown player");
-    const favorite = this.cardArtwork(row.favoriteMemberCardId, false);
-    const level = this.levelFromExp(this.sourceCatalog()?.playerLevels, row.rankExp);
     const tier = arenaTier(this.ranks, row.point, observedAt);
-    const card = row.profileCard?.thumbnailUrls[0] || "";
-    const cardTitle = [
-      row.profileCard?.name,
-      row.profileCard?.slot != null
-        ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(row.profileCard.slot))
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    const identity = html`
-      <strong>${name}</strong>
-      <small class="song-ranking__player-stats">
-        ${
-          level != null
-            ? html`
-                <span>${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}</span>
-              `
-            : nothing
-        }
-      </small>
-    `;
-    return html`
-      <li class="song-ranking__entry" data-rank=${row.rank} data-target=${String(row.rank === this.target)}>
-        <div class="song-ranking__row arena-ranking__row">
-          <span class="song-ranking__rank" aria-label=${`${this.label("rank", "Rank")} ${row.rank}`}>${row.rank}</span>
-          ${
-            this.limit
-              ? nothing
-              : card
-                ? html`
-                    <a
-                      class="song-ranking__namecard"
-                      href=${card}
-                      target="_blank"
-                      rel="noopener"
-                      title=${cardTitle}
-                      aria-label=${cardTitle || this.label("profileCard", "Profile card")}
-                    >
-                      ${this.profileMedia(name, card)}
-                    </a>
-                  `
-                : html`
-                    <span class="song-ranking__namecard song-ranking__namecard--empty" aria-label=${this.label("noProfileCard", "No profile card")}>
-                      ${icon("badge", 24)}
-                    </span>
-                  `
-          }
-          <span class="song-ranking__avatar">
-            ${
-              favorite?.avatar
-                ? this.profileMedia(name, favorite.avatar)
-                : html`
-                    <span class="song-ranking__initial" aria-hidden="true">${this.initials(name)}</span>
-                  `
-            }
-          </span>
-          ${
-            row.profileId
-              ? html`
-                  <a
-                    class="song-ranking__player-copy state-layer"
-                    href=${playerProfileHref(this.locale, this.region as GameRecordsRegion, row.profileId, this.endpoint(), navigationDocumentUrl())}
-                  >
-                    ${identity}
-                  </a>
-                `
-              : html`
-                  <span class="song-ranking__player-copy">${identity}</span>
-                `
-          }
-          <span class="arena-ranking__tier">
-            ${
-              tier && this.rankIcons[tier.rank]
-                ? html`
-                    <img src=${this.rankIcons[tier.rank]} alt="" width="28" height="28" loading="lazy" />
-                  `
-                : nothing
-            }
-            <span>${tier ? this.rankName(tier) : "—"}</span>
-          </span>
-          <span class="song-ranking__score" aria-label=${`${this.t("points", "Points")} ${row.point}`}>
-            <strong>${row.point.toLocaleString(this.locale)}</strong>
-            ${
-              row.tied
-                ? html`
-                    <small>${this.label("tied", "Tied rank")}</small>
-                  `
-                : nothing
-            }
-          </span>
-          ${
-            this.limit
-              ? nothing
-              : html`
-                  <span class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}>
-                    ${row.cards.map(
-                      (card) => html`
-                        <span class="song-ranking__deck-slot">
-                          ${this.renderCard(card)}${
-                            card.supportCardId != null
-                              ? this.renderCard(card, true)
-                              : html`
-                                  <span
-                                    class="song-ranking__card-media song-ranking__card-media--support song-ranking__card-empty"
-                                  ></span>
-                                `
-                          }
-                        </span>
-                      `,
-                    )}
-                  </span>
-                `
-          }
-        </div>
-      </li>
-    `;
+    return this.renderRankingRow({
+      ...row,
+      level: this.levelFromExp(this.sourceCatalog()?.playerLevels, row.rankExp),
+      href: row.profileId ? playerProfileHref(this.locale, this.region as GameRecordsRegion, row.profileId, this.endpoint(), navigationDocumentUrl()) : "",
+      score: row.point.toLocaleString(this.locale),
+      scoreLabel: this.t("points", "Points"),
+      target: row.rank === this.target,
+      bare: this.limit > 0,
+      ...(this.limit ? { cards: undefined } : {}),
+      detail: html`
+        <small class="arena-ranking__tier">
+          ${tier && this.rankIcons[tier.rank] ? html`<img src=${this.rankIcons[tier.rank]} alt="" width="20" height="20" loading="lazy" />` : nothing}
+          ${tier ? this.rankName(tier) : "—"}
+        </small>
+      `,
+    });
   }
 
   private renderControls() {

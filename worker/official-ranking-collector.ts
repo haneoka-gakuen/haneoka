@@ -8,7 +8,7 @@ import type { GameRecordsRegion } from "../src/lib/game-records";
 import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+import { harvestOfficialPlayers, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -18,6 +18,8 @@ const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
+const DEMAND_TTL_MS = 600_000;
+const DEMAND_LIMITS = { player: 64, song: 8 };
 type ArenaInterest = NonNullable<OfficialCollectorJob["arenaWindows"]>[number] & { requestedAtMs: number };
 const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
 const CALLBACK_ORIGIN = "https://haneoka.org";
@@ -38,6 +40,10 @@ interface CollectorRun {
   catalog: OfficialCatalog | null;
   checkpoints: Record<string, string>;
 }
+interface DemandInterest {
+  id: string;
+  requestedAtMs: number;
+}
 interface CollectorState {
   region: GameRecordsRegion;
   status: string;
@@ -55,6 +61,8 @@ interface CollectorState {
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
   arenaInterests?: ArenaInterest[];
+  playerInterests?: DemandInterest[];
+  songInterests?: DemandInterest[];
   arenaPopulationAt?: Record<string, number>;
   arenaWarmupRuns?: number;
 }
@@ -98,7 +106,7 @@ function validateFailure(value: unknown): asserts value is OfficialCollectorFail
   const failure = object(value);
   if (!["container", "catalog", "catalog_version", "catalog_server_list", "catalog_manifest", "catalog_event", "catalog_challenges", "catalog_parameters",
     "catalog_callback", "version", "board", "attempt_callback", "observation_callback", "complete_callback",
-    "arena_board", "arena_observation_callback", "arena_population_callback", "arena_progress_callback",
+    "demand", "arena_board", "arena_observation_callback", "arena_population_callback", "arena_progress_callback",
     "catalog_arena_season", "catalog_arena_league", "catalog_arena_rank"].includes(String(failure.stage))
     || !["Error", "TimeoutError", "SSLError", "SSLCertVerificationError", "OSError", "URLError", "gaierror", "ValueError", "RuntimeError", "VersionError",
       "CatalogRequestError", "CallbackError", "ImportError", "ModuleNotFoundError", "FileNotFoundError", "PermissionError", "JSONDecodeError",
@@ -358,6 +366,28 @@ export class OfficialRankingCollector extends Container<Env> {
     });
   }
 
+  /** Queues reads for the next run; the queues are bounded and repeat requests collapse. */
+  async requestDemand(region: GameRecordsRegion, kind: "player" | "song", ids: string[]): Promise<{ kind: string; retryAfter: number | null }> {
+    return this.serialized(async () => {
+      if (ids.length > DEMAND_LIMITS[kind] || ids.some((id) => !decimal(id))) return { kind: "invalid_request", retryAfter: null };
+      const state = await this.stateFor(region), now = Date.now();
+      const unavailable = await officialCollectorAvailability(this.env, region);
+      if (unavailable) return { kind: unavailable, retryAfter: null };
+      if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration) return { kind: "auth_paused", retryAfter: null };
+      if (["rate_limited", "failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status))
+        return { kind: state.status, retryAfter: null };
+      const field = kind === "player" ? "playerInterests" : "songInterests";
+      const queue = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
+      const missing = ids.filter((id) => !queue.some((entry) => entry.id === id));
+      if (!missing.length) return { kind: "pending", retryAfter: 30 };
+      if (queue.length + missing.length > DEMAND_LIMITS[kind]) return { kind: "queue_full", retryAfter: 60 };
+      state[field] = [...queue, ...missing.map((id) => ({ id, requestedAtMs: now }))];
+      this.expediteArena(state);
+      await this.persist(state);
+      return { kind: "pending", retryAfter: 30 };
+    });
+  }
+
   private serialized<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.mutations.then(operation);
     this.mutations = result.then(() => undefined, () => undefined);
@@ -546,7 +576,9 @@ export class OfficialRankingCollector extends Container<Env> {
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
-        capabilities: ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1"],
+        capabilities: ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "player-demand-v1"],
+        playerLookups: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 16).map((entry) => entry.id),
+        songRankings: (state.songInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 4).map((entry) => entry.id),
         arenaProgress: Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
         arenaWindows: (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
           .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank })),
@@ -608,6 +640,8 @@ export class OfficialRankingCollector extends Container<Env> {
       else if (update.type === "arena-observation") checkpoint = `arena:${update.observation?.snapshotId}`;
       else if (update.type === "arena-population") checkpoint = `arena-population:${update.observation?.snapshotId}`;
       else if (update.type === "arena-progress") checkpoint = `arena-progress:${update.checkpointId}`;
+      else if (update.type === "player-profile") checkpoint = `player:${update.profileId}`;
+      else if (update.type === "song-ranking") checkpoint = `song:${update.musicId}`;
       else return json({ error: "invalid_update" }, 400);
       const updateHash = await officialDigest(canonical(update));
       if (run.checkpoints[checkpoint]) {
@@ -691,6 +725,7 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           await this.ctx.storage.put("collectorState", state);
           await saveOfficialObservation(this.env, update.observation);
+          if (update.observation.players) await harvestOfficialPlayers(this.env, region, update.observation.players, update.observation.observedAtMs);
           run.pendingAttempt = null;
           run.checkpoints[checkpoint] = updateHash;
           if (!update.observation.error) {
@@ -698,6 +733,21 @@ export class OfficialRankingCollector extends Container<Env> {
             const health = this.runHealth(state);
             if (health) health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
           }
+          await this.ctx.storage.put("collectorState", state);
+        } else if (update.type === "player-profile") {
+          if (!decimal(update.profileId) || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
+          await saveOfficialPlayers(this.env, region, [{ profileId: update.profileId, found: update.found === true,
+            profile: update.profile ?? null, totalFavorite: update.totalFavorite ?? null, observedAtMs: update.observedAtMs }]);
+          state.playerInterests = (state.playerInterests ?? []).filter((entry) => entry.id !== update.profileId);
+          run.checkpoints[checkpoint] = updateHash;
+          await this.ctx.storage.put("collectorState", state);
+        } else if (update.type === "song-ranking") {
+          if (!decimal(update.musicId) || !Array.isArray(update.players) || update.players.length > 100
+            || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
+          await saveOfficialSongRanking(this.env, { region, musicId: update.musicId, players: update.players, observedAtMs: update.observedAtMs });
+          await harvestOfficialPlayers(this.env, region, update.players, update.observedAtMs);
+          state.songInterests = (state.songInterests ?? []).filter((entry) => entry.id !== update.musicId);
+          run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "arena-observation") {
           validateArenaObservation(update.observation, region);
@@ -779,7 +829,7 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
-          } else if (update.status === "ok" && state.arenaInterests?.length) this.expediteArena(state);
+          } else if (update.status === "ok" && (state.arenaInterests?.length || state.playerInterests?.length || state.songInterests?.length)) this.expediteArena(state);
           const health = this.runHealth(state);
           if (health) {
             health.leaseUntilMs = 0;

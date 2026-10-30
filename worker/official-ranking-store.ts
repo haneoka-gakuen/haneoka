@@ -326,3 +326,99 @@ export async function readOfficialArenaPopulation(env: OfficialRankingStoreBindi
   }
   return observation;
 }
+
+export interface OfficialPlayerRecord {
+  found: boolean;
+  profile: Record<string, unknown> | null;
+  totalFavorite: string | null;
+  observedAtMs: number;
+}
+interface OfficialPlayerRow {
+  profileId: string;
+  found: number;
+  profile: string | null;
+  totalFavorite: string | null;
+  observedAtMs: number;
+}
+const playerRecord = (row: OfficialPlayerRow): OfficialPlayerRecord => ({
+  found: row.found === 1,
+  profile: row.profile ? (JSON.parse(row.profile) as Record<string, unknown>) : null,
+  totalFavorite: row.totalFavorite,
+  observedAtMs: row.observedAtMs,
+});
+const PLAYER_COLUMNS = `profile_id AS profileId, found, profile_json AS profile, total_favorite AS totalFavorite,
+  observed_at_ms AS observedAtMs`;
+/** D1 binds at most 100 values per statement. */
+const PLAYER_BATCH = 98;
+
+export async function saveOfficialPlayers(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  players: ReadonlyArray<{ profileId: string; found: boolean; profile: unknown; totalFavorite: string | null; observedAtMs: number }>): Promise<void> {
+  const { db } = storage(env);
+  const statement = db.prepare(`INSERT INTO official_player_profiles
+    (region, profile_id, found, profile_json, total_favorite, observed_at_ms) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(region, profile_id) DO UPDATE SET found = excluded.found, profile_json = excluded.profile_json,
+      total_favorite = COALESCE(excluded.total_favorite, official_player_profiles.total_favorite),
+      observed_at_ms = excluded.observed_at_ms
+    WHERE excluded.observed_at_ms >= official_player_profiles.observed_at_ms`);
+  if (players.length)
+    await db.batch(players.map((player) => statement.bind(region, player.profileId, player.found ? 1 : 0,
+      player.profile ? JSON.stringify(player.profile) : null, player.totalFavorite, player.observedAtMs)));
+}
+
+/** Event boards already carry each player's card, so these cost no extra game request. */
+export async function harvestOfficialPlayers(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  rows: readonly unknown[], observedAtMs: number): Promise<void> {
+  const players = rows.flatMap((row) => {
+    const profile = (row as { player_data?: Record<string, unknown> } | null)?.player_data;
+    const id = profile?.profile_id;
+    return typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)
+      ? [{ profileId: id, found: true, profile, totalFavorite: null, observedAtMs }]
+      : [];
+  });
+  await saveOfficialPlayers(env, region, players);
+}
+
+export async function readOfficialPlayer(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  profileId: string): Promise<OfficialPlayerRecord | null> {
+  const row = await storage(env).db.prepare(`SELECT ${PLAYER_COLUMNS} FROM official_player_profiles WHERE region = ? AND profile_id = ?`)
+    .bind(region, profileId).first<OfficialPlayerRow>();
+  return row ? playerRecord(row) : null;
+}
+
+export async function readOfficialPlayers(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  profileIds: readonly string[]): Promise<Map<string, OfficialPlayerRecord>> {
+  const { db } = storage(env);
+  const found = new Map<string, OfficialPlayerRecord>();
+  for (let index = 0; index < profileIds.length; index += PLAYER_BATCH) {
+    const ids = profileIds.slice(index, index + PLAYER_BATCH);
+    const { results } = await db.prepare(`SELECT ${PLAYER_COLUMNS} FROM official_player_profiles
+      WHERE region = ? AND profile_id IN (${ids.map(() => "?").join(", ")})`).bind(region, ...ids).all<OfficialPlayerRow>();
+    for (const row of results) found.set(row.profileId, playerRecord(row));
+  }
+  return found;
+}
+
+export interface OfficialSongRanking {
+  region: GameRecordsRegion;
+  musicId: string;
+  players: unknown[];
+  observedAtMs: number;
+}
+
+export async function saveOfficialSongRanking(env: OfficialRankingStoreBindings, ranking: OfficialSongRanking): Promise<void> {
+  const { db, bucket } = storage(env);
+  const key = `official/1/${ranking.region}/songs/${ranking.musicId}.json`;
+  await bucket.put(key, JSON.stringify(ranking), { httpMetadata: { contentType: "application/json" } });
+  await db.prepare(`INSERT INTO official_song_rankings (region, music_id, payload_key, observed_at_ms) VALUES (?, ?, ?, ?)
+    ON CONFLICT(region, music_id) DO UPDATE SET payload_key = excluded.payload_key, observed_at_ms = excluded.observed_at_ms`)
+    .bind(ranking.region, ranking.musicId, key, ranking.observedAtMs).run();
+}
+
+export async function readOfficialSongRanking(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  musicId: string): Promise<OfficialSongRanking | null> {
+  const { db, bucket } = storage(env);
+  const row = await db.prepare("SELECT payload_key AS payloadKey FROM official_song_rankings WHERE region = ? AND music_id = ?")
+    .bind(region, musicId).first<{ payloadKey: string }>();
+  const body = row ? await bucket.get(row.payloadKey) : null;
+  return body ? ((await body.json()) as OfficialSongRanking) : null;
+}

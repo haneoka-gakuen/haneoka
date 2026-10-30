@@ -43,21 +43,21 @@
   /* A full board is thousands of images; rows off screen skip style, layout and paint. */
   .song-ranking__entry {
     content-visibility: auto;
-    contain-intrinsic-size: auto 96px;
+    contain-intrinsic-size: auto 88px;
   }
   .song-ranking__entry + .song-ranking__entry {
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
   .song-ranking__row {
     display: grid;
-    grid-template-columns: 28px 96px 40px minmax(80px, 1fr) minmax(80px, auto) minmax(220px, 280px);
+    grid-template-columns: 32px 72px 36px minmax(80px, 1fr) minmax(88px, auto) 256px;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: 8px;
+    padding: 4px 12px;
     min-width: 0;
   }
   .song-ranking__row.song-ranking__row--points {
-    grid-template-columns: 28px 96px 40px minmax(80px, 1fr) minmax(80px, auto);
+    grid-template-columns: 32px 72px 36px minmax(80px, 1fr) minmax(88px, auto);
   }
   .song-ranking__rank {
     font: var(--md-sys-typescale-title-medium-weight)
@@ -79,8 +79,8 @@
   }
   .song-ranking__avatar {
     display: block;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: var(--md-sys-shape-corner-full);
     overflow: hidden;
   }
@@ -170,7 +170,7 @@
   .song-ranking__deck-cards {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
   }
   .song-ranking__card {
@@ -384,12 +384,12 @@
   }
   @container (max-width:760px) {
     .song-ranking__row {
-      grid-template-columns: 24px 68px 32px minmax(0, 1fr) 96px;
-      gap: 8px;
-      padding: 10px 12px;
+      grid-template-columns: 24px 56px 32px minmax(0, 1fr) minmax(72px, auto);
+      gap: 4px 8px;
+      padding: 4px 8px;
     }
     .song-ranking__row.song-ranking__row--points {
-      grid-template-columns: 24px 68px 32px minmax(0, 1fr) 96px;
+      grid-template-columns: 24px 56px 32px minmax(0, 1fr) minmax(72px, auto);
     }
     .song-ranking__avatar {
       width: 32px;
@@ -398,7 +398,7 @@
     .song-ranking__deck-preview {
       grid-column: 2 / -1;
       grid-row: 2;
-      max-width: 400px;
+      max-width: 256px;
       justify-self: end;
       width: 100%;
     }
@@ -415,12 +415,12 @@
 @layer pages {
   @container (max-width:360px) {
     .song-ranking__row {
-      grid-template-columns: 16px 48px 28px minmax(0, 1fr) 96px;
+      grid-template-columns: 20px 48px 28px minmax(0, 1fr) minmax(64px, auto);
       gap: 4px;
       padding-inline: 8px;
     }
     .song-ranking__row.song-ranking__row--points {
-      grid-template-columns: 16px 48px 28px minmax(0, 1fr) 96px;
+      grid-template-columns: 20px 48px 28px minmax(0, 1fr) minmax(64px, auto);
     }
     .song-ranking__avatar {
       width: 28px;
@@ -428,6 +428,7 @@
     }
     .song-ranking__deck-preview {
       grid-column: 1 / -1;
+      justify-self: center;
     }
   }
 }
@@ -488,7 +489,7 @@
 @layer pages {
   .song-ranking__deck-slot {
     display: grid;
-    gap: 4px;
+    gap: 2px;
     align-content: start;
     min-width: 0;
   }

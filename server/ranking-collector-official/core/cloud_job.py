@@ -22,6 +22,7 @@ from official_catalog import OfficialCatalog, CatalogRequestError, NoRedirect
 from regions import region_config
 from transport import Sampler, VersionError
 from arena import ArenaCollector, ArenaStopped
+from demand import Demand
 
 
 class CallbackError(RuntimeError):
@@ -245,6 +246,13 @@ def run_job(job, origin):
                     updates.send('observation', observation=observation)
                     if final_status in ('auth_paused', 'rate_limited'):
                         break
+                if final_status not in ('auth_paused', 'rate_limited') and 'player-demand-v1' in job.get('capabilities', []):
+                    stage = 'demand'
+                    stopped = Demand(job, sampler, updates, deadline).run()
+                    # A refused read ends demand for this run; it says nothing about the account.
+                    if stopped and failure_status(stopped) == 'rate_limited':
+                        final_status, failure = 'rate_limited', failure_info(stage, RuntimeError('demand rejected'), stopped)
+                        retry_after = retry_delay(stopped, 300)
                 if arena_collector and final_status not in ('auth_paused', 'rate_limited'):
                     stage = 'arena_population_callback'
                     arena_collector.population()

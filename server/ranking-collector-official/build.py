@@ -10,7 +10,7 @@ FILES = ('collector.py', 'account-pool.mjs', 'setup.py', 'requirements.txt', 'bu
          'README.md', 'INTERFACES.md', 'NOTICES.md', 'LICENSE', 'LICENSE.py3rijndael.txt',
          'build.py', 'core/history.py', 'core/lifecycle.py', 'core/sample.py', 'core/arena.py',
          'core/continuous.py', 'core/status.py', 'core/api.py', 'core/transport.py',
-         'core/regions.py', 'core/intl-descriptors.pb', 'core/official_catalog.py', 'core/http2.py', 'core/process_lock.py', 'core/total-descriptors.pb', 'core/pool_query.py')
+         'core/regions.py', 'core/demand.py', 'core/intl-descriptors.pb', 'core/official_catalog.py', 'core/http2.py', 'core/process_lock.py', 'core/total-descriptors.pb', 'core/pool_query.py')
 DISTRIBUTIONS = {
     'protobuf-6.33.0-py3-none-any.whl': '25c9e1963c6734448ea2d308cfa610e692b801304ba0908d7bfa564ac5132995',
     'py3rijndael-0.3.3.tar.gz': 'b6655a3ebff3a10540eaed049e8788eea3ac93d6b71b3a6ac2b00224bbece9a8',

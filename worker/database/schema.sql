@@ -2547,3 +2547,22 @@ CREATE TABLE IF NOT EXISTS official_arena_window_metadata (
 
 -- 0043: seeded forums carried a filler description; an empty object shows none.
 UPDATE community_forum SET descriptions_json = '{}' WHERE descriptions_json = '{"ja":"この板の話題を投稿できます。","en":"Discuss this topic here.","zh-TW":"在此討論這個主題。","zh-CN":"在此讨论这个主题。","ko":"이 주제를 이야기하세요."}';
+
+-- 0044: profiles and song rankings read through the official account pool.
+CREATE TABLE IF NOT EXISTS official_player_profiles (
+  region TEXT NOT NULL CHECK (region IN ('jp', 'tw', 'en', 'kr')),
+  profile_id TEXT NOT NULL,
+  found INTEGER NOT NULL DEFAULT 1,
+  profile_json TEXT,
+  total_favorite TEXT,
+  observed_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (region, profile_id)
+);
+
+CREATE TABLE IF NOT EXISTS official_song_rankings (
+  region TEXT NOT NULL CHECK (region IN ('jp', 'tw', 'en', 'kr')),
+  music_id TEXT NOT NULL,
+  payload_key TEXT NOT NULL,
+  observed_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (region, music_id)
+);

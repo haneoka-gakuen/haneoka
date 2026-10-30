@@ -12,7 +12,8 @@ import type {
   SongRankingCardDto,
 } from "../src/lib/game-records";
 import { officialProfileCard } from "./official-ranking-api";
-import { readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import { playerCard } from "./official-player-api";
+import { readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, readOfficialPlayers, type OfficialRankingStoreBindings } from "./official-ranking-store";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
@@ -22,6 +23,7 @@ const PREFIX = "/api/v1/game/records";
 const REGIONS: readonly GameRecordsRegion[] = ["jp", "tw", "en", "kr"];
 const WINDOW = 100;
 const SEARCH_DEPTH = 2000;
+const CARD_DEMAND = 16;
 
 class ArenaFailure extends Error {
   readonly status: number;
@@ -112,7 +114,20 @@ function pending(windows: number[] = []): never { throw new ArenaFailure(503, "p
 
 const staleAt = (observed: number, now: number, ttl: number) => now < observed || now - observed > ttl;
 
-async function ranking(env: ArenaRankingBindings, region: GameRecordsRegion, seasonId: string,
+/** The game leaves `profile_card` empty on Arena rows; saved player records supply it. */
+async function attachProfileCards(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, rows: ArenaRankingRowDto[]) {
+  const ids = rows.flatMap((row) => row.profileId ?? []);
+  const players = await readOfficialPlayers(env, region, ids);
+  for (const row of rows) {
+    const profile = row.profileId ? players.get(row.profileId)?.profile : null;
+    if (profile) row.profileCard = playerCard(region, row.profileId!, profile.profile_card);
+  }
+  const missing = ids.filter((id) => !players.has(id)).slice(0, CARD_DEMAND);
+  if (missing.length)
+    ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestDemand(region, "player", missing)).catch(() => undefined));
+}
+
+async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, seasonId: string,
   bandId: string, start: number): Promise<ArenaRankingDto> {
   const metadata = await readOfficialArenaMetadata(env, region, seasonId, bandId);
   if (!metadata) return pending([Math.floor((start - 1) / WINDOW) * WINDOW + 1]);
@@ -135,6 +150,7 @@ async function ranking(env: ArenaRankingBindings, region: GameRecordsRegion, sea
     position = until + 1;
   }
   if (position <= stop) return pending([Math.floor((position - 1) / WINDOW) * WINDOW + 1]);
+  await attachProfileCards(env, ctx, region, rows);
   const now = Date.now();
   return { region, seasonId, bandId, start, end, provider: "official", snapshotId: [...snapshots].join("."),
     observedAtMs, fetchedAtMs: observedAtMs, serverTimeMs: now, stale: staleAt(observedAtMs, now, 600_000),
@@ -199,7 +215,7 @@ function json(request: Request, body: unknown, status = 200, retryAfter: number 
 }
 
 /** Missing snapshot interests are queued; game requests stay in the regional collector. */
-export async function handleArenaRankingApi(request: Request, _ctx: ExecutionContext, url: URL,
+export async function handleArenaRankingApi(request: Request, ctx: ExecutionContext, url: URL,
   env: ArenaRankingBindings): Promise<Response | null> {
   const route = new RegExp(
     `^${PREFIX}/([a-z]+)/arena/seasons/([1-9][0-9]{0,9})/leagues/([1-9][0-9]{0,9})/(ranking|population|search)$`, "u",
@@ -224,7 +240,7 @@ export async function handleArenaRankingApi(request: Request, _ctx: ExecutionCon
         || url.searchParams.getAll("start").length > 1)
         return json(request, { error: { kind: "invalid_request" } }, 400);
       if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending();
-      return json(request, await ranking(env, region, seasonId, bandId, Number(raw)));
+      return json(request, await ranking(env, ctx, region, seasonId, bandId, Number(raw)));
     }
     const raw = url.searchParams.get("thresholds") ?? "", thresholds = raw.split(",").map(Number);
     if (!/^(0|[1-9][0-9]{0,8})(,(0|[1-9][0-9]{0,8})){0,31}$/u.test(raw)

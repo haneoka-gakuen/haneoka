@@ -15,6 +15,26 @@ import { loadingIndicator } from "../ui/loading-indicator";
 import { cardGrowth } from "./card-growth";
 import { cardGrowthIcons } from "../../lib/ui-marks";
 type RankingEntry = SongRankingRowDto;
+export interface RankingRowView {
+  rank: number;
+  name: string;
+  profileId: string | null;
+  href: string;
+  favoriteMemberCardId: number | null;
+  profileCard: RankingEntry["profileCard"];
+  level: number | null;
+  totalPower?: number | null;
+  score: string;
+  scoreLabel: string;
+  tied: boolean;
+  /** Shown beneath the score, such as an Arena tier. */
+  detail?: unknown;
+  /** Omitted on rankings that have no deck to show. */
+  cards?: RankingEntry["cards"];
+  /** Rank, player and score only, for a short summary list. */
+  bare?: boolean;
+  target?: boolean;
+}
 /** Card artwork and native progression shared by rankings and the independent public player view. */
 export abstract class GameRecordsCardsElement extends LitElement {
   declare locale: string;
@@ -156,6 +176,79 @@ export abstract class GameRecordsCardsElement extends LitElement {
       : html`
           <span class="song-ranking__card" aria-label=${name}>${body}</span>
         `;
+  }
+
+  /** One leaderboard row: every ranking draws this same template on the same grid. */
+  protected renderRankingRow(row: RankingRowView) {
+    const name = row.name || this.label("privatePlayer", "Unknown player");
+    const favorite = this.cardArtwork(row.favoriteMemberCardId, false);
+    const profileCard = row.profileCard;
+    const image = profileCard?.thumbnailUrls[0] || "";
+    const cardTitle = [
+      profileCard?.name,
+      profileCard?.slot != null ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(profileCard.slot)) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const identity = html`
+      <strong>${name}</strong>
+      <small class="song-ranking__player-stats">
+        ${row.level != null ? html`<span>${this.label("cardLevel", "Lv. {level}").replace("{level}", String(row.level))}</span>` : nothing}
+        ${row.totalPower != null ? html`<span>${this.label("power", "Power")} ${this.formatScore(row.totalPower)}</span>` : nothing}
+      </small>
+    `;
+    return html`
+      <li class="song-ranking__entry" data-rank=${row.rank} data-profile=${row.profileId ?? nothing} data-target=${row.target ? "true" : nothing}>
+        <div class=${`song-ranking__row${row.cards ? "" : " song-ranking__row--points"}${row.bare ? " song-ranking__row--bare" : ""}`}>
+          <span class="song-ranking__rank" aria-label=${`${this.label("rank", "Rank")} ${row.rank}`}>${row.rank}</span>
+          ${
+            row.bare
+              ? nothing
+              : image
+                ? html`
+                    <a class="song-ranking__namecard" href=${image} target="_blank" rel="noopener" title=${cardTitle} aria-label=${cardTitle || this.label("profileCard", "Profile card")}>
+                      ${this.profileMedia(name, image)}
+                    </a>
+                  `
+                : html`
+                    <span class="song-ranking__namecard song-ranking__namecard--empty" aria-label=${this.label("noProfileCard", "No profile card")}>${icon("badge", 24)}</span>
+                  `
+          }
+          <span class="song-ranking__avatar">
+            ${favorite?.avatar ? this.profileMedia(name, favorite.avatar) : html`<span class="song-ranking__initial" aria-hidden="true">${this.initials(name)}</span>`}
+          </span>
+          ${
+            row.href
+              ? html`<a class="song-ranking__player-copy state-layer" href=${row.href} data-profile-id=${row.profileId ?? nothing}>${identity}</a>`
+              : html`<span class="song-ranking__player-copy">${identity}</span>`
+          }
+          <span class="song-ranking__score" aria-label=${`${row.scoreLabel} ${row.score}`}>
+            <strong>${row.score}</strong>
+            ${row.tied ? html`<small>${this.label("tied", "Tied rank")}</small>` : nothing}
+            ${row.detail ?? nothing}
+          </span>
+          ${
+            row.cards
+              ? html`
+                  <span class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}>
+                    ${row.cards.map(
+                      (card) => html`
+                        <span class="song-ranking__deck-slot">
+                          ${this.renderCard(card)}${
+                            card.supportCardId != null
+                              ? this.renderCard(card, true)
+                              : html`<span class="song-ranking__card-media song-ranking__card-media--support song-ranking__card-empty" aria-label=${this.label("noSupportCard", "No support card")}></span>`
+                          }
+                        </span>
+                      `,
+                    )}
+                  </span>
+                `
+              : nothing
+          }
+        </div>
+      </li>
+    `;
   }
 
   protected renderCardProgress(

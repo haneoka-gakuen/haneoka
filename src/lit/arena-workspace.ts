@@ -928,8 +928,8 @@ export class ArenaWorkspace extends LitElement {
     if (this.now < season.startAt) return emptyState({ title: this.t("notStarted"), icon: "leaderboard" });
     return html`
       <div class="arena-grid">
-        ${this.renderPopulation(league)} ${this.renderUsage()}
         <section class="surface stack arena-wide">${this.rankingElement(season, league, 0)}</section>
+        ${this.renderPopulation(league)} ${this.renderUsage()}
       </div>
     `;
   }

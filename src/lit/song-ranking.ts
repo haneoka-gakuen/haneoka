@@ -272,131 +272,15 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   private renderRow(entry: RankingEntry) {
-    const name = entry.name || this.label("privatePlayer", "Unknown player");
-    const favorite = this.cardArtwork(entry.favoriteMemberCardId, false);
-    const image = entry.profileCard?.thumbnailUrls[0] || "";
-    const cardTitle = [
-      entry.profileCard?.name,
-      entry.profileCard?.slot != null
-        ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(entry.profileCard.slot))
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    const level = this.levelFromExp(this.sourceCatalog()?.playerLevels, entry.rankExp);
     const score = entry.scoreExact ? BigInt(entry.scoreExact).toLocaleString(this.locale) : this.formatScore(entry.score);
-    const identity = html`
-      <strong>${name}</strong>
-      <small class="song-ranking__player-stats">
-        ${
-          level != null
-            ? html`
-                <span>${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}</span>
-              `
-            : nothing
-        }
-        ${
-          entry.totalPower != null
-            ? html`
-                <span>${this.label("power", "Power")} ${this.formatScore(entry.totalPower)}</span>
-              `
-            : nothing
-        }
-      </small>
-    `;
-    return html`
-      <li class="song-ranking__entry">
-        <div class=${`song-ranking__row${this.points || this.summary ? " song-ranking__row--points" : ""}`}>
-          <span class="song-ranking__rank" aria-label=${`${this.label("rank", "Rank")} ${entry.rank}`}>
-            ${entry.rank}
-          </span>
-          ${
-            image
-              ? html`
-                  <a
-                    class="song-ranking__namecard"
-                    href=${image}
-                    target="_blank"
-                    rel="noopener"
-                    title=${cardTitle}
-                    aria-label=${cardTitle || this.label("profileCard", "Profile card")}
-                  >
-                    ${this.profileMedia(name, image)}
-                  </a>
-                `
-              : html`
-                  <span
-                    class="song-ranking__namecard song-ranking__namecard--empty"
-                    aria-label=${this.label("noProfileCard", "No profile card")}
-                  >
-                    ${icon("badge", 24)}
-                  </span>
-                `
-          }
-          <span class="song-ranking__avatar">
-            ${
-              favorite?.avatar
-                ? this.profileMedia(name, favorite.avatar)
-                : html`
-                    <span class="song-ranking__initial" aria-hidden="true">${this.initials(name)}</span>
-                  `
-            }
-          </span>
-          ${
-            entry.profileId
-              ? html`
-                  <a
-                    class="song-ranking__player-copy state-layer"
-                    href=${playerProfileHref(this.locale, this.region, entry.profileId, this.rankingUrl(this.region), navigationDocumentUrl())}
-                    data-profile-id=${entry.profileId}
-                  >
-                    ${identity}
-                  </a>
-                `
-              : html`
-                  <span class="song-ranking__player-copy">${identity}</span>
-                `
-          }
-          <span
-            class="song-ranking__score"
-            aria-label=${`${this.points ? this.label("points", "Points") : this.label("score", "Score")} ${score}`}
-          >
-            <strong>${score}</strong>
-            ${
-              entry.tied
-                ? html`
-                    <small>${this.label("tied", "Tied rank")}</small>
-                  `
-                : nothing
-            }
-          </span>
-          ${
-            this.points || this.summary
-              ? nothing
-              : html`
-                  <span class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}>
-                    ${entry.cards.map(
-                      (card) => html`
-                        <span class="song-ranking__deck-slot">
-                          ${this.renderCard(card)}${
-                    card.supportCardId != null
-                      ? this.renderCard(card, true)
-                      : html`
-                          <span
-                            class="song-ranking__card-media song-ranking__card-media--support song-ranking__card-empty"
-                            aria-label=${this.label("noSupportCard", "No support card")}
-                          ></span>
-                        `
-                  }
-                        </span>
-                      `,
-                    )}
-                  </span>
-                `
-          }
-        </div>
-      </li>
-    `;
+    return this.renderRankingRow({
+      ...entry,
+      level: this.levelFromExp(this.sourceCatalog()?.playerLevels, entry.rankExp),
+      href: entry.profileId ? playerProfileHref(this.locale, this.region, entry.profileId, this.rankingUrl(this.region), navigationDocumentUrl()) : "",
+      score,
+      scoreLabel: this.points ? this.label("points", "Points") : this.label("score", "Score"),
+      ...(this.points || this.summary ? { cards: undefined } : {}),
+    });
   }
   /**
    * The first page of a ranking is always 20 rows, so while it loads the

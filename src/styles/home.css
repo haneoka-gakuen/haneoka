@@ -416,68 +416,57 @@
     display: grid;
     justify-items: center;
     align-content: center;
-    gap: 4px;
+    gap: 2px;
+    min-inline-size: 0;
     block-size: 100%;
     min-block-size: 48px;
-    padding: 6px 2px;
+    padding: 4px 2px;
     border-radius: var(--md-sys-shape-corner-medium);
     color: inherit;
     text-decoration: none;
   }
   .home-arena .home-arena__band {
-    inline-size: 32px;
-    block-size: 32px;
+    inline-size: 28px;
+    block-size: 28px;
     object-fit: contain;
   }
-  .home-arena .home-arena__name {
+  .home-arena .home-arena__rule {
+    display: flex;
     max-inline-size: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
-      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
-  }
-  .home-arena .home-arena__league .arena-rule {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    gap: 2px;
-  }
-  .home-arena .home-arena__league .arena-rule__part:last-child > .arena-mission {
-    display: none;
-  }
-  .home-arena .home-arena__league .arena-rule__part > strong {
+    min-inline-size: 0;
+    align-items: center;
+    gap: 3px;
     font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
       var(--md-sys-typescale-label-small-line-height) var(--app-font);
   }
+  .home-arena .home-arena__rule--next {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .home-arena .home-arena__rule-icons {
+    display: none;
+    align-items: center;
+  }
+  .home-arena .home-arena__rule-words {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   @container home-arena (max-width: 420px) {
-    .home-arena .home-arena__name,
-    .home-arena .home-arena__times > .home-arena__remaining,
-    .home-arena .home-arena__league .arena-rule__part:first-child > span,
-    .home-arena .home-arena__league .arena-rule__part > strong {
+    .home-arena .home-arena__times > .home-arena__remaining {
       display: none;
     }
-    /* Sections as icons only: one when all three agree, otherwise all three. */
-    .home-arena .home-arena__league .arena-rule__part:last-child > .arena-mission {
-      display: inline-flex;
-    }
-    .home-arena .home-arena__league .arena-rule__part:last-child {
-      gap: 0;
-    }
     .home-arena .home-arena__season {
-      flex-wrap: nowrap;
-      padding-block-end: 2px;
+      display: none;
     }
-    .home-arena .home-arena__band {
-      inline-size: 24px;
-      block-size: 24px;
+    .home-arena .home-arena__rule--next > .material-icon {
+      display: none;
     }
-    .home-arena .home-arena__league {
-      gap: 2px;
-      padding-block: 2px;
+    .home-arena .home-arena__rule-words {
+      display: none;
     }
-    .home-arena .home-arena__league .arena-rule__part:first-child img {
-      inline-size: 18px;
-      block-size: 18px;
+    .home-arena .home-arena__rule-icons {
+      display: inline-flex;
     }
   }
   .home-arena {

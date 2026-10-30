@@ -21,8 +21,8 @@ import { crossCatalogRows } from "../lib/cross-server/definitions";
 import { announcementText } from "./shared/announcement";
 import type { Announcement } from "../lib/announcements";
 import type { Locale } from "../i18n/locales";
-import { ARENA_PROJECTION, arenaBoundaries, arenaContains, arenaCurrentRule, arenaRuleMarkNames, compactArenaCatalog, type ArenaCatalog } from "../lib/arena";
-import { arenaRuleMarks } from "./shared/arena-rule";
+import { ARENA_PROJECTION, arenaBoundaries, arenaContains, arenaCurrentRule, arenaPeriods, arenaRuleMarkNames, compactArenaCatalog, type ArenaCatalog } from "../lib/arena";
+import { arenaAttribute, arenaMission, arenaRuleText, type ArenaRuleContext, type ArenaRuleView } from "./shared/arena-rule";
 import { clientText } from "../i18n/client";
 import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
@@ -2254,6 +2254,18 @@ export class HomeDashboard extends LitElement {
     `;
   }
   /** The current Arena season: every league's live stage attribute and sections, and when they change. */
+  /** One rule on one line: attribute, section icons where the words do not fit, then the words. */
+  private renderArenaRule(context: ArenaRuleContext, rule: ArenaRuleView, next: boolean) {
+    const words = arenaRuleText(this.locale, rule);
+    return html`
+      <span class=${`home-arena__rule${next ? " home-arena__rule--next" : ""}`} title=${next ? `${clientText(this.locale, "catalog.arena.nextRotation", "Next rotation")}: ${words}` : words}>
+        ${next ? icon("arrow_forward", 12) : nothing}
+        ${arenaAttribute(context, rule.musicType, next ? 16 : 18)}
+        <span class="home-arena__rule-icons">${[...new Set(rule.missions)].map((mission) => arenaMission(context, mission, 16))}</span>
+        <span class="home-arena__rule-words">${words}</span>
+      </span>
+    `;
+  }
   private renderArena() {
     const server = this.sourceServer();
     const link = isPublicReleaseServer(server) ? `/${server}/${this.locale}/arena/` : "";
@@ -2277,6 +2289,7 @@ export class HomeDashboard extends LitElement {
           .filter((at) => at > now)
           .sort((a, b) => a - b)[0]
       : undefined;
+    const rotation = live && season ? arenaPeriods(season).find((period) => period.startAt > now) : undefined;
     return html`
       <section class="home-card home-info home-arena" aria-labelledby="home-arena-title">
         ${this.moduleHeader(
@@ -2307,14 +2320,20 @@ export class HomeDashboard extends LitElement {
                   </span>
                 </div>
                 <ul class="home-arena__leagues" role="list">
-                  ${season.leagues.map((league) => {
+                  ${season.leagues.map((league, index) => {
                     const rule = arenaCurrentRule(season, league, live ? now : season.startAt);
+                    const upcoming = rotation?.rules[index];
                     return html`
                       <li>
-                        <a class="home-arena__league state-layer" href=${link ? `${link}?band=${league.bandId}` : nothing}>
+                        <a
+                          class="home-arena__league state-layer"
+                          href=${link ? `${link}?band=${league.bandId}` : nothing}
+                          title=${localizedText(league.name, this.locale)}
+                          aria-label=${localizedText(league.name, this.locale)}
+                        >
                           ${league.image ? html`<img class="home-arena__band" src=${league.image} alt="" width="28" height="28" loading="lazy" />` : nothing}
-                          <span class="home-arena__name md-title-small">${localizedText(league.name, this.locale)}</span>
-                          ${arenaRuleMarks(context, rule, 20)}
+                          ${rule ? this.renderArenaRule(context, rule, false) : nothing}
+                          ${upcoming ? this.renderArenaRule(context, upcoming, true) : nothing}
                         </a>
                       </li>
                     `;
