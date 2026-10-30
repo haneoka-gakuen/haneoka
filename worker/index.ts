@@ -27,6 +27,7 @@ export { CommunityMediaContainer } from "./community-media-container";
 export { OfficialRankingCollector } from "./official-ranking-collector";
 export { SearchContainer } from "./search-container";
 import { handleOfficialPlayerApi } from "./official-player-api";
+import { cleanupUnverifiedAccounts } from "./account-lifecycle";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
@@ -4149,6 +4150,7 @@ const COMMUNITY_UPLOAD_CLEANUP_CRON = "37 */6 * * *";
 const DATABASE_CLEANUP_CRON = "23 3 * * *";
 const MEDIA_RECONCILIATION_CRON = "*/2 * * * *";
 const SEARCH_SYNC_CRON = "41 * * * *";
+const ACCOUNT_CLEANUP_CRON = "11 * * * *";
 const searchBackend = (env: Env): SearchBackend => (path, init) =>
   env.SEARCH_INDEX.getByName("catalog").fetch(new Request(`http://search${path}`, init));
 
@@ -4223,6 +4225,8 @@ const worker: ExportedHandler<Env> = {
           ? ["community_ranking", () => refreshCommunityRanking(env)]
           : controller.cron === MEDIA_RECONCILIATION_CRON
             ? ["community_media_reconciliation", () => reconcileCommunityMedia(env)]
+            : controller.cron === ACCOUNT_CLEANUP_CRON
+              ? ["account_cleanup", async () => { if (env.EMAIL && env.AUTH_EMAIL_FROM) await cleanupUnverifiedAccounts(env); }]
             : controller.cron === SEARCH_SYNC_CRON
               ? ["search_sync", () => syncSearchIndex(searchBackend(env), (catalogRequest) => handleCatalogApi(env, ctx, catalogRequest, new URL(catalogRequest.url).pathname))]
             : controller.cron === MODERATION_RECONCILIATION_CRON

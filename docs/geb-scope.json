@@ -78,6 +78,7 @@
     "worker/official-ranking-api.ts",
     "worker/arena-ranking.ts",
     "server/ranking-collector-official/core/demand.py",
+    "worker/account-lifecycle.ts",
     "worker/official-player-api.ts",
     "worker/official-ranking-collector.ts",
     "worker/search-container.ts",
