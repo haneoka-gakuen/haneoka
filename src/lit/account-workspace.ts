@@ -1081,7 +1081,7 @@ ${
                             ${String(account.displayName || account.playerUid)}
                             <small class="md-body-small">
                               ${[
-                                region === "jp" ? clientText(locale, "settings.labels.settingsJapan", "Japan") : clientText(locale, "settings.labels.settingsGlobal", "International"),
+                                region === "jp" ? clientText(locale, "settings.labels.settingsJapan", "JP") : clientText(locale, "settings.labels.settingsGlobal", "Global"),
                                 String(account.playerUid),
                                 typeof summary.rank === "number" ? clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(summary.rank) }) : "",
                                 typeof summary.rating === "number" ? clientText(locale, "account.page.gameRating", "Rating {value}", { value: number(summary.rating) }) : "",

@@ -182,8 +182,8 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           value: host.data!.identity.server,
           grow: false,
           options: [
-            { value: "jp", label: host.t("boxImport.servers.jp", "Japan") },
-            { value: "intl", label: host.t("boxImport.servers.intl", "International") },
+            { value: "jp", label: host.t("boxImport.servers.jp", "JP") },
+            { value: "intl", label: host.t("boxImport.servers.intl", "Global") },
           ],
           onSelect: (server) => host.switchServer(server),
         })}

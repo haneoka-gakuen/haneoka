@@ -1559,9 +1559,9 @@ export class CommunityWorkspace extends LitElement {
     const number = (value: unknown) => new Intl.NumberFormat(this.locale).format(Number(value));
     return [
       account.region === "jp"
-        ? this.label("settings.labels.settingsJapan", "Japan")
+        ? this.label("settings.labels.settingsJapan", "JP")
         : account.region === "intl"
-          ? this.label("settings.labels.settingsGlobal", "International")
+          ? this.label("settings.labels.settingsGlobal", "Global")
           : String(account.region || ""),
       account.displayName && account.playerUid
         ? this.label("community.page.gameAccountPlayerId", "Player ID {id}", { id: String(account.playerUid) })

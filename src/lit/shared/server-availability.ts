@@ -55,9 +55,9 @@ export function serverAvailabilityLabel(availability: readonly FormalCatalogServ
   if (extra.length) return extra.map(sourceLabel).join(" / ");
   const server = exclusiveServer(availability);
   return server === "jp"
-    ? clientText(locale, "catalog.availability.catalogJapanOnly", "Japan only")
+    ? clientText(locale, "catalog.availability.catalogJapanOnly", "JP only")
     : server === "intl"
-      ? clientText(locale, "catalog.availability.catalogInternationalOnly", "International only")
+      ? clientText(locale, "catalog.availability.catalogInternationalOnly", "Global only")
       : "";
 }
 
