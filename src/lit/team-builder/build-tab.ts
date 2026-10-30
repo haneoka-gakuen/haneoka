@@ -572,6 +572,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
                     type="number"
                     min="0"
                     step="5"
+                    .error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-min-bonus")}
                     label=${host.t("minBonus", "Minimum event bonus (%)")}
                     .value=${live(s.minBonus === null ? "" : String(s.minBonus))}
                     @change=${(e: Event) => {

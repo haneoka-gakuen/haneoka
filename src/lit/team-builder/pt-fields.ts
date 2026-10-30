@@ -18,9 +18,12 @@ export function issueField(issue: PtIssue): string | null {
 }
 
 export function ptField(host: TeamBuilder, key: string, content: TemplateResult): TemplateResult {
-  const invalid = host.pt.showIssues && host.pt.issues.some((issue) => issueField(issue) === key);
+  const invalid = (host.pt.showIssues && host.pt.issues.some((issue) => issueField(issue) === key)) ||
+    (key === "minBonus" && host.submitted && host.inputIssues().some((issue) => issue.field === "tb-min-bonus"));
   return html`
     <div
+      id=${key === "minBonus" ? "tb-min-bonus" : nothing}
+      ?data-tb-field=${key === "minBonus"}
       class=${`pt-field${invalid ? " pt-field--invalid" : ""}`}
       data-pt-field=${key}
       tabindex="-1"

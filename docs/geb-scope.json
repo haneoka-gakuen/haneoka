@@ -254,6 +254,7 @@
     "worker/community-charts.ts",
     "worker/community-chart-media.ts",
     "src/lib/team-builder/reward-plan.ts",
+    "src/lib/team-builder/constraint-feasibility.ts",
     "src/lit/team-builder/reward-plan-view.ts",
     "src/lit/team-builder/workspace-state.ts",
     "src/lib/home-event-display.ts",

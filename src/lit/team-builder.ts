@@ -5,6 +5,7 @@
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
 import { compileRewardPlan, effectiveRewardPlan, legacyRewardPlan } from "../lib/team-builder/reward-plan";
 import { resolveManualEvent } from "../lib/team-builder/manual-event";
+import { minimumEventBonusUnreachable } from "../lib/team-builder/constraint-feasibility";
 import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
@@ -1100,9 +1101,19 @@ export class TeamBuilder extends LitElement {
     )
       add("tb-cards", "fixedBindingConflict", "Fixed Snapshots or bindings conflict");
     if (s.noSnaps && fixedSnaps.size) add("tb-cards", "fixedSnapConflict", "Remove fixed Snapshots or allow Snapshots");
+    if (this.master && s.minBonus !== null && s.goal === "event") {
+      const request = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.request() : this.request();
+      if (request && minimumEventBonusUnreachable(this.master, request))
+        add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached");
+    }
     return issues;
   }
   async focusInput(field: string) {
+    if (field === "tb-min-bonus") {
+      this.expanded.add("candidates");
+      this.requestUpdate();
+      await this.updateComplete;
+    }
     if (field === "tb-luck-samples") {
       this.expanded.add(this.tab === "pt" ? "farm-advanced" : `sampling-${this.tab}-${this.buildMode}`);
       this.requestUpdate();

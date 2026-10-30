@@ -36,6 +36,11 @@ export function visibleCards(host: TeamBuilder): Row[] {
 }
 
 const prefix = (kind: Kind) => (kind === "members" ? "m" : "s");
+function clearRequiredChanges(host: TeamBuilder) {
+  return Object.entries(host.snapshot?.entries ?? {})
+    .filter(([key, entry]) => /^[ms]\.[1-9]\d*\.lock$/u.test(key) && entry.v === true)
+    .map(([key]) => ({ key, value: false }));
+}
 /** Bulk edits keep the previous values for one undo. */
 function bulk(host: TeamBuilder, label: string, changes: { key: string; value: BoxValue }[]) {
   if (!changes.length || !host.snapshot) return;
@@ -167,6 +172,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
   const activeFilters = f.bands.length + f.characters.length + f.attributes.length + f.rarities.length + Object.values(f.facets).reduce((sum, values) => sum + values.length, 0);
   const ownedCount = f.kind === "members" ? view.members.size : view.snaps.size;
   const usedCount = [...(f.kind === "members" ? view.members : view.snaps).values()].filter((row) => row.use).length;
+  const requiredCount = clearRequiredChanges(host).length;
   return html`
     <div class=${`tb-box${host.pt.showIssues && host.pt.issues.some((issue) => issue.code === "inventory") ? " pt-field--invalid" : ""}`} data-pt-field="inventory" tabindex="-1">
       
@@ -249,6 +255,10 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           <button class="button button--text button--small" type="button" ?disabled=${!ownedRows.length}
             @click=${() => bulk(host, host.t("bulkMaxDone", "Set {count} cards to full growth", { count: ownedRows.length }), ownedRows.flatMap((row) => maxChanges(host, row)))}>
             ${icon("upgrade", 18)}${host.t("bulkMax", "Full growth")}</button>
+          <button class="button button--text button--small" type="button" ?disabled=${!requiredCount} @click=${() => {
+            const changes = clearRequiredChanges(host);
+            bulk(host, host.t("clearRequiredDone", "Cleared required marks on {count} cards", { count: changes.length }), changes);
+          }}>${host.t("clearRequired", "Clear all required marks")}</button>
           <button class="button button--text button--small" type="button" ?disabled=${!view.members.size && !view.snaps.size} @click=${() => {
             clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
             host.requestUpdate();
