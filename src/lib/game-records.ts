@@ -51,7 +51,7 @@ export interface SongRankingRowDto {
 
 export interface GameRankingDto {
   region: GameRecordsRegion;
-  provider?: "official" | "moenotes";
+  provider?: "official";
   snapshotId?: string;
   observedAtMs?: number | null;
   fetchedAtMs: number | null;
@@ -96,7 +96,7 @@ export interface ArenaPopulationDto {
   region: GameRecordsRegion;
   seasonId: string;
   bandId: string;
-  provider: "official" | "moenotes";
+  provider: "official";
   observedAtMs: number;
   snapshotId?: string;
   fetchedAtMs?: number;
@@ -130,7 +130,7 @@ export interface TrackedEventDto {
 
 export interface EventTrackerDto {
   region: GameRecordsRegion;
-  provider?: "official" | "moenotes";
+  provider?: "official";
   serverTimeMs?: number | null;
   event: TrackedEventDto | null;
   fetchedAtMs: number | null;

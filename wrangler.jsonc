@@ -20,7 +20,7 @@
     "AUTH_EMAIL_FROM": "noreply@haneoka.org",
     "TURNSTILE_ENABLED": "false",
     "OFFICIAL_RANKING_ENABLED_REGIONS": "jp,tw,en,kr",
-    "OFFICIAL_RANKING_READ_REGIONS": "",
+    "OFFICIAL_RANKING_READ_REGIONS": "jp,tw,en,kr",
   },
 
   "assets": {
@@ -159,7 +159,7 @@
   ],
 
   "triggers": {
-    "crons": ["*/2 * * * *", "*/5 * * * *", "17 * * * *", "37 */6 * * *", "23 3 * * *", "*/10 * * * *", "41 * * * *", "11 * * * *"],
+    "crons": ["*/2 * * * *", "*/5 * * * *", "17 * * * *", "37 */6 * * *", "23 3 * * *", "41 * * * *", "11 * * * *"],
   },
 
   "observability": {

@@ -203,6 +203,7 @@ export interface OfficialCollectorJob {
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
   playerLookups?: string[];
   songRankings?: string[];
+  cardImages?: string[];
   region: GameRecordsRegion;
   runId: string;
   credentialGeneration: string;
@@ -234,6 +235,7 @@ export type OfficialCollectorUpdate = {
   | { type: "arena-population"; observation: OfficialArenaPopulationObservation }
   | { type: "arena-progress"; checkpointId: string; progress: OfficialArenaProgress }
   | { type: "player-profile"; profileId: string; found: boolean; profile?: unknown; totalFavorite?: string | null; observedAtMs: number }
+  | { type: "card-image"; file: string; data: string }
   | { type: "song-ranking"; musicId: string; players: unknown[]; observedAtMs: number }
   | { type: "complete"; status: "ok" | "failed" | "auth_paused" | "rate_limited"; retryAfterSeconds?: number; failure?: OfficialCollectorFailure }
 );

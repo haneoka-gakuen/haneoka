@@ -27,7 +27,7 @@ export async function handleApiDiscovery(request: Request, assets?: Pick<Fetcher
   };
   const body = url.pathname === "/api/v1/tools" ? tools : {
     version: "v1", documentation: "https://docs.haneoka.org/", openapi: "/api/v1/openapi.json",
-    releases: "/api/v1/releases", catalog: "/api/v1/servers/{server}/catalog", live: "/api/v1/live-capabilities", tools,
+    releases: "/api/v1/releases", catalog: "/api/v1/servers/{server}/catalog", tools,
   };
   return new Response(request.method === "HEAD" ? null : JSON.stringify(body), { headers });
 }

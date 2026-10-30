@@ -6,7 +6,7 @@
 import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto } from "../src/lib/game-records";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
-import { OFFICIAL_RANKING_STALE_MS, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
+import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
 
 export interface OfficialRankingReadBindings extends OfficialRankingStoreBindings, OfficialCollectorConfigurationBindings {
   OFFICIAL_RANKING_READ_REGIONS?: string;
@@ -101,14 +101,14 @@ function officialCard(value: unknown): SongRankingCardDto {
   };
 }
 
-export function officialProfileCard(value: unknown): SongRankingRowDto["profileCard"] {
+export function officialProfileCard(value: unknown, region: GameRecordsRegion): SongRankingRowDto["profileCard"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const card = object(value);
   const thumbnailUrls = (Array.isArray(card.thumbnail_url) ? card.thumbnail_url : []).flatMap((source) => {
     if (typeof source !== "string") return [];
     try {
       const url = new URL(source);
-      return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? [url.href] : [];
+      return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? [officialCardUrl(region, url.href)] : [];
     } catch {
       return [];
     }
@@ -137,7 +137,7 @@ export function officialEventRanking(observation: OfficialObservation, now = Dat
       deckId: positiveInteger(deck.id),
       deckName: text(deck.name),
       totalPower: positiveInteger(deck.total_power),
-      profileCard: officialProfileCard(player.profile_card),
+      profileCard: officialProfileCard(player.profile_card, observation.region),
       cards: Array.isArray(deck.cards) ? deck.cards.slice(0, 5).map(officialCard).sort((left, right) => left.slot - right.slot) : [],
     };
   });

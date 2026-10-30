@@ -8,8 +8,6 @@ import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPat
 import { readArenaCatalog } from "../src/lib/arena-catalog";
 import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
-import { handlePublicGameApi } from "./game-public";
-import { handleGamePlatform } from "./game-platform";
 import { semanticOwnersConflict } from "../src/lib/cross-server/content";
 import { handleContentAccessRequest } from "./content-access";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
@@ -50,12 +48,7 @@ import {
   loadBestdoriSonolusCatalog,
   loadBestdoriSonolusChartText,
 } from "./bestdori";
-import {
-  handleGameRecordsApi,
-  collectEventRankingHistory,
-  EVENT_RANKING_HISTORY_CRON,
-  type PublishedRankingCatalog,
-} from "./game-records";
+import { handleGameRecordsApi } from "./game-records";
 import { handleSekaiApi } from "./sekai";
 import { handleStampFontsRequest } from "./stamp-fonts";
 import { handleChartImageRequest } from "./chart-image";
@@ -1557,92 +1550,6 @@ async function readCatalogShardAt(
   const document = await readReleaseJson(env, release, path);
   if (!isJsonObject(document)) throw new Error(`invalid catalog storage shard: ${path}`);
   return document;
-}
-
-const eventRankingCatalogCache = new Map<string, Promise<PublishedRankingCatalog["events"]>>();
-
-async function publishedEventRankingEvents(env: Env, release: Release): Promise<PublishedRankingCatalog["events"]> {
-  const cacheKey = `${release.server}:${release.releaseId}:${release.sourceId}`;
-  let pending = eventRankingCatalogCache.get(cacheKey);
-  if (!pending) {
-    pending = (async () => {
-      const storage = (await catalogStorageManifest(env, release))?.resources.events;
-      if (!storage?.entities) return [];
-      const index = await readReleaseJson(env, release, storage.index);
-      const challengeTable = await readReleaseJson(env, release, "objects/master/MasterChallengeMusic.json");
-      if (
-        !isJsonObject(index) ||
-        !isJsonObject(index.entries) ||
-        !isJsonObject(challengeTable) ||
-        !Array.isArray(challengeTable._allData)
-      )
-        throw new Error("event ranking catalog missing");
-      const challenges = new Map<string, { id: string; musicId: string }[]>();
-      for (const challenge of challengeTable._allData) {
-        if (
-          !isJsonObject(challenge) ||
-          typeof challenge._rankingRewardGroup !== "number" ||
-          challenge._rankingRewardGroup <= 0
-        )
-          continue;
-        const key = String(challenge._eventId),
-          group = challenges.get(key) ?? [];
-        group.push({ id: String(challenge._id), musicId: String(challenge._liveMusicId) });
-        challenges.set(key, group);
-      }
-      const shards = new Map<string, Promise<JsonObject | null>>();
-      const events: PublishedRankingCatalog["events"][number][] = [];
-      for (const [id, summary] of Object.entries(index.entries)) {
-        if (!isJsonObject(summary) || summary.kind !== "game-event" || !/^[1-9][0-9]*$/u.test(id)) continue;
-        const start = Array.isArray(summary.startAt) ? summary.startAt[0] : summary.startAt;
-        const end = Array.isArray(summary.endAt) ? summary.endAt[0] : summary.endAt;
-        if (
-          typeof start !== "number" ||
-          !Number.isSafeInteger(start) ||
-          typeof end !== "number" ||
-          !Number.isSafeInteger(end)
-        )
-          continue;
-        const shardId = fnv1a32Shard(id, RELEASE_INDEX_SHARDS);
-        let shard = shards.get(shardId);
-        if (!shard) {
-          shard = readCatalogShardAt(env, release, storage.entities, shardId);
-          shards.set(shardId, shard);
-        }
-        const document = await shard;
-        const details = document ? ownJsonValue(document, id) : null;
-        if (!isJsonObject(details)) continue;
-        events.push({
-          id,
-          startAtMs: start,
-          endAtMs: end,
-          pointRankingEnabled: details.rankingDisabled === false,
-          challenges: details.musicRankingDisabled === false ? (challenges.get(id) ?? []) : [],
-        });
-      }
-      return events;
-    })();
-    boundedPromiseCache(eventRankingCatalogCache, cacheKey, pending, 4);
-  }
-  try {
-    return await pending;
-  } catch (error) {
-    if (eventRankingCatalogCache.get(cacheKey) === pending) eventRankingCatalogCache.delete(cacheKey);
-    throw error;
-  }
-}
-
-async function publishedEventRankingCatalogs(env: Env): Promise<PublishedRankingCatalog[]> {
-  const catalogs: PublishedRankingCatalog[] = [];
-  for (const slug of ["jp", "intl"] as const) {
-    const server = await activeResourceServer(env, slug);
-    const release = server ? await currentRelease(env, server) : null;
-    if (!release) continue;
-    const events = await publishedEventRankingEvents(env, release);
-    for (const region of slug === "jp" ? (["jp"] as const) : (["tw", "en", "kr"] as const))
-      catalogs.push({ region, events });
-  }
-  return catalogs;
 }
 
 function validGameClientFilename(value: string): boolean {
@@ -4004,17 +3911,13 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   }
   const apiDiscovery = await handleApiDiscovery(request, env.ASSETS);
   if (apiDiscovery) return apiDiscovery;
-  const publicGame = await handlePublicGameApi(request);
-  if (publicGame) return publicGame;
-  const gamePlatform = await handleGamePlatform(request, env);
-  if (gamePlatform) return gamePlatform;
   const arenaRanking = await handleArenaRankingApi(request, ctx, url, env);
   if (arenaRanking) return arenaRanking;
   const officialRecords = await handleOfficialRankingApi(request, url, env);
   if (officialRecords) return officialRecords;
   const officialPlayer = await handleOfficialPlayerApi(request, ctx, url, env);
   if (officialPlayer) return officialPlayer;
-  const gameRecords = await handleGameRecordsApi(ctx, request, url, env);
+  const gameRecords = await handleGameRecordsApi(request, url, env);
   if (gameRecords) return gameRecords;
   const bestdori = await handleGarupaBestdoriApi(ctx, request, url, env.BESTDORI_UPSTREAM_BASE);
   if (bestdori) return bestdori;
@@ -4213,12 +4116,7 @@ const worker: ExportedHandler<Env> = {
       }));
     }
     const scheduledTask: readonly [string, () => Promise<void>] | null =
-      controller.cron === EVENT_RANKING_HISTORY_CRON
-        ? [
-            "event_ranking_history",
-            async () => collectEventRankingHistory(env, await publishedEventRankingCatalogs(env)),
-          ]
-        : controller.cron === COMMUNITY_RANKING_CRON
+      controller.cron === COMMUNITY_RANKING_CRON
           ? ["community_ranking", () => refreshCommunityRanking(env)]
           : controller.cron === MEDIA_RECONCILIATION_CRON
             ? ["community_media_reconciliation", () => reconcileCommunityMedia(env)]

@@ -73,7 +73,7 @@ function card(value: unknown, index: number): SongRankingCardDto {
   };
 }
 
-export function arenaRankingRow(value: unknown, fallbackRank: number): ArenaRankingRowDto {
+export function arenaRankingRow(value: unknown, fallbackRank: number, region: GameRecordsRegion): ArenaRankingRowDto {
   const entry = object(value);
   const profile = object(entry.profile ?? field(entry, "playerData"));
   const favorite = object(field(profile, "favoriteMemberCard"));
@@ -95,7 +95,7 @@ export function arenaRankingRow(value: unknown, fallbackRank: number): ArenaRank
     deckId: positive(deck.id),
     deckName: text(deck.name),
     totalPower: positive(field(deck, "totalPower")),
-    profileCard: officialProfileCard(field(profile, "profileCard")),
+    profileCard: officialProfileCard(field(profile, "profileCard"), region),
     cards: (Array.isArray(deck.cards) ? deck.cards : [])
       .slice(0, 5)
       .map(card)
@@ -144,7 +144,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
     const players = source.players.slice(offset, offset + length);
     if (offset < 0 || length <= 0 || players.length !== length)
       return pending([Math.floor((position - 1) / WINDOW) * WINDOW + 1]);
-    rows.push(...players.map((player, index) => arenaRankingRow(player, position + index)));
+    rows.push(...players.map((player, index) => arenaRankingRow(player, position + index, region)));
     observedAtMs = Math.min(observedAtMs, source.observedAtMs);
     snapshots.add(source.snapshotId);
     position = until + 1;
@@ -197,7 +197,7 @@ async function search(env: ArenaRankingBindings, region: GameRecordsRegion, seas
       const source = await readOfficialArenaSearchMatch(env, metadata);
       if (source.region !== region || source.seasonId !== seasonId || source.bandId !== bandId
         || source.snapshotId !== metadata.snapshotId) throw new Error("official_observation_identity_mismatch");
-      const row = arenaRankingRow(source.players?.[position - start], position);
+      const row = arenaRankingRow(source.players?.[position - start], position, region);
       if (row.profileId !== profileId) throw new Error("official_profile_index_mismatch");
       return { region, seasonId, bandId, profileId, searchedTo, observedAtMs: source.observedAtMs, row };
     }

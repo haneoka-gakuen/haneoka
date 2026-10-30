@@ -20,7 +20,6 @@ import {
   GAME_RECORDS_REGIONS as REGIONS,
   defaultGameRecordsRegion as defaultRegion,
   gameRecordsRegionPicker,
-  moenotesBrand,
 } from "./shared/game-records";
 
 import type { GameRecordsRegion, GameRankingDto, SongRankingRowDto, GameRecordsErrorDto } from "../lib/game-records";
@@ -32,7 +31,7 @@ type RankingEntry = SongRankingRowDto;
 interface RankingCache {
   rows: RankingEntry[];
   snapshotId?: string;
-  provider?: "official" | "moenotes";
+  provider?: "official";
   storedAt: number;
   reportedAt: number;
   stale: boolean;
@@ -360,9 +359,7 @@ export class SongRanking extends GameRecordsCardsElement {
                 ? html`<p class="song-ranking__fetched" aria-hidden="true"><span class="skeleton-line">${this.label("updated", "Updated")} · 00/00/0000, 00:00:00</span></p>`
                 : nothing
           }
-          ${cached?.provider === "official"
-            ? html`<span class="song-ranking__fetched">${this.label("officialSource", "Official game rankings")}</span>`
-            : this.embedded ? nothing : moenotesBrand()}
+          <span class="song-ranking__fetched">${this.label("officialSource", "Official game rankings")}</span>
         </div>
         ${
           this.phase === "error" && !this.rows.length

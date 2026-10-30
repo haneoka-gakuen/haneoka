@@ -59,25 +59,3 @@ export function gameRecordsRegionPicker(
   `;
 }
 
-export function moenotesBrand(href = "https://bdon.moe/") {
-  return html`
-    <a class="song-ranking__brand" href=${href} target="_blank" rel="noopener" aria-label="Moenotes" title="Moenotes">
-      <img
-        class="song-ranking__brand-light"
-        src="https://bdon.moe/assets/brand/moenotes-signature.svg"
-        width="104"
-        height="40"
-        alt="Moenotes"
-        decoding="async"
-      />
-      <img
-        class="song-ranking__brand-dark"
-        src="https://bdon.moe/assets/brand/moenotes-signature-light.svg"
-        width="104"
-        height="40"
-        alt="Moenotes"
-        decoding="async"
-      />
-    </a>
-  `;
-}

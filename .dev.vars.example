@@ -24,7 +24,6 @@ TURNSTILE_SECRET_KEY=
 TURNSTILE_ALLOWED_HOSTNAMES=localhost,127.0.0.1
 
 # Optional live game data key and private native chart renderer.
-MOENOTES_OPEN_API_TOKEN=
 TOOLS_SERVICE_URL=
 TOOLS_SERVICE_TOKEN=
 

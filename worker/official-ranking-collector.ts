@@ -8,7 +8,7 @@ import type { GameRecordsRegion } from "../src/lib/game-records";
 import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { harvestOfficialPlayers, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+import { harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -19,7 +19,8 @@ const JOB_MS = 120_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 const DEMAND_TTL_MS = 600_000;
-const DEMAND_LIMITS = { player: 64, song: 8 };
+const DEMAND_LIMITS = { player: 64, song: 8, card: 128 };
+const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
 type ArenaInterest = NonNullable<OfficialCollectorJob["arenaWindows"]>[number] & { requestedAtMs: number };
 const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
 const CALLBACK_ORIGIN = "https://haneoka.org";
@@ -63,6 +64,7 @@ interface CollectorState {
   arenaInterests?: ArenaInterest[];
   playerInterests?: DemandInterest[];
   songInterests?: DemandInterest[];
+  cardInterests?: DemandInterest[];
   arenaPopulationAt?: Record<string, number>;
   arenaWarmupRuns?: number;
 }
@@ -367,16 +369,17 @@ export class OfficialRankingCollector extends Container<Env> {
   }
 
   /** Queues reads for the next run; the queues are bounded and repeat requests collapse. */
-  async requestDemand(region: GameRecordsRegion, kind: "player" | "song", ids: string[]): Promise<{ kind: string; retryAfter: number | null }> {
+  async requestDemand(region: GameRecordsRegion, kind: "player" | "song" | "card", ids: string[]): Promise<{ kind: string; retryAfter: number | null }> {
     return this.serialized(async () => {
-      if (ids.length > DEMAND_LIMITS[kind] || ids.some((id) => !decimal(id))) return { kind: "invalid_request", retryAfter: null };
+      if (ids.length > DEMAND_LIMITS[kind] || ids.some((id) => (kind === "card" ? !CARD_FILE.test(id) : !decimal(id))))
+        return { kind: "invalid_request", retryAfter: null };
       const state = await this.stateFor(region), now = Date.now();
       const unavailable = await officialCollectorAvailability(this.env, region);
       if (unavailable) return { kind: unavailable, retryAfter: null };
       if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration) return { kind: "auth_paused", retryAfter: null };
       if (["rate_limited", "failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status))
         return { kind: state.status, retryAfter: null };
-      const field = kind === "player" ? "playerInterests" : "songInterests";
+      const field = kind === "player" ? "playerInterests" : kind === "song" ? "songInterests" : "cardInterests";
       const queue = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
       const missing = ids.filter((id) => !queue.some((entry) => entry.id === id));
       if (!missing.length) return { kind: "pending", retryAfter: 30 };
@@ -579,6 +582,7 @@ export class OfficialRankingCollector extends Container<Env> {
         capabilities: ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "player-demand-v1"],
         playerLookups: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 16).map((entry) => entry.id),
         songRankings: (state.songInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 4).map((entry) => entry.id),
+        cardImages: (state.cardInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 32).map((entry) => entry.id),
         arenaProgress: Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
         arenaWindows: (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
           .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank })),
@@ -642,6 +646,7 @@ export class OfficialRankingCollector extends Container<Env> {
       else if (update.type === "arena-progress") checkpoint = `arena-progress:${update.checkpointId}`;
       else if (update.type === "player-profile") checkpoint = `player:${update.profileId}`;
       else if (update.type === "song-ranking") checkpoint = `song:${update.musicId}`;
+      else if (update.type === "card-image") checkpoint = `card:${update.file}`;
       else return json({ error: "invalid_update" }, 400);
       const updateHash = await officialDigest(canonical(update));
       if (run.checkpoints[checkpoint]) {
@@ -741,6 +746,12 @@ export class OfficialRankingCollector extends Container<Env> {
           state.playerInterests = (state.playerInterests ?? []).filter((entry) => entry.id !== update.profileId);
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
+        } else if (update.type === "card-image") {
+          if (!CARD_FILE.test(update.file) || typeof update.data !== "string") return json({ error: "invalid_update" }, 400);
+          await saveOfficialCardImage(this.env, region, update.file, Uint8Array.from(atob(update.data), (character) => character.charCodeAt(0)));
+          state.cardInterests = (state.cardInterests ?? []).filter((entry) => entry.id !== update.file);
+          run.checkpoints[checkpoint] = updateHash;
+          await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "song-ranking") {
           if (!decimal(update.musicId) || !Array.isArray(update.players) || update.players.length > 100
             || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
@@ -829,7 +840,7 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
-          } else if (update.status === "ok" && (state.arenaInterests?.length || state.playerInterests?.length || state.songInterests?.length)) this.expediteArena(state);
+          } else if (update.status === "ok" && (state.arenaInterests?.length || state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)) this.expediteArena(state);
           const health = this.runHealth(state);
           if (health) {
             health.leaseUntilMs = 0;

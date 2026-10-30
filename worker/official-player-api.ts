@@ -5,7 +5,7 @@
 // Effects/Dependencies: Reads D1/R2 and queues Durable Object demand; never contacts the game itself.
 import type { GameProfileCardDto, GameRecordsRegion, PlayerProfileDto, SongRankingDto } from "../src/lib/game-records";
 import { officialEventRanking } from "./official-ranking-api";
-import { readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
 
 export interface OfficialPlayerBindings extends OfficialRankingStoreBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
@@ -41,10 +41,10 @@ export function playerCard(region: GameRecordsRegion, profileId: string, value: 
   return {
     name: text(card.name),
     slot: integer(card.slot),
-    thumbnailUrls: urls,
+    thumbnailUrls: urls.map((url) => officialCardUrl(region, url)),
     pages: urls.map((url, index) => {
       const file = new URL(url).pathname.split("/").pop() ?? "";
-      return { page: index + 1, imageUrl: url, sourceUrl: url,
+      return { page: index + 1, imageUrl: officialCardUrl(region, url), sourceUrl: url,
         downloadUrl: `${PREFIX}/${region}/players/${profileId}/cards/${index + 1}/download?file=${encodeURIComponent(file)}` };
     }),
   };
@@ -74,14 +74,32 @@ export function playerProfile(region: GameRecordsRegion, profileId: string, reco
   };
 }
 
-const queue = (ctx: ExecutionContext, env: OfficialPlayerBindings, region: GameRecordsRegion, kind: "player" | "song", id: string) =>
+const queue = (ctx: ExecutionContext, env: OfficialPlayerBindings, region: GameRecordsRegion, kind: "player" | "song" | "card", id: string) =>
   ctx.waitUntil(
     Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestDemand(region, kind, [id])).catch(() => undefined),
   );
 
-/** Answers from saved pool data; `null` lets the caller fall through while a first read is queued. */
+const pending = (request: Request) => json(request, { error: { kind: "pending", retryAfter: 30 } }, 503);
+
+async function serveCard(request: Request, ctx: ExecutionContext, env: OfficialPlayerBindings, file: string) {
+  const image = await readOfficialCardImage(env, "jp", file);
+  if (!image) {
+    queue(ctx, env, "jp", "card", file);
+    return json(request, { error: { kind: "pending", retryAfter: 60 } }, 404);
+  }
+  return new Response(request.method === "HEAD" ? null : image.body, { headers: {
+    "Content-Type": "image/png",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+    "Access-Control-Allow-Origin": "*",
+  } });
+}
+
+/** Answers only from saved pool data; anything missing is queued and reported as pending. */
 export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionContext, url: URL, env: OfficialPlayerBindings): Promise<Response | null> {
   if (!env.DB || !env.OFFICIAL_RANKING_DATA || (request.method !== "GET" && request.method !== "HEAD")) return null;
+  const card = new RegExp(`^${PREFIX}/jp/cards/([1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200})$`, "u").exec(url.pathname);
+  if (card) return serveCard(request, ctx, env, card[1]!);
   const match = new RegExp(`^${PREFIX}/([a-z]+)/(?:players/([1-9][0-9]{0,18})|songs/([1-9][0-9]{0,18})/ranking)$`, "u").exec(url.pathname);
   if (!match || !REGIONS.includes(match[1]!)) return null;
   const region = match[1] as GameRecordsRegion, now = Date.now();
@@ -89,14 +107,14 @@ export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionCo
     const profileId = match[2];
     const record = await readOfficialPlayer(env, region, profileId);
     if (!record || now - record.observedAtMs > PLAYER_TTL_MS) queue(ctx, env, region, "player", profileId);
-    if (!record) return null;
-    if (!record.found) return now - record.observedAtMs < MISSING_TTL_MS ? json(request, { error: { kind: "not_found" } }, 404) : null;
+    if (!record) return pending(request);
+    if (!record.found) return now - record.observedAtMs < MISSING_TTL_MS ? json(request, { error: { kind: "not_found" } }, 404) : pending(request);
     return json(request, playerProfile(region, profileId, record, now));
   }
   const musicId = match[3]!;
   const ranking = await readOfficialSongRanking(env, region, musicId);
   if (!ranking || now - ranking.observedAtMs > SONG_TTL_MS) queue(ctx, env, region, "song", musicId);
-  if (!ranking) return null;
+  if (!ranking) return pending(request);
   const { eventId: _eventId, ...rows } = officialEventRanking(
     { region, eventId: "", kind: "total", challengeId: "", snapshotId: `song-${musicId}-${ranking.observedAtMs}`,
       observedAtMs: ranking.observedAtMs, players: ranking.players as never },

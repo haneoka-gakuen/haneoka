@@ -442,8 +442,6 @@ type PublicApiModule = {
   handleResourceImage(request: Request, env: { TOOLS_SERVICE_URL?: string; TOOLS_SERVICE_TOKEN?: string }): Promise<Response | null>;
   handleChartImageRequest(options: import("../worker/chart-image.ts").ChartImageRequestOptions): Promise<Response | null>;
   renderNativeChart(env: { TOOLS_SERVICE_URL?: string; TOOLS_SERVICE_TOKEN?: string }, input: { server: string; songId: string; difficulty: string; release: string; locale: string; height: number }): Promise<{ png: Uint8Array; width: number; height: number }>;
-  handleGamePlatform(request: Request, env: { MOENOTES_OPEN_API_TOKEN?: string; MOENOTES_PROFILE_API_TOKEN?: string }): Promise<Response | null>;
-  handlePublicGameApi(request: Request): Promise<Response | null>;
   handleApiDiscovery(request: Request, assets: { fetch(request: Request): Promise<Response> }): Promise<Response | null>;
 };
 let publicApiModule: Promise<PublicApiModule> | undefined;
@@ -499,10 +497,7 @@ async function servePublicApi(req: IncomingMessage, res: ServerResponse, url: UR
   const result = await module.handleApiDiscovery(request, { fetch: async request => {
     const file = safeFile(path.join(ROOT, "public"), new URL(request.url).pathname.slice(1));
     return file && fs.existsSync(file) ? new Response(fs.readFileSync(file)) : new Response(null, { status: 404 });
-  } }) || await module.handlePublicGameApi(request) || await module.handleGamePlatform(request, {
-    ...(process.env.MOENOTES_OPEN_API_TOKEN ? { MOENOTES_OPEN_API_TOKEN: process.env.MOENOTES_OPEN_API_TOKEN } : {}),
-    ...(process.env.MOENOTES_PROFILE_API_TOKEN ? { MOENOTES_PROFILE_API_TOKEN: process.env.MOENOTES_PROFILE_API_TOKEN } : {}),
-  });
+  } });
   if (!result) return false;
   res.writeHead(result.status, Object.fromEntries(result.headers));
   res.end(req.method === "HEAD" ? undefined : Buffer.from(await result.arrayBuffer()));

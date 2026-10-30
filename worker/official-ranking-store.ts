@@ -422,3 +422,20 @@ export async function readOfficialSongRanking(env: OfficialRankingStoreBindings,
   const body = row ? await bucket.get(row.payloadKey) : null;
   return body ? ((await body.json()) as OfficialSongRanking) : null;
 }
+
+const cardImageKey = (region: GameRecordsRegion, file: string) => `official/1/${region}/cards/${file}`;
+
+/** Card files are named by content, so a stored copy never changes. */
+export async function saveOfficialCardImage(env: OfficialRankingStoreBindings, region: GameRecordsRegion, file: string, body: Uint8Array): Promise<void> {
+  await storage(env).bucket.put(cardImageKey(region, file), body, { httpMetadata: { contentType: "image/png" } });
+}
+
+export const readOfficialCardImage = (env: OfficialRankingStoreBindings, region: GameRecordsRegion, file: string) =>
+  storage(env).bucket.get(cardImageKey(region, file));
+
+/** JP card artwork needs the game's CDN credential, so readers use our stored copy; other regions' CDNs are public. */
+export function officialCardUrl(region: GameRecordsRegion, source: string): string {
+  if (region !== "jp") return source;
+  const file = /^https:\/\/static\.bang-dream-on\.jp\/operation\/profilecard\/[0-9]+\/([A-Za-z0-9_.-]+)$/u.exec(source)?.[1];
+  return file ? `/api/v1/game/records/jp/cards/${file}` : source;
+}

@@ -3,8 +3,11 @@
 # Output: Player profiles and song rankings sent as durable callbacks.
 # Pos: [Map](../../L2.md); on-demand reads that share a run with ranking collection.
 # Effects/Dependencies: Authenticated game RPCs at the sampler's pace. A rejected read ends demand, never the account.
+import base64
+import re
 import time
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from google.protobuf import json_format
 
@@ -14,6 +17,11 @@ from transport import pool_from_file
 DESCRIPTORS = Path(__file__).parent / 'total-descriptors.pb'
 NOT_FOUND = '5'
 PLAYER_RPCS = 2
+CARD_ORIGIN = 'https://static.bang-dream-on.jp'
+CARD_FILE = re.compile(r'(\d{1,19})_[A-Za-z0-9_.-]{1,200}')
+CARD_BYTES = 4 * 1024 * 1024
+CARD_SECONDS = 2
+PNG = b'\x89PNG\r\n\x1a\n'
 PACE_SECONDS = 2
 
 
@@ -72,6 +80,47 @@ class Demand:
             raise ValueError('invalid song ranking')
         self.updates.send('song-ranking', musicId=str(music_id), players=players, observedAtMs=self.observed(receipt))
 
+    def cdn_authorization(self):
+        """JP artwork sits behind Basic auth. The password comes with Version and stays in memory for this run."""
+        username = self.job.get('masterConfig', {}).get('cdnUsername')
+        if not username:
+            return None
+        self.sampler.version(include_cdn=True)
+        cdn, self.sampler.cdn = self.sampler.cdn or {}, None
+        password = cdn.get('x-sirius-cred')
+        if cdn.get('x-sirius-env', '').rstrip('/') != CARD_ORIGIN or not password:
+            return None
+        return 'Basic ' + base64.b64encode((username + ':' + password).encode()).decode()
+
+    def card(self, file, authorization):
+        match = CARD_FILE.fullmatch(file)
+        if not match:
+            return
+        url = '%s/operation/profilecard/%s/%s' % (CARD_ORIGIN, match.group(1), file)
+        with urlopen(Request(url, headers={'Authorization': authorization}), timeout=CARD_SECONDS * 3) as response:
+            body = response.read(CARD_BYTES + 1)
+        if len(body) > CARD_BYTES or not body.startswith(PNG):
+            raise ValueError('invalid card image')
+        self.updates.send('card-image', file=file, data=base64.b64encode(body).decode())
+
+    def cards(self):
+        files = self.job.get('cardImages', [])[:32]
+        if not files or not self.room(1):
+            return
+        try:
+            authorization = self.cdn_authorization()
+        except Exception:
+            return
+        if not authorization:
+            return
+        for file in files:
+            if time.time() + CARD_SECONDS >= self.budget:
+                return
+            try:
+                self.card(file, authorization)
+            except OSError:
+                continue
+
     def run(self):
         """Returns the receipt that ended demand, or None when every request in budget finished."""
         pool, self.sampler.pool = self.sampler.pool, pool_from_file(DESCRIPTORS)
@@ -84,6 +133,7 @@ class Demand:
                 if not self.room(PLAYER_RPCS):
                     return None
                 self.player(profile_id)
+            self.cards()
         except DemandStopped as stopped:
             return stopped.receipt
         finally:
