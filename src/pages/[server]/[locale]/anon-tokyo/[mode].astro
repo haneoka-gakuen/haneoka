@@ -6,12 +6,12 @@ import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-ser
 import { staticCatalogPageServers } from "../../../../lib/entity-graph";
 import { ANON_TOKYO_MODES, type AnonTokyoMode } from "../../../../lib/resource-route";
 
-// ANON TOKYO is not public yet: no pages are built until it is.
-const ANON_TOKYO_PUBLIC = false;
-
 export async function getStaticPaths() {
-  if (!ANON_TOKYO_PUBLIC) return [];
-  return staticBuildPaths("src/pages/[server]/[locale]/anon-tokyo/[mode].astro", (await staticCatalogPageServers()).flatMap((server) =>
+  // ANON TOKYO is not public yet: no pages are built until it is. Astro hoists
+  // this function out of the frontmatter, so the switch has to live inside it.
+  const anonTokyoPublic = false as boolean;
+  const servers = anonTokyoPublic ? await staticCatalogPageServers() : [];
+  return staticBuildPaths("src/pages/[server]/[locale]/anon-tokyo/[mode].astro", servers.flatMap((server) =>
     LOCALES.flatMap((locale) =>
       ANON_TOKYO_MODES.map((mode) => ({ params: { server, locale, mode }, props: { server, locale, mode } })),
     ),
