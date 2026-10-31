@@ -2608,3 +2608,9 @@ WHEN NEW.status = 'deleted'
 BEGIN
   DELETE FROM account_api_token WHERE user_id = NEW.user_id;
 END;
+
+CREATE TABLE IF NOT EXISTS account_api_token_scope (
+  token_id TEXT NOT NULL REFERENCES account_api_token(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL CHECK (scope IN ('profile:read', 'games:read', 'team:read', 'team:write', 'gacha:read')),
+  PRIMARY KEY (token_id, scope)
+);

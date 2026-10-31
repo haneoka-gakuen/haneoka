@@ -4088,7 +4088,13 @@
       "apiTokenUsed": "Last used",
       "apiTokenNeverUsed": "Never",
       "apiTokenRevokeTitle": "Revoke this token?",
-      "apiTokenRevoked": "Token revoked."
+      "apiTokenRevoked": "Token revoked.",
+      "apiTokenScopes": "Permissions",
+      "apiScope_team_read": "Read box and teams",
+      "apiScope_team_write": "Change box and teams",
+      "apiScope_gacha_read": "Read gacha history",
+      "apiScope_games_read": "Read game accounts",
+      "apiScope_profile_read": "Read profile"
     },
     "profile": {
       "title": "Public profile",

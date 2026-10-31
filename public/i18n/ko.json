@@ -4088,7 +4088,13 @@
       "apiTokenUsed": "마지막 사용",
       "apiTokenNeverUsed": "사용 안 함",
       "apiTokenRevokeTitle": "이 토큰을 폐기할까요?",
-      "apiTokenRevoked": "토큰을 폐기했습니다."
+      "apiTokenRevoked": "토큰을 폐기했습니다.",
+      "apiTokenScopes": "권한",
+      "apiScope_team_read": "박스와 편성 읽기",
+      "apiScope_team_write": "박스와 편성 변경",
+      "apiScope_gacha_read": "가챠 기록 읽기",
+      "apiScope_games_read": "게임 계정 읽기",
+      "apiScope_profile_read": "프로필 읽기"
     },
     "profile": {
       "title": "공개 프로필",

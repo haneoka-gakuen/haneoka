@@ -4088,7 +4088,13 @@
       "apiTokenUsed": "上次使用",
       "apiTokenNeverUsed": "從未",
       "apiTokenRevokeTitle": "要撤銷此權杖嗎?",
-      "apiTokenRevoked": "權杖已撤銷。"
+      "apiTokenRevoked": "權杖已撤銷。",
+      "apiTokenScopes": "權限",
+      "apiScope_team_read": "讀取 Box 和隊伍",
+      "apiScope_team_write": "修改 Box 和隊伍",
+      "apiScope_gacha_read": "讀取抽卡記錄",
+      "apiScope_games_read": "讀取遊戲帳號",
+      "apiScope_profile_read": "讀取個人資料"
     },
     "profile": {
       "title": "個人主頁",

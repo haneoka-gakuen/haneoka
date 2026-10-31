@@ -259,7 +259,7 @@ const summaryOf = (value: unknown): Record<string, unknown> | null => {
   };
 };
 
-const listGameAccounts = async (env: Env, userId: string) => {
+export const listGameAccounts = async (env: Env, userId: string) => {
   const { results } = await env.DB.prepare(
     `SELECT account.id, account.region, account.external_account_id AS playerUid,
             account.display_name AS displayName, account.visibility,

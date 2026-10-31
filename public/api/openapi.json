@@ -45726,10 +45726,10 @@
       "get": {
         "operationId": "team-data.get",
         "tags": [
-          "Team builder sync"
+          "Open platform"
         ],
         "summary": "Read the token owner's team data",
-        "description": "Returns the owner's participating cards and account bonuses as engine inputs. Pass `members`, `snaps` and `player` to the browser engine or local tools service; the calculation runs on the caller's device. Any origin may call this route. Cookies are ignored.\n\nAuthentication: Required: `Authorization: Bearer <token>` with a token from Account > Sign-in & security.\n\nCache-Control: `private, no-store`",
+        "description": "Returns the owner's participating cards and account bonuses as engine inputs, and their saved teams in `teams`. Pass `members`, `snaps` and `player` to the browser engine or local tools service; the calculation runs on the caller's device. Any origin may call this route. Cookies are ignored.\n\nAuthentication: Required: `Authorization: Bearer <token>` with the `team:read` scope.\n\nCache-Control: `private, no-store`",
         "security": [
           {
             "accountApiToken": []
@@ -45820,7 +45820,7 @@
             }
           },
           "403": {
-            "description": "`account_restricted`: The owner cannot sign in or was deleted.",
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
             "content": {
               "application/json": {
                 "schema": {
@@ -45907,6 +45907,262 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "team-data.write",
+        "tags": [
+          "Open platform"
+        ],
+        "summary": "Change the owner's box",
+        "description": "Applies box changes with the same key rules as the website. A `null` value clears a key. Keys include `m.<card>.own`, `m.<card>.lvl`, `m.<card>.awk`, `m.<card>.rnk`, `m.<card>.sk`, `m.<card>.gsk`, `s.<card>.own`, `s.<card>.lvl`, `s.<card>.rnk`, `cr.<character>`, `bi.<item>`, `cm.<character>`, `mm.<song>` and `p.vip`. The website picks up the change on its next sync.\n\nAuthentication: Required: `Authorization: Bearer <token>` with the `team:write` scope.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server",
+            "in": "path",
+            "required": true,
+            "description": "Resource server slug the data belongs to, e.g. `intl`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "changes"
+                ],
+                "properties": {
+                  "changes": {
+                    "type": "array",
+                    "maxItems": 4000,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "value"
+                      ],
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "value": {}
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "changes": [
+                  {
+                    "key": "m.1.own",
+                    "value": true
+                  },
+                  {
+                    "key": "m.1.lvl",
+                    "value": 60
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "revision": 43,
+                  "changed": 2
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`server_unavailable`: This server is not active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`box_too_large`: The box limit was reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_changes`: Send valid box changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/account/api-tokens": {
@@ -45941,7 +46197,10 @@
                       "name": "My tool",
                       "createdAt": 1793400000000,
                       "expiresAt": 1801176000000,
-                      "lastUsedAt": null
+                      "lastUsedAt": null,
+                      "scopes": [
+                        "team:read"
+                      ]
                     }
                   ]
                 }
@@ -45956,7 +46215,7 @@
           "Account"
         ],
         "summary": "Create an API token",
-        "description": "Creates a read-only token and returns its value once. An account can hold 10 live tokens.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
+        "description": "Creates a token with the chosen scopes and returns its value once. An account can hold 10 live tokens.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
         "parameters": [
           {
             "name": "X-Haneoka-Expected-User",
@@ -45976,7 +46235,8 @@
                 "type": "object",
                 "required": [
                   "name",
-                  "days"
+                  "days",
+                  "scopes"
                 ],
                 "properties": {
                   "name": {
@@ -45990,6 +46250,20 @@
                       90,
                       365
                     ]
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "profile:read",
+                        "games:read",
+                        "team:read",
+                        "team:write",
+                        "gacha:read"
+                      ]
+                    }
                   }
                 }
               }
@@ -46010,7 +46284,10 @@
                       "name": "My tool",
                       "createdAt": 1793400000000,
                       "expiresAt": 1801176000000,
-                      "lastUsedAt": null
+                      "lastUsedAt": null,
+                      "scopes": [
+                        "team:read"
+                      ]
                     }
                   ]
                 }
@@ -46047,7 +46324,7 @@
             }
           },
           "422": {
-            "description": "`invalid_token_request`: Send a name and 30, 90 or 365 days.",
+            "description": "`invalid_token_request`: Send a name, 30, 90 or 365 days, and scopes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -46114,6 +46391,523 @@
                 "schema": {},
                 "example": {
                   "tokens": []
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/open/me": {
+      "get": {
+        "operationId": "open.me",
+        "tags": [
+          "Open platform"
+        ],
+        "summary": "Read the token and its owner",
+        "description": "Returns the token's name, expiry and scopes. `profile` is filled when the token has `profile:read`.\n\nAuthentication: Required: `Authorization: Bearer <token>`.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "token": {
+                    "name": "My tool",
+                    "expiresAt": 1801176000000,
+                    "scopes": [
+                      "team:read",
+                      "profile:read"
+                    ]
+                  },
+                  "profile": {
+                    "uid": 1024,
+                    "displayName": "Player",
+                    "handle": "player",
+                    "bio": null
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/open/game-accounts": {
+      "get": {
+        "operationId": "open.game-accounts",
+        "tags": [
+          "Open platform"
+        ],
+        "summary": "List bound game accounts",
+        "description": "Returns the owner's bound game accounts and their latest summaries.\n\nAuthentication: Required: `Authorization: Bearer <token>` with the `games:read` scope.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "accounts": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/open/gacha-history": {
+      "get": {
+        "operationId": "open.gacha-history",
+        "tags": [
+          "Open platform"
+        ],
+        "summary": "List gacha histories",
+        "description": "Returns one summary per game account with cloud history.\n\nAuthentication: Required: `Authorization: Bearer <token>` with the `gacha:read` scope.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "accounts": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/open/gacha-history/{accountKey}": {
+      "get": {
+        "operationId": "open.gacha-history-get",
+        "tags": [
+          "Open platform"
+        ],
+        "summary": "Read one gacha history",
+        "description": "Returns the full history for one game account.\n\nAuthentication: Required: `Authorization: Bearer <token>` with the `gacha:read` scope.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "description": "`accountKey` from the list.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "accountKey": "…",
+                  "server": "jp",
+                  "revision": 3,
+                  "histories": []
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.\n`insufficient_scope`: The token lacks the scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`history_not_found`: No history for this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }

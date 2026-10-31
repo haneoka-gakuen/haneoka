@@ -4088,7 +4088,13 @@
       "apiTokenUsed": "最終使用",
       "apiTokenNeverUsed": "未使用",
       "apiTokenRevokeTitle": "このトークンを無効にしますか?",
-      "apiTokenRevoked": "トークンを無効にしました。"
+      "apiTokenRevoked": "トークンを無効にしました。",
+      "apiTokenScopes": "権限",
+      "apiScope_team_read": "ボックスと編成を読む",
+      "apiScope_team_write": "ボックスと編成を変更",
+      "apiScope_gacha_read": "ガチャ履歴を読む",
+      "apiScope_games_read": "ゲームアカウントを読む",
+      "apiScope_profile_read": "プロフィールを読む"
     },
     "profile": {
       "title": "公開プロフィール",

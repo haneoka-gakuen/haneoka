@@ -4088,7 +4088,13 @@
       "apiTokenUsed": "上次使用",
       "apiTokenNeverUsed": "从未",
       "apiTokenRevokeTitle": "要撤销此令牌吗?",
-      "apiTokenRevoked": "令牌已撤销。"
+      "apiTokenRevoked": "令牌已撤销。",
+      "apiTokenScopes": "权限",
+      "apiScope_team_read": "读取 Box 和队伍",
+      "apiScope_team_write": "修改 Box 和队伍",
+      "apiScope_gacha_read": "读取抽卡记录",
+      "apiScope_games_read": "读取游戏账号",
+      "apiScope_profile_read": "读取个人资料"
     },
     "profile": {
       "title": "个人主页",

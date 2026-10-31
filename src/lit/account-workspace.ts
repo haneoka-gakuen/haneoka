@@ -34,6 +34,7 @@ function deviceLabel(agent: unknown) {
   const system = find([[/Android/u, "Android"], [/iPhone|iPad/u, "iOS"], [/Windows/u, "Windows"], [/Mac OS/u, "macOS"], [/Linux/u, "Linux"]]);
   return [browser, system].filter(Boolean).join(" · ");
 }
+const API_SCOPES = ["team:read", "team:write", "gacha:read", "games:read", "profile:read"];
 type AuthMode = "signIn" | "signUp" | "forgotPassword" | "verifyEmail";
 type Section = "profile" | "games" | "security" | "sessions" | "relationships" | "moderation" | "management";
 
@@ -607,7 +608,11 @@ export class AccountWorkspace extends LitElement {
       this.request("/api/v1/account/api-tokens", {
         method: "POST",
         headers: this.ownerHeaders(),
-        body: JSON.stringify({ name: String(fields.get("name")), days: Number(fields.get("days")) }),
+        body: JSON.stringify({
+          name: String(fields.get("name")),
+          days: Number(fields.get("days")),
+          scopes: fields.getAll("scopes").map(String),
+        }),
       }),
     );
     if (!data) return;
@@ -629,6 +634,9 @@ export class AccountWorkspace extends LitElement {
     await navigator.clipboard.writeText(this.apiTokenValue);
     snackbar(this.label("apiTokenCopied", "Token copied."));
   }
+  private apiScopeLabel(scope: string) {
+    return this.label(`apiScope_${scope.replace(":", "_")}`, scope);
+  }
   private renderApiTokens() {
     const revoking = this.apiTokenRevoking;
     return html`
@@ -642,6 +650,8 @@ export class AccountWorkspace extends LitElement {
                 <span>
                   <strong>${String(token.name)}</strong>
                   <small>
+                    ${(token.scopes as string[]).map((scope) => this.apiScopeLabel(scope)).join(" · ")}
+                    <br />
                     ${this.label("apiTokenExpires", "Expires")} ${this.date(token.expiresAt)}
                     · ${this.label("apiTokenUsed", "Last used")}
                     ${token.lastUsedAt ? this.date(token.lastUsedAt) : this.label("apiTokenNeverUsed", "Never")}
@@ -669,6 +679,17 @@ export class AccountWorkspace extends LitElement {
               </select>
             </span>
           </label>
+          <fieldset class="account-api-scopes">
+            <legend>${this.label("apiTokenScopes", "Permissions")}</legend>
+            ${API_SCOPES.map(
+              (scope) => html`
+                <label class="account-api-scope">
+                  <input type="checkbox" name="scopes" value=${scope} ?checked=${scope === "team:read"} />
+                  <span>${this.apiScopeLabel(scope)}</span>
+                </label>
+              `,
+            )}
+          </fieldset>
           <button class="button" ?disabled=${this.busy}>${this.label("apiTokenCreate", "Create token")}</button>
         </form>
       </article>

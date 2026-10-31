@@ -342,6 +342,20 @@
     border-top: 1px solid var(--md-sys-color-outline-variant);
     text-align: left;
   }
+  .account-api-scopes {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .account-api-scope {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 12px;
+  }
   .account-api-token {
     display: block;
     overflow-wrap: anywhere;

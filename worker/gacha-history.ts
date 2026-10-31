@@ -74,6 +74,19 @@ const document = (ownerId: string, row: HistoryRow, key: string) => ({
   histories: storedHistory(row, key).histories,
 });
 
+export const listGachaHistory = async (env: Env, userId: string) =>
+  (
+    await env.DB.prepare(
+      `SELECT ${summaryColumns} FROM account_gacha_history WHERE user_id = ? ORDER BY updated_at DESC`,
+    )
+      .bind(userId)
+      .all<Omit<HistoryRow, "historyJson">>()
+  ).results.map(summary);
+export const readGachaHistory = async (env: Env, userId: string, key: string) => {
+  const row = await readHistory(env, userId, key);
+  return row ? document(userId, row, key) : null;
+};
+
 export async function handleGachaHistoryRequest(request: Request, env: Env): Promise<Response | null> {
   try {
     return await routeGachaHistoryRequest(request, env);
@@ -113,18 +126,11 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
   if (!access.ok) return access.response;
   const { userId, token } = access.value;
   if (key === null) {
-    const accounts = await env.DB.prepare(
-      `SELECT ${summaryColumns} FROM account_gacha_history WHERE user_id = ? ORDER BY updated_at DESC`,
-    )
-      .bind(userId)
-      .all<Omit<HistoryRow, "historyJson">>();
-    return json(request, { ownerId: userId, accounts: accounts.results.map(summary) });
+    return json(request, { ownerId: userId, accounts: await listGachaHistory(env, userId) });
   }
   if (!write) {
-    const row = await readHistory(env, userId, key);
-    return row
-      ? json(request, document(userId, row, key))
-      : error(request, 404, "history_not_found", "History not found");
+    const history = await readGachaHistory(env, userId, key);
+    return history ? json(request, history) : error(request, 404, "history_not_found", "History not found");
   }
   if (
     env.COMMUNITY_RATE_LIMITER &&

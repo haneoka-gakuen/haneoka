@@ -5,6 +5,7 @@
 // Effects/Dependencies: 读取 release DTO，创建本地 Worker；库存只在调用者设备内传递。
 import { EngineClient } from "../team-builder/engine/client";
 import type { TeamBuilderData } from "../team-builder/data";
+import type { SavedTeam } from "../team-builder/sync/box-view";
 import type { MemberInput, PlayerInput, SnapInput } from "../team-builder/engine/box";
 export type { EngineRequest, EngineResponse, GrowthResult, TeamEvaluation, Timeline } from "../team-builder/engine/api";
 export type { EvaluateRequest, ExplainRequest, EngineSnapshot } from "../team-builder/engine/protocol";
@@ -40,6 +41,7 @@ export async function fetchTeamData(options: TeamDataOptions) {
     members: MemberInput[];
     snaps: SnapInput[];
     player: PlayerInput;
+    teams: SavedTeam[];
   };
 }
 

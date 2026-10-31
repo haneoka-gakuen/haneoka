@@ -12,6 +12,7 @@ import {
   changesSince,
   validOp,
   type BoxEntry,
+  type BoxOp,
 } from "../src/lib/team-builder/sync/box-doc";
 import {
   privateTeamJson as json,
@@ -42,6 +43,46 @@ const readBox = (env: Env, userId: string, server: string) =>
 const parse = (row: BoxRow | null): StoredBox => (row ? (JSON.parse(row.boxJson) as StoredBox) : { schema: BOX_SCHEMA, entries: {} });
 const sinceOf = (value: unknown) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+/** Compare-and-swap of ops onto the stored box; `guard` is rechecked inside the write. */
+export async function commitBoxOps(
+  env: Env,
+  userId: string,
+  server: string,
+  ops: BoxOp[],
+  now: number,
+  guardSql: string,
+  guard: unknown[],
+  recheck: () => Promise<Response | null>,
+): Promise<{ revision: number; entries: Record<string, BoxEntry>; changed: number } | "too_many" | "too_large" | "busy" | Response> {
+  for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+    const row = await readBox(env, userId, server);
+    const revision = row?.revision ?? 0;
+    const stored = parse(row);
+    const next = revision + 1;
+    const changed = applyOps(stored.entries, ops, next);
+    if (!changed.length) return { revision, entries: stored.entries, changed: 0 };
+    if (Object.keys(stored.entries).length > MAX_BOX_KEYS) return "too_many";
+    const serialized = JSON.stringify(stored);
+    if (new TextEncoder().encode(serialized).byteLength > MAX_BOX_BYTES) return "too_large";
+    const statement = row
+      ? env.DB.prepare(
+          `UPDATE account_team_box SET box_json = ?, revision = ?, updated_at = ?
+           WHERE user_id = ? AND server = ? AND revision = ? AND ${guardSql}
+           RETURNING revision`,
+        ).bind(serialized, next, now, userId, server, revision, ...guard)
+      : env.DB.prepare(
+          `INSERT INTO account_team_box(user_id, server, box_json, revision, updated_at)
+           SELECT ?, ?, ?, 1, ? WHERE ${guardSql}
+           ON CONFLICT(user_id, server) DO NOTHING RETURNING revision`,
+        ).bind(userId, server, serialized, now, ...guard);
+    const written = await statement.first<{ revision: number }>();
+    if (written) return { revision: written.revision, entries: stored.entries, changed: changed.length };
+    const refused = await recheck();
+    if (refused) return refused;
+  }
+  return "busy";
+}
 
 export const handleTeamBoxRequest = async (request: Request, env: Env): Promise<Response | null> => {
   const url = new URL(request.url);
@@ -88,33 +129,17 @@ export const handleTeamBoxRequest = async (request: Request, env: Env): Promise<
   // Clocks far in the future would pin a key forever; clamp them to the server's day.
   const ops = body.ops.map((op) => ({ ...op, t: Math.min(op.t, now + 86_400_000) }));
   const guard = [userId, token, new Date(now).toISOString(), now];
-  for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
-    const row = await readBox(env, userId, server);
-    const revision = row?.revision ?? 0;
-    const stored = parse(row);
-    const next = revision + 1;
-    const changed = applyOps(stored.entries, ops, next);
-    if (!changed.length)
-      return json(request, { revision, serverTime: now, entries: changesSince(stored.entries, since > revision ? 0 : since) });
-    if (Object.keys(stored.entries).length > MAX_BOX_KEYS) return error(request, 413, "box_too_large", "Too many entries");
-    const serialized = JSON.stringify(stored);
-    if (new TextEncoder().encode(serialized).byteLength > MAX_BOX_BYTES) return error(request, 413, "box_too_large", "Box exceeds 1 MiB");
-    const statement = row
-      ? env.DB.prepare(
-          `UPDATE account_team_box SET box_json = ?, revision = ?, updated_at = ?
-           WHERE user_id = ? AND server = ? AND revision = ? AND ${writableOwner}
-           RETURNING revision`,
-        ).bind(serialized, next, now, userId, server, revision, ...guard)
-      : env.DB.prepare(
-          `INSERT INTO account_team_box(user_id, server, box_json, revision, updated_at)
-           SELECT ?, ?, ?, 1, ? WHERE ${writableOwner}
-           ON CONFLICT(user_id, server) DO NOTHING RETURNING revision`,
-        ).bind(userId, server, serialized, now, ...guard);
-    const written = await statement.first<{ revision: number }>();
-    if (written)
-      return json(request, { revision: written.revision, serverTime: now, entries: changesSince(stored.entries, since > written.revision ? 0 : since) });
+  const committed = await commitBoxOps(env, userId, server, ops, now, writableOwner, guard, async () => {
     const refreshed = await requireAccess(request, env, true);
-    if (!refreshed.ok) return refreshed.response;
-  }
-  return error(request, 503, "busy", "Try again");
+    return refreshed.ok ? null : refreshed.response;
+  });
+  if (committed instanceof Response) return committed;
+  if (committed === "too_many") return error(request, 413, "box_too_large", "Too many entries");
+  if (committed === "too_large") return error(request, 413, "box_too_large", "Box exceeds 1 MiB");
+  if (committed === "busy") return error(request, 503, "busy", "Try again");
+  return json(request, {
+    revision: committed.revision,
+    serverTime: now,
+    entries: changesSince(committed.entries, since > committed.revision ? 0 : since),
+  });
 };
