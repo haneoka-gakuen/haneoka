@@ -28,6 +28,15 @@
 .collection[data-viewport-grid] > .catalog-song-tile[data-viewport-grid-offscreen]:not([data-viewport-grid-sample]):focus-within {
   content-visibility: visible;
 }
+/* Every other collection skips rendering items far from the viewport, including their loading animations. `auto`
+ * keeps each item's last real size, so a scrolled-past tile holds its height and nothing above the reader moves. */
+.collection:not([data-viewport-grid]) > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--tile-min, 172px) auto 280px;
+}
+.collection:not([data-viewport-grid]) > :is(:hover, :focus-within) {
+  content-visibility: visible;
+}
 /* auto-fill, not auto-fit: a grid holding three songs keeps the tracks a
  * full grid would have, so its tiles are the same size as everywhere else and
  * sit at the leading edge instead of stretching across the pane. */

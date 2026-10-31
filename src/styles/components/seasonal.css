@@ -43,12 +43,12 @@
     fill: var(--md-sys-color-surface-bright);
     opacity: 0.45;
   }
+  /* Each depth moves as one composited layer; scroll writes its transform directly. */
   .season-depth {
     position: absolute;
     inset: -10% 0;
     opacity: var(--opacity);
-    filter: blur(var(--blur));
-    transform: translate3d(0, calc(var(--scroll, 0) * var(--speed) * -0.12px), 0);
+    will-change: transform;
   }
   .season-depth .season-particle {
     position: absolute;
@@ -59,10 +59,14 @@
     height: var(--size);
     place-items: center;
     rotate: var(--angle);
+    /* Blur is rasterized once into the glyph's own layer; the drift then only moves that layer. */
+    filter: var(--blur);
+    will-change: transform;
     animation: season-drift var(--duration) ease-in-out var(--delay) infinite alternate;
   }
   .season-depth .season-particle > svg { width: 100%; height: 100%; }
   .season-depth .season-particle > svg:not(.material-icon) { height: auto; }
+  .season-layer[data-scrolling] .season-particle { animation-play-state: paused; }
   .season-layer[data-motif="stars"] .season-particle,
   .season-layer[data-motif="sparkles"] .season-particle,
   .season-layer[data-motif="fireworks"] .season-particle {

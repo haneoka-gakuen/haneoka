@@ -88,7 +88,7 @@ function layer(motif: string) {
     </svg>
     ${motif === "moon" ? html`<i class="season-moon"></i>` : nothing}
     ${DEPTHS.map((depth, layerIndex) => html`
-      <div class="season-depth" style=${`--speed:${depth.speed};--blur:${depth.blur}px;--opacity:${depth.opacity}`}>
+      <div class="season-depth" data-speed=${depth.speed} style=${`--blur:${depth.blur ? `blur(${depth.blur}px)` : "none"};--opacity:${depth.opacity}`}>
         ${Array.from({ length: narrow ? Math.ceil(depth.count / 2) : depth.count }, (_, index) => {
           const seed = layerIndex * 97 + index + 1;
           const size = depth.size[0]! + random(seed + 3) * (depth.size[1]! - depth.size[0]!);
@@ -112,11 +112,19 @@ function layer(motif: string) {
 
 let scroller: HTMLElement | null = null;
 let frame = 0;
+let settle = 0;
 const onScroll = () => {
+  // The drift is too slow to see while the page moves; holding it frees those frames for scrolling.
+  const layer = document.querySelector<HTMLElement>("body > .season-layer");
+  if (layer && !layer.dataset.scrolling) layer.dataset.scrolling = "";
+  clearTimeout(settle);
+  settle = window.setTimeout(() => delete layer?.dataset.scrolling, 200);
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
-    document.querySelector<HTMLElement>("body > .season-layer")?.style.setProperty("--scroll", String(scroller?.scrollTop ?? 0));
+    const top = scroller?.scrollTop ?? 0;
+    for (const depth of document.querySelectorAll<HTMLElement>("body > .season-layer > .season-depth"))
+      depth.style.transform = `translate3d(0, ${(-top * Number(depth.dataset.speed) * 0.12).toFixed(1)}px, 0)`;
   });
 };
 /** Parallax follows the page's own scroll container, which a navigation replaces. */
