@@ -19,7 +19,11 @@ import type { ParticleData } from "./native-particles/merge.ts";
 import { refreshNativeParticlePackReports } from "./native-particles/packs.ts";
 import { durationBeforeNextPhase, type TrajectoryParticle } from "./native-particles/trajectory.ts";
 
-type Effect = { name: string; groups: Array<{ count: number; particles: TrajectoryParticle[] }> };
+type Effect = {
+  name: string;
+  transform: unknown;
+  groups: Array<{ count: number; particles: TrajectoryParticle[] }>;
+};
 // Float32 timeline endpoints lose precision when expanded across many cycles.
 const phaseTolerance = 0.00001;
 const channels = ({ start: _start, duration: _duration, ...body }: TrajectoryParticle) => body;
@@ -60,7 +64,7 @@ export function compactLoopFrame(effect: Effect, duration: number): Effect | und
       }),
     });
   }
-  return { name: effect.name, groups };
+  return { ...effect, groups };
 }
 
 export function buildNativeLoopFrameAssets(directory: string) {

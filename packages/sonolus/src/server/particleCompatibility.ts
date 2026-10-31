@@ -14,7 +14,7 @@ import {
   nativeParticlePresencePolicy,
 } from "../shared/particlePacks.ts";
 
-type Effect = { name: string; groups: unknown[] };
+type Effect = { name: string; transform?: unknown; groups: unknown[] };
 type Particle = { effects: Effect[] };
 type Identity = { bytes: number; sha1: string };
 type PackReport = {
@@ -195,6 +195,9 @@ export function verifyParticleEffects(
     );
     const particle = readParticle(resolve(directory, "particle.data"));
     const names = effectNames(particle, pack.key);
+    for (const effect of particle.effects)
+      if (!effect.transform)
+        fail(`${pack.key} effect has no transform: ${effect.name}`);
     if (names.size !== report.effects)
       fail(`${pack.key} effect count mismatch`);
     const policy = nativeParticlePresencePolicy(pack.key);
