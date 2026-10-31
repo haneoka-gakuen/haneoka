@@ -17,6 +17,7 @@ interface Env {
   RESOURCE_PACKAGE_INGRESS?: R2Bucket;
   TURNSTILE_ENABLED?: string;
   TURNSTILE_SECRET_KEY?: string;
+  KOFI_VERIFICATION_TOKEN?: string;
 }
 
 declare namespace Cloudflare {
@@ -39,5 +40,6 @@ declare namespace Cloudflare {
     RESOURCE_PACKAGE_INGRESS?: R2Bucket;
     TURNSTILE_ENABLED?: string;
     TURNSTILE_SECRET_KEY?: string;
+    KOFI_VERIFICATION_TOKEN?: string;
   }
 }

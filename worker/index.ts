@@ -74,6 +74,7 @@ import { handleTeamBoxRequest } from "./team-box";
 import { handleAccountApiTokenRequest } from "./account-api-tokens";
 import { handleGachaHistoryRequest } from "./gacha-history";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
+import { handleKofiSponsorRequest } from "./kofi-sponsors";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
@@ -3845,6 +3846,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (admin) return admin;
     const profile = await handleProfileRequest(request, env);
     if (profile) return profile;
+    const kofiSponsor = await handleKofiSponsorRequest(request, env);
+    if (kofiSponsor) return kofiSponsor;
     const accountApiToken = await handleAccountApiTokenRequest(request, env);
     if (accountApiToken) return accountApiToken;
     const teamInventory = await handleTeamInventoryRequest(request, env);

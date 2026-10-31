@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: AFDIAN_USER_ID／AFDIAN_TOKEN、PATREON_CREATOR_TOKEN（可选 PATREON_CAMPAIGN_ID）。
+// Input: AFDIAN_USER_ID／AFDIAN_TOKEN、PATREON_CREATOR_TOKEN（可选 PATREON_CAMPAIGN_ID），以及站点的 Ko-fi 名单接口。
 // Output: 按档位排序的现任赞助者与曾经的赞助者。
 // Pos: [Map](L2-2.md)；构建期赞助者名单读取器。
 // Effects/Dependencies: 构建输入捕获与两个平台的创作者 API；凭据缺失的平台不读取，已配置的平台读取失败则构建失败。
@@ -23,14 +23,11 @@ export interface SponsorList {
 
 interface Row extends Sponsor {
   active: boolean;
-  amount: number;
-  currency: "CNY" | "USD";
-  /** Lifetime support in CNY, only for ordering across platforms. */
-  total: number;
+  tier: SponsorTierId;
+  /** First support, in seconds; the longest-standing come first within a tier. */
   since: number;
 }
 
-const USD_TO_CNY = 7;
 const MONTH = 32 * 24 * 3600;
 const AVATAR_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(afdiancdn\.com|patreonusercontent\.com|patreon\.com)\//u;
 const avatar = (url: unknown) =>
@@ -85,9 +82,7 @@ async function afdian(userId: string, token: string): Promise<Row[]> {
         avatar: avatar(item.user?.avatar),
         platform: "afdian",
         active: now - (item.last_pay_time ?? 0) <= MONTH,
-        amount: plan || total,
-        currency: "CNY",
-        total,
+        tier: sponsorTier(plan || total, "CNY"),
         since: item.first_pay_time ?? now,
       });
     }
@@ -135,9 +130,7 @@ async function patreon(token: string, campaign: string): Promise<Row[]> {
         avatar: avatar(users.get(member.relationships?.user?.data?.id ?? "")?.image_url),
         platform: "patreon",
         active: a.patron_status === "active_patron",
-        amount: (a.currently_entitled_amount_cents ?? 0) / 100,
-        currency: "USD",
-        total: lifetime * USD_TO_CNY,
+        tier: sponsorTier((a.currently_entitled_amount_cents ?? 0) / 100, "USD"),
         since: a.pledge_relationship_start ? Date.parse(a.pledge_relationship_start) / 1000 : Date.now() / 1000,
       });
     }
@@ -146,18 +139,47 @@ async function patreon(token: string, campaign: string): Promise<Row[]> {
   return rows;
 }
 
+/** Ko-fi payments arrive by webhook; the site's API lists them without amounts. */
+async function kofi(origin: string): Promise<Row[]> {
+  const body = await retry(async () => {
+    const response = await fetch(`${origin}/api/v1/sponsors/kofi`, { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error(`Ko-fi sponsors: ${response.status}`);
+    return (await response.json()) as {
+      active: { name: string; tier: SponsorTierId; since: number }[];
+      past: { name: string; since: number }[];
+    };
+  });
+  return [
+    ...body.active.map((row) => ({
+      ...row,
+      name: name(row.name),
+      avatar: null,
+      platform: "kofi" as const,
+      active: true,
+    })),
+    ...body.past.map((row) => ({
+      name: name(row.name),
+      avatar: null,
+      platform: "kofi" as const,
+      active: false,
+      tier: "normal" as const,
+      since: row.since,
+    })),
+  ];
+}
+
 async function load(): Promise<SponsorList> {
   const env = process.env;
   const rows = (
     await Promise.all([
       env.AFDIAN_USER_ID && env.AFDIAN_TOKEN ? afdian(env.AFDIAN_USER_ID, env.AFDIAN_TOKEN) : [],
       env.PATREON_CREATOR_TOKEN ? patreon(env.PATREON_CREATOR_TOKEN, env.PATREON_CAMPAIGN_ID || "16408311") : [],
+      kofi(env.STATIC_OPERATION_ORIGIN || env.STATIC_CATALOG_ORIGIN || "https://haneoka.org"),
     ])
   )
     .flat()
     .filter((row) => row.name);
-  // Larger lifetime support first, then the longest-standing.
-  const order = (a: Row, b: Row) => b.total - a.total || a.since - b.since;
+  const order = (a: Row, b: Row) => a.since - b.since;
   return {
     updatedAt: new Date().toISOString(),
     active: rows
@@ -167,7 +189,7 @@ async function load(): Promise<SponsorList> {
         name: row.name,
         avatar: row.avatar,
         platform: row.platform,
-        tier: sponsorTier(row.amount, row.currency),
+        tier: row.tier,
       })),
     past: rows
       .filter((row) => !row.active)

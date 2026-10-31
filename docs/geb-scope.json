@@ -80,6 +80,7 @@
     "server/ranking-collector-official/core/demand.py",
     "worker/account-lifecycle.ts",
     "worker/account-api-tokens.ts",
+    "worker/kofi-sponsors.ts",
     "worker/official-player-api.ts",
     "worker/official-ranking-collector.ts",
     "worker/search-index.ts",
