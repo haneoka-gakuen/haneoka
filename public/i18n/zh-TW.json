@@ -321,7 +321,30 @@
       "timeHour": "小時",
       "timeSeconds": "秒",
       "timeZoneName": "時區標註",
-      "dateTime": "日期與時間"
+      "dateTime": "日期與時間",
+      "seasonEffects": "節日特效"
+    },
+    "seasons": {
+      "newYear": "新年",
+      "setsubun": "節分",
+      "lunarNewYear": "春節",
+      "lanternFestival": "元宵節",
+      "valentine": "情人節",
+      "hinamatsuri": "女兒節",
+      "whiteDay": "白色情人節",
+      "hanami": "賞櫻",
+      "aprilFools": "愚人節",
+      "easter": "復活節",
+      "childrensDay": "兒童節",
+      "mothersDay": "母親節",
+      "dragonBoat": "端午節",
+      "tanabata": "七夕（日本）",
+      "qixi": "七夕",
+      "obon": "盂蘭盆節",
+      "midAutumn": "中秋節",
+      "halloween": "萬聖節",
+      "thanksgiving": "感恩節",
+      "christmas": "聖誕節"
     }
   },
   "home": {

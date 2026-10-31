@@ -3,12 +3,41 @@
  * Every scheme is precomputed in packages/design-tokens/src/schemes.css, so a
  * tuning change is a single attribute flip on <html> — no color math at runtime.
  */
+import { DYNAMIC_SEED } from "./themes";
+
 export const SEED_KEY = "haneoka.ui-seed.v1";
+/** The generated scheme of a character or seasonal seed, read by the boot script before first paint. */
+export const SEED_CSS_KEY = "haneoka.ui-seed-css.v1";
 export const SEEDS = ["haneoka", "band-1", "band-2", "band-3", "band-4", "band-5"] as const;
-export type Seed = (typeof SEEDS)[number];
+export type Seed = string;
 export const SEED_EVENT = "haneoka:seed-change";
 
-export const isSeed = (value: unknown): value is Seed => (SEEDS as readonly unknown[]).includes(value);
+/** A seasonal seed's decoration as the boot script and the effect layer read it. */
+export interface SeasonMark {
+  id: string;
+  motif: string;
+  ornament: string;
+  shape: string;
+}
+export interface GeneratedSeed {
+  css: string;
+  /** When a seasonal seed closes: the page returns to `fallback`. */
+  closes: number | null;
+  season: SeasonMark | null;
+}
+
+export const isSeed = (value: unknown): value is Seed =>
+  (SEEDS as readonly unknown[]).includes(value) || (typeof value === "string" && DYNAMIC_SEED.test(value));
+
+export function seedStyle(css: string) {
+  let style = document.getElementById("haneoka-seed-scheme");
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "haneoka-seed-scheme";
+    document.head.append(style);
+  }
+  style.textContent = css;
+}
 export const seedForBand = (bandId: unknown): Seed => {
   const seed = `band-${Number(bandId)}`;
   return isSeed(seed) ? seed : "haneoka";
@@ -31,13 +60,22 @@ export function syncThemeColor() {
  * energy, 500ms emphasized-decelerate); otherwise — or with reduced motion — it
  * switches instantly.
  */
-export function applySeed(seed: Seed, origin?: { x: number; y: number }) {
+export function applySeed(seed: Seed, origin?: { x: number; y: number }, generated?: GeneratedSeed) {
   const root = document.documentElement;
   if (root.dataset.seed === seed) return;
   const commit = () => {
+    const previous = root.dataset.seed || "haneoka";
+    if (generated) seedStyle(generated.css);
     root.dataset.seed = seed;
+    if (generated?.season) root.dataset.season = generated.season.id;
+    else delete root.dataset.season;
     try {
       localStorage.setItem(SEED_KEY, seed);
+      if (generated) {
+        // Only a precomputed scheme outlives the cache this seed replaces.
+        const fallback = (SEEDS as readonly string[]).includes(previous) ? previous : "haneoka";
+        localStorage.setItem(SEED_CSS_KEY, JSON.stringify({ seed, ...generated, fallback }));
+      } else localStorage.removeItem(SEED_CSS_KEY);
     } catch {
       // Private mode: the tuning simply lasts for this page view.
     }

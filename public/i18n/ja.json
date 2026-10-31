@@ -321,7 +321,30 @@
       "timeHour": "時",
       "timeSeconds": "秒",
       "timeZoneName": "タイムゾーン表記",
-      "dateTime": "日付と時刻"
+      "dateTime": "日付と時刻",
+      "seasonEffects": "季節の演出"
+    },
+    "seasons": {
+      "newYear": "お正月",
+      "setsubun": "節分",
+      "lunarNewYear": "旧正月",
+      "lanternFestival": "元宵節",
+      "valentine": "バレンタインデー",
+      "hinamatsuri": "ひな祭り",
+      "whiteDay": "ホワイトデー",
+      "hanami": "お花見",
+      "aprilFools": "エイプリルフール",
+      "easter": "イースター",
+      "childrensDay": "こどもの日",
+      "mothersDay": "母の日",
+      "dragonBoat": "端午節",
+      "tanabata": "七夕",
+      "qixi": "七夕（中国）",
+      "obon": "お盆",
+      "midAutumn": "中秋・お月見",
+      "halloween": "ハロウィン",
+      "thanksgiving": "感謝祭",
+      "christmas": "クリスマス"
     }
   },
   "home": {

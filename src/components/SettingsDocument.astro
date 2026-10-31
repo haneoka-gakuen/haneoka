@@ -7,6 +7,8 @@ import SettingsOption from "./SettingsOption.astro";
 import type { Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { DATE_CHOICES, formatDate, formatTime, type DateChoiceKey, type DatePreferences } from "../lib/date-format";
+import { BIRTHDAY, SEASONS, birthdaySeed, characterSeed, seasonSeed } from "../lib/themes";
+import { themeCharacters } from "../server/theme-characters";
 import "../styles/components/accordion.css";
 import "../styles/settings.css";
 import cnFlag from "circle-flags/flags/cn.svg?url";
@@ -18,6 +20,8 @@ import bushimo from "../assets/icons/bushimo-circle.svg?url";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 
 const { locale } = Astro.props as { locale: Locale };
+const characters = await themeCharacters(locale);
+const bandIcon = (id: number) => `/assets/jp/Assets/AddressableResources/Band/${id}/band_small_Icon.png`;
 const title = t(locale, "navigation.settings", "Settings");
 const bilibiliBody = bilibiliSvg
   .replace(/^<svg[^>]*>/, "")
@@ -33,6 +37,12 @@ interface Option {
   swatch?: string;
   sample?: string;
   beta?: boolean;
+  ring?: string;
+  badge?: string;
+  hidden?: boolean;
+  data?: Record<string, string>;
+  /** Starts a new row of options (each band's row of members). */
+  row?: boolean;
 }
 interface Group {
   name: string;
@@ -119,12 +129,37 @@ const groups: Group[] = [
     initial: "haneoka",
     options: [
       { value: "haneoka", swatch: "haneoka", keyName: "settings.labels.tuneDefault", label: "Original key" },
-      ...[1, 2, 3, 4, 5].map((id) => ({
-        value: `band-${id}`,
-        swatch: `band-${id}`,
-        keyName: `catalog.bands.names.${id}`,
-        label: `Band ${id}`,
+      ...SEASONS.map((season) => ({
+        value: seasonSeed(season.id),
+        icon: season.ornament,
+        keyName: `settings.seasons.${season.key}`,
+        label: season.label,
+        hidden: true,
+        data: { season: season.id },
       })),
+      ...characters
+        .filter((character) => character.birthday)
+        .map((character) => ({
+          value: birthdaySeed(character.id),
+          image: character.face,
+          ring: character.color,
+          badge: BIRTHDAY.ornament,
+          label: character.name,
+          hidden: true,
+          data: { birthday: character.birthday!.join("-"), color: character.color },
+        })),
+      ...[1, 2, 3, 4, 5].flatMap((id) => [
+        { value: `band-${id}`, image: bandIcon(id), keyName: `catalog.bands.names.${id}`, label: `Band ${id}`, row: true },
+        ...characters
+          .filter((character) => character.bandId === id)
+          .map((character) => ({
+            value: characterSeed(character.id),
+            image: character.face,
+            ring: character.color,
+            label: character.name,
+            data: { color: character.color },
+          })),
+      ]),
     ],
   },
   {
@@ -261,15 +296,34 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
                     data-settings-group={group.name}
                   >
                     {group.options.map((option) => (
-                      <SettingsOption
-                        {...option}
-                        name={group.name}
-                        locale={locale}
-                        selected={option.value === group.initial}
-                      />
+                      <>
+                        {option.row && <span class="settings-options__row" aria-hidden="true"></span>}
+                        <SettingsOption
+                          {...option}
+                          name={group.name}
+                          locale={locale}
+                          selected={option.value === group.initial}
+                        />
+                      </>
                     ))}
                   </div>
                 </div>
+                {group.name === "seed" && (
+                  <div class="settings-toggle" data-season-effects-row hidden>
+                    <label for="season-effects">
+                      <Icon name="auto_awesome" size={20} />
+                      <I18nText keyName="settings.labels.seasonEffects" fallback="Seasonal effects" locale={locale} />
+                    </label>
+                    <md-switch
+                      id="season-effects"
+                      data-season-effects
+                      icons
+                      aria-label={t(locale, "settings.labels.seasonEffects", "Seasonal effects")}
+                      data-i18n-aria-label="settings.labels.seasonEffects"
+                      data-i18n-aria-label-fallback="Seasonal effects"
+                    ></md-switch>
+                  </div>
+                )}
                 {group.name === "locale" && (
                   <div class="settings-toggle">
                     <label for="japanese-titles">
@@ -321,6 +375,7 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
   import "@material/web/select/outlined-select.js";
   import "@material/web/select/select-option.js";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
+  import { BIRTHDAY, DYNAMIC_SEED, SEASONS, dayOf, openSeasons, seedCloses, type ThemeCharacter } from "../lib/themes";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
   import {
     datePreferences,
@@ -339,6 +394,42 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   let disposeSettings: (() => void) | undefined;
+  /** The characters as the option labels carry them, for birthdays and closing times. */
+  const optionCharacters = (settings: HTMLElement): ThemeCharacter[] =>
+    [...settings.querySelectorAll<HTMLElement>(".settings-option[data-birthday]")].map((option) => {
+      const [month, day] = option.dataset.birthday!.split("-").map(Number);
+      const id = Number(option.querySelector("input")!.value.split("-")[1]);
+      return { id, bandId: 0, color: option.dataset.color!, face: "", name: "", birthday: [month!, day!] };
+    });
+  /** Seasonal themes are listed only while they are open. */
+  const revealSeasons = (settings: HTMLElement) => {
+    const open = new Set(openSeasons().map((season) => season.id));
+    const today = dayOf(new Date());
+    let any = false;
+    settings.querySelectorAll<HTMLElement>(".settings-option[data-season], .settings-option[data-birthday]").forEach((option) => {
+      const visible = option.dataset.season
+        ? open.has(option.dataset.season)
+        : option.dataset.birthday === `${today.month}-${today.day}`;
+      option.hidden = !visible;
+      any ||= visible;
+    });
+    const row = settings.querySelector<HTMLElement>("[data-season-effects-row]");
+    if (row) row.hidden = !any;
+  };
+  const applyDynamicSeed = async (input: HTMLInputElement, seed: string, origin: { x: number; y: number }) => {
+    const settings = input.closest<HTMLElement>(".settings-content")!;
+    const option = input.closest<HTMLElement>(".settings-option")!;
+    const [{ seedCss }, { celebrate }] = await Promise.all([import("../lib/theme-schemes"), import("../lib/seasonal")]);
+    const season = SEASONS.find((entry) => `season-${entry.id}` === seed);
+    const mark = season
+      ? { id: season.id, motif: season.motif, ornament: season.ornament, shape: season.shape }
+      : seed.startsWith("birthday-")
+        ? { id: "birthday", motif: BIRTHDAY.motif, ornament: BIRTHDAY.ornament, shape: BIRTHDAY.shape }
+        : null;
+    const css = seedCss(seed, season ?? option.dataset.color!);
+    applySeed(seed, origin, { css, closes: seedCloses(seed, optionCharacters(settings)), season: mark });
+    if (mark) celebrate(mark.motif, origin);
+  };
   const initializeSettings = () => {
     disposeSettings?.();
     const settings = document.querySelector<HTMLElement>(".settings-content");
@@ -368,7 +459,15 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
         .forEach((group) => updateSummary(group.dataset.settingsGroup!));
     };
     select("theme", document.documentElement.dataset.themePreference || "system");
+    revealSeasons(settings);
     select("seed", currentSeed());
+    const effects = settings.querySelector<HTMLElement & { selected: boolean }>("[data-season-effects]");
+    if (effects) {
+      void import("../lib/seasonal").then(({ effectsEnabled, setEffectsEnabled }) => {
+        effects.selected = effectsEnabled();
+        effects.addEventListener("change", () => setEffectsEnabled(effects.selected), { signal });
+      });
+    }
     select("density", currentDensity());
     const dates = datePreferences();
     const datePreview = settings.querySelector<HTMLElement>("[data-date-preview]");
@@ -425,7 +524,9 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
           (window as SettingsWindow).__haneokaApplyTheme?.();
         } else if (name === "seed" && isSeed(value)) {
           const rect = input.getBoundingClientRect();
-          applySeed(value, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+          const origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          if (DYNAMIC_SEED.test(value)) void applyDynamicSeed(input, value, origin);
+          else applySeed(value, origin);
         } else if (name === "density" && isDensity(value)) {
           applyDensity(value);
         } else if (name.startsWith("date-")) {

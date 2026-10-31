@@ -1,0 +1,157 @@
+@layer components {
+  /* The brand mark sits in a tonal container cut to the season's shape, with its ornament on the corner. */
+  :root[data-season] .nav__brand img {
+    box-sizing: border-box;
+    padding: 3px;
+    background: var(--md-sys-color-primary-container);
+    clip-path: var(--season-shape, var(--shape-circle));
+  }
+  :root[data-season="april-fools"] .nav__brand img { rotate: 180deg; }
+  .season-ornament {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: grid;
+    color: var(--md-sys-color-tertiary);
+    rotate: -18deg;
+    pointer-events: none;
+  }
+
+  .season-layer,
+  .season-celebration {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--md-sys-z-index-local-sticky) - 1);
+    overflow: hidden;
+    pointer-events: none;
+    contain: strict;
+  }
+  .season-celebration { z-index: var(--md-sys-z-index-overlay-toast); }
+  .season-layer .season-particle {
+    position: absolute;
+    left: var(--x);
+    top: -32px;
+    display: grid;
+    opacity: 0.55;
+    scale: var(--scale);
+    animation: season-fall var(--duration) linear var(--delay) infinite;
+    will-change: transform;
+  }
+  .season-particle[data-tone="0"] { color: var(--md-sys-color-primary); }
+  .season-particle[data-tone="1"] { color: var(--md-sys-color-tertiary); }
+  .season-particle[data-tone="2"] { color: var(--md-sys-color-secondary); }
+  .season-particle svg:not(.material-icon) { width: 22px; height: auto; fill: currentColor; }
+
+  .season-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .season-petal { width: 10px; height: 14px; border-radius: 100% 0 100% 0; background: var(--md-sys-color-primary-container); outline: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
+  .season-egg { width: 12px; height: 16px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: repeating-linear-gradient(0deg, currentColor 0 3px, var(--md-sys-color-tertiary-container) 3px 6px); }
+  .season-confetti { width: 6px; height: 12px; border-radius: 2px; background: currentColor; }
+  .season-streak { width: 60px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, currentColor); }
+
+  /* Snow, petals, confetti and osmanthus fall and sway; hearts and sky lanterns rise. */
+  .season-layer[data-motif="hearts"] .season-particle,
+  .season-layer[data-motif="lanterns"] .season-particle { top: auto; bottom: -32px; animation-name: season-rise; }
+  .season-layer[data-motif="lanterns"] .season-particle { opacity: 0.4; }
+  .season-layer[data-motif="lanterns"] svg { width: 18px; }
+  .season-layer[data-motif="petals"] .season-particle,
+  .season-layer[data-motif="leaves"] .season-particle,
+  .season-layer[data-motif="confetti"] .season-particle { animation-name: season-tumble; }
+  .season-layer[data-motif="eggs"] .season-particle { animation-name: season-rise; top: auto; bottom: -32px; }
+  /* Bats cross the upper half; stars and sparkles hold still and twinkle. */
+  .season-layer[data-motif="bats"] .season-particle {
+    top: var(--y);
+    left: -40px;
+    opacity: 0.5;
+    animation-name: season-fly;
+  }
+  .season-layer[data-motif="bats"] svg { width: 32px; animation: season-flap 0.35s ease-in-out infinite alternate; }
+  .season-layer[data-motif="stars"] .season-particle,
+  .season-layer[data-motif="sparkles"] .season-particle {
+    top: var(--y);
+    animation: season-twinkle calc(var(--duration) / 3) ease-in-out var(--delay) infinite;
+  }
+  .season-layer[data-motif="stars"] .season-particle:has(.season-streak) { animation: season-shoot var(--duration) ease-in var(--delay) infinite; }
+  .season-layer[data-motif="fireworks"] .season-particle {
+    top: var(--y);
+    opacity: 1;
+    animation: none;
+  }
+  .season-burst { position: relative; width: 0; height: 0; }
+  .season-burst b {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0;
+    animation: season-spark calc(var(--duration) / 3) ease-out var(--delay) infinite;
+  }
+  .season-burst b:nth-child(1) { --a: 0deg; } .season-burst b:nth-child(2) { --a: 36deg; }
+  .season-burst b:nth-child(3) { --a: 72deg; } .season-burst b:nth-child(4) { --a: 108deg; }
+  .season-burst b:nth-child(5) { --a: 144deg; } .season-burst b:nth-child(6) { --a: 180deg; }
+  .season-burst b:nth-child(7) { --a: 216deg; } .season-burst b:nth-child(8) { --a: 252deg; }
+  .season-burst b:nth-child(9) { --a: 288deg; } .season-burst b:nth-child(10) { --a: 324deg; }
+  .season-moon {
+    position: absolute;
+    top: 88px;
+    right: 6%;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--md-sys-color-tertiary-container);
+    box-shadow: 0 0 48px var(--md-sys-color-tertiary-container);
+    opacity: 0.7;
+  }
+
+  .season-celebration .season-particle {
+    position: absolute;
+    left: var(--ox);
+    top: var(--oy);
+    display: grid;
+    animation: season-pop 1.2s var(--md-sys-motion-easing-emphasized-decelerate, cubic-bezier(0.05, 0.7, 0.1, 1)) forwards;
+  }
+  .season-celebration svg:not(.material-icon) { width: 20px; fill: currentColor; }
+
+  @keyframes season-fall {
+    from { transform: translate(0, 0) rotate(0); }
+    50% { transform: translate(var(--sway), 55vh) rotate(90deg); }
+    to { transform: translate(0, calc(100vh + 64px)) rotate(180deg); }
+  }
+  @keyframes season-tumble {
+    from { transform: translate(0, 0) rotate3d(1, 1, 0, 0deg); }
+    to { transform: translate(var(--sway), calc(100vh + 64px)) rotate3d(1, 1, 0, 720deg); }
+  }
+  @keyframes season-rise {
+    from { transform: translate(0, 0); }
+    50% { transform: translate(var(--sway), -55vh); }
+    to { transform: translate(0, calc(-100vh - 64px)); }
+  }
+  @keyframes season-fly {
+    from { transform: translate(0, 0); }
+    50% { transform: translate(55vw, var(--sway)); }
+    to { transform: translate(calc(100vw + 80px), 0); }
+  }
+  @keyframes season-flap { to { transform: scaleY(0.45); } }
+  @keyframes season-twinkle {
+    0%, 100% { opacity: 0.15; transform: scale(0.7); }
+    50% { opacity: 0.7; transform: scale(1); }
+  }
+  @keyframes season-shoot {
+    0%, 90% { opacity: 0; transform: translate(0, 0) rotate(20deg); }
+    93% { opacity: 0.8; }
+    100% { opacity: 0; transform: translate(40vw, 15vw) rotate(20deg); }
+  }
+  @keyframes season-spark {
+    0% { opacity: 0; transform: rotate(var(--a)) translateX(0); }
+    10% { opacity: 1; }
+    60%, 100% { opacity: 0; transform: rotate(var(--a)) translateX(48px); }
+  }
+  @keyframes season-pop {
+    from { opacity: 1; transform: translate(0, 0) scale(0.4); }
+    to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .season-layer { display: none; }
+  }
+}

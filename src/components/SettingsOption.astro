@@ -15,18 +15,29 @@ interface Props {
   sample?: string;
   beta?: boolean;
   selected?: boolean;
+  /** A portrait's colour ring (character themes). */
+  ring?: string;
+  /** Badge icon over the face (seasonal and birthday themes). */
+  badge?: string;
+  hidden?: boolean;
+  data?: Record<string, string>;
 }
-const { name, value, locale, label, keyName, icon, image, swatch, sample, beta, selected } = Astro.props;
+const { name, value, locale, label, keyName, icon, image, swatch, sample, beta, selected, ring, badge, hidden, data } = Astro.props;
+const dataAttributes = Object.fromEntries(Object.entries(data ?? {}).map(([key, entry]) => [`data-${key}`, entry]));
 const text = keyName ? t(locale, keyName, label) : label;
 ---
 
 <label
-  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample }]}
+  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample, "settings-option--portrait": ring }]}
   style={
     swatch && swatch !== "haneoka"
       ? `--swatch: var(--md-ref-${swatch}); --swatch-container: var(--md-ref-${swatch}-container); --swatch-on: var(--md-ref-${swatch}-on-container)`
-      : undefined
+      : ring
+        ? `--ring: ${ring}`
+        : undefined
   }
+  hidden={hidden}
+  {...dataAttributes}
 >
   <input
     type="radio"
@@ -48,12 +59,16 @@ const text = keyName ? t(locale, keyName, label) : label;
       <span class="settings-option__sample md-label-large">{sample}</span>
     ) : image ? (
       <span class="settings-option__image">
-        <img src={image} width="28" height="28" alt="" />
+        <img src={image} width="28" height="28" alt="" loading="lazy" decoding="async" />
         {beta && <i>β</i>}
+        {badge && <Icon name={badge} size={14} />}
       </span>
-    ) : (
-      icon && <Icon name={icon} />
-    )}
+    ) : icon ? (
+      <span class="settings-option__glyph">
+        <Icon name={icon} />
+        {badge && <Icon name={badge} size={14} />}
+      </span>
+    ) : null}
   </span>
   <span class="settings-option__tooltip" aria-hidden="true" data-i18n={keyName} data-i18n-fallback={keyName ? label : undefined}>
     {text}

@@ -181,6 +181,37 @@
     color: var(--md-sys-color-inverse-on-surface);
     font: 700 10px/1 var(--app-font);
   }
+  .settings-option[hidden] {
+    display: none;
+  }
+  .settings-options__row {
+    flex-basis: 100%;
+    height: 0;
+  }
+  .settings-options--seed .settings-option__image {
+    width: 40px;
+    height: 40px;
+  }
+  .settings-option--portrait .settings-option__image img {
+    box-sizing: border-box;
+    border: 2px solid var(--ring);
+    object-fit: cover;
+    background: var(--md-sys-color-surface-container-highest);
+  }
+  .settings-option__glyph {
+    position: relative;
+    display: grid;
+  }
+  .settings-option__image > .material-icon,
+  .settings-option__glyph > .material-icon + .material-icon {
+    position: absolute;
+    right: -6px;
+    bottom: -6px;
+    padding: 2px;
+    border-radius: 50%;
+    background: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
+  }
   .settings-option__tooltip {
     position: absolute;
     z-index: 3;

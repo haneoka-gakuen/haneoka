@@ -138,7 +138,23 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
         } catch {}
         try {
           const s = localStorage.getItem("haneoka.ui-seed.v1");
-          d.dataset.seed = /^(haneoka|band-[1-5])$/.test(s || "") ? s : "haneoka";
+          let seed = /^(haneoka|band-[1-5])$/.test(s || "") ? s : "haneoka";
+          const c = JSON.parse(localStorage.getItem("haneoka.ui-seed-css.v1") || "null");
+          if (c && c.seed === s) {
+            if (!c.closes || Date.now() < c.closes) {
+              const style = document.createElement("style");
+              style.id = "haneoka-seed-scheme";
+              style.textContent = c.css;
+              document.head.append(style);
+              seed = s;
+              if (c.season) d.dataset.season = c.season.id;
+            } else {
+              seed = c.fallback || "haneoka";
+              localStorage.setItem("haneoka.ui-seed.v1", seed);
+              localStorage.removeItem("haneoka.ui-seed-css.v1");
+            }
+          }
+          d.dataset.seed = seed;
           d.dataset.nav = localStorage.getItem("haneoka.navigation.expanded.v2") === "false" ? "collapsed" : "expanded";
           d.dataset.density = localStorage.getItem("haneoka.ui-density.v1") === "compact" ? "compact" : "comfortable";
         } catch {
@@ -232,7 +248,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       };
       void restoreAudioDock();
       document.addEventListener("astro:page-load", restoreAudioDock);
-      import { SEED_KEY, isSeed, syncThemeColor } from "../lib/tuning";
+      import { SEED_EVENT, SEED_KEY, isSeed, syncThemeColor } from "../lib/tuning";
       import { installRipple } from "../lib/ripple";
       import { installLoadingProgress } from "../lib/loading-progress";
       installLoadingProgress();
@@ -277,6 +293,10 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
           seed = localStorage.getItem(SEED_KEY) || seed;
         } catch {}
         next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";
+        if (document.documentElement.dataset.season) next.documentElement.dataset.season = document.documentElement.dataset.season;
+        else delete next.documentElement.dataset.season;
+        const scheme = document.getElementById("haneoka-seed-scheme");
+        if (scheme && !next.getElementById("haneoka-seed-scheme")) next.head.append(scheme.cloneNode(true));
         // A prefetched document must not undo a newer administrative setting observed in this tab.
         if (Number(document.documentElement.dataset.siteSettingsVersion || 0) > Number(next.documentElement.dataset.siteSettingsVersion || 0)) {
           next.documentElement.dataset.contentAccess = document.documentElement.dataset.contentAccess || "0";
@@ -287,8 +307,15 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
           next.documentElement.dataset.siteSettingsVersion = document.documentElement.dataset.siteSettingsVersion;
         }
       });
+      const syncSeason = () => {
+        if (document.documentElement.dataset.season || document.querySelector(".season-layer"))
+          void import("../lib/seasonal").then((module) => module.syncSeason());
+      };
+      syncSeason();
+      window.addEventListener(SEED_EVENT, syncSeason);
       document.addEventListener("astro:after-swap", () => {
         delete document.documentElement.dataset.navigationHref;
+        syncSeason();
         applyTheme();
         refreshDocumentAccess();
       });
