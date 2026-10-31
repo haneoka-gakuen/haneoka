@@ -9,6 +9,8 @@ import { skillTimeline } from "./shared/skill-timeline";
 import "../styles/components/skill-timeline.css";
 import { clientText } from "../i18n/client";
 import type { ChartSource } from "../lib/team-builder/engine/chart";
+import type { ChartRates } from "../lib/chart-rates";
+import "./song-chart-analysis";
 
 export interface SongChartReady {
   source: string;
@@ -24,10 +26,16 @@ export class SongSkillPoints extends LitElement {
   static properties = {
     source: { type: String },
     locale: { type: String },
+    rates: { attribute: false },
+    greatFactor: { type: Number },
+    chartId: { type: String },
     chart: { state: true },
   };
   declare source: string;
   declare locale: string;
+  declare rates: ChartRates | null;
+  declare greatFactor: number;
+  declare chartId: string;
   declare chart: ChartSource | null;
   private loaded = "";
   private request?: AbortController;
@@ -35,6 +43,9 @@ export class SongSkillPoints extends LitElement {
     super();
     this.source = "";
     this.locale = "ja";
+    this.rates = null;
+    this.greatFactor = 0.8;
+    this.chartId = "";
     this.chart = null;
   }
   createRenderRoot() {
@@ -103,6 +114,8 @@ export class SongSkillPoints extends LitElement {
             value: `${share.format(covered[index]! / Math.max(1, notes.length))} · #${ranked.indexOf(covered[index]!) + 1}`,
           })),
         })}
+        <song-chart-analysis .chart=${chart} .rates=${this.rates} .greatFactor=${this.greatFactor}
+          chartId=${this.chartId} locale=${this.locale}></song-chart-analysis>
     `;
   }
 }

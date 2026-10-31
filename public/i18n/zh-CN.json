@@ -479,7 +479,29 @@
         "only": "仅限所选类型",
         "contains": "包含所选类型"
       },
-      "skillPoints": "技能点位"
+      "skillPoints": "技能点位",
+      "analysis": {
+        "composition": "音符构成",
+        "tap": "点击",
+        "flick": "滑键",
+        "long": "长条",
+        "trace": "追踪",
+        "node": "连击节点",
+        "sections": "激奏段",
+        "section": "段",
+        "sectionNotes": "音符数",
+        "startCombo": "开始时连击",
+        "seconds": "时长",
+        "scenario": "得分场景",
+        "greatShare": "Great 比例",
+        "skill": "技能",
+        "perPower": "分数 / 综合力",
+        "perMinute": "分数 / 综合力 / 分钟",
+        "base": "无技能",
+        "skip": "跳过",
+        "slotWeights": "技能位权重",
+        "chartId": "谱面 ID"
+      }
     },
     "anonTokyo": {
       "characters": "角色",

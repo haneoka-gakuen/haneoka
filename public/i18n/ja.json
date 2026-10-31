@@ -479,7 +479,29 @@
         "only": "選択した種類のみ",
         "contains": "選択した種類を含む"
       },
-      "skillPoints": "スキル発動位置"
+      "skillPoints": "スキル発動位置",
+      "analysis": {
+        "composition": "ノーツ構成",
+        "tap": "タップ",
+        "flick": "フリック",
+        "long": "ロング",
+        "trace": "トレース",
+        "node": "コンボノード",
+        "sections": "撃奏区間",
+        "section": "区間",
+        "sectionNotes": "ノーツ数",
+        "startCombo": "開始時コンボ",
+        "seconds": "長さ",
+        "scenario": "スコア条件",
+        "greatShare": "Great 割合",
+        "skill": "スキル",
+        "perPower": "スコア / 総合力",
+        "perMinute": "スコア / 総合力 / 分",
+        "base": "スキルなし",
+        "skip": "スキップ",
+        "slotWeights": "スキル位置の重み",
+        "chartId": "譜面 ID"
+      }
     },
     "anonTokyo": {
       "characters": "キャラクター",

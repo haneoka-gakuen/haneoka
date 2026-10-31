@@ -44,6 +44,7 @@ export interface SongSummaryRenderOptions {
    * segment metrics from the song-meta entry. */
   gekisou: Item;
   metaView?: { mode: string; tier: string; band: number };
+  chartRates?: { greatFactor: number; charts: Record<string, ChartRates> };
   /** False for a game without BanG Dream scoring: only level and note count apply. */
   scoring?: boolean;
   label(key: string, fallback: string): string;
@@ -199,6 +200,9 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
             <song-skill-points
               source=${String(difficulty[selectedDifficulty]?.file || "")}
               locale=${locale}
+              .rates=${options.chartRates?.charts[`${item.musicId}:${difficulty[selectedDifficulty]?.difficulty}`] ?? null}
+              .greatFactor=${options.chartRates?.greatFactor ?? 0.8}
+              chartId=${String(difficulty[selectedDifficulty]?.scoreId ?? difficulty[selectedDifficulty]?.id ?? "")}
               @song-chart-ready=${(event: CustomEvent<SongChartReady>) => options.onChartReady?.(event.detail)}
             ></song-skill-points>
           `

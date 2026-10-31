@@ -7014,6 +7014,7 @@ export class CatalogScreen extends LitElement {
                       : undefined,
                     gekisou: songGekisou,
                     metaView: this.metaView,
+                    chartRates: this.detailAux.chartRates as import("./song-detail-rewards").SongSummaryRenderOptions["chartRates"],
                     scoring: this.settings.origin !== "sekai",
                     difficulty,
                     selectedDifficulty: this.detailDifficulty,

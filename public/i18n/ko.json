@@ -479,7 +479,29 @@
         "only": "선택한 유형만",
         "contains": "선택한 유형 포함"
       },
-      "skillPoints": "스킬 발동 위치"
+      "skillPoints": "스킬 발동 위치",
+      "analysis": {
+        "composition": "노트 구성",
+        "tap": "탭",
+        "flick": "플릭",
+        "long": "롱",
+        "trace": "트레이스",
+        "node": "콤보 노드",
+        "sections": "격주 구간",
+        "section": "구간",
+        "sectionNotes": "노트 수",
+        "startCombo": "시작 콤보",
+        "seconds": "길이",
+        "scenario": "점수 조건",
+        "greatShare": "Great 비율",
+        "skill": "스킬",
+        "perPower": "점수 / 종합력",
+        "perMinute": "점수 / 종합력 / 분",
+        "base": "스킬 없음",
+        "skip": "스킵",
+        "slotWeights": "스킬 위치 가중치",
+        "chartId": "채보 ID"
+      }
     },
     "anonTokyo": {
       "characters": "캐릭터",

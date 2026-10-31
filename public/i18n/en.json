@@ -479,7 +479,29 @@
         "only": "Only selected types",
         "contains": "Contains a selected type"
       },
-      "skillPoints": "Skill points"
+      "skillPoints": "Skill points",
+      "analysis": {
+        "composition": "Note composition",
+        "tap": "Tap",
+        "flick": "Flick",
+        "long": "Long",
+        "trace": "Trace",
+        "node": "Combo node",
+        "sections": "Gekisou sections",
+        "section": "Section",
+        "sectionNotes": "Notes",
+        "startCombo": "Starting combo",
+        "seconds": "Length",
+        "scenario": "Score scenario",
+        "greatShare": "Great share",
+        "skill": "Skill",
+        "perPower": "Score / power",
+        "perMinute": "Score / power / minute",
+        "base": "No skills",
+        "skip": "Skip",
+        "slotWeights": "Skill slot weights",
+        "chartId": "Chart ID"
+      }
     },
     "anonTokyo": {
       "characters": "Characters",

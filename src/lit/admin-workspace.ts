@@ -1067,7 +1067,7 @@ export class AdminWorkspace extends LitElement {
             className: "admin-resource-servers",
             label: `${region.toUpperCase()} · ${this.label(`pool.status.${String(pool.status)}`, String(pool.status))} · ${accounts.filter((row) => row.status === "ready" || row.status === "working").length}/${accounts.length}`,
             content: html`
-              <div class="table-scroll"><table class="table">
+              <div class="table-scroll"><table class="data-table">
                 <thead><tr>
                   <th>${this.label("pool.account", "Account")}</th><th>${this.label("pool.state", "State")}</th>
                   <th>${this.label("pool.lastSuccess", "Last success")}</th><th>${this.label("pool.failures", "Failures")}</th><th></th>
