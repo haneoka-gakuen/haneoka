@@ -141,6 +141,7 @@ export const ROUTES: RouteDefinition[] = [
   })),
   { route: "/about", kind: "legal", key: "about", page: "aboutPage", titleKey: "legal.about.title" },
   { route: "/join", kind: "legal", key: "join", page: "joinPage", titleKey: "legal.join.title" },
+  { route: "/sponsor", kind: "legal", key: "sponsor", page: "sponsorPage", titleKey: "legal.sponsor.title" },
   { route: "/license", kind: "legal", key: "license", page: "licensePage", titleKey: "legal.license.title" },
   { route: "/terms", kind: "legal", key: "terms", page: "termsPage", titleKey: "legal.terms.title" },
   { route: "/privacy", kind: "legal", key: "privacy", page: "privacyPage", titleKey: "legal.privacy.title" },
@@ -149,6 +150,7 @@ export const ROUTES: RouteDefinition[] = [
 const LEGAL_PAGE_MESSAGES: Readonly<Record<string, string>> = {
   aboutPage: "legal.about",
   joinPage: "legal.join",
+  sponsorPage: "legal.sponsor",
   licensePage: "legal.license",
   termsPage: "legal.terms",
   privacyPage: "legal.privacy",

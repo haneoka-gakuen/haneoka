@@ -16,6 +16,7 @@ import {
   staticCatalogJsonMetrics,
 } from "../lib/static-catalog-source";
 import { appRelease } from "./app-release";
+import { sponsorList } from "./sponsors";
 import { publicForumDirectory } from "./public-forum-directory";
 import { homePageData } from "./home-page-data";
 import { destinationHubMedia } from "./destination-hub-data";
@@ -132,6 +133,7 @@ export async function prepareStaticInputs(): Promise<void> {
   }
   await prepareAll([
     appRelease,
+    sponsorList,
     publicForumDirectory,
     rankingCardsPageData,
     eventTrackerPageData,

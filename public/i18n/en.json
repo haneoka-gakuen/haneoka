@@ -5116,6 +5116,22 @@
       "mention": "When you ask to join, mention you came from haneoka",
       "partnerTitle": "About the partnership",
       "partnerBody": "haneoka is an independent website and is not affiliated with MoeNotes or its developer, StarMoe. We are friendly partners and run the groups above together."
+    },
+    "sponsor": {
+      "title": "Sponsor",
+      "heroTitle": "Sponsor haneoka",
+      "afdian": "Afdian",
+      "patreon": "Patreon",
+      "wallTitle": "Sponsors",
+      "wallUpdated": "Updated {date}",
+      "tierEmpty": "None yet",
+      "pastTitle": "Past sponsors",
+      "body": [
+        "haneoka has been free from day one. There are no ads, and most of it works without signing in. The catalogue, charts, team builder, event tracking and rankings all update from the game's data every day.",
+        "Keeping that running has real costs: servers, databases and storage, rebuilding the game's resources several times a day, and shipping the app on every platform. Right now we cover all of it ourselves.",
+        "If haneoka has saved you time, or made you enjoy the game a little more, we'd be grateful for your support in whatever way feels right. Every sponsorship goes into making haneoka steadier, faster to update and more complete.",
+        "And if sponsoring isn't for you, that's completely fine. Using haneoka, sharing it with friends and telling us what could be better helps us just as much."
+      ]
     }
   },
   "admin": {

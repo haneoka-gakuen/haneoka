@@ -211,6 +211,10 @@ jobs:
           python -m pip install boto3==1.43.47 py3rijndael==0.3.3
           python scripts/build/arena_inputs.py
       - name: Collect all production data and route matrices
+        env:
+          AFDIAN_USER_ID: ${{ secrets.AFDIAN_USER_ID }}
+          AFDIAN_TOKEN: ${{ secrets.AFDIAN_TOKEN }}
+          PATREON_CREATOR_TOKEN: ${{ secrets.PATREON_CREATOR_TOKEN }}
         run: |
           node scripts/build/prepare-static-inputs.mjs
           STATIC_BUILD_PHASE=prepare pnpm exec astro build

@@ -5,6 +5,7 @@ import CatalogIndexPage from "./pages/CatalogIndexPage.astro";
 import DownloadPage from "./pages/DownloadPage.astro";
 import AboutPage from "./pages/AboutPage.astro";
 import JoinPage from "./pages/JoinPage.astro";
+import SponsorPage from "./pages/SponsorPage.astro";
 import LegalPage from "./pages/LegalPage.astro";
 import NoticePage from "./pages/NoticePage.astro";
 import EventTrackerPage from "./pages/EventTrackerPage.astro";
@@ -87,7 +88,8 @@ const trackerPage = trackerPayload ? await renderEventTracker(trackerPayload, lo
     {entry.kind === "index" && <CatalogIndexPage locale={locale} server={server} />}
     {entry.kind === "legal" && entry.page === "aboutPage" && <AboutPage locale={locale} />}
     {entry.kind === "legal" && entry.page === "joinPage" && <JoinPage locale={locale} />}
-    {entry.kind === "legal" && entry.page && entry.page !== "aboutPage" && entry.page !== "joinPage" && (
+    {entry.kind === "legal" && entry.page === "sponsorPage" && <SponsorPage locale={locale} />}
+    {entry.kind === "legal" && entry.page && entry.page !== "aboutPage" && entry.page !== "joinPage" && entry.page !== "sponsorPage" && (
       <LegalPage locale={locale} page={entry.page} />
     )}
     {entry.kind === "notice" && (
