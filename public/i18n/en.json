@@ -4094,7 +4094,9 @@
       "apiScope_team_write": "Change box and teams",
       "apiScope_gacha_read": "Read gacha history",
       "apiScope_games_read": "Read game accounts",
-      "apiScope_profile_read": "Read profile"
+      "apiScope_profile_read": "Read profile",
+      "apiTokenEvents": "Recent changes",
+      "apiTokenEventChanged": "Box entries changed"
     },
     "profile": {
       "title": "Public profile",

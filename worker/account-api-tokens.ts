@@ -27,6 +27,7 @@ const MAX_TOKENS = 10;
 const LIFETIME_DAYS = [30, 90, 365];
 const DAY_MS = 86_400_000;
 const USED_PRECISION_MS = 3_600_000;
+const KEPT_EVENTS = 50;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
@@ -55,6 +56,16 @@ const list = async (env: Env, userId: string) =>
       .all<{ scopes: string }>()
   ).results.map((row) => ({ ...row, scopes: JSON.parse(row.scopes) as string[] }));
 
+const events = async (env: Env, userId: string) =>
+  (
+    await env.DB.prepare(
+      `SELECT id, token_name AS tokenName, server, changed, created_at AS createdAt
+       FROM account_api_token_event WHERE user_id = ? ORDER BY id DESC LIMIT ?`,
+    )
+      .bind(userId, KEPT_EVENTS)
+      .all()
+  ).results;
+
 async function manage(request: Request, env: Env, id: string | null): Promise<Response> {
   if (!sameOrigin(request)) return error(request, 403, "cross_origin_request", "Use the same-origin token endpoint");
   const allowed = id ? ["DELETE"] : ["GET", "HEAD", "POST"];
@@ -68,7 +79,7 @@ async function manage(request: Request, env: Env, id: string | null): Promise<Re
     await env.DB.prepare("DELETE FROM account_api_token WHERE id = ? AND user_id = ?").bind(id, userId).run();
     return json(request, { tokens: await list(env, userId) });
   }
-  if (!write) return json(request, { tokens: await list(env, userId) });
+  if (!write) return json(request, { tokens: await list(env, userId), events: await events(env, userId) });
   if (env.COMMUNITY_RATE_LIMITER && !(await env.COMMUNITY_RATE_LIMITER.limit({ key: `api-token:${userId}` })).success)
     return error(request, 429, "rate_limit_exceeded", "Try again later");
   const result = await readBody(request);
@@ -195,6 +206,16 @@ async function teamWrite(request: Request, env: Env, server: string): Promise<Re
   if (committed instanceof Response) return committed;
   if (committed === "too_many" || committed === "too_large") return error(request, 413, "box_too_large", "Box limit reached");
   if (committed === "busy") return error(request, 503, "busy", "Try again");
+  if (committed.changed)
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO account_api_token_event (user_id, token_name, server, changed, created_at) VALUES (?, ?, ?, ?, ?)",
+      ).bind(owner.userId, owner.name, server, committed.changed, now),
+      env.DB.prepare(
+        `DELETE FROM account_api_token_event WHERE user_id = ? AND id NOT IN (
+           SELECT id FROM account_api_token_event WHERE user_id = ? ORDER BY id DESC LIMIT ?)`,
+      ).bind(owner.userId, owner.userId, KEPT_EVENTS),
+    ]);
   return json(request, { revision: committed.revision, changed: committed.changed });
 }
 

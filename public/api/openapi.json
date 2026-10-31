@@ -46172,7 +46172,7 @@
           "Account"
         ],
         "summary": "List API tokens",
-        "description": "Token values are never returned after creation.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
+        "description": "Token values are never returned after creation. `events` lists the latest 50 box writes made with tokens.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
         "parameters": [
           {
             "name": "X-Haneoka-Expected-User",
@@ -46201,6 +46201,15 @@
                       "scopes": [
                         "team:read"
                       ]
+                    }
+                  ],
+                  "events": [
+                    {
+                      "id": 1,
+                      "tokenName": "My tool",
+                      "server": "intl",
+                      "changed": 2,
+                      "createdAt": 1793400000000
                     }
                   ]
                 }

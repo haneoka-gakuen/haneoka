@@ -4094,7 +4094,9 @@
       "apiScope_team_write": "修改 Box 和队伍",
       "apiScope_gacha_read": "读取抽卡记录",
       "apiScope_games_read": "读取游戏账号",
-      "apiScope_profile_read": "读取个人资料"
+      "apiScope_profile_read": "读取个人资料",
+      "apiTokenEvents": "最近修改",
+      "apiTokenEventChanged": "修改的 Box 条目"
     },
     "profile": {
       "title": "个人主页",

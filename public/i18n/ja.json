@@ -4094,7 +4094,9 @@
       "apiScope_team_write": "ボックスと編成を変更",
       "apiScope_gacha_read": "ガチャ履歴を読む",
       "apiScope_games_read": "ゲームアカウントを読む",
-      "apiScope_profile_read": "プロフィールを読む"
+      "apiScope_profile_read": "プロフィールを読む",
+      "apiTokenEvents": "最近の変更",
+      "apiTokenEventChanged": "変更されたボックス項目"
     },
     "profile": {
       "title": "公開プロフィール",

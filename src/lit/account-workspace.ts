@@ -77,6 +77,7 @@ export class AccountWorkspace extends LitElement {
     apiTokens: { state: true },
     apiTokenValue: { state: true },
     apiTokenRevoking: { state: true },
+    apiTokenEvents: { state: true },
     avatarFile: { state: true },
     avatarPreview: { state: true },
     appealOpen: { state: true },
@@ -101,6 +102,7 @@ export class AccountWorkspace extends LitElement {
   declare apiTokens: Value[];
   declare apiTokenValue: string;
   declare apiTokenRevoking: Value | null;
+  declare apiTokenEvents: Value[];
   declare busy: boolean;
   declare message: string;
   declare error: string;
@@ -134,6 +136,7 @@ export class AccountWorkspace extends LitElement {
     this.apiTokens = [];
     this.apiTokenValue = "";
     this.apiTokenRevoking = null;
+    this.apiTokenEvents = [];
     this.busy = false;
     this.message = "";
     this.error = "";
@@ -367,6 +370,7 @@ export class AccountWorkspace extends LitElement {
     if (!this.isConnected || !this.securityRequests.current(ownSignal) || userId !== this.user()?.id) return;
     this.games = Array.isArray(games.accounts) ? (games.accounts as Value[]) : [];
     this.apiTokens = Array.isArray(apiTokens.tokens) ? (apiTokens.tokens as Value[]) : [];
+    this.apiTokenEvents = Array.isArray(apiTokens.events) ? (apiTokens.events as Value[]) : [];
     this.relationships = Array.isArray(relationships.relationships) ? (relationships.relationships as Value[]) : [];
     this.sessions = Array.isArray(sessions)
       ? (sessions as unknown as Value[])
@@ -664,6 +668,28 @@ export class AccountWorkspace extends LitElement {
             `,
           )}
         </div>
+        ${
+          this.apiTokenEvents.length
+            ? html`
+                <div class="provider-list" aria-label=${this.label("apiTokenEvents", "Recent changes")}>
+                  ${this.apiTokenEvents.map(
+                    (entry) => html`
+                      <div class="provider-row">
+                        <span class="provider-mark">${icon("history", 20)}</span>
+                        <span>
+                          <strong>${String(entry.tokenName)}</strong>
+                          <small>
+                            ${this.label("apiTokenEventChanged", "Box entries changed")}: ${Number(entry.changed).toLocaleString(preferredLocale())}
+                            · ${String(entry.server).toUpperCase()} · ${this.date(entry.createdAt)}
+                          </small>
+                        </span>
+                      </div>
+                    `,
+                  )}
+                </div>
+              `
+            : nothing
+        }
         <form class="account-inline-form" @submit=${this.createApiToken}>
           <label>
             <span>${this.label("apiTokenName", "Token name")}</span>
