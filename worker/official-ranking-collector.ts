@@ -14,7 +14,7 @@ export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
   "OFFICIAL_RANKING_JP_CONFIG" | "OFFICIAL_RANKING_TW_CONFIG" | "OFFICIAL_RANKING_EN_CONFIG" | "OFFICIAL_RANKING_KR_CONFIG"
 >> & { OFFICIAL_RANKING_ENABLED_REGIONS?: string };
-const INTERVAL_MS = 300_000;
+const INTERVAL_MS = 600_000;
 const JOB_MS = 120_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
@@ -542,7 +542,7 @@ export class OfficialRankingCollector extends Container<Env> {
       collectionEnabled: officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region),
       readEnabled: officialRegionEnabled(this.env.OFFICIAL_RANKING_READ_REGIONS, region),
       samplingIntervalSeconds: INTERVAL_MS / 1000, lastSuccessfulObservationAtMs: state.lastSuccessfulObservationAtMs,
-      ageMs: age, stale: age === null || age < 0 || age > 600_000, pollAfterSeconds: unavailable ? 300 : 30,
+      ageMs: age, stale: age === null || age < 0 || age > 2 * INTERVAL_MS, pollAfterSeconds: unavailable ? 300 : 30,
       lastFailure: state.lastFailure ?? null,
       pool: counts,
       nextAttemptAtMs: unavailable || !canSchedule ? null : state.nextAtMs || null, catalogProvider: "official-master" };

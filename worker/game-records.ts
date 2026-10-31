@@ -212,7 +212,7 @@ export async function handleGameRecordsApi(request: Request, url: URL, env: Game
       return errorResponse(request, 400, "invalid_request");
     if (!env.DB) return errorResponse(request, 503, "pending");
     try {
-      const result = await readEventHistory(env.DB, region, eventId, challengeId, snapshot, before);
+      const result = await readEventHistory(env, region, eventId, challengeId, snapshot, before);
       return result === null ? errorResponse(request, 404, "not_found") : jsonResponse(request, JSON.stringify(result));
     } catch (error) {
       console.warn(
@@ -255,7 +255,7 @@ export async function handleGameRecordsApi(request: Request, url: URL, env: Game
     if (!isRegion(region)) return errorResponse(request, 404, "not_found");
     if (!eventId) return errorResponse(request, 400, "invalid_request");
     if (!env.DB) return errorResponse(request, 503, "pending");
-    const saved = await latestEventHistory(env.DB, region, eventId, "").catch(() => null);
+    const saved = await latestEventHistory(env, region, eventId, "").catch(() => null);
     return saved ? jsonResponse(request, JSON.stringify(saved)) : errorResponse(request, 404, "not_found");
   }
   return null;

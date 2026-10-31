@@ -1,18 +1,20 @@
 import type { EventRankingDto, GameRecordsRegion } from "../src/lib/game-records";
-import {
-  decodeEventHistory,
-  eventHistoryIdentity,
-  prepareEventHistory,
-  type EventHistoryInput,
-  type HistoryKind,
-} from "../src/lib/game-event-history";
+import { decodeEventHistory } from "../src/lib/game-event-history";
+
+/** Where an archived ranking lives: summary rows in RECORDS_DB, full payloads
+ * in R2. Rows not yet moved are still read from the community database. */
+export interface EventHistoryBindings {
+  DB?: D1Database;
+  RECORDS_DB?: D1Database;
+  OFFICIAL_RANKING_DATA?: R2Bucket;
+}
 
 type HistoryRow = {
   id: string;
   region: GameRecordsRegion;
   event_id: string;
   challenge_id: string;
-  record_kind: HistoryKind;
+  record_kind: "snapshot" | "tier-history";
   source_url: string;
   source_sha256: string;
   first_source_at_ms: number | null;
@@ -22,159 +24,106 @@ type HistoryRow = {
   last_observed_at_ms: number;
   rows_json: string;
 };
-export async function saveEventHistory(db: D1Database, input: EventHistoryInput): Promise<void> {
-  const observedAtMs = Date.now(),
-    { id } = await eventHistoryIdentity(input);
-  const update = await db
-    .prepare(
-      `UPDATE game_event_ranking_history SET
-    first_source_at_ms=CASE WHEN ? IS NULL THEN first_source_at_ms
-      WHEN first_source_at_ms IS NULL THEN ? ELSE MIN(first_source_at_ms,?) END,
-    last_source_at_ms=CASE WHEN ? IS NULL THEN last_source_at_ms
-      WHEN last_source_at_ms IS NULL THEN ? ELSE MAX(last_source_at_ms,?) END,
-    last_server_time_ms=CASE WHEN ? IS NULL THEN last_server_time_ms
-      WHEN last_server_time_ms IS NULL THEN ? ELSE MAX(last_server_time_ms,?) END,
-    last_observed_at_ms=MAX(last_observed_at_ms,?) WHERE id=?`,
-    )
-    .bind(
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.ranking?.serverTimeMs ?? null,
-      input.ranking?.serverTimeMs ?? null,
-      input.ranking?.serverTimeMs ?? null,
-      observedAtMs,
-      id,
-    )
-    .run();
-  if (update.meta.changes) return;
-  const prepared = await prepareEventHistory(input, observedAtMs);
-  await db
-    .prepare(
-      `INSERT INTO game_event_ranking_history
-    (id,region,event_id,challenge_id,record_kind,source_url,source_sha256,
-      first_source_at_ms,last_source_at_ms,last_server_time_ms,first_observed_at_ms,last_observed_at_ms,rows_json,payload_gzip)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(id) DO UPDATE SET
-      first_source_at_ms=CASE WHEN excluded.first_source_at_ms IS NULL THEN first_source_at_ms
-        WHEN first_source_at_ms IS NULL THEN excluded.first_source_at_ms ELSE MIN(first_source_at_ms,excluded.first_source_at_ms) END,
-      last_source_at_ms=CASE WHEN excluded.last_source_at_ms IS NULL THEN last_source_at_ms
-        WHEN last_source_at_ms IS NULL THEN excluded.last_source_at_ms ELSE MAX(last_source_at_ms,excluded.last_source_at_ms) END,
-      last_server_time_ms=CASE WHEN excluded.last_server_time_ms IS NULL THEN last_server_time_ms
-        WHEN last_server_time_ms IS NULL THEN excluded.last_server_time_ms ELSE MAX(last_server_time_ms,excluded.last_server_time_ms) END,
-      last_observed_at_ms=MAX(last_observed_at_ms,excluded.last_observed_at_ms)`,
-    )
-    .bind(
-      prepared.id,
-      input.region,
-      input.eventId,
-      input.challengeId ?? "",
-      input.kind,
-      input.sourceUrl,
-      prepared.sourceSha256,
-      input.sourceAtMs,
-      input.sourceAtMs,
-      input.ranking?.serverTimeMs ?? null,
-      prepared.observedAtMs,
-      prepared.observedAtMs,
-      prepared.rowsJson,
-      prepared.payloadGzip,
-    )
-    .run();
+const COLUMNS = `id,region,event_id,challenge_id,record_kind,source_url,source_sha256,
+  first_source_at_ms,last_source_at_ms,last_server_time_ms,first_observed_at_ms,last_observed_at_ms,rows_json`;
+const payloadKey = (id: string) => `event-history/${id}.json.gz`;
+
+async function payload(env: EventHistoryBindings, id: string) {
+  const object = await env.OFFICIAL_RANKING_DATA?.get(payloadKey(id));
+  if (object) return decodeEventHistory([...new Uint8Array(await object.arrayBuffer())]);
+  const row = await env.DB?.prepare("SELECT payload_gzip FROM game_event_ranking_history WHERE id=?")
+    .bind(id)
+    .first<{ payload_gzip: number[] }>();
+  return row ? decodeEventHistory(row.payload_gzip) : null;
 }
+
+/** The databases holding rows, moved first. */
+const sources = (env: EventHistoryBindings) => [env.RECORDS_DB, env.DB].filter((db): db is D1Database => Boolean(db));
 
 export async function latestEventHistory(
-  db: D1Database,
+  env: EventHistoryBindings,
   region: GameRecordsRegion,
   eventId: string,
   challengeId: string,
 ): Promise<EventRankingDto | null> {
-  const row = await db
-    .prepare(
-      `SELECT payload_gzip,last_source_at_ms,last_server_time_ms FROM game_event_ranking_history
+  const rows = await Promise.all(
+    sources(env).map((db) =>
+      db
+        .prepare(
+          `SELECT id,last_source_at_ms,last_server_time_ms,last_observed_at_ms FROM game_event_ranking_history
     WHERE region=? AND event_id=? AND challenge_id=? AND record_kind='snapshot'
     ORDER BY COALESCE(last_source_at_ms,last_observed_at_ms) DESC,last_observed_at_ms DESC LIMIT 1`,
-    )
-    .bind(region, eventId, challengeId)
-    .first<{ payload_gzip: number[]; last_source_at_ms: number | null; last_server_time_ms: number | null }>();
+        )
+        .bind(region, eventId, challengeId)
+        .first<{
+          id: string;
+          last_source_at_ms: number | null;
+          last_server_time_ms: number | null;
+          last_observed_at_ms: number;
+        }>(),
+    ),
+  );
+  const row = rows
+    .filter((value) => value !== null)
+    .sort(
+      (a, b) =>
+        (b.last_source_at_ms ?? b.last_observed_at_ms) - (a.last_source_at_ms ?? a.last_observed_at_ms) ||
+        b.last_observed_at_ms - a.last_observed_at_ms,
+    )[0];
   if (!row) return null;
-  const payload = await decodeEventHistory(row.payload_gzip);
-  return payload.ranking
-    ? { ...payload.ranking, fetchedAtMs: row.last_source_at_ms, serverTimeMs: row.last_server_time_ms, stale: true }
-    : null;
-}
-
-export async function cachedEventHistory(
-  db: D1Database,
-  region: GameRecordsRegion,
-  eventId: string,
-  challengeId: string,
-): Promise<EventRankingDto | null> {
-  const row = await db
-    .prepare(
-      `SELECT h.payload_gzip,h.last_source_at_ms,h.last_server_time_ms,h.last_observed_at_ms,c.finalized_json
-    FROM game_event_ranking_history AS h LEFT JOIN game_event_ranking_collection AS c ON c.region=h.region
-    WHERE h.region=? AND h.event_id=? AND h.challenge_id=? AND h.record_kind='snapshot'
-    ORDER BY COALESCE(h.last_source_at_ms,h.last_observed_at_ms) DESC,h.last_observed_at_ms DESC LIMIT 1`,
-    )
-    .bind(region, eventId, challengeId)
-    .first<{
-      payload_gzip: number[];
-      last_source_at_ms: number | null;
-      last_server_time_ms: number | null;
-      last_observed_at_ms: number;
-      finalized_json: string | null;
-    }>();
-  if (!row) return null;
-  const finalized = row.finalized_json ? (JSON.parse(row.finalized_json) as string[]) : [];
-  if (row.last_observed_at_ms < Date.now() - 60_000 && !finalized.includes(`${eventId}:${challengeId}`)) return null;
-  const payload = await decodeEventHistory(row.payload_gzip);
-  return payload.ranking
-    ? { ...payload.ranking, fetchedAtMs: row.last_source_at_ms, serverTimeMs: row.last_server_time_ms }
+  const stored = await payload(env, row.id);
+  return stored?.ranking
+    ? { ...stored.ranking, fetchedAtMs: row.last_source_at_ms, serverTimeMs: row.last_server_time_ms, stale: true }
     : null;
 }
 
 export async function readEventHistory(
-  db: D1Database,
+  env: EventHistoryBindings,
   region: GameRecordsRegion,
   eventId: string,
   challengeId: string,
   snapshotId?: string,
   before?: string,
 ): Promise<unknown> {
-  if (snapshotId) {
-    const row = await db
-      .prepare(
-        `SELECT payload_gzip FROM game_event_ranking_history
+  const owner = async (id: string) => {
+    for (const db of sources(env)) {
+      const row = await db
+        .prepare(
+          `SELECT COALESCE(first_source_at_ms,first_observed_at_ms) AS at,id FROM game_event_ranking_history
       WHERE id=? AND region=? AND event_id=? AND challenge_id=?`,
-      )
-      .bind(snapshotId, region, eventId, challengeId)
-      .first<{ payload_gzip: number[] }>();
-    return row ? await decodeEventHistory(row.payload_gzip) : null;
-  }
-  const cursor = before
-    ? ` AND (COALESCE(first_source_at_ms,first_observed_at_ms),id)<
-    (SELECT COALESCE(first_source_at_ms,first_observed_at_ms),id FROM game_event_ranking_history
-      WHERE id=? AND region=? AND event_id=? AND challenge_id=?)`
-    : "";
-  const statement = db.prepare(`SELECT id,region,event_id,challenge_id,record_kind,source_url,source_sha256,
-    first_source_at_ms,last_source_at_ms,last_server_time_ms,first_observed_at_ms,last_observed_at_ms,rows_json
-    FROM game_event_ranking_history WHERE region=? AND event_id=? AND challenge_id=?${cursor}
-    ORDER BY COALESCE(first_source_at_ms,first_observed_at_ms) DESC,id DESC LIMIT 101`);
-  const result = await (
-    before
-      ? statement.bind(region, eventId, challengeId, before, region, eventId, challengeId)
-      : statement.bind(region, eventId, challengeId)
-  ).all<HistoryRow>();
-  const rows = result.results.slice(0, 100);
+        )
+        .bind(id, region, eventId, challengeId)
+        .first<{ at: number; id: string }>();
+      if (row) return row;
+    }
+    return null;
+  };
+  if (snapshotId) return (await owner(snapshotId)) ? payload(env, snapshotId) : null;
+  const cursor = before ? await owner(before) : null;
+  if (before && !cursor) return null;
+  const pages = await Promise.all(
+    sources(env).map((db) =>
+      db
+        .prepare(
+          `SELECT ${COLUMNS} FROM game_event_ranking_history WHERE region=? AND event_id=? AND challenge_id=?
+    ${cursor ? "AND (COALESCE(first_source_at_ms,first_observed_at_ms),id)<(?,?)" : ""}
+    ORDER BY COALESCE(first_source_at_ms,first_observed_at_ms) DESC,id DESC LIMIT 101`,
+        )
+        .bind(region, eventId, challengeId, ...(cursor ? [cursor.at, cursor.id] : []))
+        .all<HistoryRow>(),
+    ),
+  );
+  const at = (row: HistoryRow) => row.first_source_at_ms ?? row.first_observed_at_ms;
+  const merged = pages
+    .flatMap((page) => page.results)
+    .sort((a, b) => at(b) - at(a) || (b.id < a.id ? -1 : b.id > a.id ? 1 : 0))
+    .slice(0, 101);
+  const rows = merged.slice(0, 100);
   return {
     region,
     eventId,
     ...(challengeId ? { challengeId } : {}),
-    nextBefore: result.results.length > 100 ? rows.at(-1)!.id : null,
+    nextBefore: merged.length > 100 ? rows.at(-1)!.id : null,
     snapshots: rows.map((row) => ({
       id: row.id,
       kind: row.record_kind,
@@ -188,4 +137,76 @@ export async function readEventHistory(
       rows: JSON.parse(row.rows_json) as unknown[],
     })),
   };
+}
+
+/** Moves one batch out of the community database: payloads to R2, rows to
+ * RECORDS_DB, then deletes the originals. Returns how many rows moved. */
+export async function moveEventHistory(env: EventHistoryBindings, batch = 150): Promise<number> {
+  if (!env.DB || !env.RECORDS_DB || !env.OFFICIAL_RANKING_DATA) return 0;
+  const { results } = await env.DB.prepare(`SELECT ${COLUMNS},payload_gzip FROM game_event_ranking_history LIMIT ?`)
+    .bind(batch)
+    .all<HistoryRow & { payload_gzip: ArrayBuffer | number[] }>();
+  if (!results.length) return 0;
+  const bucket = env.OFFICIAL_RANKING_DATA;
+  for (let i = 0; i < results.length; i += 10)
+    await Promise.all(
+      results.slice(i, i + 10).map((row) =>
+        bucket.put(payloadKey(row.id), new Uint8Array(row.payload_gzip as ArrayBuffer), {
+          httpMetadata: { contentType: "application/json", contentEncoding: "gzip" },
+        }),
+      ),
+    );
+  const records = env.RECORDS_DB;
+  await records.batch(
+    results.map((row) =>
+      records
+        .prepare(`INSERT OR IGNORE INTO game_event_ranking_history (${COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .bind(
+          row.id,
+          row.region,
+          row.event_id,
+          row.challenge_id,
+          row.record_kind,
+          row.source_url,
+          row.source_sha256,
+          row.first_source_at_ms,
+          row.last_source_at_ms,
+          row.last_server_time_ms,
+          row.first_observed_at_ms,
+          row.last_observed_at_ms,
+          row.rows_json,
+        ),
+    ),
+  );
+  const db = env.DB;
+  await db.batch(results.map((row) => db.prepare("DELETE FROM game_event_ranking_history WHERE id=?").bind(row.id)));
+  return results.length;
+}
+
+const KEEP_ALL_MS = 2 * 86_400_000;
+const JST_MS = 9 * 3_600_000;
+
+/** Thins moved history: everything from the last two days stays; older
+ * snapshots keep the last one of each Japan-time day per board. Deletes the
+ * rows and their payloads; returns how many were removed. */
+export async function pruneEventHistory(env: EventHistoryBindings, limit = 500): Promise<number> {
+  if (!env.RECORDS_DB || !env.OFFICIAL_RANKING_DATA) return 0;
+  const { results } = await env.RECORDS_DB.prepare(
+    `WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (
+        PARTITION BY region, event_id, challenge_id,
+          CAST((COALESCE(first_source_at_ms, first_observed_at_ms) + ?) / 86400000 AS INTEGER)
+        ORDER BY COALESCE(first_source_at_ms, first_observed_at_ms) DESC, id DESC) AS position
+      FROM game_event_ranking_history
+      WHERE record_kind = 'snapshot' AND COALESCE(first_source_at_ms, first_observed_at_ms) < ?)
+    SELECT id FROM ranked WHERE position > 1 LIMIT ?`,
+  )
+    .bind(JST_MS, Date.now() - KEEP_ALL_MS, limit)
+    .all<{ id: string }>();
+  if (!results.length) return 0;
+  const ids = results.map((row) => row.id);
+  await env.OFFICIAL_RANKING_DATA.delete(ids.map(payloadKey));
+  const records = env.RECORDS_DB;
+  await records.batch(ids.map((id) => records.prepare("DELETE FROM game_event_ranking_history WHERE id=?").bind(id)));
+  return ids.length;
 }

@@ -84,6 +84,12 @@
       "database_id": "d73093dd-69cf-4c44-849e-f113e9889b84",
       "migrations_dir": "worker/database/migrations",
     },
+    {
+      "binding": "RECORDS_DB",
+      "database_name": "haneoka-records",
+      "database_id": "5f247a6a-45b8-480d-8fb2-e368a0594013",
+      "migrations_dir": "worker/database/records-migrations",
+    },
   ],
 
   "containers": [{

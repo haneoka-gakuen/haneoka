@@ -75,6 +75,7 @@ import { handleAccountApiTokenRequest } from "./account-api-tokens";
 import { handleGachaHistoryRequest } from "./gacha-history";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
 import { handleKofiSponsorRequest } from "./kofi-sponsors";
+import { moveEventHistory, pruneEventHistory } from "./game-event-history";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
@@ -4113,6 +4114,12 @@ const worker: ExportedHandler<Env> = {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!env.DB) return;
     if (controller.cron === MEDIA_RECONCILIATION_CRON) {
+      ctx.waitUntil((async () => {
+        for (let batch = 0; batch < 3; batch++) if (!(await moveEventHistory(env))) break;
+        await pruneEventHistory(env);
+      })().catch((error: unknown) => {
+        console.warn(JSON.stringify({ event: "event_history_move_failed", error: error instanceof Error ? error.message : "Error" }));
+      }));
       ctx.waitUntil(Promise.all(OFFICIAL_RANKING_REGIONS.map(async (region) => {
         if (officialRegionEnabled(env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) {
           await env.OFFICIAL_RANKING_COLLECTOR.getByName(region).ensureScheduled(region);

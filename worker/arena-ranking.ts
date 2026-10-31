@@ -153,7 +153,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
   await attachProfileCards(env, ctx, region, rows);
   const now = Date.now();
   return { region, seasonId, bandId, start, end, provider: "official", snapshotId: [...snapshots].join("."),
-    observedAtMs, fetchedAtMs: observedAtMs, serverTimeMs: now, stale: staleAt(observedAtMs, now, 600_000),
+    observedAtMs, fetchedAtMs: observedAtMs, serverTimeMs: now, stale: staleAt(observedAtMs, now, 1_200_000),
     maxRank: metadata.maxRank, rows: markTies(rows) };
 }
 

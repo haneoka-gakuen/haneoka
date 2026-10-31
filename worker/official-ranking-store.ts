@@ -23,7 +23,7 @@ interface ObservationRow {
 }
 
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
-export const OFFICIAL_RANKING_STALE_MS = 600_000;
+export const OFFICIAL_RANKING_STALE_MS = 1_200_000;
 
 export async function officialDigest(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
