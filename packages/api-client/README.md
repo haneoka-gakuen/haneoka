@@ -45,16 +45,16 @@ Full examples and current deployment requirements are in the [typed client guide
 ## Game data and local computation
 
 `createGameClient` is exported from `@haneoka/api-client/game` (and the hosted
-`/tools/api-client.js` module). It uses resource-first paths (`players`, `songs`, `events`, `arena`, `circles`, `gacha`) with a `region` query for
-profiles, batches, favorites, cards, rankings, event decks, arena trends,
-circles, product probabilities and announcements. Game regions are `jp`,
-`tw`, `en`, `kr`; resource servers remain `jp`, `intl`. IDs are decimal strings.
+`/tools/api-client.js` module). It reads Haneoka's own official records: player
+profiles, current events, event, challenge, song and Arena rankings. Game regions
+are `jp`, `tw`, `en`, `kr`; resource servers remain `jp`, `intl`. IDs are decimal
+strings.
 
 ```js
 import { createGameClient } from "@haneoka/api-client/game";
 const game = createGameClient({ region: "jp" });
 const ranking = await game.songRanking("100001");
-const event = await game.eventRanking("1", [1, 100]);
+const event = await game.eventRanking("1");
 ```
 
 `GET /api/v1` discovers the API catalog, OpenAPI and device tools.
