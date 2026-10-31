@@ -263,8 +263,16 @@ export function openSeasons(date = new Date()): Season[] {
   return SEASONS.filter((season) => season.open(day));
 }
 
+const JST_MS = 9 * 3_600_000;
+const DAY_MS = 86_400_000;
+/** The date in Japan, where the game keeps its characters' birthdays. */
+export function japanDay(date = new Date()): { month: number; day: number } {
+  const japan = new Date(date.getTime() + JST_MS);
+  return { month: japan.getUTCMonth() + 1, day: japan.getUTCDate() };
+}
+
 export function birthdaysOn(characters: readonly ThemeCharacter[], date = new Date()): ThemeCharacter[] {
-  const day = dayOf(date);
+  const day = japanDay(date);
   return characters.filter((character) => character.birthday?.[0] === day.month && character.birthday[1] === day.day);
 }
 
@@ -276,9 +284,11 @@ export function seedOpen(seed: string, characters: readonly ThemeCharacter[], da
   return false;
 }
 
-/** The first moment after `date` when a seasonal seed closes (local midnight), for the boot cache. */
+/** The first moment after `date` when a seasonal seed closes, for the boot cache: local midnight for seasons, Japan's
+ * midnight for birthdays. */
 export function seedCloses(seed: string, characters: readonly ThemeCharacter[], date = new Date()): number | null {
   if (seed.startsWith("character-")) return null;
+  if (seed.startsWith("birthday-")) return Math.floor((date.getTime() + JST_MS) / DAY_MS) * DAY_MS + DAY_MS - JST_MS;
   const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   for (let step = 0; step < 60; step++) {
     day.setDate(day.getDate() + 1);

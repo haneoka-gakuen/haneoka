@@ -7,6 +7,7 @@ import { uiFontStyles } from "../lib/ui-fonts";
 import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
+import { themeCharacters } from "../server/theme-characters";
 import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex } from "../lib/seo";
 interface Props {
   locale: Locale;
@@ -60,6 +61,10 @@ const structuredData = JSON.stringify(
   pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute),
 ).replaceAll("<", "\\u003c");
 const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed());
+// Birthdays the automatic seasonal theme reads, as [character, colour, month, day].
+const birthdays = (await themeCharacters("ja")).flatMap((character) =>
+  character.birthday ? [[character.id, character.color, ...character.birthday]] : [],
+);
 ---
 
 <!doctype html>
@@ -154,6 +159,21 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
               localStorage.removeItem("haneoka.ui-seed-css.v1");
             }
           }
+          const a = JSON.parse(localStorage.getItem("haneoka.ui-season-auto.v1") || "null"),
+            o = JSON.parse(localStorage.getItem("haneoka.ui-season-override.v1") || "null"),
+            now = new Date();
+          if (
+            a && a.seed && a.day === `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}/${new Date(now.getTime() + 32400000).toISOString().slice(0, 10)}` && a.seed !== s &&
+            !(o && o.seed === a.seed && Date.now() < o.until)
+          ) {
+            const style = document.createElement("style");
+            style.id = "haneoka-season-scheme";
+            style.textContent = a.css;
+            document.head.append(style);
+            seed = a.seed;
+            d.dataset.seedAuto = "true";
+            d.dataset.season = a.season.id;
+          }
           d.dataset.seed = seed;
           d.dataset.nav = localStorage.getItem("haneoka.navigation.expanded.v2") === "false" ? "collapsed" : "expanded";
           d.dataset.density = localStorage.getItem("haneoka.ui-density.v1") === "compact" ? "compact" : "comfortable";
@@ -216,6 +236,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
     )}
   </head>
   <body>
+    <script type="application/json" id="haneoka-birthdays" set:html={JSON.stringify(birthdays)} />
     <slot />
     <audio-dock transition:persist="haneoka-audio"></audio-dock>
     <script>
@@ -292,11 +313,19 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
         try {
           seed = localStorage.getItem(SEED_KEY) || seed;
         } catch {}
-        next.documentElement.dataset.seed = isSeed(seed) ? seed : "haneoka";
+        next.documentElement.dataset.seed = document.documentElement.dataset.seedAuto
+          ? document.documentElement.dataset.seed!
+          : isSeed(seed)
+            ? seed
+            : "haneoka";
         if (document.documentElement.dataset.season) next.documentElement.dataset.season = document.documentElement.dataset.season;
         else delete next.documentElement.dataset.season;
-        const scheme = document.getElementById("haneoka-seed-scheme");
-        if (scheme && !next.getElementById("haneoka-seed-scheme")) next.head.append(scheme.cloneNode(true));
+        if (document.documentElement.dataset.seedAuto) next.documentElement.dataset.seedAuto = "true";
+        else delete next.documentElement.dataset.seedAuto;
+        for (const id of ["haneoka-seed-scheme", "haneoka-season-scheme"]) {
+          const scheme = document.getElementById(id);
+          if (scheme && !next.getElementById(id)) next.head.append(scheme.cloneNode(true));
+        }
         // A prefetched document must not undo a newer administrative setting observed in this tab.
         if (Number(document.documentElement.dataset.siteSettingsVersion || 0) > Number(next.documentElement.dataset.siteSettingsVersion || 0)) {
           next.documentElement.dataset.contentAccess = document.documentElement.dataset.contentAccess || "0";
@@ -313,6 +342,7 @@ const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed()
       };
       syncSeason();
       window.addEventListener(SEED_EVENT, syncSeason);
+      void import("../lib/season-auto").then((module) => module.syncAutoSeason());
       document.addEventListener("astro:after-swap", () => {
         delete document.documentElement.dataset.navigationHref;
         syncSeason();

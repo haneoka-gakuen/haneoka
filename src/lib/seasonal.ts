@@ -3,7 +3,7 @@
  * them off; the ornament and the brand shape remain. */
 import { html, nothing, render, type TemplateResult } from "lit";
 import { icon } from "../lit/ui/icon";
-import { SEED_CSS_KEY, type SeasonMark } from "./tuning";
+import { SEASON_AUTO_KEY, SEED_CSS_KEY, type SeasonMark } from "./tuning";
 import "../styles/components/seasonal.css";
 
 export const EFFECTS_KEY = "haneoka.ui-season-effects.v1";
@@ -27,7 +27,8 @@ export function setEffectsEnabled(on: boolean) {
 function mark(): SeasonMark | null {
   if (!document.documentElement.dataset.season) return null;
   try {
-    return (JSON.parse(localStorage.getItem(SEED_CSS_KEY) || "null")?.season as SeasonMark | null) ?? null;
+    const key = document.documentElement.dataset.seedAuto ? SEASON_AUTO_KEY : SEED_CSS_KEY;
+    return (JSON.parse(localStorage.getItem(key) || "null")?.season as SeasonMark | null) ?? null;
   } catch {
     return null;
   }

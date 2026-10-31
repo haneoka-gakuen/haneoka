@@ -19,6 +19,20 @@ export interface SeasonMark {
   ornament: string;
   shape: string;
 }
+/** Today's automatic seasonal theme, applied unless the reader picked a theme while it was open. */
+export const SEASON_AUTO_KEY = "haneoka.ui-season-auto.v1";
+/** Set when the reader picks a theme during an automatic season: that season stays off until it closes. */
+export const SEASON_OVERRIDE_KEY = "haneoka.ui-season-override.v1";
+/** The day the boot script compares the automatic theme against: the local date (seasons) and Japan's (birthdays). */
+export const localDay = (date = new Date()) =>
+  `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}/${new Date(date.getTime() + 32_400_000).toISOString().slice(0, 10)}`;
+export interface AutoSeason {
+  day: string;
+  seed: string | null;
+  css?: string;
+  season?: SeasonMark;
+  closes?: number | null;
+}
 export interface GeneratedSeed {
   css: string;
   /** When a seasonal seed closes: the page returns to `fallback`. */
@@ -64,8 +78,15 @@ export function applySeed(seed: Seed, origin?: { x: number; y: number }, generat
   const root = document.documentElement;
   if (root.dataset.seed === seed) return;
   const commit = () => {
-    const previous = root.dataset.seed || "haneoka";
+    let previous = "haneoka";
+    try {
+      previous = localStorage.getItem(SEED_KEY) || previous;
+      const auto = JSON.parse(localStorage.getItem(SEASON_AUTO_KEY) || "null") as AutoSeason | null;
+      if (auto?.seed && auto.day === localDay())
+        localStorage.setItem(SEASON_OVERRIDE_KEY, JSON.stringify({ seed: auto.seed, until: auto.closes ?? 0 }));
+    } catch {}
     if (generated) seedStyle(generated.css);
+    delete root.dataset.seedAuto;
     root.dataset.seed = seed;
     if (generated?.season) root.dataset.season = generated.season.id;
     else delete root.dataset.season;

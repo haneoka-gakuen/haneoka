@@ -375,7 +375,7 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
   import "@material/web/select/outlined-select.js";
   import "@material/web/select/select-option.js";
   import { applySeed, currentSeed, isSeed } from "../lib/tuning";
-  import { BIRTHDAY, DYNAMIC_SEED, SEASONS, dayOf, openSeasons, seedCloses, type ThemeCharacter } from "../lib/themes";
+  import { BIRTHDAY, DYNAMIC_SEED, SEASONS, japanDay, openSeasons, seedCloses, type ThemeCharacter } from "../lib/themes";
   import { applyDensity, currentDensity, isDensity } from "../lib/density";
   import {
     datePreferences,
@@ -404,7 +404,7 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
   /** Seasonal themes are listed only while they are open. */
   const revealSeasons = (settings: HTMLElement) => {
     const open = new Set(openSeasons().map((season) => season.id));
-    const today = dayOf(new Date());
+    const today = japanDay();
     let any = false;
     settings.querySelectorAll<HTMLElement>(".settings-option[data-season], .settings-option[data-birthday]").forEach((option) => {
       const visible = option.dataset.season
