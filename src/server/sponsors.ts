@@ -143,6 +143,8 @@ async function patreon(token: string, campaign: string): Promise<Row[]> {
 async function kofi(origin: string): Promise<Row[]> {
   const body = await retry(async () => {
     const response = await fetch(`${origin}/api/v1/sponsors/kofi`, { signal: AbortSignal.timeout(15000) });
+    // The worker that serves this list deploys after the static build.
+    if (response.status === 404) return { active: [], past: [] };
     if (!response.ok) throw new Error(`Ko-fi sponsors: ${response.status}`);
     return (await response.json()) as {
       active: { name: string; tier: SponsorTierId; since: number }[];
