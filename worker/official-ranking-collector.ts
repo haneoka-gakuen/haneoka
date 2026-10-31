@@ -7,8 +7,8 @@ import { Container } from "@cloudflare/containers";
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
-  type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { EVENT_POINT_BAND, readOfficialCatalog, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+  type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
+import { readOfficialCatalog, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -21,10 +21,12 @@ const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 10;
+/** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
 const DEMAND_TTL_MS = 600_000;
 const DEMAND_LIMITS = { player: 64, song: 8, card: 128 };
 const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
+type EventInterest = NonNullable<OfficialCollectorJob["eventWindows"]>[number] & { requestedAtMs: number };
 type ArenaInterest = NonNullable<OfficialCollectorJob["arenaWindows"]>[number] & { requestedAtMs: number };
 const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
 const CALLBACK_ORIGIN = "https://haneoka.org";
@@ -72,6 +74,7 @@ interface CollectorState {
   /** Next window past the top 100 that each `season:band` board refreshes, and the band whose turn it is. */
   arenaSweep?: { band: number; next: Record<string, number> };
   eventSweep?: { eventId: string; next: number; maxRank: number | null };
+  eventInterests?: EventInterest[];
   arenaInterests?: ArenaInterest[];
   playerInterests?: DemandInterest[];
   songInterests?: DemandInterest[];
@@ -237,7 +240,7 @@ function validateArenaObservation(value: unknown, region: GameRecordsRegion): as
   const observation = object(value);
   const start = observation.startRank, end = observation.endRank;
   if (observation.region !== region || typeof observation.snapshotId !== "string" || !/^[a-f0-9]{32}$/u.test(observation.snapshotId)
-    || !decimal(observation.seasonId) || !(decimal(observation.bandId) || observation.bandId === EVENT_POINT_BAND) || !millis(observation.observedAtMs)
+    || !decimal(observation.seasonId) || !decimal(observation.bandId) || !millis(observation.observedAtMs)
     || observation.observedAtMs > Date.now() + 60_000 || typeof start !== "number" || !Number.isSafeInteger(start) || start < 1 || (start - 1) % 100 !== 0
     || typeof end !== "number" || !Number.isSafeInteger(end) || end < start || end - start >= 100
     || !(observation.maxRank == null || typeof observation.maxRank === "number" && Number.isSafeInteger(observation.maxRank) && observation.maxRank >= 0)) {
@@ -253,6 +256,27 @@ function validateArenaObservation(value: unknown, region: GameRecordsRegion): as
     if (!(typeof player.point === "string" && /^[0-9]+$/u.test(player.point) || typeof player.point === "number" && Number.isSafeInteger(player.point) && player.point >= 0)) {
       throw new Error("invalid_observation_point");
     }
+  }
+}
+
+function validateEventWindow(value: unknown, region: GameRecordsRegion): asserts value is OfficialEventWindow {
+  const observation = object(value);
+  const start = observation.startRank, end = observation.endRank;
+  if (observation.region !== region || typeof observation.snapshotId !== "string" || !/^[a-f0-9]{32}$/u.test(observation.snapshotId)
+    || !decimal(observation.eventId) || !millis(observation.observedAtMs) || observation.observedAtMs > Date.now() + 60_000
+    || typeof start !== "number" || !Number.isSafeInteger(start) || start < 1 || (start - 1) % 100 !== 0 || end !== start + 99
+    || !(observation.maxRank == null || typeof observation.maxRank === "number" && Number.isSafeInteger(observation.maxRank) && observation.maxRank >= 0)) {
+    throw new Error("invalid_observation");
+  }
+  if (observation.error !== undefined) {
+    if (typeof observation.error !== "string" || !/^[A-Za-z0-9_]{1,80}$/u.test(observation.error) || observation.players !== undefined) throw new Error("invalid_observation");
+    return;
+  }
+  if (!Array.isArray(observation.players) || observation.players.length > 100) throw new Error("invalid_observation");
+  for (const row of observation.players) {
+    const player = object(row);
+    if (!(typeof player.point === "number" && Number.isSafeInteger(player.point) && player.point >= 0)
+      || typeof player.rank !== "number" || player.rank < start || player.rank > end) throw new Error("invalid_observation_point");
   }
 }
 
@@ -360,13 +384,17 @@ export class OfficialRankingCollector extends Container<Env> {
     return windows;
   }
 
+  private async runningEvent(region: GameRecordsRegion, now: number) {
+    const event = (await readOfficialCatalog(this.env, region).catch(() => null))?.event;
+    return event?.pointRankingEnabled && now >= event.startAtMs && now < event.endAtMs + event.aggregationSeconds * 1000 ? event : null;
+  }
+
   /** The running event's top window plus the next ones in turn, walking the board from 101 to its last rank. */
   private async eventSweep(state: CollectorState, region: GameRecordsRegion, now: number) {
-    const event = (await readOfficialCatalog(this.env, region).catch(() => null))?.event;
-    if (!event?.pointRankingEnabled || now < event.startAtMs || now >= event.endAtMs + event.aggregationSeconds * 1000) return [];
+    const event = await this.runningEvent(region, now);
+    if (!event) return [];
     if (state.eventSweep?.eventId !== event.id) state.eventSweep = { eventId: event.id, next: 101, maxRank: null };
-    const sweep = state.eventSweep;
-    const starts = [1];
+    const sweep = state.eventSweep, starts = [1];
     for (let turn = 0; turn < EVENT_SWEEP_WINDOWS; turn++) {
       if (sweep.maxRank !== null && sweep.next > sweep.maxRank) {
         sweep.next = 101;
@@ -375,13 +403,37 @@ export class OfficialRankingCollector extends Container<Env> {
       starts.push(sweep.next);
       sweep.next += 100;
     }
-    return [...new Set(starts)].map((startRank) => ({ seasonId: event.id, bandId: EVENT_POINT_BAND, startRank, endRank: startRank + 99 }));
+    return [...new Set(starts)].map((startRank) => ({ eventId: event.id, startRank, endRank: startRank + 99 }));
+  }
+
+  /** Queues event point windows for the next run, as {@link requestArenaWindows} does for leagues. */
+  async requestEventWindows(region: GameRecordsRegion, eventId: string, starts: number[], expedite = true): Promise<{ kind: string; retryAfter: number | null }> {
+    return this.serialized(async () => {
+      if (!decimal(eventId) || !Array.isArray(starts) || !starts.length || starts.length > 20
+        || starts.some((start) => !Number.isSafeInteger(start) || start < 1 || (start - 1) % 100 !== 0)) return { kind: "invalid_request", retryAfter: null };
+      const state = await this.stateFor(region), now = Date.now();
+      const unavailable = await officialCollectorAvailability(this.env, region);
+      if (unavailable) return { kind: unavailable, retryAfter: null };
+      if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration) return { kind: "auth_paused", retryAfter: null };
+      if (["rate_limited", "failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status)) return { kind: state.status, retryAfter: null };
+      if ((await this.runningEvent(region, now))?.id !== eventId) return { kind: "inactive", retryAfter: null };
+      const queue = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS);
+      const missing = [...new Set(starts)].filter((start) => !queue.some((entry) => entry.eventId === eventId && entry.startRank === start));
+      if (!missing.length) return { kind: "pending", retryAfter: 30 };
+      if (queue.length + missing.length > 24) return { kind: "queue_full", retryAfter: null };
+      for (const startRank of missing) queue.push({ eventId, startRank, endRank: startRank + 99, requestedAtMs: now });
+      state.eventInterests = queue;
+      const active = state.run && !state.run.complete && now <= state.run.deadlineMs + 15_000;
+      if (!active && expedite) this.expediteArena(state);
+      await this.persist(state);
+      return { kind: "pending", retryAfter: 30 };
+    });
   }
 
   async requestArenaWindows(region: GameRecordsRegion, seasonId: string, bandId: string,
     starts: number[], thresholds: number[] = [], expedite = true): Promise<{ kind: string; retryAfter: number | null }> {
     return this.serialized(async () => {
-      if (!decimal(seasonId) || !(decimal(bandId) || bandId === EVENT_POINT_BAND) || !Array.isArray(starts) || starts.length > 20
+      if (!decimal(seasonId) || !decimal(bandId) || !Array.isArray(starts) || starts.length > 20
         || starts.some((start) => !Number.isSafeInteger(start) || start < 1 || (start - 1) % 100 !== 0)
         || !Array.isArray(thresholds) || thresholds.length > 32
         || thresholds.some((value, index) => !Number.isSafeInteger(value) || value < 0 || index > 0 && value <= thresholds[index - 1]!)) {
@@ -397,26 +449,20 @@ export class OfficialRankingCollector extends Container<Env> {
       if (state.run && !state.run.complete && !active) return { kind: "unavailable", retryAfter: null };
       const pool = await this.poolFor(region);
       if (!active && (!pool || !this.accountFor(state, pool))) return { kind: "no_available_account", retryAfter: null };
-      if (bandId === EVENT_POINT_BAND) {
-        const event = (await readOfficialCatalog(this.env, region).catch(() => null))?.event;
-        if (!event?.pointRankingEnabled || event.id !== seasonId || !starts.length || thresholds.length
-          || now < event.startAtMs || now >= event.endAtMs + event.aggregationSeconds * 1000) return { kind: "inactive", retryAfter: null };
-      } else {
-        const arena = state.arenaCatalog === undefined ? state.run?.catalog?.arena : state.arenaCatalog;
-        if (!arena || seasonId !== arena.seasonId || !arena.bandIds.includes(bandId)
-          || now < arena.startAtMs || now >= arena.rankingEndAtMs) return { kind: "inactive", retryAfter: null };
-        if (!starts.length && arena.thresholdsByBand?.[bandId]?.length === 0) return { kind: "inactive", retryAfter: null };
-        if (thresholds.length) {
-          const known = arena.thresholdsByBand?.[bandId];
-          if (!known) return { kind: "unavailable", retryAfter: null };
-          if (thresholds.some((value) => value !== 0 && !known.includes(value))) return { kind: "invalid_request", retryAfter: null };
-        }
+      const arena = state.arenaCatalog === undefined ? state.run?.catalog?.arena : state.arenaCatalog;
+      if (!arena || seasonId !== arena.seasonId || !arena.bandIds.includes(bandId)
+        || now < arena.startAtMs || now >= arena.rankingEndAtMs) return { kind: "inactive", retryAfter: null };
+      if (!starts.length && arena.thresholdsByBand?.[bandId]?.length === 0) return { kind: "inactive", retryAfter: null };
+      if (thresholds.length) {
+        const known = arena.thresholdsByBand?.[bandId];
+        if (!known) return { kind: "unavailable", retryAfter: null };
+        if (thresholds.some((value) => value !== 0 && !known.includes(value))) return { kind: "invalid_request", retryAfter: null };
       }
       const queue = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS);
       if (starts.length && starts.every((start) => queue.some((entry) => entry.seasonId === seasonId
         && entry.bandId === bandId && entry.startRank === start))) return { kind: "pending", retryAfter: 30 };
-      const metadata = starts.length && bandId !== EVENT_POINT_BAND ? await readOfficialArenaMetadata(this.env, region, seasonId, bandId) : null;
-      if (bandId !== EVENT_POINT_BAND && starts.some((start) => start > 1 && (metadata?.maxRank == null || start > metadata.maxRank)))
+      const metadata = starts.length ? await readOfficialArenaMetadata(this.env, region, seasonId, bandId) : null;
+      if (starts.some((start) => start > 1 && (metadata?.maxRank == null || start > metadata.maxRank)))
         return { kind: "unavailable", retryAfter: null };
       const missing = [...new Set(starts)].filter((start) => !queue.some((entry) => entry.seasonId === seasonId && entry.bandId === bandId && entry.startRank === start));
       if (queue.length + missing.length > 24) return { kind: "queue_full", retryAfter: null };
@@ -822,12 +868,12 @@ export class OfficialRankingCollector extends Container<Env> {
       state.blockedGeneration = null;
       state.lastRunAtMs = now;
       state.nextAtMs = now + INTERVAL_MS;
-      const interests = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
-        .map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
-      const demanded = interests.filter((entry) => entry.bandId !== EVENT_POINT_BAND).slice(0, 20);
-      const eventDemand = interests.filter((entry) => entry.bandId === EVENT_POINT_BAND).slice(0, 10);
+      const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
+        .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
+      const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
+        .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
       const eventWindows = [...eventDemand, ...(await this.eventSweep(state, region, now))
-        .filter((row) => !eventDemand.some((entry) => entry.seasonId === row.seasonId && entry.startRank === row.startRank))];
+        .filter((row) => !eventDemand.some((entry) => entry.eventId === row.eventId && entry.startRank === row.startRank))];
       const arenaWindows = [...demanded, ...await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length))];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
@@ -899,6 +945,7 @@ export class OfficialRankingCollector extends Container<Env> {
       else if (update.type === "attempt") checkpoint = `attempt:${update.snapshotId}`;
       else if (update.type === "observation") checkpoint = `observation:${update.observation?.snapshotId}`;
       else if (update.type === "arena-observation") checkpoint = `arena:${update.observation?.snapshotId}`;
+      else if (update.type === "event-window") checkpoint = `event-window:${update.observation?.snapshotId}`;
       else if (update.type === "arena-population") checkpoint = `arena-population:${update.observation?.snapshotId}`;
       else if (update.type === "arena-progress") checkpoint = `arena-progress:${update.checkpointId}`;
       else if (update.type === "player-profile") checkpoint = `player:${update.profileId}`;
@@ -1002,22 +1049,41 @@ export class OfficialRankingCollector extends Container<Env> {
           if (refused) return refused;
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
+        } else if (update.type === "event-window") {
+          validateEventWindow(update.observation, region);
+          const observation = update.observation;
+          if (run.pendingAttempt !== observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
+          if (observation.eventId !== run.catalog?.event?.id || observation.observedAtMs < run.startedAtMs) return json({ error: "board_mismatch" }, 409);
+          run.resolvedAttempt = true;
+          if (authRejected(observation)) this.pauseRun(state, "auth_paused", permissionRejected(observation));
+          if (limited(observation)) {
+            state.status = "rate_limited";
+            state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(observation.retryAfterSeconds));
+            const health = this.runHealth(state);
+            if (health) health.cooldownUntilMs = state.nextAtMs;
+          }
+          await this.ctx.storage.put("collectorState", state);
+          await saveOfficialEventWindow(this.env, observation);
+          if (!observation.error) {
+            state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.eventId !== observation.eventId || entry.startRank !== observation.startRank);
+            const sweep = state.eventSweep;
+            if (sweep?.eventId === observation.eventId) {
+              const last = observation.maxRank ?? null;
+              // A full window past the known end means the board grew.
+              if (last !== null) sweep.maxRank = Math.min(sweep.maxRank ?? last, last);
+              else if (sweep.maxRank !== null && observation.endRank > sweep.maxRank) sweep.maxRank = null;
+            }
+          }
+          run.pendingAttempt = null;
+          run.checkpoints[checkpoint] = updateHash;
+          await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "arena-observation") {
           validateArenaObservation(update.observation, region);
           if (run.pendingAttempt !== update.observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           const arena = run.catalog?.arena;
-          const pointBoard = update.observation.bandId === EVENT_POINT_BAND;
-          if ((pointBoard ? update.observation.seasonId !== run.catalog?.event?.id
-            : !arena || update.observation.seasonId !== arena.seasonId || !arena.bandIds.includes(update.observation.bandId))
+          if (!arena || update.observation.seasonId !== arena.seasonId || !arena.bandIds.includes(update.observation.bandId)
             || update.observation.observedAtMs < run.startedAtMs) {
             return json({ error: "board_mismatch" }, 409);
-          }
-          const sweep = state.eventSweep;
-          if (pointBoard && sweep?.eventId === update.observation.seasonId && !update.observation.error) {
-            const last = update.observation.maxRank ?? null;
-            // A full window past the known end means the board grew.
-            if (last !== null) sweep.maxRank = Math.min(sweep.maxRank ?? last, last);
-            else if (sweep.maxRank !== null && update.observation.endRank > sweep.maxRank) sweep.maxRank = null;
           }
           run.resolvedAttempt = true;
           if (authRejected(update.observation)) this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
@@ -1033,8 +1099,8 @@ export class OfficialRankingCollector extends Container<Env> {
             const observation = update.observation;
             state.arenaInterests = (state.arenaInterests ?? []).filter((entry) => entry.seasonId !== observation.seasonId
               || entry.bandId !== observation.bandId || entry.startRank !== observation.startRank
-              || entry.bandId !== EVENT_POINT_BAND && observation.endRank < Math.min(entry.endRank, observation.maxRank ?? entry.endRank)
-              || entry.bandId !== EVENT_POINT_BAND && observation.players!.length < Math.max(0, Math.min(entry.endRank, observation.maxRank ?? entry.endRank) - entry.startRank + 1));
+              || observation.endRank < Math.min(entry.endRank, observation.maxRank ?? entry.endRank)
+              || observation.players!.length < Math.max(0, Math.min(entry.endRank, observation.maxRank ?? entry.endRank) - entry.startRank + 1));
           }
           run.pendingAttempt = null;
           run.checkpoints[checkpoint] = updateHash;

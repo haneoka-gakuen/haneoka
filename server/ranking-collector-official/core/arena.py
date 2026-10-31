@@ -38,7 +38,7 @@ def witnessed_counts(window, thresholds):
 
 
 class EventWindows:
-    """Event point ranks past the top board, in the Arena window store under band 0."""
+    """Event point ranks past the top board, read in windows of 100."""
 
     def __init__(self, job, catalog, sampler, updates, deadline, provenance):
         self.job, self.catalog, self.sampler, self.updates = job, catalog, sampler, updates
@@ -50,7 +50,7 @@ class EventWindows:
         event = self.catalog['event']
         for demand in self.job.get('eventWindows', [])[:20]:
             start = demand['startRank']
-            if (time.time() + 3 >= self.deadline or demand['seasonId'] != event['id'] or demand['bandId'] != '0'
+            if (time.time() + 3 >= self.deadline or demand['eventId'] != event['id']
                     or type(start) is not int or start < 1 or (start - 1) % 100 != 0):
                 continue
             receipt = self.window(event['id'], start)
@@ -61,7 +61,7 @@ class EventWindows:
     def window(self, event_id, start):
         end = start + 99
         snapshot = uuid.uuid4().hex
-        observation = dict(snapshotId=snapshot, region=self.job['region'], seasonId=event_id, bandId='0',
+        observation = dict(snapshotId=snapshot, region=self.job['region'], eventId=event_id,
                            startRank=start, endRank=end, observedAtMs=int(time.time() * 1000))
         self.updates.send('attempt', snapshotId=snapshot)
         receipt, refused = None, None
@@ -90,7 +90,7 @@ class EventWindows:
                                httpStatus=receipt.get('status') if receipt else None,
                                grpcStatus=receipt.get('grpc_status') if receipt else None)
             refused = receipt or dict(status=None, grpc_status=None)
-        self.updates.send('arena-observation', observation=observation)
+        self.updates.send('event-window', observation=observation)
         return refused
 
 

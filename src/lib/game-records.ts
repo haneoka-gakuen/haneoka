@@ -85,6 +85,14 @@ export interface ArenaRankingDto extends Omit<GameRankingDto, "rows"> {
   rows: ArenaRankingRowDto[];
 }
 
+export interface EventPointRankingDto extends Omit<ArenaRankingDto, "seasonId" | "bandId"> {
+  eventId: string;
+}
+
+export interface EventPointSearchDto extends Omit<ArenaSearchDto, "seasonId" | "bandId"> {
+  eventId: string;
+}
+
 /** A player found by profile ID among the board's top `searchedTo` ranks; `row` is null when absent. */
 export interface ArenaSearchDto {
   region: GameRecordsRegion;

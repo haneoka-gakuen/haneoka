@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: Region, Arena season and league or event, rank window, tier thresholds or profile ID, and saved official snapshots.
-// Output: Normalized Arena league and event point rankings, per-tier populations and exact profile lookups within the top 2000.
+// Input: Region, Arena season, league band, rank window, tier thresholds or profile ID, and saved official snapshots.
+// Output: Normalized Arena league rankings, per-tier populations and exact profile lookups within the top 2000.
 // Pos: [Map](L2.md); Arena read adapter beside song rankings using the account-pool collector.
 // Effects/Dependencies: Reads D1/private R2 snapshots; missing windows register bounded regional interests, never game RPCs.
 import type {
@@ -13,7 +13,7 @@ import type {
 } from "../src/lib/game-records";
 import { officialProfileCard } from "./official-ranking-api";
 import { playerCard } from "./official-player-api";
-import { EVENT_POINT_BAND, readOfficialEventMaxRank, readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, readOfficialPlayers, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import { readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, readOfficialPlayers, type OfficialRankingStoreBindings } from "./official-ranking-store";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
@@ -103,7 +103,7 @@ export function arenaRankingRow(value: unknown, fallbackRank: number, region: Ga
   };
 }
 
-function markTies(rows: ArenaRankingRowDto[]) {
+export function markTies(rows: ArenaRankingRowDto[]) {
   rows.forEach((row, index) => {
     row.tied = rows[index - 1]?.rank === row.rank || rows[index + 1]?.rank === row.rank;
   });
@@ -115,7 +115,7 @@ function pending(windows: number[] = []): never { throw new ArenaFailure(503, "p
 const staleAt = (observed: number, now: number, ttl: number) => now < observed || now - observed > ttl;
 
 /** The game leaves `profile_card` empty on Arena rows; saved player records supply it. */
-async function attachProfileCards(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, rows: ArenaRankingRowDto[]) {
+export async function attachProfileCards(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, rows: ArenaRankingRowDto[]) {
   const ids = rows.flatMap((row) => row.profileId ?? []);
   const players = await readOfficialPlayers(env, region, ids);
   for (const row of rows) {
@@ -161,27 +161,6 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
     maxRank: metadata.maxRank, rows: markTies(rows) };
 }
 
-/** One saved window of an event's point board. The game's list can skip tied ranks, so rows keep their own. */
-async function eventRanking(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, eventId: string,
-  start: number): Promise<ArenaRankingDto> {
-  const aligned = Math.floor((start - 1) / WINDOW) * WINDOW + 1;
-  const [source, maxRank] = await Promise.all([readOfficialArenaLatest(env, region, eventId, EVENT_POINT_BAND, aligned),
-    readOfficialEventMaxRank(env, region, eventId, EVENT_POINT_BAND)]);
-  if (!source?.players) {
-    if (maxRank !== null && aligned > maxRank) return { region, seasonId: eventId, bandId: EVENT_POINT_BAND, start: aligned, end: aligned + WINDOW - 1,
-      provider: "official", snapshotId: "", observedAtMs: Date.now(), fetchedAtMs: Date.now(), serverTimeMs: Date.now(), stale: false, maxRank, rows: [] };
-    return pending([aligned]);
-  }
-  const rows = source.players.map((player, index) => arenaRankingRow(player, aligned + index, region));
-  await attachProfileCards(env, ctx, region, rows);
-  const now = Date.now();
-  if (staleAt(source.observedAtMs, now, 1_200_000))
-    ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region, eventId, EVENT_POINT_BAND, [aligned], [], false)).catch(() => undefined));
-  return { region, seasonId: eventId, bandId: EVENT_POINT_BAND, start: aligned, end: aligned + WINDOW - 1, provider: "official",
-    snapshotId: source.snapshotId, observedAtMs: source.observedAtMs, fetchedAtMs: source.observedAtMs, serverTimeMs: now,
-    stale: staleAt(source.observedAtMs, now, 1_200_000), maxRank, rows: markTies(rows) };
-}
-
 async function population(env: ArenaRankingBindings, region: GameRecordsRegion, seasonId: string,
   bandId: string, thresholds: number[]): Promise<ArenaPopulationDto> {
   const source = await readOfficialArenaPopulation(env, region, seasonId, bandId);
@@ -206,16 +185,13 @@ async function search(env: ArenaRankingBindings, region: GameRecordsRegion, seas
   const windows = await readOfficialArenaSearchWindows(env, region, seasonId, bandId, SEARCH_DEPTH);
   const latest = windows.reduce<(typeof windows)[number] | null>((result, row) =>
     !result || row.observedAtMs >= result.observedAtMs ? row : result, null);
-  const maxRank = bandId === EVENT_POINT_BAND
-    ? (latest ? await readOfficialEventMaxRank(env, region, seasonId, bandId) ?? SEARCH_DEPTH : null) : latest?.maxRank;
-  if (!latest || maxRank == null) return pending([1]);
-  const searchedTo = Math.min(SEARCH_DEPTH, maxRank), missing: number[] = [];
+  if (latest?.maxRank == null) return pending([1]);
+  const searchedTo = Math.min(SEARCH_DEPTH, latest.maxRank), missing: number[] = [];
   const byStart = new Map(windows.map((row) => [row.startRank, row]));
   let observedAtMs = latest.observedAtMs;
   for (let start = 1; start <= searchedTo; start += WINDOW) {
     const metadata = byStart.get(start), length = Math.min(WINDOW, searchedTo - start + 1);
-    // Tied ranks leave an event window short of a full hundred.
-    if (!metadata || bandId !== EVENT_POINT_BAND && metadata.playerCount < length || metadata.endRank < start + length - 1) {
+    if (!metadata || metadata.playerCount < length || metadata.endRank < start + length - 1) {
       missing.push(start);
       continue;
     }
@@ -245,16 +221,13 @@ function json(request: Request, body: unknown, status = 200, retryAfter: number 
 /** Missing snapshot interests are queued; game requests stay in the regional collector. */
 export async function handleArenaRankingApi(request: Request, ctx: ExecutionContext, url: URL,
   env: ArenaRankingBindings): Promise<Response | null> {
-  const arena = new RegExp(
+  const route = new RegExp(
     `^${PREFIX}/([a-z]+)/arena/seasons/([1-9][0-9]{0,9})/leagues/([1-9][0-9]{0,9})/(ranking|population|search)$`, "u",
   ).exec(url.pathname);
-  const points = new RegExp(`^${PREFIX}/([a-z]+)/events/([1-9][0-9]{0,18})/points/(ranking|search)$`, "u").exec(url.pathname);
-  const route = arena ?? points;
   if (!route) return null;
   if (request.method !== "GET" && request.method !== "HEAD")
     return json(request, { error: { kind: "method_not_allowed" } }, 405);
-  const region = route[1] as GameRecordsRegion, seasonId = route[2]!, bandId = arena ? arena[3]! : EVENT_POINT_BAND,
-    operation = arena ? arena[4] : points![3];
+  const region = route[1] as GameRecordsRegion, seasonId = route[2]!, bandId = route[3]!, operation = route[4];
   if (!REGIONS.includes(region)) return json(request, { error: { kind: "not_found" } }, 404);
   try {
     if (operation === "search") {
@@ -271,7 +244,7 @@ export async function handleArenaRankingApi(request: Request, ctx: ExecutionCont
         || url.searchParams.getAll("start").length > 1)
         return json(request, { error: { kind: "invalid_request" } }, 400);
       if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending();
-      return json(request, await (arena ? ranking(env, ctx, region, seasonId, bandId, Number(raw)) : eventRanking(env, ctx, region, seasonId, Number(raw))));
+      return json(request, await ranking(env, ctx, region, seasonId, bandId, Number(raw)));
     }
     const raw = url.searchParams.get("thresholds") ?? "", thresholds = raw.split(",").map(Number);
     if (!/^(0|[1-9][0-9]{0,8})(,(0|[1-9][0-9]{0,8})){0,31}$/u.test(raw)

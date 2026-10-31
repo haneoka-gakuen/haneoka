@@ -202,6 +202,23 @@ export interface OfficialObservation {
   retryAfterSeconds?: number;
 }
 
+/** One window of an event's point board; a full window has no `maxRank`. */
+export interface OfficialEventWindow {
+  snapshotId: string;
+  region: GameRecordsRegion;
+  eventId: string;
+  startRank: number;
+  endRank: number;
+  maxRank?: number | null;
+  observedAtMs: number;
+  players?: Array<Record<string, unknown>>;
+  provenance?: Record<string, unknown>;
+  error?: string;
+  httpStatus?: number | null;
+  grpcStatus?: string | null;
+  retryAfterSeconds?: number;
+}
+
 export interface OfficialCollectorJob {
   contract: "haneoka:official-ranking-job/1";
   /** `lookup` skips catalog and boards and only serves demand. */
@@ -209,8 +226,7 @@ export interface OfficialCollectorJob {
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
-  /** Event point windows: `seasonId` is the event and `bandId` is `0`. */
-  eventWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
+  eventWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
   playerLookups?: string[];
   songRankings?: string[];
   cardImages?: string[];
@@ -242,6 +258,7 @@ export type OfficialCollectorUpdate = {
   | { type: "attempt"; snapshotId: string }
   | { type: "observation"; observation: OfficialObservation }
   | { type: "arena-observation"; observation: OfficialArenaObservation }
+  | { type: "event-window"; observation: OfficialEventWindow }
   | { type: "arena-population"; observation: OfficialArenaPopulationObservation }
   | { type: "arena-progress"; checkpointId: string; progress: OfficialArenaProgress }
   | { type: "player-profile"; profileId: string; found: boolean; profile?: unknown; totalFavorite?: string | null; observedAtMs: number }

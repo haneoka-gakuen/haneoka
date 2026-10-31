@@ -28,6 +28,7 @@ import { cleanupUnverifiedAccounts } from "./account-lifecycle";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
+import { handleEventPointRankingApi } from "./event-point-ranking";
 import { handleAdminRequest } from "./admin";
 import { applySiteSettings, readSiteSettings, testContentAllowed, isPublicResourceServer, restrictedResourceRequest, privateResourceResponse } from "./site-settings";
 import { serveStaticDocument, staticDocumentRedirect, staticPublicationContext } from "./static-documents";
@@ -3921,6 +3922,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (apiDiscovery) return apiDiscovery;
   const arenaRanking = await handleArenaRankingApi(request, ctx, url, env);
   if (arenaRanking) return arenaRanking;
+  const eventPoints = await handleEventPointRankingApi(request, ctx, url, env);
+  if (eventPoints) return eventPoints;
   const officialRecords = await handleOfficialRankingApi(request, url, env);
   if (officialRecords) return officialRecords;
   const officialPlayer = await handleOfficialPlayerApi(request, ctx, url, env);

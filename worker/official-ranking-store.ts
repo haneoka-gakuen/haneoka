@@ -1,10 +1,10 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immutable R2 payloads, D1 indexes, numeric history cursors and board health; Arena league windows and complete populations separately.
+// Output: Immutable R2 payloads, D1 indexes, numeric history cursors and board health; Arena league windows, event point windows and complete populations separately.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
+import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
 
 export interface OfficialRankingStoreBindings {
   DB?: D1Database;
@@ -245,8 +245,84 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
   }
 }
 
-/** An event's point board shares the Arena window store under this band, which no league uses; the event stands for the season. */
-export const EVENT_POINT_BAND = "0";
+export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<void> {
+  const { db, bucket } = storage(env);
+  const body = JSON.stringify(observation);
+  if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
+  const hash = await officialDigest(body);
+  const previous = await db.prepare("SELECT payload_hash FROM official_event_window_observations WHERE region = ? AND snapshot_id = ?")
+    .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
+  if (previous && previous.payload_hash !== hash) throw new Error("official_observation_conflict");
+  const key = `official/1/${observation.region}/event-window/${observation.snapshotId}/${hash}.json`;
+  if (!previous) {
+    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+    await db.prepare(`INSERT INTO official_event_window_observations
+      (region, snapshot_id, event_id, start_rank, end_rank, max_rank, observed_at_ms, payload_key, payload_hash, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
+      .bind(observation.region, observation.snapshotId, observation.eventId, observation.startRank, observation.endRank,
+        observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null).run();
+  }
+  if (observation.error || !observation.players) return;
+  const profiles: Record<string, number> = {};
+  observation.players.forEach((player, index) => {
+    const profile = player.profile as Record<string, unknown> | undefined;
+    const id = profile?.profile_id ?? profile?.profileId;
+    if (typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)) profiles[id] = observation.startRank + index;
+  });
+  await db.prepare(`INSERT INTO official_event_window_metadata
+    (region, event_id, start_rank, end_rank, max_rank, player_count, profile_index, snapshot_id, observed_at_ms, payload_key, payload_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, event_id, start_rank) DO UPDATE SET
+    end_rank=excluded.end_rank, max_rank=excluded.max_rank, player_count=excluded.player_count, profile_index=excluded.profile_index,
+    snapshot_id=excluded.snapshot_id, observed_at_ms=excluded.observed_at_ms, payload_key=excluded.payload_key, payload_hash=excluded.payload_hash
+    WHERE excluded.observed_at_ms >= official_event_window_metadata.observed_at_ms`)
+    .bind(observation.region, observation.eventId, observation.startRank, observation.endRank, observation.maxRank ?? null,
+      observation.players.length, JSON.stringify(profiles), observation.snapshotId, observation.observedAtMs, key, hash).run();
+}
+
+export interface OfficialEventWindowMetadata {
+  startRank: number;
+  profileIndex: string;
+  snapshotId: string;
+  observedAtMs: number;
+  payloadKey: string;
+  payloadHash: string;
+}
+
+export async function readOfficialEventWindows(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  depth: number): Promise<OfficialEventWindowMetadata[]> {
+  const { db } = storage(env);
+  const { results } = await db.prepare(`SELECT start_rank AS startRank, profile_index AS profileIndex, snapshot_id AS snapshotId,
+    observed_at_ms AS observedAtMs, payload_key AS payloadKey, payload_hash AS payloadHash FROM official_event_window_metadata
+    WHERE region = ? AND event_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank LIMIT 20`)
+    .bind(region, eventId, depth).all<OfficialEventWindowMetadata>();
+  return results;
+}
+
+/** The latest window of an event's point board starting at `start`. */
+export async function readOfficialEventWindow(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  start: number): Promise<OfficialEventWindow | null> {
+  const { db, bucket } = storage(env);
+  const row = await db.prepare(`SELECT payload_key, payload_hash FROM official_event_window_metadata
+    WHERE region = ? AND event_id = ? AND start_rank = ?`).bind(region, eventId, start).first<{ payload_key: string; payload_hash: string }>();
+  if (!row) return null;
+  const observation = await readPayload<OfficialEventWindow>(bucket, row.payload_key, row.payload_hash);
+  if (observation.region !== region || observation.eventId !== eventId) throw new Error("official_observation_identity_mismatch");
+  return observation;
+}
+
+/** The last rank an event's point board is known to reach, or null while its end is unseen. */
+export async function readOfficialEventMaxRank(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string): Promise<number | null> {
+  const { db } = storage(env);
+  const row = await db.prepare(`SELECT MIN(max_rank) AS maxRank, MAX(CASE WHEN max_rank IS NULL THEN end_rank END) AS fullEnd
+    FROM official_event_window_metadata WHERE region = ? AND event_id = ?`).bind(region, eventId)
+    .first<{ maxRank: number | null; fullEnd: number | null }>();
+  // A full window past the recorded end means the board has grown since.
+  return row?.maxRank != null && (row.fullEnd === null || row.maxRank >= row.fullEnd) ? row.maxRank : null;
+}
+
+export async function readOfficialPayload<T>(env: OfficialRankingStoreBindings, key: string, hash: string): Promise<T> {
+  return readPayload<T>(storage(env).bucket, key, hash);
+}
 
 export interface OfficialArenaWindowMetadata {
   startRank: number;
@@ -269,17 +345,6 @@ export async function readOfficialArenaSearchWindows(env: OfficialRankingStoreBi
     WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank LIMIT 20`)
     .bind(region, seasonId, bandId, depth).all<OfficialArenaWindowMetadata>();
   return results;
-}
-
-/** The last rank an event's point board is known to reach, or null while its end is unseen. */
-export async function readOfficialEventMaxRank(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
-  bandId: string): Promise<number | null> {
-  const { db } = storage(env);
-  const row = await db.prepare(`SELECT MIN(max_rank) AS maxRank, MAX(CASE WHEN max_rank IS NULL THEN end_rank END) AS fullEnd
-    FROM official_arena_window_metadata WHERE region = ? AND season_id = ? AND band_id = ?`)
-    .bind(region, eventId, bandId).first<{ maxRank: number | null; fullEnd: number | null }>();
-  // A full window past the recorded end means the board has grown since.
-  return row?.maxRank != null && (row.fullEnd === null || row.maxRank >= row.fullEnd) ? row.maxRank : null;
 }
 
 export async function readOfficialArenaSearchMatch(env: OfficialRankingStoreBindings,
@@ -484,6 +549,9 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
     ORDER BY o.observed_at_ms LIMIT ?`, before, JST_MS, JST_MS);
   await take("official_arena_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_arena_ranking_observations AS o
     WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, before);
+  await take("official_event_window_observations", `SELECT o.cursor, o.payload_key FROM official_event_window_observations AS o
+    WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
       WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, before);
   await take("official_arena_population_observations", `SELECT o.cursor, o.payload_key FROM official_arena_population_observations AS o
     WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later

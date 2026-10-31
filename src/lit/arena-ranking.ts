@@ -14,6 +14,8 @@ import type { ArenaRank } from "../lib/arena";
 import type {
   ArenaRankingDto,
   ArenaRankingRowDto,
+  EventPointRankingDto,
+  EventPointSearchDto,
   ArenaSearchDto,
   GameRecordsErrorDto,
   GameRecordsRegion,
@@ -66,7 +68,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
   declare limit: number;
   declare private start: number;
   declare private phase: "loading" | "ready" | "error";
-  declare private data: ArenaRankingDto | null;
+  declare private data: ArenaRankingDto | EventPointRankingDto | null;
   declare private failure: GameRecordsErrorDto["error"] | null;
   /** The rank to scroll to and mark once its window has loaded. */
   declare private target: number;
@@ -133,7 +135,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
     this.phase = "loading";
     this.failure = null;
     try {
-      const data = await fetchJson<ArenaRankingDto>(this.endpoint(), {
+      const data = await fetchJson<ArenaRankingDto | EventPointRankingDto>(this.endpoint(), {
         signal,
         headers: { accept: "application/json" },
       });
@@ -176,7 +178,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
   private async search(profileId: string) {
     this.searching = true;
     try {
-      const result = await fetchJson<ArenaSearchDto>(
+      const result = await fetchJson<ArenaSearchDto | EventPointSearchDto>(
         `${this.board()}/search?profileId=${profileId}`,
       );
       if (result.row) this.jump(result.row.rank);
