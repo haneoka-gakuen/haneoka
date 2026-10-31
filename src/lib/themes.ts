@@ -5,7 +5,7 @@
  */
 
 /** A seasonal theme's decoration: the motif of its effect layer, brand ornament and shape. */
-export type Motif = "bats" | "beans" | "confetti" | "eggs" | "fireworks" | "hearts" | "lanterns" | "leaves" | "moon" | "petals" | "snow" | "sparkles" | "stars";
+export type Motif = "bats" | "beans" | "confetti" | "fireworks" | "hearts" | "lanterns" | "moon" | "petals" | "snow" | "sparkles" | "stars";
 
 export interface Season {
   id: string;
@@ -28,8 +28,6 @@ export interface Day {
   year: number;
   month: number;
   day: number;
-  /** Days since the epoch, for windows around movable feasts. */
-  serial: number;
   lunarMonth: number;
   lunarDay: number;
   leap: boolean;
@@ -42,7 +40,6 @@ const lunar = (() => {
     return null;
   }
 })();
-const serialOf = (year: number, month: number, day: number) => Math.round(Date.UTC(year, month - 1, day) / 86_400_000);
 
 export function dayOf(date: Date): Day {
   let lunarMonth = 0,
@@ -55,7 +52,7 @@ export function dayOf(date: Date): Day {
     } else if (part.type === "day") lunarDay = Number.parseInt(part.value, 10);
   }
   const [year, month, day] = [date.getFullYear(), date.getMonth() + 1, date.getDate()];
-  return { year, month, day, serial: serialOf(year, month, day), lunarMonth, lunarDay, leap };
+  return { year, month, day, lunarMonth, lunarDay, leap };
 }
 
 const between = (day: Day, [m1, d1]: [number, number], [m2, d2]: [number, number]) => {
@@ -66,31 +63,6 @@ const between = (day: Day, [m1, d1]: [number, number], [m2, d2]: [number, number
 };
 const lunarBetween = (day: Day, month: number, from: number, to: number) =>
   !day.leap && day.lunarMonth === month && day.lunarDay >= from && day.lunarDay <= to;
-const withinDays = (day: Day, serial: number, before: number, after: number) =>
-  day.serial >= serial + before && day.serial <= serial + after;
-/** Easter Sunday (anonymous Gregorian computus). */
-function easter(year: number) {
-  const a = year % 19,
-    b = Math.floor(year / 100),
-    c = year % 100,
-    d = Math.floor(b / 4),
-    e = b % 4,
-    f = Math.floor((b + 8) / 25),
-    g = Math.floor((b - f + 1) / 3),
-    h = (19 * a + b - d - g + 15) % 30,
-    i = Math.floor(c / 4),
-    k = c % 4,
-    l = (32 + 2 * e + 2 * i - h - k) % 7,
-    m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  return serialOf(year, month, ((h + l - 7 * m + 114) % 31) + 1);
-}
-/** The `nth` `weekday` (0 Sunday) of a month. */
-function nthWeekday(year: number, month: number, weekday: number, nth: number) {
-  const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-  return serialOf(year, month, 1 + ((weekday - first + 7) % 7) + (nth - 1) * 7);
-}
-
 export const SEASONS: readonly Season[] = [
   {
     id: "new-year",
@@ -127,18 +99,6 @@ export const SEASONS: readonly Season[] = [
     secondary: "#9c5a2c",
     tertiary: "#d9a227",
     open: (day) => (!day.leap && day.lunarMonth === 12 && day.lunarDay >= 29) || lunarBetween(day, 1, 1, 14),
-  },
-  {
-    id: "lantern-festival",
-    key: "lanternFestival",
-    label: "Lantern Festival",
-    motif: "lanterns",
-    ornament: "festival",
-    shape: "--shape-cookie-9",
-    primary: "#d2471f",
-    secondary: "#8f5e3a",
-    tertiary: "#e0b23a",
-    open: (day) => lunarBetween(day, 1, 15, 15),
   },
   {
     id: "valentine",
@@ -201,18 +161,6 @@ export const SEASONS: readonly Season[] = [
     open: (day) => day.month === 4 && day.day === 1,
   },
   {
-    id: "easter",
-    key: "easter",
-    label: "Easter",
-    motif: "eggs",
-    ornament: "egg",
-    shape: "--shape-cookie-4",
-    primary: "#8a6fc4",
-    secondary: "#6f8f7a",
-    tertiary: "#e3a33b",
-    open: (day) => withinDays(day, easter(day.year), -2, 1),
-  },
-  {
     id: "childrens-day",
     key: "childrensDay",
     label: "Children's Day",
@@ -225,30 +173,6 @@ export const SEASONS: readonly Season[] = [
     open: (day) => between(day, [5, 1], [5, 5]),
   },
   {
-    id: "mothers-day",
-    key: "mothersDay",
-    label: "Mother's Day",
-    motif: "petals",
-    ornament: "favorite",
-    shape: "--shape-flower",
-    primary: "#c43d6b",
-    secondary: "#8a6070",
-    tertiary: "#d98a3a",
-    open: (day) => withinDays(day, nthWeekday(day.year, 5, 0, 2), -6, 0) || between(day, [5, 8], [5, 8]),
-  },
-  {
-    id: "dragon-boat",
-    key: "dragonBoat",
-    label: "Dragon Boat Festival",
-    motif: "leaves",
-    ornament: "rowing",
-    shape: "--shape-pill",
-    primary: "#2f7d5b",
-    secondary: "#5a7a68",
-    tertiary: "#c9762a",
-    open: (day) => lunarBetween(day, 5, 1, 5),
-  },
-  {
     id: "tanabata",
     key: "tanabata",
     label: "Tanabata",
@@ -259,18 +183,6 @@ export const SEASONS: readonly Season[] = [
     secondary: "#5b6a8f",
     tertiary: "#d4a72c",
     open: (day) => between(day, [7, 1], [7, 7]),
-  },
-  {
-    id: "qixi",
-    key: "qixi",
-    label: "Qixi",
-    motif: "stars",
-    ornament: "auto_awesome",
-    shape: "--shape-sunny",
-    primary: "#6e4bb5",
-    secondary: "#7a6890",
-    tertiary: "#d08bb0",
-    open: (day) => lunarBetween(day, 7, 1, 7),
   },
   {
     id: "obon",
@@ -307,18 +219,6 @@ export const SEASONS: readonly Season[] = [
     secondary: "#6f5a4a",
     tertiary: "#6b3fa0",
     open: (day) => between(day, [10, 17], [10, 31]),
-  },
-  {
-    id: "thanksgiving",
-    key: "thanksgiving",
-    label: "Thanksgiving",
-    motif: "leaves",
-    ornament: "dinner_dining",
-    shape: "--shape-oval",
-    primary: "#b45a1e",
-    secondary: "#7a6650",
-    tertiary: "#8a7a1e",
-    open: (day) => withinDays(day, nthWeekday(day.year, 11, 4, 4), -2, 3),
   },
   {
     id: "christmas",

@@ -44,7 +44,6 @@
 
   .season-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .season-petal { width: 10px; height: 14px; border-radius: 100% 0 100% 0; background: var(--md-sys-color-primary-container); outline: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
-  .season-egg { width: 12px; height: 16px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: repeating-linear-gradient(0deg, currentColor 0 3px, var(--md-sys-color-tertiary-container) 3px 6px); }
   .season-confetti { width: 6px; height: 12px; border-radius: 2px; background: currentColor; }
   .season-streak { width: 60px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, currentColor); }
 
@@ -54,9 +53,7 @@
   .season-layer[data-motif="lanterns"] .season-particle { opacity: 0.4; }
   .season-layer[data-motif="lanterns"] svg { width: 18px; }
   .season-layer[data-motif="petals"] .season-particle,
-  .season-layer[data-motif="leaves"] .season-particle,
   .season-layer[data-motif="confetti"] .season-particle { animation-name: season-tumble; }
-  .season-layer[data-motif="eggs"] .season-particle { animation-name: season-rise; top: auto; bottom: -32px; }
   /* Bats cross the upper half; stars and sparkles hold still and twinkle. */
   .season-layer[data-motif="bats"] .season-particle {
     top: var(--y);

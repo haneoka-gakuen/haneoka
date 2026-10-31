@@ -55,10 +55,6 @@ function particle(motif: string, index: number): TemplateResult {
       return LANTERN;
     case "petals":
       return html`<i class="season-petal"></i>`;
-    case "leaves":
-      return icon("eco", 18);
-    case "eggs":
-      return html`<i class="season-egg"></i>`;
     case "beans":
       return html`<i class="season-dot"></i>`;
     case "fireworks":
@@ -128,6 +124,8 @@ export function syncSeason() {
 /** The ornament names, written out for the icon sprite builder. */
 function ornamentIcon(name: string) {
   switch (name) {
+    case "skull":
+      return icon("skull", 16);
     case "celebration":
       return icon("celebration", 16);
     case "mood_bad":
@@ -144,22 +142,14 @@ function ornamentIcon(name: string) {
       return icon("local_florist", 16);
     case "sentiment_very_satisfied":
       return icon("sentiment_very_satisfied", 16);
-    case "egg":
-      return icon("egg", 16);
     case "toys":
       return icon("toys", 16);
-    case "rowing":
-      return icon("rowing", 16);
     case "auto_awesome":
       return icon("auto_awesome", 16);
     case "candle":
       return icon("candle", 16);
     case "bedtime":
       return icon("bedtime", 16);
-    case "skull":
-      return icon("skull", 16);
-    case "dinner_dining":
-      return icon("dinner_dining", 16);
     case "featured_seasonal_and_gifts":
       return icon("featured_seasonal_and_gifts", 16);
     default:
