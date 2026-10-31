@@ -8,7 +8,7 @@ import time
 from types import SimpleNamespace
 import uuid
 from history import History
-from lifecycle import authentication_failed, targets, credential_generation, read_credentials
+from lifecycle import authentication_failed, board_call, board_players, targets, credential_generation, read_credentials
 from regions import region_config
 from process_lock import process_lock
 
@@ -56,14 +56,13 @@ def run(args):
                 if (kind,challenge) not in targets(definition,int(time.time()*1000)):continue
                 oid=uuid.uuid4().hex;identity=(region,str(event['id']),kind,challenge)
                 receipt=None
-                window_end=(event['endAtMs'] if kind=='total' else next(
+                window_end=(event['endAtMs'] if kind!='challenge' else next(
                     row['endAtMs'] for row in event['challenges'] if row['id']==challenge))
                 sampler.args.deadline=min(args.deadline,window_end/1000+event.get('aggregationSeconds',0))
                 try:
                     if credential_generation(args.credentials,region)!=credential:raise RuntimeError('credential changed during round')
-                    method='GetChallengeMusicRanking' if challenge else 'GetChallengeMusicTotalRanking'
-                    request=sampler.message('app.event.'+method+'Request',
-                        {'challenge_music_id':challenge} if challenge else {'event_id':str(event['id'])})
+                    method,fields=board_call(kind,event,challenge)
+                    request=sampler.message('app.event.'+method+'Request',fields)
                     receipt,response,_=sampler.rpc('/app.event.EventService/'+method,request,
                         'app.event.'+method+'Response',oid)
                     if credential_generation(args.credentials,region)!=credential:raise RuntimeError('credential changed during request')
@@ -71,7 +70,7 @@ def run(args):
                     if response is None:
                         raise RuntimeError('upstream HTTP=%s gRPC=%s'%(receipt.get('status'),receipt.get('grpc_status')))
                     body=json_format.MessageToDict(response,preserving_proto_field_name=True)
-                    players=body.get('players',[])
+                    players=board_players(kind,body)
                     if len(players)>100 or any(int(p.get('score',0))<0 for p in players):
                         raise ValueError('invalid ranking payload')
                     history.record(identity,oid,observed,{'players':players,'provenance':{

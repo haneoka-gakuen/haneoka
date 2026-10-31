@@ -191,7 +191,7 @@ function validateCatalog(value: unknown, region: GameRecordsRegion): asserts val
   if (!decimal(event.id) || !millis(event.startAtMs) || !millis(event.endAtMs) || event.endAtMs <= event.startAtMs
     || typeof event.aggregationSeconds !== "number" || !Number.isSafeInteger(event.aggregationSeconds)
     || event.aggregationSeconds < 0 || event.aggregationSeconds > 604_800 || typeof event.totalRankingEnabled !== "boolean"
-    || event.pointRankingEnabled !== false || !Array.isArray(event.challenges) || event.challenges.length > 100) throw new Error("invalid_catalog");
+    || typeof event.pointRankingEnabled !== "boolean" || !Array.isArray(event.challenges) || event.challenges.length > 100) throw new Error("invalid_catalog");
   const ids = new Set<string>();
   for (const value of event.challenges) {
     const challenge = object(value);
@@ -206,7 +206,7 @@ function validateObservation(value: unknown, region: GameRecordsRegion): asserts
   const observation = object(value);
   if (observation.region !== region || typeof observation.snapshotId !== "string" || !/^[a-f0-9]{32}$/u.test(observation.snapshotId)
     || !decimal(observation.eventId) || !millis(observation.observedAtMs) || observation.observedAtMs > Date.now() + 60_000
-    || !(observation.kind === "total" && observation.challengeId === "" || observation.kind === "challenge" && decimal(observation.challengeId))) {
+    || !((observation.kind === "total" || observation.kind === "point") && observation.challengeId === "" || observation.kind === "challenge" && decimal(observation.challengeId))) {
     throw new Error("invalid_observation");
   }
   if (observation.error !== undefined) {
@@ -717,6 +717,7 @@ export class OfficialRankingCollector extends Container<Env> {
           const event = run.catalog?.event;
           if (!event || update.observation.eventId !== event.id || update.observation.observedAtMs < run.startedAtMs
             || (update.observation.kind === "total" ? !event.totalRankingEnabled
+              : update.observation.kind === "point" ? !event.pointRankingEnabled
               : !event.challenges.some((challenge) => challenge.id === update.observation.challengeId && challenge.enabled))) {
             return json({ error: "board_mismatch" }, 409);
           }

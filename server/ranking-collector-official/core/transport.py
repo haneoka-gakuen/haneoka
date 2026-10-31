@@ -16,6 +16,7 @@ VERSION = '/app.masterdata.MasterdataService/Version'
 SERVERS = '/app.playerlogin.PlayerLoginService/GetServerList'
 ANONYMOUS = {VERSION, SERVERS}
 ALLOWED = {VERSION, SERVERS, '/app.event.EventService/GetChallengeMusicRanking', '/app.event.EventService/GetChallengeMusicTotalRanking',
+           '/app.event.EventService/GetRankingList',
            '/app.arena.ArenaService/ArenaRanking', '/app.friend.FriendService/FindByProfileID',
            '/app.player.PlayerService/GetPlayerFavoriteStatus', '/app.livemusic.LiveMusicService/GetRanking'}
 

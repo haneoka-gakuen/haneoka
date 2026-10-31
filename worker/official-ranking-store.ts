@@ -101,7 +101,7 @@ export async function saveOfficialObservation(env: OfficialRankingStoreBindings,
     db.prepare(`INSERT INTO official_ranking_observations
       (region, snapshot_id, event_id, board_kind, challenge_id, observed_at_ms, payload_key, payload_hash, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
-      .bind(observation.region, observation.snapshotId, observation.eventId, observation.kind, observation.challengeId,
+      .bind(observation.region, observation.snapshotId, observation.eventId, ...boardKey(observation.kind, observation.challengeId),
         observation.observedAtMs, key, hash, observation.error ?? null),
     db.prepare(`INSERT INTO official_ranking_board_status
       (region, event_id, board_kind, challenge_id, last_attempt_ms, last_success_ms, last_success_cursor, last_cursor, consecutive_failures)
@@ -136,6 +136,11 @@ export async function saveOfficialObservation(env: OfficialRankingStoreBindings,
   if (saved?.payload_hash !== hash) throw new Error("official_observation_conflict");
 }
 
+// The board tables predate point boards; their CHECK keeps kinds to challenge and total.
+const POINT_BOARD = "point";
+const boardKey = (kind: OfficialObservation["kind"], challengeId: string): [string, string] =>
+  kind === "point" ? ["challenge", POINT_BOARD] : [kind, challengeId];
+
 async function observationPayload(bucket: R2Bucket, row: ObservationRow, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string): Promise<StoredOfficialObservation> {
   const observation = await readPayload<OfficialObservation>(bucket, row.payload_key, row.payload_hash);
@@ -150,7 +155,7 @@ export async function readOfficialLatest(env: OfficialRankingStoreBindings, regi
   const { db, bucket } = storage(env);
   const row = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_ranking_observations
     WHERE region = ? AND event_id = ? AND board_kind = ? AND challenge_id = ? AND error IS NULL
-    ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`).bind(region, eventId, kind, challengeId).first<ObservationRow>();
+    ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`).bind(region, eventId, ...boardKey(kind, challengeId)).first<ObservationRow>();
   return row ? observationPayload(bucket, row, region, eventId, kind, challengeId) : null;
 }
 
@@ -159,7 +164,7 @@ export async function readOfficialHistory(env: OfficialRankingStoreBindings, reg
   const { db, bucket } = storage(env);
   const { results } = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_ranking_observations
     WHERE region = ? AND event_id = ? AND board_kind = ? AND challenge_id = ? AND cursor > ?
-    ORDER BY cursor LIMIT 100`).bind(region, eventId, kind, challengeId, after).all<ObservationRow>();
+    ORDER BY cursor LIMIT 100`).bind(region, eventId, ...boardKey(kind, challengeId), after).all<ObservationRow>();
   const observations: StoredOfficialObservation[] = [];
   let bytes = 0;
   for (const row of results) {
@@ -193,7 +198,8 @@ export async function readOfficialBoardStatus(env: OfficialRankingStoreBindings,
   const boards: OfficialBoardStatus[] = [];
   for (const row of results) {
     const age = row.last_success_ms === null ? null : now - row.last_success_ms;
-    boards.push({ kind: row.board_kind, challengeId: row.challenge_id, lastAttemptAtMs: row.last_attempt_ms,
+    const point = row.challenge_id === POINT_BOARD;
+    boards.push({ kind: point ? "point" : row.board_kind, challengeId: point ? "" : row.challenge_id, lastAttemptAtMs: row.last_attempt_ms,
       lastSuccessfulObservationAtMs: row.last_success_ms, consecutiveFailures: row.consecutive_failures,
       ageMs: age, stale: age === null || age < 0 || age > OFFICIAL_RANKING_STALE_MS,
       openGapMs: age === null ? null : Math.max(0, age - 300_000) });

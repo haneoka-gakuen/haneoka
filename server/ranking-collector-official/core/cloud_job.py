@@ -17,7 +17,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 import uuid
 
-from lifecycle import authentication_failed, read_credentials, targets, retry_delay
+from lifecycle import authentication_failed, board_call, board_players, read_credentials, targets, retry_delay
 from official_catalog import OfficialCatalog, CatalogRequestError, NoRedirect
 from regions import region_config
 from transport import Sampler, VersionError
@@ -205,19 +205,18 @@ def run_job(job, origin):
                     receipt = None
                     stage = 'board'
                     try:
-                        window_end = event['endAtMs'] if kind == 'total' else next(
+                        window_end = event['endAtMs'] if kind != 'challenge' else next(
                             row['endAtMs'] for row in event['challenges'] if row['id'] == challenge)
                         sampler.args.deadline = min(deadline, window_end/1000 + event['aggregationSeconds'])
-                        method = 'GetChallengeMusicRanking' if challenge else 'GetChallengeMusicTotalRanking'
-                        request = sampler.message('app.event.' + method + 'Request',
-                            {'challenge_music_id': challenge} if challenge else {'event_id': event['id']})
+                        method, fields = board_call(kind, event, challenge)
+                        request = sampler.message('app.event.' + method + 'Request', fields)
                         receipt, response, _ = sampler.rpc('/app.event.EventService/' + method, request,
                             'app.event.' + method + 'Response', snapshot)
                         observation['observedAtMs'] = int(datetime.fromisoformat(receipt['received_at']).timestamp()*1000)
                         if response is None:
                             raise RuntimeError('upstream rejected')
                         from google.protobuf import json_format
-                        players = json_format.MessageToDict(response, preserving_proto_field_name=True).get('players', [])
+                        players = board_players(kind, json_format.MessageToDict(response, preserving_proto_field_name=True))
                         if len(players) > 100 or any(int(player.get('score', 0)) < 0 for player in players):
                             raise ValueError('invalid ranking payload')
                         for player in players:

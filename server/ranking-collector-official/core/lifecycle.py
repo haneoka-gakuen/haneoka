@@ -43,7 +43,18 @@ def targets(definition, now_ms):
     result=[('challenge',c['id']) for c in event['challenges'] if c['enabled']
         and c['startAtMs']<=now_ms<c['endAtMs']+event.get('aggregationSeconds',0)*1000]
     if event.get('totalRankingEnabled',True):result.append(('total',''))
+    if event.get('pointRankingEnabled'):result.append(('point',''))
     return result
+
+def board_call(kind, event, challenge):
+    if kind=='point':return 'GetRankingList',{'event_id':event['id'],'ranks':list(range(1,101))}
+    if kind=='total':return 'GetChallengeMusicTotalRanking',{'event_id':event['id']}
+    return 'GetChallengeMusicRanking',{'challenge_music_id':challenge}
+
+def board_players(kind, body):
+    if kind!='point':return body.get('players',[])
+    rows=sorted(body.get('ranking',[]),key=lambda row:row.get('rank',0))
+    return [dict(player_data=row.get('profile',{}),score=row.get('point',0)) for row in rows]
 
 def accept_catalog(previous, candidate):
     if previous and previous['region']!=candidate['region']:raise ValueError('catalog region changed')

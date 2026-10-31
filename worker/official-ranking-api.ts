@@ -42,6 +42,7 @@ export async function officialRankingStatus(env: OfficialRankingReadBindings, re
       kind: "challenge" as const, challengeId: challenge.id, startAtMs: challenge.startAtMs, endAtMs: challenge.endAtMs,
     })),
     ...(event.totalRankingEnabled ? [{ kind: "total" as const, challengeId: "", startAtMs: event.startAtMs, endAtMs: event.endAtMs }] : []),
+    ...(event.pointRankingEnabled ? [{ kind: "point" as const, challengeId: "", startAtMs: event.startAtMs, endAtMs: event.endAtMs }] : []),
   ];
   return { ...state, eventId: event.id, catalogObservedAtMs: catalog.catalogObservedAtMs,
     boards: targets.map((target) => ({
@@ -73,8 +74,8 @@ export function officialEventTracker(catalog: OfficialCatalog, now = Date.now())
       startAtMs: event.startAtMs,
       endAtMs: event.endAtMs,
       status: now < event.endAtMs ? "nowOn" : "result",
-      pointRankingEnabled: false,
-      pointRankingStatus: "disabled",
+      pointRankingEnabled: event.pointRankingEnabled,
+      pointRankingStatus: boardStatus(event.pointRankingEnabled, event.startAtMs, event.endAtMs, event.aggregationSeconds, now),
       totalRankingEnabled: event.totalRankingEnabled,
       totalRankingStatus: boardStatus(event.totalRankingEnabled, event.startAtMs, event.endAtMs, event.aggregationSeconds, now),
       challenges: event.challenges.map((challenge) => ({
@@ -195,6 +196,12 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
   if (!route || !regionValue(route[2])) return null;
   const version = route[1], region = route[2], path = route[3]!;
   const current = path === "current";
+  const points = /^([1-9][0-9]{0,18})\/latest$/u.exec(path);
+  if (points) {
+    if (!officialRankingReadEnabled(env, region) || !env.DB || !env.OFFICIAL_RANKING_DATA) return null;
+    const observation = await readOfficialLatest(env, region, points[1]!, "point", "").catch(() => null);
+    return observation ? response(request, officialEventRanking(observation)) : null;
+  }
   const board = /^([1-9][0-9]{0,18})\/(total|challenges\/([1-9][0-9]{0,18}))\/(latest|ranking|history)$/u.exec(path);
   const optionalTotal = version === "v1" && !officialRankingReadEnabled(env, region)
     && board?.[2] === "total" && board[4] === "latest";

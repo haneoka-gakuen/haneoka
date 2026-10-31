@@ -112,7 +112,7 @@ def project(tables, version, now_ms, region='jp',resource_version=None,api_origi
         raise ValueError('enabled event has no challenges')
     result['event']=dict(id=eid,startAtMs=start,endAtMs=end,aggregationSeconds=aggregation,
         status='nowOn' if now_ms<end else 'aggregation',totalRankingEnabled=not e['_isTotalMusicRankingDisabled'],
-        pointRankingEnabled=False,challenges=challenges)
+        pointRankingEnabled=e.get('_isRankingDisabled') is False,challenges=challenges)
     return result
 
 class OfficialCatalog:

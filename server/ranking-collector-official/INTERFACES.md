@@ -20,6 +20,7 @@
 | `/events/current` | 官方主数据投影；没有当前活动时event=null |
 | `/events/{eventId}/challenges/{challengeId}/latest` | 指定单曲最后成功观测 |
 | `/events/{eventId}/total/latest` | 四曲总榜最后成功观测 |
+| `/events/{eventId}/latest` | 活动积分榜最后成功观测；活动 `_isRankingDisabled` 为 false 时才采集，请求前 100 名 |
 | 上述latest改为`history?after={cursor}` | observations与nextCursor，每页最多100条；失败也保留 |
 
 榜单合同仍为 `haneoka:ranking-observation/2`，保留snapshotId、cursor、payloadHash、eventId、challengeId、players、provenance、stale。新增官方主数据来源不应冒充Moenotes采集时间。榜单原始玩家字段不是完整图片资源；名片图片下载未接入。

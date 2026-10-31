@@ -125,7 +125,7 @@ export interface OfficialCatalog {
     aggregationSeconds: number;
     status: string;
     totalRankingEnabled: boolean;
-    pointRankingEnabled: false;
+    pointRankingEnabled: boolean;
     challenges: Array<{ id: string; musicId: string; enabled: boolean; startAtMs: number; endAtMs: number; status: string }>;
   } | null;
   /** The Arena season whose league boards the collector samples; absent while Arena collection is off. */
@@ -185,7 +185,7 @@ export interface OfficialObservation {
   snapshotId: string;
   region: GameRecordsRegion;
   eventId: string;
-  kind: "challenge" | "total";
+  kind: "challenge" | "total" | "point";
   challengeId: string;
   observedAtMs: number;
   players?: Array<Record<string, unknown>>;
