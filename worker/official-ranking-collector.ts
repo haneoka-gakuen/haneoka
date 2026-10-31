@@ -41,6 +41,8 @@ interface CollectorRun {
   complete: boolean;
   catalog: OfficialCatalog | null;
   checkpoints: Record<string, string>;
+  /** A lookup's requests: each gets one attempt, answered or not. */
+  attempted?: { player: string[]; song: string[]; card: string[] };
 }
 interface DemandInterest {
   id: string;
@@ -385,8 +387,7 @@ export class OfficialRankingCollector extends Container<Env> {
       if (!missing.length) return { kind: "pending", retryAfter: 30 };
       if (queue.length + missing.length > DEMAND_LIMITS[kind]) return { kind: "queue_full", retryAfter: 60 };
       state[field] = [...queue, ...missing.map((id) => ({ id, requestedAtMs: now }))];
-      this.expediteArena(state);
-      await this.persist(state);
+      await this.ctx.storage.put("collectorState", state);
       this.ctx.waitUntil(this.runLookup(region));
       return { kind: "pending", retryAfter: 3 };
     });
@@ -492,7 +493,8 @@ export class OfficialRankingCollector extends Container<Env> {
       const runId = crypto.randomUUID().replaceAll("-", "");
       state.lookup = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
         authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + LOOKUP_MS,
-        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {} };
+        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {},
+        attempted: { player: playerLookups, song: songRankings, card: cardImages } };
       const health = state.accounts?.[config.identity];
       if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + LOOKUP_MS + 15_000; }
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
@@ -521,8 +523,18 @@ export class OfficialRankingCollector extends Container<Env> {
         lookup.complete = true;
         const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
         if (health) { health.leaseUntilMs = 0; if (failed) health.failures += 1; }
-        await this.ctx.storage.put("collectorState", state);
       }
+      // What a lookup could not answer (a missing card image, a failed read) is not retried in a loop: the page asks
+      // again if it still needs it. Only requests that arrived during the job start another one.
+      const tried = lookup.attempted;
+      if (tried) {
+        const drop = (entries: DemandInterest[] | undefined, ids: string[]) => (entries ?? []).filter((entry) => !ids.includes(entry.id));
+        state.playerInterests = drop(state.playerInterests, tried.player);
+        state.songInterests = drop(state.songInterests, tried.song);
+        state.cardInterests = drop(state.cardInterests, tried.card);
+        delete lookup.attempted;
+      }
+      await this.ctx.storage.put("collectorState", state);
       return !failed;
     });
     if (again) await this.runLookup(region);
@@ -1008,7 +1020,7 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
-          } else if (update.status === "ok" && (state.arenaInterests?.length || state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)) this.expediteArena(state);
+          } else if (update.status === "ok" && state.arenaInterests?.length) this.expediteArena(state);
           this.ctx.waitUntil(this.runLookup(region));
           const health = this.runHealth(state);
           if (health) {
