@@ -2251,7 +2251,7 @@
         "chooseVideo": "화면 녹화 선택",
         "image-video": "이 화면 녹화를 읽을 수 없습니다.",
         "imagesHint": "카드 목록 이미지 최대 8장",
-        "videoHint": "목록 전체를 한 번 스크롤",
+        "videoHint": "목록 전체를 한 번 스크롤한 뒤 상세 화면을 한 장씩 일정한 속도로 넘기기",
         "practice_training": "특훈",
         "practice_awakening": "각성",
         "practice_liveSkillLevel": "LIVE",

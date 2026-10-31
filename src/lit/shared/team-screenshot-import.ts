@@ -93,7 +93,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
               after: html`<input hidden type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" multiple
                 @change=${(event: Event) => { const input = event.target as HTMLInputElement;
                   actions.files([...input.files ?? []]); input.value = ""; }} />` })}
-            ${actions.video ? importSourceRow({ glyph: "videocam", title: t("chooseVideo", "Choose screen recording"), hint: t("videoHint", "Scroll through the whole list once"),
+            ${actions.video ? importSourceRow({ glyph: "videocam", title: t("chooseVideo", "Choose screen recording"), hint: t("videoHint", "Scroll through the whole list once, then page through each card's details at a steady pace"),
               onClick: (event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click(),
               after: html`<input hidden type="file" accept="video/*"
                 @change=${(event: Event) => { const input = event.target as HTMLInputElement;
