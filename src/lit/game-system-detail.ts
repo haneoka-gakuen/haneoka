@@ -394,7 +394,7 @@ function runRows(run: GachaRun, offset: number): Array<{ start: number; prizes: 
 }
 
 function optionLabel(c: Controller, option: Item) {
-  return `${eventText(c, "draw", "{count} draws", { count: drawCountOf(option) })} · ${c.localized(option.currency) || c.label("free", "Free")}`;
+  return `${eventText(c, "draw", "{count} draws", { count: drawCountOf(option) })} / ${c.localized(option.currency) || c.label("free", "Free")}`;
 }
 
 const kindLabel = (c: Controller, kind: string) =>
@@ -490,7 +490,7 @@ function renderSimulationSummary(c: Controller, runs: readonly GachaRun[]) {
       ${sessionCosts(runs).map(
         (cost) => html`
           <div>
-            <dt>${c.label("spent", "Cost")} · ${c.localized(cost.currency) || c.label("free", "Free")}</dt>
+            <dt>${c.label("spent", "Cost")} / ${c.localized(cost.currency) || c.label("free", "Free")}</dt>
             <dd>${cost.spent ? costLine(cost.spent.toLocaleString(locale), cost.image) : c.label("free", "Free")}</dd>
           </div>
         `,
@@ -667,7 +667,7 @@ function renderSimulator(c: Controller, item: Item) {
                         <section class="stack stack--tight">
                           <h4 class="md-title-small">
                             ${kindLabel(c, kind)}
-                            <span class="tabular">${tally[kind].length} · ${tally[kind].reduce((sum, entry) => sum + entry.count, 0)}</span>
+                            <span class="tabular">${tally[kind].length} / ${tally[kind].reduce((sum, entry) => sum + entry.count, 0)}</span>
                           </h4>
                           <div class="gacha-stats" data-kind=${kind}>${tally[kind].map((entry) => cardFor(entry.prize, entry.count))}</div>
                         </section>
@@ -974,7 +974,7 @@ function eventRewardCondition(c: Controller, row: Item): string {
     ["_boxNumber", "eventBoxN", "Box {count}"],
   ] as const)
     if (Number(raw[field]) > 0) values.push(eventText(c, key, fallback, { count: Number(raw[field]) }));
-  return values.join(" · ");
+  return values.join(" / ");
 }
 
 /** One resource with its quantity and authored probability. */
@@ -990,7 +990,7 @@ function eventRewardRow(c: Controller, row: Item, quantity = true, compactIdenti
     const options = rewardCardOptions(c, reward, kind);
     const content = html`
       <span class=${`detail-object__artwork tile--${kind}`}>${tileMedia(options)}</span>
-      <span class="tile__identity detail-object__copy" title=${[name, secondary].filter(Boolean).join(" · ")}>
+      <span class="tile__identity detail-object__copy" title=${[name, secondary].filter(Boolean).join(" / ")}>
         <strong class="tile__title" lang=${options.titleLanguage || nothing}>${options.title}</strong>
         <small class="tile__subtitle">
           ${options.adornment || nothing}
@@ -1021,7 +1021,7 @@ function eventRewardRow(c: Controller, row: Item, quantity = true, compactIdenti
         : icon("redeem", 24)
     }
     <span
-      title=${compactIdentity ? [name, secondary].filter(Boolean).join(" · ") : nothing}
+      title=${compactIdentity ? [name, secondary].filter(Boolean).join(" / ") : nothing}
       lang=${c.localizedLanguage(reward.name) || nothing}
     >
       ${
@@ -1136,7 +1136,7 @@ function renderRotatingOverview(c: Controller, item: Item) {
                 <div class="spec-list__wide">
                   <dt>${eventText(c, "eventAvailableRankings", "Rankings")}</dt>
                   <dd>
-                    ${activeRankings.length ? activeRankings.map(([, key, fallback]) => eventText(c, key, fallback)).join(" · ") : eventText(c, "eventRankingOff", "No rankings")}
+                    ${activeRankings.length ? activeRankings.map(([, key, fallback]) => eventText(c, key, fallback)).join(" / ") : eventText(c, "eventRankingOff", "No rankings")}
                   </dd>
                 </div>
               `

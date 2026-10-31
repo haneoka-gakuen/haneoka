@@ -150,7 +150,7 @@ export function renderAnonTokyoDetails(c: Context): TemplateResult {
   const conditions: unknown[] = [];
   if (Number(unlock.levelLimit) > 0)
     conditions.push(html`
-      <p>${label("unlockLevel")} · Lv.${unlock.levelLimit}</p>
+      <p>${label("unlockLevel")} / Lv.${unlock.levelLimit}</p>
     `);
   if (Number(unlock.count) > 0 && unlock.itemId != null)
     conditions.push(object("currency", unlock.itemId, unlock.count));

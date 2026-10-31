@@ -350,7 +350,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             class="icon-button"
             id=${`${this.owner}-server`}
             aria-haspopup="menu"
-            aria-label=${`${clientText(this.locale, "settings.labels.server", "Server")} · ${this.label(GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.key, this.region)}`}
+            aria-label=${`${clientText(this.locale, "settings.labels.server", "Server")} / ${this.label(GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.key, this.region)}`}
             @click=${(event: Event) => (event.currentTarget as HTMLElement).parentElement?.querySelector("md-menu")?.show()}
           >
             <img
@@ -517,7 +517,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     const images: GalleryImage[] = this.profilePages().map((page) => ({
       id: String(page.page),
       source: page.imageUrl,
-      label: `${namecard?.name || this.label("profileCard", "Profile card")} · ${page.page}`,
+      label: `${namecard?.name || this.label("profileCard", "Profile card")} / ${page.page}`,
     }));
     const favoriteLevel = artwork
       ? this.levelFromExp(catalog?.levels.member[String(artwork.levelGroup)], favorite?.exp ?? null)
@@ -550,7 +550,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
           <div class="song-ranking__profile-identity">
             <h2>${name}</h2>
             <p class="song-ranking__profile-id">
-              ${this.label("profileSearch", "Player profile ID")} · ${this.selectedProfileId}
+              ${this.label("profileSearch", "Player profile ID")} / ${this.selectedProfileId}
             </p>
             ${
               this.communityOwner
@@ -709,7 +709,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
           profile.lastUpdatedAtMs != null && Number.isFinite(profile.lastUpdatedAtMs)
             ? html`
                 <p class="song-ranking__profile-updated">
-                  ${this.label("updated", "Updated")} ·
+                  ${this.label("updated", "Updated")} /
                   <time datetime=${new Date(profile.lastUpdatedAtMs).toISOString()}>
                     ${formatDate(this.locale, profile.lastUpdatedAtMs, { time: true })}
                   </time>

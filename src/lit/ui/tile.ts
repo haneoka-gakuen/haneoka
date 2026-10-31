@@ -217,7 +217,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
 }
 
 export function tile(options: TileOptions): TemplateResult {
-  const label = [options.label, options.serverMark?.image ? options.serverMark.label : ""].filter(Boolean).join(" · ");
+  const label = [options.label, options.serverMark?.image ? options.serverMark.label : ""].filter(Boolean).join(" / ");
   const classes = [
     "tile",
     "tile--interactive",

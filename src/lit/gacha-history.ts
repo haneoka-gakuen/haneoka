@@ -558,13 +558,13 @@ export class GachaHistory extends LitElement {
     );
     if (this.from)
       applied.push(
-        inputChip(`${this.t("from")} · ${this.from}`, this.t("remove"), () => {
+        inputChip(`${this.t("from")} / ${this.from}`, this.t("remove"), () => {
           this.from = "";
         }),
       );
     if (this.to)
       applied.push(
-        inputChip(`${this.t("to")} · ${this.to}`, this.t("remove"), () => {
+        inputChip(`${this.t("to")} / ${this.to}`, this.t("remove"), () => {
           this.to = "";
         }),
       );
@@ -722,7 +722,7 @@ export class GachaHistory extends LitElement {
           <md-outlined-select
             label=${this.t("account")}
             .value=${this.selectedAccountKey}
-            .displayText=${account ? [account.serverLabel, account.label].filter(Boolean).join(" · ") : ""}
+            .displayText=${account ? [account.serverLabel, account.label].filter(Boolean).join(" / ") : ""}
             ?disabled=${!this.accounts.length || this.busy}
             @change=${(event: Event) => this.emit("gacha-account-change", { accountKey: (event.target as HTMLSelectElement).value })}
           >
@@ -730,7 +730,7 @@ export class GachaHistory extends LitElement {
             ${this.accounts.map(
               (row) => html`
                 <md-select-option value=${row.key} ?selected=${row.key === this.selectedAccountKey}>
-                  <div slot="headline">${[row.serverLabel, row.label].filter(Boolean).join(" · ")}</div>
+                  <div slot="headline">${[row.serverLabel, row.label].filter(Boolean).join(" / ")}</div>
                 </md-select-option>
               `,
             )}
@@ -837,14 +837,14 @@ export class GachaHistory extends LitElement {
                     icon: icon("casino", 24),
                     label: this.t("total"),
                     value: this.number(stats.total),
-                    supporting: `${this.t("member")} ${this.number(stats.member)} · ${this.t("support")} ${this.number(stats.support)}`,
+                    supporting: `${this.t("member")} ${this.number(stats.member)} / ${this.t("support")} ${this.number(stats.support)}`,
                     tone: "primary",
                   })}
                   ${this.stat({
                     icon: icon("star", 24),
                     label: "SSR+",
                     value: this.number(stats.high),
-                    supporting: `${this.percent(stats.high, stats.total)}${official == null ? "" : ` · ${this.t("officialRate")} ${this.percent(official)}`}`,
+                    supporting: `${this.percent(stats.high, stats.total)}${official == null ? "" : ` / ${this.t("officialRate")} ${this.percent(official)}`}`,
                     tone: "tertiary",
                   })}
                   ${this.stat({
@@ -985,12 +985,12 @@ export class GachaHistory extends LitElement {
             (row.count > 0 && row.rarity !== "item" && row.rarity !== "unknown"),
         );
         return this.chart(
-          `${this.t(kind.kind)} · ${this.t("rarityDistribution")}`,
-          rows.map((row) => `${row.rarity} · ${this.percent(row.count, kind.total)}`),
+          `${this.t(kind.kind)} / ${this.t("rarityDistribution")}`,
+          rows.map((row) => `${row.rarity} / ${this.percent(row.count, kind.total)}`),
           (["nonPickup", "pickup"] as const).map((key) => ({ name: this.t(key), values: rows.map((row) => row[key]) })),
           {
             horizontal: true,
-            caption: `${this.t(kind.kind)} ${this.number(kind.total)} · SSR+ ${this.percent(kind.high, kind.total)}`,
+            caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
           },
         );
       });
@@ -1136,7 +1136,7 @@ export class GachaHistory extends LitElement {
                     `#${this.interval(entry.position)}`,
                   ]
                     .filter(Boolean)
-                    .join(" · ")}
+                    .join(" / ")}
                 </span>
               </span>
               <span class="gacha-hit__gap">
@@ -1177,7 +1177,7 @@ export class GachaHistory extends LitElement {
                   ${this.poolLogo(view)}
                   <div class="gacha-pool__title">
                     <h3 class="md-title-medium">${this.poolName(pool.poolId)}</h3>
-                    <span class="md-body-small">${[view?.category, period].filter(Boolean).join(" · ")}</span>
+                    <span class="md-body-small">${[view?.category, period].filter(Boolean).join(" / ")}</span>
                   </div>
                   <span class="gacha-pool__total">${this.t("draws", { count: this.number(pool.total) })}</span>
                 </header>
@@ -1186,14 +1186,14 @@ export class GachaHistory extends LitElement {
                     icon: icon("star", 20),
                     label: "SSR+",
                     value: this.number(pool.high),
-                    supporting: `${this.percent(pool.high, pool.total)}${view?.rates ? ` · ${this.t("officialRate")} ${this.percent(view.rates.high)}` : ""}`,
+                    supporting: `${this.percent(pool.high, pool.total)}${view?.rates ? ` / ${this.t("officialRate")} ${this.percent(view.rates.high)}` : ""}`,
                     tone: "tertiary",
                   })}
                   ${this.stat({
                     icon: icon("trending_up", 20),
                     label: this.t("pickup"),
                     value: this.number(pool.pickup),
-                    supporting: `${this.percent(pool.pickup, pool.total)}${view?.rates?.pickup ? ` · ${this.t("officialRate")} ${this.percent(view.rates.pickup)}` : ""}`,
+                    supporting: `${this.percent(pool.pickup, pool.total)}${view?.rates?.pickup ? ` / ${this.t("officialRate")} ${this.percent(view.rates.pickup)}` : ""}`,
                     tone: "secondary",
                   })}
                   ${this.stat({
@@ -1211,7 +1211,7 @@ export class GachaHistory extends LitElement {
                     supporting:
                       pool.expectedHigh == null
                         ? ""
-                        : `${this.t("expected")} ${this.number(pool.expectedHigh, 2)} · ${this.t("difference")} ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2, signDisplay: "always" }).format(pool.delta ?? 0)}`,
+                        : `${this.t("expected")} ${this.number(pool.expectedHigh, 2)} / ${this.t("difference")} ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2, signDisplay: "always" }).format(pool.delta ?? 0)}`,
                   })}
                 </div>
                 ${this.luckMeter(this.t("luck"), gachaHistoryLuck(batches, "high"))}
@@ -1237,7 +1237,7 @@ export class GachaHistory extends LitElement {
                                       return html`
                                         <span class="gacha-pool__featured-card" data-owned=${String(!!got)}>
                                           ${gachaPrizeCard({
-                                      label: `${card.name} · ${got ? `×${got.count}` : this.t("notObtained")}`,
+                                      label: `${card.name} / ${got ? `×${got.count}` : this.t("notObtained")}`,
                                       kind: card.kind,
                                       rarity: card.rarity,
                                       href: card.href,
@@ -1299,7 +1299,7 @@ export class GachaHistory extends LitElement {
         <div class="gacha-stats">
           ${cards.map((card) =>
             gachaPrizeCard({
-              label: `${card.prize.name} · ×${card.count}`,
+              label: `${card.prize.name} / ×${card.count}`,
               kind: card.prize.kind,
               rarity: card.prize.rarity,
               href: card.prize.href,
@@ -1427,7 +1427,7 @@ export class GachaHistory extends LitElement {
                         card.last ? this.serverTime(card.last, "date") : "",
                       ]
                         .filter(Boolean)
-                        .join(" · "),
+                        .join(" / "),
                       href: card.prize.href,
                       media: card.prize.imageUrl
                         ? html`
@@ -1461,7 +1461,7 @@ export class GachaHistory extends LitElement {
                               .filter((card) => card.prize.kind === kind)
                               .map((card) =>
                                 gachaPrizeCard({
-                                  label: `${card.prize.name} · ×${card.count} · ${this.t("pickup")} ${card.pickup}`,
+                                  label: `${card.prize.name} / ×${card.count} / ${this.t("pickup")} ${card.pickup}`,
                                   kind,
                                   rarity: card.prize.rarity,
                                   href: card.prize.href,
@@ -1536,7 +1536,7 @@ export class GachaHistory extends LitElement {
                                           `
                                         : this.t("unknownTime")
                                     }
-                                    ·
+                                    /
                                     ${batch.drawCount == null ? this.t("unknownCount") : this.t("draws", { count: batch.drawCount })}
                                   </span>
                                 </div>
@@ -1600,11 +1600,11 @@ export class GachaHistory extends LitElement {
           months.map((row) => monthLabel(row.month)),
           composition(months),
           {
-            details: months.map((row) => `SSR+ ${row.high} · ${this.t("pickup")} ${row.pickup}`),
+            details: months.map((row) => `SSR+ ${row.high} / ${this.t("pickup")} ${row.pickup}`),
           },
         )}
         ${this.chart(
-          `SSR+ · ${this.t("monthlyTrend")}`,
+          `SSR+ / ${this.t("monthlyTrend")}`,
           months.map((row) => monthLabel(row.month)),
           [
             { name: this.t("nonPickup"), values: months.map((row) => row.high - Math.min(row.high, row.pickup)) },
@@ -1615,7 +1615,7 @@ export class GachaHistory extends LitElement {
           this.t("dailyTrend"),
           stats.days.map((day) => day.day ?? this.t("unknownTime")),
           composition(stats.days),
-          { details: stats.days.map((day) => `SSR+ ${day.high} · ${this.t("pickup")} ${day.pickup}`), wide: true },
+          { details: stats.days.map((day) => `SSR+ ${day.high} / ${this.t("pickup")} ${day.pickup}`), wide: true },
         )}
         ${this.chart(
           this.t("poolComposition"),
@@ -1697,17 +1697,17 @@ export class GachaHistory extends LitElement {
     const luck = gachaHistoryLuck(batches, "high");
     const metrics = [
       { label: this.t("total"), value: this.number(stats.total) },
-      { label: "SSR+", value: `${this.number(stats.high)} · ${this.percent(stats.high, stats.total)}` },
+      { label: "SSR+", value: `${this.number(stats.high)} / ${this.percent(stats.high, stats.total)}` },
       { label: this.t("pickup"), value: this.number(stats.pickup) },
       {
         label: this.t("luck"),
-        value: luck ? `${this.t(`luckTier${this.luckTier(luck)}`)} · ${this.luckValue(luck)}` : "—",
+        value: luck ? `${this.t(`luckTier${this.luckTier(luck)}`)} / ${this.luckValue(luck)}` : "—",
       },
     ];
     const groups = stats.pools.flatMap((pool) => {
       const selected = batches.filter((batch) => batch.poolId === pool.poolId);
       return (["member", "support"] as const).map((kind) => ({
-        label: `${this.poolName(pool.poolId)} · ${this.t(kind)}`,
+        label: `${this.poolName(pool.poolId)} / ${this.t(kind)}`,
         imageUrl: this.poolMap.get(pool.poolId ?? "")?.imageUrl,
         cards: this.collected(selected)
           .filter((card) => card.prize.kind === kind && (isHigh(card.prize) || card.pickup > 0))
@@ -1729,8 +1729,8 @@ export class GachaHistory extends LitElement {
     const charts = stats.kinds
       .filter((kind) => kind.kind === "member" || kind.kind === "support")
       .map((kind) => ({
-        label: `${this.t(kind.kind)} · ${this.t("rarityDistribution")}`,
-        caption: `${this.t(kind.kind)} ${this.number(kind.total)} · SSR+ ${this.percent(kind.high, kind.total)}`,
+        label: `${this.t(kind.kind)} / ${this.t("rarityDistribution")}`,
+        caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
         legend: [this.t("nonPickup"), this.t("pickup")],
         rows: kind.distribution
           .filter(
@@ -1739,7 +1739,7 @@ export class GachaHistory extends LitElement {
               (row.count > 0 && row.rarity !== "item" && row.rarity !== "unknown"),
           )
           .map((row) => ({
-            label: `${row.rarity} · ${this.percent(row.count, kind.total)}`,
+            label: `${row.rarity} / ${this.percent(row.count, kind.total)}`,
             values: [row.nonPickup, row.pickup],
           })),
       }));
@@ -1900,7 +1900,7 @@ export class GachaHistory extends LitElement {
                 }
                 ${fold(
                   `exchange-targets-${pool!.id}-${target.exchangeProductId}`,
-                  `${this.t("exchangeTargets")} · ${number(group.length)}`,
+                  `${this.t("exchangeTargets")} / ${number(group.length)}`,
                   group.map((entry) => {
                     const reward = entry.reward;
                     const name = String(reward.name ?? reward.resourceId ?? "");
@@ -1932,7 +1932,7 @@ export class GachaHistory extends LitElement {
                           {
                             id: entry.exchangeProductId,
                             title: name,
-                            subtitle: details[0].join(" · "),
+                            subtitle: details[0].join(" / "),
                             href: typeof reward.href === "string" ? reward.href : undefined,
                             media: html`
                               <span style="display:block;width:56px;height:56px">
@@ -2016,7 +2016,7 @@ export class GachaHistory extends LitElement {
           ${(["freeUnitGemPrice", "paidUnitGemPrice"] as const).map(
             (key) => html`
               <label class="field">
-                <span>${this.t(key)} · ${conversion.currencyCode}</span>
+                <span>${this.t(key)} / ${conversion.currencyCode}</span>
                 <input
                   name=${key}
                   type="number"
@@ -2188,7 +2188,7 @@ export class GachaHistory extends LitElement {
       unknown ? this.t("unknownDraws", { count: unknown }) : "",
     ]
       .filter(Boolean)
-      .join(" · ");
+      .join(" / ");
   }
   private renderPrizes(prizes: readonly GachaHistoryPrize[]) {
     const subtitle = (prize: GachaHistoryPrize) =>
@@ -2200,7 +2200,7 @@ export class GachaHistory extends LitElement {
         prize.converted ? this.t("converted") : "",
       ]
         .filter(Boolean)
-        .join(" · ");
+        .join(" / ");
     if (this.view === "table")
       return collectionTable(
         this.t("records"),
@@ -2234,7 +2234,7 @@ export class GachaHistory extends LitElement {
       );
     return html`
       <div class="gacha-pulls__cards">
-        ${prizes.map((prize) => gachaPrizeCard({ label: `${prize.name} · ${subtitle(prize)}`, kind: prize.kind, rarity: prize.rarity, href: prize.href, image: prize.imageUrl, attribute: prize.attributeImageUrl, rarityMark: prize.rarityImageUrl, count: prize.quantity, pickup: prize.pickup === true }))}
+        ${prizes.map((prize) => gachaPrizeCard({ label: `${prize.name} / ${subtitle(prize)}`, kind: prize.kind, rarity: prize.rarity, href: prize.href, image: prize.imageUrl, attribute: prize.attributeImageUrl, rarityMark: prize.rarityImageUrl, count: prize.quantity, pickup: prize.pickup === true }))}
       </div>
     `;
   }

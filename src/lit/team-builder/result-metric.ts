@@ -60,7 +60,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     const converted = s.ptCycle && s.route !== "challenge";
     return metric(
       `${measure}:${converted ? "converted" : "direct"}`,
-      converted ? `${label} · ${host.t("farm.converted", "Direct rewards + CP conversion")}` : label,
+      converted ? `${label} / ${host.t("farm.converted", "Direct rewards + CP conversion")}` : label,
       measure === "challenge-points" ? event.challengePoints : event.mean,
       1,
       measure === "points" ? "pt" : measure === "challenge-points" ? "CP" : "",

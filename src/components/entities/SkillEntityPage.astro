@@ -42,7 +42,7 @@ const rendered = await renderSkillsWorkspace(payload, locale, id);
   title={sectionTitle}
   titleKey="catalog.cards.fields.skills"
   description={descriptions[locale]}
-  seoTitleValues={Object.fromEntries(LOCALES.map((target) => [target, `${titles[target]} · ${t(target, "catalog.cards.fields.skills", "Skills")}`])) as Record<Locale, string>}
+  seoTitleValues={Object.fromEntries(LOCALES.map((target) => [target, `${titles[target]} / ${t(target, "catalog.cards.fields.skills", "Skills")}`])) as Record<Locale, string>}
   seoDescriptionValues={descriptions}
   searchImage={entry.image}
   searchTitle={titles[locale]}

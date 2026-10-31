@@ -160,7 +160,7 @@ export class CharacterVoices extends LitElement {
       (voiceKind(entry) === "resultPair" && (entry.characterIds as unknown[]).length > 1)
         ? (entry.characterIds as unknown[]).map((id) => this.name(Number(id))).join(" → ")
         : "";
-    return [title, score, call, pair].filter(Boolean).join(" · ");
+    return [title, score, call, pair].filter(Boolean).join(" / ");
   }
 
   private clipKey(entry: JsonRecord, index: number) {
@@ -284,12 +284,12 @@ export class CharacterVoices extends LitElement {
     const playing = active && status.state === "playing";
     const loading = active && status.state === "loading";
     const label = loading
-      ? `${this.v("loading")} · ${speaker}`
+      ? `${this.v("loading")} / ${speaker}`
       : playing
-        ? `${this.v("stop")} · ${speaker}`
+        ? `${this.v("stop")} / ${speaker}`
         : status.state === "error"
-          ? `${this.t("retry")} · ${speaker}`
-          : `${this.v("playLine")} · ${speaker}`;
+          ? `${this.t("retry")} / ${speaker}`
+          : `${this.v("playLine")} / ${speaker}`;
     return html`
       <button
         class="icon-button dialogue-row__play"
@@ -373,7 +373,7 @@ export class CharacterVoices extends LitElement {
     const titleLanguage = entry.title ? resolveLocalizedText(entry.title, this.locale).locale : this.locale;
     const condition = [calendarInGroup ? "" : this.calendarDate(entry), this.condition(entry)]
       .filter(Boolean)
-      .join(" · ");
+      .join(" / ");
     const sequence = lines.length > 1;
     const groupActive = this.activeClipKey.startsWith(`${this.voiceKey(entry)}:`);
     const hasHeading =
@@ -421,7 +421,7 @@ export class CharacterVoices extends LitElement {
                             class="button button--tonal voice-entry__play-group"
                             type="button"
                             ?disabled=${!lines.some((line) => line.url)}
-                            aria-label=${`${groupActive ? this.v("stop") : this.v("playGroup")} · ${title}`}
+                            aria-label=${`${groupActive ? this.v("stop") : this.v("playGroup")} / ${title}`}
                             aria-pressed=${String(groupActive)}
                             @click=${() => this.playGroup(entry)}
                           >
@@ -486,7 +486,7 @@ export class CharacterVoices extends LitElement {
                         const kind = voiceKind(entries[0]!);
                         const category = voiceGroup(entries[0]!);
                         const title = ["realLive", "liveDialogue", "livePairDialogue", "seasonal"].includes(category)
-                          ? this.v(voiceGroupLabelKey(category)) + " · " + this.v(kind)
+                          ? this.v(voiceGroupLabelKey(category)) + " / " + this.v(kind)
                           : this.v(kind);
                         const date = category === "birthday" ? "" : this.calendarDate(entries[0]!);
                         const label = date ? this.v("withDetails", title, date) : title;

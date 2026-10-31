@@ -998,7 +998,7 @@ export class CommunityWorkspace extends LitElement {
    * section name, exactly as the catalog's entity pages keep "图鉴". */
   private setDocumentTitle(value: string) {
     if (!value) return;
-    document.title = `${value} · haneoka`;
+    document.title = `${value} / haneoka`;
     if (this.routeKind !== "collection") {
       const heading = document.querySelector<HTMLElement>(
         "[data-top-app-bar] h1",
@@ -3669,7 +3669,7 @@ export class CommunityWorkspace extends LitElement {
                         </label>
                       </header>
                       <p class="community-upload-policy">
-                        ${this.label("uploadPolicy", "Up to {count} files · {size} MiB each")
+                        ${this.label("uploadPolicy", "Up to {count} files / {size} MiB each")
                           .replace("{count}", String(COMMUNITY_UPLOAD_LIMITS.attachmentsPerPost))
                           .replace("{size}", String(COMMUNITY_UPLOAD_LIMITS.fileBytes / 1024 / 1024))}
                       </p>
@@ -3690,7 +3690,7 @@ export class CommunityWorkspace extends LitElement {
                                   <strong>${entry.file.name}</strong>
                                   <small>
                                     ${this.label(`upload${entry.phase[0]?.toUpperCase()}${entry.phase.slice(1)}`, entry.phase)}${entry.phase === "uploading" ? ` ${entry.progress}%` : ""}
-                                    ·
+                                    /
                                     ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 1 }).format(entry.file.size / 1024)}
                                     KB
                                   </small>
@@ -4726,7 +4726,7 @@ export class CommunityWorkspace extends LitElement {
                               <span class="list-item__avatar">${icon("sports_esports", 20)}</span>
                               <span class="list-item__body">
                                 <span class="list-item__headline">${String(account.displayName || account.playerUid || "")}</span>
-                                <span class="list-item__supporting">${this.gameAccountFacts(account).join(" · ")}</span>
+                                <span class="list-item__supporting">${this.gameAccountFacts(account).join(" / ")}</span>
                               </span>
                             </a>
                           </li>
@@ -4826,7 +4826,7 @@ export class CommunityWorkspace extends LitElement {
   /** A track's supporting line: its artist, or the band it belongs to. */
   private trackArtist(track: Value) {
     const performer=track.displayPerformer as SongPerformer | undefined;
-    return performer?.names.length ? performer.names.map(name=>localizedText(name,this.locale)).filter(Boolean).join(" · ") : localizedText(track.artist || track.artistName || track.bandName, this.locale);
+    return performer?.names.length ? performer.names.map(name=>localizedText(name,this.locale)).filter(Boolean).join(" / ") : localizedText(track.artist || track.artistName || track.bandName, this.locale);
   }
   /**
    * Plays a playlist, optionally starting at one of its rows. `startIndex`
@@ -4957,7 +4957,7 @@ export class CommunityWorkspace extends LitElement {
                   <h2>
                     ${playlist ? this.playlistTitle(playlist) : this.entityId}
                   </h2>
-                  <p>${this.label("songs", "Songs")} · ${tracks.length}</p>
+                  <p>${this.label("songs", "Songs")} / ${tracks.length}</p>
                 </div>
                 <div class="playlist-hero__actions">${
                   tracks.some((track) => track.musicUrl || track.url)
@@ -5008,7 +5008,7 @@ export class CommunityWorkspace extends LitElement {
                               <button
                                 class="icon-button"
                                 type="button"
-                                aria-label=${`${this.label("play", "Play")} · ${songTitle(track, this.locale).text}`}
+                                aria-label=${`${this.label("play", "Play")} / ${songTitle(track, this.locale).text}`}
                                 @click=${() => {
                                   if (playlist)
                                     void this.requestPlaylistPlay(playlist,index);
@@ -5078,7 +5078,7 @@ export class CommunityWorkspace extends LitElement {
               `
             : nothing
         }
-        ${this.playlistChallengeError ? html`<section class="playlist-group"><header><h2>${this.label("playlistPage.stageChallenges","Stage Challenge")}</h2></header>${errorState(`${this.label("unavailable","Unavailable")} · ${this.playlistChallengeError}`,this.label("retry","Retry"),()=>void this.load(false,true))}</section>` : nothing}
+        ${this.playlistChallengeError ? html`<section class="playlist-group"><header><h2>${this.label("playlistPage.stageChallenges","Stage Challenge")}</h2></header>${errorState(`${this.label("unavailable","Unavailable")} / ${this.playlistChallengeError}`,this.label("retry","Retry"),()=>void this.load(false,true))}</section>` : nothing}
         ${groups
           .filter(([, entries]) => entries.length)
           .map(
@@ -5099,12 +5099,12 @@ export class CommunityWorkspace extends LitElement {
                           ${this.playlistArtwork(playlist)}
                         </span>
                         <div class="playlist-card__body"><h3 class="playlist-card__title">${this.playlistTitle(playlist)}</h3>
-                          <div class="playlist-card__meta"><span>${playlist.provider==="our-notes" ? "Our Notes" : "GBP"} · ${this.label(String(playlist.source || playlist.type)==="band" ? "playlistPage.systemPlaylist" : "playlistPage.inGamePlaylist","")}</span>
+                          <div class="playlist-card__meta"><span>${playlist.provider==="our-notes" ? "Our Notes" : "GBP"} / ${this.label(String(playlist.source || playlist.type)==="band" ? "playlistPage.systemPlaylist" : "playlistPage.inGamePlaylist","")}</span>
                             <span class="playlist-card__count">${this.playlistTracks(playlist).length} ${this.label("playlistPage.tracks","Songs")}</span></div>
                         </div>
                       </a>
                       <div class="playlist-card__actions"><button class="button button--tonal" type="button" ?disabled=${!this.playlistTracks(playlist).length || this.playlistPlaying.has(String(playlist.id || playlist.playlistId || ""))}
-                        aria-label=${`${this.label("playlistPage.playAll","Play all")} · ${this.playlistTitle(playlist)}`}
+                        aria-label=${`${this.label("playlistPage.playAll","Play all")} / ${this.playlistTitle(playlist)}`}
                         @click=${()=>void this.requestPlaylistPlay(playlist)}>${icon("playlist_play",18)}${this.label("playlistPage.playAll","Play all")}</button></div>
                       ${this.playlistPlaying.has(String(playlist.id || playlist.playlistId || "")) ? html`<p class="playlist-card__status">${this.label("loading","Loading")}</p>` : this.playlistPlaybackMessages.has(String(playlist.id || playlist.playlistId || "")) ? html`<p class="playlist-card__status">${this.playlistPlaybackMessages.get(String(playlist.id || playlist.playlistId || ""))}</p>` : !this.playlistTracks(playlist).length ? html`<p class="playlist-card__status">${this.label("playlistPage.audioUnavailable","Audio unavailable")}</p>` : nothing}
                     </li>`)}
@@ -6068,7 +6068,7 @@ export class CommunityWorkspace extends LitElement {
                               forum.latestPost
                                 ? html`
                                     <small class="community-forum-latest">
-                                      ${forum.latestPost.title} ·
+                                      ${forum.latestPost.title} /
                                       ${this.time(forum.latestPost.createdAt)}
                                     </small>
                                   `
@@ -6568,7 +6568,7 @@ export class CommunityWorkspace extends LitElement {
                     <span class="list-item__supporting">
                       ${String(
                         tag.description ||
-                          `${tag.postCount || 0} ${this.label("posts", "posts")} · ${tag.followerCount || 0} ${this.label("followers", "followers")}`,
+                          `${tag.postCount || 0} ${this.label("posts", "posts")} / ${tag.followerCount || 0} ${this.label("followers", "followers")}`,
                       )}
                     </span>
                   </a>

@@ -31,7 +31,7 @@ type RankingEntry = SongRankingRowDto;
 interface RankingCache {
   rows: RankingEntry[];
   snapshotId?: string;
-  provider?: "official";
+  provider?: "official" | "moenotes";
   storedAt: number;
   reportedAt: number;
   stale: boolean;
@@ -356,7 +356,7 @@ export class SongRanking extends GameRecordsCardsElement {
                   </p>
                 `
               : this.phase === "loading" && !this.rows.length
-                ? html`<p class="song-ranking__fetched" aria-hidden="true"><span class="skeleton-line">${this.label("updated", "Updated")} · 00/00/0000, 00:00:00</span></p>`
+                ? html`<p class="song-ranking__fetched" aria-hidden="true"><span class="skeleton-line">${this.label("updated", "Updated")} / 00/00/0000, 00:00:00</span></p>`
                 : nothing
           }
           <span class="song-ranking__fetched">${this.label("officialSource", "Official game rankings")}</span>

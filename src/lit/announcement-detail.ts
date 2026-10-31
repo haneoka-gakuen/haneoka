@@ -122,7 +122,7 @@ export class AnnouncementDetail extends LitElement {
     }
     const displayTitle = this.entry?.title || announcementText(this.locale, "title", "Announcements");
     const siteTitle = clientText(this.locale, "common.seo.siteTitle", "BanG Dream! Our Notes Archive");
-    const title = `${displayTitle} · haneoka - ${siteTitle}`;
+    const title = `${displayTitle} / haneoka - ${siteTitle}`;
     document.title = title;
     for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])
       document.querySelector(selector)?.setAttribute("content", title);

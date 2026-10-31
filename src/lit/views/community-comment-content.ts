@@ -302,7 +302,7 @@ export function renderCommentComposer(view: CommentComposerView) {
         view.replyName
           ? html`
               <div class="community-reply-banner">
-                <span>${label("replyingTo", "Replying to")} · ${view.replyName}</span>
+                <span>${label("replyingTo", "Replying to")} / ${view.replyName}</span>
                 <button
                   class="icon-button"
                   type="button"

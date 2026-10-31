@@ -793,8 +793,8 @@ export class AdminWorkspace extends LitElement {
               ${[...reasons].map(([reason, count]) => html`<span class="admin-comment__status admin-comment__status--error">${this.valueLabel(reason)}${count > 1 ? ` ×${count}` : ""}</span>`)}
             </span>
             <blockquote class="admin-appeal__content md-body-medium">${text}</blockquote>
-            ${details.length ? html`<small>${details.slice(0, 3).join(" · ")}</small>` : nothing}
-            <small>${reporters.slice(0, 4).join("、")}${reporters.length > 4 ? ` +${reporters.length - 4}` : ""} · ${this.date(reports.at(-1)!.createdAt)}</small>
+            ${details.length ? html`<small>${details.slice(0, 3).join(" / ")}</small>` : nothing}
+            <small>${reporters.slice(0, 4).join("、")}${reporters.length > 4 ? ` +${reporters.length - 4}` : ""} / ${this.date(reports.at(-1)!.createdAt)}</small>
           </span>
           <div class="admin-record-actions">
             ${
@@ -1065,7 +1065,7 @@ export class AdminWorkspace extends LitElement {
           return this.disclosure({
             id: `admin-pool-${region}`,
             className: "admin-resource-servers",
-            label: `${region.toUpperCase()} · ${this.label(`pool.status.${String(pool.status)}`, String(pool.status))} · ${accounts.filter((row) => row.status === "ready" || row.status === "working").length}/${accounts.length}`,
+            label: `${region.toUpperCase()} / ${this.label(`pool.status.${String(pool.status)}`, String(pool.status))} / ${accounts.filter((row) => row.status === "ready" || row.status === "working").length}/${accounts.length}`,
             content: html`
               <div class="table-scroll"><table class="data-table">
                 <thead><tr>
@@ -1437,7 +1437,7 @@ export class AdminWorkspace extends LitElement {
                     </dl>
                     <p class="admin-post-body">${String(revision.summary || "")}</p>
                   </section>`) : html`
-                  <h3>${this.label("creations.tracks", "Tracks")} · ${details.length}</h3>
+                  <h3>${this.label("creations.tracks", "Tracks")} / ${details.length}</h3>
                   <ol>${details.map(track => html`<li><a href=${track.provider === "bestdori" ? `/${preferredLocale()}/community/gbp/songs/detail/?song=${encodeURIComponent(String(track.musicId))}` : ["jp", "intl"].includes(String(track.server)) ? `/${track.server}/${preferredLocale()}/songs/${encodeURIComponent(String(track.musicId))}/` : `/catalog/songs?song=${encodeURIComponent(String(track.musicId))}`}>${String(track.provider)} / ${String(track.server)} / ${String(track.musicId)}</a></li>`)}</ol>`}
               </main>
               <aside class="admin-review-context">
@@ -2000,7 +2000,7 @@ export class AdminWorkspace extends LitElement {
           }
           <p class="admin-map-credit">
             <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noopener noreferrer">
-              Natural Earth · Public domain
+              Natural Earth / Public domain
             </a>
           </p>
         </section>
@@ -2412,7 +2412,7 @@ export class AdminWorkspace extends LitElement {
     const operations = this.userDocument?.operations as Value | undefined;
     const rows = (value: Value | undefined) => (Array.isArray(value?.items) ? (value.items as Value[]) : []);
     const summary = (value: Value | undefined) =>
-      this.label("userDetails.recentCount", "Showing {shown} recent records · {total} total")
+      this.label("userDetails.recentCount", "Showing {shown} recent records / {total} total")
         .replace("{shown}", String(rows(value).length))
         .replace("{total}", typeof value?.total === "number" ? value.total.toLocaleString(preferredLocale()) : "—");
     return html`
@@ -2474,7 +2474,7 @@ export class AdminWorkspace extends LitElement {
                     [this.label("userDetails.actorUid", "Actor account ID"), record.actorUserId],
                     [
                       this.label("columns.target", "Target"),
-                      `${this.valueLabel(record.targetKind)} · ${String(record.targetId || "—")}`,
+                      `${this.valueLabel(record.targetKind)} / ${String(record.targetId || "—")}`,
                     ],
                     [this.label("columns.createdAt", "Created"), this.fullDate(record.createdAt)],
                     [this.label("userDetails.completed", "Completed"), this.fullDate(record.completedAt)],
@@ -2769,7 +2769,7 @@ export class AdminWorkspace extends LitElement {
                     </strong>
                     <small>
                       ${restriction.expiresAt === null ? this.label("durations.permanent", "Permanent") : this.fullDate(restriction.expiresAt)}
-                      · ${String(restriction.reasonCode || "")}
+                      / ${String(restriction.reasonCode || "")}
                     </small>
                   </span>
                   <button
@@ -2915,14 +2915,14 @@ export class AdminWorkspace extends LitElement {
           <span>${icon("flag", 22)}</span>
           <span>
             <strong>
-              ${this.valueLabel(target.kind)} ·
+              ${this.valueLabel(target.kind)} /
               ${String(target.title || target.body || target.displayName || target.id || "—")}
             </strong>
             ${this.statusBadge(record.status)}
-            <small>${this.valueLabel(record.reasonCode)}${record.detail ? ` · ${record.detail}` : ""}</small>
+            <small>${this.valueLabel(record.reasonCode)}${record.detail ? ` / ${record.detail}` : ""}</small>
             <small>
               ${String((record.reporter as Value | undefined)?.displayName || (record.reporter as Value | undefined)?.accountName || "")}
-              · ${this.date(record.createdAt)}
+              / ${this.date(record.createdAt)}
             </small>
           </span>
           <div class="admin-record-actions">
@@ -2976,7 +2976,7 @@ export class AdminWorkspace extends LitElement {
             </span>
             ${record.entityText ? html`<blockquote class="admin-appeal__content md-body-medium">${String(record.entityText)}</blockquote>` : nothing}
             <span class="admin-appeal__statement md-body-medium">${icon("chat", 18)}${String(record.statement || "")}</span>
-            <small>${String(record.appellantName || "")} · ${this.date(record.createdAt)}</small>
+            <small>${String(record.appellantName || "")} / ${this.date(record.createdAt)}</small>
           </span>
           ${
             record.status === "pending" && this.can("appeals.write")
@@ -3010,8 +3010,8 @@ export class AdminWorkspace extends LitElement {
             ${this.label(`operations.actions.${String(record.action || "").replace(/[._-]([a-z])/g, (_match, letter: string) => letter.toUpperCase())}`, String(record.action || ""))}
           </strong>
           ${this.statusBadge(record.status)}
-          <small>${this.valueLabel(record.targetKind)} · ${String(record.targetId || "")}</small>
-          <small>${String(record.actorName || "")} · ${this.date(record.createdAt)}</small>
+          <small>${this.valueLabel(record.targetKind)} / ${String(record.targetId || "")}</small>
+          <small>${String(record.actorName || "")} / ${this.date(record.createdAt)}</small>
         </span>
         ${
           record.errorCode
@@ -3381,10 +3381,10 @@ export class AdminWorkspace extends LitElement {
                 ${icon(forumIcon(forum.icon), 20)}
                 <span class="admin-forum-row__body">
                   <strong>${this.forumName(forum)}</strong>
-                  <small>${forum.slug} · ${forum.sortOrder}</small>
+                  <small>${forum.slug} / ${forum.sortOrder}</small>
                   <small>
                     ${this.label(forum.enabled ? "forum.enabled" : "forum.disabled", forum.enabled ? "Enabled" : "Disabled")}
-                    · ${this.label(`forum.audience.${forum.permissions.read}`, forum.permissions.read)}
+                    / ${this.label(`forum.audience.${forum.permissions.read}`, forum.permissions.read)}
                   </small>
                 </span>
               </button>
@@ -3881,7 +3881,7 @@ export class AdminWorkspace extends LitElement {
                                   <h4>${String(entry.title || "")}</h4>
                                   ${this.renderPostBody(entry.body)} ${this.renderAttachments(entry.attachments)}
                                   <small>
-                                    ${String((entry.editor as Value | undefined)?.displayName || (entry.editor as Value | undefined)?.accountName || "")}${entry.editReason ? ` · ${entry.editReason}` : ""}
+                                    ${String((entry.editor as Value | undefined)?.displayName || (entry.editor as Value | undefined)?.accountName || "")}${entry.editReason ? ` / ${entry.editReason}` : ""}
                                   </small>
                                   ${this.disclosure({
                                     id: `admin-revision-audit-${this.reviewPostId}-${entry.revisionNumber}`,
@@ -4103,7 +4103,7 @@ export class AdminWorkspace extends LitElement {
           (revision) => html`
             <article class="admin-history-card">
               ${this.renderPostBody(revision.body)}
-              <small>${String(revision.userAgent || "—")} · ${this.date(revision.createdAt)}</small>
+              <small>${String(revision.userAgent || "—")} / ${this.date(revision.createdAt)}</small>
               ${this.renderIpAudit(revision)}
             </article>
           `,

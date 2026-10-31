@@ -260,7 +260,7 @@ export function songList(
                       <span class="list-item__body">
                         <strong class="list-item__headline clamp-1">${catalog.songTitle(song.songId)}</strong>
                         <span class="list-item__supporting">
-                          ${catalog.difficultyLabel(song.songId, song.difficulty)}${(host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso") ? ` · ${missionSummary(songMissions(host.songRules() ? arenaSongView(catalog.song(song.songId), host.songRules()!) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` · ${host.t("unavailable", "Unavailable")}` : ""}
+                          ${catalog.difficultyLabel(song.songId, song.difficulty)}${(host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso") ? ` / ${missionSummary(songMissions(host.songRules() ? arenaSongView(catalog.song(song.songId), host.songRules()!) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` / ${host.t("unavailable", "Unavailable")}` : ""}
                         </span>
                       </span>
                       <span class="list-item__trailing">
@@ -547,7 +547,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
           (id) => html`
             <md-select-option value=${String(id)}>
               <div slot="headline">
-                ${catalog.cardName("members", id)} · ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
+                ${catalog.cardName("members", id)} / ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
               </div>
             </md-select-option>
           `,
@@ -696,7 +696,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
       }
       <div class="row row--between tb-input-summary">
         <span class="tb-results__meta">
-          ${host.t("candidateSummary", "{members} member cards · {snaps} Snapshots", { members: cards.members.length, snaps: cards.snaps.length })}${required ? ` · ${host.t("requiredCount", "{count} fixed", { count: required })}` : ""}
+          ${host.t("candidateSummary", "{members} member cards / {snaps} Snapshots", { members: cards.members.length, snaps: cards.snaps.length })}${required ? ` / ${host.t("requiredCount", "{count} fixed", { count: required })}` : ""}
         </span>
         ${
           !view.members.size

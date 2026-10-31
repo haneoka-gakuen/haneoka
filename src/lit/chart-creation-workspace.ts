@@ -1397,7 +1397,7 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private renderAudioSettings() {
     const volume = (key: "bgmVolume" | "noteVolume" | "metronomeVolume", label: string) => html`<label class="stack stack--tight">
-      <span>${label} · ${Math.round(this.audioSettings[key] * 100)}%</span>
+      <span>${label} / ${Math.round(this.audioSettings[key] * 100)}%</span>
       <md-slider class="md3-slider" min="0" max="100" step="1" .value=${this.audioSettings[key] * 100} aria-label=${label} .ariaLabel=${label}
         @input=${(event: Event) => this.setAudioSetting(key, Number((event.target as HTMLInputElement).value) / 100)}></md-slider>
     </label>`;
@@ -1991,8 +1991,8 @@ export class ChartCreationWorkspace extends LitElement {
       ...(chart.waypoints ?? []),
       ...chart.markers.skill.map((tick, index) => ({ tick, name: `${this.t("markers.skill")} ${index + 1}` })),
       ...chart.markers.fever.flatMap(([start, end]) => [
-        { tick: start, name: `${this.t("markers.fever")} · ${this.t("markers.start")}` },
-        { tick: end, name: `${this.t("markers.fever")} · ${this.t("markers.end")}` },
+        { tick: start, name: `${this.t("markers.fever")} / ${this.t("markers.start")}` },
+        { tick: end, name: `${this.t("markers.fever")} / ${this.t("markers.end")}` },
       ]),
       ...chart.markers.call.map(call => ({ tick: call.tick, name: this.t("markers.call") })),
     ];
@@ -2016,7 +2016,7 @@ export class ChartCreationWorkspace extends LitElement {
     for (const { at, names } of annotationGroups) {
       ctx.save();
       ctx.font = `${style.getPropertyValue("--md-sys-typescale-label-small-size").trim()} ${style.getPropertyValue("--app-font").trim()}`;
-      let label = names.join(" · ");
+      let label = names.join(" / ");
       const available = Math.max(0, width - 24);
       if (ctx.measureText(label).width > available) {
         let low = 0, high = label.length;
@@ -2167,7 +2167,7 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.setLineDash([4, 4]);
       ctx.beginPath();ctx.moveTo(0, at);ctx.lineTo(width, at);ctx.moveTo(x(cursorLane), 0);ctx.lineTo(x(cursorLane), height);ctx.stroke();
       ctx.restore();
-      if (cursorOutput) cursorOutput.textContent = `${map.tickToSeconds(tick).toFixed(3)} s · ${this.t("beat")} ${tick / chart.resolution} · ${this.t("lane")} ${Number(lane.toFixed(2))}${edited ? ` · ${this.t("width")} ${Number(edited.size.toFixed(2))}` : ""}${lane < 0 || lane > chart.laneBasis ? ` · ${this.t("creation.outside_stage")}` : ""}${action?.error ? ` · ${action.error}` : ""}`;
+      if (cursorOutput) cursorOutput.textContent = `${map.tickToSeconds(tick).toFixed(3)} s / ${this.t("beat")} ${tick / chart.resolution} / ${this.t("lane")} ${Number(lane.toFixed(2))}${edited ? ` / ${this.t("width")} ${Number(edited.size.toFixed(2))}` : ""}${lane < 0 || lane > chart.laneBasis ? ` / ${this.t("creation.outside_stage")}` : ""}${action?.error ? ` / ${action.error}` : ""}`;
       const nearby = this.selectionNodes(chart).find(item => this.selectedIds.has(item.note.id) &&
         Math.abs(y(item.note.tick) - cursorY) <= 12 &&
         Math.min(Math.abs(x(item.lane) - cursorX), Math.abs(x(item.lane + item.size) - cursorX)) <= 8);
@@ -2187,7 +2187,7 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.setLineDash([]);
       if (cursorOutput) {
         cursorOutput.hidden = false;
-        cursorOutput.textContent = placement.error || `${this.t("beat")} ${placement.tick / chart.resolution} · ${this.t("tick")} ${placement.tick}`;
+        cursorOutput.textContent = placement.error || `${this.t("beat")} ${placement.tick / chart.resolution} / ${this.t("tick")} ${placement.tick}`;
       }
     }
     if (this.pending) {
@@ -2492,7 +2492,7 @@ export class ChartCreationWorkspace extends LitElement {
     const conflict = chartShortcutCommands.find(command => command.id !== id
       && chartShortcutBindings(this.shortcutOverrides, command.id).includes(binding));
     if (conflict) {
-      this.shortcutError = `${this.t("shortcuts.conflict")} · ${this.shortcutCommandLabel(conflict)}`;
+      this.shortcutError = `${this.t("shortcuts.conflict")} / ${this.shortcutCommandLabel(conflict)}`;
       this.requestUpdate();
       return;
     }
@@ -2518,13 +2518,13 @@ export class ChartCreationWorkspace extends LitElement {
           ${chartShortcutCommands.map(command => {
             const bindings = chartShortcutBindings(this.shortcutOverrides, command.id), label = this.shortcutCommandLabel(command);
             const bindingButton = (binding: string | undefined, index: number) => html`<button class="button button--tonal" type="button"
-              aria-label=${`${label} · ${binding ? displayChartShortcut(binding) : this.t("shortcuts.add")}`}
+              aria-label=${`${label} / ${binding ? displayChartShortcut(binding) : this.t("shortcuts.add")}`}
               @click=${() => recording(command.id, index)} @keydown=${(event: KeyboardEvent) => this.recordShortcut(event, command.id, index)}>
               ${this.recordingShortcut?.id === command.id && this.recordingShortcut.index === index ? this.t("shortcuts.recording") : binding ? displayChartShortcut(binding) : this.t("shortcuts.add")}
             </button>`;
             return html`<div class="stack stack--tight" role="group" aria-label=${label}><span>${label}</span><div class="cluster">
               ${bindings.map((binding, index) => html`<div class="cluster">
-                ${bindingButton(binding, index)}${iconButton({ label: `${this.t("shortcuts.clear")} · ${label} · ${displayChartShortcut(binding)}`, icon: "close",
+                ${bindingButton(binding, index)}${iconButton({ label: `${this.t("shortcuts.clear")} / ${label} / ${displayChartShortcut(binding)}`, icon: "close",
                   onClick: () => this.saveShortcut(command.id, bindings.filter((_, i) => i !== index)) })}
               </div>`)}
               ${bindings.length < 4 ? bindingButton(undefined, bindings.length) : nothing}
@@ -2689,8 +2689,8 @@ export class ChartCreationWorkspace extends LitElement {
         }))}
         <div class="chart-creation__actions">
           <button class="button button--text" type="button" ?disabled=${this.busy || !this.audio}
-            aria-label=${`${this.t("creation.jump_waypoint")} · ${point.name}`} @click=${() => this.jumpToWaypoint(point.tick)}>${this.t("creation.jump_waypoint")}</button>
-          ${iconButton({ label: `${this.t("creation.delete_waypoint")} · ${point.name}`, icon: "delete", disabled: this.busy,
+            aria-label=${`${this.t("creation.jump_waypoint")} / ${point.name}`} @click=${() => this.jumpToWaypoint(point.tick)}>${this.t("creation.jump_waypoint")}</button>
+          ${iconButton({ label: `${this.t("creation.delete_waypoint")} / ${point.name}`, icon: "delete", disabled: this.busy,
             onClick: () => this.edit(project => { project.waypoints = project.waypoints!.filter(item => item.id !== point.id); }) })}
         </div>
       </div>`)}
@@ -3164,7 +3164,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.audio
           ? html`
               <div class="chart-creation__audio">
-                <span>${this.audio.file.name} · ${this.audio.analysis.duration.toFixed(2)} s</span>
+                <span>${this.audio.file.name} / ${this.audio.analysis.duration.toFixed(2)} s</span>
                 ${this.audio.analysis.candidates.map(
                   (candidate) => html`
                     <button
@@ -3193,7 +3193,7 @@ export class ChartCreationWorkspace extends LitElement {
                 ${this.widthControl(this.selectionNodes(chart).find((item) => item.note.id === selection.id)?.size ?? selection.size, true)}
                 <div class="chart-creation__actions">
                   ${([-1, 1] as const).map(direction => iconButton({
-                    label: `${this.t("beat")} ${direction > 0 ? "+" : "−"} · ${this.t("snap")}`,
+                    label: `${this.t("beat")} ${direction > 0 ? "+" : "−"} / ${this.t("snap")}`,
                     icon: direction > 0 ? "arrow_upward" : "arrow_downward",
                     disabled: this.busy || !!this.gesture || !this.audio,
                     onClick: () => this.nudgeSelection(direction),
@@ -3614,7 +3614,7 @@ export class ChartCreationWorkspace extends LitElement {
                     if ((event.target as HTMLInputElement).checked) this.selectedSpeeds.add(scale.id);
                     else this.selectedSpeeds.delete(scale.id);
                     this.requestUpdate();
-                  }}></md-checkbox>${this.t("selection")} · ${scale.tick / chart.resolution}
+                  }}></md-checkbox>${this.t("selection")} / ${scale.tick / chart.resolution}
               </label>
               ${this.beatField(scale.tick, tick => this.edit(project => {
                 project.timeScales.find(event => event.id === scale.id)!.tick = tick;
@@ -3660,7 +3660,7 @@ export class ChartCreationWorkspace extends LitElement {
           ${this.documents.map(
             (document) => html`
               <md-select-option value=${document.id}>
-                <div slot="headline">${document.title || this.t("project")} · ${formatDate(this.locale, document.updatedAt, { time: true })}</div>
+                <div slot="headline">${document.title || this.t("project")} / ${formatDate(this.locale, document.updatedAt, { time: true })}</div>
               </md-select-option>
             `,
           )}
@@ -3679,7 +3679,7 @@ export class ChartCreationWorkspace extends LitElement {
                 .selected=${revision.revision === this.activeRevision}
               >
                 <div slot="headline">
-                  ${revision.revision} · ${formatDate(this.locale, revision.savedAt, { time: true })}
+                  ${revision.revision} / ${formatDate(this.locale, revision.savedAt, { time: true })}
                 </div>
               </md-select-option>
             `,

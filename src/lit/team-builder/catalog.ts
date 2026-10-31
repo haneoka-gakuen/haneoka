@@ -237,7 +237,7 @@ export class Catalog {
         title: title.text,
         titleLanguage: title.locale,
         subtitle: names,
-        label: [title.text, names, rarity, attribute].filter(Boolean).join(" · "),
+        label: [title.text, names, rarity, attribute].filter(Boolean).join(" / "),
         image: card.image,
         avatars: [...new Set(characters)].map((character) => ({
           image: this.characterFace(character),

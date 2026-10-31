@@ -393,8 +393,8 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                               </strong>
                               <span class="list-item__supporting">
                                 ${snapKey ? catalog.cardName("snaps", cardIdOf(snapKey)) : host.t("noSnap", "No snap")}
-                                · ${host.t("power", "Power")}
-                                ${format(host, hit.power)}${hit.score ? ` · ${format(host, hit.score.mean)}` : ""}${hit.event ? ` · ${format(host, hit.event.mean, 1)} pt` : ""}
+                                / ${host.t("power", "Power")}
+                                ${format(host, hit.power)}${hit.score ? ` / ${format(host, hit.score.mean)}` : ""}${hit.event ? ` / ${format(host, hit.event.mean, 1)} pt` : ""}
                               </span>
                             </span>
                             <span class="list-item__trailing">

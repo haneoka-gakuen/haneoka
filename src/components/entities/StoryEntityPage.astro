@@ -36,7 +36,7 @@ const seoTitleValues = Object.fromEntries(
   LOCALES.map((target) => {
     const chapter = page.chapterNames[target];
     const parts = [page.titles[target], chapter && chapter !== page.titles[target] ? chapter : "", modeLabel(target)];
-    return [target, parts.filter(Boolean).join(" · ")];
+    return [target, parts.filter(Boolean).join(" / ")];
   }),
 ) as Record<Locale, string>;
 const payload = await catalogEntityData(server, "stories", page.storyId) as StoryPayload | undefined;

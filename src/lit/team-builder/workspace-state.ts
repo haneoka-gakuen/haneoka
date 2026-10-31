@@ -15,7 +15,7 @@ export const uniqueCharts = (songs: readonly SongRef[]): SongRef[] =>
 export function missionSummary(missions: readonly string[]): string {
   const labels = missions.map(value => value === "Combo" ? "COMBO" : value === "Luck" ? "LUCK" : value === "JustCount" ? "JUST" : "—");
   if (!labels.length || labels.every(value => value === "—")) return "";
-  return labels.every(value => value === labels[0]) ? `${labels[0]} ×${labels.length}` : labels.join(" · ");
+  return labels.every(value => value === labels[0]) ? `${labels[0]} ×${labels.length}` : labels.join(" / ");
 }
 
 export function parseOpponents(drafts: readonly string[]) {

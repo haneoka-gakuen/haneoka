@@ -46,9 +46,9 @@ export const COMPARISON_TEXT = {
   average: "Per-player requirement",
   sort: "Sort",
   conditions: "Conditions",
-  play: "Normal play · Assist off",
-  orders: "120 skill orders · Average score",
-  luck: "LUCK · Nominal expectation",
+  play: "Normal play / Assist off",
+  orders: "120 skill orders / Average score",
+  luck: "LUCK / Nominal expectation",
   placement: "Every section: #{rank}",
   coverage: "{done}/{total} charts complete",
   empty: "Choose playable charts to compare",
@@ -72,7 +72,7 @@ export const COMPARISON_TEXT = {
   percent: "Enter 0–100",
   issues: "Review these fields",
   slot: "Slot {slot}",
-  unknown: "Unfilled growth · Minimum values",
+  unknown: "Unfilled growth / Minimum values",
   recorded: "Recorded",
   defaultValue: "Base value",
   unset: "Unfilled",
@@ -137,24 +137,24 @@ function conditions(host: TeamBuilder) {
     { label: t("rankTotal"), value: resolved.totalRank, recorded: team.player.characterTotalRank !== null },
     { label: t("vip"), value: resolved.vipRank, recorded: team.player.vipRank !== null },
     ...[...master.characters.keys()].map((id) => ({
-      label: `${host.catalog!.characterName(id)} · ${t("characterRank")}`,
+      label: `${host.catalog!.characterName(id)} / ${t("characterRank")}`,
       value: resolved.characterRanks.get(id) ?? 1,
       recorded: team.player.characterRanks[String(id)] != null,
     })),
     ...[...master.characters.keys()].map((id) => ({
-      label: `${host.catalog!.characterName(id)} · ${t("characterMemory")}`,
+      label: `${host.catalog!.characterName(id)} / ${t("characterMemory")}`,
       value: resolved.characterMemory.get(id) ?? 0,
       recorded: team.player.characterMemory[String(id)] != null,
     })),
     ...s.songs
       .filter((song, index, all) => all.findIndex((row) => row.songId === song.songId) === index)
       .map((song) => ({
-        label: `${host.catalog!.songTitle(song.songId)} · ${t("songMemory")}`,
+        label: `${host.catalog!.songTitle(song.songId)} / ${t("songMemory")}`,
         value: resolved.musicMemory.get(song.songId) ?? 0,
         recorded: team.player.musicMemory[String(song.songId)] != null,
       })),
     ...[...master.bandItems.keys()].map((id) => ({
-      label: `${host.catalog!.text(host.data!.bandItems[String(id)]?.name) || "#" + id} · ${t("facilities")}`,
+      label: `${host.catalog!.text(host.data!.bandItems[String(id)]?.name) || "#" + id} / ${t("facilities")}`,
       value: resolved.bandItems.get(id) ?? 0,
       recorded: team.player.bandItems[String(id)] != null,
     })),
@@ -376,7 +376,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
               }}
             >
               ${t("coverage", { done: group.charts.filter((chart) => chart.status === "complete").length, total: group.charts.length })}
-              · ${t("details")}
+              / ${t("details")}
             </button>
             <div id=${`sc-mobile-${group.id}`} class="stack" ?hidden=${!open}>
               ${group.charts.map((chart) => {
@@ -444,7 +444,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
           type="button"
           @click=${() => c.choose()}
         >
-          ${t("choose")} · ${c.rows.length}
+          ${t("choose")} / ${c.rows.length}
         </button>
         ${songRulesControl(host, s.songRules, songRules => c.update({songRules}), true)}
         ${select(
@@ -514,7 +514,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
                               void host.focusInput(issue.field);
                             }}
                           >
-                            ${issue.slot === undefined ? "" : t("slot", { slot: issue.slot + 1 }) + " · "}${t(issue.reason as keyof typeof COMPARISON_TEXT)}
+                            ${issue.slot === undefined ? "" : t("slot", { slot: issue.slot + 1 }) + " / "}${t(issue.reason as keyof typeof COMPARISON_TEXT)}
                           </a>
                         </li>
                       `,
@@ -661,7 +661,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
                                               <dt>${t("score")}</dt>
                                               <dd>${chart.hit?.score ? format(chart.hit.score.mean) : "—"}</dd>
                                               <dt>${t("rank")}</dt>
-                                              <dd>${missions} · ${result.rank ?? "—"}</dd>
+                                              <dd>${missions} / ${result.rank ?? "—"}</dd>
                                             </dl>
                                             ${
                                               chart.status === "failed" || chart.status === "cancelled"

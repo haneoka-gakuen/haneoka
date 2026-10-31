@@ -204,7 +204,7 @@ export function renderItemRelations(c: ItemRelationsController, data: ItemRelati
   const sourceRow = (entry: ItemRelation) => {
     const occurrences = entry.occurrences;
     const single = occurrences.length === 1 ? occurrences[0]! : undefined;
-    const supporting = single ? conditions(single).join(" · ") : "";
+    const supporting = single ? conditions(single).join(" / ") : "";
     const body = html`
       ${artwork(entry)}
       <span>
@@ -224,7 +224,7 @@ export function renderItemRelations(c: ItemRelationsController, data: ItemRelati
                   ${occurrences.map(
                   (row) => html`
                     <span class="item-relation__alternative">
-                      <span>${conditions(row).join(" · ") || "—"}</span>
+                      <span>${conditions(row).join(" / ") || "—"}</span>
                       <strong>${quantity(row.count)}</strong>
                     </span>
                   `,
@@ -385,7 +385,7 @@ export function renderItemRelations(c: ItemRelationsController, data: ItemRelati
                           return html`
                             <tr>
                               <td>${rewardGroup === undefined ? "—" : String(rewardGroup)}</td>
-                              <td>${conditions({ ...row, conditions: rest }).join(" · ") || "—"}</td>
+                              <td>${conditions({ ...row, conditions: rest }).join(" / ") || "—"}</td>
                               <td class="is-numeric">${quantity(row.count)}</td>
                             </tr>
                           `;

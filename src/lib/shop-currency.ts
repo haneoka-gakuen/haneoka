@@ -130,7 +130,7 @@ export function shopPriceLine(locale: string, prices: unknown): string {
   const table = priceTable(prices);
   return resolveShopPriceCurrencies(locale, prices)
     .map((code) => formatMoney(table[code], code, locale))
-    .join(" · ");
+    .join(" / ");
 }
 
 export interface ShopFxRates {

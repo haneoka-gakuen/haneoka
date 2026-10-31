@@ -3240,7 +3240,11 @@
       },
       "selectAllCharts": "すべて選択",
       "deselectAllCharts": "すべて解除",
-      "clearAllCharts": "すべての選択をクリア"
+      "clearAllCharts": "すべての選択をクリア",
+      "stepsLabel": "手順",
+      "stepCards": "カードをインポート",
+      "stepCardsDone": "{count} 枚",
+      "stepSongs": "楽曲を選ぶ"
     },
     "calendar": {
       "title": "カレンダー",

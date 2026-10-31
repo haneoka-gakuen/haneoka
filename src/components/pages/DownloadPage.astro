@@ -11,19 +11,19 @@ const release = await appRelease();
 const text = (key: string) => t(locale, `download.${key}`);
 const platforms = [
   { id: "android", name: "Android", system: "Android 8+", groups: ["arm64-v8a", "x86_64", "universal"], preferred: "-android-arm64-v8a.apk" },
-  { id: "ios", name: "iOS / iPadOS", system: "iOS 15+ · ARM64", groups: ["arm64"], preferred: "-ios-unsigned.ipa" },
+  { id: "ios", name: "iOS / iPadOS", system: "iOS 15+ / ARM64", groups: ["arm64"], preferred: "-ios-unsigned.ipa" },
   { id: "windows", name: "Windows", system: "Windows 10+", groups: ["x64", "arm64"], preferred: "-windows-x64-setup.exe" },
   { id: "macos", name: "macOS", system: "macOS 12+", groups: ["arm64", "x64"], preferred: "-macos-arm64.dmg" },
-  { id: "linux", name: "Linux", system: "Linux · glibc", groups: ["x64", "arm64"], preferred: "-linux-x64.AppImage" },
+  { id: "linux", name: "Linux", system: "Linux / glibc", groups: ["x64", "arm64"], preferred: "-linux-x64.AppImage" },
 ];
-const groupLabel = (platform: string, arch: string) => arch === "universal" ? text("universal") : platform === "macos" ? (arch === "arm64" ? "Apple Silicon · ARM64" : "Intel · x64") : ({ "arm64-v8a": "ARM64 · arm64-v8a", "armeabi-v7a": "ARM32 · armeabi-v7a", "x86_64": "x86-64", "arm64": "ARM64", "x64": "x64" }[arch] ?? arch);
+const groupLabel = (platform: string, arch: string) => arch === "universal" ? text("universal") : platform === "macos" ? (arch === "arm64" ? "Apple Silicon / ARM64" : "Intel / x64") : ({ "arm64-v8a": "ARM64 / arm64-v8a", "armeabi-v7a": "ARM32 / armeabi-v7a", "x86_64": "x86-64", "arm64": "ARM64", "x64": "x64" }[arch] ?? arch);
 const packages = release.assets.filter((a) => /\.(apk|aab|ipa|tipa|exe|msi|msix|zip|dmg|pkg|AppImage|deb|rpm|flatpak|snap|zst|gz)$/.test(a.name));
 const linuxFormats = [".AppImage", ".flatpak", ".snap", ".deb", ".rpm", ".pkg.tar.zst", ".tar.gz"];
 const assetsFor = (platform: string, arch: string) => {
   const assets = packages.filter((a) => platform === "ios" ? a.name.includes("-ios-") : arch === "universal" ? /-android\.(apk|aab)$/.test(a.name) : a.name.includes(`-${platform}-${arch}`));
   return platform === "linux" ? assets.sort((a, b) => linuxFormats.findIndex((suffix) => a.name.endsWith(suffix)) - linuxFormats.findIndex((suffix) => b.name.endsWith(suffix))) : assets;
 };
-const format = (name: string) => name.endsWith(".pkg.tar.zst") ? "Arch" : name.endsWith(".tar.gz") ? "tar.gz" : name.endsWith(".tipa") ? "TrollStore · TIPA" : name.endsWith(".ipa") ? "IPA" : name.endsWith(".exe") ? `EXE · ${text("installer")}` : name.endsWith(".zip") ? `ZIP · ${text("portable")}` : name.endsWith(".aab") ? `AAB · ${text("bundle")}` : name.split(".").pop()!;
+const format = (name: string) => name.endsWith(".pkg.tar.zst") ? "Arch" : name.endsWith(".tar.gz") ? "tar.gz" : name.endsWith(".tipa") ? "TrollStore / TIPA" : name.endsWith(".ipa") ? "IPA" : name.endsWith(".exe") ? `EXE / ${text("installer")}` : name.endsWith(".zip") ? `ZIP / ${text("portable")}` : name.endsWith(".aab") ? `AAB / ${text("bundle")}` : name.split(".").pop()!;
 const size = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 const extras = release.assets.filter((a) => !packages.includes(a) && a.name !== "release-version.json");
 ---
@@ -62,11 +62,11 @@ const extras = release.assets.filter((a) => !packages.includes(a) && a.name !== 
         const preferred = packages.find((a) => a.name.endsWith(platform.preferred));
         return <section class={`download-card download-card--${platform.id}`} id={`download-${platform.id}`} aria-labelledby={`title-${platform.id}`}>
           <header class="download-card__header"><span class="download-platform-icon"><PlatformLogo platform={platform.id} /></span><div><h3 id={`title-${platform.id}`}>{platform.name}</h3><p>{platform.system}</p></div></header>
-          {preferred && <a class="download-primary" href={preferred.browser_download_url}><Icon name="download" size={24} /><span><strong><I18nText keyName="download.download" locale={locale} /> {platform.name}</strong><small>{platform.id === "android" ? "ARM64" : platform.id === "macos" ? "Apple Silicon" : platform.id === "ios" ? "ARM64" : "x64"} · {format(preferred.name)} · {size(preferred.size)}</small></span><Icon name="arrow_downward" size={22} /></a>}
+          {preferred && <a class="download-primary" href={preferred.browser_download_url}><Icon name="download" size={24} /><span><strong><I18nText keyName="download.download" locale={locale} /> {platform.name}</strong><small>{platform.id === "android" ? "ARM64" : platform.id === "macos" ? "Apple Silicon" : platform.id === "ios" ? "ARM64" : "x64"} / {format(preferred.name)} / {size(preferred.size)}</small></span><Icon name="arrow_downward" size={22} /></a>}
           {platform.id === "windows" && <a class="chip" href="https://learn.microsoft.com/windows/arm/apps-on-arm-x86-emulation" target="_blank" rel="noreferrer"><I18nText keyName="download.windowsArmPackage" locale={locale} /></a>}
           <div class="download-architectures">{platform.groups.map((arch) => {
             const assets = assetsFor(platform.id, arch);
-            return assets.length > 0 && <div class="download-architecture"><h4>{groupLabel(platform.id, arch)}</h4><div class="download-package-buttons">{assets.map((asset) => <a class="download-package" href={asset.browser_download_url} title={`${asset.name} · ${size(asset.size)}`}><Icon name="download" size={18} /><span>{format(asset.name)}<small>{size(asset.size)}</small></span></a>)}</div></div>;
+            return assets.length > 0 && <div class="download-architecture"><h4>{groupLabel(platform.id, arch)}</h4><div class="download-package-buttons">{assets.map((asset) => <a class="download-package" href={asset.browser_download_url} title={`${asset.name} / ${size(asset.size)}`}><Icon name="download" size={18} /><span>{format(asset.name)}<small>{size(asset.size)}</small></span></a>)}</div></div>;
           })}</div>
           <p class="download-note"><Icon name="info" size={18} /><I18nText keyName={`download.${platform.id}Note`} locale={locale} /></p>
         </section>;

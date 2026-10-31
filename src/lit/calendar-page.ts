@@ -338,7 +338,7 @@ export class CalendarPage extends LitElement {
     if (item.kind === "character" || item.kind === "cast") return this.t("allDay");
     if (item.allDay || !item.startAtMs) {
       return item.kind === "live"
-        ? `${this.dateLabel(item.start)}${item.end !== item.start ? ` – ${this.dateLabel(item.end)}` : ""} · ${this.t("allDay")}`
+        ? `${this.dateLabel(item.start)}${item.end !== item.start ? ` – ${this.dateLabel(item.end)}` : ""} / ${this.t("allDay")}`
         : this.t("allDay");
     }
     return this.timedRange(item.startAtMs, item.endAtMs);
@@ -351,7 +351,7 @@ export class CalendarPage extends LitElement {
         const actorHref = item.kind === "cast" && item.voices?.length === 1 ? item.voices[0].href : undefined;
         const primaryHref = item.kind === "cast" ? actorHref : item.href;
         const actorLabel = actorHref
-          ? `${title.text} · ${this.t("voiceRoles").replace("{roles}", resolveLocalizedText(item.voices![0].name, this.locale).text)}${actorHref.startsWith("https://bestdori.com/") ? " · Bestdori" : ""}`
+          ? `${title.text} / ${this.t("voiceRoles").replace("{roles}", resolveLocalizedText(item.voices![0].name, this.locale).text)}${actorHref.startsWith("https://bestdori.com/") ? " / Bestdori" : ""}`
           : undefined;
         return html`
           ${index ? html`<md-divider></md-divider>` : nothing}
@@ -393,7 +393,7 @@ export class CalendarPage extends LitElement {
             </span>
             ${primaryHref ? html`<span slot="end">${icon("chevron_right", 24)}</span>` : nothing}
           </md-list-item>
-          ${item.gameWindow ? html`<a class="calendar-source-link" href=${item.gameWindow.href}>${this.t("game-live")} · ${this.gameRange(item)}${icon("chevron_right", 16)}</a>` : nothing}
+          ${item.gameWindow ? html`<a class="calendar-source-link" href=${item.gameWindow.href}>${this.t("game-live")} / ${this.gameRange(item)}${icon("chevron_right", 16)}</a>` : nothing}
           ${item.sourceUrl && item.sourceUrl !== item.href ? html`<a class="calendar-source-link" href=${item.sourceUrl} rel="noopener noreferrer">${this.t("source")}${icon("open_in_new", 16)}</a>` : nothing}
         `;
       })}
@@ -618,7 +618,7 @@ export class CalendarPage extends LitElement {
                 ${changes.map((item) => {
                   const title = this.itemTitle(item);
                   const phase = item.start === item.end ? "" : this.t(item.start === date ? "starts" : "ends");
-                  const body = html`<i class=${`calendar-tone calendar-tone--${tone(item.kind)}`}></i><span lang=${title.lang}>${title.text}</span><small>${[phase, this.t(item.kind)].filter(Boolean).join(" · ")}</small>`;
+                  const body = html`<i class=${`calendar-tone calendar-tone--${tone(item.kind)}`}></i><span lang=${title.lang}>${title.text}</span><small>${[phase, this.t(item.kind)].filter(Boolean).join(" / ")}</small>`;
                   return item.kind !== "cast" && item.href
                     ? html`<a class="calendar-agenda__item" href=${item.href}>${body}</a>`
                     : html`<span class="calendar-agenda__item">${body}</span>`;

@@ -37,7 +37,7 @@ export function serverSourcesImage(sources: readonly string[]): string {
   if (existing) return existing;
   const base = contentSourceFamily(sources[0] || "") === "jp" ? `data:image/svg+xml,${encodeURIComponent(bushimoSource)}` : bilibili;
   const labels = sources.map((server) => (server.split("-").at(-1) || "").replace(/^0+(?=\d)/u, "").slice(0, 2).toUpperCase());
-  const text = labels.slice(0, 3).join("·") + (labels.length > 3 ? "+" : "");
+  const text = labels.slice(0, 3).join("/") + (labels.length > 3 ? "+" : "");
   const escaped = text.replace(/[&<>"']/gu, (char) => `&#${char.charCodeAt(0)};`);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><image href="${base}" width="27" height="27"/><rect x="5" y="21" width="27" height="11" rx="5.5" fill="#fff" stroke="#555" stroke-width=".6"/><text x="18.5" y="29" font-family="sans-serif" font-size="8" font-weight="700" text-anchor="middle" fill="#222">${escaped}</text></svg>`;
   const image = `data:image/svg+xml,${encodeURIComponent(svg)}`;

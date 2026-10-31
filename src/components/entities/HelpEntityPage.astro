@@ -33,7 +33,7 @@ const seoTitleValues = Object.fromEntries(
       target,
       [topic.titles[target], category && category !== topic.titles[target] ? category : "", sectionTitle]
         .filter(Boolean)
-        .join(" · "),
+        .join(" / "),
     ];
   }),
 ) as Record<Locale, string>;

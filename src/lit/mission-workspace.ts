@@ -536,7 +536,7 @@ export class MissionWorkspace extends LitElement {
     return goal > 0
       ? html`
           <span class="mission-row__goal tabular">
-            ${this.text("catalog.missions.goal", "Goal")} ·
+            ${this.text("catalog.missions.goal", "Goal")} /
             <b>${goal.toLocaleString(this.locale)}</b>
           </span>
         `
@@ -550,7 +550,7 @@ export class MissionWorkspace extends LitElement {
         groups: groups.filter((group) => group.category === 1 && !group.timed),
       },
       ...(["ongoing", "upcoming", "ended"] as const).map((status) => ({
-        label: `${this.text("limitedMission", "Limited missions")} · ${this.text(status, "")}`,
+        label: `${this.text("limitedMission", "Limited missions")} / ${this.text(status, "")}`,
         groups: groups
           .filter((group) => group.timed && missionGroupStatus(group, this.now) === status)
           .sort((a, b) => (status === "upcoming" ? a.window.start - b.window.start : b.window.start - a.window.start)),

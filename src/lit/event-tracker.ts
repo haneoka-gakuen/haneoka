@@ -412,7 +412,7 @@ export class EventTracker extends LitElement {
                     <a
                       class="browse__heading-art-link"
                       href=${eventHref}
-                      aria-label=${`${this.label("event", "Event")} · ${this.eventTitle()}`}
+                      aria-label=${`${this.label("event", "Event")} / ${this.eventTitle()}`}
                     >
                       ${eventArt}
                     </a>
@@ -422,7 +422,7 @@ export class EventTracker extends LitElement {
             <div class="browse__heading-copy">
               <h2 lang=${resolveLocalizedText(this.info?.title, this.locale).locale}>${this.eventTitle()}</h2>
               <p>
-                ${this.label("event", "Event")} · #${event.id} ·
+                ${this.label("event", "Event")} / #${event.id} /
                 ${gameDateTimeRange(this.locale, event.startAtMs || 0, event.endAtMs || 0)}
               </p>
               <p class="tabular" role="timer" aria-live="off">${this.countdown()}</p>

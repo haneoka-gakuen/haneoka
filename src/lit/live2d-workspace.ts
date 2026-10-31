@@ -1344,7 +1344,7 @@ export class Live2DWorkspace extends LitElement {
     if (this.entityId && this.detail)
       updateEntityHeading(
         this,
-        [...new Set([this.characterName(this.detail), this.modelTitle(this.detail)].filter(Boolean))].join(" · "),
+        [...new Set([this.characterName(this.detail), this.modelTitle(this.detail)].filter(Boolean))].join(" / "),
       );
     this.removeSsrStageWhenOwned();
     // Collection details are modal panes; canonical entity routes are ordinary
@@ -1500,7 +1500,7 @@ export class Live2DWorkspace extends LitElement {
           ? uiText(this.locale, "media.models.labels.visualAssets")
           : uiText(this.locale, "media.models.labels.downloadModel");
     const count = progress.total == null ? String(progress.completed) : `${progress.completed}/${progress.total}`;
-    const bytes = progress.loadedBytes > 0 ? ` · ${this.formatBytes(progress.loadedBytes)}` : "";
+    const bytes = progress.loadedBytes > 0 ? ` / ${this.formatBytes(progress.loadedBytes)}` : "";
     return `${uiText(this.locale, "common.fields.progress")}: ${stage} ${count}${bytes}`;
   }
   private renderCatalogWorkspace() {

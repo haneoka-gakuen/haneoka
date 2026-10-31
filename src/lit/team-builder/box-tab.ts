@@ -239,8 +239,8 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           : nothing}
         <div class="row row--wrap tb-toolbar__row tb-bulk">
           <span class="tb-bulk__summary">${host.boxQuickEntry
-            ? host.t("quickEntrySummary", "{owned} owned · {shown} shown", { owned: ownedCount, shown: rows.length })
-            : host.t("boxSummary", "{owned} owned · {used} in search · {shown} shown", { owned: ownedCount, used: usedCount, shown: rows.length })}</span>
+            ? host.t("quickEntrySummary", "{owned} owned / {shown} shown", { owned: ownedCount, shown: rows.length })
+            : host.t("boxSummary", "{owned} owned / {used} in search / {shown} shown", { owned: ownedCount, used: usedCount, shown: rows.length })}</span>
           <span class="row__spacer"></span>
           <button class="button button--text button--small" type="button" ?disabled=${!rows.length}
             @click=${() => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.flatMap((row) => [{ key: `${prefix(row.kind)}.${row.id}.own`, value: true }, ...(row.owned || host.boxQuickEntry ? [] : [{ key: `${prefix(row.kind)}.${row.id}.use`, value: true }])]))}>

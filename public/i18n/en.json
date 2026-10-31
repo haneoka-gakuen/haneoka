@@ -3240,7 +3240,11 @@
       },
       "selectAllCharts": "Select all",
       "deselectAllCharts": "Deselect all",
-      "clearAllCharts": "Clear all selections"
+      "clearAllCharts": "Clear all selections",
+      "stepsLabel": "Steps",
+      "stepCards": "Import cards",
+      "stepCardsDone": "{count} cards",
+      "stepSongs": "Choose songs"
     },
     "calendar": {
       "title": "Calendar",

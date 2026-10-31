@@ -772,7 +772,7 @@ export class ImageGallery extends LitElement {
             href=${candidates[0]}
             target="_blank"
             rel="noopener"
-            aria-label=${`${uiText(this.locale, "media.models.labels.zoom")} · ${active.label}`}
+            aria-label=${`${uiText(this.locale, "media.models.labels.zoom")} / ${active.label}`}
             @click=${(event: MouseEvent) => this.open(index, event)}
           >
             ${this.picture(active)}

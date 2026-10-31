@@ -306,7 +306,7 @@ export class ChartPublication extends LitElement {
   }
   private sourceLabel(ref: ChartMediaRef | null, local = "") {
     return ref?.kind === "server"
-      ? `${ref.provider === "our-notes" ? "Our Notes" : "Bestdori"} · ${ref.server} · ${ref.songId}`
+      ? `${ref.provider === "our-notes" ? "Our Notes" : "Bestdori"} / ${ref.server} / ${ref.songId}`
       : local || this.t("localUpload");
   }
   render() {

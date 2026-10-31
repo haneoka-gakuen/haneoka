@@ -277,7 +277,7 @@ export function historyBatchViews(
         kind,
         name: Object.keys(card).length
           ? localizedText(card.prefix ?? card.cardName ?? card.name, locale)
-          : `${unknown} · ${prize.prizeId}`,
+          : `${unknown} / ${prize.prizeId}`,
         rarity,
         rarityLabel,
         converted: prize.converted,

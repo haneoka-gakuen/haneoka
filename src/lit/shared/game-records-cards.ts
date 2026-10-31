@@ -189,7 +189,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
       profileCard?.slot != null ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(profileCard.slot)) : "",
     ]
       .filter(Boolean)
-      .join(" · ");
+      .join(" / ");
     const identity = html`
       <strong>${name}</strong>
       <small class="song-ranking__player-stats">

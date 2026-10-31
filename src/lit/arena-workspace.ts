@@ -641,9 +641,6 @@ export class ArenaWorkspace extends LitElement {
                     )}
                   </ol>
                 </div>
-                <p class="arena-condition__summary md-title-small">
-                  ${this.attributeLabel(shown.musicType)} · ${this.ruleText(shown)}
-                </p>
                 <p class="arena-condition__window md-body-medium">
                   ${icon("schedule", 18)}${this.time(shown.startAt)} – ${this.time(shown.endAt)}
                   ${
@@ -760,7 +757,7 @@ export class ArenaWorkspace extends LitElement {
                                   ${group.divisions.map(
                                     (division, index) => html`
                                       <span
-                                        title=${`${this.name(division.name)} · ${division.points.toLocaleString(this.locale)}+`}
+                                        title=${`${this.name(division.name)} / ${division.points.toLocaleString(this.locale)}+`}
                                       >
                                         <span>${this.name(division.name)}</span>
                                         <strong>

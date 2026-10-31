@@ -17,14 +17,14 @@ const { locale, mode = "characters", server } = Astro.props as {
 const route = `/catalog/anon-tokyo/${mode}`;
 const canonicalRoute = server ? `/${server}/${locale}/anon-tokyo/${mode}/` : undefined;
 const key = mode === "outfits" ? "catalog.anonTokyo.dressingRoom" : `catalog.anonTokyo.${mode}`;
-const title = `ANON TOKYO · ${t(locale, key, mode)}`;
+const title = `ANON TOKYO / ${t(locale, key, mode)}`;
 const payload = await catalogSystemData("anon-tokyo", server || "intl", locale, mode);
 const page = await renderCatalogSystem(payload, locale);
 const dataId = `anon-tokyo-${mode}`;
 // The <title> prefers explicit values over the titleKey translation, so the
 // brand prefix survives into the document head in every language.
 const seoTitleValues = Object.fromEntries(
-  LOCALES.map((target) => [target, `ANON TOKYO · ${t(target, key, mode)}`]),
+  LOCALES.map((target) => [target, `ANON TOKYO / ${t(target, key, mode)}`]),
 ) as Record<Locale, string>;
 ---
 

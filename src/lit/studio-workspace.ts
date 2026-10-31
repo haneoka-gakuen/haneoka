@@ -314,7 +314,7 @@ export class StudioWorkspace extends LitElement {
         <span class="studio-metric__label">${label}</span>
         <strong class="studio-metric__value tabular">${this.number(value)}</strong>
         <span class="studio-metric__session tabular">
-          ${this.hours(level.efficiencyTime)} · ${this.number(Math.round(value * session))}
+          ${this.hours(level.efficiencyTime)} / ${this.number(Math.round(value * session))}
         </span>
       </div>
     `;

@@ -151,7 +151,7 @@ export class PlaylistHub extends LitElement {
   }
   private reportLibraryStatus(library: SongLibrary, lists: RecordValue[]) {
     if (library.partial.length) snackbar(this.t("partial", "Some songs could not be loaded; the lists show what is available."));
-    else if (this.gameError && !lists.length) snackbar(`${this.t("gameUnavailable", "In-game playlists are unavailable")} · ${this.gameError}`);
+    else if (this.gameError && !lists.length) snackbar(`${this.t("gameUnavailable", "In-game playlists are unavailable")} / ${this.gameError}`);
   }
   renderStaticChrome() { if (this.view === "hub") this.syncHubBar(); else this.renderBarActions(); }
 
@@ -220,7 +220,7 @@ export class PlaylistHub extends LitElement {
       ? names
           .map((name) => localizedText(name, this.locale))
           .filter(Boolean)
-          .join(" · ")
+          .join(" / ")
       : localizedText(song.bandName, this.locale);
   }
 
@@ -372,7 +372,7 @@ export class PlaylistHub extends LitElement {
       text = this.draft?.id ? this.t("editTitle", "Edit playlist") : this.t("create", "New playlist");
     else if (this.view === "detail" && this.current && this.heroHidden) text = this.titleOf(this.current);
     if (heading.textContent !== text) heading.textContent = text;
-    document.title = `${this.view === "detail" && this.current ? this.titleOf(this.current) : text} · haneoka`;
+    document.title = `${this.view === "detail" && this.current ? this.titleOf(this.current) : text} / haneoka`;
   }
 
   private renderBarActions() {
@@ -956,7 +956,7 @@ export class PlaylistHub extends LitElement {
           <button
             class="playlist-tile__play"
             type="button"
-            aria-label=${`${this.t("playAll", "Play all")} · ${this.titleOf(playlist)}`}
+            aria-label=${`${this.t("playAll", "Play all")} / ${this.titleOf(playlist)}`}
             ?disabled=${!playlist.trackCount}
             @click=${async () => {
               let target = playlist;
@@ -1257,7 +1257,7 @@ export class PlaylistHub extends LitElement {
                 ${
                   fromNotes && fromGbp
                     ? html`
-                        <span>Our Notes ${fromNotes} · GBP ${fromGbp}</span>
+                        <span>Our Notes ${fromNotes} / GBP ${fromGbp}</span>
                       `
                     : nothing
                 }
@@ -1301,7 +1301,7 @@ export class PlaylistHub extends LitElement {
                     >
                       ${playlist.viewerLiked ? iconFilled("favorite", 20) : icon("favorite", 20)}
                       <span>
-                        ${playlist.viewerLiked ? this.t("collected", "Saved") : this.t("collect", "Save")}${playlist.likeCount ? ` · ${playlist.likeCount}` : ""}
+                        ${playlist.viewerLiked ? this.t("collected", "Saved") : this.t("collect", "Save")}${playlist.likeCount ? ` / ${playlist.likeCount}` : ""}
                       </span>
                     </button>
                   `
@@ -1393,7 +1393,7 @@ export class PlaylistHub extends LitElement {
           class="playlist-song__main"
           type="button"
           ?disabled=${!song.audio}
-          aria-label=${`${this.t("play", "Play")} · ${this.songName(song)}`}
+          aria-label=${`${this.t("play", "Play")} / ${this.songName(song)}`}
           @click=${() => void this.play(playlist, song)}
         >
           <span class="playlist-song__index">${playing ? icon("graphic_eq", 18) : index + 1}</span>

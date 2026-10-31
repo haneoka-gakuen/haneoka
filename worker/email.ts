@@ -326,7 +326,7 @@ const renderEmail = (message: AuthEmailMessage, safeURL: string): { html: string
         </td></tr>
       </table>
       <!--[if mso]></td></tr></table><![endif]-->
-      <p style="margin:18px 0 0;font-size:12px;line-height:20px;color:#777680"><a href="${siteURL}" style="color:#555994;text-decoration:none">Haneoka</a> &nbsp;·&nbsp; haneoka.org</p>
+      <p style="margin:18px 0 0;font-size:12px;line-height:20px;color:#777680"><a href="${siteURL}" style="color:#555994;text-decoration:none">Haneoka</a> &nbsp;/&nbsp; haneoka.org</p>
     </td></tr>
   </table>
 </body>

@@ -227,7 +227,7 @@ export class SongProgress extends LitElement {
           </span>
         </a>
         <span class="song-progress__level tabular" style=${`--chart-color:var(--md-extended-color-difficulty-${DIFFICULTIES[chart.difficulty === 5 ? 4 : chart.difficulty] === "special" ? "master" : DIFFICULTIES[chart.difficulty]})`}>${chart.levelText}</span>
-        <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} · ${chart.levelText}`}>
+        <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
           ${[1, 2, 3].map(
             (value) => html`<button
               type="button"

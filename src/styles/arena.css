@@ -114,10 +114,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .arena-condition__summary {
-    margin: 0;
-  }
-
   /* Tabs and panel grid */
   .arena-tabs {
     overflow-x: auto;

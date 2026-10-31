@@ -1415,7 +1415,7 @@ export class HomeDashboard extends LitElement {
                           <a
                             class="home-event__media media-loading"
                             href=${eventHref}
-                            aria-label=${`${title} · ${countdown}`}
+                            aria-label=${`${title} / ${countdown}`}
                           >
                             ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale)}
                             <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
@@ -1603,7 +1603,7 @@ export class HomeDashboard extends LitElement {
                       this.releaseLabel(releasedAt),
                     ]
                       .filter(Boolean)
-                      .join(" · "),
+                      .join(" / "),
                     kind: kind === "member-cards" ? "member" : "support",
                     fit: "contain",
                     adornment: related.adornment,
@@ -1731,7 +1731,7 @@ export class HomeDashboard extends LitElement {
                     );
                     return tile({
                       ...options,
-                      label: [options.label, release].filter(Boolean).join(" · "),
+                      label: [options.label, release].filter(Boolean).join(" / "),
                       serverMark: this.exclusiveMark(song) ?? undefined,
                       static: !songHref,
                     });
@@ -1945,7 +1945,7 @@ export class HomeDashboard extends LitElement {
                   this.birthdayCountdown(item),
                 ]
                   .filter(Boolean)
-                  .join(" · ");
+                  .join(" / ");
                 const content = html`
                   <span class="home-birthday-portrait" style=${`--member:${item.color}`}>
                     ${
@@ -2125,7 +2125,7 @@ export class HomeDashboard extends LitElement {
                           <div style="min-width:0;max-width:100%;overflow-x:auto">
                             <div style="display:flex;align-items:center;gap:var(--md-sys-spacing-2);width:max-content">
                               ${segmented({
-                                label: `${this.text("birthdaysTitle", "Birthday countdown")} · ${uiText(this.locale, "navigation.gacha")}`,
+                                label: `${this.text("birthdaysTitle", "Birthday countdown")} / ${uiText(this.locale, "navigation.gacha")}`,
                                 value: this.birthdayChoiceKey(featured),
                                 options: choices.map((item) => {
                                   const pool = this.birthdayRecruitment(item);
@@ -2137,7 +2137,7 @@ export class HomeDashboard extends LitElement {
                                         : "";
                                   return {
                                     value: this.birthdayChoiceKey(item),
-                                    label: [item.name, status].filter(Boolean).join(" · "),
+                                    label: [item.name, status].filter(Boolean).join(" / "),
                                   };
                                 }),
                                 onSelect: (value) => {
@@ -2228,7 +2228,7 @@ export class HomeDashboard extends LitElement {
                                 : nothing
                             }
                             <span class="list-item__supporting">
-                              ${String(post.authorName || "")}${post.createdAt ? ` · ${this.formatDate(String(post.lastEditedAt || post.createdAt))}` : ""}
+                              ${String(post.authorName || "")}${post.createdAt ? ` / ${this.formatDate(String(post.lastEditedAt || post.createdAt))}` : ""}
                             </span>
                           </span>
                           <span class="list-item__meta community-hot-list__score tabular">
@@ -2373,7 +2373,7 @@ export class HomeDashboard extends LitElement {
     else if (entry.eventDate && /^\d{4}-\d{2}-\d{2}$/u.test(entry.eventDate))
       date = formatDate(this.locale, `${entry.eventDate}T00:00:00Z`, { timeZone: "UTC" });
     return date
-      ? [date, entry.venue].filter(Boolean).join(" · ")
+      ? [date, entry.venue].filter(Boolean).join(" / ")
       : entry.summary ||
           (["live", "real-live"].includes(entry.category || "")
             ? clientText(this.locale, "tools.calendar.live", "Live")
@@ -2410,7 +2410,7 @@ export class HomeDashboard extends LitElement {
             <span class="list-item__body">
               <strong class="list-item__headline">${entry.title}</strong>
               <span class="list-item__supporting">
-                ${this.fanSummary(entry)}${entry.publishedAt ? ` · ${announcementText(this.locale, "published", "Published")} ${this.formatDate(entry.publishedAt, true)}` : ""}
+                ${this.fanSummary(entry)}${entry.publishedAt ? ` / ${announcementText(this.locale, "published", "Published")} ${this.formatDate(entry.publishedAt, true)}` : ""}
               </span>
             </span>
             <span class="list-item__trailing">${icon("open_in_new", 18)}</span>

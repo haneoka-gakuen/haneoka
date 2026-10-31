@@ -183,7 +183,7 @@ export class CommunityCharts extends LitElement {
           },
         );
         this.selected = chart;
-        document.title = `${chart.title} · haneoka`;
+        document.title = `${chart.title} / haneoka`;
         if (this.chartPage) {
           const [{ releaseId }] = await Promise.all([
             chartRequest<{ releaseId: string }>(`/api/v1/servers/${this.server}/release?projection=identity`, {
@@ -529,10 +529,10 @@ export class CommunityCharts extends LitElement {
                                   >
                                     <span class="list-item__body">
                                       <strong class="list-item__headline">
-                                        ${version.revision} · ${version.title}
+                                        ${version.revision} / ${version.title}
                                       </strong>
                                       <span class="list-item__supporting">
-                                        ${formatDate(this.locale, version.createdAt, { time: true })} ·
+                                        ${formatDate(this.locale, version.createdAt, { time: true })} /
                                         ${this.t(version.publishedAt ? "published" : "draft")}
                                       </span>
                                     </span>
@@ -696,7 +696,7 @@ export class CommunityCharts extends LitElement {
           : b.updatedAt - a.updatedAt,
     );
     const href = (r: CommunityChartItem) => communityChartPath(this.server, this.locale, r.id);
-    const subtitle = (r: CommunityChartItem) => `${r.artist || r.ownerName} · ${r.charter || r.ownerName}`;
+    const subtitle = (r: CommunityChartItem) => `${r.artist || r.ownerName} / ${r.charter || r.ownerName}`;
     const results =
       this.phase === "loading"
         ? loadingState(c("common.states.loading"))

@@ -32,7 +32,7 @@ function deviceLabel(agent: unknown) {
   const find = (rules: Array<[RegExp, string]>) => rules.find(([pattern]) => pattern.test(text))?.[1];
   const browser = find([[/Edg\//u, "Edge"], [/SamsungBrowser/u, "Samsung Internet"], [/Firefox\//u, "Firefox"], [/Chrome\//u, "Chrome"], [/Safari\//u, "Safari"]]);
   const system = find([[/Android/u, "Android"], [/iPhone|iPad/u, "iOS"], [/Windows/u, "Windows"], [/Mac OS/u, "macOS"], [/Linux/u, "Linux"]]);
-  return [browser, system].filter(Boolean).join(" · ");
+  return [browser, system].filter(Boolean).join(" / ");
 }
 const API_SCOPES = ["team:read", "team:write", "gacha:read", "games:read", "profile:read"];
 type AuthMode = "signIn" | "signUp" | "forgotPassword" | "verifyEmail";
@@ -654,10 +654,10 @@ export class AccountWorkspace extends LitElement {
                 <span>
                   <strong>${String(token.name)}</strong>
                   <small>
-                    ${(token.scopes as string[]).map((scope) => this.apiScopeLabel(scope)).join(" · ")}
+                    ${(token.scopes as string[]).map((scope) => this.apiScopeLabel(scope)).join(" / ")}
                     <br />
                     ${this.label("apiTokenExpires", "Expires")} ${this.date(token.expiresAt)}
-                    · ${this.label("apiTokenUsed", "Last used")}
+                    / ${this.label("apiTokenUsed", "Last used")}
                     ${token.lastUsedAt ? this.date(token.lastUsedAt) : this.label("apiTokenNeverUsed", "Never")}
                   </small>
                 </span>
@@ -680,7 +680,7 @@ export class AccountWorkspace extends LitElement {
                           <strong>${String(entry.tokenName)}</strong>
                           <small>
                             ${this.label("apiTokenEventChanged", "Box entries changed")}: ${Number(entry.changed).toLocaleString(preferredLocale())}
-                            · ${String(entry.server).toUpperCase()} · ${this.date(entry.createdAt)}
+                            / ${String(entry.server).toUpperCase()} / ${this.date(entry.createdAt)}
                           </small>
                         </span>
                       </div>
@@ -1253,7 +1253,7 @@ ${
                                 String(account.playerUid),
                                 typeof summary.rank === "number" ? clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(summary.rank) }) : "",
                                 typeof summary.rating === "number" ? clientText(locale, "account.page.gameRating", "Rating {value}", { value: number(summary.rating) }) : "",
-                              ].filter(Boolean).join(" · ")}
+                              ].filter(Boolean).join(" / ")}
                             </small>
                           </span>
                         </a>
@@ -1326,7 +1326,7 @@ ${
                         <li class="account-object">
                           <a class="detail-object" href=${`/community/users/${row.uid}`}>
                             ${this.avatarOf(row.avatarUrl, name)}
-                            <span>${name}<small class="md-body-small">${row.handle ? `@${row.handle} · ` : ""}${this.date(row.createdAt)}</small></span>
+                            <span>${name}<small class="md-body-small">${row.handle ? `@${row.handle} / ` : ""}${this.date(row.createdAt)}</small></span>
                           </a>
                           <button class="button button--text" type="button" ?disabled=${this.busy} @click=${() => this.setRelationship(row)}>${action}</button>
                         </li>
@@ -1372,7 +1372,7 @@ ${
             ? specList(
                 this.appeals.map((appeal) => ({
                   label: appeal.entityKind === "profile-name" ? this.label("displayName", "Display name") : appeal.entityKind === "attachment" ? this.label("avatar", "Avatar") : this.label("appeal", "Appeal"),
-                  value: `${this.label(`appealStatus.${appeal.status}`, String(appeal.status))} · ${this.date(appeal.updatedAt)}`,
+                  value: `${this.label(`appealStatus.${appeal.status}`, String(appeal.status))} / ${this.date(appeal.updatedAt)}`,
                 })),
               )
             : html`<p class="md-body-medium account-empty">${this.label("listEmpty", "None")}</p>`
@@ -1755,8 +1755,8 @@ ${
                   <div>
                     <strong title=${String(session.userAgent || "")}>${deviceLabel(session.userAgent) || this.label("sessionUnknown", "Unknown device")}</strong>
                     <small>
-                      ${session.token === current ? `${this.label("currentSession", "Current session")} · ` : ""}${String(session.ipAddress || "—")}
-                      · ${this.date(session.createdAt)}
+                      ${session.token === current ? `${this.label("currentSession", "Current session")} / ` : ""}${String(session.ipAddress || "—")}
+                      / ${this.date(session.createdAt)}
                     </small>
                   </div>
                   ${

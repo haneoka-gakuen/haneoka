@@ -30,10 +30,10 @@ const canonicalHref = rankingPath({ server, locale, id: page.id });
 const songHref = resourcePath({ server, locale, kind: "songs", id: page.id });
 const backHref = returnTo || songHref;
 const seoTitleValues = Object.fromEntries(
-  LOCALES.map((target) => [target, `${rankingTitles[target]} · ${page.titles[target]}`]),
+  LOCALES.map((target) => [target, `${rankingTitles[target]} / ${page.titles[target]}`]),
 ) as Record<Locale, string>;
 const seoDescriptionValues = Object.fromEntries(
-  LOCALES.map((target) => [target, `${rankingTitles[target]} · ${page.titles[target]}`]),
+  LOCALES.map((target) => [target, `${rankingTitles[target]} / ${page.titles[target]}`]),
 ) as Record<Locale, string>;
 ---
 

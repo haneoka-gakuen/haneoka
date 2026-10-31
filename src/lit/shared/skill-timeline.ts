@@ -68,7 +68,7 @@ export function skillTimeline(options: SkillTimelineOptions): TemplateResult {
               <span
                 class="skill-timeline__window"
                 style=${`inset-inline-start:${at(window.startMs)};width:max(14px, calc(${at(window.endMs)} - ${at(window.startMs)}));--lane:${lane};${window.color ? `--window-color:${window.color}` : ""}`}
-                title=${`${index + 1} · ${skillSeconds(window.startMs)}–${skillSeconds(window.endMs)}`}
+                title=${`${index + 1} / ${skillSeconds(window.startMs)}–${skillSeconds(window.endMs)}`}
               >${index + 1}</span>
             `,
           )}

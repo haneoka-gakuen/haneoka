@@ -3240,7 +3240,11 @@
       },
       "selectAllCharts": "전체 선택",
       "deselectAllCharts": "전체 해제",
-      "clearAllCharts": "모든 선택 지우기"
+      "clearAllCharts": "모든 선택 지우기",
+      "stepsLabel": "단계",
+      "stepCards": "카드 가져오기",
+      "stepCardsDone": "{count}장",
+      "stepSongs": "곡 고르기"
     },
     "calendar": {
       "title": "달력",

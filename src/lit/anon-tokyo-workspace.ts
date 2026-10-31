@@ -531,8 +531,8 @@ export class AnonTokyoWorkspace extends LitElement {
     if (this.mode === "staff" && item.nameKey && clientText(this.locale, `catalog.anonTokyo.${String(item.nameKey)}`, ""))
       return this.label(String(item.nameKey));
     if (this.mode === "fever" && item.bandId)
-      return `${this.anonBandName(Number(item.bandId))} · ${this.label(String(item.entityGroup || "stages"))}`;
-    if (item.level != null) return `${this.label(String(item.entityGroup || "level"))} · Lv.${item.level}`;
+      return `${this.anonBandName(Number(item.bandId))} / ${this.label(String(item.entityGroup || "stages"))}`;
+    if (item.level != null) return `${this.label(String(item.entityGroup || "level"))} / Lv.${item.level}`;
     return this.label(String(item.entityGroup || this.mode));
   }
   private media(item: Value): string {
@@ -568,19 +568,19 @@ export class AnonTokyoWorkspace extends LitElement {
   private subtitle(item: Value): string {
     if (this.mode === "characters")
       return Number(item.levelLimit) > 0
-        ? `${this.label("unlockLevel")} · Lv.${item.levelLimit}`
+        ? `${this.label("unlockLevel")} / Lv.${item.levelLimit}`
         : this.label("noLevelRequirement");
     if (this.mode === "goods")
-      return `${this.label("unitCost")} ${Number(read(item, "purchase.cost") || 0).toLocaleString(this.locale)} · ${this.label("quantity")} ${Number(read(item, "purchase.count") || 0).toLocaleString(this.locale)}`;
+      return `${this.label("unitCost")} ${Number(read(item, "purchase.cost") || 0).toLocaleString(this.locale)} / ${this.label("quantity")} ${Number(read(item, "purchase.count") || 0).toLocaleString(this.locale)}`;
     if (this.mode === "decorations")
-      return `${(item.size as number[] | undefined)?.join(" × ") || "—"} · ${this.label("popularity")} +${Number(read(item, "popularity.count") || 0)}`;
+      return `${(item.size as number[] | undefined)?.join(" × ") || "—"} / ${this.label("popularity")} +${Number(read(item, "popularity.count") || 0)}`;
     if (this.mode === "shop")
-      return `${this.label("customerCapacity")} ${item.customerCount ?? "—"} · ${item.exp != null ? `EXP ${item.exp}` : `${this.label("roomSize")} ${(item.size as number[] | undefined)?.join(" × ") || "—"}`}`;
+      return `${this.label("customerCapacity")} ${item.customerCount ?? "—"} / ${item.exp != null ? `EXP ${item.exp}` : `${this.label("roomSize")} ${(item.size as number[] | undefined)?.join(" × ") || "—"}`}`;
     if (this.mode === "tasks") return this.rewardText(item.reward) || this.label(String(item.entityGroup || "tasks"));
     if (this.mode === "staff")
-      return `${this.label(String(item.entityGroup || "staff"))}${item.point != null ? ` · ${item.point} ${this.label("point")}` : ""}`;
+      return `${this.label(String(item.entityGroup || "staff"))}${item.point != null ? ` / ${item.point} ${this.label("point")}` : ""}`;
     if (this.mode === "customers")
-      return `${this.label(String(item.customerKind || "customers"))} · Lv.${read(item, "values.customerLv") || item.level || 1}`;
+      return `${this.label(String(item.customerKind || "customers"))} / Lv.${read(item, "values.customerLv") || item.level || 1}`;
     if (this.mode === "guide")
       return item.pageIndex != null ? `${this.label("page")} ${Number(item.pageIndex) + 1}` : this.label("guide");
     if (this.mode === "fever")
@@ -590,7 +590,7 @@ export class AnonTokyoWorkspace extends LitElement {
         item.durationSeconds != null ? `${item.durationSeconds}s` : "",
       ]
         .filter(Boolean)
-        .join(" · ");
+        .join(" / ");
     return this.text(item.description) || `#${item.rawId}`;
   }
   render() {
@@ -920,7 +920,7 @@ export class AnonTokyoWorkspace extends LitElement {
               tile({
                 title: this.entityTitle(item),
                 titleLanguage: this.titleValue(item).locale,
-                subtitle: `${this.label("rarity")} ${item.rarity || "—"} · ${this.label("popularity")} ${item.popularity || 0}`,
+                subtitle: `${this.label("rarity")} ${item.rarity || "—"} / ${this.label("popularity")} ${item.popularity || 0}`,
                 label: this.entityTitle(item),
                 image: this.media(item),
                 fit: "contain",

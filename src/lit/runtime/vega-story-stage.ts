@@ -551,7 +551,7 @@ export class VegaStoryStage extends LitElement {
   }
 
   private bootLoadingLabel() {
-    return [uiText(this.locale, "common.states.loading"), this.bootStageLabel()].filter(Boolean).join(" · ");
+    return [uiText(this.locale, "common.states.loading"), this.bootStageLabel()].filter(Boolean).join(" / ");
   }
 
   private bootProgress() {
@@ -566,7 +566,7 @@ export class VegaStoryStage extends LitElement {
       done,
       total,
       determinate: total > 0 && done <= total,
-      stageLabel: [this.ui("preparing"), stageLabel].filter(Boolean).join(" · "),
+      stageLabel: [this.ui("preparing"), stageLabel].filter(Boolean).join(" / "),
     };
   }
 
@@ -578,7 +578,7 @@ export class VegaStoryStage extends LitElement {
         : done > 0
           ? `${done} ${this.ui("preparationTasks")}`
           : "";
-    return [stageLabel, count].filter(Boolean).join(" · ");
+    return [stageLabel, count].filter(Boolean).join(" / ");
   }
 
   /**

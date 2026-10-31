@@ -151,7 +151,7 @@ async function buildSearchableStoryPages(server: ReleaseServer): Promise<Searcha
         );
         const firstLine = text(excerpt, locale);
         if (firstLine) parts.push(firstLine);
-        return [locale, [...new Set(parts)].join(" · ").slice(0, 300)];
+        return [locale, [...new Set(parts)].join(" / ").slice(0, 300)];
       }),
     ) as Record<Locale, string>;
     const storyId = String(episode.storyId ?? key);

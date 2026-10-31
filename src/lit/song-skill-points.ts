@@ -111,7 +111,7 @@ export class SongSkillPoints extends LitElement {
             startMs: start,
             endMs: start + SKILL_MS,
             label: `${notesLabel} ${covered[index]}`,
-            value: `${share.format(covered[index]! / Math.max(1, notes.length))} · #${ranked.indexOf(covered[index]!) + 1}`,
+            value: `${share.format(covered[index]! / Math.max(1, notes.length))} / #${ranked.indexOf(covered[index]!) + 1}`,
           })),
         })}
         <song-chart-analysis .chart=${chart} .rates=${this.rates} .greatFactor=${this.greatFactor}

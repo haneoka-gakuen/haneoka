@@ -85,7 +85,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
       LOCALES.map((locale) => {
         const name = character[locale] || key;
         const costume = costumes[locale];
-        return [locale, costume && costume !== character[locale] ? `${name} · ${costume}` : name];
+        return [locale, costume && costume !== character[locale] ? `${name} / ${costume}` : name];
       }),
     ) as Record<Locale, string>;
     const factRows = (source: RecordValue, key: string): string[] =>
@@ -123,7 +123,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
           [titles[locale], character[locale], text(model.nickname, locale)]
             .filter(Boolean)
             .filter((value, index, all) => all.indexOf(value) === index)
-            .join(" · "),
+            .join(" / "),
         ]),
       ) as Record<Locale, string>,
       facts,
@@ -167,7 +167,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
       descriptions: Object.fromEntries(
         LOCALES.map((locale) => [
           locale,
-          [id, String(model.family || ""), `${animations.length} animations`].filter(Boolean).join(" · "),
+          [id, String(model.family || ""), `${animations.length} animations`].filter(Boolean).join(" / "),
         ]),
       ) as Record<Locale, string>,
       facts,
@@ -194,7 +194,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
         [page.titles[locale], page.subtitles[locale]]
           .filter(Boolean)
           .filter((value, index, all) => all.indexOf(value) === index)
-          .join(" · "),
+          .join(" / "),
       ]),
     ) as Record<Locale, string>;
 

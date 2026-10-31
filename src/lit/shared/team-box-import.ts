@@ -236,7 +236,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         `
       : html`
           <span>
-            ${actions.fieldName(row.field)} · ${sourceLabel(row.source)}${row.value === null ? "" : `: ${row.value}`}
+            ${actions.fieldName(row.field)} / ${sourceLabel(row.source)}${row.value === null ? "" : `: ${row.value}`}
           </span>
         `;
   };
@@ -284,7 +284,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         state.phase === "parsing"
           ? html`
               <p role="status">
-                ${actions.sourceStatus || t("parsing", "Reading Box")}${state.progress ? ` · ${state.progress.completed}/${state.progress.total}` : ""}
+                ${actions.sourceStatus || t("parsing", "Reading Box")}${state.progress ? ` / ${state.progress.completed}/${state.progress.total}` : ""}
               </p>
             `
           : nothing
@@ -341,7 +341,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                   ${
                     state.confirmation.ownership === "replace" ? html`
                           <p>
-                            ${t("replaceScope", "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}
+                            ${t("replaceScope", "Replace all member and snapshot ownership with selected cards / {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}
                           </p>
                         `
                       : nothing
@@ -511,7 +511,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                       <ul class="list">
                         ${notices.map(
                           (row) => html`
-                            <li>${actions.noticeName(row.path)} · ${t(`notice.${row.code}`, "Needs review")}</li>
+                            <li>${actions.noticeName(row.path)} / ${t(`notice.${row.code}`, "Needs review")}</li>
                           `,
                         )}
                       </ul>
@@ -544,14 +544,14 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                                   ? actions.mapName(issue.kind, issue.id)
                                   : t("review", "Needs review")
                           }
-                          ·
+                          /
                           ${
                             issue.code === "unavailable_target_card" || issue.code === "unavailable_target_entity"
                               ? t("unavailableTarget", "Not in the target server's catalogue")
                               : issue.field === "row"
                               ? t("listRowCheck", "Check the card ID, name, type and training values in this row.")
                               : html`
-                                  ${actions.fieldName(issue.field)} · ${t("review", "Needs review")}
+                                  ${actions.fieldName(issue.field)} / ${t("review", "Needs review")}
                                 `
                           }
                         </li>

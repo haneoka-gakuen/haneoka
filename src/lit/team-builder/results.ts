@@ -72,7 +72,7 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
     ] : []),
     ...(input?.goal.kind === "event" && input.goal.weights
       ? [
-          `${host.t("weightPoints", "Weight per event point")}: ${input.goal.weights.points} · ${host.t("weightItems", "Weight per shop item")}: ${input.goal.weights.items} · ${host.t("weightCp", "Weight per challenge point")}: ${input.goal.weights.challengePoints}`,
+          `${host.t("weightPoints", "Weight per event point")}: ${input.goal.weights.points} / ${host.t("weightItems", "Weight per shop item")}: ${input.goal.weights.items} / ${host.t("weightCp", "Weight per challenge point")}: ${input.goal.weights.challengePoints}`,
         ]
       : []),
     ...(input?.goal.kind === "score" && input.goal.target
@@ -86,24 +86,24 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
                 ? `${host.t("missEvery", "Miss every N notes")}: ${value}`
                 : `${key.toUpperCase()} ${format(host, value * 100, 2)}%`,
             )
-            .join(" · "),
+            .join(" / "),
         ]
       : []),
     ...(input?.goal.kind === "gekiso"
       ? [
-          `GREAT ${format(host, input.goal.accuracy.great * 100, 2)}% · JUST ${format(host, input.goal.accuracy.just * 100, 2)}% · ${host.t("missEvery", "Miss every N notes")}: ${input.goal.accuracy.missEvery ?? 0}`,
+          `GREAT ${format(host, input.goal.accuracy.great * 100, 2)}% / JUST ${format(host, input.goal.accuracy.just * 100, 2)}% / ${host.t("missEvery", "Miss every N notes")}: ${input.goal.accuracy.missEvery ?? 0}`,
           `${host.t("pt.luckSamples", "Luck samples")}: ${input.goal.seeds}`,
           `${host.t("gekisoPlacements", "Scoring placements")}: ${input.goal.opponents ? (host.results?.results.find((result) => result.hits.includes(hit))?.placements?.join(" / ") ?? "—") : input.goal.rank}`,
         ]
       : input?.goal.kind === "event" && input.goal.gekiso && s.route !== "challenge"
         ? [
-            `JUST ${format(host, input.goal.gekiso.just * 100, 2)}% · ${host.t("gekisoPlacements", "Scoring placements")}: 1`,
+            `JUST ${format(host, input.goal.gekiso.just * 100, 2)}% / ${host.t("gekisoPlacements", "Scoring placements")}: 1`,
             `${host.t("pt.luckSamples", "Luck samples")}: ${input.goal.gekiso.luckSamples}`,
           ]
         : []),
     ...((s.goal === "event" || s.goal === "plan") && s.eventId !== null
       ? [
-          `${s.manualEventEnabled ? host.t("manualEvent.summary", "Manual · Rules") : host.t("event", "Event")}: ${host.catalog!.events().find((event) => event.id === s.eventId)?.name ?? s.eventId}`,
+          `${s.manualEventEnabled ? host.t("manualEvent.summary", "Manual / Rules") : host.t("event", "Event")}: ${host.catalog!.events().find((event) => event.id === s.eventId)?.name ?? s.eventId}`,
           s.route === "challenge"
             ? host.t("routeChallenge", "Challenge live")
             : s.route === "skip"
@@ -116,12 +116,12 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
           host.t("manualEvent.attribute", "Bonus attribute") + ": " + (s.manualEvent.attributes?.length ? s.manualEvent.attributes.map(id => host.catalog!.attributeName(id)).join(" / ") : host.t("manualEvent.none", "None")),
           host.t("manualEvent.targets", "Bonus targets") + ": " + (s.manualEvent.targetKind === "none" ? host.t("manualEvent.none", "None") : s.manualEvent.targets.map(id => s.manualEvent.targetKind === "band" ? host.catalog!.bandName(id) : host.catalog!.characterName(id)).join(" / ")),
           ...(["members", "snaps"] as const).flatMap(kind => s.manualEvent[kind].map(row =>
-            host.catalog!.cardName(kind, row.cardId) + " · " + JSON.parse(row.tier).filter((effect: [number, number[]]) => effect[0] !== 2).map((effect: [number, number[]]) =>
-              host.t(effect[0] === 0 ? "measurePoints" : "measureItems", effect[0] === 0 ? "Event points" : "Shop items") + " +" + effect[1].map(value => value / 100).join("/") + "%").join(" · "))),
+            host.catalog!.cardName(kind, row.cardId) + " / " + JSON.parse(row.tier).filter((effect: [number, number[]]) => effect[0] !== 2).map((effect: [number, number[]]) =>
+              host.t(effect[0] === 0 ? "measurePoints" : "measureItems", effect[0] === 0 ? "Event points" : "Shop items") + " +" + effect[1].map(value => value / 100).join("/") + "%").join(" / "))),
         ] : []),
     ...(s.goal === "plan"
       ? [
-          `${host.t("planBudget", "Boosts to spend")}: ${s.planBudget} · ${host.t("planStartCp", "Challenge points now")}: ${s.planStartingCp}`,
+          `${host.t("planBudget", "Boosts to spend")}: ${s.planBudget} / ${host.t("planStartCp", "Challenge points now")}: ${s.planStartingCp}`,
         ]
       : []),
     ...(s.goal === "event" || s.goal === "plan"
@@ -334,7 +334,7 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
         )?.placements
       : undefined;
   if (placements)
-    out.push(chip(host.t("gekisoPlacements", "Placements"), placements.join(" · "), icon("leaderboard", 16)));
+    out.push(chip(host.t("gekisoPlacements", "Placements"), placements.join(" / "), icon("leaderboard", 16)));
   if (hit.skipScore !== null)
     out.push(chip(host.t("skipScore", "Skip score"), format(host, hit.skipScore), icon("fast_forward", 16)));
   if (hit.potential)
@@ -382,7 +382,7 @@ export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
           <li
             class=${`tb-slot${index === 0 ? " is-leader" : ""}`}
             aria-label=${index === 0 ? host.t("leader", "Leader") : nothing}
-            title=${`${catalog.characterName(catalog.member(member)?.characterId ?? 0)} · ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`}
+            title=${`${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`}
           >
             <button
               class="tb-slot__member"
@@ -750,7 +750,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 class="tb-order-slot"
                 aria-pressed=${String(picked === position)}
                 ?data-swap=${picked !== undefined && picked !== position}
-                aria-label=${`${position + 1} · ${member.name}`}
+                aria-label=${`${position + 1} / ${member.name}`}
                 title=${member.name}
                 style=${`--member-color:${member.color}`}
                 @click=${() => pick(position)}
@@ -794,7 +794,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                     color: member.color,
                     image: member.card,
                     label: member.name,
-                    value: `+${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` · +${(window.extensionMs / 1000).toFixed(1)}s` : ""}`,
+                    value: `+${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` / +${(window.extensionMs / 1000).toFixed(1)}s` : ""}`,
                   };
                 }),
               })
@@ -845,7 +845,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
             id: String(entry.index),
             title: orderFaces(host, hit, entry.index, firing),
             subtitle: html`
-              <span class="tabular">${format(host, entry.value)} · ${gap(entry.value)}</span>
+              <span class="tabular">${format(host, entry.value)} / ${gap(entry.value)}</span>
             `,
             media: html`
               <span class="tb-order-rank tabular">${rankOf(entry.value)}</span>
@@ -904,7 +904,7 @@ function copyText(host: TeamBuilder, hit: EngineHit) {
     hit.song
       ? `${catalog.songTitle(hit.song.songId)} ${catalog.difficultyLabel(hit.song.songId, hit.song.difficulty)}`
       : "",
-    `${main.label}: ${main.value} · ${host.t("power", "Power")}: ${format(host, hit.power)}`,
+    `${main.label}: ${main.value} / ${host.t("power", "Power")}: ${format(host, hit.power)}`,
     ...conditionLines(host, hit),
     ...hit.members.map((key, index) => {
       const snap = hit.snaps[index];
@@ -928,7 +928,7 @@ export function saveTeam(
   const catalog = host.catalog!;
   const label =
     name ??
-    `${catalog.characterName(catalog.member(members[0]!)?.characterId ?? 0)} · ${song ? catalog.songTitle(song.songId) : host.t("noSong", "No song")}`;
+    `${catalog.characterName(catalog.member(members[0]!)?.characterId ?? 0)} / ${song ? catalog.songTitle(song.songId) : host.t("noSong", "No song")}`;
   host.write([
     {
       key: `team.${id}`,
@@ -1001,7 +1001,7 @@ export function renderHit(
     <article
       data-result-key=${key}
       class=${`card card--outlined tb-hit${index === 0 ? " is-best" : ""}`}
-      aria-label=${`${options.subtitle ?? `#${index + 1}`} · ${main.label} ${main.value}`}
+      aria-label=${`${options.subtitle ?? `#${index + 1}`} / ${main.label} ${main.value}`}
     >
       ${hit.song ? resultSong(host, hit.song) : nothing}
       <header class="tb-hit__header">
@@ -1011,7 +1011,7 @@ export function renderHit(
             ${main.label}${
               options.subtitle
                 ? html`
-                    · ${options.subtitle}
+                    / ${options.subtitle}
                   `
                 : nothing
             }
@@ -1132,7 +1132,7 @@ export function renderHit(
                     host.results && !usesPtResults(host)
                       ? html`
                           <span class="tb-results__meta">
-                            ${host.results.results.some((result) => result.stats.exact > 0) ? host.t("resultMeta", "{ms} ms · {exact} teams simulated exactly", { ms: format(host, host.results.elapsedMs), exact: host.results.results.reduce((total, result) => total + result.stats.exact, 0) }) : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
+                            ${host.results.results.some((result) => result.stats.exact > 0) ? host.t("resultMeta", "{ms} ms / {exact} teams simulated exactly", { ms: format(host, host.results.elapsedMs), exact: host.results.results.reduce((total, result) => total + result.stats.exact, 0) }) : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
                           </span>
                         `
                       : nothing

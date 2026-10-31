@@ -46,13 +46,13 @@ export function shouldNoindex(route: string): boolean {
 }
 
 const withoutSiteSuffix = (title: string): string =>
-  title.replace(/\s*·\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
+  title.replace(/\s*[·/]\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
 
 export function pageTitle(locale: Locale, route: string, title: string): string {
   if (route === "/") return `haneoka - ${serverText(locale, "common.seo.homeTitle", undefined, title)}`;
   const name = withoutSiteSuffix(title);
   const site = serverText(locale, "common.seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
-  return `${name && name !== "haneoka" ? `${name} · ` : ""}haneoka - ${site}`;
+  return `${name && name !== "haneoka" ? `${name} / ` : ""}haneoka - ${site}`;
 }
 
 /** Small, page-specific vocabulary for clients that consume keyword metadata. */

@@ -312,7 +312,7 @@ export class TeamBuilder extends LitElement {
             ? this.t("preparingEngine", "Preparing")
             : this.t("sc.running", "Calculating"),
       )
-      .join(" · ");
+      .join(" / ");
   }
   running = false;
   progress: { done: number; total: number; started: number } | null = null;
@@ -1584,7 +1584,7 @@ export class TeamBuilder extends LitElement {
     if (heading && !this.shellHeading)
       this.shellHeading = { element: heading, nodes: [...heading.childNodes], title: document.title };
     if (heading && heading.textContent !== title) heading.textContent = title;
-    document.title = `${title} · haneoka`;
+    document.title = `${title} / haneoka`;
   }
   private resourceLinks(className = "") {
     return (
@@ -1627,11 +1627,11 @@ export class TeamBuilder extends LitElement {
     const status = snapshot?.status ?? "local";
     const signedOut = !snapshot?.owner || status === "signed-out";
     const map: Record<string, { icon: string; label: string }> = {
-      local: { icon: "save", label: this.t("syncLocal", "Saved on this device · sign in to sync") },
+      local: { icon: "save", label: this.t("syncLocal", "Saved on this device / sign in to sync") },
       syncing: { icon: "sync", label: this.t("syncing", "Syncing…") },
       pending: { icon: "schedule", label: this.t("syncPending", "Saving…") },
       synced: { icon: "cloud_done", label: this.t("synced", "Synced") },
-      offline: { icon: "cloud_off", label: this.t("syncOffline", "Offline · changes are kept and sent later") },
+      offline: { icon: "cloud_off", label: this.t("syncOffline", "Offline / changes are kept and sent later") },
       "signed-out": { icon: "no_accounts", label: this.t("syncSignedOut", "Sign in again to sync") },
       error: { icon: "error", label: this.t("syncError", "Sync paused") },
     };

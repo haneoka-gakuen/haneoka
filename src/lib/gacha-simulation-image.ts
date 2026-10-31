@@ -229,7 +229,7 @@ async function render(ctx: CanvasRenderingContext2D | null, theme: Theme, input:
         const width = ctx.measureText(group.label).width;
         ctx.fillStyle = theme.variant;
         ctx.font = `400 18px ${theme.font}`;
-        ctx.fillText(`${group.cards.length} · ${total}`, PAD + width + 12, y + 3);
+        ctx.fillText(`${group.cards.length} / ${total}`, PAD + width + 12, y + 3);
       }
       y += 40;
       const columns = group.kind === "support" ? 6 : 10;

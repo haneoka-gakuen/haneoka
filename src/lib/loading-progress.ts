@@ -404,22 +404,22 @@ class LoadingCoordinator {
   private statusText(state: ProgressState, document: Document): string {
     const locale = localeFor(document);
     if (state.failed.length && !state.active.length)
-      return `${state.label} · ${clientText(locale, "common.loading.failed", "Loading failed")}`;
+      return `${state.label} / ${clientText(locale, "common.loading.failed", "Loading failed")}`;
     const label = state.stageLabel || state.label;
     if (state.processedTasks !== undefined) {
       const count = state.totalTasks === undefined
         ? String(state.processedTasks) : `${state.processedTasks} / ${state.totalTasks}`;
-      return `${label} · ${count} ${state.countLabel || clientText(locale, "story.playback.preparationTasks", "preparation tasks")}`;
+      return `${label} / ${count} ${state.countLabel || clientText(locale, "story.playback.preparationTasks", "preparation tasks")}`;
     }
     if (state.loadedBytes !== undefined) {
       const bytes =
         state.totalBytes === undefined
           ? formatBytes(state.loadedBytes, locale)
           : `${formatBytes(state.loadedBytes, locale)} / ${formatBytes(state.totalBytes, locale)}`;
-      return `${label} · ${bytes}`;
+      return `${label} / ${bytes}`;
     }
     if (state.completedFiles !== undefined) {
-      return `${label} · ${formatFileCount(state.completedFiles, state.totalFiles, locale)}`;
+      return `${label} / ${formatFileCount(state.completedFiles, state.totalFiles, locale)}`;
     }
     return label;
   }

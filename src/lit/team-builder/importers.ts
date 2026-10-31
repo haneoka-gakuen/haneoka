@@ -708,9 +708,9 @@ export class ImportController {
             if (field === "characterTotalRank") return host.t("totalRank", "Total character rank");
             const [map, id] = field.split(".");
             if (map === "characterMemoryPoints")
-              return `${host.t("importFlow.characterMemory", "Character memory bonus")} · ${host.catalog!.characterName(Number(id))}`;
+              return `${host.t("importFlow.characterMemory", "Character memory bonus")} / ${host.catalog!.characterName(Number(id))}`;
             if (map === "musicMemoryPoints")
-              return `${host.t("importFlow.musicMemory", "Song memory bonus")} · ${host.catalog!.songTitle(Number(id))}`;
+              return `${host.t("importFlow.musicMemory", "Song memory bonus")} / ${host.catalog!.songTitle(Number(id))}`;
             return host.t(
               field === "liveSkillLevel" ? "liveSkill" : field === "gekisoSkillLevel" ? "gekisoSkill" : field,
               field,
@@ -735,10 +735,10 @@ export class ImportController {
               const name =
                 host.catalog!.cardOptions(kind, Number(card[2]))?.label ||
                 `${this.text(kind === "members" ? "members" : "snapshots", "Card")} #${card[2]}`;
-              return `${name} · ${fieldLabel}`;
+              return `${name} / ${fieldLabel}`;
             }
             const row = /^cards\[(\d+)\]/u.exec(path);
-            if (row) return `${this.text("listRow", "Row {row}", { row: Number(row[1]) + 1 })} · ${fieldLabel}`;
+            if (row) return `${this.text("listRow", "Row {row}", { row: Number(row[1]) + 1 })} / ${fieldLabel}`;
             const entity = /^player\.(characterRanks|bandItems|bandItemStates)\.(\d+)/u.exec(path);
             if (entity)
               return (

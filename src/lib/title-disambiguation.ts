@@ -26,7 +26,7 @@ export function disambiguateTitles<T>(
       if (!colliding.length) break;
       for (const page of colliding) {
         const suffix = candidate(page, locale);
-        if (suffix) setTitle(page, locale, `${titleOf(page, locale)} · ${suffix}`);
+        if (suffix) setTitle(page, locale, `${titleOf(page, locale)} / ${suffix}`);
       }
     }
   }

@@ -121,7 +121,7 @@ export function searchDocument(server: Server, releaseId: string, from: Source, 
   const titles = joined(row, from.title, " ");
   const path = entityPath(from.kind, id, row);
   if (!path || !titles.some(Boolean)) return null;
-  const texts = joined(row, from.text, " · ");
+  const texts = joined(row, from.text, " / ");
   const image = from.image.map((path) => pathValue(row, path)).find((value) => typeof value === "string" && value);
   return { server, releaseId, kind: from.kind, section: from.section, path, image: typeof image === "string" ? image : null, titles, texts };
 }

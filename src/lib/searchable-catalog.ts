@@ -410,7 +410,7 @@ function factsFor(
 
   if (definition.kind === "song") {
     const performer=resolveSongPerformer(value,{game:"our-notes",server,bands,characters});
-    push("band",performer.names.map(name=>text(name,locale)).filter(Boolean).join(" · "));
+    push("band",performer.names.map(name=>text(name,locale)).filter(Boolean).join(" / "));
     push("characters",nameList(performer.participantCharacterIds.map(id=>text(characters.get(id)?.characterName,locale)).filter(Boolean),locale));
     push("characters",nameList(performer.unresolvedNames,locale));
     push("composer", value.composer);
@@ -425,7 +425,7 @@ function factsFor(
       const level = row.displayLevel ?? row.playLevel ?? row.sortLevel;
       const notes = row.noteCount;
       const parts = [level == null ? "" : String(level), notes == null ? "" : String(notes)].filter(Boolean);
-      if (name && parts.length) facts.push({ key: name, value: parts.join(" · ") });
+      if (name && parts.length) facts.push({ key: name, value: parts.join(" / ") });
     });
     return facts;
   }
@@ -617,7 +617,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
             return [
               locale,
               definition.kind === "song"
-                ? resolveSongPerformer(value,{game:"our-notes",server,bands,characters}).names.map(name=>text(name,locale)).filter(Boolean).join(" · ") || text(value.artistName || value.bandName, locale)
+                ? resolveSongPerformer(value,{game:"our-notes",server,bands,characters}).names.map(name=>text(name,locale)).filter(Boolean).join(" / ") || text(value.artistName || value.bandName, locale)
                 : bandNameForId(Number(value.bandId || 0), bands, locale),
             ];
           if (definition.subtitle === "characters")
@@ -648,7 +648,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
               return `${messagePath ? t(locale, messagePath, fact.key) : fact.key}: ${fact.value}`;
             });
           const description =
-            bodies[locale] || [titles[locale], subtitles[locale], ...uniqueFacts].filter(Boolean).join(" · ");
+            bodies[locale] || [titles[locale], subtitles[locale], ...uniqueFacts].filter(Boolean).join(" / ");
           return [locale, description];
         }),
       ) as Record<Locale, string>;

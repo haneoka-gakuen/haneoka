@@ -823,7 +823,7 @@ export class AudioDock extends LitElement {
                 <button
                   class="icon-button audio-queue-panel__drag"
                   data-drag-index=${index}
-                  aria-label=${`${this.t("reorder")} · ${entry.title}`}
+                  aria-label=${`${this.t("reorder")} / ${entry.title}`}
                   aria-keyshortcuts="ArrowUp ArrowDown Home End"
                   @keydown=${(event: KeyboardEvent) => this.reorderByKeyboard(event, index)}
                 >
@@ -851,7 +851,7 @@ export class AudioDock extends LitElement {
                 <small>${String(index + 1).padStart(2, "0")}</small>
                 <button
                   class="icon-button audio-queue-panel__remove"
-                  aria-label=${`${this.t("remove")} · ${entry.title}`}
+                  aria-label=${`${this.t("remove")} / ${entry.title}`}
                   @click=${() => this.removeQueueItem(index)}
                 >
                   <svg class="material-icon" width="17" height="17"><use href="/icons.svg#delete"></use></svg>
@@ -926,7 +926,7 @@ export class AudioDock extends LitElement {
         >
           <span aria-hidden="true"></span>
         </button>
-        <a class="player__identity state-layer" aria-label=${`${track.title} · ${track.artist}`} title=${track.title} href=${detailHref}>
+        <a class="player__identity state-layer" aria-label=${`${track.title} / ${track.artist}`} title=${track.title} href=${detailHref}>
           ${this.renderCover(track, 56)}
           <span class="player__copy">${title}</span>
         </a>
@@ -1034,7 +1034,7 @@ export class AudioDock extends LitElement {
         <button
           class="now-playing__expand"
           type="button"
-          aria-label=${`${this.t("expandPlayer")} · ${track.title} · ${track.artist}`}
+          aria-label=${`${this.t("expandPlayer")} / ${track.title} / ${track.artist}`}
           title=${this.t("expandPlayer")}
           @click=${() => this.setExpanded(true)}
         >
@@ -1078,8 +1078,8 @@ export class AudioDock extends LitElement {
         class="now-playing"
         type="button"
         data-playing=${String(this.playing)}
-        aria-label=${`${this.t("expandPlayer")} · ${track.title} · ${track.artist}`}
-        title=${`${track.title} · ${track.artist}`}
+        aria-label=${`${this.t("expandPlayer")} / ${track.title} / ${track.artist}`}
+        title=${`${track.title} / ${track.artist}`}
         style=${`--player-progress:${progress}`}
         @click=${() => this.setExpanded(true)}
       >

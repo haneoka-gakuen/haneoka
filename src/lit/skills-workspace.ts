@@ -138,7 +138,7 @@ export class SkillsWorkspace extends LitElement {
     return this.text(FAMILY_LABELS[family], family);
   }
   private effectNames(entry: SkillCatalogEntry) {
-    return entry.effects.map((effect) => this.name(effect.name) || String(effect.id)).join(" · ");
+    return entry.effects.map((effect) => this.name(effect.name) || String(effect.id)).join(" / ");
   }
   private levelRange(entry: SkillCatalogEntry) {
     const levels = entry.levels.map((level) => level.level);
@@ -233,7 +233,7 @@ export class SkillsWorkspace extends LitElement {
               rows.map((entry) => ({
                 id: entry.key,
                 title: this.skillTitle(entry),
-                subtitle: [this.familyLabel(entry.family), this.effectNames(entry)].filter(Boolean).join(" · "),
+                subtitle: [this.familyLabel(entry.family), this.effectNames(entry)].filter(Boolean).join(" / "),
                 image: entry.image,
                 trailing: entry.cards.length ? cardCount(entry) : nothing,
                 href: this.skillHref(entry),

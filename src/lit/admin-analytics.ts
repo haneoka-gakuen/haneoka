@@ -438,7 +438,7 @@ export class AdminAnalyticsView {
       )
       .map((point) => ({
         ...point,
-        name: [this.country(point.countryCode), point.regionCode, point.city].filter(Boolean).join(" · "),
+        name: [this.country(point.countryCode), point.regionCode, point.city].filter(Boolean).join(" / "),
         value: [point.longitude, point.latitude, point.count],
       }));
     chart.setOption(
@@ -465,7 +465,7 @@ export class AdminAnalyticsView {
           formatter: (parameter: unknown) => {
             const p = parameter as { name?: string; data?: AdminGeoPoint; seriesType?: string };
             if (p.seriesType === "scatter" && p.data)
-              return `${text(this.country(p.data.countryCode))}\n${text([p.data.regionCode, p.data.city].filter(Boolean).join(" · "))}\n${this.label("usersCount")}: ${this.count(p.data.count)}\n${p.data.latitude.toFixed(1)}, ${p.data.longitude.toFixed(1)}\n${this.label("approximate")}`;
+              return `${text(this.country(p.data.countryCode))}\n${text([p.data.regionCode, p.data.city].filter(Boolean).join(" / "))}\n${this.label("usersCount")}: ${this.count(p.data.count)}\n${p.data.latitude.toFixed(1)}, ${p.data.longitude.toFixed(1)}\n${this.label("approximate")}`;
             const code = p.name || "",
               row = this.countries.get(code);
             return `${text(/^[A-Z]{2}$/.test(code) ? this.country(code) : labels.get(code) || code)}\n${this.label("usersCount")}: ${row ? this.count(row.count) : /^[A-Z]{2}$/.test(code) ? "0" : "—"}`;

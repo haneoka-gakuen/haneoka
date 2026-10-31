@@ -301,7 +301,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
         label:
           [...new Set(values)].map(label).join(" / ") +
           (key === "gekisouType"
-            ? ` · ${missionMode === "contains" ? host.common("catalog.songs.gekisou.contains", "Contains a selected type") : host.common("catalog.songs.gekisou.only", "Only selected types")}`
+            ? ` / ${missionMode === "contains" ? host.common("catalog.songs.gekisou.contains", "Contains a selected type") : host.common("catalog.songs.gekisou.only", "Only selected types")}`
             : ""),
         clear: () => clearDimension(key === "gekisouType" ? [key, "gekisouMatch"] : [key], patch),
       });
@@ -327,7 +327,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     searchLabel: host.common("common.actions.search", "Search"),
     query: state.query,
     search: (query) => update({ query }),
-    filterLabel: `${host.t("filters", "Filters")}${applied.length ? ` · ${applied.length}` : ""}`,
+    filterLabel: `${host.t("filters", "Filters")}${applied.length ? ` / ${applied.length}` : ""}`,
     filtersOpen: state.filtersOpen,
     layout: "grid",
     filterCount: applied.length,

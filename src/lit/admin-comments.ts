@@ -220,7 +220,7 @@ export class AdminComments extends LitElement {
     const done = ids.length - failed;
     snackbar(
       failed
-        ? this.t("partial", "{done} updated · {failed} failed", { done, failed })
+        ? this.t("partial", "{done} updated / {failed} failed", { done, failed })
         : this.t("updated", "{count} updated", { count: done }),
     );
     // Items that no longer match the filter leave the list on the next read, not under the reader's cursor.
@@ -265,7 +265,7 @@ export class AdminComments extends LitElement {
     const [kind, label] = ENTITY_KINDS[target.entityType] ?? ["", ""];
     return {
       href: kind ? `/${readReleaseServer()}/${this.locale}/${kind}/${encodeURIComponent(target.entityId)}/#comment-${comment.id}` : "",
-      label: `${label ? this.common(label, target.entityType) : target.entityType} · ${target.entityId}`,
+      label: `${label ? this.common(label, target.entityType) : target.entityType} / ${target.entityId}`,
       icon: "comment",
     };
   }

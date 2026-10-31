@@ -47,7 +47,7 @@ export function homeFanInfo(value: unknown): NonNullable<HomeSeed["fanInfo"]> {
     const place = record(row.venue) ? text(row.venue.name, 200) : text(row.venue, 200);
     const summary = text(row.summary || row.description) || [
       text(row.eventDate ?? row.startDate, 80), place,
-    ].filter(Boolean).join(" · ");
+    ].filter(Boolean).join(" / ");
     // Fetch/modified time is not the publisher's original publication time.
     const published = typeof row.sourcePublishedAt === "string" && /(?:Z|[+-]\d\d:\d\d)$/u.test(row.sourcePublishedAt)
       ? Date.parse(row.sourcePublishedAt) : typeof row.publishedAt === "number" ? row.publishedAt : NaN;

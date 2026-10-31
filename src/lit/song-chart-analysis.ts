@@ -153,7 +153,7 @@ export class SongChartAnalysis extends LitElement {
           ${rates.gekisou ? this.segmented([1, 0], this.gekisou ? 1 : 0, (value) => (this.gekisou = value === 1),
             (value) => (value ? this.text("gekisouLive", "Gekisou Live") : this.text("freeLive", "Free Live"))) : nothing}
           ${gekisou ? html`<div class="song-analysis__ranks">${this.ranks.map((rank, index) => html`
-            <div><span>${this.text("section", "Section")} ${index + 1} · ${this.text("placement", "Place")}</span>
+            <div><span>${this.text("section", "Section")} ${index + 1} / ${this.text("placement", "Place")}</span>
             ${this.segmented([1, 2, 3, 4, 5], rank, (value) => {
               const next = [...this.ranks];
               next[index] = value;

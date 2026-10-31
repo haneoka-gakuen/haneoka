@@ -11,7 +11,7 @@ import { serializePageData } from "../../../lib/page-data";
 export function getStaticPaths() { return staticBuildPaths("src/pages/[locale]/chart-editor/create.astro", LOCALES.map(locale => ({ params: { locale }, props: { locale } }))); }
 const { locale } = Astro.props as { locale: Locale };
 const titleKey = "editors.chart.creation.title";
-const title = t(locale, titleKey, `${t(locale, "navigation.chartEditor", "Chart Editor")} · Beta`);
+const title = t(locale, titleKey, `${t(locale, "navigation.chartEditor", "Chart Editor")} / Beta`);
 const route = "/chart-editor/create";
 const payload = await publicSongsPageData("intl");
 const page = await renderChartCreationPage(payload, locale);

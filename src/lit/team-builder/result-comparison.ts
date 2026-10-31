@@ -213,7 +213,7 @@ export class ResultComparison {
   }
   title(host: TeamBuilder, item: ComparisonEntry) {
     return item.hit.song
-      ? `${host.catalog!.songTitle(item.hit.song.songId)} · ${host.catalog!.difficultyLabel(item.hit.song.songId, item.hit.song.difficulty)}`
+      ? `${host.catalog!.songTitle(item.hit.song.songId)} / ${host.catalog!.difficultyLabel(item.hit.song.songId, item.hit.song.difficulty)}`
       : item.metric.label;
   }
   tray(host: TeamBuilder) {
@@ -223,7 +223,7 @@ export class ResultComparison {
             <div class="cluster">
               ${this.items.map((item) =>
                 inputChip(
-                  `#${this.items.indexOf(item) + 1} · ${this.title(host, item)}`,
+                  `#${this.items.indexOf(item) + 1} / ${this.title(host, item)}`,
                   host.common("common.actions.remove", "Remove"),
                   () => {
                     this.remove(item.id);
@@ -240,7 +240,7 @@ export class ResultComparison {
                 host.requestUpdate();
               }}
             >
-              ${host.t("compareTeams", "Compare teams")} · ${this.items.length}/3
+              ${host.t("compareTeams", "Compare teams")} / ${this.items.length}/3
             </button>
           </div>
         `
@@ -262,7 +262,7 @@ export class ResultComparison {
     const side = (item: ComparisonEntry) =>
       item.id === base.id ? "is-baseline" : item.id === this.candidate ? "is-candidate" : "is-hidden-mobile";
     const identity = (item: ComparisonEntry) =>
-      `#${this.items.indexOf(item) + 1} · ${this.title(host, item)} · ${host.catalog!.cardName("members", cardIdOf(item.hit.members[0]!))}`;
+      `#${this.items.indexOf(item) + 1} / ${this.title(host, item)} / ${host.catalog!.cardName("members", cardIdOf(item.hit.members[0]!))}`;
     const row = (label: string, value: (item: ComparisonEntry) => unknown, main = false) => html`
       <tr class=${main ? "tb-comparison-primary" : ""}>
         <th scope="row">${label}</th>
@@ -323,7 +323,7 @@ export class ResultComparison {
                   (item) => html`
                     <th scope="col" class=${side(item)}>
                       <span class="tb-comparison-title">
-                        #${this.items.indexOf(item) + 1} · ${this.title(host, item)}
+                        #${this.items.indexOf(item) + 1} / ${this.title(host, item)}
                       </span>
                       <button
                         class="button button--text"
@@ -408,7 +408,7 @@ export class ResultComparison {
                             ${item.input.goal.opponents ? (item.placements?.join(" / ") ?? "—") : item.input.goal.rank}
                           </span>
                           <span>
-                            GREAT ${format(item.input.goal.accuracy.great * 100, 2)}% · JUST
+                            GREAT ${format(item.input.goal.accuracy.great * 100, 2)}% / JUST
                             ${format(item.input.goal.accuracy.just * 100, 2)}%
                           </span>
                         `
@@ -418,7 +418,7 @@ export class ResultComparison {
                     item.input.goal.kind === "event" && item.input.goal.gekiso && item.settings.route !== "challenge"
                       ? html`
                           <span>
-                            ${host.t("gekisoPlacements", "Scoring placements")}: 1 · JUST
+                            ${host.t("gekisoPlacements", "Scoring placements")}: 1 / JUST
                             ${format(item.input.goal.gekiso.just * 100, 2)}%
                           </span>
                         `
@@ -429,7 +429,7 @@ export class ResultComparison {
                       ? html`
                           <span>
                             ${item.settings.route === "challenge" ? host.t("routeChallenge", "Challenge live") : item.settings.route === "skip" ? host.t("routeSkip", "Skip") : host.t("routeLive", "Normal live")}
-                            ·
+                            /
                             ${item.settings.route === "challenge" ? `${item.settings.challengePoints} CP` : `${item.settings.boosts} Boost`}
                           </span>
                         `
@@ -437,7 +437,7 @@ export class ResultComparison {
                   }
                   <span>
                     ${item.settings.scope === "theoretical" ? host.t("scopeAll", "All cards, full growth") : host.t("scopeBox", "My cards")}
-                    ·
+                    /
                     ${item.input.unknownPolicy === "max" ? host.t("unknownMax", "Count as max") : host.t("unknownMin", "Count as minimum")}
                   </span>
                   ${

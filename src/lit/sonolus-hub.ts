@@ -132,7 +132,7 @@ export class SonolusHub extends LitElement {
     return html`
       <section class="detail-section">
         ${renderDetailSectionHeading(
-          `${type === "levels" ? this.text("levels", "Charts") : this.text("playlists", "Playlists")} · ${this.sectionLabel(section.title)}`,
+          `${type === "levels" ? this.text("levels", "Charts") : this.text("playlists", "Playlists")} / ${this.sectionLabel(section.title)}`,
           type === "levels" ? "songs" : "works",
         )}
         <div class="collection collection--song">

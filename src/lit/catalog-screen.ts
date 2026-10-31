@@ -3278,9 +3278,9 @@ export class CatalogScreen extends LitElement {
     const start = this.release(item.startAt);
     const end = this.release(item.endAt);
     if (state === "upcoming")
-      return start ? `${this.label("starts", "Starts")} · ${start}` : this.label("upcoming", "Upcoming");
+      return start ? `${this.label("starts", "Starts")} / ${start}` : this.label("upcoming", "Upcoming");
     if (state === "ended") return this.label("ended", "Ended");
-    return end ? `${this.label("ends", "Ends")} · ${end}` : this.label("ongoing", "Ongoing");
+    return end ? `${this.label("ends", "Ends")} / ${end}` : this.label("ongoing", "Ongoing");
   }
   entryKindLabel(item: Item) {
     const kind = String(item.kind || "");
@@ -4435,7 +4435,7 @@ export class CatalogScreen extends LitElement {
                 .map(Number)
                 .map((id) => this.characterName(id)),
             );
-      return this.isRetired(item) && base ? `${base} · ${this.label("retired", "Retired")}` : base;
+      return this.isRetired(item) && base ? `${base} / ${this.label("retired", "Retired")}` : base;
     }
     if (kind === "item") return String(item.itemTypeName || "");
     if (kind === "background") return this.plainGameText(item.description);
@@ -5081,7 +5081,7 @@ export class CatalogScreen extends LitElement {
               type="button"
               aria-pressed=${option.key === current}
               aria-label=${option.label}
-              title=${`${option.label}${option.tier === "band" ? ` · ${rows.filter((row) => Number(row.bandId || 0) === option.band).length}` : ""}`}
+              title=${`${option.label}${option.tier === "band" ? ` / ${rows.filter((row) => Number(row.bandId || 0) === option.band).length}` : ""}`}
               @click=${() => select(option.tier, option.band)}
             >
               ${
@@ -5188,7 +5188,7 @@ export class CatalogScreen extends LitElement {
       const bound = key.startsWith("min") || key.endsWith("From") ? "minimum" : "maximum";
       chips.push(
         inputChip(
-          `${this.detailLabel(field)} · ${uiText(this.settings.locale, uiLabelPaths[bound] ?? bound)}: ${value}`,
+          `${this.detailLabel(field)} / ${uiText(this.settings.locale, uiLabelPaths[bound] ?? bound)}: ${value}`,
           remove,
           () => {
             this.facets = { ...this.facets, [key]: [] };
@@ -5411,7 +5411,7 @@ export class CatalogScreen extends LitElement {
     const value = (item: Item, key: string) =>
       key === "nativeScore" ? Number(this.nativeSongScore(item) ?? Number.NaN) : this.songMetaValue(item, key);
     return metaScatter({
-      label: `${uiText(this.settings.locale, "catalog.analysis.fields.scatter")} · ${option?.label ?? metric}`,
+      label: `${uiText(this.settings.locale, "catalog.analysis.fields.scatter")} / ${option?.label ?? metric}`,
       xLabel: axis === "level" ? this.label("level", "Level") : (options.find((entry) => entry.value === axis)?.label ?? axis),
       yLabel: option?.label ?? metric,
       format,
@@ -5425,7 +5425,7 @@ export class CatalogScreen extends LitElement {
           x: axis === "level" ? Number(row.sortLevel ?? row.displayLevel ?? row.playLevel) : value(item, axis),
           y,
           difficulty,
-          label: `${this.itemTitle(item)} · ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} · ${format(y)}`,
+          label: `${this.itemTitle(item)} / ${difficulty.toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""} / ${format(y)}`,
           href: this.itemEntityLink(item, Number(row.difficulty ?? item.__difficultyIndex ?? 0)),
         };
       }),
@@ -5813,7 +5813,7 @@ export class CatalogScreen extends LitElement {
                 {
                   ...entry,
                   id: `${entry.id}:${language}`,
-                  label: `${entry.label} · ${languageNames.of(language) || language}`,
+                  label: `${entry.label} / ${languageNames.of(language) || language}`,
                   source: variant,
                 },
               ]

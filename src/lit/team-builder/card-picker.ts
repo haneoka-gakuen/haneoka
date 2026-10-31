@@ -94,7 +94,7 @@ export function renderCardPicker(host: TeamBuilder): TemplateResult | typeof not
           const cards = picker.ids.map(cardId => draft[kind].find(row => row.cardId === cardId) ?? {cardId, tier: profiles[0]!.key});
           host.updateSettings({manualEvent: {...draft, [kind]: cards}});
           close();
-        }}>${host.common("common.actions.confirm", "Confirm")} · ${host.t("cardCount", "{count} cards", {count: picker.ids.length})}</button>`
+        }}>${host.common("common.actions.confirm", "Confirm")} / ${host.t("cardCount", "{count} cards", {count: picker.ids.length})}</button>`
       : kind === "snaps"
         ? html`
             <button

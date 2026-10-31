@@ -524,7 +524,7 @@ export class StampMaker extends LitElement {
       this.draftNotice ? this.t(this.draftNotice) : "",
       this.draftSourceMissing ? this.t("draftSourceMissing") : "",
       this.layers.some((layer) => layer.localFontLabel) ? this.t("draftFontsMissing") : "",
-    ].filter(Boolean).join(" · ");
+    ].filter(Boolean).join(" / ");
     if (status !== seen.status) {
       seen.status = status;
       if (status) snackbar(status);
@@ -690,7 +690,7 @@ export class StampMaker extends LitElement {
     return this.layers.filter((layer) => !layer.image).length;
   }
   private layerLabel(layer: StampLayer) {
-    return `${this.layers.indexOf(layer) + 1} · ${layer.image ? this.t("imageLayer") : layer.settings.text.trim().slice(0, 24) || this.t("text")}`;
+    return `${this.layers.indexOf(layer) + 1} / ${layer.image ? this.t("imageLayer") : layer.settings.text.trim().slice(0, 24) || this.t("text")}`;
   }
   private changeImage(values: Partial<StampImageTransform>) {
     if (!this.pendingDraft) this.draftEnabled = true;

@@ -283,7 +283,7 @@ export async function renderGachaHistoryImages(
     }
     ctx.fillStyle = color("on-surface-variant");
     ctx.font = `500 16px ${font}`;
-    ctx.fillText(`Haneoka · ${pageIndex + 1}/${pages.length}`, PAD, canvas.height - 36);
+    ctx.fillText(`Haneoka / ${pageIndex + 1}/${pages.length}`, PAD, canvas.height - 36);
     output.push(
       await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("image_export_failed"))), "image/png"),

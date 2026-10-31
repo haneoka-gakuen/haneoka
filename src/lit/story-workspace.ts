@@ -1806,7 +1806,7 @@ export class StoryWorkspace extends LitElement {
       if (value)
         chips.push(
           inputChip(
-            `${uiText(this.locale, "catalog.fields.release")} · ${uiText(this.locale, key.endsWith("From") ? "common.fields.minimum" : "common.fields.maximum")}: ${value}`,
+            `${uiText(this.locale, "catalog.fields.release")} / ${uiText(this.locale, key.endsWith("From") ? "common.fields.minimum" : "common.fields.maximum")}: ${value}`,
             remove,
             () => {
               this.facets = { ...this.facets, [key]: [] };
@@ -2425,8 +2425,8 @@ export class StoryWorkspace extends LitElement {
       const number = Number(condition.episodeNumber || 0);
       const label =
         kind === "episode"
-          ? `${uiText(this.locale, "common.fields.required")} · ${uiText(this.locale, "story.labels.episode")}`
-          : `${uiText(this.locale, kind === "playerRank" ? "navigation.player" : kind === "bandRank" ? "catalog.fields.band" : "catalog.fields.character")} · ${uiText(this.locale, "catalog.cards.fields.rank")}`;
+          ? `${uiText(this.locale, "common.fields.required")} / ${uiText(this.locale, "story.labels.episode")}`
+          : `${uiText(this.locale, kind === "playerRank" ? "navigation.player" : kind === "bandRank" ? "catalog.fields.band" : "catalog.fields.character")} / ${uiText(this.locale, "catalog.cards.fields.rank")}`;
       if (kind !== "episode" && (!["playerRank", "bandRank", "characterRank"].includes(kind) || rank <= 0)) return [];
       if (kind === "episode" && number <= 0) return [];
       const band = condition.band as JsonRecord | undefined;
@@ -2436,7 +2436,7 @@ export class StoryWorkspace extends LitElement {
         ((kind === "characterRank" && reference.resource === "characters") ||
           (kind === "episode" && condition.status === "resolved" && reference.resource === "stories"));
       const identity = html`
-        ${name ? localizedContent(name, this.locale) : nothing}${name ? " · " : ""}${kind === "episode" ? `${uiText(this.locale, "story.labels.episode")} ${number}` : `${uiText(this.locale, "catalog.cards.fields.rank")} ${rank}`}
+        ${name ? localizedContent(name, this.locale) : nothing}${name ? " / " : ""}${kind === "episode" ? `${uiText(this.locale, "story.labels.episode")} ${number}` : `${uiText(this.locale, "catalog.cards.fields.rank")} ${rank}`}
       `;
       // A restricted edition's references have no pages of their own.
       const server = this.detailServer();
@@ -2584,7 +2584,7 @@ export class StoryWorkspace extends LitElement {
                               <md-outlined-text-field
                                 class="is-search"
                                 type="search"
-                                label=${`${uiText(this.locale, "common.actions.search")} · ${uiText(this.locale, "navigation.storyText")}`}
+                                label=${`${uiText(this.locale, "common.actions.search")} / ${uiText(this.locale, "navigation.storyText")}`}
                                 supporting-text=${`${dialogueCount(visibleCommands)} / ${dialogueCount(commands)}`}
                                 .value=${this.transcriptQuery}
                                 @input=${(event: Event) => {
@@ -2749,7 +2749,7 @@ export class StoryWorkspace extends LitElement {
         >
           <summary>
             ${mediaIcon}
-            <span>${uiText(this.locale, (uiLabelPaths[kind] ?? kind))}${media.length > 1 ? ` · ${media.length}` : ""}</span>
+            <span>${uiText(this.locale, (uiLabelPaths[kind] ?? kind))}${media.length > 1 ? ` / ${media.length}` : ""}</span>
             ${icon("expand_more", 20)}
           </summary>
           <div class="story-transcript__media-body">${media.map((item) => this.renderTranscriptEntry(item))}</div>
@@ -2948,7 +2948,7 @@ export class StoryWorkspace extends LitElement {
                         type="button"
                         @click=${() => this.playStoryAudio(url)}
                         aria-pressed=${String(playing)}
-                        aria-label=${`${uiText(this.locale, playing ? "common.actions.pause" : "story.labels.playVoice")}${names ? ` · ${names}` : ""}${entry.voices.length > 1 ? ` · ${index + 1}` : ""}`}
+                        aria-label=${`${uiText(this.locale, playing ? "common.actions.pause" : "story.labels.playVoice")}${names ? ` / ${names}` : ""}${entry.voices.length > 1 ? ` / ${index + 1}` : ""}`}
                       >
                         ${icon(playing ? "pause" : "play_arrow", 24)}
                       </button>

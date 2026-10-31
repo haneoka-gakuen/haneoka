@@ -431,12 +431,12 @@ function inputLabel(host: TeamBuilder, target: string): string {
   };
   const card = /^([ms])(\d+)(?:[.:/]|$)/u.exec(target);
   if (card)
-    return `${catalog.cardName(card[1] === "m" ? "members" : "snaps", Number(card[2]))}${fields[field] ? ` · ${fields[field]}` : ""}`;
+    return `${catalog.cardName(card[1] === "m" ? "members" : "snaps", Number(card[2]))}${fields[field] ? ` / ${fields[field]}` : ""}`;
   const song = /^(?:challenge:|gekiso:)?(\d+):(\d+)$/u.exec(target);
   if (song)
-    return `${catalog.songTitle(Number(song[1]))} · ${catalog.difficultyLabel(Number(song[1]), Number(song[2]))}`;
-  if (key === "cr") return `${catalog.characterName(Number(field))} · ${fields[key]}`;
-  if (key === "bi") return `${catalog.text(host.data!.bandItems[field]?.name) || `#${field}`} · ${fields[key]}`;
+    return `${catalog.songTitle(Number(song[1]))} / ${catalog.difficultyLabel(Number(song[1]), Number(song[2]))}`;
+  if (key === "cr") return `${catalog.characterName(Number(field))} / ${fields[key]}`;
+  if (key === "bi") return `${catalog.text(host.data!.bandItems[field]?.name) || `#${field}`} / ${fields[key]}`;
   return target;
 }
 
@@ -586,7 +586,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
         f.play === "gekiso"
           ? html`
               <span class="tb-results__meta">
-                ${host.t("playAp", "All Perfect")} · ${host.t("gekisoPlacements", "Scoring placements")}: 1
+                ${host.t("playAp", "All Perfect")} / ${host.t("gekisoPlacements", "Scoring placements")}: 1
               </span>
               ${comboBonusControl(host)}
               ${justWindowControl(host)}
@@ -853,7 +853,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
             gap === null
               ? nothing
               : html`
-                  · ${host.t("improvementBound", "Up to {percent}% improvement", { percent: number(gap) })}
+                  / ${host.t("improvementBound", "Up to {percent}% improvement", { percent: number(gap) })}
                 `
           }
         </span>
