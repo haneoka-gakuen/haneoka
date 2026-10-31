@@ -10,7 +10,10 @@ from recognize.build_index import source_index
 SOURCE_PATH = "runtime/card-recognition/source.json"
 LOCAL_PATH = "runtime/card-recognition/local.json"
 # Tile sizes keep each sheet small enough to fetch on demand in the browser and app.
-TILES = {"members": (45, 60), "snapshots": (64, 36)}
+# Each tile is the part of the thumbnail the in-game card list draws: members
+# show the top-centred 85% of the width, Snapshots the full width cut to the cell.
+TILES = {"members": (48, 59), "snapshots": (64, 34)}
+SHOWN_WIDTH = {"members": 0.85, "snapshots": 1.0}
 SHEET_COLUMNS = 16
 
 
@@ -27,7 +30,12 @@ def write_local_reference(root: Path, server: str, source: dict, data) -> dict:
             if file is None:
                 raise ValueError("recognition thumbnail is missing from the build")
             with Image.open(file) as image:
-                tile = image.convert("RGB").resize((width, height), Image.Resampling.BOX)
+                shown = image.width * SHOWN_WIDTH[kind]
+                left = (image.width - shown) / 2
+                tall = min(image.height, shown * height / width)
+                top = 0 if kind == "members" else (image.height - tall) / 2
+                tile = image.convert("RGB").resize((width, height), Image.Resampling.BOX,
+                                                   box=(left, top, left + shown, top + tall))
             sheet.paste(tile, ((index % SHEET_COLUMNS) * width, (index // SHEET_COLUMNS) * height))
         path = f"runtime/card-recognition/{kind}.png"
         target = root / path
