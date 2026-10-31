@@ -292,8 +292,10 @@
       var(--md-sys-typescale-body-small-size)/var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .song-ranking__profile-level {
-    display: inline-block;
-    margin-top: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 8px 8px 0 0;
     padding: 2px 8px;
     border-radius: var(--md-sys-shape-corner-small);
     color: var(--md-sys-color-on-secondary-container);
@@ -326,35 +328,32 @@
     font: var(--md-sys-typescale-title-medium-weight)
       var(--md-sys-typescale-title-medium-size)/var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
-  .song-ranking__profile-details {
+  .song-ranking__profile-favorite {
     display: grid;
-    gap: 20px;
-    padding: 16px;
-    border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface-container-low);
+    gap: 12px;
   }
   .song-ranking__profile-favorite-card {
-    display: flex;
+    display: grid;
     min-width: 0;
-    align-items: center;
     gap: 12px;
-    margin-block: 12px;
-    border-radius: var(--md-sys-shape-corner-small);
+    justify-items: center;
     color: inherit;
+    text-decoration: none;
   }
   .song-ranking__profile-favorite-card > strong {
     min-width: 0;
     overflow-wrap: anywhere;
+    text-align: center;
     font: var(--md-sys-typescale-title-small-weight)
       var(--md-sys-typescale-title-small-size)/var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .song-ranking__profile-favorite-art {
     position: relative;
     display: block;
-    flex: 0 0 84px;
+    width: min(100%, 240px);
     aspect-ratio: 3 / 4;
     overflow: hidden;
-    border-radius: var(--md-sys-shape-corner-small);
+    border-radius: var(--md-sys-shape-corner-medium);
   }
   .song-ranking__profile-facts {
     margin: 0;
@@ -374,7 +373,7 @@
       var(--md-sys-typescale-body-small-size)/var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   @container (min-width: 880px) {
-    .song-ranking__profile-layout:has(.song-ranking__profile-namecard):has(.song-ranking__profile-details) {
+    .song-ranking__profile-layout:has(.song-ranking__profile-namecard):has(.song-ranking__profile-favorite) {
       grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
     }
   }

@@ -533,8 +533,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         ? BigInt(profile.totalFavoriteExact).toLocaleString(this.locale)
         : profile.totalFavorite?.toLocaleString(this.locale);
     const entry = this.selectedEntry;
-    const hasFavorite = Boolean(favoriteId) || (favorite && Object.values(favorite).some((value) => value != null));
-    const hasDetails = profile.rankExp != null || favorites != null || hasFavorite;
     return html`
       <div class="song-ranking__profile">
         <header class="song-ranking__profile-head">
@@ -568,6 +566,15 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                 ? html`
                     <span class="song-ranking__profile-level">
                       ${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}
+                    </span>
+                  `
+                : nothing
+            }
+            ${
+              favorites != null
+                ? html`
+                    <span class="song-ranking__profile-level">
+                      ${icon("favorite", 16)}<span class="sr-only">${this.label("favorites", "Likes received")}</span>${favorites}
                     </span>
                   `
                 : nothing
@@ -643,57 +650,26 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
               : nothing
           }
           ${
-            hasDetails
+            cardHref
               ? html`
-                  <div class="song-ranking__profile-details">
-                    ${
-                      profile.rankExp != null || favorites != null
-                        ? html`
-                            <dl class="spec-list song-ranking__profile-facts">
-                              ${this.profileFact(clientText(this.locale, "catalog.cards.fields.exp", "EXP"), profile.rankExp?.toLocaleString(this.locale))}
-                              ${this.profileFact(this.label("favorites", "Likes received"), favorites)}
-                            </dl>
-                          `
-                        : nothing
-                    }
-                    ${
-                      hasFavorite
-                        ? html`
-                            <section class="song-ranking__profile-favorite">
-                              <h3>${this.label("favoriteCard", "Favorite member card")}</h3>
-                              ${
-                                cardHref
-                                  ? html`
-                                      <a class="song-ranking__profile-favorite-card state-layer" href=${cardHref}>
-                                        <span class="song-ranking__profile-favorite-art">
-                                          ${this.profileMedia(cardName, artwork?.image || "")}
-                                          ${artwork ? this.renderCardProgress(artwork, {
-                                            level: favoriteLevelDisplay,
-                                            training: favorite?.awakeCount ?? null,
-                                            rank: favorite?.cardRank ?? null,
-                                            liveSkillLevel: favorite?.liveSkillLevel,
-                                            gekisoSkillLevel: favorite?.performanceSkillLevel,
-                                          }) : nothing}
-                                        </span>
-                                        <strong>${cardName}</strong>
-                                      </a>
-                                    `
-                                  : nothing
-                              }
-                              <dl class="spec-list song-ranking__profile-facts">
-                                ${!artwork ? this.profileFact(clientText(this.locale, "navigation.cards", "Cards"), favoriteId) : nothing}
-                                ${this.profileFact(clientText(this.locale, "common.fields.level", "Level"), favoriteLevelDisplay)}
-                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.exp", "EXP"), favorite?.exp?.toLocaleString(this.locale))}
-                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.training", "Training"), favorite?.awakeCount)}
-                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.awakening", "Awakening"), favorite?.cardRank)}
-                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.liveSkill", "LIVE Skill"), favorite?.liveSkillLevel)}
-                                ${this.profileFact(clientText(this.locale, "catalog.cards.fields.gekisouSkill", "Gekisou Skill"), favorite?.performanceSkillLevel)}
-                              </dl>
-                            </section>
-                          `
-                        : nothing
-                    }
-                  </div>
+                  <section class="song-ranking__profile-favorite surface">
+                    <h3>${this.label("favoriteCard", "Favorite member card")}</h3>
+                    <a class="song-ranking__profile-favorite-card" href=${cardHref}>
+                      <span class="song-ranking__profile-favorite-art card-media card-media--member">
+                        ${this.profileMedia(cardName, artwork?.image || "")}
+                        ${artwork?.attributeIcon ? html`<img class="card-media__attribute" src=${artwork.attributeIcon} alt="" />` : nothing}
+                        ${artwork?.rarityIcon ? html`<img class="card-media__rarity" src=${artwork.rarityIcon} alt="" />` : nothing}
+                        ${artwork ? this.renderCardProgress(artwork, {
+                          level: favoriteLevelDisplay,
+                          training: favorite?.awakeCount ?? null,
+                          rank: favorite?.cardRank ?? null,
+                          liveSkillLevel: favorite?.liveSkillLevel,
+                          gekisoSkillLevel: favorite?.performanceSkillLevel,
+                        }) : nothing}
+                      </span>
+                      <strong>${cardName}</strong>
+                    </a>
+                  </section>
                 `
               : nothing
           }

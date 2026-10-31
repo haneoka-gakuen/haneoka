@@ -69,9 +69,15 @@ export function playerProfile(region: GameRecordsRegion, profileId: string, reco
             performanceSkillLevel: integer(favorite.performance_skill_level) }
         : null,
       profileCard: playerCard(region, profileId, profile.profile_card),
-      lastUpdatedAtMs: integer(profile.last_updated_at),
+      lastUpdatedAtMs: updatedAtMs(profile.last_updated_at),
     },
   };
+}
+
+/** The game sends this time in seconds. */
+function updatedAtMs(value: unknown): number | null {
+  const seconds = integer(value);
+  return seconds ? seconds * 1000 : null;
 }
 
 const queue = (ctx: ExecutionContext, env: OfficialPlayerBindings, region: GameRecordsRegion, kind: "player" | "song" | "card", id: string) =>
