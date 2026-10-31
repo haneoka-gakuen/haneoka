@@ -46,8 +46,10 @@ export interface OfficialCollectorAccountHealth {
 export function selectOfficialCollectorAccount(pool: OfficialCollectorPool, health: Record<string, OfficialCollectorAccountHealth>, now: number): OfficialCollectorAccount | null {
   return pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause && !health[account.identity]?.held && !health[account.identity]?.blocked[account.authGeneration]
     && account.availableAtMs <= now && (health[account.identity]?.cooldownUntilMs ?? 0) <= now && (health[account.identity]?.leaseUntilMs ?? 0) <= now)
-    .sort((left, right) => Number(right.identity === pool.preferredIdentity) - Number(left.identity === pool.preferredIdentity)
-      || (health[left.identity]?.lastUsedAtMs ?? 0) - (health[right.identity]?.lastUsedAtMs ?? 0) || left.identity.localeCompare(right.identity))[0] ?? null;
+    // Least recently used first, so work spreads across the pool; the preferred account only breaks ties.
+    .sort((left, right) => (health[left.identity]?.lastUsedAtMs ?? 0) - (health[right.identity]?.lastUsedAtMs ?? 0)
+      || Number(right.identity === pool.preferredIdentity) - Number(left.identity === pool.preferredIdentity)
+      || left.identity.localeCompare(right.identity))[0] ?? null;
 }
 
 export async function parseOfficialCollectorConfiguration(raw: string, region: GameRecordsRegion): Promise<OfficialCollectorPool> {

@@ -63,32 +63,57 @@
    grids are shared with the chart-creation library; they keep their classes.
    ========================================================================== */
 @layer pages {
-  .tb-app-download {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 16px;
-    padding: 20px;
-    margin-bottom: 20px;
-    border-radius: 24px;
-    background: var(--md-sys-color-surface-container-high);
+  .import-sources__group {
+    display: grid;
+    gap: 4px;
   }
-  .tb-app-download .button,
+  .import-sources__group + .import-sources__group {
+    margin-top: 16px;
+  }
+  .import-sources__group > header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding-inline: 4px;
+  }
+  .import-sources__group h3 {
+    margin: 0;
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .import-sources__group > header > span {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / 1.4 var(--app-font);
+  }
+  .import-source > .list-item {
+    width: 100%;
+    text-align: start;
+  }
+  .import-source .list-item {
+    height: auto;
+    min-height: 72px;
+  }
+  .import-source :is(.list-item__headline, .list-item__supporting) {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .import-source > .list-item:disabled {
+    opacity: 0.5;
+  }
+  .import-source__extra {
+    display: grid;
+    gap: 12px;
+    padding: 4px 16px 12px 72px;
+  }
+  @media (width < 600px) {
+    .import-source__extra {
+      padding-inline-start: 16px;
+    }
+  }
   .tb-save-sources .button {
     min-height: 48px;
-  }
-  .tb-app-download > div {
-    flex: 1 1 240px;
-    min-width: 0;
-  }
-  .tb-app-download strong {
-    font-size: 16px;
-  }
-  .tb-app-download p {
-    margin: 8px 0 0;
-    font-size: 14px;
-    line-height: 1.6;
-    color: var(--md-sys-color-on-surface-variant);
   }
 
   team-builder {

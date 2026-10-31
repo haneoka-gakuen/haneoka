@@ -22,6 +22,7 @@ import { tile, tileMedia, type TileOptions } from "../ui/tile";
 import { iconButton, segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
 import { ANDROID_CHANNELS } from "@haneoka/game-data-exporter";
+import { importSourceRow } from "./import-source-row";
 
 export interface BoxImportDialogState {
   ownedKeys?: readonly string[];
@@ -43,8 +44,11 @@ export interface BoxImportDialogState {
 export interface BoxImportDialogActions {
   locale?: string;
   onOpenHistory?: () => void;
-  appDownload?: TemplateResult;
-  sources?: TemplateResult;
+  appHref?: string;
+  /** The save folder picker: its click and the fallback input after the row. */
+  folder?: { open: (event: Event) => void; input: TemplateResult };
+  /** The opened iPhone backup row: password and folder picker. */
+  backup?: TemplateResult;
   sourceStatus?: string;
   screenshots?: () => void;
   android?: () => void;
@@ -68,6 +72,102 @@ export interface BoxImportDialogActions {
 /** Local sanitized Box review. Main owns parser Worker, captured account/pin,
  * showModal and InventoryStore/CAS; this renderer only emits explicit choices.
  */
+/** The first step: where the cards are, fullest sources first. */
+function renderSources(state: BoxImportDialogState, actions: BoxImportDialogActions, channels: readonly (typeof ANDROID_CHANNELS)[number][]) {
+  const t = actions.text;
+  const opened = (key: string) => actions.expanded?.(key) ?? false;
+  const toggle = (key: string) => () => actions.expand?.(key, !opened(key));
+  const group = (title: string, tag: string, rows: unknown) => html`
+    <section class="import-sources__group">
+      <header><h3>${title}</h3><span>${tag}</span></header>
+      <ul class="list" role="list">${rows}</ul>
+    </section>
+  `;
+  return html`
+    ${group(t("groupSave", "Game save"), t("tagAll", "All progress"), html`
+      ${importSourceRow({
+        glyph: "upload_file",
+        title: t("sourceFile", "Save or export file"),
+        hint: t("sourceFileHint", "ZIP, iMazing, JSON or CSV"),
+        onClick: (event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click(),
+        after: html`<input hidden type="file" multiple @change=${(event: Event) => {
+          const input = event.target as HTMLInputElement;
+          actions.files([...(input.files ?? [])]);
+          input.value = "";
+        }} />`,
+      })}
+      ${actions.backup
+        ? importSourceRow({
+            glyph: "phone_iphone",
+            title: t("iosBackup", "iPhone / iPad backup"),
+            hint: t("iosBackupHint", "Made with Finder, Apple Devices or iTunes"),
+            expanded: opened("box-backup"),
+            onClick: toggle("box-backup"),
+            after: opened("box-backup") ? actions.backup : nothing,
+          })
+        : nothing}
+      ${importSourceRow({
+        glyph: "usb",
+        title: t("android", "Read Android phone"),
+        hint: t(state.usbReady ? "androidHint" : "androidUnavailable", state.usbReady ? "Connect by USB with debugging on" : "Needs Chrome or Edge on a computer"),
+        disabled: !state.usbReady,
+        onClick: actions.android,
+        after: state.usbReady && channels.length > 1
+          ? html`<div class="import-source__extra"><md-outlined-select
+              label=${t("channel", "Game channel")}
+              .value=${state.usbChannel ?? ""}
+              @change=${(event: Event) => actions.channel?.((event.target as HTMLInputElement).value)}
+            >${channels.map((channel) => html`
+              <md-select-option value=${channel.packageId}>
+                <span slot="headline">${t(channel.packageId.endsWith(".official") ? "channelOfficial" : "channelPlay", channel.label)}</span>
+              </md-select-option>`)}</md-outlined-select></div>`
+          : nothing,
+      })}
+      ${actions.folder
+        ? importSourceRow({
+            glyph: "folder_open",
+            title: t("saveFolder", "Save folder"),
+            hint: t("saveFolderHint", "The game's data folder on this device"),
+            onClick: actions.folder.open,
+            after: actions.folder.input,
+          })
+        : nothing}
+      ${actions.appHref
+        ? importSourceRow({
+            glyph: "install_mobile",
+            title: t("sourceApp", "Haneoka App"),
+            hint: t("sourceAppHint", "Reads the save on your phone, then syncs here"),
+            href: actions.appHref,
+          })
+        : nothing}
+    `)}
+    ${actions.screenshots
+      ? group(t("groupScreen", "From the game screen"), t("tagCards", "Cards and levels"), importSourceRow({
+          glyph: "screenshot_monitor",
+          title: t("screenshots", "Screenshots or screen recording"),
+          hint: t("screenshotsHint", "Recognized on this device"),
+          onClick: actions.screenshots,
+        }))
+      : nothing}
+    ${group(t("groupText", "Text"), t("tagList", "What the text lists"), importSourceRow({
+      glyph: "content_paste",
+      title: t("paste", "Paste Box text"),
+      hint: t("pasteHint", "A card list or copied Box text"),
+      expanded: opened("box-paste"),
+      onClick: toggle("box-paste"),
+      after: opened("box-paste")
+        ? html`<div class="import-source__extra team-builder__practice-control">
+            <md-outlined-text-field type="textarea" rows="4" label=${t("paste", "Paste Box text")}></md-outlined-text-field>
+            <button type="button" class="button button--tonal" @click=${(event: Event) => {
+              const input = (event.currentTarget as HTMLElement).parentElement?.querySelector("md-outlined-text-field") as HTMLElement & { value: string };
+              if (input?.value.trim()) actions.parseText(input.value);
+            }}>${t("parse", "Read Box")}</button>
+          </div>`
+        : nothing,
+    }))}
+  `;
+}
+
 export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxImportDialogActions) {
   const channels = ANDROID_CHANNELS.filter((channel) => channel.server === state.server);
   const t = actions.text,
@@ -176,101 +276,8 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
         ${
         state.phase === "select"
           ? html`
-              ${actions.appDownload ?? nothing}
-              <div class="team-builder__import-file">
-                  <button
-                    type="button"
-                    class="button button--tonal"
-                    @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}
-                  >
-                    ${icon("upload_file")}${t("chooseFiles", "Choose Box files")}
-                  </button>
-                  <input
-                    hidden
-                    type="file"
-                    multiple
-                    @change=${(event: Event) => {
-                      const input = event.target as HTMLInputElement;
-                      actions.files([...(input.files ?? [])]);
-                      input.value = "";
-                    }}
-                  />
-                </div>
-                <div class="team-builder__fields">
-                <button type="button" class="button button--outlined" @click=${actions.screenshots}>
-                  ${t("screenshots", "Screenshots")}
-                </button>
-                <div class="team-builder__practice-control">
-                  ${
-          channels.length > 1
-            ? html`
-                <md-outlined-select
-                  label=${t("channel", "Game channel")}
-                  .value=${state.usbChannel ?? ""}
-                  @change=${(event: Event) => actions.channel?.((event.target as HTMLInputElement).value)}
-                >
-                  ${channels.map(
-            (channel) => html`
-              <md-select-option value=${channel.packageId}>
-                <span slot="headline">
-                  ${t(channel.packageId.endsWith(".official") ? "channelOfficial" : "channelPlay", channel.label)}
-                </span>
-              </md-select-option>
-            `,
-          )}
-                </md-outlined-select>
-              `
-            : nothing
-        }
-                  <button
-                    type="button"
-                    class="button button--outlined"
-                    ?disabled=${!state.usbReady}
-                    @click=${actions.android}
-                  >
-                    ${t("android", "Read Android phone")}
-                  </button>
-                </div>
-                </div>
-                ${accordion({
-                  id: "team-box-paste",
-                  label: t("paste", "Paste Box text"),
-                  expanded: actions.expanded?.("box-paste") ?? false,
-                  onExpandedChange: (value) => actions.expand?.("box-paste", value),
-                  content: html`
-                    <div class="team-builder__practice-control">
-                  <md-outlined-text-field
-                    type="textarea"
-                    rows="4"
-                    label=${t("paste", "Paste Box text")}
-                  ></md-outlined-text-field>
-                  <button
-                    type="button"
-                    class="button button--outlined"
-                    @click=${(event: Event) => {
-            const input = (event.currentTarget as HTMLElement).parentElement?.querySelector(
-              "md-outlined-text-field",
-            ) as HTMLElement & { value: string };
-            if (input?.value.trim()) actions.parseText(input.value);
-          }}
-                  >
-                    ${t("parse", "Read Box")}
-                  </button>
-                </div>
-              `,
-                })}
-                ${
-                  actions.sources
-                    ? accordion({
-                        id: "team-box-sources",
-                        label: t("otherSources", "Save folders and backups"),
-                        expanded: actions.expanded?.("box-sources") ?? false,
-                        onExpandedChange: (value) => actions.expand?.("box-sources", value),
-                        content: actions.sources,
-                      })
-                    : nothing
-                }
-              `
+              ${renderSources(state, actions, channels)}
+            `
           : nothing
       }
         ${

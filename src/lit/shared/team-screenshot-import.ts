@@ -1,4 +1,5 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { importSourceRow } from "./import-source-row";
+import { html, nothing } from "lit";
 import "@material/web/slider/slider.js";
 import "@material/web/checkbox/checkbox.js";
 import "@material/web/select/outlined-select.js";
@@ -24,7 +25,6 @@ export interface ScreenshotImportDialogState {
   canConfirm: boolean;
 }
 export interface ScreenshotImportDialogActions {
-  appDownload?: TemplateResult;
   upload?: () => void;
   crop?: (image: number, side: keyof ScreenshotCrop, value: number) => void;
   text: (key: string, fallback: string) => string;
@@ -78,7 +78,6 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
         ${iconButton({ icon: "close", label: t("close", "Close"), onClick: actions.close })}
       </header>
       <div class="selection-pane__body">
-        ${state.phase === "select" || state.phase === "failed" ? actions.appDownload ?? nothing : nothing}
         ${state.localImages?.length ? html`<div class="team-builder__crops">${state.localImages.map((image, index) => html`<figure class="team-builder__crop">
           <div class="team-builder__crop-frame"><img src=${image.url} alt="" decoding="async" />
             <span style=${`inset:${image.crop.top}% ${image.crop.right}% ${image.crop.bottom}% ${image.crop.left}%`}></span></div>
@@ -88,18 +87,18 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
         </figure>`)}</div>` : nothing}
         ${state.phase === "select" || state.phase === "failed" ||
           (state.phase === "review" && state.results?.length && state.results.every(result => result.status === "no-reliable-grid")) ? html`
-          <div>
-            <button type="button" class="button button--outlined"
-              @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}>${t("chooseImages", "Choose screenshots")}</button>
-            <input hidden type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" multiple
-              @change=${(event: Event) => { const input = event.target as HTMLInputElement;
-                actions.files([...input.files ?? []]); input.value = ""; }} />
-            ${actions.video ? html`<button type="button" class="button button--outlined"
-              @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}>${t("chooseVideo", "Choose screen recording")}</button>
-            <input hidden type="file" accept="video/*"
-              @change=${(event: Event) => { const input = event.target as HTMLInputElement;
-                const file = input.files?.[0]; if (file) actions.video!(file); input.value = ""; }} />` : nothing}
-          </div>` : nothing}
+          <ul class="list" role="list">
+            ${importSourceRow({ glyph: "image", title: t("chooseImages", "Choose screenshots"), hint: t("imagesHint", "Up to 8 images of the card list"),
+              onClick: (event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click(),
+              after: html`<input hidden type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" multiple
+                @change=${(event: Event) => { const input = event.target as HTMLInputElement;
+                  actions.files([...input.files ?? []]); input.value = ""; }} />` })}
+            ${actions.video ? importSourceRow({ glyph: "videocam", title: t("chooseVideo", "Choose screen recording"), hint: t("videoHint", "Scroll through the whole list once"),
+              onClick: (event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click(),
+              after: html`<input hidden type="file" accept="video/*"
+                @change=${(event: Event) => { const input = event.target as HTMLInputElement;
+                  const file = input.files?.[0]; if (file) actions.video!(file); input.value = ""; }} />` }) : nothing}
+          </ul>` : nothing}
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
         ${state.error ? html`<p class="team-builder__error" role="alert">${t(state.error.startsWith("image-") ? state.error : state.error === "recognition_reference_unavailable" ? "unavailable" : "failedMessage", "Screenshot recognition failed")}</p>` : nothing}
         ${state.preview ? html`

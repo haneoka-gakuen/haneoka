@@ -366,8 +366,8 @@ export class ImportController {
       }
     }
   }
-  private renderSources(): TemplateResult {
-    const folderInput = (kind: "folder" | "backup") => html`
+  private folderInput(kind: "folder" | "backup") {
+    return html`
       <input
         hidden
         type="file"
@@ -375,9 +375,7 @@ export class ImportController {
         multiple
         @change=${(event: Event) => {
           const input = event.target as HTMLInputElement;
-          const passwordField = input
-            .closest(".tb-save-sources")
-            ?.querySelector<HTMLInputElement>("input[type=password]");
+          const passwordField = input.closest(".tb-save-sources")?.querySelector<HTMLInputElement>("input[type=password]");
           const password = passwordField?.value ?? "";
           if (passwordField) passwordField.value = "";
           this.folder([...(input.files ?? [])], kind, password);
@@ -385,38 +383,19 @@ export class ImportController {
         }}
       />
     `;
+  }
+  private renderBackup(): TemplateResult {
     return html`
-      <section class="tb-save-sources">
-        <p class="team-builder__hint">
-          ${this.text("localSources", "Files and backups are read on this device. Backup passwords stay here.")}
-        </p>
-        <div class="team-builder__actions">
-          <button class="button button--outlined" type="button" @click=${(e: Event) => this.chooseFolder(e, "folder")}>
-            ${icon("folder_open", 20)}${this.text("saveFolder", "Save folder")}
-          </button>
-          ${folderInput("folder")}
-        </div>
-        <div class="tb-backup-source">
-          <strong>${this.text("iosBackup", "iPhone / iPad backup")}</strong>
-          <p class="team-builder__hint">
-            ${this.text("backupHint", "Choose the backup folder containing Manifest.db, created with Finder, Apple Devices or iTunes.")}
-          </p>
-          <label class="tb-backup-password">
-            <span>${this.text("backupPassword", "Backup password (encrypted backups)")}</span>
-            <input type="password" autocomplete="off" />
-          </label>
-          <div class="team-builder__actions">
-            <button
-              class="button button--outlined"
-              type="button"
-              @click=${(e: Event) => this.chooseFolder(e, "backup")}
-            >
-              ${icon("phone_iphone", 20)}${this.text("chooseBackup", "Choose backup folder")}
-            </button>
-            ${folderInput("backup")}
-          </div>
-        </div>
-      </section>
+      <div class="import-source__extra tb-save-sources">
+        <label class="tb-backup-password">
+          <span>${this.text("backupPassword", "Backup password (encrypted backups)")}</span>
+          <input type="password" autocomplete="off" />
+        </label>
+        <button class="button button--tonal" type="button" @click=${(e: Event) => this.chooseFolder(e, "backup")}>
+          ${icon("folder_open", 20)}${this.text("chooseBackup", "Choose backup folder")}
+        </button>
+        ${this.folderInput("backup")}
+      </div>
     `;
   }
   private select(id: string) {
@@ -694,27 +673,6 @@ export class ImportController {
     );
   }
 
-  private appDownload(): TemplateResult {
-    return html`
-      <aside class="tb-app-download">
-        <div>
-          <strong>${this.host.t("appDownload.title", "Import your save with Haneoka App")}</strong>
-          <p>
-            ${this.host.t("appDownload.description", "Read your Our Notes save in the app, then send your cards to the team builder or export a file to import here.")}
-          </p>
-        </div>
-        <a
-          class="button button--tonal"
-          href=${`/${this.host.locale}/download/`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          ${icon("download", 20)}${this.host.t("appDownload.action", "Download App")}${icon("open_in_new", 18)}
-        </a>
-      </aside>
-    `;
-  }
-
   render(): TemplateResult | typeof nothing {
     const host = this.host;
     if (this.box) {
@@ -734,8 +692,9 @@ export class ImportController {
             this.closeBox();
             location.assign(`/${host.locale}/gacha-history/`);
           },
-          appDownload: this.appDownload(),
-          sources: this.renderSources(),
+          appHref: `/${host.locale}/download/`,
+          folder: { open: (event) => void this.chooseFolder(event, "folder"), input: this.folderInput("folder") },
+          backup: this.renderBackup(),
           sourceStatus: this.sourceStatus,
           text: (key, fallback, params) => this.text(key, fallback, params),
           card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
@@ -872,7 +831,6 @@ export class ImportController {
         });
       }
       return renderScreenshotImportDialog(this.screenshot, {
-        appDownload: this.appDownload(),
         text: (key, fallback) =>
           key.startsWith("existing") || key === "close" || key === "cancel"
             ? this.text(key, fallback)
