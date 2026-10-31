@@ -2315,9 +2315,7 @@
         "ownershipMode": "Members and snapshots",
         "mergeOwnership": "Merge ownership",
         "replaceOwnership": "Replace member and snapshot ownership",
-        "replaceScope": "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.",
-        "noCapture": "No game login in this capture. Capture while the game starts, then export again.",
-        "invalidCapture": "The player data in this capture could not be read. Export it as HAR with response bodies."
+        "replaceScope": "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved."
       },
       "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results.",
       "localDraftChanged": "Your card library changed in another tab. Export your current inputs, then reload the saved library.",

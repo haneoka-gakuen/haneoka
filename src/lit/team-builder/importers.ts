@@ -531,10 +531,6 @@ export class ImportController {
     if (code === "box_incompatible_server")
       return this.text("incompatibleServer", "Card IDs from this server cannot be matched to the target server.");
     if (code === "box_no_player") return this.text("empty", "No supported Box records found.");
-    if (code === "box_no_capture")
-      return this.text("noCapture", "No game login in this capture. Capture while the game starts, then export again.");
-    if (code === "box_invalid_capture")
-      return this.text("invalidCapture", "The player data in this capture could not be read. Export it as HAR with response bodies.");
     if (code === "box_linked_save_required")
       return this.text("linkedSave", "This backup links to a separate game save. Import that save file.");
     if (code === "box_profile_requires_json")

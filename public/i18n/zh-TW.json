@@ -2315,9 +2315,7 @@
         "ownershipMode": "成員和留影",
         "mergeOwnership": "合併擁有狀態",
         "replaceOwnership": "替換成員和留影擁有狀態",
-        "replaceScope": "以所選卡片替換全部成員和留影的擁有狀態 · {count}張將標記為未擁有。保留帳號加成、隊伍和偏好。",
-        "noCapture": "這份抓包裡沒有遊戲登入。請在啟動遊戲時抓包，再重新匯出。",
-        "invalidCapture": "無法讀取這份抓包中的玩家資料。請以包含回應內容的 HAR 格式匯出。"
+        "replaceScope": "以所選卡片替換全部成員和留影的擁有狀態 · {count}張將標記為未擁有。保留帳號加成、隊伍和偏好。"
       },
       "resourceResultsChanged": "養成或條件已變更，請重新計算以更新結果。",
       "localDraftChanged": "另一個分頁已修改卡庫。請先匯出目前輸入，再重新讀取已儲存的卡庫。",
