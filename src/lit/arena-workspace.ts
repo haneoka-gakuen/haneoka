@@ -1010,7 +1010,7 @@ export class ArenaWorkspace extends LitElement {
     const { rule } = this.ruleNow(season, league);
     const songs = [...league.songs].sort((a, b) => Number(b.arenaPublishedAt) - Number(a.arenaPublishedAt));
     return html`
-      <section class="surface stack">
+      <section class="surface stack arena-songs">
         ${heading(this.name(league.name), "songs", { count: songs.length })}
         ${collectionTable(
           this.t("songs"),
@@ -1059,7 +1059,7 @@ export class ArenaWorkspace extends LitElement {
     const tiers = [...new Set(basePoints.map((row) => row.tier))].sort((a, b) => a - b);
     return html`
       <div class="arena-grid">
-        <section class="surface stack arena-wide">
+        <section class="surface stack arena-wide arena-thresholds">
           ${heading(this.t("thresholds"), "rewards", { count: league.ranks.length })}
           ${collectionTable(
             this.t("thresholds"),

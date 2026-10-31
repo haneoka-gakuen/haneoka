@@ -492,11 +492,7 @@
 
   @container arena (max-width: 1099px) {
     .arena-leagues {
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(148px, 1fr);
-      grid-template-columns: none;
-      overflow-x: auto;
-      scrollbar-width: none;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
   @container arena (max-width: 839px) {
@@ -515,6 +511,111 @@
     }
   }
   @container arena (max-width: 599px) {
+    /* Nothing here scrolls sideways: every block wraps to the phone's width. */
+    .arena-leagues {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .arena-league:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+    .arena-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 4px;
+      overflow: visible;
+      box-shadow: none;
+    }
+    .arena-tabs .tab {
+      min-inline-size: 0;
+      justify-content: center;
+      padding-inline: 4px;
+      white-space: normal;
+    }
+    .arena-grid > * {
+      min-inline-size: 0;
+    }
+    .arena-songs .arena-rule,
+    .arena-songs .arena-rule__part {
+      flex-wrap: wrap;
+      min-inline-size: 0;
+      white-space: normal;
+    }
+    .arena-songs .arena-rule__part > strong {
+      overflow-wrap: anywhere;
+    }
+    .arena-grid .data-table,
+    .arena-songs .data-table {
+      width: 100%;
+      min-width: 0;
+    }
+    .arena-grid .table-scroll,
+    .arena-songs .table-scroll {
+      overflow-x: clip;
+    }
+    :is(.arena-grid, .arena-songs) .data-table :where(th, td) {
+      padding-inline: 6px;
+      white-space: normal;
+    }
+    :is(.arena-grid, .arena-songs) .data-table :where(th, td).is-sticky {
+      position: static;
+      min-width: 0;
+      max-width: none;
+      box-shadow: none;
+    }
+    /* Wide tables turn each row into a title line over three short values. */
+    :is(.arena-songs, .arena-thresholds) :is(table, thead, tbody) {
+      display: block;
+    }
+    :is(.arena-songs, .arena-thresholds) tr {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .arena-songs thead th:first-child,
+    .arena-thresholds thead th:last-child {
+      display: none;
+    }
+    .arena-thresholds tr {
+      grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+    }
+    .arena-songs tbody th,
+    .arena-thresholds tbody td:last-child {
+      grid-column: 1 / -1;
+    }
+    :is(.arena-songs, .arena-thresholds) tbody :where(th, td) {
+      block-size: auto;
+      min-block-size: 0;
+      border-block-end: 0;
+    }
+    :is(.arena-songs, .arena-thresholds) tbody tr {
+      border-block-end: 1px solid var(--md-sys-color-outline-variant);
+    }
+    .arena-thresholds tbody td:last-child {
+      padding-block-start: 0;
+      text-align: start;
+    }
+    .arena-thresholds .arena-rank {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .arena-grid .data-table--numeric {
+      table-layout: fixed;
+    }
+    .arena-grid .data-table.data-table--numeric :where(th, td).is-sticky {
+      inline-size: 32%;
+      white-space: normal;
+    }
+    .arena-thresholds .data-table--numeric {
+      table-layout: auto;
+    }
+    .arena-grid .segmented {
+      inline-size: 100%;
+    }
+    .arena-grid .segmented > * {
+      flex: 1 1 0;
+      min-inline-size: 0;
+      padding-inline: 4px;
+    }
     /* The whole schedule fits on screen: five columns of marks, the words stay in the tooltip. */
     .arena-schedule .data-table {
       width: 100%;

@@ -469,14 +469,17 @@ function workerSourceIdentity(active, version) {
     const versions = JSON.parse(run(["versions", "list", "--config", path.join(root, "wrangler.jsonc"), "--json"], true));
     const activeNumber = versions.find((entry) => entry.id === active.versions[0].version_id)?.number;
     if (!Number.isInteger(activeNumber)) throw new Error("Active Worker is missing from version history");
-    const matches = new Map();
     for (const prior of versions.filter((entry) => entry.number < activeNumber && messageSource(entry)).sort((a, b) => b.number - a.number).slice(0, 20)) {
       const details = JSON.parse(run(["versions", "view", prior.id, "--config", path.join(root, "wrangler.jsonc"), "--json"], true));
       const sha = messageSource(details);
-      if (sha && fingerprint(details) === identity) matches.set(sha, prior.id);
+      if (sha && fingerprint(details) === identity) {
+        // Commits that only touched the frontend share Worker content; the newest is the one published.
+        activeWorkerSha = sha;
+        identityMatchedVersionId = prior.id;
+        break;
+      }
     }
-    if (matches.size !== 1) throw new Error("Active Worker content has no unique published source identity");
-    [activeWorkerSha, identityMatchedVersionId] = matches.entries().next().value;
+    if (!activeWorkerSha) throw new Error("Active Worker content has no published source identity");
   }
   return { activeWorkerSha, activeWorkerVersionId: active.versions[0].version_id, identityMatchedVersionId };
 }
