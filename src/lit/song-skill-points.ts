@@ -115,7 +115,7 @@ export class SongSkillPoints extends LitElement {
           })),
         })}
         <song-chart-analysis .chart=${chart} .rates=${this.rates} .greatFactor=${this.greatFactor}
-          chartId=${this.chartId} locale=${this.locale}></song-chart-analysis>
+          chartId=${this.chartId} server=${this.source.split("/")[2] ?? ""} locale=${this.locale}></song-chart-analysis>
     `;
   }
 }

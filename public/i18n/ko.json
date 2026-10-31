@@ -500,7 +500,21 @@
         "base": "스킬 없음",
         "skip": "스킵",
         "slotWeights": "스킬 위치 가중치",
-        "chartId": "채보 ID"
+        "chartId": "채보 ID",
+        "metric": "순위 기준",
+        "gekisouLive": "격주 라이브",
+        "freeLive": "프리 라이브",
+        "placement": "순위",
+        "justShare": "Just 비율",
+        "recordPerPower": "곡 기록 / 종합력",
+        "thresholds": "랭크 기준",
+        "roomSize": "방 인원",
+        "power": "종합력",
+        "rank": "랭크",
+        "score": "스코어",
+        "scorePerPlayer": "1인당 스코어",
+        "powerNeeded": "필요 종합력",
+        "reached": "달성도"
       }
     },
     "anonTokyo": {

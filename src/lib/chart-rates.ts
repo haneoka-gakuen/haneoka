@@ -41,6 +41,38 @@ export interface ChartRates {
   notes: number;
   /** Each score rank as [rank, solo score, Gekisou score with five players]. */
   ranks: [number, number, number][];
+  /** Gekisou Live, on songs with three missions. */
+  gekisou?: GekisouRates;
+}
+/** A Gekisou Live's per-power score without rank bonuses, as parts [outside the ranges, range 1, 2, 3]: at no Just
+ * and at every Just the play allows. Each range's part takes its rank bonus on top. */
+export interface GekisouRates {
+  /** Mission type of each range: 1 COMBO, 2 LUCK, 3 JUST, 4 All. */
+  missions: number[];
+  /** Rank bonus percent as [range][rank - 1]. */
+  percents: number[][];
+  /** [no Just, all Just] → parts without skills. */
+  base: [number[], number[]];
+  /** [no Just, all Just] → [skill event] → parts a +100 % five-second score skill adds. */
+  events: [number[][], number[][]];
+  /** Judged notes in each range. */
+  notes: number[];
+  /** Just judgements in each range at every Just. */
+  just: number[];
+}
+/** Per-power Gekisou score at a rank in each range, a Just share, a general score factor (Great share) and the
+ * five skills in percent. */
+export function gekisouRate(rates: GekisouRates, ranks: readonly number[], just: number, general: number, skills: readonly number[]) {
+  const lerp = (low: number, high: number) => low + (high - low) * just;
+  let total = 0;
+  for (let part = 0; part < 4; part++) {
+    let value = lerp(rates.base[0][part]!, rates.base[1][part]!);
+    for (let event = 0; event < 5; event++)
+      value += ((skills[event] ?? 0) / 100) * lerp(rates.events[0][event]![part]!, rates.events[1][event]![part]!);
+    const bonus = part ? (rates.percents[part - 1]?.[(ranks[part - 1] ?? 1) - 1] ?? 0) : 0;
+    total += value * (1 + bonus / 100);
+  }
+  return total * general;
 }
 export interface ChartRateTable {
   releaseId: string;

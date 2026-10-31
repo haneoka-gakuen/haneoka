@@ -200,7 +200,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
             <song-skill-points
               source=${String(difficulty[selectedDifficulty]?.file || "")}
               locale=${locale}
-              .rates=${options.chartRates?.charts[`${item.musicId}:${difficulty[selectedDifficulty]?.difficulty}`] ?? null}
+              .rates=${options.chartRates?.charts[String(difficulty[selectedDifficulty]?.difficulty ?? "")] ?? null}
               .greatFactor=${options.chartRates?.greatFactor ?? 0.8}
               chartId=${String(difficulty[selectedDifficulty]?.scoreId ?? difficulty[selectedDifficulty]?.id ?? "")}
               @song-chart-ready=${(event: CustomEvent<SongChartReady>) => options.onChartReady?.(event.detail)}

@@ -500,7 +500,21 @@
         "base": "スキルなし",
         "skip": "スキップ",
         "slotWeights": "スキル位置の重み",
-        "chartId": "譜面 ID"
+        "chartId": "譜面 ID",
+        "metric": "順位の指標",
+        "gekisouLive": "撃奏ライブ",
+        "freeLive": "フリーライブ",
+        "placement": "順位",
+        "justShare": "Just率",
+        "recordPerPower": "楽曲記録 / 総合力",
+        "thresholds": "評価ライン",
+        "roomSize": "ルーム人数",
+        "power": "総合力",
+        "rank": "評価",
+        "score": "スコア",
+        "scorePerPlayer": "1人あたりスコア",
+        "powerNeeded": "必要総合力",
+        "reached": "達成度"
       }
     },
     "anonTokyo": {

@@ -28,5 +28,10 @@
   .song-analysis__slot-track { display: block; height: 8px; overflow: hidden; border-radius: var(--md-sys-shape-corner-full); background: var(--md-sys-color-surface-container-highest); }
   .song-analysis__slot-track > i { display: block; height: 100%; border-radius: inherit; background: var(--md-sys-color-primary); }
   .song-analysis__slots b { text-align: end; font-weight: 500; }
+  .song-analysis__ranks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; }
+  .song-analysis__ranks > div, .song-analysis__power { display: grid; gap: 4px; }
+  .song-analysis__ranks span, .song-analysis__power span { color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / 1.4 var(--app-font); }
+  .song-analysis__ranks .segmented > button { min-width: 0; flex: 1 1 0; }
+  .song-analysis__power { max-width: 240px; }
   .song-analysis__id { margin: 0; color: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / 1.4 var(--app-font); }
 }

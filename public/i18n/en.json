@@ -500,7 +500,21 @@
         "base": "No skills",
         "skip": "Skip",
         "slotWeights": "Skill slot weights",
-        "chartId": "Chart ID"
+        "chartId": "Chart ID",
+        "metric": "Ranked by",
+        "gekisouLive": "Gekisou Live",
+        "freeLive": "Free Live",
+        "placement": "Place",
+        "justShare": "Just share",
+        "recordPerPower": "Song record / power",
+        "thresholds": "Rank thresholds",
+        "roomSize": "Room size",
+        "power": "Power",
+        "rank": "Rank",
+        "score": "Score",
+        "scorePerPlayer": "Score per player",
+        "powerNeeded": "Power needed",
+        "reached": "Reached"
       }
     },
     "anonTokyo": {

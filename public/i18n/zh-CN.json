@@ -500,7 +500,21 @@
         "base": "无技能",
         "skip": "跳过",
         "slotWeights": "技能位权重",
-        "chartId": "谱面 ID"
+        "chartId": "谱面 ID",
+        "metric": "排名指标",
+        "gekisouLive": "激奏 Live",
+        "freeLive": "自由 Live",
+        "placement": "名次",
+        "justShare": "Just 率",
+        "recordPerPower": "歌曲记录 / 综合力",
+        "thresholds": "评级门槛",
+        "roomSize": "房间人数",
+        "power": "综合力",
+        "rank": "评级",
+        "score": "分数",
+        "scorePerPlayer": "每人分数",
+        "powerNeeded": "所需综合力",
+        "reached": "达成度"
       }
     },
     "anonTokyo": {
