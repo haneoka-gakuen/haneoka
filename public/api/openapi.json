@@ -13430,8 +13430,8 @@
         "tags": [
           "Game records"
         ],
-        "summary": "Read an event point ranking",
-        "description": "Latest point ranking of an event. Returns `404 not_found` when the event has no point ranking (see `pointRankingEnabled`).\n\nAuthentication: None. Public, anonymous read.\n\nCache-Control: `public, max-age=60, stale-while-revalidate=300`",
+        "summary": "Event point board",
+        "description": "The latest top 100 of the event point board. Only events that rank points have one; others answer 404. Rows match the total board without decks.\n\nCache-Control: `no-store`",
         "parameters": [
           {
             "name": "region",
@@ -46917,6 +46917,506 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game/records/{region}/events/{eventId}/total/latest": {
+      "get": {
+        "operationId": "records.event-total",
+        "tags": [
+          "Game records"
+        ],
+        "summary": "Event total board",
+        "description": "The latest top 100 of the four-song total board, with decks.\n\nCache-Control: `no-store`",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "description": "Game region: `jp`, `tw`, `en` or `kr`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Numeric event ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "region": "jp",
+                  "eventId": "4",
+                  "provider": "official",
+                  "observedAtMs": 1793424485170,
+                  "stale": false,
+                  "rows": [
+                    {
+                      "rank": 1,
+                      "tied": false,
+                      "profileId": "59231009908",
+                      "name": "Player",
+                      "point": 10098,
+                      "cards": [],
+                      "scoreExact": "123456789"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: A path or query value is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: Unknown region or no board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`pending`: Not collected yet. Retry after `retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game/records/{region}/events/{eventId}/challenges/{challengeId}/latest": {
+      "get": {
+        "operationId": "records.event-challenge",
+        "tags": [
+          "Game records"
+        ],
+        "summary": "Challenge song board",
+        "description": "The latest top 100 of one challenge song, with decks.\n\nCache-Control: `no-store`",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "description": "Game region: `jp`, `tw`, `en` or `kr`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "Numeric event ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "challengeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Challenge song ID from the current event."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "region": "jp",
+                  "eventId": "4",
+                  "challengeId": "10",
+                  "rows": [
+                    {
+                      "rank": 1,
+                      "tied": false,
+                      "profileId": "59231009908",
+                      "name": "Player",
+                      "point": 10098,
+                      "cards": [],
+                      "scoreExact": "1234567"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: A path or query value is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: Unknown region or no board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`pending`: Not collected yet. Retry after `retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game/records/{region}/arena/seasons/{seasonId}/leagues/{bandId}/ranking": {
+      "get": {
+        "operationId": "records.arena-ranking",
+        "tags": [
+          "Game records"
+        ],
+        "summary": "Arena league board",
+        "description": "100 rows from rank `start`, with decks and name cards. `maxRank` is the board size.\n\nCache-Control: `no-store`",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "description": "Game region: `jp`, `tw`, `en` or `kr`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seasonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Arena season ID."
+          },
+          {
+            "name": "bandId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The league's band ID."
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "description": "First rank; rounded down to a window of 100."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "region": "jp",
+                  "seasonId": "1",
+                  "bandId": "1",
+                  "start": 1,
+                  "end": 100,
+                  "maxRank": 35605,
+                  "rows": [
+                    {
+                      "rank": 1,
+                      "tied": false,
+                      "profileId": "59231009908",
+                      "name": "Player",
+                      "point": 10098,
+                      "cards": []
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: A path or query value is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: Unknown region or no board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`pending`: Not collected yet. Retry after `retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/game/records/{region}/arena/seasons/{seasonId}/leagues/{bandId}/population": {
+      "get": {
+        "operationId": "records.arena-population",
+        "tags": [
+          "Game records"
+        ],
+        "summary": "Arena players by points",
+        "description": "How many players hold at least each point threshold. Pass the rank thresholds you want counted.\n\nCache-Control: `no-store`",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "description": "Game region: `jp`, `tw`, `en` or `kr`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seasonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Arena season ID."
+          },
+          {
+            "name": "bandId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The league's band ID."
+          },
+          {
+            "name": "thresholds",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated point thresholds, ascending, e.g. `745,1505,4155`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "region": "jp",
+                  "seasonId": "1",
+                  "bandId": "1",
+                  "maxRank": 35605,
+                  "tiers": [
+                    {
+                      "threshold": 745,
+                      "count": 2077
+                    },
+                    {
+                      "threshold": 1505,
+                      "count": 1014
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: A path or query value is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: Unknown region or no board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`pending`: Not collected yet. Retry after `retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Counting. Retry after `Retry-After` seconds."
+          }
+        }
+      }
+    },
+    "/api/v1/game/records/{region}/arena/seasons/{seasonId}/leagues/{bandId}/search": {
+      "get": {
+        "operationId": "records.arena-search",
+        "tags": [
+          "Game records"
+        ],
+        "summary": "Find a player on an Arena board",
+        "description": "Looks for a player among the top `searchedTo` ranks. `row` is `null` when they are not there.\n\nCache-Control: `no-store`",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "path",
+            "required": true,
+            "description": "Game region: `jp`, `tw`, `en` or `kr`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "seasonId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Arena season ID."
+          },
+          {
+            "name": "bandId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The league's band ID."
+          },
+          {
+            "name": "profileId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "In-game player ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "region": "jp",
+                  "seasonId": "1",
+                  "bandId": "1",
+                  "profileId": "59231009908",
+                  "searchedTo": 2000,
+                  "row": {
+                    "rank": 1,
+                    "tied": false,
+                    "profileId": "59231009908",
+                    "name": "Player",
+                    "point": 10098,
+                    "cards": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: A path or query value is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: Unknown region or no board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`pending`: Not collected yet. Retry after `retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
                 }
               }
             }
