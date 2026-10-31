@@ -8,103 +8,22 @@
 [![Deploy](https://github.com/haneoka-gakuen/haneoka/actions/workflows/deploy-cloudflare.yml/badge.svg)](https://github.com/haneoka-gakuen/haneoka/actions/workflows/deploy-cloudflare.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-2f356f.svg)](LICENSE)
 
-Unofficial resource archive and browser viewer for _BanG Dream! Our Notes_.
+Unofficial database, tools and community for *BanG Dream! Our Notes*, at [haneoka.org](https://haneoka.org).
 
-The production UI is a root-level Astro application with small, route-scoped
-Lit workspaces. Shared shell and document components live in `src/components`,
-interactive workspaces in `src/lit`, and the Material Design 3 styles in
-`src/styles`.
+## Features
 
-- [Catalog](https://haneoka.org/catalog)
-- Searchable multilingual game data
-- Audio, video, comic, Live2D, story, and asset viewers
-- Gekiso Arena schedule with all five leagues, every published rotation, current-period highlighting, local times, ranks, rewards, and calendar links
-- Interactive chart and story players
-- Song jacket sliding puzzles with mouse dragging, touch swipes, screenshot layout import and solving
-- ADV story playback and authoring
-- Sonolus-compatible play, watch, preview, and tutorial engines
-- Accounts and community features
-- Team builder with separate server inventories and reviewed cross-server JSON imports, including MoeNotes card inventories
-- Shared song type and Gekiso range overrides across automatic teams, manual evaluation, song comparison, and event rewards
-- GEKISO ARENA leagues with current schedules, custom song rules, and one formation optimized across selected songs
-- Community chart publishing, cloud drafts, version history, remixes, and Sonolus play
-- App installations and updates through the Haneoka R2 download mirror
+- Searchable catalogue in five languages, for every server
+- Audio, video, comic, Live2D, Spine and story viewers
+- Chart and story players, with Sonolus-compatible engines
+- Team builder with separate server inventories, event planning and card import
+- Chart editor with cloud drafts, version history, publishing and remixes
+- Gekiso Arena schedule, rankings, song rules and team building
+- Event trackers, player lookup, song rankings and calendars
+- Community posts, playlists and accounts
+- Embeddable players and a [public API](https://docs.haneoka.org)
+- [Native app](https://github.com/haneoka-gakuen/haneoka-app) for Android, iOS, Windows, macOS and Linux
 
-The native App's Storage and cache settings include Offline stories. Download
-individual chapters or the complete server catalogue, pause and resume transfers,
-and open downloaded episodes for playback or text reading. Updates reuse files
-by content hash across chapters, resource releases and servers. Downloaded stories
-are retained separately from ordinary cache cleanup.
-
-In the team builder's My cards view, Quick add lets you tap member or Snapshot
-artwork to toggle ownership while keeping the filtered list in place. Finish
-adding returns to growth editing; existing growth and search settings are preserved.
-
-The chart editor saves local revisions automatically and reopens the latest local
-project. Select Slide node (`0`) and click a Hold or Guide body to insert a middle
-point; the selected connector's inspector also provides Insert middle node.
-Node types are visible, hidden and automatic; Fill nodes on grid remains the
-separate batch operation. Paused beat positions retain their exact input precision.
-Selected tail/head pairs can join slides; a selected middle point can split one.
-Mirror paste and duplicate commands share placement previews. Slide tools repeat
-a selected path and generate Trace notes along native curves; timing tools
-interpolate selected speed changes. Patterns support renaming and JSON file exchange.
-Keyboard shortcuts support multiple bindings per command, conflict checks and
-restoring defaults; tooltips follow the saved local bindings. Named waypoints
-save with the project and support exact beat editing and previous/next navigation.
-Editor statistics report authored objects and the native viewer COMBO count.
-The timing panel edits meter changes. Editor audio has separate music, note and
-metronome volumes, native sound sets and local settings. Editing keeps the current
-media clock; focused text drafts survive playback-follow updates.
-Game events edit skill triggers, FEVER sections and CALL rhythms. The timeline
-extends beyond audio, and playback speed accepts custom values from 0.25 to 4.
-Selected slide segments can be copied independently, with automatic endpoints
-resolved on the original curve. Files support SUS export and MMW binary project
-exchange; export diagnostics identify format limits before writing.
-Its Publish dialog selects audio and cover independently: upload your
-own files or reuse Our Notes and Bestdori song resources. Our Notes references
-retain their release identity. Reused audio and covers are copied into deduplicated
-community snapshots, so release cleanup does not break published charts. Uploaded audio is prepared as stereo PCM WAV;
-uploaded covers use the community media and moderation pipeline.
-
-Cloud drafts stay private while the previous published version remains playable.
-Publish publicly or by link, choose remix availability, then open the chart in
-Sonolus from its community page. Community details share song playback, chart,
-and Sonolus actions with official songs. The chart child page uses the same 2D
-overview, 3D player, settings, and image download. Playback remains available when
-remixes are closed. Community charts also share the official chart summary and
-FC operation-load difficulty model. Authors set their own level; the recommended
-level, note count, duration, BPM, and density are computed by the server for each
-immutable revision. Saved cloud drafts can open their private detail page before
-publication. The Sonolus server has a separate Community Charts section;
-community levels do not enter the default official list. Withdrawal removes
-public chart and media access; deleted chart payloads are retained for 30 days before cleanup. Project backups include audio,
-cover and publication settings, and import as a new local project.
-
-Event rewards are organized into farming recommendations and resource planning.
-Farming keeps its own play, reward and input conditions, including ordinary,
-Gekiso, challenge and skip routes. Existing reward weights and CP conversion remain available.
-Automatic and manual Gekiso scoring use a Luck sample count of 0 for nominal expectations;
-a positive count averages fixed seeds 0 through n-1. Manual Gekiso evaluation
-and replacement suggestions share the selected accuracy, placement and sample count.
-
-For screenshot puzzle imports, select the song and board size, then choose a PNG,
-JPEG or WebP screenshot. Board detection and fragment matching run in the browser.
-Adjust the square crop when needed and review the layout before applying it;
-select two preview cells to swap them. The importer infers the current empty cell
-and the missing source fragment separately, and checks whether the layout is solvable.
-The goal empty cell follows the current setting, with automatic detection also available.
-Visible tile numbers help distinguish repeated fragments after their shapes are
-calibrated against confident image matches in the same screenshot.
-
-Clicks, dragging, undo and solution replay use smooth tile motion.
-Motion follows the system reduced-motion preference.
-
-For 5×5 through 8×8 boards, solving starts with a short optimal search, then
-uses [row/column reduction](https://ianparberry.com/pubs/saml.pdf), paired edge placement and a final 3×3 bidirectional
-search to produce a playable solution. These solutions and proven shortest
-solutions have separate result labels. Custom goal empty cells and cancellation
-work with both paths.
+The site is an Astro application with route-scoped Lit workspaces. `src/components` holds the shell, `src/lit` the workspaces, and `src/styles` the Material Design 3 styles.
 
 ## Development
 
