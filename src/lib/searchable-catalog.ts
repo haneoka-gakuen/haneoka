@@ -258,6 +258,9 @@ interface LoadedCollection {
   absentReason?: string;
 }
 
+const nameList = (names: string[], locale: Locale) =>
+  new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(names);
+
 function text(value: unknown, locale: Locale): string {
   return resolveLocalizedText(value, locale).text.trim();
 }
@@ -408,8 +411,8 @@ function factsFor(
   if (definition.kind === "song") {
     const performer=resolveSongPerformer(value,{game:"our-notes",server,bands,characters});
     push("band",performer.names.map(name=>text(name,locale)).filter(Boolean).join(" · "));
-    push("characters",performer.participantCharacterIds.map(id=>text(characters.get(id)?.characterName,locale)).filter(Boolean).join(" · "));
-    push("characters",performer.unresolvedNames.join(" · "));
+    push("characters",nameList(performer.participantCharacterIds.map(id=>text(characters.get(id)?.characterName,locale)).filter(Boolean),locale));
+    push("characters",nameList(performer.unresolvedNames,locale));
     push("composer", value.composer);
     push("lyrics", value.lyricist);
     push("arrangement", value.arranger);
@@ -444,7 +447,7 @@ function factsFor(
 
   if (definition.kind === "member" || definition.kind === "support") {
     const names = localizedNamesForIds(characterIds(value), characters, locale);
-    if (names.length) facts.push({ key: "character", value: names.join("、") });
+    if (names.length) facts.push({ key: "character", value: nameList(names, locale) });
     if (value.rarity != null) {
       const rarity = cardRarityName(value.rarity);
       if (rarity) facts.push({ key: "rarity", value: rarity });
@@ -472,7 +475,7 @@ function factsFor(
 
   if (definition.kind === "comic" || definition.kind === "stamp") {
     const names = localizedNamesForIds(characterIds(value), characters, locale);
-    if (names.length) facts.push({ key: "character", value: names.join("、") });
+    if (names.length) facts.push({ key: "character", value: nameList(names, locale) });
     const released = formatDate(value.publicStartAt ?? value.releasedAt, locale);
     if (released) facts.push({ key: "release", value: released });
     return facts;
@@ -618,7 +621,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
                 : bandNameForId(Number(value.bandId || 0), bands, locale),
             ];
           if (definition.subtitle === "characters")
-            return [locale, localizedNamesForIds(ids, characters, locale).join("、")];
+            return [locale, nameList(localizedNamesForIds(ids, characters, locale), locale)];
           if (definition.subtitle === "description") return [locale, plainGameText(value.description, locale)];
           if (definition.subtitle === "field") return [locale, text(value[definition.subtitleField || ""], locale)];
           return [locale, ""];

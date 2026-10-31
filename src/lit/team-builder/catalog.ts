@@ -4,6 +4,7 @@ import type { SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
 import { html, nothing } from "lit";
 import { clientText } from "../../i18n/client";
+import { formatList } from "../shared/catalog";
 import { resolveLocalizedText, resolveRelationshipText } from "../../lib/localized-text";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../../lib/song-performer";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
@@ -229,10 +230,7 @@ export class Catalog {
     const attribute = this.attributeName(card.attribute);
     const title = resolveLocalizedText(card.name, this.host.locale);
     const characters = this.characterIds(kind, id);
-    const names = characters
-      .map((character) => this.characterName(character))
-      .filter(Boolean)
-      .join(" · ");
+    const names = formatList(characters.map((character) => this.characterName(character)), this.host.locale);
     return {
       ...cardTile({
         kind: kind === "members" ? "member" : "support",

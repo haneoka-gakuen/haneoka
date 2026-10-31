@@ -4,6 +4,7 @@
 // Pos: [Map](../L2-2.md); activity setup, separate from candidate filters.
 // Effects/Dependencies: Saves drafts through the host; no calculation or catalogue writes.
 import { html, nothing } from "lit";
+import { formatList } from "../shared/catalog";
 import type { TeamBuilder } from "../team-builder";
 import {
   emptyManualEvent,
@@ -54,11 +55,7 @@ export function renderManualEvent(host: TeamBuilder) {
     const profiles = template?.[kind] ?? [];
     if (!profiles.length && !draft[kind].length) return nothing;
     const characters = (id: number) =>
-      catalog
-        .characterIds(kind, id)
-        .map((id) => catalog.characterName(id))
-        .filter(Boolean)
-        .join(" · ");
+      formatList(catalog.characterIds(kind, id).map((id) => catalog.characterName(id)), host.locale);
     return html`
       <div class="stack">
         <button class="button button--tonal" type="button" ?disabled=${!profiles.length}

@@ -4,7 +4,7 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { isLocale } from "../i18n/locales";
 import { resourcePath } from "../lib/resource-route";
 import type { ReleaseServer } from "../lib/release-server";
-import { localizedText, uiText, type JsonRecord } from "./shared/catalog";
+import { formatList, localizedText, uiText, type JsonRecord } from "./shared/catalog";
 import {
   compareVoices,
   VOICE_TABS,
@@ -322,7 +322,7 @@ export class CharacterVoices extends LitElement {
     const statusMessage = status.message || (!line.url ? this.v("unavailable") : "");
     const speaker = line.characterId
       ? this.name(line.characterId)
-      : (entry.characterIds as number[]).map((id) => this.name(id)).join(" · ");
+      : formatList((entry.characterIds as number[]).map((id) => this.name(id)), this.locale);
     return dialogueRow({
       key,
       className: `voice-line voice-line--${voiceGroup(entry)}`,

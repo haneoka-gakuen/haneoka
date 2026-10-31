@@ -7,6 +7,8 @@
     clip-path: var(--season-shape, var(--shape-circle));
   }
   :root[data-season="april-fools"] .nav__brand img { rotate: 180deg; }
+  :root[data-season="april-fools"] .nav__brand > span { display: none; }
+  :root[data-season="april-fools"] .nav__brand::after { content: "hanasakigawa"; }
   .season-ornament {
     position: absolute;
     top: 0;
