@@ -541,7 +541,12 @@
       white-space: normal;
     }
     .arena-songs .arena-rule__part > strong {
+      white-space: normal;
       overflow-wrap: anywhere;
+    }
+    .arena-grid .arena-reward {
+      min-inline-size: 0;
+      max-inline-size: 100%;
     }
     .arena-grid .data-table,
     .arena-songs .data-table {
@@ -598,15 +603,18 @@
       align-items: center;
       gap: 6px;
     }
-    .arena-grid .data-table--numeric {
+    .arena-grid .data-table {
       table-layout: fixed;
     }
     .arena-grid .data-table.data-table--numeric :where(th, td).is-sticky {
       inline-size: 32%;
       white-space: normal;
     }
-    .arena-thresholds .data-table--numeric {
+    .arena-thresholds .data-table {
       table-layout: auto;
+    }
+    .arena-grid .data-table:not(.data-table--numeric) :where(th, td).is-sticky {
+      inline-size: 32%;
     }
     .arena-grid .segmented {
       inline-size: 100%;
