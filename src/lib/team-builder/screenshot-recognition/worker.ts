@@ -50,7 +50,7 @@ function load(server: string) {
         const entry = document.kinds[kind];
         const sheet = await fetch(base + entry.sheet);
         if (!sheet.ok) throw new Error("recognition_reference_unavailable");
-        kinds[kind] = referenceKind(await raster(await sheet.blob()), entry.tile, entry.columns, entry.cardIds);
+        kinds[kind] = referenceKind(kind, await raster(await sheet.blob()), entry.tile, entry.columns, entry.cardIds);
       }
       const reader = document.levelReader;
       return {

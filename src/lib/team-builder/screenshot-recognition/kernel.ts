@@ -15,6 +15,7 @@ export interface Raster {
   data: Uint8ClampedArray;
 }
 export interface ReferenceKind {
+  kind: CardKind;
   tile: [number, number];
   cardIds: number[];
   vectors: Float32Array[];
@@ -47,7 +48,11 @@ export const ALGORITHM = "card-tile-glyph-v1";
 const WORKING_SIDE = 2048;
 const ACCEPT_SCORE = 0.6;
 const ACCEPT_MARGIN = 0.06;
-const MASK = { top: 0.12, bottom: 0.89, left: 0.09, right: 0.9 };
+// Art inside a cell that no badge, mark or Lv label covers.
+const MASKS: Record<CardKind, { top: number; bottom: number; left: number; right: number }> = {
+  members: { top: 0.18, bottom: 0.8, left: 0.1, right: 0.72 },
+  snapshots: { top: 0.22, bottom: 0.74, left: 0.1, right: 0.84 },
+};
 
 /** Separable box-filter resample of an RGBA raster region into width × height floats (RGB). */
 export function sampleRegion(
@@ -113,11 +118,12 @@ function weights(start: number, span: number, count: number, limit: number) {
 }
 
 /** Zero-mean, unit-length colour vector over the identity mask. */
-export function tileVector(rgb: Float32Array, width: number, height: number): Float32Array {
-  const top = Math.round(height * MASK.top),
-    bottom = Math.round(height * MASK.bottom);
-  const left = Math.round(width * MASK.left),
-    right = Math.round(width * MASK.right);
+export function tileVector(rgb: Float32Array, width: number, height: number, kind: CardKind): Float32Array {
+  const mask = MASKS[kind];
+  const top = Math.round(height * mask.top),
+    bottom = Math.round(height * mask.bottom);
+  const left = Math.round(width * mask.left),
+    right = Math.round(width * mask.right);
   const out = new Float32Array((bottom - top) * (right - left) * 3);
   const mean = [0, 0, 0];
   let n = 0;
@@ -152,22 +158,22 @@ export function matchIdentity(
 ): Pick<Observation, "cardId" | "status" | "candidates"> {
   const [tw, th] = reference.tile;
   const [x, y, w, h] = bbox;
-  const base = tileVector(sampleRegion(image, x, y, w, h, tw, th), tw, th);
+  const base = tileVector(sampleRegion(image, x, y, w, h, tw, th), tw, th, reference.kind);
   const coarse = reference.vectors
     .map((vector, index) => ({ index, score: dot(base, vector) }))
     .sort((a, b) => b.score - a.score);
   // Box proposals can sit a few pixels off the art; refine the leaders over small shifts and scales.
   const leaders = coarse.slice(0, 6);
   const shifted: Float32Array[] = [];
-  for (const scale of [0.96, 1, 1.04])
-    for (const dy of [-0.03, -0.015, 0, 0.015, 0.03])
-      for (const dx of [-0.03, -0.015, 0, 0.015, 0.03]) {
+  for (const scale of [0.94, 0.97, 1, 1.03, 1.06])
+    for (const dy of [-0.04, -0.02, 0, 0.02, 0.04])
+      for (const dx of [-0.04, -0.02, 0, 0.02, 0.04]) {
         const sw = w * scale,
           sh = h * scale;
         const sx = x + (w - sw) / 2 + dx * w,
           sy = y + (h - sh) / 2 + dy * h;
         if (sx < 0 || sy < 0 || sx + sw > image.width || sy + sh > image.height) continue;
-        shifted.push(tileVector(sampleRegion(image, sx, sy, sw, sh, tw, th), tw, th));
+        shifted.push(tileVector(sampleRegion(image, sx, sy, sw, sh, tw, th), tw, th, reference.kind));
       }
   const refined = leaders
     .map(({ index, score }) => ({
@@ -352,14 +358,6 @@ function enclosedRatio(labels: Int32Array, W: number, c: Component): number {
   return (c.w * c.h - outside) / (c.w * c.h);
 }
 
-const iou = (a: number[], b: number[]) => {
-  const x = Math.max(a[0]!, b[0]!),
-    y = Math.max(a[1]!, b[1]!);
-  const r = Math.min(a[0]! + a[2]!, b[0]! + b[2]!),
-    d = Math.min(a[1]! + a[3]!, b[1]! + b[3]!);
-  const v = Math.max(0, r - x) * Math.max(0, d - y);
-  return v / (a[2]! * a[3]! + b[2]! * b[3]! - v + 1e-8);
-};
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
@@ -389,108 +387,147 @@ interface Proposal {
   bbox: [number, number, number, number];
 }
 
-/** Card cell proposals from closed edge outlines, regularised into the member grid. */
+// Cell width ÷ height, frame included, as the card lists draw them.
+const ASPECTS: Record<CardKind, [number, number]> = { members: [0.74, 0.86], snapshots: [1.68, 1.96] };
+
+/** Card cell proposals. Columns come from width-consistent closed outlines;
+ * rows are the textured runs inside those columns, since outlines merge rows
+ * wherever a badge crosses a border. The cell shape gives the card kind. */
 export function grid(image: Raster): Proposal[] {
   const { width: W, height: H } = image;
+  const g = gray(image);
   const edge = canny(image, 50, 120);
   const closed = morph(morph(edge, W, H, 1, true), W, H, 1, false);
-  const candidates: Proposal[] = [];
+  const seeds: [number, number, number, number][] = [];
   const consider = (labels: Int32Array, c: Component) => {
-    if (Math.min(c.w, c.h) < 32 || c.w > W * 0.4 || c.h > H * 0.7) return;
+    if (Math.min(c.w, c.h) < 32 || c.w > W * 0.4 || c.h > H * 0.9) return;
     const ratio = c.w / c.h;
-    const kind: CardKind | null =
-      ratio > 0.68 && ratio < 0.85 ? "members" : ratio > 1.65 && ratio < 1.95 ? "snapshots" : null;
-    if (kind && enclosedRatio(labels, W, c) > 0.82) candidates.push({ kind, bbox: [c.x, c.y, c.w, c.h] });
+    if (ratio > 0.6 && ratio < 2.2 && enclosedRatio(labels, W, c) > 0.82) seeds.push([c.x, c.y, c.w, c.h]);
   };
   const outlines = label(closed, W, H, 1, true);
   for (const c of outlines.components) consider(outlines.labels, c);
   const holes = label(closed, W, H, 0, false);
   for (const c of holes.components) if (c.x > 0 && c.y > 0 && c.x + c.w < W && c.y + c.h < H) consider(holes.labels, c);
-  const kept: Proposal[] = [];
-  for (const box of candidates.sort((a, b) => b.bbox[2] * b.bbox[3] - a.bbox[2] * a.bbox[3]))
-    if (!kept.some((other) => iou(box.bbox, other.bbox) > 0.7)) kept.push(box);
-  if (!kept.length) return [];
-  const groups: Proposal[][] = [];
-  for (const box of kept) {
-    const group = groups.find(
-      (g) =>
-        g[0]!.kind === box.kind &&
-        Math.abs(g[0]!.bbox[2] - box.bbox[2]) < box.bbox[2] * 0.15 &&
-        Math.abs(g[0]!.bbox[3] - box.bbox[3]) < box.bbox[3] * 0.15,
+
+  // Widest group of seeds sharing a width and a horizontal lattice.
+  let best: { width: number; xs: number[]; boxes: typeof seeds } | null = null;
+  for (const seed of seeds) {
+    const group = seeds.filter((b) => Math.abs(b[2] - seed[2]) <= seed[2] * 0.05);
+    const xs = [...new Set(group.map((b) => b[0]))].sort((a, b) => a - b);
+    const lattice = xs.filter((x) =>
+      xs.some(
+        (o) =>
+          o !== x &&
+          Math.abs(o - x) >= seed[2] * 0.95 &&
+          Math.abs(o - x) < seed[2] * 1.5 * Math.max(1, Math.round(Math.abs(o - x) / (seed[2] * 1.1))),
+      ),
     );
-    if (group) group.push(box);
-    else groups.push([box]);
+    if (lattice.length < 2) continue;
+    const width = Math.round(median(group.map((b) => b[2])));
+    if (!best || lattice.length > best.xs.length || (lattice.length === best.xs.length && width > best.width))
+      best = { width, xs: lattice, boxes: group };
   }
-  const dominant = groups.reduce((a, b) => (b.length > a.length ? b : a));
-  const kind = dominant[0]!.kind;
-  let boxes = dominant;
-  if (kind === "members" && dominant.length >= 3) {
-    const width = Math.trunc(median(dominant.map((b) => b.bbox[2])));
-    const height = Math.trunc(median(dominant.map((b) => b.bbox[3])));
-    const xs = [...new Set(dominant.map((b) => b.bbox[0]))].sort((a, b) => a - b);
-    const ys = [...new Set(dominant.map((b) => b.bbox[1]))].sort((a, b) => a - b);
-    const steps = xs
-      .slice(1)
-      .map((x, i) => x - xs[i]!)
-      .filter((d) => d >= width * 0.9 && d < width * 1.5);
-    if (steps.length) {
-      const fitX = fit(
-        dominant.map((b) => b.bbox[0]),
-        median(steps),
-      );
-      const y0 = Math.trunc(median(ys));
-      const x0 = Math.round(fitX.origin),
-        columns = Math.round((xs.at(-1)! - fitX.origin) / fitX.pitch) + 1;
-      const right = Math.min(W, Math.round(fitX.origin + (columns - 1) * fitX.pitch) + width);
-      const profile = new Float32Array(H);
-      for (let y = 0; y < H; y++) {
-        let sum = 0;
-        for (let x = Math.max(0, x0); x < right; x++) sum += edge[y * W + x]!;
-        profile[y] = sum;
-      }
-      const smooth = (y: number) => {
-        let sum = 0;
-        for (let k = -2; k <= 2; k++) sum += profile[y + k] ?? 0;
-        return sum / 5;
-      };
-      let pitchY = 0,
-        bestScore = -1;
-      for (let candidate = Math.round(height * 1.02); candidate <= Math.round(height * 1.35); candidate++) {
-        let score = 0;
-        for (let y = y0 % candidate; y <= H - height; y += candidate) score += smooth(Math.min(H - 1, y + height - 1));
-        if (score > bestScore) [bestScore, pitchY] = [score, candidate];
-      }
-      const fitY = fit(
-        dominant.map((b) => b.bbox[1]),
-        pitchY,
-      );
-      const rows: number[] = [];
-      // Rows above the seeds count too: a screenshot can start mid-list.
-      for (let row = Math.floor(-fitY.origin / fitY.pitch); ; row++) {
-        const y = Math.round(fitY.origin + row * fitY.pitch);
-        if (y + height > H) break;
-        if (y >= 0) rows.push(y);
-      }
-      if (rows.length > 1)
-        boxes = rows.flatMap((y) =>
-          Array.from({ length: columns }, (_, column): Proposal => {
-            const bbox: [number, number, number, number] = [
-              Math.round(fitX.origin + column * fitX.pitch),
-              y,
-              width,
-              height,
-            ];
-            const seed = dominant.find((b) => iou(b.bbox, bbox) > 0.6);
-            return { kind, bbox: seed ? seed.bbox : bbox };
-          }).filter((b) => b.bbox[0] >= 0 && b.bbox[0] + b.bbox[2] <= W),
-        );
+  if (!best) return [];
+  const width = best.width;
+  const steps = best.xs.slice(1).map((x, i) => x - best.xs[i]!);
+  const unit = Math.min(...steps.filter((d) => d >= width * 0.95));
+  const fitX = fit(best.xs, median(steps.map((d) => d / Math.max(1, Math.round(d / unit)))));
+  const yTop = Math.max(0, Math.min(...best.boxes.map((b) => b[1])));
+  const yBottom = Math.min(H, Math.max(...best.boxes.map((b) => b[1] + b[3])));
+  const vertical = (x: number) => {
+    if (x < 1 || x >= W - 1) return 0;
+    let hit = 0;
+    for (let y = yTop; y < yBottom; y++) if (Math.abs(g[y * W + x + 1]! - g[y * W + x - 1]!) > 40) hit++;
+    return hit / Math.max(1, yBottom - yTop);
+  };
+  const border = (x: number) => Math.max(vertical(x - 1), vertical(x), vertical(x + 1));
+  const columnStrength = (x: number) => (border(x) + border(x + width - 1)) / 2;
+  const seeded = best.xs.map((x) =>
+    columnStrength(Math.round(fitX.origin + Math.round((x - fitX.origin) / fitX.pitch) * fitX.pitch)),
+  );
+  const floor = median(seeded) * 0.5;
+  let first = Math.round((best.xs[0]! - fitX.origin) / fitX.pitch),
+    last = Math.round((best.xs.at(-1)! - fitX.origin) / fitX.pitch);
+  const at = (k: number) => Math.round(fitX.origin + k * fitX.pitch);
+  while (at(first - 1) >= 0 && columnStrength(at(first - 1)) >= floor) first--;
+  while (at(last + 1) + width <= W && columnStrength(at(last + 1)) >= floor) last++;
+  const columns = Array.from({ length: last - first + 1 }, (_, i) => at(first + i));
+
+  // Share of each scanline, per column and overall, that crosses a horizontal edge.
+  const profile = new Float32Array(H);
+  const perColumn = columns.map(() => new Float32Array(H));
+  for (let y = 1; y < H - 1; y++) {
+    let total = 0;
+    columns.forEach((x0, c) => {
+      let hit = 0;
+      for (let x = x0; x < x0 + width; x++) if (Math.abs(g[(y + 1) * W + x]! - g[(y - 1) * W + x]!) > 40) hit++;
+      perColumn[c]![y] = hit / width;
+      total += hit;
+    });
+    profile[y] = total / (columns.length * width);
+  }
+  const line = (y: number) => Math.max(profile[y - 1] ?? 0, profile[y] ?? 0, profile[y + 1] ?? 0);
+  // Card art is textured; the blurred background between rows is not. A smooth
+  // patch of art blanks one card, a gap between rows blanks every column.
+  const texture = (y: number) => {
+    let textured = 0;
+    for (const column of perColumn) {
+      let sum = 0;
+      for (let d = -3; d <= 3; d++) sum += column[y + d] ?? 0;
+      if (sum / 7 > 0.01) textured++;
+    }
+    return textured / columns.length;
+  };
+  const runs: [number, number][] = [];
+  for (let y = 0, start = -1; y <= H; y++) {
+    const inside = y < H && texture(y) >= 0.3;
+    if (inside && start < 0) start = y;
+    if (!inside && start >= 0) {
+      runs.push([start, y - 1]);
+      start = -1;
     }
   }
-  return boxes.sort(
-    (a, b) =>
-      Math.round(a.bbox[1] / Math.max(1, a.bbox[3] * 0.4)) - Math.round(b.bbox[1] / Math.max(1, b.bbox[3] * 0.4)) ||
-      a.bbox[0] - b.bbox[0],
+  // A smooth patch of art also dips; a gap between rows is bounded by borders.
+  const near = (y: number) => Math.max(line(y - 2), line(y), line(y + 2));
+  // A card split by a smooth patch rejoins to about one card; two rows never fit.
+  const cap = (width / ASPECTS.members[0]) * 1.05;
+  const tallest = Math.min(cap, Math.max(0, ...runs.map(([start, end]) => end - start).filter((n) => n <= cap)) * 1.15);
+  for (let i = runs.length - 1; i > 0; i--)
+    if (near(runs[i - 1]![1]) < 0.2 && near(runs[i]![0]) < 0.2 && runs[i]![1] - runs[i - 1]![0] <= tallest)
+      runs.splice(i - 1, 2, [runs[i - 1]![0], runs[i]![1]]);
+  // Nothing hangs below a card, so a run ends at the card's bottom; badges can
+  // rise above the top, so the top is the strongest border near the run start.
+  const cards = runs
+    .filter(([start, end]) => end < H - 2 && end - start >= width * 0.4)
+    .map(([start, end]) => {
+      let top = start;
+      for (let y = start; y <= start + (end - start) * 0.2; y++) if (line(y) > line(top)) top = y;
+      return { top, bottom: end + 1, start };
+    });
+  if (!cards.length) return [];
+  const height = Math.round(median(cards.map((c) => c.bottom - c.top)));
+  const ratio = width / height;
+  const kind = (["members", "snapshots"] as const).find(
+    (k) => ratio >= ASPECTS[k][0] * 0.95 && ratio <= ASPECTS[k][1] * 1.05,
   );
+  if (!kind) return [];
+  // A run shorter than a card is a row cut by the list's edge or header.
+  return cards
+    .filter((c) => {
+      if (c.bottom - c.top < height * 0.92 || c.bottom - height < 0) return false;
+      // A whole card has its top frame one card height above its bottom.
+      let frame = 0;
+      for (let d = -4; d <= 4; d++) frame = Math.max(frame, line(c.bottom - height + d));
+      return frame >= line(c.top) * 0.6;
+    })
+    .flatMap((c) =>
+      columns.flatMap((x, column): Proposal[] => {
+        // An empty slot at the end of the list shows only the blurred background.
+        let sum = 0;
+        for (let y = c.bottom - height; y < c.bottom; y++) sum += perColumn[column]![y]!;
+        return sum / height > 0.01 ? [{ kind, bbox: [x, c.bottom - height, width, height] }] : [];
+      }),
+    );
 }
 
 // Level reader: port of scripts/recognize/levels.py.
@@ -632,7 +669,7 @@ function readOne(image: Raster, font: Record<string, Mask>, allowed: Set<number>
   if (!anchors.length) return { value: null, reason: "Lv-prefix-not-found" };
   const [, l, v] = anchors.reduce((a, b) => (b[0] > a[0] ? b : a));
   const bottom = l.y + l.h;
-  const digits: { character: string; score: number; margin: number; x: number; w: number }[] = [];
+  const digits: { character: string; score: number; margin: number; x: number; y: number; w: number }[] = [];
   for (const c of cs) {
     if (
       c.x < v.x + v.w + 1 ||
@@ -645,16 +682,21 @@ function readOne(image: Raster, font: Record<string, Mask>, allowed: Set<number>
     if (c.y === 0 || c.x + c.w >= roi.width || c.y + c.h >= roi.height)
       return { value: null, reason: "digit-component-touches-roi-boundary" };
     if (digits.length && c.x - digits.at(-1)!.x - digits.at(-1)!.w > l.h * 0.75) break;
+    // Digits of one number share their top as well as their baseline.
+    if (digits.length && Math.abs(c.y - digits.at(-1)!.y) > 2) break;
     if (!digits.length && c.x - (v.x + v.w) > l.h * 1.35) continue;
     const ranked = "0123456789"
       .split("")
       .map((character) => [character, similarity(c.mask, font[character]!)] as const)
       .sort((a, b) => b[1] - a[1]);
+    // Art next to the label can pass the shape tests; it never resembles a digit.
+    if (digits.length && ranked[0]![1] < 0.45) break;
     digits.push({
       character: ranked[0]![0],
       score: ranked[0]![1],
       margin: ranked[0]![1] - ranked[1]![1],
       x: c.x,
+      y: c.y,
       w: c.w,
     });
     if (digits.length >= 3) break;
@@ -674,30 +716,42 @@ function readOne(image: Raster, font: Record<string, Mask>, allowed: Set<number>
 }
 
 export function readLevel(image: Raster, font: Record<string, Mask>, allowed: Set<number>) {
-  const variants = [190, 200, 210].map((t) => readOne(image, font, allowed, t));
-  const strong = variants.filter((r) => r.value !== null);
-  const weak = variants.filter(
-    (r) =>
+  const variants = [180, 190, 200, 210, 220].map((t) => readOne(image, font, allowed, t));
+  // Every read of an allowed level with digit-like evidence votes; one of
+  // them must also be strong, and no other level may draw as many votes.
+  const votes = new Map<number, LevelRead[]>();
+  for (const r of variants)
+    if (
       r.candidate !== undefined &&
       allowed.has(r.candidate) &&
       r.digits?.length &&
       Math.min(...r.digits.map((d) => d.score)) > 0.45 &&
-      Math.min(...r.digits.map((d) => d.margin)) > 0.02,
-  );
-  const counts = new Map<number, number>();
-  for (const r of weak) counts.set(r.candidate!, (counts.get(r.candidate!) ?? 0) + 1);
-  const valid = strong.filter((r) => (counts.get(r.value!) ?? 0) >= 2);
-  if (!valid.length || counts.size > 1)
+      Math.min(...r.digits.map((d) => d.margin)) > 0.02
+    )
+      votes.set(r.candidate, [...(votes.get(r.candidate) ?? []), r]);
+  const ranked = [...votes.entries()].sort((a, b) => b[1].length - a[1].length);
+  const [winner, second] = ranked;
+  if (
+    !winner ||
+    winner[1].length < 2 ||
+    (second && second[1].length >= winner[1].length) ||
+    !winner[1].some((r) => r.value !== null)
+  )
     return { value: null, reason: "threshold-variants-disagree-or-no-strong-supported-read" };
-  const best = valid.reduce((a, b) => ((b.quality ?? 0) > (a.quality ?? 0) ? b : a));
-  return { value: best.value, reason: "accepted" };
+  return { value: winner[0], reason: "accepted" };
 }
 
 /** Recognise one screenshot; boxes are returned in the input raster's coordinates. */
 export function recognize(input: Raster, reference: LocalReference, options: { kind?: CardKind } = {}): Observation[] {
-  const scale = Math.min(1, WORKING_SIDE / Math.max(input.width, input.height));
+  // Thresholds are set for a list about this wide, so small screenshots are enlarged too.
+  const scale = WORKING_SIDE / Math.max(input.width, input.height);
+  const [workingWidth, workingHeight] = [Math.round(input.width * scale), Math.round(input.height * scale)];
   const working =
-    scale < 1 ? downscale(input, Math.round(input.width * scale), Math.round(input.height * scale)) : input;
+    scale < 1
+      ? downscale(input, workingWidth, workingHeight)
+      : scale > 1
+        ? enlarge(input, workingWidth, workingHeight)
+        : input;
   let boxes = grid(working);
   if (options.kind) {
     boxes = boxes.filter((b) => b.kind === options.kind);
@@ -708,7 +762,10 @@ export function recognize(input: Raster, reference: LocalReference, options: { k
     const identity = matchIdentity(working, bbox, reference.kinds[kind]);
     let level: Observation["level"] = { value: null, status: "unknown", reason: "level_resources_unavailable" };
     if (reference.glyphs && reference.allowedLevels) {
-      const patch = crop(working, x, y, w, Math.min(working.height - y, h + Math.round(h * 0.08)));
+      let patch = crop(working, x, y, w, Math.min(working.height - y, h + Math.round(h * 0.08)));
+      // Small cells leave the Lv digits only a few pixels tall; read them enlarged.
+      const factor = Math.ceil(LEVEL_CELL_WIDTH[kind] / w);
+      if (factor > 1) patch = upscale(patch, factor);
       const read = readLevel(patch, reference.glyphs, reference.allowedLevels[kind]);
       level = { value: read.value, status: read.value !== null ? "recognized" : "unknown", reason: read.reason };
     }
@@ -727,6 +784,36 @@ function clampBox(x: number, y: number, w: number, h: number, width: number, hei
   return [left, top, Math.min(width - left, Math.round(w)), Math.min(height - top, Math.round(h))];
 }
 
+const LEVEL_CELL_WIDTH: Record<CardKind, number> = { members: 200, snapshots: 280 };
+
+const upscale = (image: Raster, factor: number) => enlarge(image, image.width * factor, image.height * factor);
+
+/** Bilinear enlargement. */
+function enlarge(image: Raster, width: number, height: number): Raster {
+  const fx0 = width / image.width,
+    fy0 = height / image.height;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const fy = Math.min(image.height - 1, Math.max(0, (y + 0.5) / fy0 - 0.5));
+    const y0 = Math.floor(fy),
+      y1 = Math.min(image.height - 1, y0 + 1),
+      ty = fy - y0;
+    for (let x = 0; x < width; x++) {
+      const fx = Math.min(image.width - 1, Math.max(0, (x + 0.5) / fx0 - 0.5));
+      const x0 = Math.floor(fx),
+        x1 = Math.min(image.width - 1, x0 + 1),
+        tx = fx - x0;
+      for (let c = 0; c < 4; c++) {
+        const at = (xx: number, yy: number) => image.data[(yy * image.width + xx) * 4 + c]!;
+        const top = at(x0, y0) * (1 - tx) + at(x1, y0) * tx;
+        const bottom = at(x0, y1) * (1 - tx) + at(x1, y1) * tx;
+        data[(y * width + x) * 4 + c] = top * (1 - ty) + bottom * ty;
+      }
+    }
+  }
+  return { width, height, data };
+}
+
 export function downscale(image: Raster, width: number, height: number): Raster {
   const rgb = sampleRegion(image, 0, 0, image.width, image.height, width, height);
   const data = new Uint8ClampedArray(width * height * 4);
@@ -741,6 +828,7 @@ export function downscale(image: Raster, width: number, height: number): Raster 
 
 /** Cut a reference sheet into normalised identity vectors. */
 export function referenceKind(
+  kind: CardKind,
   sheet: Raster,
   tile: [number, number],
   columns: number,
@@ -748,10 +836,16 @@ export function referenceKind(
 ): ReferenceKind {
   const [tw, th] = tile;
   return {
+    kind,
     tile,
     cardIds,
     vectors: cardIds.map((_, index) =>
-      tileVector(sampleRegion(sheet, (index % columns) * tw, Math.floor(index / columns) * th, tw, th, tw, th), tw, th),
+      tileVector(
+        sampleRegion(sheet, (index % columns) * tw, Math.floor(index / columns) * th, tw, th, tw, th),
+        tw,
+        th,
+        kind,
+      ),
     ),
   };
 }
