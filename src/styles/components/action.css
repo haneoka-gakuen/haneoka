@@ -19,7 +19,9 @@
   gap: 8px;
   padding-inline: 16px;
   color: var(--md-sys-color-on-primary);
-  border-radius: var(--md-sys-shape-corner-full);
+  /* Half the height, not corner-full (9999px): the press morph then moves
+     through visible radii instead of jumping at its last frame. */
+  border-radius: calc(var(--button-height, var(--control-height)) / 2);
   background: var(--md-sys-color-primary);
   font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
     var(--md-sys-typescale-label-large-line-height) var(--app-font);
@@ -101,7 +103,7 @@
   flex: 0 0 auto;
   place-items: center;
   color: var(--md-sys-color-on-surface-variant);
-  border-radius: var(--md-sys-shape-corner-full);
+  border-radius: calc(var(--icon-button-size, var(--control-height)) / 2);
   background: transparent;
   cursor: pointer;
   transition: background-color var(--md-sys-motion-duration-short3) linear;

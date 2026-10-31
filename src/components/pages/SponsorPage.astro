@@ -25,15 +25,15 @@ const tiers = SPONSOR_TIERS.map((tier) => ({ ...tier, sponsors: list.active.filt
 const initial = (name: string) => [...name][0]?.toUpperCase() ?? "";
 ---
 
-<article class="about sponsor" aria-labelledby="sponsor-heading">
-  <header class="sponsor-hero">
-    <div class="sponsor-hero__copy">
-      <h2 id="sponsor-heading" class="about-display about-display--small">{copy.heroTitle}</h2>
+<article class="about backing" aria-labelledby="backing-heading">
+  <header class="backing-hero">
+    <div class="backing-hero__copy">
+      <h2 id="backing-heading" class="about-display about-display--small">{copy.heroTitle}</h2>
       {copy.body.map((paragraph, index) => <p class={index === 0 ? "about-lede" : "about-body"}>{paragraph}</p>)}
     </div>
-    <div class="sponsor-links">
+    <div class="backing-links">
       {SPONSOR_PLATFORMS.map((platform) => (
-        <a class={`sponsor-link sponsor-link--${platform.id}`} href={platform.url} target="_blank" rel="noopener">
+        <a class={`backing-link backing-link--${platform.id}`} href={platform.url} target="_blank" rel="noopener">
           {platform.id === "afdian" && <Icon name="electric_bolt" size={24} filled />}
           {platform.id === "patreon" && (
             <svg class="material-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="14.5" cy="9.5" r="7" fill="currentColor" /><rect x="3" y="2.5" width="3.5" height="19" rx="0.6" fill="currentColor" /></svg>
@@ -46,38 +46,38 @@ const initial = (name: string) => [...name][0]?.toUpperCase() ?? "";
     </div>
   </header>
 
-  <section class="sponsor-section" aria-labelledby="sponsor-wall">
-    <div class="sponsor-wall__head">
-      <h3 id="sponsor-wall" class="about-headline">{copy.wallTitle}</h3>
-      <span class="sponsor-wall__updated">{copy.wallUpdated.replace("{date}", updated)}</span>
+  <section class="backing-section" aria-labelledby="backing-wall">
+    <div class="backing-wall__head">
+      <h3 id="backing-wall" class="about-headline">{copy.wallTitle}</h3>
+      <span class="backing-wall__updated">{copy.wallUpdated.replace("{date}", updated)}</span>
     </div>
     {tiers.map((tier) => (
-      <section class={`sponsor-tier sponsor-tier--${tier.id}`} aria-labelledby={`sponsor-tier-${tier.id}`}>
-        <h4 id={`sponsor-tier-${tier.id}`} class="sponsor-tier__title">
+      <section class={`backing-tier backing-tier--${tier.id}`} aria-labelledby={`backing-tier-${tier.id}`}>
+        <h4 id={`backing-tier-${tier.id}`} class="backing-tier__title">
           <img src={sponsorCardImage(tier.card)} alt="" width="300" height="140" loading="lazy" decoding="async" />
-          <span class="sponsor-tier__label"><span>{tier.title}</span><span class="sponsor-tier__count">{tier.sponsors.length}</span></span>
+          <span class="backing-tier__label"><span>{tier.title}</span><span class="backing-tier__count">{tier.sponsors.length}</span></span>
         </h4>
           {tier.sponsors.length ? (
-            <ul class="sponsor-names">
+            <ul class="backing-names">
               {tier.sponsors.map((sponsor) => (
-                <li class="sponsor-name">
+                <li class="backing-name">
                   {sponsor.avatar ? (
                     <img src={sponsor.avatar} alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
                   ) : (
-                    <span class="sponsor-name__initial" aria-hidden="true">{initial(sponsor.name)}</span>
+                    <span class="backing-name__initial" aria-hidden="true">{initial(sponsor.name)}</span>
                   )}
-                  <span class="sponsor-name__text">{sponsor.name}</span>
+                  <span class="backing-name__text">{sponsor.name}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p class="sponsor-tier__empty">{copy.tierEmpty}</p>
+            <p class="backing-tier__empty">{copy.tierEmpty}</p>
           )}
       </section>
     ))}
     {list.past.length > 0 && (
-      <section class="sponsor-past" aria-labelledby="sponsor-past">
-        <h4 id="sponsor-past" class="sponsor-tier__title"><span class="sponsor-tier__label"><span>{copy.pastTitle}</span><span class="sponsor-tier__count">{list.past.length}</span></span></h4>
+      <section class="backing-past" aria-labelledby="backing-past">
+        <h4 id="backing-past" class="backing-tier__title"><span class="backing-tier__label"><span>{copy.pastTitle}</span><span class="backing-tier__count">{list.past.length}</span></span></h4>
         <ul>{list.past.map((sponsor) => <li>{sponsor.name}</li>)}</ul>
       </section>
     )}

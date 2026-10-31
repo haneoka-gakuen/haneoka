@@ -45,7 +45,7 @@
   border-radius: var(--md-sys-shape-corner-medium);
 }
 .icon-button--toggle[aria-pressed="true"]:active {
-  border-radius: var(--md-sys-shape-corner-full);
+  border-radius: calc(var(--icon-button-size, var(--control-height)) / 2);
 }
 .segmented > button {
   transition:
