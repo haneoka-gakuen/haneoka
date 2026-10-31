@@ -33,8 +33,7 @@ export interface ArenaRank {
   rank: number;
   division: number;
   points: number;
-  /** Points a player in this rank starts the next season with. */
-  /** AP deducted when the next season starts, by the rank held at season end (0 keeps it). */
+  /** Share of AP deducted when the next season starts, in basis points, by the rank held at season end (0 keeps it). */
   resetPoints: number;
   top: boolean;
   /** When the rank opens; 0 when it is open from the season start. */

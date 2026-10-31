@@ -1079,7 +1079,9 @@ export class ArenaWorkspace extends LitElement {
                 </span>
               `,
               rank.points.toLocaleString(this.locale),
-              rank.resetPoints ? `−${rank.resetPoints.toLocaleString(this.locale)}` : this.t("resetKept"),
+              rank.resetPoints
+                ? `−${(rank.resetPoints / 10000).toLocaleString(this.locale, { style: "percent" })}`
+                : this.t("resetKept"),
               this.rewardList(league.promotionRewards.filter((reward) => reward.rankId === rank.id)),
             ]),
             { numeric: true },
