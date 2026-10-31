@@ -347,7 +347,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
       ${levelField(row?.level ?? null, limits.levelCap)}
       ${steps(host.t("awakening", "Awakening"), "rnk", row?.rank ?? null, limits.rank)}
       ${steps(host.t("liveSkill", "Live skill"), "sk", row?.skill ?? null, limits.liveSkillLevel)}
-      ${host.master!.members.get(cardId)?.gekisoSkillId ? steps(host.t("gekisoSkill", "Gekiso skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel) : nothing}
+      ${host.master!.members.get(cardId)?.gekisoSkillId ? steps(host.t("gekisoSkill", "GEKISO skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel) : nothing}
     `;
   } else {
     const row = owned as OwnedSnap | undefined;

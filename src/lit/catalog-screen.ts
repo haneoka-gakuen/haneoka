@@ -4158,7 +4158,7 @@ export class CatalogScreen extends LitElement {
     if (kind === "song" && !this.isProvider())
       groups.push({
         key: "gekisouType",
-        label: this.label("gekisouType", "Gekiso type"),
+        label: this.label("gekisouType", "GEKISO type"),
         options: [
           { value: "Combo", label: this.label("gekisouMissionCombo", "COMBO") },
           { value: "Luck", label: this.label("gekisouMissionLuck", "LUCK") },
@@ -5139,7 +5139,7 @@ export class CatalogScreen extends LitElement {
       value: this.metaMode,
       options: [
         { value: "live", label: this.label("metaModeLive", "Live") },
-        { value: "gekisou", label: this.label("metaModeGekisou", "Gekisou") },
+        { value: "gekisou", label: this.label("metaModeGekisou", "GEKISO") },
       ],
       onSelect: (mode) => {
         this.metaMode = mode;

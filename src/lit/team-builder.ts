@@ -1484,8 +1484,8 @@ export class TeamBuilder extends LitElement {
   private renderTabs(): TemplateResult {
     const tabs = [
       { id: "build", icon: "groups", label: this.t("tabBuild", "Build"), count: null },
-      { id: "arena", icon: "swords", label: this.t("arena.tab", "Gekiso Arena"), count: null },
-      { id: "song-comparison", icon: "music_note", label: this.t("sc.tab", "Gekiso songs"), count: null },
+      { id: "arena", icon: "swords", label: this.t("arena.tab", "GEKISO Arena"), count: null },
+      { id: "song-comparison", icon: "music_note", label: this.t("sc.tab", "GEKISO songs"), count: null },
       { id: "pt", icon: "emoji_events", label: this.t("pt.tab", "Event rewards"), count: null },
     ] as const;
     return html`

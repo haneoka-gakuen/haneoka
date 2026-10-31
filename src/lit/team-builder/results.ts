@@ -785,7 +785,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 durationMs: timeline.durationMs,
                 density: timeline.density,
                 fever: timeline.fever,
-                feverLabel: (index) => `${host.t("gekiso", "Gekisou")} ${index + 1}`,
+                feverLabel: (index) => `${host.t("gekiso", "GEKISO")} ${index + 1}`,
                 windows: timeline.windows.map((window) => {
                   const member = memberFace(host, hit, hit.members.indexOf(window.member));
                   return {

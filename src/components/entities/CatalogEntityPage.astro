@@ -47,7 +47,7 @@ const seoTitleValues = Object.fromEntries(
     const subtitle = page.subtitles[target];
     return [
       target,
-      `${page.titles[target]}${subtitle && subtitle !== page.titles[target] ? ` / ${subtitle}` : ""} / ${localizedSection}`,
+      [page.titles[target], subtitle !== page.titles[target] && subtitle, localizedSection].filter(Boolean).join(" / "),
     ];
   }),
 ) as Record<Locale, string>;

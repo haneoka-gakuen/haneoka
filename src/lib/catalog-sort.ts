@@ -62,11 +62,11 @@ export function catalogSortOptions(
           ? [
               ["leaderSkill", "catalog.cards.fields.leaderSkill", "Leader skill", "leaderSkill"],
               ["liveSkill", "catalog.cards.fields.liveSkill", "Live skill", "liveSkill"],
-              ["gekisouSkill", "catalog.cards.fields.gekisouSkill", "Gekisou skill", "gekisouSkill"],
+              ["gekisouSkill", "catalog.cards.fields.gekisouSkill", "GEKISO skill", "gekisouSkill"],
             ] as const
           : [
               ["supportSkill", "catalog.cards.fields.supportSkill", "Support skill", "supportSkill"],
-              ["gekisouSupportSkill", "catalog.cards.fields.gekisouSupportSkill", "Gekiso support skill", "gekisouSupportSkill"],
+              ["gekisouSupportSkill", "catalog.cards.fields.gekisouSupportSkill", "GEKISO support skill", "gekisouSupportSkill"],
             ] as const),
         RELEASE,
       ];

@@ -268,7 +268,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
       } : undefined,
       gekisoSkill: values.gekisoSkillLevel !== undefined ? {
         level: values.gekisoSkillLevel, icon: artwork.gekisoSkillIcon ?? "",
-        label: clientText(this.locale, "catalog.cards.fields.gekisouSkill", "Gekisou Skill"),
+        label: clientText(this.locale, "catalog.cards.fields.gekisouSkill", "GEKISO Skill"),
       } : undefined,
     });
   }

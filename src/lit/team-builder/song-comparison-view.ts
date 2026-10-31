@@ -17,8 +17,8 @@ import { resultSong } from "./results";
 import { playerState } from "../../lib/team-builder/engine/api";
 
 export const COMPARISON_TEXT = {
-  title: "Gekiso song comparison",
-  tab: "Gekiso songs",
+  title: "GEKISO song comparison",
+  tab: "GEKISO songs",
   chooseTeam: "Use a saved team",
   useTeam: "Compare songs with this team",
   choose: "Playable charts",
@@ -60,7 +60,7 @@ export const COMPARISON_TEXT = {
   threshold: "Target threshold unavailable",
   source: "Unavailable on this server",
   chart: "Chart unavailable",
-  missions: "Gekiso sections unavailable",
+  missions: "GEKISO sections unavailable",
   rewards: "Placement rewards unavailable",
   scoreFailed: "Scoring failed",
   memberMissing: "Choose an owned member",
@@ -116,7 +116,7 @@ function conditions(host: TeamBuilder) {
     awake: host.t("training", "Training"),
     rank: host.t("awakening", "Awakening"),
     liveSkillLevel: host.t("liveSkill", "Live skill"),
-    gekisoSkillLevel: host.t("gekisoSkill", "Gekiso skill"),
+    gekisoSkillLevel: host.t("gekisoSkill", "GEKISO skill"),
   };
   const missing = [...team.members, ...team.snaps].flatMap((input) => {
     const growth = (input.key.startsWith("m") ? team.box.members : team.box.snaps).find(

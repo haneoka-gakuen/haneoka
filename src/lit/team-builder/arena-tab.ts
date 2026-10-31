@@ -238,7 +238,7 @@ export function renderArenaTab(host: TeamBuilder) {
     host,
     html`
       <section class="surface stack" id="tb-arena-rules" data-tb-field tabindex="-1">
-        ${sectionHeading({ icon: "swords", label: host.t("arena.tab", "Gekiso Arena") })}
+        ${sectionHeading({ icon: "swords", label: host.t("arena.tab", "GEKISO Arena") })}
         <div class="stack">
           <md-outlined-select
             label=${host.t("arena.server", "Server")}

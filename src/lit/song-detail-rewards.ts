@@ -247,7 +247,7 @@ export function renderGekisouStages({
       <li>
         ${image ? gameGlyph(image) : nothing}
         <span>
-          <small><span aria-hidden="true">${index + 1}</span><span class="sr-only">${label("gekisouSegment", "Gekisou stage")} ${index + 1}</span></small>
+          <small><span aria-hidden="true">${index + 1}</span><span class="sr-only">${label("gekisouSegment", "GEKISO stage")} ${index + 1}</span></small>
           <strong>${label(mission.key, mission.fallback)}</strong>
           ${mission.icon === "combo" ? html`<span class="song-gekisou-timing-slot">${gekisoTimingView(segments[index]?.timing as GekisoTimingSegment | undefined, locale, label)}</span>` : nothing}
         </span>
@@ -257,7 +257,7 @@ export function renderGekisouStages({
   return cells.length
     ? html`
         <section class="detail-section song-detail-section song-gekisou-section">
-          ${renderDetailSectionHeading(label("gekisouStages", "Gekisou stages"), "effects")}
+          ${renderDetailSectionHeading(label("gekisouStages", "GEKISO stages"), "effects")}
           <ol class="song-gekisou-stages">
             ${cells}
           </ol>
@@ -415,12 +415,12 @@ export function renderSongRewards({
   const rooms = roomRanks.length
     ? html`
         <section class="detail-section song-detail-section song-room-section">
-          ${renderDetailSectionHeading(label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores"), "characters")}
+          ${renderDetailSectionHeading(label("catalog.analysis.fields.gekisouRoomScores", "GEKISO room scores"), "characters")}
           <div
             class="table-scroll"
             role="region"
             tabindex="0"
-            aria-label=${label("catalog.analysis.fields.gekisouRoomScores", "Gekisou room scores")}
+            aria-label=${label("catalog.analysis.fields.gekisouRoomScores", "GEKISO room scores")}
             data-scroll-region
           >
             <table class="data-table song-room-table">

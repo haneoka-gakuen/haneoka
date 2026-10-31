@@ -190,7 +190,7 @@ function goalText(host: TeamBuilder, goal: GoalKind): string {
     case "score":
       return host.t("goalScore", "Live score");
     case "gekiso":
-      return host.t("goalGekiso", "Gekiso score");
+      return host.t("goalGekiso", "GEKISO score");
     case "event":
       return host.t("goalEvent", "Event rewards");
     case "plan":

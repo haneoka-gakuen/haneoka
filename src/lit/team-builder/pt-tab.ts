@@ -406,7 +406,7 @@ function inputLabel(host: TeamBuilder, target: string): string {
     tables: host.t("pt.eventTables", "Event consumption tables"),
     consumption: host.t("boosts", "Boosts per live"),
     "challenge-consumption": host.t("pt.challengeCost", "CP per challenge"),
-    "gekiso-input": host.t("pt.gekiso", "Gekisou"),
+    "gekiso-input": host.t("pt.gekiso", "GEKISO"),
     minBonus: host.t("minBonus", "Minimum event bonus (%)"),
     member: host.t("members", "Members"),
     snap: host.t("snapshots", "Snapshots"),
@@ -425,7 +425,7 @@ function inputLabel(host: TeamBuilder, target: string): string {
     awake: host.t("training", "Training"),
     rank: host.t("awakening", "Awakening"),
     liveSkillLevel: host.t("liveSkill", "Live skill"),
-    gekisoSkillLevel: host.t("gekisoSkill", "Gekisou skill"),
+    gekisoSkillLevel: host.t("gekisoSkill", "GEKISO skill"),
     cr: host.t("characterRanks", "Character ranks"),
     bi: host.t("bandItems", "Band items"),
   };
@@ -454,7 +454,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
     { value: "solo", label: host.t("routeLive", "Normal live"), icon: icon("play_arrow", 20), available: normal },
     {
       value: "gekiso",
-      label: host.t("pt.gekiso", "Gekisou"),
+      label: host.t("pt.gekiso", "GEKISO"),
       icon: icon("local_fire_department", 20),
       available: normal,
     },

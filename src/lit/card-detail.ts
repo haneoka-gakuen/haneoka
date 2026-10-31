@@ -139,7 +139,7 @@ export function renderCardStats(c: Controller, item: Item) {
                     c.detailLiveLevel = value;
                     c.persistCardDetailQuery();
                   })}${renderLevelSwitch(
-                    c.label("gekisouSkill", "Gekisou Skill"),
+                    c.label("gekisouSkill", "GEKISO Skill"),
                     data.gekisou,
                     c.detailGekisouLevel,
                     (value) => {

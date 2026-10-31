@@ -441,7 +441,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               value: host.settings.manualScoreMode,
               options: [
                 { value: "score", label: host.t("goalScore", "Live score") },
-                { value: "gekiso", label: host.t("goalGekiso", "Gekiso score") },
+                { value: "gekiso", label: host.t("goalGekiso", "GEKISO score") },
               ],
               onSelect: (manualScoreMode) => host.updateSettings({ manualScoreMode }),
             })}
@@ -529,7 +529,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
             <div class="stack stack--loose">
               ${editor}
               <section class="surface stack tb-manual__scores">
-                ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score"), count: rows.length || undefined })}
+                ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
                 <ul class="tb-eval-mobile">
                   ${rows.map(
                   ({ song, row }) => html`
@@ -573,7 +573,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                   class="table-scroll tb-eval-desktop"
                   role="region"
                   tabindex="0"
-                  aria-label=${showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "Gekiso score")}
+                  aria-label=${showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score")}
                 >
                   <table class="data-table tb-eval">
                     <thead>

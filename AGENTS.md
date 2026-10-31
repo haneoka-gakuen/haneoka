@@ -43,7 +43,7 @@ outside stable maps. Do not move or split source just to fit a map.
 - Errors are one short line naming what is wrong, next to what fixes it.
 - Every string exists in all five catalogues (`public/i18n/{en,ja,ko,zh-CN,zh-TW}.json`).
   A visible English fallback in another locale is a bug.
-- Use the game's own terms in each locale. Support cards: 留影 / スナップ /
+- Use the game's own terms in each locale. Support cards: 留影 / 快照 / スナップ /
   Snapshot / 스냅 — never "photo", 照片, フォト or 포토.
 - Code follows the same rule: no comments that narrate the obvious, no
   defensive re-validation of values the producer already guarantees.

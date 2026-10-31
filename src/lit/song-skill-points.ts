@@ -106,7 +106,7 @@ export class SongSkillPoints extends LitElement {
           durationMs: end,
           density,
           fever: chart.feverMs,
-          feverLabel: (index) => `${this.text("catalog.analysis.fields.gekisouSegment", "Gekisou stage")} ${index + 1}`,
+          feverLabel: (index) => `${this.text("catalog.analysis.fields.gekisouSegment", "GEKISO stage")} ${index + 1}`,
           windows: chart.skillTimesMs.map((start, index) => ({
             startMs: start,
             endMs: start + SKILL_MS,
