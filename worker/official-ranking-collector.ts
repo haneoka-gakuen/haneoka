@@ -14,11 +14,13 @@ export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
   "OFFICIAL_RANKING_JP_CONFIG" | "OFFICIAL_RANKING_TW_CONFIG" | "OFFICIAL_RANKING_EN_CONFIG" | "OFFICIAL_RANKING_KR_CONFIG"
 >> & { OFFICIAL_RANKING_ENABLED_REGIONS?: string };
-const INTERVAL_MS = 600_000;
+const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const LOOKUP_MS = 60_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
+/** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
+const ARENA_SWEEP_WINDOWS = 10;
 const DEMAND_TTL_MS = 600_000;
 const DEMAND_LIMITS = { player: 64, song: 8, card: 128 };
 const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
@@ -66,6 +68,8 @@ interface CollectorState {
   lookup?: CollectorRun | null;
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
+  /** Next window past the top 100 that each `season:band` board refreshes, and the band whose turn it is. */
+  arenaSweep?: { band: number; next: Record<string, number> };
   arenaInterests?: ArenaInterest[];
   playerInterests?: DemandInterest[];
   songInterests?: DemandInterest[];
@@ -329,8 +333,33 @@ export class OfficialRankingCollector extends Container<Env> {
     state.nextAtMs = state.nextAtMs ? Math.min(state.nextAtMs, next) : next;
   }
 
+  /** Windows past the top 100 that this run refreshes on its own, so the whole board stays current without anyone
+   * opening it: bands take turns, each walking its windows from 101 to its last rank and starting over. */
+  private async arenaSweep(state: CollectorState, region: GameRecordsRegion, now: number, count: number) {
+    const arena = state.arenaCatalog;
+    if (!arena || count <= 0 || now < arena.startAtMs || now >= arena.rankingEndAtMs || !arena.bandIds.length) return [];
+    const sweep = state.arenaSweep ??= { band: 0, next: {} };
+    const maxima = new Map<string, number | null>();
+    const windows: { seasonId: string; bandId: string; startRank: number; endRank: number }[] = [];
+    for (let turn = 0; windows.length < count && turn < count + arena.bandIds.length; turn++) {
+      const bandId = arena.bandIds[sweep.band % arena.bandIds.length]!;
+      sweep.band = (sweep.band + 1) % arena.bandIds.length;
+      if (!maxima.has(bandId))
+        maxima.set(bandId, (await readOfficialArenaMetadata(this.env, region, arena.seasonId, bandId).catch(() => null))?.maxRank ?? null);
+      const maxRank = maxima.get(bandId);
+      if (!maxRank || maxRank <= 100) continue;
+      const key = `${arena.seasonId}:${bandId}`;
+      let startRank = sweep.next[key] ?? 101;
+      if (startRank > maxRank) startRank = 101;
+      sweep.next[key] = startRank + 100;
+      windows.push({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 });
+    }
+    sweep.next = Object.fromEntries(Object.entries(sweep.next).filter(([key]) => key.startsWith(`${arena.seasonId}:`)));
+    return windows;
+  }
+
   async requestArenaWindows(region: GameRecordsRegion, seasonId: string, bandId: string,
-    starts: number[], thresholds: number[] = []): Promise<{ kind: string; retryAfter: number | null }> {
+    starts: number[], thresholds: number[] = [], expedite = true): Promise<{ kind: string; retryAfter: number | null }> {
     return this.serialized(async () => {
       if (!decimal(seasonId) || !decimal(bandId) || !Array.isArray(starts) || starts.length > 20
         || starts.some((start) => !Number.isSafeInteger(start) || start < 1 || (start - 1) % 100 !== 0)
@@ -367,7 +396,7 @@ export class OfficialRankingCollector extends Container<Env> {
       if (queue.length + missing.length > 24) return { kind: "queue_full", retryAfter: null };
       for (const startRank of missing) queue.push({ seasonId, bandId, startRank, endRank: startRank + 99, requestedAtMs: now });
       state.arenaInterests = queue;
-      if (!active) this.expediteArena(state);
+      if (!active && expedite) this.expediteArena(state);
       await this.persist(state);
       return { kind: "pending", retryAfter: 30 };
     });
@@ -767,6 +796,9 @@ export class OfficialRankingCollector extends Container<Env> {
       state.blockedGeneration = null;
       state.lastRunAtMs = now;
       state.nextAtMs = now + INTERVAL_MS;
+      const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
+        .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
+      const arenaWindows = [...demanded, ...await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length))];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
@@ -777,8 +809,7 @@ export class OfficialRankingCollector extends Container<Env> {
         songRankings: (state.songInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 4).map((entry) => entry.id),
         cardImages: (state.cardInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 32).map((entry) => entry.id),
         arenaProgress: Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
-        arenaWindows: (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
-          .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank })),
+        arenaWindows,
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
         callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + JOB_MS };
     });

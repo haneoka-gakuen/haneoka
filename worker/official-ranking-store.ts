@@ -445,3 +445,38 @@ export function officialCardUrl(region: GameRecordsRegion, source: string): stri
   const file = /^https:\/\/static\.bang-dream-on\.jp\/operation\/profilecard\/[0-9]+\/([A-Za-z0-9_.-]+)$/u.exec(source)?.[1];
   return file ? `/api/v1/game/records/jp/cards/${file}` : source;
 }
+
+/** Raw observations stay whole for this long; older ones are thinned by {@link pruneOfficialObservations}. */
+export const OFFICIAL_KEEP_ALL_MS = 12 * 3_600_000;
+const JST_MS = 9 * 3_600_000;
+
+/** Thins raw observations older than {@link OFFICIAL_KEEP_ALL_MS}: event boards keep the last snapshot of each
+ * Japan-time day per board (the points event charts read); Arena windows keep only what each window's latest
+ * metadata points at; population counts keep the latest per board. Deletes rows and payloads; returns how many. */
+export async function pruneOfficialObservations(env: OfficialRankingStoreBindings, limit = 200): Promise<number> {
+  const { db, bucket } = storage(env);
+  const before = Date.now() - OFFICIAL_KEEP_ALL_MS;
+  const doomed: { table: string; cursor: number; key: string }[] = [];
+  const take = async (table: string, sql: string, ...values: unknown[]) => {
+    if (doomed.length >= limit) return;
+    const { results } = await db.prepare(sql).bind(...values, limit - doomed.length).all<{ cursor: number; payload_key: string }>();
+    for (const row of results) doomed.push({ table, cursor: row.cursor, key: row.payload_key });
+  };
+  await take("official_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_ranking_observations AS o
+    WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_ranking_observations AS later
+      WHERE later.region = o.region AND later.event_id = o.event_id AND later.board_kind = o.board_kind
+        AND later.challenge_id = o.challenge_id AND (later.observed_at_ms, later.cursor) > (o.observed_at_ms, o.cursor)
+        AND later.observed_at_ms < (CAST((o.observed_at_ms + ?) / 86400000 AS INTEGER) + 1) * 86400000 - ?)
+    ORDER BY o.observed_at_ms LIMIT ?`, before, JST_MS, JST_MS);
+  await take("official_arena_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_arena_ranking_observations AS o
+    WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, before);
+  await take("official_arena_population_observations", `SELECT o.cursor, o.payload_key FROM official_arena_population_observations AS o
+    WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
+      WHERE later.region = o.region AND later.season_id = o.season_id AND later.band_id = o.band_id
+        AND later.observed_at_ms > o.observed_at_ms) ORDER BY o.observed_at_ms LIMIT ?`, before);
+  if (!doomed.length) return 0;
+  await bucket.delete(doomed.map((row) => row.key));
+  await db.batch(doomed.map((row) => db.prepare(`DELETE FROM ${row.table} WHERE cursor = ?`).bind(row.cursor)));
+  return doomed.length;
+}

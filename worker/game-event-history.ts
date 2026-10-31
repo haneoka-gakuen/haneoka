@@ -183,10 +183,10 @@ export async function moveEventHistory(env: EventHistoryBindings, batch = 150): 
   return results.length;
 }
 
-const KEEP_ALL_MS = 2 * 86_400_000;
+const KEEP_ALL_MS = 12 * 3_600_000;
 const JST_MS = 9 * 3_600_000;
 
-/** Thins moved history: everything from the last two days stays; older
+/** Thins moved history: everything from the last 12 hours stays; older
  * snapshots keep the last one of each Japan-time day per board. Deletes the
  * rows and their payloads; returns how many were removed. */
 export async function pruneEventHistory(env: EventHistoryBindings, limit = 500): Promise<number> {

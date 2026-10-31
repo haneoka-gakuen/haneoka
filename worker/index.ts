@@ -76,6 +76,7 @@ import { handleGachaHistoryRequest } from "./gacha-history";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
 import { handleKofiSponsorRequest } from "./kofi-sponsors";
 import { moveEventHistory, pruneEventHistory } from "./game-event-history";
+import { pruneOfficialObservations } from "./official-ranking-store";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
@@ -4117,6 +4118,7 @@ const worker: ExportedHandler<Env> = {
       ctx.waitUntil((async () => {
         for (let batch = 0; batch < 3; batch++) if (!(await moveEventHistory(env))) break;
         await pruneEventHistory(env);
+        await pruneOfficialObservations(env);
       })().catch((error: unknown) => {
         console.warn(JSON.stringify({ event: "event_history_move_failed", error: error instanceof Error ? error.message : "Error" }));
       }));
