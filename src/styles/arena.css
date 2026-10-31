@@ -492,7 +492,16 @@
 
   @container arena (max-width: 1099px) {
     .arena-leagues {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(148px, 1fr);
+      grid-template-columns: none;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x proximity;
+      scrollbar-width: none;
+    }
+    .arena-league {
+      scroll-snap-align: start;
     }
   }
   @container arena (max-width: 839px) {
@@ -512,12 +521,6 @@
   }
   @container arena (max-width: 599px) {
     /* Nothing here scrolls sideways: every block wraps to the phone's width. */
-    .arena-leagues {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .arena-league:last-child:nth-child(odd) {
-      grid-column: 1 / -1;
-    }
     .arena-tabs {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -607,14 +610,16 @@
       table-layout: fixed;
     }
     .arena-grid .data-table.data-table--numeric :where(th, td).is-sticky {
-      inline-size: 32%;
       white-space: normal;
+    }
+    .arena-grid .data-table:not(.arena-thresholds *) :where(th, td).is-sticky {
+      inline-size: 32%;
     }
     .arena-thresholds .data-table {
       table-layout: auto;
     }
-    .arena-grid .data-table:not(.data-table--numeric) :where(th, td).is-sticky {
-      inline-size: 32%;
+    .arena-thresholds .data-table :where(th, td).is-sticky {
+      inline-size: auto;
     }
     .arena-grid .segmented {
       inline-size: 100%;
