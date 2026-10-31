@@ -4073,7 +4073,22 @@
       "submitAppeal": "이의 제기 제출",
       "appealSubmitted": "이의 제기 제출됨",
       "appealFailed": "이의 제기를 제출할 수 없습니다.",
-      "emailPassword": "이메일 및 비밀번호"
+      "emailPassword": "이메일 및 비밀번호",
+      "apiTokens": "API 토큰",
+      "apiTokenName": "토큰 이름",
+      "apiTokenLifetime": "유효 기간",
+      "apiTokenDays30": "30일",
+      "apiTokenDays90": "90일",
+      "apiTokenDays365": "1년",
+      "apiTokenCreate": "토큰 만들기",
+      "apiTokenShown": "지금 이 토큰을 복사하세요",
+      "apiTokenCopy": "복사",
+      "apiTokenCopied": "토큰을 복사했습니다.",
+      "apiTokenExpires": "만료",
+      "apiTokenUsed": "마지막 사용",
+      "apiTokenNeverUsed": "사용 안 함",
+      "apiTokenRevokeTitle": "이 토큰을 폐기할까요?",
+      "apiTokenRevoked": "토큰을 폐기했습니다."
     },
     "profile": {
       "title": "공개 프로필",

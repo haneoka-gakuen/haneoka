@@ -4073,7 +4073,22 @@
       "submitAppeal": "送信する",
       "appealSubmitted": "送信済み",
       "appealFailed": "異議申し立てを送信できませんでした。",
-      "emailPassword": "メールとパスワード"
+      "emailPassword": "メールとパスワード",
+      "apiTokens": "APIトークン",
+      "apiTokenName": "トークン名",
+      "apiTokenLifetime": "有効期間",
+      "apiTokenDays30": "30日",
+      "apiTokenDays90": "90日",
+      "apiTokenDays365": "1年",
+      "apiTokenCreate": "トークンを作成",
+      "apiTokenShown": "このトークンを今すぐコピー",
+      "apiTokenCopy": "コピー",
+      "apiTokenCopied": "トークンをコピーしました。",
+      "apiTokenExpires": "有効期限",
+      "apiTokenUsed": "最終使用",
+      "apiTokenNeverUsed": "未使用",
+      "apiTokenRevokeTitle": "このトークンを無効にしますか?",
+      "apiTokenRevoked": "トークンを無効にしました。"
     },
     "profile": {
       "title": "公開プロフィール",

@@ -71,6 +71,7 @@ import { handleProfileRequest } from "./profile";
 import { handleTeamInventoryRequest } from "./team-inventory";
 import { handleTeamWorkspaceRequest } from "./team-workspace";
 import { handleTeamBoxRequest } from "./team-box";
+import { handleAccountApiTokenRequest } from "./account-api-tokens";
 import { handleGachaHistoryRequest } from "./gacha-history";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
@@ -3844,6 +3845,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (admin) return admin;
     const profile = await handleProfileRequest(request, env);
     if (profile) return profile;
+    const accountApiToken = await handleAccountApiTokenRequest(request, env);
+    if (accountApiToken) return accountApiToken;
     const teamInventory = await handleTeamInventoryRequest(request, env);
     if (teamInventory) return teamInventory;
     const teamWorkspace = await handleTeamWorkspaceRequest(request, env);

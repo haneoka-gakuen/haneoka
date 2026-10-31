@@ -31,6 +31,14 @@ export interface SnapInput {
   level: number | null;
   rank: number | null;
 }
+export interface PlayerInput {
+  characterRanks: Record<string, number | null>;
+  characterTotalRank: number | null;
+  bandItems: Record<string, number | null>;
+  vipRank: number | null;
+  characterMemory: Record<string, number | null>;
+  musicMemory: Record<string, number | null>;
+}
 /** How unknown growth fields are filled. */
 export type UnknownPolicy = "max" | "min";
 

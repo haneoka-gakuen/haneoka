@@ -1,7 +1,6 @@
 /** Typed reads of box entries: owned cards, account bonuses, saved teams, engine inputs. */
 import type { BoxEntry, BoxValue } from "./box-doc";
-import type { MemberInput, SnapInput } from "../engine/box";
-import type { PlayerInput } from "../engine/api";
+import type { MemberInput, PlayerInput, SnapInput } from "../engine/box";
 
 type Entries = Readonly<Record<string, BoxEntry>>;
 export interface OwnedMember {
@@ -27,8 +26,8 @@ export interface SavedTeam {
   members: number[];
   snaps: (number | null)[];
   leader: number | null;
-  song?: { songId: number; difficulty: number } | null;
-  note?: string;
+  song?: { songId: number; difficulty: number } | null | undefined;
+  note?: string | undefined;
   createdAt: number;
 }
 export interface BoxView {

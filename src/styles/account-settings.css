@@ -342,6 +342,11 @@
     border-top: 1px solid var(--md-sys-color-outline-variant);
     text-align: left;
   }
+  .account-api-token {
+    display: block;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
   .provider-row--link {
     width: 100%;
     cursor: pointer;

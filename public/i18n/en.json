@@ -4073,7 +4073,22 @@
       "submitAppeal": "Submit appeal",
       "appealSubmitted": "Appeal submitted",
       "appealFailed": "The appeal could not be submitted.",
-      "emailPassword": "Email & password"
+      "emailPassword": "Email & password",
+      "apiTokens": "API tokens",
+      "apiTokenName": "Token name",
+      "apiTokenLifetime": "Valid for",
+      "apiTokenDays30": "30 days",
+      "apiTokenDays90": "90 days",
+      "apiTokenDays365": "1 year",
+      "apiTokenCreate": "Create token",
+      "apiTokenShown": "Copy this token now",
+      "apiTokenCopy": "Copy",
+      "apiTokenCopied": "Token copied.",
+      "apiTokenExpires": "Expires",
+      "apiTokenUsed": "Last used",
+      "apiTokenNeverUsed": "Never",
+      "apiTokenRevokeTitle": "Revoke this token?",
+      "apiTokenRevoked": "Token revoked."
     },
     "profile": {
       "title": "Public profile",

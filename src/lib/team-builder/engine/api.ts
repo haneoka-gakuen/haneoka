@@ -7,6 +7,7 @@
 import { battleRank, compileChart, scoreRank, type ChartSource, type CompiledChart } from "./chart";
 import { AP, ORDERS, isAllPerfect, playJudgements, prepareLive, skipScore, type PlayModel, type PreparedLive } from "./live";
 import type { EngineMaster, EventEffectRow } from "./master";
+import type { PlayerInput } from "./box";
 import {
   eventObjective,
   eventScoreTieObjective,
@@ -53,14 +54,7 @@ export interface SongRef {
   songId: number;
   difficulty: number;
 }
-export interface PlayerInput {
-  characterRanks: Record<string, number | null>;
-  characterTotalRank: number | null;
-  bandItems: Record<string, number | null>;
-  vipRank: number | null;
-  characterMemory: Record<string, number | null>;
-  musicMemory: Record<string, number | null>;
-}
+export type { PlayerInput };
 export interface ConstraintInput {
   requiredMembers: string[];
   excludedMembers: string[];

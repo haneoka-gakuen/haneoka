@@ -45721,6 +45721,405 @@
           "url": "https://docs.haneoka.org/sonolus/"
         }
       }
+    },
+    "/api/v1/team-data/{server}": {
+      "get": {
+        "operationId": "team-data.get",
+        "tags": [
+          "Team builder sync"
+        ],
+        "summary": "Read the token owner's team data",
+        "description": "Returns the owner's participating cards and account bonuses as engine inputs. Pass `members`, `snaps` and `player` to the browser engine or local tools service; the calculation runs on the caller's device. Any origin may call this route. Cookies are ignored.\n\nAuthentication: Required: `Authorization: Bearer <token>` with a token from Account > Sign-in & security.\n\nCache-Control: `private, no-store`",
+        "security": [
+          {
+            "accountApiToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server",
+            "in": "path",
+            "required": true,
+            "description": "Resource server slug the data belongs to, e.g. `intl`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "server": "intl",
+                  "revision": 42,
+                  "members": [
+                    {
+                      "key": "m1",
+                      "cardId": 1,
+                      "level": 60,
+                      "awake": 2,
+                      "rank": 3,
+                      "liveSkillLevel": 5,
+                      "gekisoSkillLevel": null
+                    }
+                  ],
+                  "snaps": [
+                    {
+                      "key": "s1",
+                      "cardId": 1,
+                      "level": 40,
+                      "rank": 2
+                    }
+                  ],
+                  "player": {
+                    "characterRanks": {
+                      "1": 20
+                    },
+                    "characterTotalRank": null,
+                    "bandItems": {
+                      "1": 3
+                    },
+                    "vipRank": null,
+                    "characterMemory": {},
+                    "musicMemory": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token`: The token is missing, malformed, revoked or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`account_restricted`: The owner cannot sign in or was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`server_not_found`: Unknown server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limit_exceeded`: Try again later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/api-tokens": {
+      "get": {
+        "operationId": "account.api-tokens.list",
+        "tags": [
+          "Account"
+        ],
+        "summary": "List API tokens",
+        "description": "Token values are never returned after creation.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
+        "parameters": [
+          {
+            "name": "X-Haneoka-Expected-User",
+            "in": "header",
+            "required": true,
+            "description": "The signed-in user's internal ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "tokens": [
+                    {
+                      "id": "3f2b1c9e-6c55-4a70-9f7d-1f5a8e2d4b10",
+                      "name": "My tool",
+                      "createdAt": 1793400000000,
+                      "expiresAt": 1801176000000,
+                      "lastUsedAt": null
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "account.api-tokens.create",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Create an API token",
+        "description": "Creates a read-only token and returns its value once. An account can hold 10 live tokens.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
+        "parameters": [
+          {
+            "name": "X-Haneoka-Expected-User",
+            "in": "header",
+            "required": true,
+            "description": "The signed-in user's internal ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "days"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "days": {
+                    "type": "integer",
+                    "enum": [
+                      30,
+                      90,
+                      365
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "token": "hnk_REDACTED",
+                  "tokens": [
+                    {
+                      "id": "3f2b1c9e-6c55-4a70-9f7d-1f5a8e2d4b10",
+                      "name": "My tool",
+                      "createdAt": 1793400000000,
+                      "expiresAt": 1801176000000,
+                      "lastUsedAt": null
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`too_many_tokens`: Revoke a token first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_token_request`: Send a name and 30, 90 or 365 days.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/api-tokens/{id}": {
+      "delete": {
+        "operationId": "account.api-tokens.revoke",
+        "tags": [
+          "Account"
+        ],
+        "summary": "Revoke an API token",
+        "description": "Deletes the token. Later requests with it return `401 invalid_token`.\n\nAuthentication: Required: a session cookie, the `X-Haneoka-Expected-User` header and a same-origin request.\n\nCache-Control: `private, no-store`",
+        "parameters": [
+          {
+            "name": "X-Haneoka-Expected-User",
+            "in": "header",
+            "required": true,
+            "description": "The signed-in user's internal ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Token ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "tokens": []
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -52312,6 +52711,10 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-Game-Application-Key"
+      },
+      "accountApiToken": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

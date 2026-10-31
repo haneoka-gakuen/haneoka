@@ -4073,7 +4073,22 @@
       "submitAppeal": "提交申诉",
       "appealSubmitted": "申诉已提交",
       "appealFailed": "无法提交申诉。",
-      "emailPassword": "邮箱与密码"
+      "emailPassword": "邮箱与密码",
+      "apiTokens": "API 令牌",
+      "apiTokenName": "令牌名称",
+      "apiTokenLifetime": "有效期",
+      "apiTokenDays30": "30 天",
+      "apiTokenDays90": "90 天",
+      "apiTokenDays365": "1 年",
+      "apiTokenCreate": "创建令牌",
+      "apiTokenShown": "请立即复制此令牌",
+      "apiTokenCopy": "复制",
+      "apiTokenCopied": "令牌已复制。",
+      "apiTokenExpires": "到期",
+      "apiTokenUsed": "上次使用",
+      "apiTokenNeverUsed": "从未",
+      "apiTokenRevokeTitle": "要撤销此令牌吗?",
+      "apiTokenRevoked": "令牌已撤销。"
     },
     "profile": {
       "title": "个人主页",

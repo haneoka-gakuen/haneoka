@@ -73,6 +73,9 @@ export class AccountWorkspace extends LitElement {
     busy: { state: true },
     message: { state: true },
     error: { state: true },
+    apiTokens: { state: true },
+    apiTokenValue: { state: true },
+    apiTokenRevoking: { state: true },
     avatarFile: { state: true },
     avatarPreview: { state: true },
     appealOpen: { state: true },
@@ -94,6 +97,9 @@ export class AccountWorkspace extends LitElement {
   declare removing: Value | null;
   declare mode: AuthMode;
   declare section: Section;
+  declare apiTokens: Value[];
+  declare apiTokenValue: string;
+  declare apiTokenRevoking: Value | null;
   declare busy: boolean;
   declare message: string;
   declare error: string;
@@ -124,6 +130,9 @@ export class AccountWorkspace extends LitElement {
     this.removing = null;
     this.mode = "signIn";
     this.section = "profile";
+    this.apiTokens = [];
+    this.apiTokenValue = "";
+    this.apiTokenRevoking = null;
     this.busy = false;
     this.message = "";
     this.error = "";
@@ -347,14 +356,16 @@ export class AccountWorkspace extends LitElement {
     const userId = this.user()?.id;
     const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
     const optional = (url: string) => this.request(url, init).catch((): Value => ({}));
-    const [sessions, accounts, games, relationships] = await Promise.all([
+    const [sessions, accounts, games, relationships, apiTokens] = await Promise.all([
       speculative?.sessions ?? this.request("/api/auth/list-sessions", init),
       speculative?.accounts ?? this.request("/api/auth/list-accounts", init),
       optional("/api/v1/account/game-accounts"),
       optional("/api/v1/community/me/relationships"),
+      this.request("/api/v1/account/api-tokens", { ...init, headers: this.ownerHeaders() }).catch((): Value => ({})),
     ]);
     if (!this.isConnected || !this.securityRequests.current(ownSignal) || userId !== this.user()?.id) return;
     this.games = Array.isArray(games.accounts) ? (games.accounts as Value[]) : [];
+    this.apiTokens = Array.isArray(apiTokens.tokens) ? (apiTokens.tokens as Value[]) : [];
     this.relationships = Array.isArray(relationships.relationships) ? (relationships.relationships as Value[]) : [];
     this.sessions = Array.isArray(sessions)
       ? (sessions as unknown as Value[])
@@ -584,6 +595,116 @@ export class AccountWorkspace extends LitElement {
         await this.loadSecurity();
       },
     );
+  }
+  private ownerHeaders() {
+    return { "X-Haneoka-Expected-User": String(this.user()?.id ?? "") };
+  }
+  private async createApiToken(event: SubmitEvent) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const fields = new FormData(form);
+    const data = await this.action(() =>
+      this.request("/api/v1/account/api-tokens", {
+        method: "POST",
+        headers: this.ownerHeaders(),
+        body: JSON.stringify({ name: String(fields.get("name")), days: Number(fields.get("days")) }),
+      }),
+    );
+    if (!data) return;
+    this.apiTokens = data.tokens as Value[];
+    this.apiTokenValue = String(data.token);
+    form.reset();
+  }
+  private async revokeApiToken() {
+    const id = this.apiTokenRevoking?.id;
+    if (!id) return;
+    const data = await this.action(
+      () => this.request(`/api/v1/account/api-tokens/${id}`, { method: "DELETE", headers: this.ownerHeaders() }),
+      this.label("apiTokenRevoked", "Token revoked."),
+    );
+    if (data) this.apiTokens = data.tokens as Value[];
+    this.apiTokenRevoking = null;
+  }
+  private async copyApiToken() {
+    await navigator.clipboard.writeText(this.apiTokenValue);
+    snackbar(this.label("apiTokenCopied", "Token copied."));
+  }
+  private renderApiTokens() {
+    const revoking = this.apiTokenRevoking;
+    return html`
+      <article class="surface account-block">
+        ${this.heading("key", this.label("apiTokens", "API tokens"), this.apiTokens.length)}
+        <div class="provider-list">
+          ${this.apiTokens.map(
+            (token) => html`
+              <div class="provider-row">
+                <span class="provider-mark">${icon("key", 20)}</span>
+                <span>
+                  <strong>${String(token.name)}</strong>
+                  <small>
+                    ${this.label("apiTokenExpires", "Expires")} ${this.date(token.expiresAt)}
+                    · ${this.label("apiTokenUsed", "Last used")}
+                    ${token.lastUsedAt ? this.date(token.lastUsedAt) : this.label("apiTokenNeverUsed", "Never")}
+                  </small>
+                </span>
+                <button class="button button--text" ?disabled=${this.busy} @click=${() => (this.apiTokenRevoking = token)}>
+                  ${this.label("revoke", "Revoke")}
+                </button>
+              </div>
+            `,
+          )}
+        </div>
+        <form class="account-inline-form" @submit=${this.createApiToken}>
+          <label>
+            <span>${this.label("apiTokenName", "Token name")}</span>
+            <span class="field"><input name="name" maxlength="64" required /></span>
+          </label>
+          <label>
+            <span>${this.label("apiTokenLifetime", "Valid for")}</span>
+            <span class="field">
+              <select name="days">
+                ${[30, 90, 365].map(
+                  (days) => html`<option value=${days} ?selected=${days === 90}>${this.label(`apiTokenDays${days}`, `${days} days`)}</option>`,
+                )}
+              </select>
+            </span>
+          </label>
+          <button class="button" ?disabled=${this.busy}>${this.label("apiTokenCreate", "Create token")}</button>
+        </form>
+      </article>
+      ${
+        this.apiTokenValue
+          ? html`
+              <dialog class="dialog" ${modal(() => (this.apiTokenValue = ""))}>
+                <div class="dialog__surface">
+                  <header class="dialog__header"><h2>${this.label("apiTokenShown", "Copy this token now")}</h2></header>
+                  <div class="dialog__body"><code class="account-api-token">${this.apiTokenValue}</code></div>
+                  <footer class="dialog__actions">
+                    <button class="button button--text" type="button" @click=${() => (this.apiTokenValue = "")}>${this.label("close", "Close")}</button>
+                    <button class="button" type="button" @click=${this.copyApiToken}>${this.label("apiTokenCopy", "Copy")}</button>
+                  </footer>
+                </div>
+              </dialog>
+            `
+          : nothing
+      }
+      ${
+        revoking
+          ? html`
+              <dialog class="dialog" ${modal(() => (this.apiTokenRevoking = null))}>
+                <div class="dialog__surface">
+                  <header class="dialog__header"><h2>${this.label("apiTokenRevokeTitle", "Revoke this token?")}</h2></header>
+                  <div class="dialog__body">${String(revoking.name)}</div>
+                  <footer class="dialog__actions">
+                    <button class="button button--text" type="button" @click=${() => (this.apiTokenRevoking = null)}>${this.label("close", "Close")}</button>
+                    <button class="button button--danger" type="button" ?disabled=${this.busy} @click=${this.revokeApiToken}>${this.label("revoke", "Revoke")}</button>
+                  </footer>
+                </div>
+              </dialog>
+            `
+          : nothing
+      }
+    `;
   }
   private async revokeSession(token: unknown) {
     await this.action(
@@ -1563,6 +1684,7 @@ ${
               )}
           </div>
         </article>
+        ${this.renderApiTokens()}
       </section>
     `;
   }

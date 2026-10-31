@@ -4073,7 +4073,22 @@
       "submitAppeal": "送出申訴",
       "appealSubmitted": "申訴已送出",
       "appealFailed": "無法送出申訴。",
-      "emailPassword": "信箱與密碼"
+      "emailPassword": "信箱與密碼",
+      "apiTokens": "API 權杖",
+      "apiTokenName": "權杖名稱",
+      "apiTokenLifetime": "有效期",
+      "apiTokenDays30": "30 天",
+      "apiTokenDays90": "90 天",
+      "apiTokenDays365": "1 年",
+      "apiTokenCreate": "建立權杖",
+      "apiTokenShown": "請立即複製此權杖",
+      "apiTokenCopy": "複製",
+      "apiTokenCopied": "權杖已複製。",
+      "apiTokenExpires": "到期",
+      "apiTokenUsed": "上次使用",
+      "apiTokenNeverUsed": "從未",
+      "apiTokenRevokeTitle": "要撤銷此權杖嗎?",
+      "apiTokenRevoked": "權杖已撤銷。"
     },
     "profile": {
       "title": "個人主頁",
