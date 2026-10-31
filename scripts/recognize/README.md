@@ -43,7 +43,7 @@ An optional `levelReader` supplies native `glyphs` as binary strings for 0–9,
 L/v/period, and `allowedLevels` for each kind. If it is absent, levels are unknown.
 The glyph recognizer checks the Lv prefix, white glyph geometry, competing digit
 scores and threshold agreement. Weak, conflicting or cut text is rejected.
-Training, awakening and skill levels remain unknown in this version.
+Training, awakening and skill levels are read only on device, from detail screens.
 
 Output has schema `haneoka-card-recognition-result-v1`: `identity`, `images`,
 `observations`, `entities`, `warnings`, `engine` and `stats`. Observations carry

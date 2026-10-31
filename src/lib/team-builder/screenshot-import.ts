@@ -1,6 +1,6 @@
 import type { TeamBuilderData } from "./data.ts";
 import {
-  addInventoryEntries, updateInventoryEntries, upgradeInventory, validateInventory,
+  addInventoryEntries, practiceRanges, updateInventoryEntries, upgradeInventory, validateInventory,
   type InventoryV1, type InventoryKind,
 } from "./inventory.ts";
 
@@ -11,7 +11,17 @@ export interface ScreenshotObservation {
   cardId: number | null;
   candidates: { cardId: number; variant: string; score: number; evidence: unknown }[];
   level: { value: number | null; reason: string; evidence?: unknown };
+  /** Read from the card's detail screen. */
+  detail?: ScreenshotDetail;
 }
+export interface ScreenshotDetail {
+  cap: number;
+  training: number | null;
+  awakening: number | null;
+  liveSkillLevel: number | null;
+  gekisoSkillLevel: number | null;
+}
+export type ScreenshotPractice = Partial<Record<(typeof PRACTICE_FIELDS)[number], number>>;
 export interface ScreenshotRecognitionResult {
   schema: "haneoka-card-recognition-result-v1";
   context: ScreenshotRecognitionContext;
@@ -30,7 +40,7 @@ export interface ScreenshotCardProposal {
   existingInstanceId: string | null;
   existingLevel: number | null;
   observedLevels: number[];
-
+  observedPractice: ScreenshotPractice;
 }
 export interface ScreenshotImportPreview {
   context: ScreenshotReviewContext;
@@ -45,6 +55,23 @@ export interface ScreenshotCardConfirmation {
   /** Omitted follows the bulk default; "keep" preserves the saved level explicitly. */
   level?: number | "keep";
   levelSource?: "observed" | "manual";
+}
+
+const PRACTICE_FIELDS = ["training", "awakening", "liveSkillLevel", "gekisoSkillLevel"] as const;
+
+/** The detail fields this card can hold. A Snapshot shows no awakening rank, but each rank has its own level cap. */
+function detailPractice(data: TeamBuilderData, kind: InventoryKind, cardId: number, detail: ScreenshotDetail): ScreenshotPractice {
+  if (kind === "snapshots") {
+    const group = data.snapshots[String(cardId)]?.awakeningGroup;
+    const ranks = (data.progression.supportCardRanks || [])
+      .filter(row => Number(row.group) === group && Number(row.limitLevel) === detail.cap);
+    return ranks.length === 1 ? { awakening: Number(ranks[0]!.rank) } : {};
+  }
+  const ranges = practiceRanges(data, kind, cardId, { training: detail.training });
+  return Object.fromEntries(PRACTICE_FIELDS.flatMap(field => {
+    const value = detail[field];
+    return value !== null && ranges[field]?.includes(value) ? [[field, value]] : [];
+  }));
 }
 
 export function screenshotLevelDefault(card: ScreenshotCardProposal, existingValues: "keep" | "overwrite" | "updates" = "keep") {
@@ -112,12 +139,14 @@ export function previewScreenshotImport(
     if (!proposal) {
       const owned = current[observation.kind].find(entry => entry.cardId === chosen);
       proposal = { key, kind: observation.kind, cardId: chosen, observations: [],
-        existingInstanceId: owned?.instanceId ?? null, existingLevel: owned?.level ?? null, observedLevels: [] };
+        existingInstanceId: owned?.instanceId ?? null, existingLevel: owned?.level ?? null, observedLevels: [], observedPractice: {} };
       cards.set(key, proposal);
     }
     proposal.observations.push({ image: 0, index });
     if (observation.level.value !== null && !proposal.observedLevels.includes(observation.level.value))
       proposal.observedLevels.push(observation.level.value);
+    if (observation.detail)
+      proposal.observedPractice = { ...detailPractice(data, observation.kind, chosen, observation.detail), ...proposal.observedPractice };
   }
   return { context: { ...context }, original: structuredClone(current), recognitions: [structuredClone(recognition)],
     cards: [...cards.values()], rejectedObservations: rejected };
@@ -139,6 +168,7 @@ export function previewScreenshotImportBatch(
       if (previous) {
         previous.observations.push(...observations);
         previous.observedLevels = [...new Set([...previous.observedLevels, ...proposal.observedLevels])];
+        previous.observedPractice = { ...proposal.observedPractice, ...previous.observedPractice };
       } else cards.set(proposal.key, { ...proposal, observations });
     }
     rejected.push(...preview.rejectedObservations.map(index => image * 100 + index));
@@ -148,7 +178,8 @@ export function previewScreenshotImportBatch(
 }
 
 /** Only explicit confirmation creates/changes owned cards. Fields a screenshot
- * does not show stay unknown; a confirmed observed/manual level is applied last.
+ * does not show stay unknown; a confirmed observed/manual level is applied last,
+ * then what a detail screen showed, following the same choice for saved values.
  * Existing cards retain unseen practice and all flags/player maps. A changed
  * account/revision/source or inventory requires review again.
  */
@@ -189,6 +220,12 @@ export function applyConfirmedScreenshotImport(
       const entry = next[card.kind].find(value => value.cardId === card.cardId)!;
       next = updateInventoryEntries(next, card.kind, [entry.instanceId], { level });
     }
+    const entry = next[card.kind].find(value => value.cardId === card.cardId)! as Partial<Record<(typeof PRACTICE_FIELDS)[number], number | null>> & { instanceId: string };
+    const practice = Object.entries(card.observedPractice).filter(([field, value]) => {
+      const saved = entry[field as (typeof PRACTICE_FIELDS)[number]] ?? null;
+      return saved === null || existingValues === "overwrite" || (existingValues === "updates" && value > saved);
+    });
+    if (practice.length) next = updateInventoryEntries(next, card.kind, [entry.instanceId], Object.fromEntries(practice));
   }
   const checked = validateInventory(next, data);
   if (!checked.valid) throw new RangeError(`screenshot-practice-review:${checked.issues[0]?.path}`);

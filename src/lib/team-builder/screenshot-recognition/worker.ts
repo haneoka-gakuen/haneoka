@@ -13,9 +13,15 @@ import {
   type Raster,
 } from "./kernel";
 
+interface SheetEntry {
+  tile: [number, number];
+  columns: number;
+  sheet: string;
+  cardIds: number[];
+}
 interface LocalDocument {
   schema: "haneoka-card-recognition-local-v1";
-  kinds: Record<CardKind, { tile: [number, number]; columns: number; sheet: string; cardIds: number[] }>;
+  kinds: Record<CardKind, SheetEntry & { art?: SheetEntry }>;
   levelReader: { glyphs: Record<string, string[]>; allowedLevels: Record<CardKind, number[]> } | null;
 }
 
@@ -53,9 +59,14 @@ function load(server: string) {
         kinds[kind] = referenceKind(kind, await raster(await sheet.blob()), entry.tile, entry.columns, entry.cardIds);
       }
       const reader = document.levelReader;
+      const artEntry = document.kinds.members.art;
+      const artSheet = artEntry ? await fetch(base + artEntry.sheet) : null;
       return {
         reference: {
           kinds,
+          art: artEntry && artSheet?.ok
+            ? referenceKind("art", await raster(await artSheet.blob()), artEntry.tile, artEntry.columns, artEntry.cardIds)
+            : null,
           glyphs: reader ? glyphMasks(reader.glyphs) : null,
           allowedLevels: reader
             ? { members: new Set(reader.allowedLevels.members), snapshots: new Set(reader.allowedLevels.snapshots) }
@@ -107,7 +118,7 @@ self.onmessage = async (
           cardId: row.cardId,
           status: row.status,
           candidates: row.candidates,
-          fields: { level: row.level },
+          fields: { level: row.level, ...(row.detail ? { detail: row.detail } : {}) },
         })),
         engine: { algorithm: ALGORITHM },
       },

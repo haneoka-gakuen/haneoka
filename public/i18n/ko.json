@@ -2251,7 +2251,11 @@
         "chooseVideo": "화면 녹화 선택",
         "image-video": "이 화면 녹화를 읽을 수 없습니다.",
         "imagesHint": "카드 목록 이미지 최대 8장",
-        "videoHint": "목록 전체를 한 번 스크롤"
+        "videoHint": "목록 전체를 한 번 스크롤",
+        "practice_training": "특훈",
+        "practice_awakening": "각성",
+        "practice_liveSkillLevel": "LIVE",
+        "practice_gekisoSkillLevel": "GEKISO"
       },
       "personalLiveScore": "개인 Live 점수",
       "scoreDomain": "점수 유형",

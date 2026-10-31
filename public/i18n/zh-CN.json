@@ -2251,7 +2251,11 @@
         "chooseVideo": "选择录屏",
         "image-video": "无法读取这个录屏。",
         "imagesHint": "最多 8 张卡牌列表截图",
-        "videoHint": "把整个列表滑动一遍"
+        "videoHint": "把整个列表滑动一遍",
+        "practice_training": "特训",
+        "practice_awakening": "觉醒",
+        "practice_liveSkillLevel": "LIVE",
+        "practice_gekisoSkillLevel": "GEKISO"
       },
       "personalLiveScore": "个人 Live 分数",
       "scoreDomain": "分数类型",

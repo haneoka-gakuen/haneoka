@@ -2,7 +2,7 @@ import {
   uploadPrivateScreenshot, readPrivateScreenshotJob, deletePrivateScreenshotJob,
   type ScreenshotRecognitionOptions, type ScreenshotRecognitionUploadOptions,
 } from "../../../packages/community-media/client";
-import type { ScreenshotRecognitionContext, ScreenshotRecognitionResult } from "./screenshot-import.ts";
+import type { ScreenshotDetail, ScreenshotRecognitionContext, ScreenshotRecognitionResult } from "./screenshot-import.ts";
 
 export interface RecognitionJob {
   id: string;
@@ -35,7 +35,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 const HASH = /^[a-f0-9]{64}$/u;
 
 /** Adapt the deployed kernel shape once at the UI boundary. Accepted visible
- * level evidence survives; hidden practice fields are never imported.
+ * level evidence and detail-screen fields survive.
  */
 export function normalizeRecognitionResult(job: RecognitionJob): ScreenshotRecognitionResult[] {
   const result = job.result;
@@ -66,6 +66,7 @@ export function normalizeRecognitionResult(job: RecognitionJob): ScreenshotRecog
     observations: result.observations.filter(row => row.imageId === image.id).map(row => ({
       bbox: [...row.bbox], kind: row.kind, cardId: row.cardId,
       candidates: row.candidates.map(candidate => ({ cardId: candidate.cardId, variant: candidate.variant, score: candidate.score, evidence: { ...candidate } })),
+      ...(row.fields.detail ? { detail: row.fields.detail as ScreenshotDetail } : {}),
       level: { value: row.fields.level.status === "recognized" ? row.fields.level.value : null, reason: row.fields.level.reason ?? row.fields.level.status },
     })),
   }));

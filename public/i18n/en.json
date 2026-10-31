@@ -2251,7 +2251,11 @@
         "chooseVideo": "Choose screen recording",
         "image-video": "This recording couldn't be read.",
         "imagesHint": "Up to 8 images of the card list",
-        "videoHint": "Scroll through the whole list once"
+        "videoHint": "Scroll through the whole list once",
+        "practice_training": "Training",
+        "practice_awakening": "Awakening",
+        "practice_liveSkillLevel": "LIVE",
+        "practice_gekisoSkillLevel": "GEKISO"
       },
       "personalLiveScore": "Personal Live score",
       "scoreDomain": "Score type",

@@ -15,6 +15,10 @@ LOCAL_PATH = "runtime/card-recognition/local.json"
 TILES = {"members": (48, 59), "snapshots": (64, 34)}
 SHOWN_WIDTH = {"members": 0.85, "snapshots": 1.0}
 SHEET_COLUMNS = 16
+# The member detail screen draws the 1440×1920 art unscaled at a screen height of
+# 1206; this is the part of it nothing on that screen covers.
+ART_TILE = (48, 26)
+ART_BOX = (108, 392, 1108, 942)
 
 
 def write_local_reference(root: Path, server: str, source: dict, data) -> dict:
@@ -43,12 +47,38 @@ def write_local_reference(root: Path, server: str, source: dict, data) -> dict:
         sheet.save(target, optimize=True)
         kinds[kind] = {"tile": [width, height], "columns": SHEET_COLUMNS, "sheet": f"{kind}.png",
                        "cardIds": [r["cardId"] for r in refs]}
+    art = write_member_art(root, source, data)
+    if art is not None:
+        kinds["members"]["art"] = art
     reader = source.get("levelReader")
     document = {"schema": "haneoka-card-recognition-local-v1", "server": server, "sourceId": source["sourceId"],
                 "kinds": kinds, "levelReader": None if reader is None else
                 {"glyphs": reader["glyphs"], "allowedLevels": reader["allowedLevels"]}}
     write_json(root / LOCAL_PATH, document)
     return {"path": LOCAL_PATH, "levelReader": reader is not None}
+
+
+def write_member_art(root: Path, source: dict, data) -> dict | None:
+    """Member art as the detail screen shows it, or None when a card has no full art."""
+    from PIL import Image
+    width, height = ART_TILE
+    refs = sorted((r for r in source["references"] if r["kind"] == "members"), key=lambda r: r["cardId"])
+    files = [data.asset_file(r["sourcePath"].removeprefix("assets/").replace("member_thumbnail", "member_full"))
+             for r in refs]
+    if not refs or None in files:
+        return None
+    rows = -(-len(refs) // SHEET_COLUMNS)
+    sheet = Image.new("RGB", (width * SHEET_COLUMNS, height * rows))
+    for index, file in enumerate(files):
+        with Image.open(file) as image:
+            scale = image.width / 1440
+            box = tuple(value * scale for value in ART_BOX)
+            tile = image.convert("RGB").resize(ART_TILE, Image.Resampling.BOX, box=box)
+        sheet.paste(tile, ((index % SHEET_COLUMNS) * width, (index // SHEET_COLUMNS) * height))
+    target = root / "runtime/card-recognition/members-art.png"
+    sheet.save(target, optimize=True)
+    return {"tile": list(ART_TILE), "columns": SHEET_COLUMNS, "sheet": "members-art.png",
+            "cardIds": [r["cardId"] for r in refs]}
 
 
 def build_card_recognition_source(root: Path, server: str, source_id: str, *, data=None):

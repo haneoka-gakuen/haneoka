@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 截图 RGBA、当前 release 的参考图向量与 Lv 字形。
-// Output: 卡牌格位、身份候选与可见等级。
+// Output: 卡牌格位或详情页、身份候选、可见等级与详情页养成字段。
 // Pos: [Map](../L2-2.md)；截图识别的纯计算核心，app 有同一算法的 Dart 版本。
 // Effects/Dependencies: 无副作用。
 /** On-device card recognition: grid proposals, identity by masked colour
@@ -15,13 +15,15 @@ export interface Raster {
   data: Uint8ClampedArray;
 }
 export interface ReferenceKind {
-  kind: CardKind;
+  kind: CardKind | "art";
   tile: [number, number];
   cardIds: number[];
   vectors: Float32Array[];
 }
 export interface LocalReference {
   kinds: Record<CardKind, ReferenceKind>;
+  /** Member art as the detail screen shows it. */
+  art: ReferenceKind | null;
   glyphs: Record<string, Mask> | null;
   allowedLevels: Record<CardKind, Set<number>> | null;
 }
@@ -42,6 +44,8 @@ export interface Observation {
   status: "recognized" | "needs_confirmation" | "unknown";
   candidates: Candidate[];
   level: { value: number | null; status: "recognized" | "unknown"; reason: string };
+  /** Present when the card came from its detail screen. */
+  detail?: DetailFields;
 }
 
 export const ALGORITHM = "card-tile-glyph-v1";
@@ -49,9 +53,10 @@ const WORKING_SIDE = 2048;
 const ACCEPT_SCORE = 0.6;
 const ACCEPT_MARGIN = 0.06;
 // Art inside a cell that no badge, mark or Lv label covers.
-const MASKS: Record<CardKind, { top: number; bottom: number; left: number; right: number }> = {
+const MASKS: Record<CardKind | "art", { top: number; bottom: number; left: number; right: number }> = {
   members: { top: 0.18, bottom: 0.8, left: 0.1, right: 0.72 },
   snapshots: { top: 0.22, bottom: 0.74, left: 0.1, right: 0.84 },
+  art: { top: 0, bottom: 1, left: 0, right: 1 },
 };
 
 /** Separable box-filter resample of an RGBA raster region into width × height floats (RGB). */
@@ -118,7 +123,7 @@ function weights(start: number, span: number, count: number, limit: number) {
 }
 
 /** Zero-mean, unit-length colour vector over the identity mask. */
-export function tileVector(rgb: Float32Array, width: number, height: number, kind: CardKind): Float32Array {
+export function tileVector(rgb: Float32Array, width: number, height: number, kind: ReferenceKind["kind"]): Float32Array {
   const mask = MASKS[kind];
   const top = Math.round(height * mask.top),
     bottom = Math.round(height * mask.bottom);
@@ -741,6 +746,194 @@ export function readLevel(image: Raster, font: Record<string, Mask>, allowed: Se
   return { value: winner[0], reason: "accepted" };
 }
 
+// Detail screen reader: the single-card screens of a Box recording.
+
+export interface DetailFields {
+  /** The level cap shown beside the level. */
+  cap: number;
+  training: number | null;
+  awakening: number | null;
+  liveSkillLevel: number | null;
+  gekisoSkillLevel: number | null;
+}
+interface Number_ {
+  value: number;
+  score: number;
+  margin: number;
+  x: number;
+  right: number;
+}
+
+/** One run of same-height digits starting at the left of [row]. */
+function digitRun(row: Blob[], font: Record<string, Mask>, height: number): Number_ | null {
+  const digits: { character: string; score: number; margin: number; x: number; w: number }[] = [];
+  for (const c of row) {
+    if (c.h < height * 0.8 || c.h > height * 1.25) continue;
+    if (digits.length && c.x - digits.at(-1)!.x - digits.at(-1)!.w > height * 0.5) break;
+    const ranked = "0123456789"
+      .split("")
+      .map((character) => [character, similarity(c.mask, font[character]!)] as const)
+      .sort((a, b) => b[1] - a[1]);
+    digits.push({ character: ranked[0]![0], score: ranked[0]![1], margin: ranked[0]![1] - ranked[1]![1], x: c.x, w: c.w });
+  }
+  if (!digits.length) return null;
+  return {
+    value: Number(digits.map((d) => d.character).join("")),
+    score: Math.min(...digits.map((d) => d.score)),
+    margin: Math.min(...digits.map((d) => d.margin)),
+    x: digits[0]!.x,
+    right: digits.at(-1)!.x + digits.at(-1)!.w,
+  };
+}
+
+/** Every L-v pair in the blobs, left to right. */
+function prefixes(cs: Blob[], font: Record<string, Mask>) {
+  const found: { l: Blob; v: Blob }[] = [];
+  for (const l of cs) {
+    if (l.h < 6 || !(l.w / l.h > 0.2 && l.w / l.h < 1) || similarity(l.mask, font.L!) < 0.5) continue;
+    const v = cs.find(
+      (c) =>
+        c.x >= l.x + l.w &&
+        c.x < l.x + l.w + l.h * 0.95 &&
+        c.h / l.h > 0.42 &&
+        c.h / l.h < 0.9 &&
+        Math.abs(c.y + c.h - (l.y + l.h)) <= 3 &&
+        similarity(c.mask, font.v!) > 0.4,
+    );
+    if (v) found.push({ l, v });
+  }
+  return found;
+}
+
+interface DetailHeader {
+  level: number;
+  cap: number;
+  /** The Lv prefix in image pixels; the rest of the screen is measured from it. */
+  x: number;
+  bottom: number;
+  unit: number;
+}
+
+function detailHeader(image: Raster, font: Record<string, Mask>, threshold: number): DetailHeader | null {
+  const left = Math.round(image.width * 0.4),
+    top = Math.round(image.height * 0.04);
+  const roi = crop(image, left, top, Math.round(image.width * 0.42), Math.round(image.height * 0.28));
+  const cs = blobs(roi, threshold);
+  for (const { l, v } of prefixes(cs, font)) {
+    const bottom = l.y + l.h;
+    const row = cs.filter((c) => c.x > v.x + v.w && Math.abs(c.y + c.h - bottom) <= 4);
+    const tall = row.filter((c) => c.h >= l.h * 1.3 && c.h <= l.h * 2.6);
+    if (!tall.length) continue;
+    const height = Math.max(...tall.map((c) => c.h));
+    const level = digitRun(tall, font, height);
+    if (!level || level.score < 0.55 || level.margin < 0.03) continue;
+    // A slash separates the level from its smaller cap.
+    const rest = row.filter((c) => c.x > level.right && c.x < level.right + l.h * 4 && c.h < height * 0.85).slice(1);
+    const cap = digitRun(rest, font, l.h);
+    if (!cap || cap.score < 0.5) continue;
+    return { level: level.value, cap: cap.value, x: left + l.x, bottom: top + bottom, unit: l.h };
+  }
+  return null;
+}
+
+/** The training digit sits inside its ring of stars, right of the header. */
+function detailTraining(image: Raster, header: DetailHeader, font: Record<string, Mask>, threshold: number) {
+  const { x, bottom, unit } = header;
+  const left = Math.round(x + unit * 17),
+    top = Math.max(0, Math.round(bottom - unit * 3));
+  const roi = crop(image, left, top, Math.min(Math.round(unit * 4.5), image.width - left), Math.round(unit * 5));
+  const c = blobs(roi, threshold)
+    .filter((blob) => blob.h >= unit * 1.1 && blob.h <= unit * 2)
+    .sort((a, b) => b.h - a.h)[0];
+  if (!c) return null;
+  const ranked = "0123456"
+    .split("")
+    .map((character) => [Number(character), similarity(c.mask, font[character]!)] as const)
+    .sort((a, b) => b[1] - a[1]);
+  return ranked[0]![1] > 0.55 && ranked[0]![1] - ranked[1]![1] > 0.03 ? ranked[0]![0] : null;
+}
+
+/** Awakening is a star of five facets: lit facets count ranks. */
+function detailAwakening(image: Raster, header: DetailHeader) {
+  const { x, bottom, unit } = header;
+  const centre = [x + unit * 31.4, bottom - unit * 0.95];
+  let lit = 0;
+  for (let facet = 0; facet < 5; facet++) {
+    const angle = ((-90 + facet * 72) * Math.PI) / 180;
+    const fx = Math.round(centre[0]! + Math.cos(angle) * unit * 0.9),
+      fy = Math.round(centre[1]! + Math.sin(angle) * unit * 0.9);
+    if (fx < 2 || fy < 2 || fx + 3 > image.width || fy + 3 > image.height) return null;
+    let red = 0;
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++) red += image.data[((fy + dy) * image.width + fx + dx) * 4]!;
+    if (red / 25 > 100) lit++;
+  }
+  return lit;
+}
+
+/** Skill rows carry "Lv. n/5"; the panel lists leader, live, then Gekisou. */
+function detailSkills(image: Raster, header: DetailHeader, font: Record<string, Mask>) {
+  const { x, bottom, unit } = header;
+  const left = Math.round(x + unit * 28),
+    top = Math.round(bottom);
+  const roi = crop(image, left, top, Math.min(Math.round(unit * 9), image.width - left), image.height - top);
+  // The row label is dimmer than the header.
+  const cs = blobs(roi, 150);
+  const found = prefixes(cs, font).sort((a, b) => a.l.y - b.l.y);
+  const rows = found.flatMap(({ l, v }) => {
+    const base = l.y + l.h;
+    const row = cs.filter(
+      (c) => c.x > v.x + v.w + 1 && c.h >= l.h * 1.05 && c.h <= l.h * 1.5 && Math.abs(c.y + c.h - base) <= 3,
+    );
+    if (row.length < 3) return [];
+    const digit = digitRun(row.slice(0, 1), font, row[0]!.h);
+    const most = digitRun(row.slice(2, 3), font, row[2]!.h);
+    return digit && most && digit.score > 0.5 && most.score > 0.5 && digit.value >= 1 && digit.value <= most.value
+      ? [digit.value]
+      : [];
+  });
+  return rows.length === 3 ? { live: rows[1]!, gekisou: rows[2]! } : null;
+}
+
+/** The art shown on each detail screen, in fractions of the screen height. */
+const DETAIL_ART: Record<CardKind, [number, number, number, number]> = {
+  members: [0.083, 0.207, 0.912, 0.456],
+  snapshots: [0.198, 0.211, 0.903, 0.48],
+};
+
+/** A detail screen's card and fields, or null on any other screen. */
+export function readDetail(image: Raster, reference: LocalReference): Observation | null {
+  const font = reference.glyphs;
+  if (image.width < image.height * 1.25 || !font) return null;
+  const reads = [170, 185, 200, 215, 230].flatMap((threshold) => {
+    const header = detailHeader(image, font, threshold);
+    return header ? [{ header, threshold }] : [];
+  });
+  if (!reads.length) return null;
+  const { header, threshold } = reads[Math.floor(reads.length / 2)]!;
+  if (header.level > header.cap || reads.some((r) => r.header.level !== header.level || r.header.cap !== header.cap))
+    return null;
+  // The Snapshot screen sets its header lower, beside the framed art.
+  const kind: CardKind = header.bottom > image.height * 0.195 ? "snapshots" : "members";
+  const [left, top, width, height] = DETAIL_ART[kind].map((value) => value * image.height) as [number, number, number, number];
+  const box: Observation["bbox"] = [Math.round(left), Math.round(top), Math.round(width), Math.round(height)];
+  const art = kind === "members" ? reference.art : reference.kinds.snapshots;
+  const skills = kind === "members" ? detailSkills(image, header, font) : null;
+  return {
+    kind,
+    bbox: box,
+    ...(art ? matchIdentity(image, box, art) : { cardId: null, status: "unknown" as const, candidates: [] }),
+    level: { value: header.level, status: "recognized", reason: "accepted" },
+    detail: {
+      cap: header.cap,
+      training: kind === "members" ? detailTraining(image, header, font, threshold) : null,
+      awakening: kind === "members" ? detailAwakening(image, header) : null,
+      liveSkillLevel: skills?.live ?? null,
+      gekisoSkillLevel: skills?.gekisou ?? null,
+    },
+  };
+}
+
 /** Recognise one screenshot; boxes are returned in the input raster's coordinates. */
 export function recognize(input: Raster, reference: LocalReference, options: { kind?: CardKind } = {}): Observation[] {
   // Thresholds are set for a list about this wide, so small screenshots are enlarged too.
@@ -752,6 +945,9 @@ export function recognize(input: Raster, reference: LocalReference, options: { k
       : scale > 1
         ? enlarge(input, workingWidth, workingHeight)
         : input;
+  const detail = readDetail(working, reference);
+  if (detail)
+    return [{ ...detail, bbox: clampBox(...scaled(detail.bbox, scale), input.width, input.height) }];
   let boxes = grid(working);
   if (options.kind) {
     boxes = boxes.filter((b) => b.kind === options.kind);
@@ -777,6 +973,9 @@ export function recognize(input: Raster, reference: LocalReference, options: { k
     };
   });
 }
+
+const scaled = (box: Observation["bbox"], scale: number) =>
+  box.map((value) => value / scale) as [number, number, number, number];
 
 function clampBox(x: number, y: number, w: number, h: number, width: number, height: number): Observation["bbox"] {
   const left = Math.max(0, Math.round(x)),
@@ -828,7 +1027,7 @@ export function downscale(image: Raster, width: number, height: number): Raster 
 
 /** Cut a reference sheet into normalised identity vectors. */
 export function referenceKind(
-  kind: CardKind,
+  kind: ReferenceKind["kind"],
   sheet: Raster,
   tile: [number, number],
   columns: number,

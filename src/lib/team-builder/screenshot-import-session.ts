@@ -3,6 +3,7 @@ import { practiceRanges, type InventoryV1 } from "./inventory";
 import { createRecognitionClient, normalizeRecognitionResult, type RecognitionTransport } from "./recognition-client";
 import { localRecognitionTransport } from "./screenshot-recognition/client";
 import { videoFrames } from "./screenshot-video";
+import type { ScreenshotDetail } from "./screenshot-import";
 import { previewScreenshotImportBatch, applyConfirmedScreenshotImport,
   type ScreenshotRecognitionResult, type ScreenshotReviewContext, type ScreenshotSelection } from "./screenshot-import";
 import type { ScreenshotImportDialogState } from "../../lit/shared/team-screenshot-import";
@@ -151,7 +152,7 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       const run = new AbortController(); controller = run;
       cleanupCrops(); results = []; selections = [];
       state = { phase: "processing", confirmations: [], crops: {}, error: null, canConfirm: false }; emit();
-      const seen = new Map<string, { frames: number; best: number; levels: Map<number, number>; observation: ScreenshotRecognitionResult["observations"][number] }>();
+      const seen = new Map<string, { frames: number; best: number; levels: Map<number, number>; detail: boolean; fields: Map<keyof ScreenshotDetail, Map<number, number>>; observation: ScreenshotRecognitionResult["observations"][number] }>();
       try {
         for await (const { frame, index, total } of videoFrames(file, run.signal)) {
           onFrame?.(index, total);
@@ -168,13 +169,22 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
             const key = `${row.kind}:${row.cardId}`;
             let entry = seen.get(key);
             if (!entry) {
-              entry = { frames: 0, best: 0, levels: new Map(), observation: { ...row, level: { ...row.level } } };
+              entry = { frames: 0, best: 0, levels: new Map(), detail: false, fields: new Map(), observation: { ...row, level: { ...row.level } } };
               seen.set(key, entry);
               fresh.push(entry.observation);
             }
             entry.frames++;
             entry.best = Math.max(entry.best, row.candidates[0]?.score ?? 0);
-            if (row.level.value !== null) entry.levels.set(row.level.value, (entry.levels.get(row.level.value) ?? 0) + 1);
+            // A detail screen is one card held still, so one reading is as good as two.
+            if (row.level.value !== null) entry.levels.set(row.level.value, (entry.levels.get(row.level.value) ?? 0) + (row.detail ? 2 : 1));
+            if (row.detail) {
+              entry.detail = true;
+              for (const [field, value] of Object.entries(row.detail) as [keyof ScreenshotDetail, number | null][]) {
+                if (value === null) continue;
+                const counts = entry.fields.get(field) ?? new Map<number, number>();
+                entry.fields.set(field, counts.set(value, (counts.get(value) ?? 0) + 1));
+              }
+            }
           }
           if (!fresh.length) continue;
           const kept = { ...result, observations: fresh };
@@ -186,7 +196,7 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
         run.signal.throwIfAborted();
         // A real card is seen in two frames and clearly matched in one of
         // them; a row caught mid-scroll can pass the per-frame threshold once.
-        const keep = new Set([...seen.values()].filter((entry) => entry.frames >= 2 && entry.best >= 0.8).map((entry) => entry.observation));
+        const keep = new Set([...seen.values()].filter((entry) => (entry.detail || entry.frames >= 2) && entry.best >= 0.8).map((entry) => entry.observation));
         const crops: Record<string, string> = {};
         const kept: ScreenshotRecognitionResult[] = [];
         results.forEach((result, image) => {
@@ -208,7 +218,15 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
         });
         results = kept;
         state = { ...state, crops };
-        for (const { levels, observation } of seen.values()) {
+        for (const { levels, fields, detail, observation } of seen.values()) {
+          if (detail) {
+            const most = (field: keyof ScreenshotDetail) => {
+              const [first, second] = [...(fields.get(field) ?? [])].sort((a, b) => b[1] - a[1]);
+              return first && (!second || first[1] > second[1]) ? first[0] : null;
+            };
+            observation.detail = { cap: most("cap") ?? 0, training: most("training"), awakening: most("awakening"),
+              liveSkillLevel: most("liveSkillLevel"), gekisoSkillLevel: most("gekisoSkillLevel") };
+          }
           const [first, second] = [...levels.entries()].sort((a, b) => b[1] - a[1]);
           // A single frame's reading can catch a row mid-scroll; two must agree.
           observation.level = first && first[1] >= 2 && (!second || first[1] > second[1])

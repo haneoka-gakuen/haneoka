@@ -2251,7 +2251,11 @@
         "chooseVideo": "画面収録を選ぶ",
         "image-video": "この画面収録を読み込めませんでした。",
         "imagesHint": "カード一覧の画像を最大 8 枚",
-        "videoHint": "一覧を最後まで一度スクロール"
+        "videoHint": "一覧を最後まで一度スクロール",
+        "practice_training": "特訓",
+        "practice_awakening": "覚醒",
+        "practice_liveSkillLevel": "LIVE",
+        "practice_gekisoSkillLevel": "GEKISO"
       },
       "personalLiveScore": "個人Liveスコア",
       "scoreDomain": "スコアの種類",

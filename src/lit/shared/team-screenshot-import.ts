@@ -148,6 +148,8 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                   ${choice?.level !== undefined ? html`<button class="button button--text" @click=${()=>actions.level(proposal.key, undefined, "manual")}>${defaultText}</button>` : nothing}
                 </div>
                 ${!proposal.observedLevels.length ? html`<small>${t("levelUnknown", "Level not recognized")}</small>` : nothing}
+                ${Object.keys(proposal.observedPractice).length ? html`<small>${Object.entries(proposal.observedPractice)
+                  .map(([field, value]) => `${t(`practice_${field}`, field)} ${value}`).join(" · ")}</small>` : nothing}
                 ${conflict && choice?.include && choice.level === undefined ? html`<small role="status">${t("chooseLevel", "Choose level")}</small>` : nothing}
                 ${accordion({ id: `team-screenshot-${proposal.key}`, label: t("sourceImages", "Screenshots"),
                   expanded: actions.expandedSource?.(proposal.key) ?? false,
