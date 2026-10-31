@@ -31,6 +31,7 @@ export interface ScreenshotImportDialogActions {
   card: (kind: "members" | "snapshots", cardId: number) => TileOptions | null;
   levels?: (kind: "members" | "snapshots", cardId: number) => readonly number[];
   files: (files: File[]) => void;
+  video?: (file: File) => void;
   close: () => void;
   cancel: () => void;
   correct: (image: number, observation: number) => void;
@@ -93,6 +94,11 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
             <input hidden type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" multiple
               @change=${(event: Event) => { const input = event.target as HTMLInputElement;
                 actions.files([...input.files ?? []]); input.value = ""; }} />
+            ${actions.video ? html`<button type="button" class="button button--outlined"
+              @click=${(event: Event) => ((event.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement | null)?.click()}>${t("chooseVideo", "Choose screen recording")}</button>
+            <input hidden type="file" accept="video/*"
+              @change=${(event: Event) => { const input = event.target as HTMLInputElement;
+                const file = input.files?.[0]; if (file) actions.video!(file); input.value = ""; }} />` : nothing}
           </div>` : nothing}
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
         ${state.error ? html`<p class="team-builder__error" role="alert">${t(state.error.startsWith("image-") ? state.error : state.error === "recognition_reference_unavailable" ? "unavailable" : "failedMessage", "Screenshot recognition failed")}</p>` : nothing}

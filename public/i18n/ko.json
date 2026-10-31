@@ -2194,7 +2194,9 @@
         "image-timeout": "인식 시간이 초과되었습니다.",
         "issues": "확인 필요",
         "level": "레벨",
-        "unknown": "알 수 없음"
+        "unknown": "알 수 없음",
+        "chooseVideo": "화면 녹화 선택",
+        "image-video": "이 화면 녹화를 읽을 수 없습니다."
       },
       "personalLiveScore": "개인 Live 점수",
       "scoreDomain": "점수 유형",

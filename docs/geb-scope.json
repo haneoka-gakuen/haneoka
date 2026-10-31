@@ -150,6 +150,7 @@
     "src/lib/team-builder/save-sources/client.ts",
     "src/lib/team-builder/box-import/client.ts",
     "src/lib/team-builder/box-import/parser.ts",
+    "src/lib/team-builder/screenshot-video.ts",
     "src/lib/team-builder/screenshot-recognition/client.ts",
     "src/lib/team-builder/screenshot-recognition/kernel.ts",
     "src/lib/team-builder/screenshot-recognition/worker.ts",

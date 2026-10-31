@@ -2,6 +2,7 @@ import type { TeamBuilderData } from "./data";
 import { practiceRanges, type InventoryV1 } from "./inventory";
 import { createRecognitionClient, normalizeRecognitionResult, type RecognitionTransport } from "./recognition-client";
 import { localRecognitionTransport } from "./screenshot-recognition/client";
+import { videoFrames } from "./screenshot-video";
 import { previewScreenshotImportBatch, applyConfirmedScreenshotImport,
   type ScreenshotRecognitionResult, type ScreenshotReviewContext, type ScreenshotSelection } from "./screenshot-import";
 import type { ScreenshotImportDialogState } from "../../lit/shared/team-screenshot-import";
@@ -139,6 +140,87 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
         if (!closed) { state = { phase: run.signal.aborted && !timedOut ? "select" : "failed", confirmations: [], crops: {}, error: timedOut ? "image-timeout" : run.signal.aborted ? null : code ?? "recognition-failed", canConfirm: false }; emit(); }
       } finally {
         clearTimeout(timer);
+        await cleanupJobs(true); if (controller === run) controller = null;
+      }
+    },
+    /** A screen recording scrolled through the Box: every frame is
+     * recognized, each card is kept once (from the frame it first appears in)
+     * and its level is the reading most frames agree on. */
+    async video(file: Blob, onFrame?: (done: number, total: number) => void) {
+      if (closed || controller) throw new Error("recognition-session-busy");
+      const run = new AbortController(); controller = run;
+      cleanupCrops(); results = []; selections = [];
+      state = { phase: "processing", confirmations: [], crops: {}, error: null, canConfirm: false }; emit();
+      const seen = new Map<string, { frames: number; best: number; levels: Map<number, number>; observation: ScreenshotRecognitionResult["observations"][number] }>();
+      try {
+        for await (const { frame, index, total } of videoFrames(file, run.signal)) {
+          onFrame?.(index, total);
+          const id = crypto.randomUUID(); jobs.add(id);
+          const job = await client.submit(frame, run.signal, id);
+          await client.cancel(id); jobs.delete(id);
+          if (job.state !== "ready") continue;
+          const result = normalizeRecognitionResult(job)[0];
+          if (!result) continue;
+          previewScreenshotImportBatch(inventory, data, context, [result], []);
+          const fresh: ScreenshotRecognitionResult["observations"] = [];
+          for (const row of result.observations) {
+            if (row.cardId === null || !(row.kind === "members" ? data.members : data.snapshots)[String(row.cardId)]) continue;
+            const key = `${row.kind}:${row.cardId}`;
+            let entry = seen.get(key);
+            if (!entry) {
+              entry = { frames: 0, best: 0, levels: new Map(), observation: { ...row, level: { ...row.level } } };
+              seen.set(key, entry);
+              fresh.push(entry.observation);
+            }
+            entry.frames++;
+            entry.best = Math.max(entry.best, row.candidates[0]?.score ?? 0);
+            if (row.level.value !== null) entry.levels.set(row.level.value, (entry.levels.get(row.level.value) ?? 0) + 1);
+          }
+          if (!fresh.length) continue;
+          const kept = { ...result, observations: fresh };
+          const crops = await (options.crops ?? createScreenshotCrops)(frame, kept, run.signal);
+          const image = results.length;
+          state = { ...state, crops: { ...state.crops, ...Object.fromEntries(Object.entries(crops).map(([i, url]) => [`${image}:${i}`, url])) } };
+          results.push(kept);
+        }
+        run.signal.throwIfAborted();
+        // A real card is seen in two frames and clearly matched in one of
+        // them; a row caught mid-scroll can pass the per-frame threshold once.
+        const keep = new Set([...seen.values()].filter((entry) => entry.frames >= 2 && entry.best >= 0.8).map((entry) => entry.observation));
+        const crops: Record<string, string> = {};
+        const kept: ScreenshotRecognitionResult[] = [];
+        results.forEach((result, image) => {
+          const rows = result.observations.filter((row, index) => {
+            const url = state.crops[`${image}:${index}`];
+            if (keep.has(row)) return true;
+            if (url) revoke(url);
+            return false;
+          });
+          if (!rows.length) return;
+          const at = kept.length;
+          let next = 0;
+          result.observations.forEach((row, index) => {
+            if (!keep.has(row)) return;
+            crops[`${at}:${next}`] = state.crops[`${image}:${index}`]!;
+            selections.push({ image: at, observation: next++, cardId: row.cardId });
+          });
+          kept.push({ ...result, observations: rows });
+        });
+        results = kept;
+        state = { ...state, crops };
+        for (const { levels, observation } of seen.values()) {
+          const [first, second] = [...levels.entries()].sort((a, b) => b[1] - a[1]);
+          // A single frame's reading can catch a row mid-scroll; two must agree.
+          observation.level = first && first[1] >= 2 && (!second || first[1] > second[1])
+            ? { value: first[0], reason: "majority" }
+            : { value: null, reason: "unread-or-disagreeing" };
+        }
+        review();
+      } catch (error) {
+        cleanupCrops(); results = []; selections = [];
+        const code = error instanceof Error ? (error as Error & { code?: string }).code ?? (error instanceof RangeError ? error.message : undefined) : undefined;
+        if (!closed) { state = { phase: run.signal.aborted ? "select" : "failed", confirmations: [], crops: {}, error: run.signal.aborted ? null : code ?? "recognition-failed", canConfirm: false }; emit(); }
+      } finally {
         await cleanupJobs(true); if (controller === run) controller = null;
       }
     },

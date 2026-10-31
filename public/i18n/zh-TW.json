@@ -2194,7 +2194,9 @@
         "image-timeout": "辨識逾時。",
         "issues": "待檢查",
         "level": "等級",
-        "unknown": "未知"
+        "unknown": "未知",
+        "chooseVideo": "選擇螢幕錄影",
+        "image-video": "無法讀取這段螢幕錄影。"
       },
       "personalLiveScore": "個人 Live 分數",
       "scoreDomain": "分數類型",

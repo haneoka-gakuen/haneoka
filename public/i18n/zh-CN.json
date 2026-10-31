@@ -2194,7 +2194,9 @@
         "image-timeout": "识别超时。",
         "issues": "待检查",
         "level": "等级",
-        "unknown": "未知"
+        "unknown": "未知",
+        "chooseVideo": "选择录屏",
+        "image-video": "无法读取这个录屏。"
       },
       "personalLiveScore": "个人 Live 分数",
       "scoreDomain": "分数类型",

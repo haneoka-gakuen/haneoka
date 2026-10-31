@@ -97,6 +97,7 @@ export class ImportController {
   private screenshotBase: InventoryV2 | null = null;
   private screenshotStore: TeamBuilder["store"] = null;
   private screenshotOwner: string | null | undefined;
+  private screenshotFrames: ((done: number, total: number) => void) | null = null;
   private imageController: AbortController | null = null;
   private localImages: { blob: Blob; url: string; crop: ScreenshotCrop }[] = [];
   private correcting: { image: number; observation: number; kind: "members" | "snapshots"; query: string } | null =
@@ -577,6 +578,7 @@ export class ImportController {
           loading?.finish();
           loading = beginLoading(this.host.t(`screenshotImport.${state.phase}`, "Recognizing screenshots"));
           loadingPhase = state.phase;
+          this.screenshotFrames = (done, total) => loading?.update({ processedTasks: done, totalTasks: total });
         } else if (!busy) {
           loading?.finish();
           loading = undefined;
@@ -599,6 +601,14 @@ export class ImportController {
   private clearLocalImages() {
     this.localImages.forEach((image) => URL.revokeObjectURL(image.url));
     this.localImages = [];
+  }
+  private async stageVideo(file: File) {
+    const session = this.session;
+    if (!session) return;
+    this.imageController?.abort();
+    this.clearLocalImages();
+    await session.video(file, (done, total) => this.screenshotFrames?.(done, total));
+    this.host.requestUpdate();
   }
   private async stageImages(files: File[]) {
     const session = this.session;
@@ -870,6 +880,7 @@ export class ImportController {
         card: (kind, id) => host.catalog!.cardOptions(kind === "members" ? "members" : "snaps", id),
         levels: (kind, id) => practiceRanges(host.data!, kind, id).level ?? [],
         files: (files) => void this.stageImages(files),
+        video: (file) => void this.stageVideo(file),
         upload: () => void this.uploadImages(),
         crop: (index, side, value) => {
           const image = this.localImages[index];

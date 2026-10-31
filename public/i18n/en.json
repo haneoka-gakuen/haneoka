@@ -2194,7 +2194,9 @@
         "image-timeout": "Recognition timed out.",
         "issues": "Needs review",
         "level": "Level",
-        "unknown": "Unknown"
+        "unknown": "Unknown",
+        "chooseVideo": "Choose screen recording",
+        "image-video": "This recording couldn't be read."
       },
       "personalLiveScore": "Personal Live score",
       "scoreDomain": "Score type",

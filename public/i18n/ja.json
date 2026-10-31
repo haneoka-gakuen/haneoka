@@ -2194,7 +2194,9 @@
         "image-timeout": "認識がタイムアウトしました。",
         "issues": "要確認",
         "level": "レベル",
-        "unknown": "不明"
+        "unknown": "不明",
+        "chooseVideo": "画面収録を選ぶ",
+        "image-video": "この画面収録を読み込めませんでした。"
       },
       "personalLiveScore": "個人Liveスコア",
       "scoreDomain": "スコアの種類",
