@@ -33,7 +33,7 @@ A region's secret holds one account or a pool:
 
 Pools use `haneoka:official-ranking-account-pool/1`, the output of `account-pool.mjs export-pool`. Save a verified configuration as a GitHub Actions secret of the same name and run `official-ranking-config.yml`. Secrets never go in `vars`, the image or the repository. The `tw` region uses `hk` in `credentials.region`.
 
-A run lasts about two minutes. Each board request is checkpointed before it is sent, and the next one waits until the Worker has stored the last.
+A run lasts up to two minutes. Accounts take turns, least recently used first, and a run starts every five minutes divided by the usable accounts, at most once a minute. Each board request is checkpointed before it is sent, and the next one waits until the Worker has stored the last.
 
 | Upstream response | Result |
 | --- | --- |

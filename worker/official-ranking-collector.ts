@@ -900,7 +900,11 @@ export class OfficialRankingCollector extends Container<Env> {
       state.lastFailure = null;
       state.blockedGeneration = null;
       state.lastRunAtMs = now;
-      state.nextAtMs = now + INTERVAL_MS;
+      // Accounts take turns, so each keeps the base rate however many there are.
+      const usable = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
+        && !state.accounts?.[account.identity]?.held && !state.accounts?.[account.identity]?.blocked[account.authGeneration]
+        && (state.accounts?.[account.identity]?.cooldownUntilMs ?? 0) <= now).length;
+      state.nextAtMs = now + Math.max(ARENA_DEMAND_INTERVAL_MS, Math.ceil(INTERVAL_MS / Math.max(1, usable)));
       const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
