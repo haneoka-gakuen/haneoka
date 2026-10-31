@@ -1514,7 +1514,7 @@ VALUES ('intl', 'Global', 'global', 'active', 'servers/intl', 1, 0, 0, NULL, NUL
 INSERT INTO resource_server
   (slug, display_name, region, status, resource_prefix, version,
    created_at, updated_at, created_by, updated_by)
-VALUES ('jp', 'Japan', 'jp', 'active', 'servers/jp', 1, 0, 0, NULL, NULL);
+VALUES ('jp', 'JP', 'jp', 'active', 'servers/jp', 1, 0, 0, NULL, NULL);
 
 CREATE TABLE resource_package_upload (
   id TEXT PRIMARY KEY NOT NULL,
